@@ -1,0 +1,39 @@
+# Multi-stage build: compile Rust in builder, copy binary to slim runtime
+FROM rust:1.76-slim AS builder
+
+WORKDIR /build
+
+# Install Python dev headers needed by maturin/pyo3
+RUN apt-get update && apt-get install -y \
+    python3 python3-dev python3-pip python3-venv \
+    libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install maturin
+RUN pip3 install maturin --break-system-packages
+
+# Build the Rust extension
+COPY entroly-core/ ./entroly-core/
+RUN cd entroly-core && \
+    python3 -m venv /build/venv && \
+    /build/venv/bin/pip install maturin && \
+    /build/venv/bin/maturin build --release -o /build/wheels/
+
+# ── Runtime image ─────────────────────────────────────────────────────────────
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install the Rust wheel + Python MCP server
+COPY --from=builder /build/wheels/*.whl /tmp/wheels/
+COPY entroly/ ./entroly-pkg/
+
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && \
+    pip install --no-cache-dir -e "./entroly-pkg[mcp]" --no-deps && \
+    pip install --no-cache-dir "mcp>=1.0.0" && \
+    rm -rf /tmp/wheels
+
+# MCP servers communicate over stdio — no port needed
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["python", "-m", "entroly.server"]

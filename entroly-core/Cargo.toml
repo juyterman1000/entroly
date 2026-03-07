@@ -1,0 +1,26 @@
+[package]
+name = "entroly-core"
+version = "0.2.0"
+edition = "2021"
+description = "Rust core for Entroly — information-theoretic context optimization"
+
+[lib]
+name = "entroly_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.23", features = ["extension-module"] }
+
+# Serialization (checkpoint)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Hashing
+md-5 = "0.10"
+
+# Compression (checkpoint)
+flate2 = "1.0"
+
+# Concurrency
+rayon = "1.8"

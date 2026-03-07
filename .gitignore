@@ -1,0 +1,6 @@
+# Entroly
+target/
+.venv/
+__pycache__/
+dist/
+*.whl
