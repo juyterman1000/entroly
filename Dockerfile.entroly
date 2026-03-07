@@ -1,39 +1,40 @@
-# Multi-stage build: compile Rust in builder, copy binary to slim runtime
-FROM rust:1.84-slim AS builder
+# Stage 1: Build — Python 3.12 + Rust via rustup
+# Using python:3.12 as base ensures the compiled wheel is cp312,
+# compatible with the python:3.12-slim runtime stage.
+FROM python:3.12 AS builder
 
 WORKDIR /build
 
-# Install Python dev headers needed by maturin/pyo3
-RUN apt-get update && apt-get install -y \
-    python3 python3-dev python3-pip python3-venv \
-    libssl-dev pkg-config \
+# Install Rust toolchain (respects RUSTUP_HOME/CARGO_HOME)
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN apt-get update && apt-get install -y curl build-essential libssl-dev pkg-config \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
     && rm -rf /var/lib/apt/lists/*
 
 # Install maturin
-RUN pip3 install maturin --break-system-packages
+RUN pip install --no-cache-dir maturin
 
-# Build the Rust extension
+# Copy Rust source and build wheel
 COPY entroly-core/ ./entroly-core/
-RUN cd entroly-core && \
-    python3 -m venv /build/venv && \
-    /build/venv/bin/pip install maturin && \
-    /build/venv/bin/maturin build --release -o /build/wheels/
+RUN cd entroly-core && maturin build --release -o /build/wheels/
 
-# ── Runtime image ─────────────────────────────────────────────────────────────
+# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install the Rust wheel + Python MCP server
+# Install the cp312 wheel built above
 COPY --from=builder /build/wheels/*.whl /tmp/wheels/
-COPY entroly/ ./entroly-pkg/
+COPY entroly/entroly/ /app/entroly/
+COPY entroly/pyproject.toml /app/
 
-RUN pip install --no-cache-dir /tmp/wheels/*.whl && \
-    pip install --no-cache-dir -e "./entroly-pkg[mcp]" --no-deps && \
-    pip install --no-cache-dir "mcp>=1.0.0" && \
-    rm -rf /tmp/wheels
+RUN pip install --no-cache-dir /tmp/wheels/*.whl "mcp>=1.0.0" \
+    && pip install --no-cache-dir --no-deps /app \
+    && rm -rf /tmp/wheels
 
-# MCP servers communicate over stdio — no port needed
 ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python", "-m", "entroly.server"]
