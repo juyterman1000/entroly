@@ -309,6 +309,7 @@ impl EntrolyEngine {
             let mut frag = ContextFragment::new(frag_id.clone(), content.clone(), tc, source.clone());
             frag.recency_score = 1.0;
             frag.entropy_score = effective_entropy;
+            frag.salience = criticality_boost(criticality);
             frag.turn_created = self.current_turn;
             frag.turn_last_accessed = self.current_turn;
             frag.access_count = 1;
@@ -391,11 +392,21 @@ impl EntrolyEngine {
                 .collect();
 
             let mut frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
+            
+            let raw_weights = [
+                self.w_recency,
+                self.w_frequency,
+                self.w_semantic,
+                self.w_entropy,
+            ];
+
+            let final_weights = self.prism_optimizer.apply_residual(&raw_weights);
+
             let weights = ScoringWeights {
-                recency: self.w_recency,
-                frequency: self.w_frequency,
-                semantic: self.w_semantic,
-                entropy: self.w_entropy,
+                recency: final_weights[0],
+                frequency: final_weights[1],
+                semantic: final_weights[2],
+                entropy: final_weights[3],
             };
 
             // ── Pailitao-VL Paradigm: Compare-and-Calibrate Listwise Reranking ──
@@ -617,6 +628,9 @@ impl EntrolyEngine {
                 if let Some(f) = self.fragments.get_mut(fid) {
                     f.turn_last_accessed = self.current_turn;
                     f.access_count += 1;
+                    // Recall Reinforcement (Spacing Effect)
+                    f.salience = (f.salience * 1.2).min(5.0);
+                    f.frequency_score = (f.frequency_score + 0.1).min(1.0);
                 }
             }
 
@@ -713,10 +727,14 @@ impl EntrolyEngine {
             py_result.set_item("skeleton_tokens", skeleton_tokens_used)?;
             py_result.set_item("tokens_saved", saved)?;
             py_result.set_item("effective_budget", effective_budget)?;
-            py_result.set_item("budget_utilization",
-                if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 }
-            )?;
+            let budget_util = if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 };
+            py_result.set_item("budget_utilization", budget_util)?;
             py_result.set_item("sufficiency", (sufficiency * 10000.0).round() / 10000.0)?;
+            
+            // Context Efficiency: high sufficiency with low budget utilization is optimal
+            let context_efficiency = sufficiency * (1.0 - budget_util).max(0.1_f64); 
+            py_result.set_item("context_efficiency", (context_efficiency * 10000.0).round() / 10000.0)?;
+
             if sufficiency < 0.7 {
                 py_result.set_item("sufficiency_warning",
                     format!("Only {:.0}% of referenced symbols have definitions in context", sufficiency * 100.0)
@@ -833,6 +851,22 @@ impl EntrolyEngine {
             };
 
             scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            // ── Episode Co-Recall (Dependency Graph) ──
+            // Boost dependencies of the top candidates so they surface together
+            let seed_len = scored.len().min(5);
+            let seed_ids: HashSet<String> = scored.iter().take(seed_len).map(|(f, _)| f.fragment_id.clone()).collect();
+            let dep_boosts = self.dep_graph.compute_dep_boosts(&seed_ids);
+            
+            if !dep_boosts.is_empty() {
+                for (f, rel) in scored.iter_mut() {
+                    if let Some(&boost) = dep_boosts.get(&f.fragment_id) {
+                        *rel = (*rel + boost * 0.2).min(1.0);
+                    }
+                }
+                scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            }
+
             scored.truncate(top_k);
 
             let result = pyo3::types::PyList::empty(py);

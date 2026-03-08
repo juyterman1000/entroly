@@ -164,5 +164,1469 @@
     ],
     "token_budget": 100,
     "expected_min_recall": 0.66
+  },
+  {
+    "id": "xss_fix",
+    "query": "fix the XSS vulnerability in innerHTML",
+    "fragments": [
+      {
+        "content": "def render_comment(comment):\n    return f\"<div>{comment.text}</div>\"",
+        "source": "views/comments.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "import bleach\ndef sanitize_html(text):\n    return bleach.clean(text, strip=True)",
+        "source": "utils/sanitize.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "ALLOWED_TAGS = [\"b\", \"i\", \"a\", \"p\"]\nALLOWED_ATTRS = {\"a\": [\"href\"]}",
+        "source": "config/security.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "def send_notification(user, msg):\n    push_service.send(user.token, msg)",
+        "source": "services/push.py",
+        "token_count": 15,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "csrf_protection",
+    "query": "add CSRF protection to the form submission endpoint",
+    "fragments": [
+      {
+        "content": "@app.route(\"/submit\", methods=[\"POST\"])\ndef submit_form():\n    data = request.form\n    save_to_db(data)\n    return redirect(\"/success\")",
+        "source": "routes/forms.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "from flask_wtf.csrf import CSRFProtect\ncsrf = CSRFProtect()\ndef init_csrf(app):\n    csrf.init_app(app)",
+        "source": "extensions/csrf.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "SECRET_KEY = os.environ.get(\"SECRET_KEY\")\nWTF_CSRF_ENABLED = True",
+        "source": "config.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "def format_currency(amount):\n    return f\"${amount:.2f}\"",
+        "source": "utils/format.py",
+        "token_count": 10,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "extract_method_refactor",
+    "query": "extract the validation logic into a separate method",
+    "fragments": [
+      {
+        "content": "def create_order(data):\n    if not data.get(\"items\"):\n        raise ValueError(\"No items\")\n    if data[\"total\"] <= 0:\n        raise ValueError(\"Invalid total\")\n    if not data.get(\"customer_id\"):\n        raise ValueError(\"No customer\")\n    order = Order(**data)\n    db.session.add(order)\n    db.session.commit()\n    return order",
+        "source": "services/orders.py",
+        "token_count": 60,
+        "expected_selected": true
+      },
+      {
+        "content": "class Order(db.Model):\n    id = db.Column(db.Integer, primary_key=True)\n    customer_id = db.Column(db.Integer)\n    total = db.Column(db.Float)\n    items = db.relationship(\"OrderItem\")",
+        "source": "models/order.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "class OrderSerializer:\n    def serialize(self, order):\n        return {\"id\": order.id, \"total\": order.total}",
+        "source": "serializers/order.py",
+        "token_count": 20,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 100,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "null_check_bug",
+    "query": "fix the null pointer exception when user profile is missing",
+    "fragments": [
+      {
+        "content": "def get_display_name(user):\n    return user.profile.display_name.upper()",
+        "source": "utils/display.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "class UserProfile(db.Model):\n    user_id = db.Column(db.Integer, primary_key=True)\n    display_name = db.Column(db.String(100))\n    bio = db.Column(db.Text)",
+        "source": "models/profile.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "def migrate_database():\n    db.create_all()\n    print(\"Migration complete\")",
+        "source": "scripts/migrate.py",
+        "token_count": 12,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 50,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "race_condition_fix",
+    "query": "fix the race condition in the inventory update",
+    "fragments": [
+      {
+        "content": "def decrement_stock(product_id, qty):\n    product = Product.query.get(product_id)\n    product.stock -= qty\n    db.session.commit()",
+        "source": "services/inventory.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "from sqlalchemy import select, update\nfrom sqlalchemy.orm import with_for_update\ndef atomic_decrement(product_id, qty):\n    stmt = update(Product).where(Product.id == product_id).values(stock=Product.stock - qty)\n    db.session.execute(stmt)",
+        "source": "services/atomic_inventory.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "class Product(db.Model):\n    id = db.Column(db.Integer, primary_key=True)\n    stock = db.Column(db.Integer, default=0)\n    price = db.Column(db.Float)",
+        "source": "models/product.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "def generate_invoice(order):\n    return f\"Invoice #{order.id}\"",
+        "source": "utils/invoice.py",
+        "token_count": 10,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 80,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "caching_layer",
+    "query": "add Redis caching to the product listing endpoint",
+    "fragments": [
+      {
+        "content": "@app.route(\"/products\")\ndef list_products():\n    products = Product.query.filter_by(active=True).all()\n    return jsonify([p.to_dict() for p in products])",
+        "source": "routes/products.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "import redis\nr = redis.Redis(host=\"localhost\", port=6379)\ndef cache_get(key):\n    return r.get(key)\ndef cache_set(key, value, ttl=300):\n    r.setex(key, ttl, value)",
+        "source": "utils/cache.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "REDIS_URL = os.environ.get(\"REDIS_URL\", \"redis://localhost:6379\")\nCACHE_TTL = 300",
+        "source": "config/cache.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "def log_request(request):\n    logger.info(f\"{request.method} {request.path}\")",
+        "source": "middleware/logging.py",
+        "token_count": 12,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 80,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "api_versioning",
+    "query": "implement API versioning for the v2 endpoints",
+    "fragments": [
+      {
+        "content": "@app.route(\"/api/users\")\ndef get_users():\n    return jsonify(User.query.all())",
+        "source": "routes/api.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "from flask import Blueprint\napi_v2 = Blueprint(\"api_v2\", __name__, url_prefix=\"/api/v2\")\n@api_v2.route(\"/users\")\ndef get_users_v2():\n    return jsonify({\"data\": User.query.all(), \"version\": 2})",
+        "source": "routes/api_v2.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "def create_app():\n    app = Flask(__name__)\n    app.register_blueprint(api_v1)\n    return app",
+        "source": "app.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": ".container { max-width: 1200px; margin: 0 auto; }",
+        "source": "static/main.css",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 80,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "rust_unsafe_audit",
+    "query": "audit and fix unsafe blocks in the memory allocator",
+    "fragments": [
+      {
+        "content": "pub unsafe fn alloc_page(size: usize) -> *mut u8 {\n    let layout = Layout::from_size_align_unchecked(size, 4096);\n    alloc::alloc(layout)\n}",
+        "source": "src/alloc/page.rs",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "pub fn safe_alloc(size: usize) -> Result<Vec<u8>, AllocError> {\n    let mut buf = Vec::with_capacity(size);\n    buf.resize(size, 0);\n    Ok(buf)\n}",
+        "source": "src/alloc/safe.rs",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "#[cfg(test)]\nmod tests {\n    use super::*;\n    #[test]\n    fn test_alloc_dealloc() {\n        let ptr = unsafe { alloc_page(4096) };\n        assert!(!ptr.is_null());\n        unsafe { dealloc_page(ptr, 4096) };\n    }\n}",
+        "source": "src/alloc/tests.rs",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "pub fn format_bytes(n: usize) -> String {\n    if n > 1_000_000 { format!(\"{:.1}MB\", n as f64 / 1e6) }\n    else { format!(\"{n}B\") }\n}",
+        "source": "src/utils/format.rs",
+        "token_count": 20,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 90,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "typescript_api_types",
+    "query": "add TypeScript types for the REST API response",
+    "fragments": [
+      {
+        "content": "export interface User {\n  id: number;\n  email: string;\n  name: string;\n  createdAt: string;\n}",
+        "source": "types/user.ts",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "export async function fetchUsers(): Promise<User[]> {\n  const res = await fetch(\"/api/users\");\n  return res.json();\n}",
+        "source": "api/users.ts",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "export interface ApiResponse<T> {\n  data: T;\n  status: number;\n  message: string;\n}",
+        "source": "types/api.ts",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "export const COLORS = {\n  primary: \"#3b82f6\",\n  secondary: \"#10b981\",\n};",
+        "source": "constants/colors.ts",
+        "token_count": 10,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "go_error_handling",
+    "query": "improve error handling in the HTTP handler",
+    "fragments": [
+      {
+        "content": "func HandleCreateUser(w http.ResponseWriter, r *http.Request) {\n\tvar user User\n\tjson.NewDecoder(r.Body).Decode(&user)\n\tdb.Create(&user)\n\tw.WriteHeader(200)\n}",
+        "source": "handlers/user.go",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "type AppError struct {\n\tCode    int    \n\tMessage string \n}\nfunc (e AppError) Error() string { return e.Message }",
+        "source": "errors/types.go",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "func respondJSON(w http.ResponseWriter, status int, data interface{}) {\n\tw.Header().Set(\"Content-Type\", \"application/json\")\n\tw.WriteHeader(status)\n\tjson.NewEncoder(w).Encode(data)\n}",
+        "source": "utils/response.go",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "var VERSION = \"1.0.0\"",
+        "source": "version.go",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 80,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "database_migration",
+    "query": "create a migration to add the email_verified column",
+    "fragments": [
+      {
+        "content": "class User(db.Model):\n    id = db.Column(db.Integer, primary_key=True)\n    email = db.Column(db.String(120), unique=True)\n    password_hash = db.Column(db.String(256))",
+        "source": "models/user.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "def upgrade():\n    op.add_column(\"users\", sa.Column(\"email_verified\", sa.Boolean(), default=False))\ndef downgrade():\n    op.drop_column(\"users\", \"email_verified\")",
+        "source": "migrations/add_email_verified.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "SQLALCHEMY_DATABASE_URI = \"postgresql://localhost/myapp\"",
+        "source": "config.py",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "logging_improvement",
+    "query": "add structured logging with request correlation IDs",
+    "fragments": [
+      {
+        "content": "import logging\nlogger = logging.getLogger(__name__)\ndef process_order(order):\n    logger.info(\"Processing order\")\n    # business logic\n    logger.info(\"Order processed\")",
+        "source": "services/orders.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "import structlog\ndef configure_logging():\n    structlog.configure(\n        processors=[structlog.stdlib.add_log_level, structlog.processors.JSONRenderer()]\n    )",
+        "source": "config/logging.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "import uuid\ndef correlation_middleware(get_response):\n    def middleware(request):\n        request.correlation_id = str(uuid.uuid4())\n        return get_response(request)\n    return middleware",
+        "source": "middleware/correlation.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "body { font-family: sans-serif; }",
+        "source": "static/style.css",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 75,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "dependency_injection",
+    "query": "refactor to use dependency injection for the email service",
+    "fragments": [
+      {
+        "content": "class OrderService:\n    def create_order(self, data):\n        order = Order(**data)\n        db.session.add(order)\n        db.session.commit()\n        send_email(order.customer.email, \"Order confirmed\")\n        return order",
+        "source": "services/order.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "class EmailService:\n    def send(self, to, subject, body):\n        msg = Message(subject, recipients=[to], body=body)\n        mail.send(msg)",
+        "source": "services/email.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "class MockEmailService:\n    def __init__(self):\n        self.sent = []\n    def send(self, to, subject, body):\n        self.sent.append({\"to\": to, \"subject\": subject})",
+        "source": "tests/mocks.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "DEBUG = True\nTESTING = False",
+        "source": "config.py",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 85,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "pagination_support",
+    "query": "add cursor-based pagination to the articles API",
+    "fragments": [
+      {
+        "content": "@app.route(\"/api/articles\")\ndef list_articles():\n    articles = Article.query.order_by(Article.created_at.desc()).all()\n    return jsonify([a.to_dict() for a in articles])",
+        "source": "routes/articles.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "class Article(db.Model):\n    id = db.Column(db.Integer, primary_key=True)\n    title = db.Column(db.String(200))\n    created_at = db.Column(db.DateTime, default=datetime.utcnow)",
+        "source": "models/article.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "import base64\ndef encode_cursor(id, timestamp):\n    return base64.b64encode(f\"{id}:{timestamp}\".encode()).decode()\ndef decode_cursor(cursor):\n    decoded = base64.b64decode(cursor).decode()\n    id_str, ts = decoded.split(\":\")\n    return int(id_str), ts",
+        "source": "utils/pagination.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "def healthcheck():\n    return {\"status\": \"ok\"}",
+        "source": "routes/health.py",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 90,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "websocket_auth",
+    "query": "add authentication to the WebSocket connection handler",
+    "fragments": [
+      {
+        "content": "async def websocket_handler(websocket, path):\n    async for message in websocket:\n        data = json.loads(message)\n        response = process_message(data)\n        await websocket.send(json.dumps(response))",
+        "source": "ws/handler.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "import jwt\ndef verify_token(token):\n    try:\n        payload = jwt.decode(token, SECRET_KEY, algorithms=[\"HS256\"])\n        return payload[\"user_id\"]\n    except jwt.InvalidTokenError:\n        return None",
+        "source": "auth/jwt_utils.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "WS_PORT = 8765\nMAX_CONNECTIONS = 1000",
+        "source": "config/ws.py",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "rate_limiting",
+    "query": "implement rate limiting for the login endpoint",
+    "fragments": [
+      {
+        "content": "@app.route(\"/login\", methods=[\"POST\"])\ndef login():\n    email = request.json[\"email\"]\n    password = request.json[\"password\"]\n    user = User.query.filter_by(email=email).first()\n    if user and user.check_password(password):\n        return jsonify({\"token\": generate_token(user)})\n    return jsonify({\"error\": \"Invalid credentials\"}), 401",
+        "source": "routes/auth.py",
+        "token_count": 50,
+        "expected_selected": true
+      },
+      {
+        "content": "from flask_limiter import Limiter\nlimiter = Limiter(key_func=get_remote_address)\ndef init_limiter(app):\n    limiter.init_app(app)",
+        "source": "extensions/limiter.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "RATE_LIMIT_DEFAULT = \"100/hour\"\nRATELIMIT_STORAGE_URL = \"redis://localhost:6379\"",
+        "source": "config/limits.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "def render_about():\n    return render_template(\"about.html\")",
+        "source": "routes/pages.py",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 90,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "env_variable_leak",
+    "query": "fix the hardcoded API key in the configuration",
+    "fragments": [
+      {
+        "content": "STRIPE_API_KEY = \"sk_live_abc123def456\"\nDATABASE_URL = \"postgresql://user:pass@localhost/db\"",
+        "source": "config/settings.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "import os\ndef get_config():\n    return {\n        \"stripe_key\": os.environ.get(\"STRIPE_API_KEY\"),\n        \"db_url\": os.environ.get(\"DATABASE_URL\")\n    }",
+        "source": "config/env.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": ".gitignore\n.env\n*.pyc\n__pycache__/",
+        "source": ".gitignore",
+        "token_count": 8,
+        "expected_selected": true
+      },
+      {
+        "content": "print(\"Hello World\")",
+        "source": "hello.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 50,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "off_by_one_fix",
+    "query": "fix the off-by-one error in the pagination calculation",
+    "fragments": [
+      {
+        "content": "def get_page(items, page, per_page):\n    start = page * per_page\n    end = start + per_page\n    return items[start:end]",
+        "source": "utils/pagination.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "def total_pages(total_items, per_page):\n    return total_items // per_page",
+        "source": "utils/math.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "def test_pagination():\n    items = list(range(25))\n    page1 = get_page(items, 1, 10)\n    assert len(page1) == 10\n    assert page1[0] == 10",
+        "source": "tests/test_pagination.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "colors = [\"red\", \"blue\", \"green\"]",
+        "source": "constants.py",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 65,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "async_worker",
+    "query": "convert the synchronous email sending to use Celery async tasks",
+    "fragments": [
+      {
+        "content": "def send_welcome_email(user):\n    msg = Message(\"Welcome!\", recipients=[user.email])\n    msg.body = f\"Hello {user.name}\"\n    mail.send(msg)",
+        "source": "services/email.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "from celery import Celery\napp = Celery(\"tasks\", broker=\"redis://localhost:6379/0\")\n@app.task\ndef async_send_email(to, subject, body):\n    msg = Message(subject, recipients=[to], body=body)\n    mail.send(msg)",
+        "source": "tasks/email.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "CELERY_BROKER_URL = \"redis://localhost:6379/0\"\nCELERY_RESULT_BACKEND = \"redis://localhost:6379/0\"",
+        "source": "config/celery.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "FAQ_QUESTIONS = [\n    \"How do I reset my password?\",\n    \"How do I contact support?\"\n]",
+        "source": "data/faq.py",
+        "token_count": 15,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "docker_multistage",
+    "query": "optimize the Docker build with multi-stage builds",
+    "fragments": [
+      {
+        "content": "FROM python:3.11\nCOPY . /app\nWORKDIR /app\nRUN pip install -r requirements.txt\nRUN pip install gunicorn\nCMD [\"gunicorn\", \"app:app\"]",
+        "source": "Dockerfile",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "flask==3.0\nsqlalchemy==2.0\nredis==5.0\ncelery==5.3",
+        "source": "requirements.txt",
+        "token_count": 10,
+        "expected_selected": true
+      },
+      {
+        "content": "version: \"3.8\"\nservices:\n  web:\n    build: .\n    ports:\n      - \"8000:8000\"\n  redis:\n    image: redis:7",
+        "source": "docker-compose.yml",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "MIT License\nCopyright 2024",
+        "source": "LICENSE",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "graphql_resolver",
+    "query": "add a GraphQL resolver for the nested comments query",
+    "fragments": [
+      {
+        "content": "type Query {\n  post(id: ID!): Post\n}\ntype Post {\n  id: ID!\n  title: String!\n  comments: [Comment!]!\n}\ntype Comment {\n  id: ID!\n  text: String!\n  author: User!\n}",
+        "source": "schema.graphql",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "def resolve_post(_, info, id):\n    return Post.query.get(id)\ndef resolve_comments(post, info):\n    return Comment.query.filter_by(post_id=post.id).all()",
+        "source": "resolvers/post.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "from ariadne import make_executable_schema\nschema = make_executable_schema(type_defs, query, mutation)",
+        "source": "schema.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "h1 { font-size: 2rem; }",
+        "source": "static/blog.css",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 80,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "memory_leak_fix",
+    "query": "fix the memory leak in the event listener registration",
+    "fragments": [
+      {
+        "content": "class EventBus:\n    def __init__(self):\n        self._listeners = {}\n    def on(self, event, callback):\n        if event not in self._listeners:\n            self._listeners[event] = []\n        self._listeners[event].append(callback)",
+        "source": "core/events.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "import weakref\nclass WeakEventBus:\n    def __init__(self):\n        self._listeners = {}\n    def on(self, event, callback):\n        ref = weakref.ref(callback)\n        if event not in self._listeners:\n            self._listeners[event] = []\n        self._listeners[event].append(ref)",
+        "source": "core/weak_events.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "README.md\n# Event System\nSimple pub/sub event bus.",
+        "source": "README.md",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "connection_pool_tuning",
+    "query": "tune the database connection pool for high concurrency",
+    "fragments": [
+      {
+        "content": "engine = create_engine(DATABASE_URL)\nSession = sessionmaker(bind=engine)",
+        "source": "db/engine.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "engine = create_engine(\n    DATABASE_URL,\n    pool_size=20,\n    max_overflow=30,\n    pool_timeout=30,\n    pool_recycle=3600,\n    pool_pre_ping=True\n)",
+        "source": "db/pool_config.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "DATABASE_URL = os.environ[\"DATABASE_URL\"]\nDB_POOL_SIZE = int(os.environ.get(\"DB_POOL_SIZE\", 10))",
+        "source": "config/db.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "print(\"Starting server...\")",
+        "source": "main.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 55,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "index_optimization",
+    "query": "add missing database indexes for the search query",
+    "fragments": [
+      {
+        "content": "SELECT p.* FROM products p\nJOIN categories c ON p.category_id = c.id\nWHERE p.name ILIKE %%search%%\nORDER BY p.created_at DESC\nLIMIT 20",
+        "source": "queries/search.sql",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "class Product(db.Model):\n    id = db.Column(db.Integer, primary_key=True)\n    name = db.Column(db.String(200))\n    category_id = db.Column(db.Integer, db.ForeignKey(\"categories.id\"))\n    created_at = db.Column(db.DateTime)",
+        "source": "models/product.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "def upgrade():\n    op.create_index(\"idx_products_name_trgm\", \"products\", [\"name\"], postgresql_using=\"gin\", postgresql_ops={\"name\": \"gin_trgm_ops\"})\n    op.create_index(\"idx_products_category_created\", \"products\", [\"category_id\", \"created_at\"])",
+        "source": "migrations/add_indexes.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "SITE_NAME = \"My Shop\"",
+        "source": "config/site.py",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 85,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "tight_budget_stress",
+    "query": "refactor the user authentication flow",
+    "fragments": [
+      {
+        "content": "def login(email, password):\n    user = User.query.filter_by(email=email).first()\n    if user and bcrypt.check_password_hash(user.password, password):\n        return create_token(user)\n    return None",
+        "source": "auth/login.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "def register(email, password, name):\n    hashed = bcrypt.generate_password_hash(password)\n    user = User(email=email, password=hashed, name=name)\n    db.session.add(user)\n    db.session.commit()\n    return user",
+        "source": "auth/register.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "def forgot_password(email):\n    user = User.query.filter_by(email=email).first()\n    if user:\n        token = generate_reset_token(user)\n        send_reset_email(user.email, token)",
+        "source": "auth/password.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "COLOR_PRIMARY = \"#3b82f6\"",
+        "source": "constants/ui.py",
+        "token_count": 5,
+        "expected_selected": false
+      },
+      {
+        "content": "def get_weather(city):\n    return requests.get(f\"https://api.weather.com/{city}\").json()",
+        "source": "services/weather.py",
+        "token_count": 12,
+        "expected_selected": false
+      },
+      {
+        "content": "def generate_sitemap():\n    return \"<?xml version=1.0?>\"",
+        "source": "utils/seo.py",
+        "token_count": 10,
+        "expected_selected": false
+      },
+      {
+        "content": "CHANGELOG = \"v1.0 - Initial Release\"",
+        "source": "CHANGELOG.md",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 50,
+    "expected_min_recall": 0.33
+  },
+  {
+    "id": "ci_pipeline_fix",
+    "query": "fix the failing CI pipeline test step",
+    "fragments": [
+      {
+        "content": "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: pip install -r requirements.txt\n      - run: pytest",
+        "source": ".github/workflows/ci.yml",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "import pytest\ndef test_health():\n    response = client.get(\"/health\")\n    assert response.status_code == 200",
+        "source": "tests/test_health.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "pytest==8.0\nflask==3.0\nsqlalchemy==2.0",
+        "source": "requirements.txt",
+        "token_count": 8,
+        "expected_selected": true
+      },
+      {
+        "content": "body { margin: 0; }",
+        "source": "static/reset.css",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "serialization_performance",
+    "query": "optimize JSON serialization for large response payloads",
+    "fragments": [
+      {
+        "content": "def serialize_users(users):\n    return [{\"id\": u.id, \"name\": u.name, \"email\": u.email, \"orders\": [o.to_dict() for o in u.orders]} for u in users]",
+        "source": "serializers/user.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "import orjson\ndef fast_jsonify(data):\n    return Response(orjson.dumps(data), mimetype=\"application/json\")",
+        "source": "utils/json.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "class UserSchema(Schema):\n    id = fields.Int()\n    name = fields.Str()\n    email = fields.Str()",
+        "source": "schemas/user.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "APP_NAME = \"MyApp\"",
+        "source": "config/app.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "middleware_ordering",
+    "query": "fix the middleware execution order causing auth to run after logging",
+    "fragments": [
+      {
+        "content": "app.use(loggingMiddleware)\napp.use(corsMiddleware)\napp.use(authMiddleware)\napp.use(rateLimitMiddleware)",
+        "source": "app.ts",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "export function authMiddleware(req, res, next) {\n  const token = req.headers.authorization;\n  if (!token) return res.status(401).json({error: \"Unauthorized\"});\n  req.user = verifyToken(token);\n  next();\n}",
+        "source": "middleware/auth.ts",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "export function loggingMiddleware(req, res, next) {\n  console.log(req.method, req.path, req.user?.id);\n  next();\n}",
+        "source": "middleware/logging.ts",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "export const PORT = process.env.PORT || 3000;",
+        "source": "config.ts",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "config_hot_reload",
+    "query": "implement hot-reloading for the configuration file without restart",
+    "fragments": [
+      {
+        "content": "import json\nconfig = json.load(open(\"config.json\"))\ndef get_setting(key):\n    return config.get(key)",
+        "source": "config/loader.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "import watchdog\nfrom watchdog.observers import Observer\nfrom watchdog.events import FileSystemEventHandler\nclass ConfigWatcher(FileSystemEventHandler):\n    def on_modified(self, event):\n        if event.src_path.endswith(\"config.json\"):\n            reload_config()",
+        "source": "config/watcher.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "{\"debug\": true, \"log_level\": \"INFO\", \"max_workers\": 4}",
+        "source": "config.json",
+        "token_count": 10,
+        "expected_selected": true
+      },
+      {
+        "content": "def hello():\n    print(\"Hello World\")",
+        "source": "hello.py",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "health_check_endpoint",
+    "query": "add a comprehensive health check endpoint with dependency checks",
+    "fragments": [
+      {
+        "content": "@app.route(\"/health\")\ndef health():\n    return jsonify({\"status\": \"ok\"})",
+        "source": "routes/health.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "def check_database():\n    try:\n        db.session.execute(\"SELECT 1\")\n        return True\n    except Exception:\n        return False\ndef check_redis():\n    try:\n        redis_client.ping()\n        return True\n    except Exception:\n        return False",
+        "source": "health/checks.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "HEALTH_CHECK_TIMEOUT = 5\nHEALTH_CHECK_INTERVAL = 30",
+        "source": "config/health.py",
+        "token_count": 8,
+        "expected_selected": true
+      },
+      {
+        "content": "print(\"Goodbye\")",
+        "source": "bye.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "oauth_integration",
+    "query": "add OAuth2 login with Google provider",
+    "fragments": [
+      {
+        "content": "from authlib.integrations.flask_client import OAuth\noauth = OAuth()\ngoogle = oauth.register(\"google\", client_id=GOOGLE_CLIENT_ID, client_secret=GOOGLE_CLIENT_SECRET)",
+        "source": "auth/oauth.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "@app.route(\"/login/google\")\ndef google_login():\n    redirect_uri = url_for(\"google_callback\", _external=True)\n    return google.authorize_redirect(redirect_uri)",
+        "source": "routes/oauth.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "GOOGLE_CLIENT_ID = os.environ[\"GOOGLE_CLIENT_ID\"]\nGOOGLE_CLIENT_SECRET = os.environ[\"GOOGLE_CLIENT_SECRET\"]",
+        "source": "config/oauth.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "def resize_image(img, size):\n    return img.thumbnail(size)",
+        "source": "utils/image.py",
+        "token_count": 8,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 60,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "retry_logic",
+    "query": "add exponential backoff retry to the API client",
+    "fragments": [
+      {
+        "content": "def call_api(url, data):\n    response = requests.post(url, json=data)\n    response.raise_for_status()\n    return response.json()",
+        "source": "clients/api.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "from tenacity import retry, stop_after_attempt, wait_exponential\n@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, max=10))\ndef resilient_call(url, data):\n    return requests.post(url, json=data, timeout=5)",
+        "source": "clients/resilient.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "API_TIMEOUT = 30\nMAX_RETRIES = 3",
+        "source": "config/api.py",
+        "token_count": 6,
+        "expected_selected": true
+      },
+      {
+        "content": "LOGO_URL = \"/static/logo.png\"",
+        "source": "config/ui.py",
+        "token_count": 4,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 55,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "file_upload_security",
+    "query": "validate file uploads to prevent malicious file execution",
+    "fragments": [
+      {
+        "content": "@app.route(\"/upload\", methods=[\"POST\"])\ndef upload_file():\n    f = request.files[\"file\"]\n    f.save(os.path.join(UPLOAD_DIR, f.filename))\n    return jsonify({\"status\": \"uploaded\"})",
+        "source": "routes/upload.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "ALLOWED_EXTENSIONS = {\"png\", \"jpg\", \"jpeg\", \"gif\", \"pdf\"}\ndef allowed_file(filename):\n    return \".\" in filename and filename.rsplit(\".\", 1)[1].lower() in ALLOWED_EXTENSIONS\ndef secure_filename(filename):\n    return werkzeug.utils.secure_filename(filename)",
+        "source": "utils/upload.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "MAX_CONTENT_LENGTH = 16 * 1024 * 1024\nUPLOAD_DIR = \"/var/uploads\"",
+        "source": "config/upload.py",
+        "token_count": 10,
+        "expected_selected": true
+      },
+      {
+        "content": "def count_words(text):\n    return len(text.split())",
+        "source": "utils/text.py",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "deprecation_warning",
+    "query": "add deprecation warnings for the legacy API endpoints",
+    "fragments": [
+      {
+        "content": "@app.route(\"/api/v1/users\")\ndef get_users_v1():\n    return jsonify(User.query.all())",
+        "source": "routes/api_v1.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "import warnings\ndef deprecated(msg):\n    def decorator(f):\n        @functools.wraps(f)\n        def wrapper(*args, **kwargs):\n            warnings.warn(msg, DeprecationWarning)\n            return f(*args, **kwargs)\n        return wrapper\n    return decorator",
+        "source": "utils/deprecation.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "DEPRECATED_ENDPOINTS = [\"/api/v1/users\", \"/api/v1/orders\"]",
+        "source": "config/deprecated.py",
+        "token_count": 8,
+        "expected_selected": true
+      },
+      {
+        "content": "def generate_id():\n    return str(uuid.uuid4())",
+        "source": "utils/ids.py",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 55,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "monitoring_metrics",
+    "query": "add Prometheus metrics for request latency and error rates",
+    "fragments": [
+      {
+        "content": "from prometheus_client import Counter, Histogram, generate_latest\nREQUEST_COUNT = Counter(\"http_requests_total\", \"Total requests\", [\"method\", \"endpoint\", \"status\"])\nREQUEST_LATENCY = Histogram(\"http_request_duration_seconds\", \"Request latency\", [\"endpoint\"])",
+        "source": "metrics/prometheus.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "import time\ndef metrics_middleware(get_response):\n    def middleware(request):\n        start = time.time()\n        response = get_response(request)\n        duration = time.time() - start\n        REQUEST_LATENCY.labels(request.path).observe(duration)\n        return response\n    return middleware",
+        "source": "middleware/metrics.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "@app.route(\"/metrics\")\ndef metrics():\n    return Response(generate_latest(), mimetype=\"text/plain\")",
+        "source": "routes/metrics.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "APP_VERSION = \"2.1.0\"",
+        "source": "version.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 75,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "data_validation",
+    "query": "add Pydantic validation for the user registration endpoint",
+    "fragments": [
+      {
+        "content": "@app.route(\"/register\", methods=[\"POST\"])\ndef register():\n    data = request.json\n    user = User(email=data[\"email\"], name=data[\"name\"])\n    db.session.add(user)\n    db.session.commit()",
+        "source": "routes/register.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "from pydantic import BaseModel, EmailStr, validator\nclass UserCreate(BaseModel):\n    email: EmailStr\n    name: str\n    password: str\n    @validator(\"password\")\n    def validate_password(cls, v):\n        if len(v) < 8: raise ValueError(\"Password too short\")\n        return v",
+        "source": "schemas/user.py",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "class User(db.Model):\n    email = db.Column(db.String(120), unique=True)\n    name = db.Column(db.String(100))",
+        "source": "models/user.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "ADMIN_EMAIL = \"admin@example.com\"",
+        "source": "config/admin.py",
+        "token_count": 4,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 80,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "rust_trait_refactor",
+    "query": "extract common behavior into a trait for the storage backends",
+    "fragments": [
+      {
+        "content": "pub struct FileStorage {\n    base_path: PathBuf,\n}\nimpl FileStorage {\n    pub fn save(&self, key: &str, data: &[u8]) -> io::Result<()> {\n        fs::write(self.base_path.join(key), data)\n    }\n    pub fn load(&self, key: &str) -> io::Result<Vec<u8>> {\n        fs::read(self.base_path.join(key))\n    }\n}",
+        "source": "src/storage/file.rs",
+        "token_count": 40,
+        "expected_selected": true
+      },
+      {
+        "content": "pub struct S3Storage {\n    bucket: String,\n    client: S3Client,\n}\nimpl S3Storage {\n    pub fn save(&self, key: &str, data: &[u8]) -> io::Result<()> {\n        self.client.put_object(&self.bucket, key, data)\n    }\n}",
+        "source": "src/storage/s3.rs",
+        "token_count": 35,
+        "expected_selected": true
+      },
+      {
+        "content": "pub trait StorageBackend {\n    fn save(&self, key: &str, data: &[u8]) -> io::Result<()>;\n    fn load(&self, key: &str) -> io::Result<Vec<u8>>;\n    fn delete(&self, key: &str) -> io::Result<()>;\n}",
+        "source": "src/storage/traits.rs",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "pub const VERSION: &str = \"0.1.0\";",
+        "source": "src/lib.rs",
+        "token_count": 5,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 100,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "n_plus_one_query",
+    "query": "fix the N+1 query problem in the orders listing",
+    "fragments": [
+      {
+        "content": "def list_orders():\n    orders = Order.query.all()\n    for order in orders:\n        order.customer_name = order.customer.name\n        order.item_count = len(order.items)\n    return orders",
+        "source": "services/orders.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "from sqlalchemy.orm import joinedload\ndef list_orders_optimized():\n    return Order.query.options(\n        joinedload(Order.customer),\n        joinedload(Order.items)\n    ).all()",
+        "source": "services/orders_v2.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "class Order(db.Model):\n    customer_id = db.Column(db.Integer, db.ForeignKey(\"customers.id\"))\n    customer = db.relationship(\"Customer\")\n    items = db.relationship(\"OrderItem\")",
+        "source": "models/order.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "THEME = \"dark\"",
+        "source": "config/ui.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "timezone_bug",
+    "query": "fix the timezone conversion bug in the scheduling module",
+    "fragments": [
+      {
+        "content": "from datetime import datetime\ndef schedule_event(start_time):\n    event = Event(start=datetime.utcnow(), scheduled=start_time)\n    db.session.add(event)",
+        "source": "services/scheduler.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "import pytz\ndef to_utc(dt, tz_name):\n    local = pytz.timezone(tz_name)\n    return local.localize(dt).astimezone(pytz.UTC)",
+        "source": "utils/timezone.py",
+        "token_count": 18,
+        "expected_selected": true
+      },
+      {
+        "content": "DEFAULT_TIMEZONE = \"America/New_York\"\nDATE_FORMAT = \"%Y-%m-%d %H:%M:%S\"",
+        "source": "config/time.py",
+        "token_count": 10,
+        "expected_selected": true
+      },
+      {
+        "content": "COLORS = [\"red\", \"blue\"]",
+        "source": "data/colors.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 55,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "multitenancy",
+    "query": "add tenant isolation to the database queries",
+    "fragments": [
+      {
+        "content": "def get_projects():\n    return Project.query.all()",
+        "source": "services/projects.py",
+        "token_count": 8,
+        "expected_selected": true
+      },
+      {
+        "content": "class TenantMixin:\n    tenant_id = db.Column(db.Integer, db.ForeignKey(\"tenants.id\"), nullable=False)\n    @classmethod\n    def for_tenant(cls, tenant_id):\n        return cls.query.filter_by(tenant_id=tenant_id)",
+        "source": "models/mixins.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "def get_current_tenant():\n    return g.get(\"tenant_id\")\ndef tenant_middleware(get_response):\n    def mw(request):\n        g.tenant_id = extract_tenant(request)\n        return get_response(request)\n    return mw",
+        "source": "middleware/tenant.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "print(\"hello\")",
+        "source": "scratch.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 65,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "permissions_system",
+    "query": "implement role-based access control for admin endpoints",
+    "fragments": [
+      {
+        "content": "@app.route(\"/admin/users\")\ndef admin_users():\n    return jsonify(User.query.all())",
+        "source": "routes/admin.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "from functools import wraps\ndef require_role(role):\n    def decorator(f):\n        @wraps(f)\n        def wrapper(*args, **kwargs):\n            if current_user.role != role:\n                abort(403)\n            return f(*args, **kwargs)\n        return wrapper\n    return decorator",
+        "source": "auth/rbac.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "class Role(db.Model):\n    id = db.Column(db.Integer, primary_key=True)\n    name = db.Column(db.String(50), unique=True)\n    permissions = db.Column(db.JSON)",
+        "source": "models/role.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "SITE_TITLE = \"Admin Panel\"",
+        "source": "config/site.py",
+        "token_count": 4,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "event_sourcing",
+    "query": "add event sourcing to the order processing module",
+    "fragments": [
+      {
+        "content": "class OrderCreated:\n    def __init__(self, order_id, items, total):\n        self.order_id = order_id\n        self.items = items\n        self.total = total\n        self.timestamp = datetime.utcnow()",
+        "source": "events/order.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "class EventStore:\n    def __init__(self):\n        self._events = []\n    def append(self, event):\n        self._events.append(event)\n    def get_events(self, aggregate_id):\n        return [e for e in self._events if e.aggregate_id == aggregate_id]",
+        "source": "events/store.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "def replay_events(events):\n    state = {}\n    for event in events:\n        state = apply_event(state, event)\n    return state",
+        "source": "events/replay.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "BANNER = \"Welcome to Our Store\"",
+        "source": "config/ui.py",
+        "token_count": 4,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 75,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "graceful_shutdown",
+    "query": "implement graceful shutdown for the worker process",
+    "fragments": [
+      {
+        "content": "import signal\nimport sys\ndef handle_shutdown(signum, frame):\n    print(\"Shutting down...\")\n    cleanup()\n    sys.exit(0)\nsignal.signal(signal.SIGTERM, handle_shutdown)\nsignal.signal(signal.SIGINT, handle_shutdown)",
+        "source": "worker/signals.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "class Worker:\n    def __init__(self):\n        self.running = True\n        self.current_task = None\n    def run(self):\n        while self.running:\n            task = queue.get()\n            self.current_task = task\n            process(task)\n            self.current_task = None",
+        "source": "worker/main.py",
+        "token_count": 30,
+        "expected_selected": true
+      },
+      {
+        "content": "def cleanup():\n    db.session.close()\n    redis_client.close()\n    logger.info(\"Cleanup complete\")",
+        "source": "worker/cleanup.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "VERSION = \"1.0\"",
+        "source": "version.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "input_sanitization",
+    "query": "sanitize user input in the search endpoint to prevent injection",
+    "fragments": [
+      {
+        "content": "@app.route(\"/search\")\ndef search():\n    q = request.args.get(\"q\")\n    results = db.execute(f\"SELECT * FROM products WHERE name LIKE %%{q}%%\")\n    return jsonify(results)",
+        "source": "routes/search.py",
+        "token_count": 25,
+        "expected_selected": true
+      },
+      {
+        "content": "import html\ndef sanitize_input(text):\n    text = html.escape(text)\n    text = text.replace(\";\", \"\")\n    text = text.replace(\"--\", \"\")\n    return text[:200]",
+        "source": "utils/sanitize.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "from sqlalchemy import text\ndef safe_search(query):\n    stmt = text(\"SELECT * FROM products WHERE name ILIKE :q\")\n    return db.session.execute(stmt, {\"q\": f\"%%{query}%%\"}).fetchall()",
+        "source": "queries/safe_search.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "FOOTER_TEXT = \"Copyright 2024\"",
+        "source": "config/footer.py",
+        "token_count": 4,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 70,
+    "expected_min_recall": 0.66
+  },
+  {
+    "id": "large_context_stress",
+    "query": "optimize the data processing pipeline",
+    "fragments": [
+      {
+        "content": "def process_batch(items):\n    results = []\n    for item in items:\n        result = transform(item)\n        results.append(result)\n    return results",
+        "source": "pipeline/batch.py",
+        "token_count": 20,
+        "expected_selected": true
+      },
+      {
+        "content": "def transform(item):\n    item[\"normalized\"] = normalize(item[\"value\"])\n    item[\"validated\"] = validate(item)\n    return item",
+        "source": "pipeline/transform.py",
+        "token_count": 15,
+        "expected_selected": true
+      },
+      {
+        "content": "def validate(item):\n    if item[\"value\"] < 0:\n        raise ValueError(\"Negative value\")\n    return True",
+        "source": "pipeline/validate.py",
+        "token_count": 12,
+        "expected_selected": true
+      },
+      {
+        "content": "FAQ = \"How to use the pipeline?\"",
+        "source": "docs/faq.py",
+        "token_count": 5,
+        "expected_selected": false
+      },
+      {
+        "content": "ICON = \"pipeline.svg\"",
+        "source": "assets/icons.py",
+        "token_count": 3,
+        "expected_selected": false
+      },
+      {
+        "content": "VERSION = \"3.2.1\"",
+        "source": "version.py",
+        "token_count": 3,
+        "expected_selected": false
+      },
+      {
+        "content": "def spell_check(text):\n    return text",
+        "source": "utils/spelling.py",
+        "token_count": 5,
+        "expected_selected": false
+      },
+      {
+        "content": "BANNER = \"Data Pipeline v3\"",
+        "source": "ui/banner.py",
+        "token_count": 4,
+        "expected_selected": false
+      },
+      {
+        "content": "def get_app_name():\n    return \"Pipeline\"",
+        "source": "config/name.py",
+        "token_count": 5,
+        "expected_selected": false
+      },
+      {
+        "content": "TIMEOUT = 30",
+        "source": "config/timeout.py",
+        "token_count": 3,
+        "expected_selected": false
+      }
+    ],
+    "token_budget": 55,
+    "expected_min_recall": 0.66
   }
 ]

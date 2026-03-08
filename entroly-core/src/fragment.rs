@@ -57,7 +57,14 @@ pub struct ContextFragment {
     #[pyo3(get, set)]
     #[serde(default)]
     pub prototype_id: u8,
+
+    // Ebbiforge Episodic Memory Salience
+    #[pyo3(get, set)]
+    #[serde(default = "default_salience")]
+    pub salience: f64,
 }
+
+fn default_salience() -> f64 { 1.0 }
 
 #[pymethods]
 impl ContextFragment {
@@ -87,6 +94,7 @@ impl ContextFragment {
             skeleton_content: None,
             skeleton_token_count: None,
             prototype_id,
+            salience: 1.0,
         }
     }
 }
@@ -171,10 +179,10 @@ pub fn apply_ebbinghaus_decay(
     current_turn: u32,
     half_life: u32,
 ) {
-    let decay_rate = (2.0_f64).ln() / half_life.max(1) as f64;
-
     for frag in fragments.iter_mut() {
         let dt = current_turn.saturating_sub(frag.turn_last_accessed) as f64;
+        let effective_half_life = half_life as f64 * frag.salience;
+        let decay_rate = (2.0_f64).ln() / effective_half_life.max(1.0);
         frag.recency_score = (-decay_rate * dt).exp();
     }
 }

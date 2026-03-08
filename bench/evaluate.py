@@ -116,6 +116,7 @@ def run_case(engine_factory, case: dict) -> dict[str, Any]:
 
     recall = len(true_positives) / max(len(expected_selected), 1)
     precision = len(true_positives) / max(len(selected_sources), 1)
+    f1 = 2 * precision * recall / max(precision + recall, 1e-9)
 
     # Context efficiency from the optimize result
     context_efficiency = result.get("context_efficiency", 0.0)
@@ -124,6 +125,7 @@ def run_case(engine_factory, case: dict) -> dict[str, Any]:
         "case_id": case["id"],
         "recall": round(recall, 4),
         "precision": round(precision, 4),
+        "f1": round(f1, 4),
         "context_efficiency": context_efficiency,
         "latency_ms": round(latency_ms, 2),
         "latency_ok": latency_ms <= MAX_LATENCY_MS,
@@ -153,13 +155,11 @@ def evaluate(config: dict | None = None, cases_path: Path | None = None) -> dict
     # Aggregate metrics (primary objective for autotuner)
     avg_recall = sum(r["recall"] for r in results) / max(len(results), 1)
     avg_precision = sum(r["precision"] for r in results) / max(len(results), 1)
+    avg_f1 = sum(r["f1"] for r in results) / max(len(results), 1)
     avg_efficiency = sum(r["context_efficiency"] for r in results) / max(len(results), 1)
     avg_latency = sum(r["latency_ms"] for r in results) / max(len(results), 1)
     all_latency_ok = all(r["latency_ok"] for r in results)
 
-    # Composite score: the single number the autotuner optimizes.
-    # Higher is better. Recall is weighted 2x because missing relevant
-    # context is worse than including irrelevant context.
     composite = (
         0.50 * avg_recall
         + 0.25 * avg_precision
@@ -170,9 +170,11 @@ def evaluate(config: dict | None = None, cases_path: Path | None = None) -> dict
         "composite_score": round(composite, 4),
         "avg_recall": round(avg_recall, 4),
         "avg_precision": round(avg_precision, 4),
+        "avg_f1": round(avg_f1, 4),
         "avg_context_efficiency": round(avg_efficiency, 4),
         "avg_latency_ms": round(avg_latency, 2),
         "all_latency_ok": all_latency_ok,
+        "total_cases": len(results),
         "cases": results,
         "config": config,
     }
@@ -204,14 +206,16 @@ def main():
         print(f"Composite Score: {result['composite_score']:.4f}")
         print(f"  Recall:     {result['avg_recall']:.4f}")
         print(f"  Precision:  {result['avg_precision']:.4f}")
+        print(f"  F1 Score:   {result['avg_f1']:.4f}")
         print(f"  Efficiency: {result['avg_context_efficiency']:.4f}")
         print(f"  Latency:    {result['avg_latency_ms']:.1f} ms (ok={result['all_latency_ok']})")
+        print(f"  Cases:      {result['total_cases']}")
         print()
         for c in result["cases"]:
             status = "PASS" if c["recall"] >= 0.5 and c["latency_ok"] else "FAIL"
             print(
                 f"  [{status}] {c['case_id']}: "
-                f"recall={c['recall']:.2f} precision={c['precision']:.2f} "
+                f"R={c['recall']:.2f} P={c['precision']:.2f} F1={c['f1']:.2f} "
                 f"latency={c['latency_ms']:.1f}ms"
             )
 

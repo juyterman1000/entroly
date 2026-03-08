@@ -7,6 +7,7 @@ SimHash deduplication, and checkpoint/resume system.
 """
 
 import json
+from entroly.config import EntrolyConfig
 import math
 import os
 import tempfile
@@ -119,6 +120,7 @@ def test_boilerplate_detection():
 import sys
 from pathlib import Path
 import json
+from entroly.config import EntrolyConfig
 pass
 """
     ratio = boilerplate_ratio(code)
@@ -253,7 +255,7 @@ def test_checkpoint_save_and_load():
 
 def test_full_engine_pipeline():
     """End-to-end test of the Entroly engine."""
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
 
     # Ingest several code fragments
     r1 = engine.ingest_fragment(
@@ -278,7 +280,7 @@ def test_full_engine_pipeline():
 
     # Ingest boilerplate — should get low entropy
     r4 = engine.ingest_fragment(
-        "import os\nimport sys\nimport json\nfrom pathlib import Path\npass",
+        "import os\nimport sys\nimport json\nfrom entroly.config import EntrolyConfig\nfrom pathlib import Path\npass",
         source="file:imports.py",
     )
     assert r4["entropy_score"] < 0.75, f"Boilerplate should have lower entropy than novel code, got {r4['entropy_score']}"
@@ -315,7 +317,7 @@ def test_positive_feedback_raises_fragment_value():
     higher relative to a fragment that received no feedback.
     Proves the PRISM RL weight update actually changes scoring.
     """
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
 
     r_target = engine.ingest_fragment(
         "def compute_hamming_distance(a: int, b: int) -> int: return bin(a ^ b).count('1')",
@@ -355,7 +357,7 @@ def test_negative_feedback_suppresses_fragment():
     After repeated negative feedback on a fragment, its Wilson lower-bound
     multiplier should drop below 1.0, reducing its effective relevance score.
     """
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
 
     r_good = engine.ingest_fragment(
         "async def send_payment(amount, receiver): await bank_transfer(amount, receiver)",
@@ -395,7 +397,7 @@ def test_recall_correct_after_eviction():
     after non-pinned ones are evicted — a slot-index corruption would silently
     cause the engine to miss relevant fragments.
     """
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
 
     # Ingest transient fragments that will decay (not pinned)
     for i in range(5):
@@ -483,7 +485,7 @@ def test_provenance_hallucination_risk():
     """
     from entroly.provenance import build_provenance
 
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
     engine.ingest_fragment(
         "def authenticate_user(token): return db.find_by_token(token)",
         source="file:auth.py",
@@ -519,7 +521,7 @@ def test_export_import_preserves_prism_covariance():
     must survive (not reset to identity), proving the learned RL state persists
     across restarts.
     """
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
 
     r = engine.ingest_fragment(
         "def calculate_hash(data: bytes) -> str: return hashlib.sha256(data).hexdigest()",
@@ -563,7 +565,7 @@ def test_token_budget_zero_uses_default():
     Calling optimize_context with token_budget=0 must not crash and must
     use the server's configured default budget.
     """
-    engine = EntrolyEngine()
+    engine = EntrolyEngine(config=EntrolyConfig(checkpoint_dir=tempfile.mkdtemp()))
     engine.ingest_fragment("def foo(): pass", source="file:foo.py")
     result = engine.optimize_context(token_budget=0, query="")
     total_toks = result.get("total_tokens") or result.get("optimization_stats", {}).get("total_tokens", 0)

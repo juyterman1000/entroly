@@ -119,6 +119,9 @@ pub struct PrismOptimizer {
     pub beta: f64,
     pub learning_rate: f64,
     pub epsilon: f64,
+    pub initial_weights: [f64; 4],
+    pub total_updates: u32,
+    pub residual_lambda: f64,
 }
 
 impl PrismOptimizer {
@@ -131,12 +134,19 @@ impl PrismOptimizer {
             beta: 0.95, // exponential moving average decay
             learning_rate,
             epsilon: 1e-6,
+            initial_weights: [0.30, 0.25, 0.25, 0.20], // Default weights
+            total_updates: 0,
+            residual_lambda: 0.0,
         }
     }
 
     /// Applies Anisotropic Spectral Gain to a gradient vector.
     /// Computes $P g = Q \Lambda^{-1/2} Q^T g$ and returns the update $\Delta w = \alpha P g$.
     pub fn compute_update(&mut self, g: &[f64; 4]) -> [f64; 4] {
+        self.total_updates += 1;
+        // Sigmoid warmup centered at 50 updates
+        self.residual_lambda = 1.0 / (1.0 + (-0.1 * (self.total_updates as f64 - 50.0)).exp());
+
         // 1. Update running covariance
         self.covariance.update_ema(g, self.beta);
 
@@ -174,6 +184,19 @@ impl PrismOptimizer {
         }
 
         step
+    }
+
+    /// PRISM Value Residual Mixing: Anchors the completely learned parameters (`drifted`)
+    /// back to the reliable `initial_weights` using the sigmoid `residual_lambda`.
+    /// When lambda ~0 (early training), returns mostly initial weights.
+    /// When lambda ~1 (mature training), returns mostly learned weights.
+    pub fn apply_residual(&self, drifted: &[f64; 4]) -> [f64; 4] {
+        let mut mixed = [0.0; 4];
+        let lam = self.residual_lambda;
+        for i in 0..4 {
+            mixed[i] = lam * drifted[i] + (1.0 - lam) * self.initial_weights[i];
+        }
+        mixed
     }
 }
 

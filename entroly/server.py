@@ -293,15 +293,55 @@ class EntrolyEngine:
                 result = dict(result)
                 if refinement_info:
                     result["query_refinement"] = refinement_info
-                return result
+                return self._apply_sssl_filtering(result)
             else:
                 result = self._optimize_python(token_budget, refined_query)
                 if refinement_info:
                     result["query_refinement"] = refinement_info
-                return result
+                return self._apply_sssl_filtering(result)
         finally:
             gc.enable()
             gc.collect()
+
+    def _apply_sssl_filtering(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sliding Window Relevance Filter (SSSL pattern).
+        Trims long tails of low-relevance context fragments that drag down LLM attention.
+        """
+        selected = result.get("selected_fragments", [])
+        if not selected or len(selected) < 3:
+            return result
+
+        # Extract relevances (already computed by Knapsack)
+        relevances = [f.get("relevance", 0.0) for f in selected]
+        max_rel = max(relevances) if relevances else 0.0
+
+        # Dynamic cutoff based on the highest relevance in this specific query
+        # Fragments dropping below 30% of the peak relevance are noise
+        cutoff_threshold = max(0.05, max_rel * 0.3)
+
+        filtered_selected = []
+        tokens_purged = 0
+
+        for f in selected:
+            if f.get("relevance", 0.0) >= cutoff_threshold or f.get("is_pinned", False):
+                filtered_selected.append(f)
+            else:
+                tokens_purged += f.get("token_count", 0)
+
+        # Re-pack the result
+        result["selected_fragments"] = filtered_selected
+        
+        # Update stats
+        if "optimization_stats" in result:
+            result["optimization_stats"]["total_tokens"] -= tokens_purged
+        
+        # Add a diagnostic flag for the consumer
+        result["sssl_tokens_purged"] = tokens_purged
+        if tokens_purged > 0:
+            self._total_tokens_saved += tokens_purged
+
+        return result
 
     def recall_relevant(
         self,
