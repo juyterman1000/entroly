@@ -43,6 +43,15 @@ native = [
     "mcp>=1.0.0",
     "psutil",
 ]
+memory = [
+    "hippocampus-sharp-memory>=1.0.0",
+]
+full = [
+    "entroly-core>=0.2.0",
+    "mcp>=1.0.0",
+    "hippocampus-sharp-memory>=1.0.0",
+    "psutil",
+]
 
 [project.urls]
 Homepage = "https://github.com/juyterman1000/entroly"
