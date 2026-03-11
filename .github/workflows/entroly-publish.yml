@@ -1,85 +1,112 @@
-name: Build and Push Entroly Docker Image
+name: Publish Entroly to PyPI
 
 on:
-  push:
-    tags:
-      - 'entroly-v*'     # trigger on tags like entroly-v0.3.0
-  workflow_dispatch:     # allow manual trigger
+  release:
+    types: [published]
+  workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/entroly
+permissions:
+  contents: read
+  id-token: write  # Required for PyPI trusted publishing (OIDC)
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  # ─── Build entroly-core Rust wheels on 3 platforms ───
+  build-wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          python-version: "3.11"
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheels
+        run: maturin build --release -o dist/
+        working-directory: entroly-core
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=match,pattern=entroly-v(.*),group=1
-            type=raw,value=latest
+          name: wheels-${{ matrix.os }}
+          path: entroly-core/dist/*.whl
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.entroly
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  publish-pypi:
-    needs: build-and-push
+  # ─── Build entroly-core source distribution ───
+  build-sdist:
+    name: Build source distribution
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build sdist
+        run: maturin sdist -o dist/
+        working-directory: entroly-core
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: entroly-core/dist/*.tar.gz
+
+  # ─── Publish entroly-core wheels to PyPI ───
+  publish-core:
+    name: Publish entroly-core to PyPI
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ─── Publish entroly Python wrapper to PyPI ───
+  publish-wrapper:
+    name: Publish entroly wrapper to PyPI
+    runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.11"
 
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> $GITHUB_OUTPUT
-
-      - name: Update version in pyproject.toml
-        run: |
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.VERSION }}\"/" entroly/pyproject.toml
-
-      - name: Build PyPI package
+      - name: Build wheel and sdist
         run: |
           pip install build
-          cd entroly && python -m build
+          python -m build --wheel --sdist
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: entroly/dist/
-          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: dist/
