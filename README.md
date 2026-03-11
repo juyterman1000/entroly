@@ -37,8 +37,6 @@ At scale (100K+ files, 128K token budget), these savings compound: more noise to
 
 ## Quick Start (30 seconds)
 
-### Option A: Cursor / VS Code / Windsurf
-
 ```bash
 pip install entroly
 cd your-project
@@ -46,15 +44,19 @@ entroly init        # auto-detects your AI tool, writes mcp.json
 # Restart your AI tool — done.
 ```
 
-### Option B: Claude Code
+> **🐳 Mac / Windows users:** Entroly auto-detects [Docker Desktop](https://docker.com/products/docker-desktop) and runs the Rust engine inside a container — **zero compilation, zero Rust toolchain, just works.** Make sure Docker Desktop is running when you start your AI tool.
 
+`entroly init` auto-detects **Cursor, VS Code, Windsurf, and Claude Code** and writes the correct MCP config for you. For other MCP clients:
+
+<details>
+<summary>Manual MCP configuration</summary>
+
+**Claude Code:**
 ```bash
-pip install entroly
 claude mcp add entroly -- entroly serve
 ```
 
-### Option C: Any MCP Client
-
+**Any MCP client (mcp.json):**
 ```json
 {
   "mcpServers": {
@@ -66,11 +68,11 @@ claude mcp add entroly -- entroly serve
 }
 ```
 
-### Option D: npm (for tools that prefer npx)
-
+**npm (for tools that prefer npx):**
 ```bash
 npx -y entroly-mcp
 ```
+</details>
 
 > **Tip:** Run `entroly demo` to see a side-by-side before/after comparison using the real Rust engine.
 
