@@ -200,18 +200,14 @@ def cmd_init(args):
   {C.GRAY}Call {C.CYAN}entroly_dashboard{C.GRAY} from your AI to see live value metrics.{C.RESET}
 """)
 
-    # Post-init health check: warn if entroly-core is missing
+    # Post-init health check: inform if entroly-core is missing
     try:
         import entroly_core  # noqa: F401
     except ImportError:
         print(f"""
-  {C.YELLOW}⚠  entroly-core (Rust engine) is not installed.{C.RESET}
-  {C.GRAY}The MCP server needs it to run. Install it:{C.RESET}
-
-  {C.CYAN}pip install entroly-core{C.RESET}          {C.GRAY}# prebuilt wheel (if available){C.RESET}
-  {C.GRAY}— or build from source —{C.RESET}
-  {C.CYAN}pip install maturin{C.RESET}
-  {C.CYAN}cd entroly-core && maturin develop --release{C.RESET}
+  {C.YELLOW}ℹ  Rust engine (entroly-core) not found locally.{C.RESET}
+  {C.GREEN}🐳 Docker Desktop detected?{C.RESET} {C.GRAY}Entroly auto-uses it — you're good to go!{C.RESET}
+  {C.GRAY}No Docker? Install the engine:{C.RESET} {C.CYAN}pip install entroly-core{C.RESET}
 """)
 
 

@@ -22,15 +22,28 @@ DOCKER_IMAGE = "ghcr.io/juyterman1000/entroly:latest"
 
 
 def _docker_available() -> bool:
+    """Check if Docker is installed and the daemon is reachable."""
     try:
-        subprocess.run(
+        # First check: can we reach the Docker daemon?
+        result = subprocess.run(
             ["docker", "info"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True,
+            check=False,
         )
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
+        if result.returncode == 0:
+            return True
+
+        # Fallback: Docker installed but daemon needs sudo?
+        # Try 'docker version' which shows client info even without daemon.
+        result = subprocess.run(
+            ["docker", "version", "--format", "{{.Client.Version}}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
         return False
 
 
