@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/home/abby/.gemini/antigravity/brain/58a307f2-9368-4ed7-90ae-e78a6a97c56f/entroly_logo_trending_1773529891239.png" width="200" alt="Entroly Logo">
+  <img src="docs/assets/logo.png" width="200" alt="Entroly Logo">
 </p>
 
 <h1 align="center">Entroly</h1>
