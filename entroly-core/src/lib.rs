@@ -1,27 +1,3 @@
-// ── Clippy: suppress cosmetic lints for fast-moving codebase ─────────────
-// These are all style/pedantic lints that don't indicate bugs.
-// Dead code warnings: many methods are used from Python via PyO3
-// or reserved for future integration. Removing them breaks the API.
-#![allow(
-    clippy::empty_line_after_doc_comments,
-    clippy::unnecessary_map_or,
-    clippy::or_fun_call,
-    clippy::doc_lazy_continuation,
-    clippy::needless_range_loop,
-    clippy::manual_contains,
-    clippy::manual_pattern_char_comparison,
-    clippy::manual_clamp,
-    clippy::too_many_arguments,
-    clippy::unnecessary_cast,
-    clippy::manual_split_once,
-    clippy::useless_vec,
-    clippy::unwrap_or_default,
-    unreachable_patterns,
-    unused_parens,
-    dead_code,
-    unused_variables,
-)]
-
 /// Entroly Core — Rust Engine + PyO3 Bindings
 ///
 /// This is the main entry point that:
@@ -56,12 +32,13 @@ use serde::{Deserialize, Serialize};
 
 use fragment::{ContextFragment, compute_relevance};
 use knapsack::{knapsack_optimize, ScoringWeights};
-use entropy::{information_score, shannon_entropy, normalized_entropy, boilerplate_ratio, ngram_jaccard_similarity};
+use entropy::{information_score, shannon_entropy, normalized_entropy, boilerplate_ratio};
 use dedup::{simhash, hamming_distance, DedupIndex};
 use depgraph::{DepGraph, extract_identifiers};
 use guardrails::{file_criticality, has_safety_signal, TaskType, FeedbackTracker, Criticality, compute_ordering_priority, criticality_boost};
+use lsh::{LshIndex, ContextScorer};
 use prism::PrismOptimizer;
-
+use query::{analyze_query as query_analyze, refine_heuristic as query_refine};
 
 /// Process-wide monotonic counter — used only to seed each engine's instance_id.
 /// Guarantees every EntrolyEngine instance gets a unique prefix, making
@@ -99,8 +76,6 @@ pub struct EntrolyEngine {
     total_optimizations: u64,
     total_fragments_ingested: u64,
     total_duplicates_caught: u64,
-    cumulative_tokens_used: u64,
-    cumulative_information: f64,
 
     // Fragment ID generation — per-instance prefix guarantees isolation
     // between multiple EntrolyEngine instances in the same process.
@@ -114,9 +89,6 @@ pub struct EntrolyEngine {
     // Exploration
     total_explorations: u64,
     exploration_rate: f64,
-
-    // Sliding Window Recall (0 = no limit)
-    recall_window_size: usize,
 
     // Last optimization snapshot (for explainability)
     last_optimization: Option<OptimizationSnapshot>,
@@ -149,7 +121,6 @@ struct FragmentScore {
     feedback_mult: f64,
     dep_boost: f64,
     criticality: String,
-    prototype_name: String,
     composite: f64,
     reason: String,
 }
@@ -160,8 +131,7 @@ impl EntrolyEngine {
     #[pyo3(signature = (
         w_recency=0.30, w_frequency=0.25, w_semantic=0.25, w_entropy=0.20,
         decay_half_life=15, min_relevance=0.05,
-        hamming_threshold=3, exploration_rate=0.1, max_fragments=10000,
-        recall_window_size=0
+        hamming_threshold=3, exploration_rate=0.1, max_fragments=10000
     ))]
     pub fn new(
         w_recency: f64,
@@ -173,7 +143,6 @@ impl EntrolyEngine {
         hamming_threshold: u32,
         exploration_rate: f64,
         max_fragments: usize,
-        recall_window_size: usize,
     ) -> Self {
         // Derive per-instance ID using xorshift64 on the global seed.
         // Each engine gets a unique instance_id, so fragment IDs are
@@ -203,14 +172,11 @@ impl EntrolyEngine {
             total_optimizations: 0,
             total_fragments_ingested: 0,
             total_duplicates_caught: 0,
-            cumulative_tokens_used: 0,
-            cumulative_information: 0.0,
             instance_id,
             id_counter: 0,
             max_fragments,
             total_explorations: 0,
             exploration_rate: exploration_rate.clamp(0.0, 1.0),
-            recall_window_size,
             last_optimization: None,
             lsh_index: lsh::LshIndex::new(),
             context_scorer: lsh::ContextScorer::default(),
@@ -221,12 +187,10 @@ impl EntrolyEngine {
     pub fn advance_turn(&mut self) {
         self.current_turn += 1;
 
-        // Apply Ebbinghaus decay in-place with per-fragment salience.
-        // Matches fragment::apply_ebbinghaus_decay: effective_half_life = half_life * salience.
+        // Apply decay in-place (no drain/rebuild)
+        let decay_rate = (2.0_f64).ln() / self.decay_half_life.max(1) as f64;
         for frag in self.fragments.values_mut() {
             let dt = self.current_turn.saturating_sub(frag.turn_last_accessed) as f64;
-            let effective_half_life = (self.decay_half_life as f64 * frag.salience).max(1.0);
-            let decay_rate = (2.0_f64).ln() / effective_half_life;
             frag.recency_score = (-decay_rate * dt).exp();
         }
 
@@ -344,13 +308,11 @@ impl EntrolyEngine {
             let mut frag = ContextFragment::new(frag_id.clone(), content.clone(), tc, source.clone());
             frag.recency_score = 1.0;
             frag.entropy_score = effective_entropy;
-            frag.salience = criticality_boost(criticality);
             frag.turn_created = self.current_turn;
             frag.turn_last_accessed = self.current_turn;
             frag.access_count = 1;
             frag.is_pinned = effective_pinned;
             frag.simhash = fp;
-            frag.insertion_index = self.total_fragments_ingested as u64;
 
             // Hierarchical fragmentation: extract skeleton for code files
             if let Some(skel) = skeleton::extract_skeleton(&content, &source) {
@@ -427,83 +389,13 @@ impl EntrolyEngine {
                 .map(|fid| (fid.clone(), self.feedback.learned_value(fid)))
                 .collect();
 
-            let mut frags: Vec<ContextFragment> = self.fragments.values()
-                .filter(|f| {
-                    if self.recall_window_size > 0 {
-                        f.insertion_index > self.total_fragments_ingested.saturating_sub(self.recall_window_size as u64) || f.is_pinned
-                    } else {
-                        true
-                    }
-                })
-                .cloned()
-                .collect();
-            
-            let raw_weights = [
-                self.w_recency,
-                self.w_frequency,
-                self.w_semantic,
-                self.w_entropy,
-            ];
-
-            let final_weights = self.prism_optimizer.apply_residual(&raw_weights);
-
+            let frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
             let weights = ScoringWeights {
-                recency: final_weights[0],
-                frequency: final_weights[1],
-                semantic: final_weights[2],
-                entropy: final_weights[3],
+                recency: self.w_recency,
+                frequency: self.w_frequency,
+                semantic: self.w_semantic,
+                entropy: self.w_entropy,
             };
-
-            // ── Pailitao-VL Paradigm: Compare-and-Calibrate Listwise Reranking ──
-            // Evolve from isolated pointwise evaluation to chunk-based compare-and-calibrate policy.
-            // We group by Semantic Prototype and penalize redundant candidates via Marginal Utility.
-            {
-                let lambda = 0.35; // aggressive penalty for intra-prototype redundancy
-                
-                // Group by prototype
-                let mut chunks: std::collections::HashMap<u8, Vec<usize>> = std::collections::HashMap::new();
-                for (i, f) in frags.iter().enumerate() {
-                    chunks.entry(f.prototype_id).or_default().push(i);
-                }
-                
-                // Precalculate pointwise scores so we have O(1) access
-                let mut pointwise_scores: Vec<f64> = vec![0.0; frags.len()];
-                for i in 0..frags.len() {
-                    let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                    pointwise_scores[i] = compute_relevance(&frags[i], weights.recency, weights.frequency, weights.semantic, weights.entropy, fm);
-                }
-
-                for (_proto, chunk_indices) in chunks {
-                    // Only calibrate if there is >1 fragment competing for this prototype
-                    if chunk_indices.len() > 1 {
-                        let chunk_avg_entropy = chunk_indices.iter().map(|&idx| frags[idx].entropy_score).sum::<f64>() / chunk_indices.len() as f64;
-
-                        for &i in &chunk_indices {
-                            let mut redundancy_penalty = 0.0;
-                            for &j in &chunk_indices {
-                                if i != j {
-                                    // How similar are they?
-                                    let dist = hamming_distance(frags[i].simhash, frags[j].simhash);
-                                    let sim = (1.0 - (dist as f64 / 64.0)).max(0.0);
-                                    // Penalty is proportional to the other's score and similarity
-                                    redundancy_penalty += sim * pointwise_scores[j];
-                                }
-                            }
-                            
-                            // Apply penalty to the semantic score (which drives Knapsack inclusion)
-                            // We don't touch entropy because that's intrinsic density.
-                            frags[i].semantic_score = (frags[i].semantic_score - lambda * redundancy_penalty).max(0.0);
-                            
-                            // NEW: Ebbiforge Episodic Curiosity / Surprise
-                            // If this fragment's entropy is exceptionally high compared to the chunk average,
-                            // boost its recency (retention) because it's a surprising/anomalous piece of code.
-                            if frags[i].entropy_score > chunk_avg_entropy + 0.2 {
-                                frags[i].recency_score = (frags[i].recency_score + 0.2).min(1.0);
-                            }
-                        }
-                    }
-                }
-            }
 
             // ── Pass 1: Initial knapsack selection ──
             let result1 = knapsack_optimize(&frags, effective_budget, &weights, &feedback_mults);
@@ -589,42 +481,6 @@ impl EntrolyEngine {
                 }
             }
 
-            // ── NEW: Compare-Calibrate Post-Selection Dedup ──
-            // Post-Knapsack listwise redundancy filter.
-            // Knapsack selects independently based on individual score. For listwise
-            // diversity, we drop fragments that are highly redundant with already-accepted
-            // fragments in the final context window.
-            let mut final_calibrated_indices: Vec<usize> = Vec::with_capacity(final_indices.len());
-            for &idx in &final_indices {
-                let current_content = &frags[idx].content;
-                let is_pinned = frags[idx].is_pinned;
-                
-                if is_pinned {
-                    final_calibrated_indices.push(idx);
-                    continue;
-                }
-
-                let mut is_redundant = false;
-                for &accepted_idx in &final_calibrated_indices {
-                    let accepted_content = &frags[accepted_idx].content;
-                    
-                    // Use the continuous Jaccard similarity for strict redundancy check
-                    let jaccard = ngram_jaccard_similarity(current_content, accepted_content);
-                    if jaccard > 0.60 {
-                        is_redundant = true;
-                        break;
-                    }
-                }
-
-                if !is_redundant {
-                    final_calibrated_indices.push(idx);
-                } else {
-                    // We drop this fragment. It saves tokens, fulfilling the "tokens_saved" metric.
-                    // The token tracking happens below during the `full_tokens` summation.
-                }
-            }
-            final_indices = final_calibrated_indices;
-
             // ── Pass 3: Skeleton Substitution ──
             // For fragments NOT selected, try to fit their skeletons into
             // remaining budget. This gives the LLM structural awareness of
@@ -673,9 +529,6 @@ impl EntrolyEngine {
                 if let Some(f) = self.fragments.get_mut(fid) {
                     f.turn_last_accessed = self.current_turn;
                     f.access_count += 1;
-                    // Recall Reinforcement (Spacing Effect)
-                    f.salience = (f.salience * 1.2).min(5.0);
-                    f.frequency_score = (f.frequency_score + 0.1).min(1.0);
                 }
             }
 
@@ -728,17 +581,6 @@ impl EntrolyEngine {
                     "budget exceeded".to_string()
                 };
 
-                let proto_name = match frag.prototype_id {
-                    1 => "DomainLogic",
-                    2 => "UIComponent",
-                    3 => "Test",
-                    4 => "Config",
-                    5 => "Database",
-                    6 => "Docs",
-                    7 => "ApiRoute",
-                    _ => "Unknown",
-                };
-
                 fragment_scores.push(FragmentScore {
                     fragment_id: frag.fragment_id.clone(),
                     source: frag.source.clone(),
@@ -750,7 +592,6 @@ impl EntrolyEngine {
                     feedback_mult: fm,
                     dep_boost: db,
                     criticality: format!("{:?}", crit),
-                    prototype_name: proto_name.to_string(),
                     composite,
                     reason,
                 });
@@ -772,14 +613,10 @@ impl EntrolyEngine {
             py_result.set_item("skeleton_tokens", skeleton_tokens_used)?;
             py_result.set_item("tokens_saved", saved)?;
             py_result.set_item("effective_budget", effective_budget)?;
-            let budget_util = if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 };
-            py_result.set_item("budget_utilization", budget_util)?;
+            py_result.set_item("budget_utilization",
+                if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 }
+            )?;
             py_result.set_item("sufficiency", (sufficiency * 10000.0).round() / 10000.0)?;
-            
-            // Context Efficiency: high sufficiency with low budget utilization is optimal
-            let context_efficiency = sufficiency * (1.0 - budget_util).max(0.1_f64); 
-            py_result.set_item("context_efficiency", (context_efficiency * 10000.0).round() / 10000.0)?;
-
             if sufficiency < 0.7 {
                 py_result.set_item("sufficiency_warning",
                     format!("Only {:.0}% of referenced symbols have definitions in context", sufficiency * 100.0)
@@ -801,8 +638,13 @@ impl EntrolyEngine {
                 let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
                 let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
                 d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
+                d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
                 let preview = if f.content.len() > 100 {
-                    format!("{}...", &f.content[..100])
+                    let mut end = 100;
+                    while end < f.content.len() && !f.content.is_char_boundary(end) {
+                        end += 1;
+                    }
+                    format!("{}...", &f.content[..end])
                 } else {
                     f.content.clone()
                 };
@@ -821,8 +663,13 @@ impl EntrolyEngine {
                     let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
                     let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
                     d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
+                    d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
                     let preview = if skel_content.len() > 100 {
-                        format!("{}...", &skel_content[..100])
+                        let mut end = 100;
+                        while end < skel_content.len() && !skel_content.is_char_boundary(end) {
+                            end += 1;
+                        }
+                        format!("{}...", &skel_content[..end])
                     } else {
                         skel_content.clone()
                     };
@@ -831,17 +678,6 @@ impl EntrolyEngine {
                 }
             }
             py_result.set_item("selected", selected_list)?;
-
-            self.cumulative_tokens_used += final_tokens as u64;
-            let mut current_info: f64 = ordered_indices.iter().map(|&idx| frags[idx].entropy_score * frags[idx].token_count as f64).sum();
-            current_info += skeleton_indices.iter().filter_map(|&idx| {
-                if let (Some(_), Some(tc)) = (&frags[idx].skeleton_content, frags[idx].skeleton_token_count) {
-                    Some(frags[idx].entropy_score * tc as f64)
-                } else {
-                    None
-                }
-            }).sum::<f64>();
-            self.cumulative_information += current_info;
 
             Ok(py_result.into())
         })
@@ -865,22 +701,13 @@ impl EntrolyEngine {
                 candidates.iter()
                     .filter_map(|&slot| {
                         let frag_id = self.fragment_slot_ids.get(slot)?;
-                        let f = self.fragments.get(frag_id)?;
-                        if self.recall_window_size > 0 && f.insertion_index <= self.total_fragments_ingested.saturating_sub(self.recall_window_size as u64) && !f.is_pinned {
-                            None
-                        } else {
-                            Some(f)
-                        }
+                        self.fragments.get(frag_id)
                     })
                     .map(|f| {
                         let dist = hamming_distance(query_fp, f.simhash);
-                        let simhash_sim = 1.0 - (dist as f64 / 64.0);
-                        let jaccard_sim = ngram_jaccard_similarity(&query, &f.content);
-                        let hybrid_sim = (simhash_sim + jaccard_sim) / 2.0;
-
                         let fm   = self.feedback.learned_value(&f.fragment_id);
                         let rel  = self.context_scorer.score(
-                            hybrid_sim,
+                            dist,
                             f.recency_score,
                             f.entropy_score,
                             f.frequency_score,
@@ -892,22 +719,11 @@ impl EntrolyEngine {
             } else {
                 // Cold-start fallback: O(N) brute force
                 self.fragments.values()
-                    .filter(|f| {
-                        if self.recall_window_size > 0 {
-                            f.insertion_index > self.total_fragments_ingested.saturating_sub(self.recall_window_size as u64) || f.is_pinned
-                        } else {
-                            true
-                        }
-                    })
                     .map(|f| {
                         let dist = hamming_distance(query_fp, f.simhash);
-                        let simhash_sim = 1.0 - (dist as f64 / 64.0);
-                        let jaccard_sim = ngram_jaccard_similarity(&query, &f.content);
-                        let hybrid_sim = (simhash_sim + jaccard_sim) / 2.0;
-
                         let fm   = self.feedback.learned_value(&f.fragment_id);
                         let rel  = self.context_scorer.score(
-                            hybrid_sim,
+                            dist,
                             f.recency_score,
                             f.entropy_score,
                             f.frequency_score,
@@ -919,22 +735,6 @@ impl EntrolyEngine {
             };
 
             scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            // ── Episode Co-Recall (Dependency Graph) ──
-            // Boost dependencies of the top candidates so they surface together
-            let seed_len = scored.len().min(5);
-            let seed_ids: HashSet<String> = scored.iter().take(seed_len).map(|(f, _)| f.fragment_id.clone()).collect();
-            let dep_boosts = self.dep_graph.compute_dep_boosts(&seed_ids);
-            
-            if !dep_boosts.is_empty() {
-                for (f, rel) in scored.iter_mut() {
-                    if let Some(&boost) = dep_boosts.get(&f.fragment_id) {
-                        *rel = (*rel + boost * 0.2).min(1.0);
-                    }
-                }
-                scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            }
-
             scored.truncate(top_k);
 
             let result = pyo3::types::PyList::empty(py);
@@ -988,17 +788,6 @@ impl EntrolyEngine {
             dedup.set_item("indexed_fragments", self.dedup_index.size())?;
             dedup.set_item("duplicates_detected", self.dedup_index.duplicates_detected)?;
             result.set_item("dedup", dedup)?;
-
-            let context_efficiency = if self.cumulative_tokens_used > 0 {
-                self.cumulative_information / (self.cumulative_tokens_used as f64 / 1000.0)
-            } else {
-                0.0
-            };
-            let eff_block = PyDict::new(py);
-            eff_block.set_item("cumulative_tokens_used", self.cumulative_tokens_used)?;
-            eff_block.set_item("cumulative_information", (self.cumulative_information * 10000.0).round() / 10000.0)?;
-            eff_block.set_item("context_efficiency", (context_efficiency * 10000.0).round() / 10000.0)?;
-            result.set_item("context_efficiency", eff_block)?;
 
             Ok(result.into())
         })
@@ -1082,7 +871,6 @@ impl EntrolyEngine {
                 scores.set_item("feedback_mult", (fs.feedback_mult * 10000.0).round() / 10000.0)?;
                 scores.set_item("dep_boost", (fs.dep_boost * 10000.0).round() / 10000.0)?;
                 scores.set_item("criticality", &fs.criticality)?;
-                d.set_item("prototype", &fs.prototype_name)?;
                 scores.set_item("composite", (fs.composite * 10000.0).round() / 10000.0)?;
                 d.set_item("scores", scores)?;
                 d.set_item("reason", &fs.reason)?;
@@ -1340,8 +1128,8 @@ impl EntrolyEngine {
         if count == 0.0 { return; }
         
         // Average the gradients and multiply by the RL feedback signal
-        for gi in &mut g {
-            *gi = (*gi / count) * feedback_val;
+        for i in 0..4 {
+            g[i] = (g[i] / count) * feedback_val;
         }
         
         // Let the PRISM optimizer compute the anisotropically-damped update step
@@ -1522,13 +1310,6 @@ fn py_analyze_health_info() -> String {
     "{\"info\":\"Call engine.analyze_health() to get a full HealthReport for the current session.\"}".to_string()
 }
 
-/// Extract a structural skeleton from source code.
-/// Returns the skeleton string, or an empty string if extraction failed.
-#[pyfunction]
-fn extract_skeleton(content: &str, source: &str) -> String {
-    skeleton::extract_skeleton(content, source).unwrap_or_default()
-}
-
 // ─── Extra standalone wrappers for direct test/utility access ────────────────
 
 /// Cross-fragment redundancy: how much of `text` is already covered by `others` [0,1].
@@ -1620,12 +1401,11 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Knapsack / Ebbinghaus
     m.add_function(wrap_pyfunction!(py_knapsack_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(py_apply_ebbinghaus_decay, m)?)?;
-    // ── SAST / Health / Query / Skeleton
+    // ── SAST / Health / Query
     m.add_function(wrap_pyfunction!(py_scan_content, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_health_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_refine_heuristic, m)?)?;
-    m.add_function(wrap_pyfunction!(extract_skeleton, m)?)?;
     Ok(())
 }
 
@@ -1707,7 +1487,7 @@ mod tests {
 
     #[test]
     fn test_sufficiency_full() {
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, 100);
+        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000);
 
         // Register a symbol in the dep graph
         engine.dep_graph.register_symbol("calculate_tax", "f1");
@@ -1738,7 +1518,7 @@ mod tests {
 
     #[test]
     fn test_exploration_rate_bounds() {
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, 100);
+        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000);
         engine.set_exploration_rate(1.5);
         assert!((engine.exploration_rate - 1.0).abs() < 0.001);
         engine.set_exploration_rate(-0.5);
@@ -1765,7 +1545,7 @@ mod tests {
     #[test]
     fn test_recall_returns_correct_fragment_not_random() {
         use crate::dedup::simhash;
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, 100);
+        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000);
 
         // Target: database code
         let target = "fn connect_to_database(host: &str, port: u16) -> Connection { ... }";
@@ -1824,11 +1604,11 @@ mod tests {
         use crate::dedup::simhash;
         let query = "async fn process_payment(amount: f64, currency: &str) -> Result<Receipt>";
 
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, 100);
+        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000);
         let query_fp = simhash(query);
 
         // Varying content: exact match, near match, unrelated
-        let contents = [
+        let contents = vec![
             query.to_string(),   // identical → highest score
             "async fn process_payment(amount: f64) -> Result<()> {}".to_string(), // very similar
             "fn validate_user_token(token: &str) -> bool { false }".to_string(), // unrelated
@@ -1855,11 +1635,7 @@ mod tests {
                 let id = engine.fragment_slot_ids.get(slot)?;
                 let f = engine.fragments.get(id)?;
                 let dist = crate::dedup::hamming_distance(query_fp, f.simhash);
-                let simhash_sim = 1.0 - (dist as f64 / 64.0);
-                let jaccard_sim = ngram_jaccard_similarity(query, &f.content);
-                let hybrid = (simhash_sim + jaccard_sim) / 2.0;
-
-                let rel = engine.context_scorer.score(hybrid, f.recency_score, f.entropy_score, f.frequency_score, 1.0);
+                let rel = engine.context_scorer.score(dist, f.recency_score, f.entropy_score, f.frequency_score, 1.0);
                 Some((id.clone(), rel))
             })
             .collect();
@@ -1892,8 +1668,7 @@ mod tests {
         let freq = 0.5;
 
         let scores: Vec<f64> = (0u32..=8).map(|hamming| {
-            let hybrid_sim = 1.0 - (hamming as f64 / 8.0);
-            scorer.score(hybrid_sim, recency, entropy, freq, 1.0)
+            scorer.score(hamming * 8, recency, entropy, freq, 1.0)
         }).collect();
 
         for window in scores.windows(2) {

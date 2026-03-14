@@ -41,7 +41,6 @@ from .adaptive_pruner import EntrolyPruner, FragmentGuard
 from .provenance import build_provenance, ContextProvenance
 from .multimodal import ingest_image as _mm_image, ingest_diagram as _mm_diagram
 from .multimodal import ingest_voice as _mm_voice, ingest_diff as _mm_diff
-from .long_term_memory import LongTermMemory
 # ── Rust engine import (required) ──────────────────────────────────
 try:
     from entroly_core import EntrolyEngine as RustEngine
@@ -49,9 +48,8 @@ try:
     _RUST_AVAILABLE = True
 except ImportError as _rust_err:
     raise ImportError(
-        "entroly-core Rust extension is required but not installed.\n"
-        "Install with:  pip install entroly[native]\n"
-        "Or build from source:  cd entroly-core && maturin develop --release\n"
+        "entroly_core Rust extension is not installed. "
+        "Run `maturin develop` inside entroly-core/ to build it.\n"
         f"Original error: {_rust_err}"
     )
 
@@ -64,6 +62,57 @@ logging.basicConfig(
 logger = logging.getLogger("entroly")
 
 
+class _WilsonFeedbackTracker:
+    """
+    Python-exact port of the Rust FeedbackTracker in guardrails.rs.
+
+    Uses the Wilson score lower bound (the same formula Reddit uses for ranking)
+    to produce a calibrated relevance multiplier for each fragment:
+
+        p̂  = successes / (successes + failures)
+        z  = 1.96   # 95% confidence interval
+        lb = Wilson lower bound
+        multiplier = 0.5 + lb × 1.5   → maps [0, 1] → [0.5, 2.0]
+
+    > 1.0  fragment historically useful   (boosted)
+    = 1.0  no data yet                    (neutral)
+    < 1.0  fragment historically unhelpful (suppressed)
+
+    Numerically identical to the Rust implementation — the Python fallback
+    now has the same feedback quality as the Rust engine.
+    """
+    import math as _math
+
+    _Z = 1.96  # 95% CI
+
+    def __init__(self):
+        self._success: dict[str, int] = {}
+        self._failure: dict[str, int] = {}
+
+    def record_success(self, fragment_ids: list[str]) -> None:
+        for fid in fragment_ids:
+            self._success[fid] = self._success.get(fid, 0) + 1
+
+    def record_failure(self, fragment_ids: list[str]) -> None:
+        for fid in fragment_ids:
+            self._failure[fid] = self._failure.get(fid, 0) + 1
+
+    def learned_value(self, fragment_id: str) -> float:
+        import math
+        s = self._success.get(fragment_id, 0)
+        f = self._failure.get(fragment_id, 0)
+        total = s + f
+        if total == 0:
+            return 1.0
+        p = s / total
+        z = self._Z
+        denominator = 1.0 + z * z / total
+        center = p + z * z / (2.0 * total)
+        spread = z * math.sqrt((p * (1.0 - p) + z * z / (4.0 * total)) / total)
+        lower_bound = (center - spread) / denominator
+        return 0.5 + lower_bound * 1.5
+
+
 class EntrolyEngine:
     """
     Orchestrates all subsystems. Delegates math to Rust when available.
@@ -74,20 +123,33 @@ class EntrolyEngine:
 
     def __init__(self, config: Optional[EntrolyConfig] = None):
         self.config = config or EntrolyConfig()
-        self._use_rust = True  # Rust engine is required (see import above)
+        self._use_rust = _RUST_AVAILABLE
 
-        self._rust = RustEngine(
-            w_recency=self.config.weight_recency,
-            w_frequency=self.config.weight_frequency,
-            w_semantic=self.config.weight_semantic_sim,
-            w_entropy=self.config.weight_entropy,
-            decay_half_life=self.config.decay_half_life_turns,
-            min_relevance=self.config.min_relevance_threshold,
-        )
-        logger.info("Using Rust engine (entroly_core)")
-
-        # Shared stats (used by both Rust and Python paths, e.g. SSSL filtering)
-        self._total_tokens_saved: int = 0
+        if self._use_rust:
+            self._rust = RustEngine(
+                w_recency=self.config.weight_recency,
+                w_frequency=self.config.weight_frequency,
+                w_semantic=self.config.weight_semantic_sim,
+                w_entropy=self.config.weight_entropy,
+                decay_half_life=self.config.decay_half_life_turns,
+                min_relevance=self.config.min_relevance_threshold,
+            )
+            logger.info("Using Rust engine (entroly_core)")
+        else:
+            # Python fallback state
+            self._fragments: Dict[str, Any] = {}
+            self._current_turn: int = 0
+            from collections import Counter
+            self._global_token_counts: Counter = Counter()
+            self._total_token_count: int = 0
+            self._dedup = DedupIndex(hamming_threshold=3)
+            self._total_tokens_saved: int = 0
+            self._total_optimizations: int = 0
+            self._total_fragments_ingested: int = 0
+            self._total_duplicates_caught: int = 0
+            # Wilson-score feedback tracker — numerically identical to Rust FeedbackTracker
+            self._wilson = _WilsonFeedbackTracker()
+            logger.info("Using Python fallback engine (entroly_core not installed)")
 
         # Python-only subsystems
         self._prefetch = PrefetchEngine(co_access_window=5)
@@ -115,27 +177,25 @@ class EntrolyEngine:
         # On startup, try to load a previous session's index for instant warm retrieval.
         # Index is stored at <checkpoint_dir>/index.json.gz (gzip-compressed JSON).
         self._index_path = str(Path(self.config.checkpoint_dir) / "index.json.gz")
-        try:
-            loaded = self._rust.load_index(self._index_path)
-            if loaded:
-                n = self._rust.fragment_count()
-                logger.info(f"Loaded persistent index: {n} fragments from {self._index_path}")
-            else:
-                logger.info("No persistent index found, starting fresh session")
-        except Exception as e:
-            logger.debug(f"Persistent index not available: {e}")
+        if self._use_rust:
+            try:
+                loaded = self._rust.load_index(self._index_path)
+                if loaded:
+                    n = self._rust.fragment_count()
+                    logger.info(f"Loaded persistent index: {n} fragments from {self._index_path}")
+                else:
+                    logger.info("No persistent index found, starting fresh session")
+            except Exception as e:
+                logger.warning(f"Failed to load persistent index: {e}")
 
-        # ── hippocampus Long-Term Memory ──
-        # Cross-session memory powered by hippocampus-sharp-memory (salience-based
-        # Ebbinghaus decay + Kanerva SDM). Gracefully degrades if not installed.
-        self._ltm = LongTermMemory(capacity=10_000)
-
-        # GC tuning: increase thresholds to reduce pause frequency.
-        # Default (700, 10, 10) causes ~500ms stalls on large heaps.
-        # We raise gen0 threshold and manually collect every N turns.
+        # GC freeze at startup: Python's cyclic GC causes ~500ms stalls on large
+        # heaps. Freeze all existing long-lived objects and disable automatic
+        # collection. We manually collect every N tool calls in advance_turn()
+        # to reclaim short-lived garbage without unpredictable pauses.
         self._gc_collect_interval = 50  # collect every 50 turns
         gc.collect()
-        gc.set_threshold(5000, 15, 15)
+        gc.freeze()
+        gc.disable()
 
     def advance_turn(self) -> None:
         """Advance the turn counter and apply Ebbinghaus decay."""
@@ -143,9 +203,24 @@ class EntrolyEngine:
         if self._turn_counter > 0 and self._turn_counter % self._gc_collect_interval == 0:
             gc.collect()
 
-        self._rust.advance_turn()
-        # Tick hippocampus clock (triggers Ebbinghaus decay on long-term memories)
-        self._ltm.tick()
+        if self._use_rust:
+            self._rust.advance_turn()
+        else:
+            self._current_turn += 1
+            fragments = list(self._fragments.values())
+            apply_ebbinghaus_decay(
+                fragments,
+                self._current_turn,
+                self.config.decay_half_life_turns,
+            )
+            to_evict = [
+                fid for fid, f in self._fragments.items()
+                if f.recency_score < self.config.min_relevance_threshold
+                and not f.is_pinned
+            ]
+            for fid in to_evict:
+                self._dedup.remove(fid)
+                del self._fragments[fid]
 
     def ingest_fragment(
         self,
@@ -155,13 +230,24 @@ class EntrolyEngine:
         is_pinned: bool = False,
     ) -> Dict[str, Any]:
         """Ingest a new context fragment."""
-        result = self._rust.ingest(content, source, token_count, is_pinned)
-        # result is a dict from PyO3
-        if source:
-            self._prefetch.record_access(source, self._rust.get_turn())
-        if self._checkpoint_mgr.should_auto_checkpoint():
-            self._auto_checkpoint()
-        return dict(result)
+        # GC freeze: disable the garbage collector during the tight Python→Rust
+        # dispatch to prevent unpredictable GC pauses. Manually collect after
+        # returning to amortize the cost at a safe boundary.
+        gc.disable()
+        try:
+            if self._use_rust:
+                result = self._rust.ingest(content, source, token_count, is_pinned)
+                # result is a dict from PyO3
+                if source:
+                    self._prefetch.record_access(source, self._rust.get_turn())
+                if self._checkpoint_mgr.should_auto_checkpoint():
+                    self._auto_checkpoint()
+                return dict(result)
+            else:
+                return self._ingest_python(content, source, token_count, is_pinned)
+        finally:
+            gc.enable()
+            gc.collect()
 
     def optimize_context(
         self,
@@ -180,11 +266,12 @@ class EntrolyEngine:
         refinement_info: Dict[str, Any] = {}
         if query:
             fragment_summaries = []
-            try:
-                recalled = list(self._rust.recall(query, 20))
-                fragment_summaries = [r.get("content", "") for r in recalled]
-            except Exception:
-                pass
+            if self._use_rust:
+                try:
+                    recalled = list(self._rust.recall(query, 20))
+                    fragment_summaries = [r.get("content", "") for r in recalled]
+                except Exception:
+                    pass
             # analyze() returns dict: vagueness_score, key_terms, needs_refinement, reason
             analysis_dict = self._refiner.analyze(query, fragment_summaries)
             # refine() returns the improved query string
@@ -198,92 +285,34 @@ class EntrolyEngine:
                     "key_terms":         analysis_dict.get("key_terms", []),
                 }
 
-        # ── Long-term memory recall: inject relevant cross-session memories ──
-        ltm_fragments = []
-        if self._ltm.active and refined_query:
-            ltm_results = self._ltm.recall_relevant(refined_query, top_k=5, min_retention=0.2)
-            for mem in ltm_results:
-                # Inject long-term memories as pinned high-priority fragments
-                try:
-                    self._rust.ingest(
-                        mem["content"],
-                        f"ltm:{mem.get('source', 'long_term_memory')}",
-                        0,  # auto-estimate tokens
-                        True,  # pinned — always include
-                    )
-                    ltm_fragments.append(mem)
-                except Exception:
-                    pass
+        # Always capture query analysis (vagueness is needed by EGTC even
+        # when the query doesn't trigger refinement)
+        query_analysis = {
+            "vagueness_score": analysis_dict["vagueness_score"],
+            "key_terms": analysis_dict.get("key_terms", []),
+        } if query and analysis_dict else {}
 
-        result = self._rust.optimize(token_budget, refined_query)
-        result = dict(result)
-        if refinement_info:
-            result["query_refinement"] = refinement_info
-        if ltm_fragments:
-            result["long_term_memories_injected"] = len(ltm_fragments)
-
-        # ── Auto-remember high-value selected fragments for next session ──
-        if self._ltm.active:
-            selected = result.get("selected", [])
-            if selected:
-                selected_ids = {f.get("id", "") for f in selected if isinstance(f, dict)}
-                frag_dicts = []
-                for f in selected:
-                    if isinstance(f, dict):
-                        frag_dicts.append({
-                            "id": f.get("id", ""),
-                            "content": f.get("preview", ""),
-                            "source": f.get("source", ""),
-                            "entropy_score": 0.5,  # selected = valuable
-                            "is_pinned": f.get("variant", "") == "full",
-                            "relevance": f.get("relevance", 0.0),
-                        })
-                remembered = self._ltm.remember_fragments(frag_dicts, selected_ids)
-                if remembered:
-                    result["long_term_memories_saved"] = remembered
-
-        return self._apply_sssl_filtering(result)
-
-    def _apply_sssl_filtering(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Sliding Window Relevance Filter (SSSL pattern).
-        Trims long tails of low-relevance context fragments that drag down LLM attention.
-        """
-        # Rust returns "selected", normalize to "selected_fragments" for MCP consumers
-        selected = result.pop("selected", result.get("selected_fragments", []))
-        if not selected or len(selected) < 3:
-            result["selected_fragments"] = selected
-            return result
-
-        # Convert PyO3 dicts to plain dicts
-        selected = [dict(f) for f in selected]
-
-        relevances = [f.get("relevance", 0.0) for f in selected]
-        max_rel = max(relevances) if relevances else 0.0
-
-        # Dynamic cutoff based on the highest relevance in this specific query
-        cutoff_threshold = max(0.05, max_rel * 0.3)
-
-        filtered_selected = []
-        tokens_purged = 0
-
-        for f in selected:
-            if f.get("relevance", 0.0) >= cutoff_threshold or f.get("is_pinned", False):
-                filtered_selected.append(f)
+        # GC freeze: disable during hot Rust dispatch + final result assembly.
+        gc.disable()
+        try:
+            if self._use_rust:
+                result = self._rust.optimize(token_budget, refined_query)
+                result = dict(result)
+                if refinement_info:
+                    result["query_refinement"] = refinement_info
+                if query_analysis:
+                    result["query_analysis"] = query_analysis
+                return result
             else:
-                tokens_purged += f.get("token_count", 0)
-
-        result["selected_fragments"] = filtered_selected
-
-        # Update top-level total_tokens (Rust puts it at top level, not nested)
-        if "total_tokens" in result:
-            result["total_tokens"] = max(0, result["total_tokens"] - tokens_purged)
-
-        result["sssl_tokens_purged"] = tokens_purged
-        if tokens_purged > 0:
-            self._total_tokens_saved += tokens_purged
-
-        return result
+                result = self._optimize_python(token_budget, refined_query)
+                if refinement_info:
+                    result["query_refinement"] = refinement_info
+                if query_analysis:
+                    result["query_analysis"] = query_analysis
+                return result
+        finally:
+            gc.enable()
+            gc.collect()
 
     def recall_relevant(
         self,
@@ -291,12 +320,18 @@ class EntrolyEngine:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """Semantic recall of relevant fragments."""
-        result = self._rust.recall(query, top_k)
-        return [dict(r) for r in result]
+        if self._use_rust:
+            result = self._rust.recall(query, top_k)
+            return [dict(r) for r in result]
+        else:
+            return self._recall_python(query, top_k)
 
     def record_success(self, fragment_ids: List[str]) -> None:
         """Record that selected fragments led to a successful output."""
-        self._rust.record_success(fragment_ids)
+        if self._use_rust:
+            self._rust.record_success(fragment_ids)
+        else:
+            self._wilson.record_success(fragment_ids)
         # Fix #2: Wire AdaptivePruner RL feedback on every record_success call.
         # apply_feedback(+1.0) boosts the learned weights for features that
         # were present when the fragment was selected and led to success.
@@ -305,7 +340,10 @@ class EntrolyEngine:
 
     def record_failure(self, fragment_ids: List[str]) -> None:
         """Record that selected fragments led to a failed output."""
-        self._rust.record_failure(fragment_ids)
+        if self._use_rust:
+            self._rust.record_failure(fragment_ids)
+        else:
+            self._wilson.record_failure(fragment_ids)
         # Fix #2: Wire AdaptivePruner RL feedback on every record_failure call.
         # apply_feedback(-1.0) down-weights feature combinations that led to
         # unhelpful context selections.
@@ -342,27 +380,36 @@ class EntrolyEngine:
         if ckpt is None:
             return {"status": "no_checkpoint_found"}
 
-        # Try to restore from full engine state (preferred)
-        engine_state = ckpt.metadata.get("engine_state") if ckpt.metadata else None
-        if engine_state:
-            self._rust.import_state(engine_state)
-        else:
-            # Fallback: re-create engine and re-ingest fragments
-            self._rust = RustEngine(
-                w_recency=self.config.weight_recency,
-                w_frequency=self.config.weight_frequency,
-                w_semantic=self.config.weight_semantic_sim,
-                w_entropy=self.config.weight_entropy,
-                decay_half_life=self.config.decay_half_life_turns,
-                min_relevance=self.config.min_relevance_threshold,
-            )
-            for frag_data in ckpt.fragments:
-                self._rust.ingest(
-                    frag_data["content"],
-                    frag_data.get("source", ""),
-                    frag_data.get("token_count", 0),
-                    frag_data.get("is_pinned", False),
+        if self._use_rust:
+            # Try to restore from full engine state (preferred)
+            engine_state = ckpt.metadata.get("engine_state") if ckpt.metadata else None
+            if engine_state:
+                self._rust.import_state(engine_state)
+            else:
+                # Fallback: re-create engine and re-ingest fragments
+                self._rust = RustEngine(
+                    w_recency=self.config.weight_recency,
+                    w_frequency=self.config.weight_frequency,
+                    w_semantic=self.config.weight_semantic_sim,
+                    w_entropy=self.config.weight_entropy,
+                    decay_half_life=self.config.decay_half_life_turns,
+                    min_relevance=self.config.min_relevance_threshold,
                 )
+                for frag_data in ckpt.fragments:
+                    self._rust.ingest(
+                        frag_data["content"],
+                        frag_data.get("source", ""),
+                        frag_data.get("token_count", 0),
+                        frag_data.get("is_pinned", False),
+                    )
+        else:
+            self._fragments.clear()
+            for frag in self._checkpoint_mgr.restore_fragments(ckpt):
+                self._fragments[frag.fragment_id] = frag
+            self._dedup = DedupIndex(hamming_threshold=3)
+            for fid, fp in ckpt.dedup_fingerprints.items():
+                self._dedup._fingerprints[fid] = fp
+            self._current_turn = ckpt.current_turn
 
         # Restore co-access patterns
         from collections import Counter
@@ -379,42 +426,62 @@ class EntrolyEngine:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get comprehensive session statistics."""
-        rust_stats = dict(self._rust.stats())
-        dep_stats = dict(self._rust.dep_graph_stats())
-        rust_stats["dep_graph"] = dep_stats
-        rust_stats["prefetch"] = self._prefetch.stats()
-        rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
-        return rust_stats
+        if self._use_rust:
+            rust_stats = dict(self._rust.stats())
+            dep_stats = dict(self._rust.dep_graph_stats())
+            rust_stats["dep_graph"] = dep_stats
+            rust_stats["prefetch"] = self._prefetch.stats()
+            rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
+            return rust_stats
+        else:
+            return self._stats_python()
 
     def explain_selection(self) -> Dict[str, Any]:
         """Explain why each fragment was included or excluded."""
-        result = self._rust.explain_selection()
-        return dict(result)
+        if self._use_rust:
+            result = self._rust.explain_selection()
+            return dict(result)
+        else:
+            return {"error": "Explainability requires Rust engine"}
 
     def _auto_checkpoint(
         self,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Create an auto-checkpoint."""
-        co_access = {
-            k: dict(v)
-            for k, v in self._prefetch._co_access.items()
-        }
-        # Export full engine state (not empty fragments)
-        engine_state = self._rust.export_state()
-        # Auto-persist repo-level index alongside checkpoint
-        try:
-            self._rust.persist_index(self._index_path)
-        except Exception as e:
-            logger.debug(f"Index persistence not available: {e}")
-        return self._checkpoint_mgr.save(
-            fragments=[],
-            dedup_fingerprints={},
-            co_access_data=co_access,
-            current_turn=self._rust.get_turn(),
-            metadata={**(metadata or {}), "engine_state": engine_state},
-            stats=self.get_stats(),
-        )
+        if self._use_rust:
+            co_access = {
+                k: dict(v)
+                for k, v in self._prefetch._co_access.items()
+            }
+            # Export full engine state (not empty fragments)
+            engine_state = self._rust.export_state()
+            # Auto-persist repo-level index alongside checkpoint
+            try:
+                self._rust.persist_index(self._index_path)
+            except Exception as e:
+                logger.warning(f"Failed to persist index: {e}")
+            return self._checkpoint_mgr.save(
+                fragments=[],
+                dedup_fingerprints={},
+                co_access_data=co_access,
+                current_turn=self._rust.get_turn(),
+                metadata={**(metadata or {}), "engine_state": engine_state},
+                stats=self.get_stats(),
+            )
+        else:
+            co_access = {
+                k: dict(v)
+                for k, v in self._prefetch._co_access.items()
+            }
+            return self._checkpoint_mgr.save(
+                fragments=list(self._fragments.values()),
+                dedup_fingerprints=dict(self._dedup._fingerprints),
+                co_access_data=co_access,
+                current_turn=self._current_turn,
+                metadata=metadata,
+                stats=self.get_stats(),
+            )
 
     def _validate_checkpoint_dir(self) -> None:
         """Fix #5: Validate checkpoint directory is writable at startup."""
@@ -434,6 +501,244 @@ class EntrolyEngine:
                 f"to point to a writable location."
             ) from e
 
+    # ── Python fallback implementations ──────────────────────────────
+
+    def _ingest_python(self, content, source, token_count, is_pinned):
+        """Python fallback for ingest (when Rust not available)."""
+        import hashlib
+        self._total_fragments_ingested += 1
+
+        if token_count <= 0:
+            token_count = max(1, len(content) // 4)
+
+        # Fix #4 (Python fallback): enforce max_fragments cap
+        if len(self._fragments) >= self.config.max_fragments:
+            return {
+                "status": "rejected",
+                "reason": "max_fragments cap reached",
+                "max_fragments": self.config.max_fragments,
+            }
+
+        frag_id = hashlib.sha256(
+            f"{source}:{content[:200]}:{self._total_fragments_ingested}".encode()
+        ).hexdigest()[:16]
+
+        dup_id = self._dedup.insert(frag_id, content)
+        if dup_id is not None:
+            self._total_duplicates_caught += 1
+            existing = self._fragments.get(dup_id)
+            if existing:
+                existing.access_count += 1
+                existing.turn_last_accessed = self._current_turn
+                max_freq = max(
+                    f.access_count for f in self._fragments.values()
+                ) or 1
+                existing.frequency_score = min(
+                    existing.access_count / max_freq, 1.0
+                )
+            return {
+                "status": "duplicate",
+                "duplicate_of": dup_id,
+                "fragment_id": frag_id,
+                "tokens_saved": token_count,
+            }
+
+        # Deterministic entropy comparison (sorted by fragment_id)
+        other_contents = [
+            f.content for f in sorted(
+                self._fragments.values(),
+                key=lambda f: f.fragment_id,
+            )
+        ][:50]
+        entropy_score = compute_information_score(
+            content,
+            global_token_counts=dict(self._global_token_counts),
+            total_tokens=self._total_token_count,
+            other_fragments=other_contents,
+        )
+
+        tokens = content.lower().split()
+        self._global_token_counts.update(tokens)
+        self._total_token_count += len(tokens)
+
+        frag = ContextFragment(
+            fragment_id=frag_id,
+            content=content,
+            token_count=token_count,
+            source=source,
+            recency_score=1.0,
+            frequency_score=0.0,
+            semantic_score=0.0,
+            entropy_score=entropy_score,
+            turn_created=self._current_turn,
+            turn_last_accessed=self._current_turn,
+            access_count=1,
+            is_pinned=is_pinned,
+            simhash=simhash(content),
+        )
+
+        self._fragments[frag_id] = frag
+
+        if source:
+            self._prefetch.record_access(source, self._current_turn)
+
+        if self._checkpoint_mgr.should_auto_checkpoint():
+            self._auto_checkpoint()
+
+        # Fix #3: extract skeleton for code files (Python fallback)
+        has_skeleton = False
+        skeleton_tc = None
+        try:
+            if _RUST_AVAILABLE:
+                # entroly_core exposes extract_skeleton directly
+                from entroly_core import extract_skeleton
+                skel = extract_skeleton(content, source)
+            else:
+                from .skeleton import extract_skeleton  # type: ignore[import]
+                skel = extract_skeleton(content, source)
+            if skel:
+                has_skeleton = True
+                skeleton_tc = max(1, len(skel) // 4)
+        except Exception:
+            pass  # skeleton is best-effort; never block ingest
+
+        result: Dict[str, Any] = {
+            "status": "ingested",
+            "fragment_id": frag_id,
+            "token_count": token_count,
+            "entropy_score": round(entropy_score, 4),
+            "total_fragments": len(self._fragments),
+            "has_skeleton": has_skeleton,
+        }
+        if skeleton_tc is not None:
+            result["skeleton_token_count"] = skeleton_tc
+        return result
+
+    def _optimize_python(self, token_budget, query):
+        """Python fallback for optimize."""
+        self._total_optimizations += 1
+
+        if query:
+            query_hash = simhash(query)
+            from .dedup import hamming_distance
+            for frag in self._fragments.values():
+                dist = hamming_distance(query_hash, frag.simhash)
+                frag.semantic_score = max(0.0, 1.0 - (dist / 64.0))
+
+        # Apply Wilson feedback via the frequency dimension. Wilson learned_value
+        # returns [0.5, 2.0] (neutral=1.0). We map this to [0, 1] and use it as
+        # the frequency_score, so fragments with positive feedback history get
+        # boosted in the knapsack and fragments with negative history get suppressed.
+        for frag in self._fragments.values():
+            wilson = self._wilson.learned_value(frag.fragment_id)
+            frag.frequency_score = max(0.0, min((wilson - 0.5) / 1.5, 1.0))
+
+        fragments = list(self._fragments.values())
+        selected, stats = knapsack_optimize(
+            fragments,
+            token_budget,
+            w_recency=self.config.weight_recency,
+            w_frequency=self.config.weight_frequency,
+            w_semantic=self.config.weight_semantic_sim,
+            w_entropy=self.config.weight_entropy,
+        )
+
+        total_available_tokens = sum(f.token_count for f in fragments)
+        tokens_saved = total_available_tokens - stats["total_tokens"]
+        self._total_tokens_saved += max(0, tokens_saved)
+
+        for frag in selected:
+            frag.turn_last_accessed = self._current_turn
+            frag.access_count += 1
+
+        return {
+            "selected_fragments": [
+                {
+                    "id": f.fragment_id,
+                    "source": f.source,
+                    "token_count": f.token_count,
+                    "relevance": round(
+                        compute_relevance(
+                            f,
+                            self.config.weight_recency,
+                            self.config.weight_frequency,
+                            self.config.weight_semantic_sim,
+                            self.config.weight_entropy,
+                        ), 4
+                    ),
+                    "content_preview": f.content[:100] + "..." if len(f.content) > 100 else f.content,
+                }
+                for f in selected
+            ],
+            "optimization_stats": stats,
+            "tokens_saved_this_call": max(0, tokens_saved),
+            "total_tokens_saved_session": self._total_tokens_saved,
+        }
+
+    def _recall_python(self, query, top_k):
+        """Python fallback for recall."""
+        if not self._fragments:
+            return []
+
+        query_hash = simhash(query)
+        from .dedup import hamming_distance
+
+        scored = []
+        for frag in self._fragments.values():
+            dist = hamming_distance(query_hash, frag.simhash)
+            frag.semantic_score = max(0.0, 1.0 - (dist / 64.0))
+            relevance = compute_relevance(
+                frag,
+                self.config.weight_recency,
+                self.config.weight_frequency,
+                self.config.weight_semantic_sim,
+                self.config.weight_entropy,
+            )
+            scored.append((frag, relevance))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        return [
+            {
+                "fragment_id": f.fragment_id,
+                "source": f.source,
+                "relevance": round(rel, 4),
+                "entropy": round(f.entropy_score, 4),
+                "content": f.content,
+            }
+            for f, rel in scored[:top_k]
+        ]
+
+    def _stats_python(self):
+        """Python fallback for stats."""
+        fragments = list(self._fragments.values())
+        total_tokens = sum(f.token_count for f in fragments)
+        avg_entropy = (
+            sum(f.entropy_score for f in fragments) / len(fragments)
+            if fragments else 0.0
+        )
+
+        return {
+            "session": {
+                "current_turn": self._current_turn,
+                "total_fragments": len(fragments),
+                "total_tokens_tracked": total_tokens,
+                "avg_entropy_score": round(avg_entropy, 4),
+                "pinned_fragments": sum(1 for f in fragments if f.is_pinned),
+            },
+            "savings": {
+                "total_tokens_saved": self._total_tokens_saved,
+                "total_duplicates_caught": self._total_duplicates_caught,
+                "total_optimizations": self._total_optimizations,
+                "total_fragments_ingested": self._total_fragments_ingested,
+                "estimated_cost_saved_usd": round(
+                    self._total_tokens_saved * 0.000003, 4
+                ),
+            },
+            "dedup": self._dedup.stats(),
+            "prefetch": self._prefetch.stats(),
+            "checkpoint": self._checkpoint_mgr.stats(),
+        }
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -755,22 +1060,16 @@ def create_mcp_server():
                     "reason": frag.get("reason", ""),
                 })
 
-            proto_dist = {}
-            for f in included:
-                p = f.get("prototype", "Unknown")
-                proto_dist[p] = proto_dist.get(p, 0) + 1
-
             last_opt = {
                 "context_sufficiency": f"{sufficiency:.0%}",
                 "selected": len(included),
                 "excluded": len(excluded),
-                "pailitao_vl_prototype_distribution": proto_dist,
                 "fragments_selected": selected_summary,
                 "fragments_excluded": excluded_summary,
             }
 
         dashboard = {
-            "money": {
+            "💰 money": {
                 "tokens_saved_total": f"{tokens_saved:,}",
                 "cost_saved_total_usd": f"${cost_saved_usd:.4f}",
                 "cost_per_call_without_entroly": f"${naive_cost:.4f}",
@@ -783,7 +1082,7 @@ def create_mcp_server():
                     if total_opts > 0 else "Run optimize_context to see savings."
                 ),
             },
-            "performance": {
+            "⚡ performance": {
                 "avg_optimize_latency": f"{avg_us:.0f}µs ({avg_ms:.2f}ms)",
                 "peak_optimize_latency": f"{peak_us:.0f}µs",
                 "vs_api_roundtrip": f"{speedup:.0f}x faster than a typical API call" if speedup > 0 else "N/A",
@@ -794,7 +1093,7 @@ def create_mcp_server():
                     if avg_us > 0 else "No optimizations run yet."
                 ),
             },
-            "bloat_prevention": {
+            "🧠 bloat_prevention": {
                 "total_tokens_in_memory": f"{total_tokens:,}",
                 "context_compression": f"{compression:.2%}" if compression < 1 else "N/A (no optimize yet)",
                 "bloat_filtered": f"{bloat_prevented_pct:.0f}% of context is noise that gets filtered",
@@ -807,7 +1106,7 @@ def create_mcp_server():
                     if total_frags > 0 else "Ingest some code to see memory stats."
                 ),
             },
-            "selection_quality": {
+            "🎯 selection_quality": {
                 "information_density": f"{info_efficiency:.4f} bits/token",
                 "avg_entropy": f"{session.get('avg_entropy', 0):.4f}",
                 "fragments_tracked": total_frags,
@@ -821,7 +1120,7 @@ def create_mcp_server():
                     if total_frags > 0 else "Ingest code to see quality metrics."
                 ),
             },
-            "safety": {
+            "🔒 safety": {
                 "duplicates_blocked": dupes,
                 "stale_fragments_deprioritized": f"Ebbinghaus decay active (half-life: 15 turns)",
                 "persistent_index": "active" if hasattr(engine, '_index_path') else "disabled",
@@ -830,59 +1129,7 @@ def create_mcp_server():
         }
 
         if last_opt:
-            dashboard["last_optimization"] = last_opt
-
-        # ── 🔬 AUTOTUNE (live background self-tuning status) ──
-        try:
-            import csv
-            from pathlib import Path as _p
-            tc_path = _p(__file__).parent.parent / "tuning_config.json"
-            tc = json.loads(tc_path.read_text()) if tc_path.exists() else {}
-            at_cfg = tc.get("autotuner", {})
-            strategy_name = at_cfg.get("strategy", "auto")
-            time_budget_ms = at_cfg.get("time_budget_ms", 500)
-            idle_only = at_cfg.get("idle_only", True)
-
-            results_tsv = _p(__file__).parent.parent / "bench" / "results.tsv"
-            at_total = 0
-            at_improvements = 0
-            at_best = 0.0
-            at_last_strategy = strategy_name
-            if results_tsv.exists():
-                with open(results_tsv) as _f:
-                    _rows = list(csv.DictReader(_f, delimiter="\t"))
-                    at_total = len(_rows)
-                    kept = [r for r in _rows if r.get("kept") == "keep"]
-                    at_improvements = len(kept)
-                    at_best = max((float(r["new_score"]) for r in kept), default=0.0)
-                    if _rows:
-                        at_last_strategy = _rows[-1].get("strategy", strategy_name)
-
-            dashboard["autotune"] = {
-                "strategy": strategy_name,
-                "resolved_to": at_last_strategy if strategy_name == "auto" else strategy_name,
-                "experiments_run": at_total,
-                "improvements_kept": at_improvements,
-                "best_score": round(at_best, 4),
-                "time_budget_guarantee": f"{time_budget_ms}ms hard limit",
-                "idle_only": idle_only,
-                "insight": (
-                    f"Self-tuning has run {at_total} experiments and found "
-                    f"{at_improvements} improvements. Best score: {at_best:.4f}. "
-                    f"Runs automatically in the background when your machine is idle."
-                    if at_total > 0
-                    else "Self-tuning starts automatically in the background when your machine is idle."
-                ),
-            }
-        except Exception:
-            pass  # Dashboard never fails due to autotune
-
-        # ── 🧠 LONG-TERM MEMORY (cross-session hippocampus integration) ──
-        try:
-            ltm_stats = engine._ltm.stats()
-            dashboard["long_term_memory"] = ltm_stats
-        except Exception:
-            pass  # Dashboard never fails due to LTM
+            dashboard["📊 last_optimization"] = last_opt
 
         return json.dumps(dashboard, indent=2)
 
@@ -908,8 +1155,48 @@ def create_mcp_server():
             - critical_count, high_count, medium_count, low_count
             - top_fix: most impactful remediation action
         """
-        from entroly_core import py_scan_content
-        return py_scan_content(content, source)
+        if engine._use_rust:
+            return engine._rust.scan_fragment.__func__(engine._rust, source) \
+                if False else _scan_via_rust_standalone(content, source)
+        # Python fallback — basic pattern matching
+        return _sast_python_fallback(content, source)
+
+    def _scan_via_rust_standalone(content: str, source: str) -> str:
+        """Use the module-level py_scan_content function from entroly_core."""
+        try:
+            from entroly_core import py_scan_content
+            return py_scan_content(content, source)
+        except Exception as e:
+            return json.dumps({"error": str(e), "findings": [], "risk_score": 0.0})
+
+    def _sast_python_fallback(content: str, source: str) -> str:
+        """Minimal Python SAST fallback when Rust is unavailable."""
+        findings = []
+        lines = content.splitlines()
+        SIMPLE_RULES = [
+            ("SEC-001", "CWE-798", "Critical", "password", "=", "Hardcoded password"),
+            ("SQL-001", "CWE-89",  "Critical", "execute(",  "%s", "SQL injection"),
+            ("CMD-001", "CWE-78",  "Critical", "os.system(", None, "Command injection"),
+            ("DESER-001", "CWE-502","Critical","pickle.loads(", None, "Unsafe deserialization"),
+            ("CRYPTO-001","CWE-327","High",    "md5",        None, "Broken hash"),
+        ]
+        for i, line in enumerate(lines, 1):
+            lower = line.lower()
+            for rule_id, cwe, sev, pat, req, desc in SIMPLE_RULES:
+                if pat in lower and (req is None or req in lower):
+                    findings.append({
+                        "rule_id": rule_id, "cwe": cwe, "severity": sev,
+                        "line_number": i, "description": desc,
+                        "line_content": line.strip(), "confidence": 0.7,
+                        "taint_flow": False, "fix": "See OWASP for remediation guidance.",
+                    })
+        risk = min(10.0, sum(9.5 if f["severity"] == "Critical" else 6.5 for f in findings) * 0.25)
+        return json.dumps({
+            "source": source, "findings": findings, "risk_score": round(risk, 2),
+            "critical_count": sum(1 for f in findings if f["severity"] == "Critical"),
+            "high_count": sum(1 for f in findings if f["severity"] == "High"),
+            "medium_count": 0, "low_count": 0,
+        }, indent=2)
 
     @mcp.tool()
     def security_report() -> str:
@@ -926,7 +1213,22 @@ def create_mcp_server():
             - findings_by_category: {category: count}
             - vulnerable_fragments: sorted list by risk_score
         """
-        return engine._rust.security_report()
+        if engine._use_rust:
+            return engine._rust.security_report()
+        # Python fallback: scan all fragments individually
+        results = []
+        for fid, frag in engine._fragments.items():
+            raw = json.loads(_sast_python_fallback(frag.content, frag.source))
+            if raw.get("findings"):
+                results.append({"fragment_id": fid, "source": frag.source,
+                                 "risk_score": raw["risk_score"],
+                                 "finding_count": len(raw["findings"])})
+        results.sort(key=lambda r: r["risk_score"], reverse=True)
+        return json.dumps({
+            "fragments_scanned": len(engine._fragments),
+            "fragments_with_findings": len(results),
+            "vulnerable_fragments": results,
+        }, indent=2)
 
     @mcp.tool()
     def analyze_codebase_health() -> str:
@@ -945,7 +1247,31 @@ def create_mcp_server():
             - clone_pairs, dead_symbols, god_files, arch_violations, naming_issues
             - summary (human-readable) and top_recommendation (most impactful action)
         """
-        return engine._rust.analyze_health()
+        if engine._use_rust:
+            return engine._rust.analyze_health()
+        # Python fallback: basic clone detection only
+        frags = list(engine._fragments.values())
+        from .dedup import simhash as _simhash
+        clone_pairs = []
+        for i, a in enumerate(frags):
+            for b in frags[i+1:]:
+                if a.source == b.source:
+                    continue
+                ha = _simhash(a.content)
+                hb = _simhash(b.content)
+                dist = bin(ha ^ hb).count("1")
+                if dist <= 8:
+                    sim = round(1.0 - dist / 64.0, 4)
+                    clone_pairs.append({"source_a": a.source, "source_b": b.source,
+                                        "similarity": sim, "clone_type": "Type-1/2"})
+        score = max(0.0, 100.0 - len(clone_pairs) * 5.0)
+        return json.dumps({
+            "fragment_count": len(frags),
+            "clone_pairs": clone_pairs,
+            "code_health_score": round(score, 1),
+            "health_grade": "A" if score >= 90 else "B" if score >= 80 else "C",
+            "summary": f"{len(frags)} fragments analyzed. {len(clone_pairs)} clone pairs found.",
+        }, indent=2)
 
     @mcp.tool()
     def ingest_diagram(diagram_text: str, source: str, diagram_type: str = "auto") -> str:
@@ -1053,530 +1379,64 @@ def create_mcp_server():
         data["symbols_changed"] = modal.metadata.get("symbols_changed", [])
         return json.dumps(data, indent=2)
 
-    @mcp.tool()
-    def autotune_status() -> str:
-        """Show the live status of Entroly's background self-tuning loop.
-
-        Gives developers real-time visibility into what the autotuner is doing
-        without them having to interact with it. Everything runs automatically
-        in the background — this tool just surfaces the current state.
-
-        Returns JSON with:
-            - strategy: active tuning strategy (auto/balanced/latency/monorepo/quality)
-            - best_score: highest composite score found so far
-            - improvements: number of parameter improvements found this session
-            - config_drift: how far current config has drifted from defaults (0=identical)
-            - time_budget_guarantee: the hard latency ceiling in effect
-            - recent_experiments: last 10 experiment results from results.tsv
-            - idle_only: whether daemon only runs when system is idle
-        """
-        import csv
-        from pathlib import Path as _Path
-
-        # Read tuning config
-        tc_path = _Path(__file__).parent.parent / "tuning_config.json"
-        tc = {}
-        if tc_path.exists():
-            try:
-                tc = json.loads(tc_path.read_text())
-            except Exception:
-                pass
-
-        at = tc.get("autotuner", {})
-        strategy = at.get("strategy", "balanced")
-        time_budget_ms = at.get("time_budget_ms", 500)
-        idle_only = at.get("idle_only", True)
-        idle_threshold = at.get("idle_cpu_threshold", 0.30)
-
-        # Read recent experiments from results.tsv
-        recent = []
-        results_path = _Path(__file__).parent.parent / "bench" / "results.tsv"
-        if results_path.exists():
-            try:
-                with open(results_path) as f:
-                    reader = csv.DictReader(f, delimiter="\t")
-                    rows = list(reader)
-                    for row in rows[-10:]:
-                        recent.append({
-                            "iter": int(row.get("iteration", 0)),
-                            "param": row.get("param", ""),
-                            "score": float(row.get("new_score", 0)),
-                            "kept": row.get("kept", "discard") == "keep",
-                            "drift": float(row.get("drift", 0)),
-                            "strategy": row.get("strategy", strategy),
-                        })
-                kept_rows = [r for r in rows if r.get("kept") == "keep"]
-                best_score = max(
-                    (float(r["new_score"]) for r in kept_rows),
-                    default=0.0
-                )
-                improvements = len(kept_rows)
-                total_iters = len(rows)
-            except Exception:
-                best_score = 0.0
-                improvements = 0
-                total_iters = 0
-        else:
-            best_score = 0.0
-            improvements = 0
-            total_iters = 0
-
-        # Config drift from defaults
-        try:
-            from bench.autotune import config_drift_score
-            drift = config_drift_score(tc)
-        except Exception:
-            drift = 0.0
-
-        return json.dumps({
-            "strategy": strategy,
-            "best_score_ever": round(best_score, 4),
-            "improvements_found": improvements,
-            "total_experiments_run": total_iters,
-            "config_drift": round(drift, 4),
-            "time_budget_guarantee": f"{time_budget_ms}ms hard limit per optimize() call",
-            "idle_only": idle_only,
-            "idle_cpu_threshold": f"{idle_threshold:.0%} CPU",
-            "recent_experiments": recent,
-            "insight": (
-                f"Autotune has run {total_iters} experiments and kept {improvements} improvements. "
-                f"Best score: {best_score:.4f}. Config drift: {drift:.4f} (0=identical to defaults)."
-                if total_iters > 0
-                else "Autotune hasn't run yet — it starts automatically in the background."
-            ),
-        }, indent=2)
-
-    @mcp.tool()
-    def autotune_history(n: int = 20) -> str:
-        """Show the experiment history from the autotune background loop.
-
-        Reads from bench/results.tsv — the structured log of every experiment
-        the autotuner has run. Each entry shows the parameter mutated, the score
-        delta, whether it was kept, the config drift, and the strategy in use.
-
-        This is the equivalent of 'git log autotune/results' — full experiment
-        auditability without needing git.
-
-        Args:
-            n: Number of recent experiments to show (default: 20)
-        """
-        import csv
-        from pathlib import Path as _Path
-
-        results_path = _Path(__file__).parent.parent / "bench" / "results.tsv"
-        if not results_path.exists():
-            return json.dumps({
-                "status": "no_experiments_yet",
-                "message": "Autotune hasn't run any experiments yet. It starts automatically in the background.",
-                "experiments": [],
-            }, indent=2)
-
-        try:
-            with open(results_path) as f:
-                reader = csv.DictReader(f, delimiter="\t")
-                rows = list(reader)
-        except Exception as e:
-            return json.dumps({"error": str(e)}, indent=2)
-
-        kept = [r for r in rows if r.get("kept") == "keep"]
-        skipped = [r for r in rows if r.get("kept") != "keep"]
-        recent = rows[-n:]
-
-        experiments = []
-        for row in recent:
-            experiments.append({
-                "iter": int(row.get("iteration", 0)),
-                "param": row.get("param", ""),
-                "old_val": float(row.get("old_val", 0)),
-                "new_val": float(row.get("new_val", 0)),
-                "score": float(row.get("new_score", 0)),
-                "kept": row.get("kept", "discard") == "keep",
-                "drift": float(row.get("drift", 0)),
-                "duration_ms": float(row.get("duration_ms", 0)),
-                "strategy": row.get("strategy", "balanced"),
-            })
-
-        return json.dumps({
-            "total_experiments": len(rows),
-            "kept": len(kept),
-            "discarded": len(skipped),
-            "keep_rate": f"{len(kept)/max(len(rows),1):.0%}",
-            "experiments": experiments,
-        }, indent=2)
-
-    @mcp.tool()
-    def set_tuning_strategy(strategy: str) -> str:
-        """Switch the autotuner to a different optimization strategy.
-
-        Available strategies:
-          - auto     (default) Auto-detects: monorepo for large repos, balanced otherwise
-          - balanced Balanced defaults — good for most single-service repos
-          - latency  Optimise for <50ms hard latency guarantee
-          - monorepo Large codebases with deep dependency trees
-          - quality  Maximum recall/precision (allows up to 500ms)
-
-        The daemon picks up the new strategy within ~30 seconds.
-        You don't need to restart anything.
-
-        Args:
-            strategy: One of: auto, balanced, latency, monorepo, quality
-        """
-        from pathlib import Path as _Path
-
-        valid = {"auto", "balanced", "latency", "monorepo", "quality"}
-        if strategy not in valid:
-            return json.dumps({
-                "error": f"Unknown strategy '{strategy}'. Valid: {sorted(valid)}",
-            }, indent=2)
-
-        tc_path = _Path(__file__).parent.parent / "tuning_config.json"
-        if not tc_path.exists():
-            return json.dumps({"error": "tuning_config.json not found"}, indent=2)
-
-        try:
-            tc = json.loads(tc_path.read_text())
-            tc.setdefault("autotuner", {})["strategy"] = strategy
-            tc_path.write_text(json.dumps(tc, indent=2) + "\n")
-        except Exception as e:
-            return json.dumps({"error": str(e)}, indent=2)
-
-        # Load strategy description for response
-        strategies_dir = _Path(__file__).parent.parent / "tuning_strategies"
-        desc = f"{strategy} strategy"
-        import re as _re
-        recipe_path = strategies_dir / f"{strategy}.md"
-        if recipe_path.exists():
-            fm = _re.match(r"^---\n(.*?)\n---", recipe_path.read_text(), _re.DOTALL)
-            if fm:
-                for line in fm.group(1).splitlines():
-                    if line.startswith("description:"):
-                        desc = line.partition(":")[2].strip()
-                        break
-
-        return json.dumps({
-            "status": "strategy_updated",
-            "strategy": strategy,
-            "description": desc,
-            "note": "The background daemon picks up the new strategy within ~30 seconds. No restart needed.",
-        }, indent=2)
-
-    @mcp.tool()
-    def get_tuning_strategy() -> str:
-        """Show the current tuning strategy and its effect on the autotuner.
-
-        Returns the active recipe details including what it optimizes for,
-        the hard time budget in effect, and how it affects parameter search bounds.
-
-        Call this to understand why the autotuner is exploring certain parameters.
-        """
-        from pathlib import Path as _Path
-        import re as _re
-
-        tc_path = _Path(__file__).parent.parent / "tuning_config.json"
-        tc = json.loads(tc_path.read_text()) if tc_path.exists() else {}
-        strategy_name = tc.get("autotuner", {}).get("strategy", "balanced")
-
-        # If auto, determine what it resolved to
-        resolved = strategy_name
-        if strategy_name == "auto":
-            resolved = _auto_detect_strategy()
-
-        strategies_dir = _Path(__file__).parent.parent / "tuning_strategies"
-        recipe_path = strategies_dir / f"{resolved}.md"
-
-        recipe_content = {}
-        if recipe_path.exists():
-            text = recipe_path.read_text()
-            fm = _re.match(r"^---\n(.*?)\n---", text, _re.DOTALL)
-            if fm:
-                for line in fm.group(1).splitlines():
-                    if ":" in line:
-                        k, _, v = line.partition(":")
-                        recipe_content[k.strip()] = v.strip()
-
-        return json.dumps({
-            "configured_strategy": strategy_name,
-            "resolved_strategy": resolved,
-            "description": recipe_content.get("description", f"{resolved} strategy"),
-            "optimize_for": recipe_content.get("optimize_for", "recall, precision, efficiency"),
-            "time_budget_ms": recipe_content.get("time_budget_ms", "500"),
-            "available_strategies": ["auto", "balanced", "latency", "monorepo", "quality"],
-        }, indent=2)
-
-    # ── 🧠 Long-Term Memory Tools (powered by hippocampus-sharp-memory) ──
-
-    @mcp.tool()
-    def long_term_memory_status() -> str:
-        """Show long-term memory status and statistics.
-
-        Shows whether cross-session memory is active (requires hippocampus-sharp-memory),
-        how many fragments have been remembered and recalled, episode count,
-        average retention, and consolidation status.
-
-        Long-term memory runs automatically — fragments from successful optimizations
-        are remembered across sessions using salience-based Ebbinghaus decay.
-        """
-        return json.dumps(engine._ltm.stats(), indent=2)
-
-    @mcp.tool()
-    def long_term_memory_recall(query: str, top_k: int = 5) -> str:
-        """Recall relevant long-term memories for a specific query.
-
-        Searches across sessions for fragments that were previously valuable.
-        Uses hippocampus' LSH-based semantic search + salience-weighted decay.
-
-        This is called automatically during optimize_context(), but you can
-        also call it explicitly to check what the engine remembers about a topic.
-
-        Args:
-            query: What to search for (e.g. "payment processing error handling")
-            top_k: Maximum number of memories to return (default: 5)
-        """
-        memories = engine._ltm.recall_relevant(query, top_k=top_k, min_retention=0.1)
-        if not memories:
-            return json.dumps({
-                "memories": [],
-                "note": (
-                    "No relevant long-term memories found. "
-                    + ("Install hippocampus-sharp-memory for cross-session memory."
-                       if not engine._ltm.active
-                       else "Memories build up as you use entroly across sessions.")
-                ),
-            }, indent=2)
-
-        return json.dumps({
-            "memories": memories,
-            "count": len(memories),
-            "note": "These are cross-session memories ranked by relevance × retention.",
-        }, indent=2)
-
     return mcp, engine
 
 
 
-def _auto_detect_strategy() -> str:
-    """
-    Auto-detect the best tuning strategy based on the project structure.
-
-    Heuristic:
-      - If .git/modules or workspace files exist → 'monorepo'
-      - Otherwise → 'balanced'
-
-    This is called when strategy='auto' in tuning_config.json (the default).
-    Developers install entroly and get the right strategy without configuring anything.
-    """
-    import subprocess
-    from pathlib import Path
-
-    cwd = Path.cwd()
-
-    # Monorepo signals: workspace files, many top-level packages, git submodules
-    monorepo_signals = [
-        cwd / "pnpm-workspace.yaml",
-        cwd / "lerna.json",
-        cwd / "nx.json",
-        cwd / "Cargo.toml",      # check if it's a workspace Cargo.toml below
-        cwd / "go.work",
-        cwd / "WORKSPACE",       # Bazel
-        cwd / "WORKSPACE.bazel",
-    ]
-
-    for signal in monorepo_signals:
-        if signal.exists():
-            # Extra check for Cargo.toml — only count as monorepo if it has [workspace]
-            if signal.name == "Cargo.toml":
-                try:
-                    content = signal.read_text()
-                    if "[workspace]" in content:
-                        return "monorepo"
-                    continue
-                except Exception:
-                    continue
-            return "monorepo"
-
-    # Count top-level directories that look like packages
-    try:
-        dirs = [d for d in cwd.iterdir() if d.is_dir() and not d.name.startswith(".")]
-        package_dirs = [d for d in dirs if (d / "package.json").exists()
-                        or (d / "Cargo.toml").exists()
-                        or (d / "pyproject.toml").exists()
-                        or (d / "setup.py").exists()]
-        if len(package_dirs) >= 3:
-            return "monorepo"
-    except Exception:
-        pass
-
-    return "balanced"
-
-
-def _is_system_idle(cpu_threshold: float = 0.30) -> bool:
-    """
-    Check if the system is idle enough to safely run an autotune iteration.
-
-    Safe for 16GB i5/i7/MacBook machines — returns False when developer is
-    actively working (CPU > threshold). Autotune pauses until system is idle.
-
-    Uses psutil if available, falls back to /proc/stat on Linux.
-    """
-    try:
-        import psutil
-        cpu_pct = psutil.cpu_percent(interval=0.1) / 100.0
-        return cpu_pct < cpu_threshold
-    except ImportError:
-        pass
-
-    # Fallback: read /proc/stat on Linux
-    try:
-        import time as _time
-        def _cpu_times():
-            with open("/proc/stat") as f:
-                line = f.readline()
-            parts = line.split()
-            # user, nice, system, idle, iowait, irq, softirq
-            nums = [int(x) for x in parts[1:8]]
-            idle = nums[3]
-            total = sum(nums)
-            return idle, total
-
-        idle1, total1 = _cpu_times()
-        _time.sleep(0.1)
-        idle2, total2 = _cpu_times()
-        d_idle = idle2 - idle1
-        d_total = total2 - total1
-        cpu_pct = 1.0 - (d_idle / max(d_total, 1))
-        return cpu_pct < cpu_threshold
-    except Exception:
-        return True  # Can't measure → assume idle (safe default)
-
-
 def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
     """
-    Spawn the idle-aware autotune loop as a daemon background thread.
+    Spawn the autotune loop as a daemon background thread.
 
-    Design for 16GB dev machines (i5/i7/MacBook):
-      - Reads tuning_config.json every iteration (picks up strategy changes live)
-      - Auto-detects monorepo vs single-service (no user config needed)
-      - Pauses when CPU > idle_cpu_threshold (dev is actively working)
-      - Sleeps iteration_sleep_secs between experiments (~0.5s default)
-      - Runs at nice+10 OS priority — never competes with foreground work
-      - Daemon thread: dies automatically when MCP server exits, no cleanup
+    Daemon threads die automatically when the MCP server exits — no cleanup
+    needed. Runs at idle CPU priority so it never interferes with foreground
+    tool calls.
 
     Controlled by tuning_config.json → autotuner.enabled (default: true).
+    Set to false to disable background tuning.
     """
     import threading
     import os
-    import time as _time
     from pathlib import Path
 
+    # Check if autotuning is enabled in tuning_config.json
     config_path = Path(__file__).parent.parent / "tuning_config.json"
-
-    def _read_autotune_config() -> dict:
-        """Read current autotuner config fresh from disk each time."""
+    enabled = True
+    if config_path.exists():
         try:
             import json as _json
-            return _json.loads(config_path.read_text()).get("autotuner", {})
+            cfg = _json.loads(config_path.read_text())
+            enabled = cfg.get("autotuner", {}).get("enabled", True)
         except Exception:
-            return {}
+            pass
 
-    # Check if enabled before starting the thread at all
-    at_cfg = _read_autotune_config()
-    if not at_cfg.get("enabled", True):
-        logger.info("Autotune: disabled via tuning_config.json autotuner.enabled=false")
+    if not enabled:
+        logger.info("Autotune: disabled via tuning_config.json")
         return
 
     def _daemon_loop():
-        # Lower OS scheduling priority: nice +10 on Linux/Mac
+        # Lower this thread's OS scheduling priority (nice +10 on Linux)
         try:
             os.nice(10)
         except (AttributeError, OSError):
-            pass
+            pass  # Windows has no nice()
 
-        logger.info("Autotune: background self-tuning daemon started (nice+10)")
-
-        iteration = 0
-        best_score: Optional[float] = None
-        improvements = 0
-
-        while True:
-            try:
-                # Re-read config each iteration — picks up live changes (e.g., new strategy)
-                at_cfg = _read_autotune_config()
-
-                if not at_cfg.get("enabled", True):
-                    logger.info("Autotune: disabled mid-session, daemon pausing")
-                    _time.sleep(30)
-                    continue
-
-                idle_only = at_cfg.get("idle_only", True)
-                idle_threshold = at_cfg.get("idle_cpu_threshold", 0.30)
-                idle_sleep = at_cfg.get("idle_sleep_secs", 5)
-                iter_sleep = at_cfg.get("iteration_sleep_secs", 0.5)
-                strategy_name = at_cfg.get("strategy", "auto")
-                drift_penalty = at_cfg.get("drift_penalty_weight", 0.1)
-
-                # Auto-detect strategy (Feature 1: zero-config strategy selection)
-                if strategy_name == "auto":
-                    strategy_name = _auto_detect_strategy()
-
-                # Idle-only mode: pause when developer is working (Feature: 16GB machine safety)
-                if idle_only and not _is_system_idle(idle_threshold):
-                    _time.sleep(idle_sleep)
-                    continue
-
-                # Run one iteration of autotune via bench module
-                try:
-                    from bench.autotune import autotune as _run_one_autotune
-                    result = _run_one_autotune(
-                        iterations=1,
-                        seed=iteration,
-                        verbose=False,
-                        strategy_name=strategy_name,
-                        use_git=False,  # git is opt-in via CLI, not daemon
-                        drift_penalty_weight=drift_penalty,
-                    )
-                    new_score = result.get("final_score", 0.0)
-                    if best_score is None or new_score > best_score:
-                        if best_score is not None:
-                            improvements += 1
-                            logger.info(
-                                f"Autotune: improvement #{improvements} "
-                                f"score {best_score:.4f} → {new_score:.4f} "
-                                f"[{strategy_name}]"
-                            )
-                        best_score = new_score
-                except ImportError:
-                    # bench module not available (e.g., installed as a package)
-                    # Fall back to the simpler entroly/autotune.py
-                    try:
-                        from .autotune import run_autotune
-                        run_autotune(iterations=1)
-                    except Exception as e2:
-                        logger.debug(f"Autotune: fallback also failed: {e2}")
-                        _time.sleep(60)
-                        continue
-
-                iteration += 1
-                # Sleep between iterations — 0.5s default keeps CPU load ~0% between runs
-                _time.sleep(iter_sleep)
-
-            except Exception as e:
-                logger.debug(f"Autotune daemon iteration error (non-fatal): {e}")
-                _time.sleep(30)  # Back off on unexpected errors
+        try:
+            from .autotune import run_autotune
+            logger.info("Autotune: background self-tuning started (low priority)")
+            # Run forever — daemon thread dies when MCP server exits
+            run_autotune(max_iterations=None)
+        except Exception as e:
+            logger.warning("Autotune: background thread exited: %s", e)
 
     t = threading.Thread(target=_daemon_loop, name="entroly-autotune", daemon=True)
     t.start()
-    resolved_strategy = _auto_detect_strategy()
-    logger.info(
-        f"Autotune: daemon launched (tid={t.ident or 0}, "
-        f"strategy=auto→{resolved_strategy}, idle_only={at_cfg.get('idle_only', True)})"
-    )
+    logger.info("Autotune: daemon thread launched (tid=%d)", t.ident or 0)
 
 
 def main():
     """Entry point for the entroly MCP server."""
     engine_type = "Rust" if _RUST_AVAILABLE else "Python"
-    from entroly import __version__
-    logger.info(f"Starting Entroly MCP server v{__version__} ({engine_type} engine)")
+    logger.info(f"Starting Entroly MCP server v0.2.0 ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 
     # Auto-index the project on startup (zero config)
@@ -1594,7 +1454,7 @@ def main():
     # Start the autotune daemon in the background — zero config needed.
     # It reads/writes only tuning_config.json and runs at nice+10 priority.
     try:
-        _start_autotune_daemon(engine)
+        _start_autotune_daemon(None)
     except Exception as e:
         logger.warning("Autotune: failed to start daemon: %s", e)
 

@@ -4,12 +4,3 @@ target/
 __pycache__/
 dist/
 *.whl
-entroly/npm/.npmrc
-
-# Scratch/temp files
-README.md.restored
-capture_metrics.py
-fix_readme.py
-update_readme_safe.py
-test_out*.txt
-bench/results.tsv

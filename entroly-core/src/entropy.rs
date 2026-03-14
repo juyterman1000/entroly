@@ -182,51 +182,6 @@ pub fn cross_fragment_redundancy(
     (w2 * r2 + w3 * r3 + w4 * r4).clamp(0.0, 1.0)
 }
 
-/// Compute n-gram Jaccard similarity between two texts: |A ∩ B| / |A ∪ B|.
-/// Uses a blended trigram (n=3) approach for continuous semantic scoring.
-/// Returns [0, 1] where 1.0 is identical and 0.0 is completely disjoint.
-pub fn ngram_jaccard_similarity(text1: &str, text2: &str) -> f64 {
-    if text1.is_empty() && text2.is_empty() {
-        return 1.0;
-    }
-    if text1.is_empty() || text2.is_empty() {
-        return 0.0;
-    }
-
-    let words1: Vec<&str> = text1.split_whitespace().collect();
-    let words2: Vec<&str> = text2.split_whitespace().collect();
-
-    if words1.len() < 3 || words2.len() < 3 {
-        // Fallback to word-level Jaccard for very short snippets
-        let set1: HashSet<&str> = words1.into_iter().collect();
-        let set2: HashSet<&str> = words2.into_iter().collect();
-        let intersection = set1.intersection(&set2).count();
-        let union = set1.union(&set2).count();
-        if union == 0 { return 0.0; }
-        return intersection as f64 / union as f64;
-    }
-
-    let n = 3; // Trigrams
-    let mut set1: HashSet<Vec<&str>> = HashSet::new();
-    for window in words1.windows(n) {
-        set1.insert(window.to_vec());
-    }
-
-    let mut set2: HashSet<Vec<&str>> = HashSet::new();
-    for window in words2.windows(n) {
-        set2.insert(window.to_vec());
-    }
-
-    let intersection = set1.intersection(&set2).count();
-    let union = set1.union(&set2).count();
-
-    if union == 0 {
-        return 0.0;
-    }
-
-    intersection as f64 / union as f64
-}
-
 /// Compute single-scale n-gram overlap ratio against a set of other fragments.
 /// Parallelises over others when len > 10 (Rayon).
 fn ngram_redundancy(

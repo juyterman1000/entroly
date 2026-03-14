@@ -115,6 +115,7 @@ def _generate_mcp_config() -> dict:
         "entroly": {
             "command": "entroly",
             "args": ["serve"],
+            "env": {},
         }
     }
 
@@ -152,38 +153,11 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
     return config_path
 
 
-def _check_for_updates() -> None:
-    """Check PyPI for a newer version of entroly (non-blocking)."""
-    try:
-        from importlib.metadata import version, PackageNotFoundError
-        import urllib.request
-        
-        try:
-            current_version = version("entroly")
-        except PackageNotFoundError:
-            return  # Not installed via pip
-
-        req = urllib.request.Request(
-            "https://pypi.org/pypi/entroly/json",
-            headers={"User-Agent": f"entroly-cli/{current_version}"}
-        )
-        with urllib.request.urlopen(req, timeout=1.5) as response:
-            data = json.loads(response.read().decode())
-            latest = data["info"]["version"]
-            
-            if latest != current_version:
-                print(f"  {C.YELLOW}⚠ Update available:{C.RESET} {current_version} → {C.BOLD}{latest}{C.RESET}")
-                print(f"  {C.GRAY}Run:{C.RESET} {C.CYAN}pip install --upgrade entroly{C.RESET}\n")
-    except Exception:
-        pass  # Silently fail if offline or timeout
-
-
 def cmd_init(args):
     """entroly init — auto-detect and configure."""
     print(f"""
 {C.CYAN}{C.BOLD}  🔬 Entroly — Context Optimizer for AI Coding Agents{C.RESET}
 """)
-    _check_for_updates()
 
     # Detect project
     project = _detect_project_type()
@@ -227,59 +201,21 @@ def cmd_init(args):
   {C.GRAY}Call {C.CYAN}entroly_dashboard{C.GRAY} from your AI to see live value metrics.{C.RESET}
 """)
 
-    # Post-init health check: inform if entroly-core is missing
-    try:
-        import entroly_core  # noqa: F401
-    except ImportError:
-        print(f"""
-  {C.YELLOW}ℹ  Rust engine (entroly-core) not found locally.{C.RESET}
-  {C.GREEN}🐳 Docker Desktop detected?{C.RESET} {C.GRAY}Entroly auto-uses it — you're good to go!{C.RESET}
-  {C.GRAY}No Docker? Install the engine:{C.RESET} {C.CYAN}pip install entroly-core{C.RESET}
-""")
-
 
 def cmd_serve(args):
     """entroly serve — start MCP server with auto-indexing."""
-    from entroly._docker_launcher import launch
-    launch()
+    # Set env so Docker launcher knows to go native
+    os.environ["ENTROLY_NO_DOCKER"] = "1"
 
-
-def cmd_demo(args):
-    """entroly demo — show the value of Entroly in 5 seconds."""
-    import importlib.util
-    demo_path = Path(__file__).parent.parent / "examples" / "demo_value.py"
-    if demo_path.exists():
-        spec = importlib.util.spec_from_file_location("demo_value", demo_path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        mod.run_demo()
-    else:
-        # Fallback: try importing directly
-        try:
-            from entroly_core import EntrolyEngine
-            print(f"{C.GREEN}✅ entroly-core Rust engine ready{C.RESET}")
-            print(f"{C.GRAY}Run 'python demo_value.py' from the repo root for the full demo.{C.RESET}")
-        except ImportError:
-            print(f"{C.RED}❌ entroly-core not installed.{C.RESET}")
-            print(f"  Install with: pip install entroly[native]")
-            print(f"  Or build:     cd entroly-core && maturin develop --release")
+    # Import and run
+    from entroly.server import main
+    main()
 
 
 def cmd_dashboard(args):
     """entroly dashboard — show value metrics from current session."""
-    try:
-        from entroly.server import EntrolyEngine
-        from entroly.auto_index import auto_index
-    except ImportError:
-        print(f"""
-  {C.RED}❌ Cannot start dashboard — entroly-core is not installed.{C.RESET}
-
-  {C.GRAY}Install the Rust engine first:{C.RESET}
-  {C.CYAN}pip install entroly-core{C.RESET}          {C.GRAY}# prebuilt wheel{C.RESET}
-  {C.GRAY}— or —{C.RESET}
-  {C.CYAN}pip install maturin && cd entroly-core && maturin develop --release{C.RESET}
-""")
-        return
+    from entroly.server import EntrolyEngine
+    from entroly.auto_index import auto_index
 
     print(f"\n{C.CYAN}{C.BOLD}  🔬 Entroly Dashboard{C.RESET}\n")
 
@@ -355,12 +291,6 @@ def main():
         help="Force re-index even if persistent index exists",
     )
 
-    # entroly demo
-    demo_parser = subparsers.add_parser(
-        "demo",
-        help="See Entroly's value in 5 seconds — before/after comparison",
-    )
-
     args = parser.parse_args()
 
     if args.command == "init":
@@ -369,23 +299,9 @@ def main():
         cmd_serve(args)
     elif args.command == "dashboard":
         cmd_dashboard(args)
-    elif args.command == "demo":
-        cmd_demo(args)
     else:
-        # No subcommand given → default to serve (backward compat with MCP clients)
-        if len(sys.argv) == 1:
-            cmd_serve(args)
-        else:
-            print(f"""
-  {C.RED}Unknown command:{C.RESET} {C.BOLD}{sys.argv[1]}{C.RESET}
-
-  {C.GRAY}Available commands:{C.RESET}
-    {C.CYAN}entroly init{C.RESET}        Auto-detect project + AI tool, generate MCP config
-    {C.CYAN}entroly serve{C.RESET}       Start the MCP server
-    {C.CYAN}entroly dashboard{C.RESET}   Show live value metrics
-    {C.CYAN}entroly demo{C.RESET}        See a before/after comparison
-""")
-            sys.exit(1)
+        # Default: if no subcommand, run serve (backward compat)
+        cmd_serve(args)
 
 
 if __name__ == "__main__":

@@ -211,7 +211,7 @@ impl Default for ContextScorer {
 impl ContextScorer {
     /// Compute a composite relevance score for a candidate fragment.
     ///
-    /// - `semantic_similarity`: Blended semantic similarity (e.g. SimHash + Jaccard) [0, 1].
+    /// - `hamming`: Hamming distance between query fingerprint and fragment (0–64).
     /// - `recency_score`:   Pre-computed Ebbinghaus decay [0, 1].
     /// - `entropy_score`:   Information density [0, 1].
     /// - `frequency_score`: Normalized access count [0, 1].
@@ -219,13 +219,14 @@ impl ContextScorer {
     #[inline]
     pub fn score(
         &self,
-        semantic_similarity: f64,
+        hamming: u32,
         recency_score: f64,
         entropy_score: f64,
         frequency_score: f64,
         feedback_mult: f64,
     ) -> f64 {
-        let raw = self.w_similarity * semantic_similarity
+        let similarity = 1.0 - (hamming as f64 / 64.0);
+        let raw = self.w_similarity  * similarity
                 + self.w_recency    * recency_score
                 + self.w_entropy    * entropy_score
                 + self.w_frequency  * frequency_score;
@@ -298,9 +299,9 @@ mod tests {
         let scorer = ContextScorer::default();
 
         // Perfect match, recent, high entropy, frequent
-        let high = scorer.score(1.0, 1.0, 1.0, 1.0, 1.0);
+        let high = scorer.score(0, 1.0, 1.0, 1.0, 1.0);
         // Distant, old, low entropy, rare
-        let low  = scorer.score(0.0625, 0.01, 0.01, 0.01, 1.0);
+        let low  = scorer.score(60, 0.01, 0.01, 0.01, 1.0);
 
         assert!(high > low, "High-context score ({}) should beat low-context ({})", high, low);
         assert!(high > 0.8, "Perfect match should score > 0.8, got {}", high);

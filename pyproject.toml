@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "0.4.3"
+version = "0.3.0"
 
 description = "Information-theoretic context optimization for AI coding agents. Knapsack-optimal token budgeting, Shannon entropy scoring, SimHash dedup, predictive pre-fetch. MCP server."
 readme = "README.md"
@@ -31,26 +31,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # No hard dependencies — entroly auto-detects:
-    #   1. If entroly-core (Rust) is installed → runs natively (fastest)
-    #   2. If Docker is available → runs in container
-    #   3. Otherwise → helpful error with install instructions
+    # Docker is the only hard requirement — the Rust engine lives inside the image.
+    # For native/fallback mode (ENTROLY_NO_DOCKER=1), also install entroly-core.
 ]
 
 [project.optional-dependencies]
 native = [
     "entroly-core>=0.2.0",
     "mcp>=1.0.0",
-    "psutil",
-]
-memory = [
-    "hippocampus-sharp-memory>=1.0.0",
-]
-full = [
-    "entroly-core>=0.2.0",
-    "mcp>=1.0.0",
-    "hippocampus-sharp-memory>=1.0.0",
-    "psutil",
 ]
 
 [project.urls]

@@ -1,32 +1,24 @@
 {
-  "name": "entroly-mcp",
-  "version": "0.4.0",
-  "description": "Information-theoretic context optimization MCP server for AI coding agents. Bridge package that wraps the Entroly Python engine.",
+  "name": "@ebbiforge/entroly-mcp",
+  "version": "0.2.0",
+  "description": "Information-theoretic context optimization MCP server for AI coding agents.",
   "main": "index.js",
   "bin": {
-    "entroly-mcp": "index.js"
+    "entroly-mcp": "./index.js"
   },
-  "files": [
-    "index.js",
-    "README.md"
-  ],
   "scripts": {
-    "test": "node index.js --help || true"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/juyterman1000/entroly"
   },
-  "homepage": "https://github.com/juyterman1000/entroly",
   "keywords": [
     "mcp",
     "context-optimization",
-    "entroly",
+    "ebbiforge",
     "ai",
-    "agents",
-    "cursor",
-    "claude",
-    "vscode"
+    "agents"
   ],
   "author": "Ebbiforge Team",
   "license": "MIT"

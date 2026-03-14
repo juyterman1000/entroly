@@ -1,186 +1,160 @@
 # Entroly
 
-[![PyPI](https://img.shields.io/pypi/v/entroly)](https://pypi.org/project/entroly/)
-[![CI](https://github.com/juyterman1000/entroly/actions/workflows/ci.yml/badge.svg)](https://github.com/juyterman1000/entroly/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/engine-100%25%20Rust-orange)](entroly-core/)
+**Information-theoretic context optimization for AI coding agents.**
 
-### Your AI coding tool wastes 40–60% of its context window on irrelevant files. Entroly fixes that.
+Every AI coding tool manages context with dumb FIFO truncation — stuffing tokens until the window is full, then cutting from the top. Entroly applies mathematics to select the **optimal** context subset.
 
-When you ask Cursor to "fix the SQL injection bug," it stuffs your context window with README.md, CSS, changelogs, and duplicate boilerplate — then drops the actual database code because it ran out of room.
-
-**Entroly is an MCP server that selects the mathematically optimal subset of context for every query.** Your AI sees the right code, not all the code.
-
-<div align="center">
-  <br/>
-
-  https://github.com/juyterman1000/entroly/raw/main/docs/assets/entroly_demo.mp4
-
-  <p><i>Live engine metrics from <code>entroly demo</code> — real Rust engine, zero mocks.</i></p>
-</div>
-
----
-
-## What You Get
-
-| Metric | Without Entroly | With Entroly |
-|--------|:-:|:-:|
-| **Context relevance** | ~50% (FIFO truncation) | **91%** (knapsack-optimized) |
-| **Cost per API call** | $0.0115 | **$0.0044** (62% savings) |
-| **Duplicate detection** | None | **Automatic** (SimHash) |
-| **Selection speed** | N/A | **320µs** (sub-millisecond) |
-| **Crash recovery** | Lost | **Checkpoint & resume** |
-
-At scale (100K+ files, 128K token budget), these savings compound: more noise to filter = bigger improvement.
-
----
-
-## Quick Start (30 seconds)
-
-```bash
+```
 pip install entroly
-cd your-project
-entroly init        # auto-detects your AI tool, writes mcp.json
-# Restart your AI tool — done.
 ```
 
-> **🐳 Mac / Windows users:** Entroly auto-detects [Docker Desktop](https://docker.com/products/docker-desktop) and runs the Rust engine inside a container — **zero compilation, zero Rust toolchain, just works.** Make sure Docker Desktop is running when you start your AI tool.
+## Architecture
 
-`entroly init` auto-detects **Cursor, VS Code, Windsurf, and Claude Code** and writes the correct MCP config for you. For other MCP clients:
+Hybrid Rust + Python: CPU-intensive math (knapsack DP, entropy, SimHash, LSH, dependency graph) runs in Rust via PyO3 for 50-100x speedup. MCP protocol and orchestration run in Python via FastMCP. Pure Python fallbacks activate automatically if the Rust extension isn't available.
 
-<details>
-<summary>Manual MCP configuration</summary>
+## What It Does
 
-**Claude Code:**
-```bash
-claude mcp add entroly -- entroly serve
-```
+An MCP server that sits between your AI coding tool and the LLM, providing:
 
-**Any MCP client (mcp.json):**
+| Engine | What it does | How it works |
+|--------|-------------|--------------|
+| **Knapsack Optimizer** | Selects mathematically optimal context subset | 0/1 Knapsack DP with budget quantization (N ≤ 2000), greedy fallback (N > 2000) |
+| **Entropy Scorer** | Measures information density per fragment | Shannon entropy (40%) + boilerplate detection (30%) + cross-fragment multi-scale n-gram redundancy (30%) |
+| **SimHash Dedup** | Catches near-duplicate content in O(1) | 64-bit SimHash fingerprints with 4-band LSH bucketing, Hamming threshold = 3 |
+| **Multi-Probe LSH Index** | Sub-linear semantic recall over 100K+ fragments | 12-table LSH with 10-bit sampling + 3-neighbor multi-probe queries |
+| **Dependency Graph** | Pulls in related code fragments together | Symbol table + auto-linking (imports, type refs, function calls) + two-pass knapsack refinement |
+| **Predictive Pre-fetch** | Pre-loads context before the agent asks | Static import analysis + test file inference + learned co-access patterns |
+| **Checkpoint & Resume** | Crash recovery for multi-step tasks | Gzipped JSON state serialization (~100 KB per checkpoint) |
+| **Feedback Loop** | Learns which context leads to good outputs | Wilson score lower-bound confidence intervals (same formula as Reddit ranking) |
+| **Context Ordering** | Orders fragments for optimal LLM attention | Pinned → criticality level → dependency count → relevance score |
+| **Guardrails** | Auto-pins safety-critical files, classifies tasks | Criticality levels (Safety/Critical/Important/Normal) + task-aware budget multipliers |
+| **PRISM Optimizer** | Adapts scoring weights to the codebase | Anisotropic spectral optimization via Jacobi eigendecomposition on 4×4 covariance matrix |
+| **Provenance Chain** | Detects hallucination risk in selected context | Tracks source verification + confidence scoring per fragment |
+
+## Setup
+
+### Cursor
+
+Add to `.cursor/mcp.json`:
+
 ```json
 {
   "mcpServers": {
     "entroly": {
-      "command": "entroly",
-      "args": ["serve"]
+      "command": "entroly"
     }
   }
 }
 ```
 
-**npm (for tools that prefer npx):**
+### Claude Code
+
 ```bash
-npx -y entroly-mcp
-```
-</details>
-
-> **Tip:** Run `entroly demo` to see a side-by-side before/after comparison using the real Rust engine.
-
----
-
-## How It Works
-
-Entroly sits between your AI tool and the LLM as an MCP server. When your agent asks for context, Entroly:
-
-1. **Scores** every code fragment on 4 dimensions (recency, frequency, semantic similarity, information density)
-2. **Deduplicates** via 64-bit SimHash fingerprints — catches near-identical code in O(1)
-3. **Solves the 0/1 Knapsack Problem** to select the optimal subset within your token budget
-4. **Learns** from feedback — fragments that lead to good outputs get boosted next time
-
-All computation runs in **100% Rust** via PyO3. The Python layer only handles MCP protocol and I/O.
-
-```
-Your AI Tool → MCP (JSON-RPC) → Python (FastMCP) → Rust Engine → Optimal Context
-                                                      ↑
-                                              Selection in 320µs
+claude mcp add entroly -- entroly
 ```
 
----
+### Cline / Any MCP Client
+
+```json
+{
+  "entroly": {
+    "command": "entroly",
+    "args": []
+  }
+}
+```
 
 ## MCP Tools
 
-Once `entroly serve` is running, your AI agent has access to these tools:
+### `remember_fragment`
+Store context with auto-dedup, entropy scoring, dependency linking, and criticality detection.
 
-| Tool | What it does |
-|------|-------------|
-| `optimize_context` | Select the optimal context subset for a token budget. **The core tool.** |
-| `remember_fragment` | Store context with auto-dedup, entropy scoring, and security scanning |
-| `recall_relevant` | Semantic search over stored fragments via multi-probe LSH |
-| `record_outcome` | Feed the RL loop: mark fragments as helpful or unhelpful |
-| `explain_context` | See exactly why each fragment was included or excluded |
-| `prefetch_related` | Predict what files will be needed next (import analysis + co-access) |
-| `checkpoint_state` | Save full session state for crash recovery |
-| `resume_state` | Restore from the latest checkpoint |
-| `entroly_dashboard` | Live ROI metrics — cost saved, latency, compression ratio |
-| `get_stats` | Comprehensive session statistics |
-| `scan_fragment` | Security scan (SQL injection, hardcoded secrets, unsafe patterns) |
-| `analyze_health` | Codebase health report (clone detection, dead code, god files) |
+```
+remember_fragment(content="def process_payment(...)...", source="payments.py", token_count=45)
+→ {"status": "ingested", "entropy_score": 0.82}
 
-### Example: optimize_context
+remember_fragment(content="def process_payment(...)...")  # same content
+→ {"status": "duplicate", "duplicate_of": "a1b2c3", "tokens_saved": 45}
+```
+
+### `optimize_context`
+Select the optimal context subset for a token budget. Includes dependency boosting, ε-greedy exploration, context sufficiency scoring, and provenance metadata.
 
 ```
 optimize_context(token_budget=128000, query="fix payment bug")
 → {
-    "selected_fragments": [...],  // The good stuff
+    "selected_fragments": [...],
+    "optimization_stats": {"method": "exact_dp", "budget_utilization": 0.73},
     "tokens_saved_this_call": 42000,
-    "sufficiency": 0.91,         // 91% of referenced symbols included
-    "hallucination_risk": "low",
-    "optimization_stats": {"method": "exact_dp", "budget_utilization": 0.73}
+    "sufficiency": 0.91,
+    "hallucination_risk": "low"
   }
 ```
 
-### Example: entroly_dashboard
+### `recall_relevant`
+Sub-linear semantic recall via multi-probe LSH. Falls back to brute-force scan on cold start.
 
 ```
-entroly_dashboard()
+recall_relevant(query="database connection pooling", top_k=5)
+→ [{"fragment_id": "...", "relevance": 0.87, "content": "..."}]
+```
+
+### `record_outcome`
+Feed the Wilson score feedback loop. Adjusts fragment scoring multipliers in the range [0.5, 2.0].
+
+```
+record_outcome(fragment_ids=["a1b2c3", "d4e5f6"], success=true)
+→ {"status": "recorded", "fragments_updated": 2}
+```
+
+### `explain_context`
+Per-fragment scoring breakdown with sufficiency analysis and exploration swap log.
+
+```
+explain_context()
 → {
-    "money": {
-      "cost_per_call_without_entroly": "$0.0115",
-      "cost_per_call_with_entroly": "$0.0044",
-      "savings_pct": "62%"
-    },
-    "performance": {"avg_optimize_latency": "320µs"},
-    "bloat_prevention": {"context_compression": "39%", "duplicates_caught": 12}
+    "fragments": [{"id": "...", "recency": 0.9, "frequency": 0.3, "semantic": 0.7, "entropy": 0.8}],
+    "sufficiency": 0.91,
+    "exploration_swaps": 1
   }
 ```
 
----
+### `checkpoint_state` / `resume_state`
+Save and restore full session state — fragments, dedup index, co-access patterns, feedback scores.
 
-## Try It (See the Value in 5 Seconds)
+```
+checkpoint_state(task_description="Refactoring auth module", current_step="Step 5/8")
+→ {"status": "checkpoint_saved", "fragments_saved": 47}
 
-```bash
-pip install entroly
-entroly demo
+resume_state()
+→ {"status": "resumed", "restored_fragments": 47, "metadata": {"step": "Step 5/8"}}
 ```
 
-This runs a simulated coding session (fixing a SQL injection bug) and shows you side-by-side what happens with and without Entroly. Uses the real Rust engine — zero mocks.
+### `prefetch_related`
+Predict and pre-load likely-needed context using import analysis, test file inference, and co-access history.
 
----
+```
+prefetch_related(file_path="src/payments.py", source_content="from utils import...")
+→ [{"path": "src/utils.py", "reason": "import", "confidence": 0.70}]
+```
 
-## Architecture
+### `get_stats`
+Session statistics and cost savings.
 
-**Hybrid Rust + Python.** CPU-intensive math runs in Rust via PyO3 for 50-100x speedup. MCP protocol and orchestration run in Python via FastMCP.
+```
+get_stats()
+→ {
+    "fragments": 142,
+    "total_tokens": 384000,
+    "savings": {
+      "total_tokens_saved": 284000,
+      "total_duplicates_caught": 12,
+      "estimated_cost_saved_usd": 0.85
+    }
+  }
+```
 
-| Component | What it does | How |
-|-----------|-------------|-----|
-| **Knapsack Optimizer** | Selects optimal context subset | Exact DP (N ≤ 2000) or greedy (N > 2000) |
-| **Entropy Scorer** | Measures information density | Shannon entropy + boilerplate + cross-fragment redundancy |
-| **SimHash Dedup** | Catches near-duplicates in O(1) | 64-bit fingerprints, Hamming threshold ≤ 3 |
-| **Multi-Probe LSH** | Sub-linear semantic recall | 12-table LSH with multi-probe queries |
-| **Dependency Graph** | Pulls related code together | Symbol table + import/type/call linking |
-| **PRISM Optimizer** | Adapts weights to your codebase | Anisotropic spectral optimization (4×4 covariance) |
-| **Feedback Loop** | Learns from outcomes | Wilson score confidence intervals |
-| **Predictive Pre-fetch** | Pre-loads likely context | Import analysis + co-access patterns |
-| **Long-Term Memory** | Cross-session recall | Ebbinghaus decay + salience boosting |
-| **Security Scanner** | Finds vulnerabilities | Pattern-based SAST (SQL injection, secrets, unsafe) |
-| **Health Analyzer** | Codebase quality metrics | Clone detection, dead symbols, god files |
-
----
-
-## The Math (For the Curious)
-
-<details>
-<summary>Click to expand the mathematical foundations</summary>
+## The Math
 
 ### Multi-Dimensional Relevance Scoring
 
@@ -197,17 +171,51 @@ Default weights: recency 0.30, frequency 0.25, semantic 0.25, entropy 0.20.
 - **Recency**: Ebbinghaus forgetting curve — `exp(-ln(2) × Δt / half_life)`, half_life = 15 turns
 - **Frequency**: Normalized access count (spaced repetition boost)
 - **Semantic similarity**: SimHash Hamming distance to query, normalized to [0, 1]
-- **Information density**: Shannon entropy + boilerplate + redundancy
+- **Information density**: Shannon entropy + boilerplate + redundancy (see below)
 
 ### Knapsack Context Selection
+
+Context selection is the 0/1 Knapsack Problem:
 
 ```
 Maximize:   Σ r(fᵢ) · x(fᵢ)     for selected fragments
 Subject to: Σ c(fᵢ) · x(fᵢ) ≤ B  (token budget)
 ```
 
+**Two strategies** based on fragment count:
 - **N ≤ 2000**: Exact DP with budget quantization into 1000 bins — O(N × 1000)
 - **N > 2000**: Greedy density sort — O(N log N), Dantzig 0.5-optimality guarantee
+
+Pinned fragments (safety-critical files, config files) are always included; remaining budget is allocated via DP/greedy.
+
+### Shannon Entropy Scoring
+
+Three components combined:
+
+```
+score = 0.40 × normalized_entropy + 0.30 × (1 - boilerplate_ratio) + 0.30 × (1 - redundancy)
+```
+
+- **Shannon entropy** (40%): `H = -Σ p(char) · log₂(p(char))`, normalized by 6.0 bits/char. Stack-allocated 256-byte histogram, single O(n) pass.
+- **Boilerplate detection** (30%): Pattern matching for imports, pass, dunder methods, closing delimiters.
+- **Cross-fragment redundancy** (30%): Multi-scale n-gram overlap with adaptive weights by fragment length — bigram-heavy for short fragments (<20 words), 4-gram-heavy for long fragments (>100 words). Parallelized with rayon.
+
+### SimHash Deduplication
+
+64-bit fingerprints from word trigrams hashed via MD5:
+- Hamming distance ≤ 3 → near-duplicate
+- 4-band LSH bucketing for O(1) candidate lookup
+- Separate 12-table multi-probe LSH index for semantic recall (~3 μs over 100K fragments)
+
+### Dependency Graph
+
+Auto-linking via source analysis:
+- **Imports** (strength 1.0): Python `from X import Y`, Rust `use`, JS `import`
+- **Type references** (0.9): Type annotations, isinstance checks
+- **Function calls** (0.7): General identifier usage matching against symbol table
+- **Same module** (0.5): Co-located definitions
+
+Two-pass knapsack refinement: initial selection → boost dependencies of selected fragments → re-optimize.
 
 ### Task-Aware Budget Multipliers
 
@@ -215,16 +223,14 @@ Subject to: Σ c(fᵢ) · x(fᵢ) ≤ B  (token budget)
 Bug tracing / debugging     → 1.5× budget
 Exploration / understanding → 1.3× budget
 Refactoring / code review   → 1.0× budget
+Testing                     → 0.8× budget
 Code generation             → 0.7× budget
+Documentation               → 0.6× budget
 ```
 
 ### PRISM Spectral Optimizer
 
-Tracks a 4×4 covariance matrix with EMA updates (β=0.95). Jacobi eigendecomposition finds principal axes. Anisotropic spectral gain dampens noisy dimensions — automatic learning rate adaptation without hyperparameter tuning.
-
-</details>
-
----
+Tracks a 4×4 covariance matrix over scoring dimensions [recency, frequency, semantic, entropy] with EMA updates (β=0.95). Jacobi eigendecomposition finds principal axes. Anisotropic spectral gain dampens noisy dimensions and amplifies clean signals — automatic learning rate adaptation without hyperparameter tuning.
 
 ## Configuration
 
@@ -240,34 +246,27 @@ EntrolyConfig(
     min_relevance_threshold=0.05,     # auto-evict below this
     dedup_similarity_threshold=0.92,
     prefetch_depth=2,
+    max_prefetch_fragments=10,
     auto_checkpoint_interval=5,       # checkpoint every N tool calls
 )
 ```
 
----
-
-## Build from Source
-
-If you want the Rust engine locally (instead of Docker):
-
-```bash
-git clone https://github.com/juyterman1000/entroly
-cd entroly
-pip install maturin
-cd entroly-core && maturin develop --release && cd ..
-pip install -e ".[native]"
-entroly init
-```
-
----
-
 ## References
 
-Shannon (1948) • Charikar (2002) SimHash • Ebbinghaus (1885) Forgetting Curve • Dantzig (1957) Greedy Knapsack • Wilson (1927) Score Intervals • ICPC (2025) Prompt Compression • Proximity (2025) LSH Caching • RCC (ICLR 2025) Context Compression
+- Shannon (1948) — Information Theory
+- Charikar (2002) — SimHash
+- Ebbinghaus (1885) — Forgetting Curve
+- Dantzig (1957) — Greedy Knapsack Approximation
+- Wilson (1927) — Score Confidence Intervals
+- ICPC (arXiv 2025) — In-context Prompt Compression
+- Proximity (arXiv 2026) — LSH-bucketed Semantic Caching
+- RCC (ICLR 2025) — Recurrent Context Compression
+- ILRe (ICLR 2026) — Intermediate Layer Retrieval
+- Agentic Plan Caching (arXiv 2025)
 
 ## Part of the Ebbiforge Ecosystem
 
-Entroly integrates with [hippocampus-sharp-memory](https://pypi.org/project/hippocampus-sharp-memory/) for persistent memory and [Ebbiforge](https://pypi.org/project/ebbiforge/) for TF embeddings. Both are optional — Entroly works standalone.
+Entroly integrates with [hippocampus-sharp-memory](https://pypi.org/project/hippocampus-sharp-memory/) for persistent memory and [Ebbiforge](https://pypi.org/project/ebbiforge/) for TF embeddings and RL weight learning. Both are optional — Entroly works standalone with pure Python fallbacks.
 
 ## License
 

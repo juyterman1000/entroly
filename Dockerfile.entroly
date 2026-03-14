@@ -1,5 +1,4 @@
 # Stage 1: Build Rust extension — python:3.12 base ensures cp312 wheel ABI match
-# Works on: Linux x86_64, ARM64 (Apple Silicon, AWS Graviton), Windows/macOS via Docker Desktop
 FROM python:3.12 AS builder
 
 WORKDIR /build
@@ -22,42 +21,26 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install Rust wheel + MCP SDK + psutil (idle CPU detection for autotune daemon)
+# Install the cp312 Rust wheel and runtime deps
 COPY --from=builder /build/wheels/*.whl /tmp/wheels/
-RUN pip install --no-cache-dir /tmp/wheels/*.whl "mcp>=1.0.0" psutil \
+RUN pip install --no-cache-dir /tmp/wheels/*.whl "mcp>=1.0.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" \
     && rm -rf /tmp/wheels
 
-# ── Python package ────────────────────────────────────────────────────────────
-# Full entroly package — all source files
-COPY entroly/ /app/entroly/
+# Copy entroly Python package (flat layout: entroly/*.py → /app/entroly/)
+COPY entroly/__init__.py entroly/server.py entroly/cli.py \
+     entroly/config.py entroly/checkpoint.py entroly/prefetch.py \
+     entroly/query_refiner.py entroly/provenance.py entroly/multimodal.py \
+     entroly/adaptive_pruner.py entroly/auto_index.py entroly/autotune.py \
+     entroly/benchmark_harness.py entroly/_docker_launcher.py \
+     entroly/long_term_memory.py \
+     entroly/proxy.py entroly/proxy_config.py entroly/proxy_transform.py \
+     /app/entroly/
+COPY entroly/tuning_config.json /app/entroly/
 COPY pyproject.toml /app/
 COPY README.md /app/
 
-# ── Autotune system ───────────────────────────────────────────────────────────
-# bench/ = evaluation harness + cases.json + autotune loop
-COPY bench/ /app/bench/
-
-# tuning_strategies/ = recipe files (balanced/latency/monorepo/quality)
-COPY tuning_strategies/ /app/tuning_strategies/
-
-# tuning_config.json = live config mutated by the autotuner
-COPY entroly/tuning_config.json /app/
-
-# ── Tests ─────────────────────────────────────────────────────────────────────
-# Included so 'docker run entroly pytest tests/' works for CI validation
-COPY tests/ /app/tests/
-
-# ── NPM wrapper (for Cursor/VSCode MCP integration) ──────────────────────────
-COPY npm/ /app/npm/
-
-# ── Demo scripts ─────────────────────────────────────────────────────────────
-COPY examples/ /app/examples/
-
-# ── Environment ───────────────────────────────────────────────────────────────
-# Make entroly and bench importable as packages
+# Make the entroly package importable
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Default: run as MCP server (stdio JSON-RPC)
-# The autotune daemon starts automatically (idle-only, nice+10, safe for 16GB machines)
 ENTRYPOINT ["python", "-m", "entroly.server"]

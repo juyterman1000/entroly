@@ -140,7 +140,7 @@ def auto_index(
     project_dir = os.path.abspath(project_dir)
 
     # Skip if engine already has fragments (loaded from persistent index)
-    if not force:
+    if not force and engine._use_rust:
         existing = engine._rust.fragment_count()
         if existing > 0:
             logger.info(
@@ -211,6 +211,15 @@ def auto_index(
         total_tokens += tokens
 
     elapsed = time.perf_counter() - t0
+
+    # Build dependency graph from import analysis
+    if engine._use_rust and indexed > 0:
+        try:
+            # Trigger a lightweight optimize to build the dep graph
+            # (dep graph is built during optimize, not ingest)
+            engine.optimize_context(token_budget=1, query="")
+        except Exception:
+            pass  # Non-critical, dep graph will build on first real optimize
 
     logger.info(
         f"Auto-indexed {indexed} files ({total_tokens:,} tokens) "
