@@ -451,6 +451,14 @@ def create_proxy_app(
     """Create the Starlette ASGI app for the prompt compiler proxy."""
     proxy = PromptCompilerProxy(engine, config)
 
+    # Auto-start the live value dashboard alongside the proxy
+    try:
+        from .dashboard import start_dashboard
+        start_dashboard(engine=engine, port=9378, daemon=True)
+        logger.info("Value dashboard live at http://localhost:9378")
+    except Exception as e:
+        logger.warning(f"Dashboard failed to start: {e}")
+
     app = Starlette(
         routes=[
             Route("/v1/chat/completions", proxy.handle_proxy, methods=["POST"]),

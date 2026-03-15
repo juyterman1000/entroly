@@ -213,15 +213,14 @@ def cmd_serve(args):
 
 
 def cmd_dashboard(args):
-    """entroly dashboard — show value metrics from current session."""
+    """entroly dashboard — launch live web dashboard at localhost:9378."""
     from entroly.server import EntrolyEngine
     from entroly.auto_index import auto_index
+    from entroly.dashboard import start_dashboard
 
-    print(f"\n{C.CYAN}{C.BOLD}  🔬 Entroly Dashboard{C.RESET}\n")
+    print(f"\n{C.CYAN}{C.BOLD}  ⚡ Entroly Value Dashboard{C.RESET}\n")
 
     engine = EntrolyEngine()
-
-    # Auto-index current project
     result = auto_index(engine, force=args.force)
 
     if result["status"] == "indexed":
@@ -229,39 +228,116 @@ def cmd_dashboard(args):
     elif result["status"] == "skipped":
         print(f"  {C.GRAY}Using persistent index ({result['existing_fragments']} fragments){C.RESET}")
 
-    # Run an optimize to build stats
+    # Run an optimize to populate all engine subsystems
     engine.optimize_context(token_budget=128000, query="project overview")
 
-    # Get stats
-    stats = engine.get_stats()
-    perf = stats.get("performance", {})
-    mem = stats.get("memory", {})
-    savings = stats.get("savings", {})
-    session = stats.get("session", {})
+    # Start web dashboard
+    start_dashboard(engine=engine, port=args.port, daemon=False)
+    print(f"\n  {C.GREEN}{C.BOLD}Dashboard live at http://localhost:{args.port}{C.RESET}")
+    print(f"  {C.GRAY}Showing: tokens saved, PRISM weights, health grade, SAST, dep graph, knapsack decisions{C.RESET}")
+    print(f"  {C.GRAY}Press Ctrl+C to stop{C.RESET}\n")
 
-    print(f"""
-  {C.BOLD}💰 Cost Analysis{C.RESET}
-     Naive cost/call:     ${mem.get('naive_cost_per_call_usd', 0):.4f}
-     Optimized cost/call: ${mem.get('optimized_cost_per_call_usd', 0):.4f}
-     {C.GREEN}Savings:             {((1 - mem.get('optimized_cost_per_call_usd', 0) / max(mem.get('naive_cost_per_call_usd', 0), 0.0001)) * 100):.0f}% per API call{C.RESET}
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print(f"\n  {C.GRAY}Dashboard stopped.{C.RESET}")
 
-  {C.BOLD}⚡ Performance{C.RESET}
-     Optimize latency:    {perf.get('avg_optimize_us', 0):.0f}µs ({perf.get('avg_optimize_us', 0)/1000:.2f}ms)
-     Context compression: {perf.get('context_compression', 0):.1%}
 
-  {C.BOLD}🧠 Codebase{C.RESET}
-     Fragments tracked:   {session.get('total_fragments', 0)}
-     Total tokens:        {session.get('total_tokens_tracked', 0):,}
-     Memory footprint:    {mem.get('total_kb', 0)} KB
-     Avg entropy:         {session.get('avg_entropy', 0):.4f}
-""")
+def cmd_health(args):
+    """entroly health — analyze codebase health."""
+    import json as _json
+    from entroly.server import EntrolyEngine
+    from entroly.auto_index import auto_index
+
+    print(f"\n{C.CYAN}{C.BOLD}  🏥 Entroly Health Analysis{C.RESET}\n")
+
+    engine = EntrolyEngine()
+    result = auto_index(engine)
+
+    if result["status"] == "indexed":
+        print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({result['total_tokens']:,} tokens){C.RESET}")
+
+    # Run optimize to build dep graph
+    engine.optimize_context(token_budget=128000, query="")
+
+    # Get health report
+    if engine._use_rust:
+        health = _json.loads(engine._rust.analyze_health())
+        grade = health.get("health_grade", "?")
+        score = health.get("code_health_score", 0)
+
+        grade_colors = {"A": C.GREEN, "B": C.GREEN, "C": C.YELLOW, "D": C.RED, "F": C.RED}
+        gc = grade_colors.get(grade, C.GRAY)
+
+        print(f"\n  {C.BOLD}Code Health:{C.RESET}  {gc}{C.BOLD}{grade}{C.RESET} ({score}/100)\n")
+
+        items = [
+            ("Clone pairs", health.get("clone_pairs", [])),
+            ("Dead symbols", health.get("dead_symbols", [])),
+            ("God files", health.get("god_files", [])),
+            ("Arch violations", health.get("arch_violations", [])),
+            ("Naming issues", health.get("naming_issues", [])),
+        ]
+        for name, lst in items:
+            count = len(lst) if isinstance(lst, list) else 0
+            color = C.GREEN if count == 0 else C.YELLOW if count < 5 else C.RED
+            print(f"  {color}{'✓' if count == 0 else '!'} {name}: {count}{C.RESET}")
+            if count > 0 and args.verbose:
+                for item in lst[:5]:
+                    detail = item if isinstance(item, str) else str(item)
+                    print(f"    {C.GRAY}→ {detail[:80]}{C.RESET}")
+
+        rec = health.get("top_recommendation")
+        if rec:
+            print(f"\n  {C.YELLOW}💡 {rec}{C.RESET}")
+
+        # Security summary
+        sec = _json.loads(engine._rust.security_report())
+        total_findings = sec.get("critical_total", 0) + sec.get("high_total", 0)
+        if total_findings > 0:
+            print(f"\n  {C.RED}🛡️ {total_findings} security findings ({sec.get('critical_total', 0)} critical, {sec.get('high_total', 0)} high){C.RESET}")
+            if sec.get("most_vulnerable_fragment"):
+                print(f"    {C.GRAY}Most vulnerable: {sec['most_vulnerable_fragment']}{C.RESET}")
+        else:
+            print(f"\n  {C.GREEN}🛡️ No security vulnerabilities detected{C.RESET}")
+
+    print()
+
+
+def cmd_autotune(args):
+    """entroly autotune — optimize engine hyperparameters."""
+    print(f"\n{C.CYAN}{C.BOLD}  🎛️ Entroly Autotune{C.RESET}\n")
+    print(f"  {C.GRAY}Running {args.iterations} iterations of mutation-based optimization...{C.RESET}\n")
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bench"))
+    try:
+        from bench.autotune import run_autotune
+        result = run_autotune(iterations=args.iterations)
+        print(f"\n  {C.GREEN}{C.BOLD}Best efficiency: {result.get('best_efficiency', 0):.4f}{C.RESET}")
+        print(f"  {C.GRAY}Config saved to tuning_config.json{C.RESET}\n")
+    except ImportError:
+        # Fallback: run the script directly
+        os.system(f"python3 {os.path.join(os.path.dirname(__file__), '..', 'bench', 'autotune.py')} --iterations {args.iterations}")
+
+
+def cmd_benchmark(args):
+    """entroly benchmark — run competitive comparison."""
+    print(f"\n{C.CYAN}{C.BOLD}  📊 Entroly Competitive Benchmark{C.RESET}\n")
+
+    bench_script = os.path.join(os.path.dirname(__file__), "..", "bench", "compare.py")
+    if os.path.exists(bench_script):
+        os.system(f"python3 {bench_script}")
+    else:
+        print(f"  {C.RED}Benchmark script not found at {bench_script}{C.RESET}")
 
 
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="entroly",
-        description="🔬 Entroly — Information-theoretic context optimization for AI coding agents",
+        description="⚡ Entroly — Information-theoretic context optimization for AI coding agents",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -276,7 +352,7 @@ def main():
     )
 
     # entroly serve
-    serve_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "serve",
         help="Start the MCP server with auto-indexing",
     )
@@ -284,11 +360,41 @@ def main():
     # entroly dashboard
     dash_parser = subparsers.add_parser(
         "dashboard",
-        help="Show live value metrics for current project",
+        help="Launch live web dashboard showing all engine metrics",
     )
     dash_parser.add_argument(
         "--force", action="store_true",
         help="Force re-index even if persistent index exists",
+    )
+    dash_parser.add_argument(
+        "--port", type=int, default=9378,
+        help="Dashboard port (default: 9378)",
+    )
+
+    # entroly health
+    health_parser = subparsers.add_parser(
+        "health",
+        help="Analyze codebase health (grade A–F, clones, dead code, SAST)",
+    )
+    health_parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show details for each finding",
+    )
+
+    # entroly autotune
+    autotune_parser = subparsers.add_parser(
+        "autotune",
+        help="Optimize engine hyperparameters via mutation-based search",
+    )
+    autotune_parser.add_argument(
+        "--iterations", type=int, default=50,
+        help="Number of optimization iterations (default: 50)",
+    )
+
+    # entroly benchmark
+    subparsers.add_parser(
+        "benchmark",
+        help="Run competitive benchmark: Entroly vs Raw vs Top-K",
     )
 
     args = parser.parse_args()
@@ -299,10 +405,16 @@ def main():
         cmd_serve(args)
     elif args.command == "dashboard":
         cmd_dashboard(args)
+    elif args.command == "health":
+        cmd_health(args)
+    elif args.command == "autotune":
+        cmd_autotune(args)
+    elif args.command == "benchmark":
+        cmd_benchmark(args)
     else:
-        # Default: if no subcommand, run serve (backward compat)
-        cmd_serve(args)
+        parser.print_help()
 
 
 if __name__ == "__main__":
     main()
+
