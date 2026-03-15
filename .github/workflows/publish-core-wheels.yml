@@ -1,7 +1,8 @@
 name: Publish entroly-core wheels to PyPI
 
 # Builds native Python wheels and publishes to PyPI on release tags.
-# Covers Linux x86_64 (manylinux), macOS native, and Windows x86_64.
+# Uses direct maturin shell commands (not maturin-action) to avoid the
+# repo-root pyproject.toml / build-backend confusion.
 
 on:
   push:
@@ -13,17 +14,20 @@ jobs:
   build-linux:
     name: Build wheels (Linux x86_64)
     runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
     steps:
       - uses: actions/checkout@v4
-      - name: Build manylinux wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: x86_64
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml
-          manylinux: auto
+      - name: Install Rust
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      - name: Build manylinux wheel
+        run: |
+          source $HOME/.cargo/env
+          pip3 install maturin
+          cd entroly-core
+          maturin build --release --out ../dist
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-x86_64
+          name: wheels-linux
           path: dist
 
   build-macos:
@@ -31,11 +35,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      # Let maturin auto-detect the native macOS target (no explicit target arg)
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wheel
+        run: |
+          pip3 install maturin
+          cd entroly-core
+          maturin build --release --out ../dist
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-macos
@@ -46,14 +51,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: x86_64
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wheel
+        shell: bash
+        run: |
+          pip install maturin
+          cd entroly-core
+          maturin build --release --out ../dist
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-windows-x86_64
+          name: wheels-windows
           path: dist
 
   publish-to-pypi:
