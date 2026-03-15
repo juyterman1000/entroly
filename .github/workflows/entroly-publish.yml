@@ -54,6 +54,7 @@ jobs:
   publish-pypi:
     needs: build-and-push
     runs-on: ubuntu-latest
+    environment: pypi
     permissions:
       id-token: write
       contents: read
@@ -71,15 +72,12 @@ jobs:
 
       - name: Update version in pyproject.toml
         run: |
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.VERSION }}\"/" entroly/pyproject.toml
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.VERSION }}\"/" pyproject.toml
 
       - name: Build PyPI package
         run: |
           pip install build
-          cd entroly && python -m build
+          python -m build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: entroly/dist/
-          password: ${{ secrets.PYPI_TOKEN }}
