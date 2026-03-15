@@ -1,8 +1,8 @@
 name: Publish entroly-core wheels to PyPI
 
 # Builds native Python wheels and publishes to PyPI on release tags.
-# Uses direct maturin shell commands (not maturin-action) to avoid the
-# repo-root pyproject.toml / build-backend confusion.
+# Uses PyO3/maturin-action which handles manylinux, Python discovery,
+# and cross-compilation internally.
 
 on:
   push:
@@ -12,65 +12,67 @@ on:
 
 jobs:
   build-linux:
-    name: Build wheels (Linux x86_64)
+    name: Linux wheels
     runs-on: ubuntu-latest
-    container: quay.io/pypa/manylinux_2_28_x86_64
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-      - name: Build manylinux wheel
-        run: |
-          source $HOME/.cargo/env
-          pip3 install maturin
-          cd entroly-core
-          maturin build --release --out ../dist
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          command: build
+          args: --release --out dist
+          manylinux: auto
+          working-directory: entroly-core
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux
-          path: dist
+          name: wheels-linux-${{ matrix.target }}
+          path: entroly-core/dist
 
   build-macos:
-    name: Build wheels (macOS)
+    name: macOS wheels
     runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build wheel
-        run: |
-          pip3 install maturin
-          cd entroly-core
-          maturin build --release --out ../dist
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          command: build
+          args: --release --out dist
+          working-directory: entroly-core
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos
-          path: dist
+          name: wheels-macos-${{ matrix.target }}
+          path: entroly-core/dist
 
   build-windows:
-    name: Build wheels (Windows x86_64)
+    name: Windows wheels
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build wheel
-        shell: bash
-        run: |
-          pip install maturin
-          cd entroly-core
-          maturin build --release --out ../dist
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          command: build
+          args: --release --out dist
+          working-directory: entroly-core
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-windows
-          path: dist
+          path: entroly-core/dist
 
   publish-to-pypi:
-    name: Publish entroly-core to PyPI
+    name: Publish to PyPI
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/entroly-v')
     permissions:
       id-token: write
-
     steps:
       - name: Download all wheels
         uses: actions/download-artifact@v4
@@ -78,10 +80,6 @@ jobs:
           pattern: wheels-*
           merge-multiple: true
           path: dist
-
-      - name: List wheels
-        run: ls -la dist/
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
