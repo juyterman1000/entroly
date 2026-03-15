@@ -32,14 +32,14 @@
     "initial_residual_lambda": 0.1
   },
   "ios": {
-    "skeleton_info_factor": 0.70,
+    "skeleton_info_factor": 0.7,
     "reference_info_factor": 0.15,
-    "diversity_floor": 0.10,
+    "diversity_floor": 0.1,
     "_comment": "MRK info retention factors and SDS diversity floor. Tunable by autotune."
   },
   "ecdb": {
     "min_budget": 500,
-    "max_fraction": 0.30,
+    "max_fraction": 0.3,
     "sigmoid_steepness": 3.0,
     "sigmoid_base": 0.5,
     "sigmoid_range": 1.5,

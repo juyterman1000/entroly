@@ -780,15 +780,15 @@ def create_mcp_server():
         except Exception as e:
             logger.warning(f"Failed to load tuning_config.json: {e}")
 
-    engine = EntrolyEngine(
-        w_recency=_tuning_cfg.get("weight_recency", 0.30),
-        w_frequency=_tuning_cfg.get("weight_frequency", 0.25),
-        w_semantic=_tuning_cfg.get("weight_semantic_sim", 0.25),
-        w_entropy=_tuning_cfg.get("weight_entropy", 0.20),
-        decay_half_life=_tuning_cfg.get("decay_half_life_turns", 15),
-        min_relevance=_tuning_cfg.get("min_relevance_threshold", 0.05),
-        exploration_rate=_tuning_cfg.get("exploration_rate", 0.1),
+    _config = EntrolyConfig(
+        weight_recency=_tuning_cfg.get("weight_recency", 0.30),
+        weight_frequency=_tuning_cfg.get("weight_frequency", 0.25),
+        weight_semantic_sim=_tuning_cfg.get("weight_semantic_sim", 0.25),
+        weight_entropy=_tuning_cfg.get("weight_entropy", 0.20),
+        decay_half_life_turns=_tuning_cfg.get("decay_half_life_turns", 15),
+        min_relevance_threshold=_tuning_cfg.get("min_relevance_threshold", 0.05),
     )
+    engine = EntrolyEngine(config=_config)
 
     @mcp.tool()
     def remember_fragment(
