@@ -1405,6 +1405,9 @@ def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
     """
     Spawn the autotune loop as a daemon background thread.
 
+    Dynamic tuning: weights are hot-reloaded into the running engine
+    after each improvement round — no restart needed.
+
     Daemon threads die automatically when the MCP server exits — no cleanup
     needed. Runs at idle CPU priority so it never interferes with foreground
     tool calls.
@@ -1417,7 +1420,7 @@ def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
     from pathlib import Path
 
     # Check if autotuning is enabled in tuning_config.json
-    config_path = Path(__file__).parent.parent / "tuning_config.json"
+    config_path = Path(__file__).parent.parent / "bench" / "tuning_config.json"
     enabled = True
     if config_path.exists():
         try:
@@ -1431,7 +1434,28 @@ def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
         logger.info("Autotune: disabled via tuning_config.json")
         return
 
+    def _hot_reload_weights():
+        """Read tuning_config.json and push weights into the live engine."""
+        try:
+            import json as _json
+            cfg = _json.loads(config_path.read_text())
+            w_r = cfg.get("weight_recency", 0.30)
+            w_f = cfg.get("weight_frequency", 0.25)
+            w_s = cfg.get("weight_semantic_sim", 0.25)
+            w_e = cfg.get("weight_entropy", 0.20)
+            if engine._use_rust:
+                engine._rust.set_weights(w_r, w_f, w_s, w_e)
+                logger.info(
+                    f"Autotune: hot-reloaded weights → "
+                    f"R={w_r:.2f} F={w_f:.2f} S={w_s:.2f} E={w_e:.2f}"
+                )
+            return True
+        except Exception as e:
+            logger.warning(f"Autotune: hot-reload failed: {e}")
+            return False
+
     def _daemon_loop():
+        import time
         # Lower this thread's OS scheduling priority (nice +10 on Linux)
         try:
             os.nice(10)
@@ -1440,9 +1464,16 @@ def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
 
         try:
             from .autotune import run_autotune
-            logger.info("Autotune: background self-tuning started (low priority)")
-            # Run forever — daemon thread dies when MCP server exits
-            run_autotune(max_iterations=None)
+            logger.info("Autotune: background self-tuning started (dynamic, low priority)")
+
+            # Run in rounds of 10 iterations, hot-reload after each round
+            while True:
+                try:
+                    run_autotune(iterations=10, bench_only=False)
+                    _hot_reload_weights()
+                except Exception as e:
+                    logger.warning(f"Autotune round failed: {e}")
+                time.sleep(30)  # 30s cooldown between rounds
         except Exception as e:
             logger.warning("Autotune: background thread exited: %s", e)
 

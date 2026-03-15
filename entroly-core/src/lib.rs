@@ -874,6 +874,28 @@ impl EntrolyEngine {
         self.fragments.len()
     }
 
+    /// Hot-reload scoring weights mid-session (autotune live update).
+    /// Normalizes to sum=1.0 and clamps to [0.05, 0.80].
+    pub fn set_weights(&mut self, w_recency: f64, w_frequency: f64, w_semantic: f64, w_entropy: f64) {
+        self.w_recency = w_recency.clamp(0.05, 0.80);
+        self.w_frequency = w_frequency.clamp(0.05, 0.80);
+        self.w_semantic = w_semantic.clamp(0.05, 0.80);
+        self.w_entropy = w_entropy.clamp(0.05, 0.80);
+        // Normalize to sum=1.0
+        let sum = self.w_recency + self.w_frequency + self.w_semantic + self.w_entropy;
+        if sum > 0.0 {
+            self.w_recency /= sum;
+            self.w_frequency /= sum;
+            self.w_semantic /= sum;
+            self.w_entropy /= sum;
+        }
+        // Sync to context scorer (uses different field names)
+        self.context_scorer.w_recency = self.w_recency;
+        self.context_scorer.w_frequency = self.w_frequency;
+        self.context_scorer.w_similarity = self.w_semantic;
+        self.context_scorer.w_entropy = self.w_entropy;
+    }
+
     /// Record that the selected fragments led to a successful output.
     /// This feeds the reinforcement learning loop.
     pub fn record_success(&mut self, fragment_ids: Vec<String>) {
