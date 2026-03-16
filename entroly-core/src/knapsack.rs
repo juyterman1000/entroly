@@ -204,7 +204,70 @@ pub fn knapsack_optimize(
     KnapsackResult { selected_indices: selected, total_tokens, total_relevance, method, lambda_star }
 }
 
-// ── Soft bisection selector ───────────────────────────────────────────────────
+// ── Public bisection helper ───────────────────────────────────────────────────
+
+/// Compute only the Lagrange dual variable λ* for a given budget target.
+///
+/// This is the pure bisection step, decoupled from selection. Callers that
+/// use a different selection mechanism (e.g. IOS submodular greedy) can call
+/// this after selection to get the λ* that makes the sigmoid model consistent
+/// with the actual selection:
+///
+///   Find λ* ≥ 0 s.t. Σᵢ σ((sᵢ − λ*·tokensᵢ) / τ) · tokensᵢ = budget_target
+///
+/// The result is a meaningful proxy for IOS inclusion probability:
+/// fragments with high σ((sᵢ − λ*·tokensᵢ)/τ) are the ones the sigmoid model
+/// "expected" to be included given the actual budget consumed by IOS.
+///
+/// # Arguments
+/// - `scored`: (fragment_idx, linear_score) pairs for all candidates
+/// - `fragments`: fragment slice (for token counts)
+/// - `budget_target`: typically the *actual* tokens used by IOS (not the full budget)
+/// - `temperature`: current gradient temperature τ
+///
+/// Returns 0.0 if temperature < 0.05 (hard sel) or if all items fit (λ* = 0).
+pub fn compute_lambda_star(
+    scored: &[(usize, f64)],
+    fragments: &[ContextFragment],
+    budget_target: u32,
+    temperature: f64,
+) -> f64 {
+    if temperature < 0.05 || scored.is_empty() || budget_target == 0 {
+        return 0.0;
+    }
+    let tau = temperature.max(1e-4);
+    let budget_f = budget_target as f64;
+
+    let expected_tokens = |lambda: f64| -> f64 {
+        scored.iter().map(|&(idx, score)| {
+            let tc = fragments[idx].token_count as f64;
+            sigmoid((score - lambda * tc) / tau) * tc
+        }).sum()
+    };
+
+    // Fast path: all items fit at λ=0.
+    if expected_tokens(0.0) <= budget_f {
+        return 0.0;
+    }
+
+    let max_score = scored.iter().map(|&(_, s)| s).fold(f64::NEG_INFINITY, f64::max);
+    let min_tokens = scored.iter()
+        .map(|&(idx, _)| fragments[idx].token_count as f64)
+        .fold(f64::INFINITY, f64::min)
+        .max(1.0);
+    let mut hi = (max_score + 5.0 * tau) / (min_tokens * tau).max(1e-10);
+    let mut iters = 0;
+    while expected_tokens(hi) >= budget_f && iters < 60 { hi *= 2.0; iters += 1; }
+    if expected_tokens(hi) >= budget_f { return 0.0; }
+
+    let mut lo = 0.0_f64;
+    for _ in 0..30 {
+        let mid = (lo + hi) * 0.5;
+        if expected_tokens(mid) > budget_f { lo = mid; } else { hi = mid; }
+    }
+    (lo + hi) * 0.5
+}
+
 
 /// Differentiable forward selector using exact Lagrange dual bisection.
 ///

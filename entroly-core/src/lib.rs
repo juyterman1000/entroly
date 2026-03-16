@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 
 use fragment::{ContextFragment, compute_relevance};
-use knapsack::{knapsack_optimize, ScoringWeights};
+use knapsack::{knapsack_optimize, compute_lambda_star, ScoringWeights};
 use knapsack_sds::{ios_select, Resolution, InfoFactors};
 use entropy::{information_score, shannon_entropy, normalized_entropy, boilerplate_ratio};
 use dedup::{simhash, hamming_distance, DedupIndex};
@@ -501,6 +501,31 @@ impl EntrolyEngine {
                     final_indices.iter().map(|&i| frags[i].token_count).sum::<u32>()
                 );
                 ios_diversity_score = Some(ios_result.diversity_score);
+
+                // ── IOS-consistent λ* for REINFORCE backward pass ──────────────────
+                // IOS uses submodular greedy selection — a different mechanism than knapsack.
+                // Re-run bisection with the actual IOS token usage as the budget target:
+                //   Find λ_ios s.t. Σ σ((sᵢ − λ_ios·tokensᵢ)/τ)·tokensᵢ = ios_tokens_used
+                // This gives the sigmoid model's best approximation of IOS inclusion probs,
+                // making apply_prism_rl_update's p_i consistent with the IOS forward pass.
+                if self.gradient_temperature >= 0.05 {
+                    // Build scored slice from boosted_frags for the bisection (mirror IOS inputs)
+                    let ios_scored: Vec<(usize, f64)> = boosted_frags.iter().enumerate()
+                        .filter_map(|(i, f)| {
+                            if f.is_pinned { return None; }
+                            let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
+                            let s = (weights.recency   * f.recency_score
+                                   + weights.frequency * f.frequency_score
+                                   + weights.semantic  * f.semantic_score
+                                   + weights.entropy   * f.entropy_score) * fm.max(0.01);
+                            if s > 0.0 && f.token_count > 0 { Some((i, s)) } else { None }
+                        })
+                        .collect();
+                    let ios_tokens_used = ios_result.total_tokens;
+                    self.last_lambda_star = compute_lambda_star(
+                        &ios_scored, &boosted_frags, ios_tokens_used, self.gradient_temperature
+                    );
+                }
             } else {
                 // ── Legacy Path: Standard knapsack + exploration + skeleton pass ──
                 selection_method = "legacy_knapsack";
