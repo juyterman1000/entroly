@@ -66,6 +66,10 @@ pub struct KnapsackResult {
     pub total_tokens: u32,
     pub total_relevance: f64,
     pub(crate) method: &'static str,
+    /// Lagrange multiplier λ* for the budget constraint (soft path only; 0.0 for hard paths).
+    /// Forward: p_i = σ((s_i − λ*·tokens_i) / τ)
+    /// Store in EntrolyEngine and reuse in REINFORCE backward pass for exact consistency.
+    pub lambda_star: f64,
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -118,6 +122,7 @@ pub fn knapsack_optimize(
             total_tokens: 0,
             total_relevance: 0.0,
             method: "empty",
+            lambda_star: 0.0,
         };
     }
 
@@ -143,6 +148,7 @@ pub fn knapsack_optimize(
             total_tokens: pinned_tokens,
             total_relevance,
             method: "pinned_only",
+            lambda_star: 0.0,
         };
     }
 
@@ -174,12 +180,13 @@ pub fn knapsack_optimize(
         .collect();
 
     // ── Selection ────────────────────────────────────────────────────────────
-    let (method, mut selected) = if use_soft {
-        ("soft_bisection", soft_bisection_select(&scored, fragments, remaining_budget, temperature))
+    let (method, mut selected, lambda_star) = if use_soft {
+        let (sel, lam) = soft_bisection_select(&scored, fragments, remaining_budget, temperature);
+        ("soft_bisection", sel, lam)
     } else if scored.len() <= 2000 {
-        ("exact_dp", knapsack_dp(&scored, fragments, remaining_budget))
+        ("exact_dp", knapsack_dp(&scored, fragments, remaining_budget), 0.0)
     } else {
-        ("greedy_approx", knapsack_greedy(&scored, fragments, remaining_budget))
+        ("greedy_approx", knapsack_greedy(&scored, fragments, remaining_budget), 0.0)
     };
 
     // Merge pinned + selected
@@ -194,88 +201,108 @@ pub fn knapsack_optimize(
         })
         .sum();
 
-    KnapsackResult { selected_indices: selected, total_tokens, total_relevance, method }
+    KnapsackResult { selected_indices: selected, total_tokens, total_relevance, method, lambda_star }
 }
 
 // ── Soft bisection selector ───────────────────────────────────────────────────
 
-/// Differentiable forward selector: bisect for th* (Lagrange multiplier),
-/// then order fragments by pᵢ and greedily fill the hard budget.
+/// Differentiable forward selector using exact Lagrange dual bisection.
 ///
-/// # Mathematical derivation
+/// # Full KKT derivation
 ///
-/// The continuous relaxation of the 0/1 knapsack replaces xᵢ ∈ {0,1} with
-/// pᵢ ∈ [0,1]. The Lagrangian is:
+/// The continuous relaxation of the 0/1 knapsack:
+///   max   Σ pᵢ·sᵢ
+///   s.t.  Σ pᵢ·tokensᵢ ≤ B,   pᵢ ∈ [0,1]
 ///
+/// The Lagrangian (with λ ≥ 0 for the budget constraint):
 ///   L(p, λ) = Σ pᵢ·sᵢ − λ·(Σ pᵢ·tokensᵢ − B)
+///            = Σ (sᵢ − λ·tokensᵢ)·pᵢ + λ·B
 ///
-/// Maximizing over pᵢ independently (concave in pᵢ) via smooth sigmoid gives:
+/// Maximizing over each pᵢ independently via sigmoid-smooth relaxation:
+///   p*ᵢ = σ((sᵢ − λ·tokensᵢ) / τ)
 ///
-///   p*ᵢ = σ((sᵢ − λ·tokensᵢ) / τ)   [general Lagrangian]
+/// This is the EXACT KKT condition for heterogeneous token counts.
+/// Previous "additive threshold" version (p*ᵢ = σ((sᵢ − th*) / τ)) is only
+/// exact when all tokens_i are equal — a bias-inducing simplification.
 ///
-/// When all token_counts are comparable (homogeneous items), this simplifies to:
+/// Dual feasibility: find λ* ≥ 0 such that Σ p*ᵢ·tokensᵢ = B.
+/// g(λ) = Σ σ((sᵢ − λ·tokensᵢ)/τ)·tokensᵢ − B
+/// dg/dλ = −1/τ · Σ p_i(1−p_i)·tokensᵢ² < 0  (strictly monotone → bisection converges)
 ///
-///   p*ᵢ = σ((sᵢ − th*) / τ),   th* absorbs the Lagrange multiplier
-///
-/// The bisection finds th* such that the budget constraint holds with equality.
-/// This is exactly the KKT condition at the dual optimum.
+/// Returns: (selected_indices, λ*)  
+/// Caller stores λ* in EntrolyEngine.last_lambda_star for the REINFORCE backward pass,
+/// which recomputes p_i = σ((s_i − λ*·tokens_i)/τ) for exact advantage estimation.
 fn soft_bisection_select(
     scored: &[(usize, f64)],
     fragments: &[ContextFragment],
     budget: u32,
     temperature: f64,
-) -> Vec<usize> {
+) -> (Vec<usize>, f64) {
     let tau = temperature.max(1e-4);
     let budget_f = budget as f64;
 
-    // Expected token cost as a function of threshold — strictly decreasing in th.
-    let expected_tokens = |th: f64| -> f64 {
+    // g(λ) = Σ σ((sᵢ − λ·tokensᵢ)/τ)·tokensᵢ − B  (strictly decreasing in λ)
+    let expected_tokens = |lambda: f64| -> f64 {
         scored.iter().map(|&(idx, score)| {
-            sigmoid((score - th) / tau) * fragments[idx].token_count as f64
+            let tc = fragments[idx].token_count as f64;
+            sigmoid((score - lambda * tc) / tau) * tc
         }).sum()
     };
 
-    // Bisection bounds: widen by ±5τ to guarantee sign change.
-    let min_score = scored.iter().map(|&(_, s)| s).fold(f64::INFINITY, f64::min);
+    // Fast path: λ=0 → p_i = σ(s_i/τ) ≈ 1 for all. If total E[tokens] ≤ B, include all.
+    if expected_tokens(0.0) <= budget_f {
+        return (scored.iter().map(|&(idx, _)| idx).collect(), 0.0);
+    }
+
+    // Find λ_hi s.t. g(λ_hi) < 0 (expected tokens < budget).
+    // λ_hi = max_score / (min_tokens · τ) makes σ((s_i - λ_hi·tokens_i)/τ) ≈ 0 for all items.
     let max_score = scored.iter().map(|&(_, s)| s).fold(f64::NEG_INFINITY, f64::max);
-    let mut lo = min_score - 5.0 * tau;
-    let mut hi = max_score + 5.0 * tau;
-
-    // Fast path: all candidates trivially fit.
-    if expected_tokens(lo) <= budget_f {
-        return scored.iter().map(|&(idx, _)| idx).collect();
+    let min_tokens = scored.iter()
+        .map(|&(idx, _)| fragments[idx].token_count as f64)
+        .fold(f64::INFINITY, f64::min)
+        .max(1.0);
+    // Start hi at a value that drives σ → 0; double if still not below budget.
+    let mut hi = (max_score + 5.0 * tau) / (min_tokens * tau).max(1e-10);
+    let mut iters = 0;
+    while expected_tokens(hi) >= budget_f && iters < 60 {
+        hi *= 2.0;
+        iters += 1;
     }
-    // Degenerate: even at maximum exclusion we overshoot — fall back to greedy.
     if expected_tokens(hi) >= budget_f {
-        return knapsack_greedy(scored, fragments, budget);
+        // Pathological case: fall back to greedy.
+        return (knapsack_greedy(scored, fragments, budget), 0.0);
     }
 
-    // 30 bisection iterations: error < (max_score - min_score) / 2^30 ≈ machine ε.
-    // Each iteration: one O(N) pass over scored. Total: O(30·N).
+    // 30-step bisection on λ ∈ [0, hi].
+    // Each iteration: O(N). Total: O(30·N).
+    let mut lo = 0.0_f64;
     for _ in 0..30 {
         let mid = (lo + hi) * 0.5;
         if expected_tokens(mid) > budget_f {
-            lo = mid;  // expected cost too high: raise threshold
+            lo = mid;  // g(mid) > 0: λ too low, need to raise it
         } else {
-            hi = mid;  // expected cost too low: lower threshold
+            hi = mid;  // g(mid) < 0: λ too high, lower it
         }
     }
-    let th_star = (lo + hi) * 0.5;
+    let lambda_star = (lo + hi) * 0.5;
 
-    // Compute final pᵢ at th*. Fragments near th* have pᵢ ≈ 0.5 — these are
-    // the "marginal" items, the same ones the REINFORCE σ'(·/τ) = p(1−p)/τ
-    // term focuses gradient mass on. Forward and backward are aligned.
+    // Compute exact KKT probabilities at λ*.
+    // Sorting by p_i ≡ sorting by (s_i − λ*·tokens_i): items with best
+    // "adjusted score" (value minus Lagrange-weighted cost) go first.
+    // This is the reduced-cost ordering from LP duality.
     let mut with_probs: Vec<(usize, f64)> = scored.iter().map(|&(idx, score)| {
-        (idx, sigmoid((score - th_star) / tau))
+        let tc = fragments[idx].token_count as f64;
+        let p = sigmoid((score - lambda_star * tc) / tau);
+        (idx, p)
     }).collect();
 
-    // Sort descending: highest-certainty inclusions go first.
+    // Sort descending by pᵢ (= by reduced cost sᵢ − λ*·tokensᵢ).
     with_probs.sort_unstable_by(|a, b| {
         b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Greedy fill: enforces the hard budget constraint.
-    // At τ → 0 this recovers exact greedy sort (p_i → step function at th*).
+    // Hard budget enforcement via greedy fill.
+    // At τ → 0: p_i → I(s_i > λ*·tokens_i), recovering exact LP relaxation rounding.
     let mut selected = Vec::with_capacity(with_probs.len());
     let mut remaining = budget;
     for (idx, _) in with_probs {
@@ -286,7 +313,7 @@ fn soft_bisection_select(
         }
         if remaining == 0 { break; }
     }
-    selected
+    (selected, lambda_star)
 }
 
 // ── Hard DP fallback (τ < 0.05) ──────────────────────────────────────────────

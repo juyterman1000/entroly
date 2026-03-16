@@ -116,6 +116,10 @@ pub struct EntrolyEngine {
     // Anneals toward 0 over turns so early learning explores, late learning exploits.
     gradient_temperature: f64,
     // EMA of gradient L2 norm — used to detect regime changes and reset temperature.
+    // ── Shared Lagrange multiplier from last soft-bisection forward pass.
+    // Stored here so apply_prism_rl_update can reuse the exact λ* to compute
+    // p_i = σ((s_i − λ*·tokens_i)/τ) — closing the forward/backward probability gap.
+    last_lambda_star: f64,
     gradient_norm_ema: f64,
 }
 
@@ -213,6 +217,7 @@ impl EntrolyEngine {
             ios_reference_info_factor: ios_reference_info_factor.clamp(0.01, 0.99),
             ios_diversity_floor: ios_diversity_floor.clamp(0.0, 1.0),
             gradient_temperature: 2.0, // Start soft — anneals via τ *= 0.995 each turn
+            last_lambda_star: 0.0,     // λ* from last forward pass — shared with REINFORCE
             gradient_norm_ema: 0.0,
         }
     }
@@ -435,6 +440,8 @@ impl EntrolyEngine {
             // First pass with basic knapsack to discover initial selection,
             // then compute dep boosts from that selection.
             let result1 = knapsack_optimize(&frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature);
+            // Store λ* for the REINFORCE backward pass — ensures forward/backward p_i are identical.
+            self.last_lambda_star = result1.lambda_star;
             let initial_selected_ids: HashSet<String> = result1.selected_indices.iter()
                 .map(|&i| frags[i].fragment_id.clone())
                 .collect();
@@ -1104,7 +1111,6 @@ impl EntrolyEngine {
 
             // Total budget utilization
             let total_used = hcc.budget_used.0 + hcc.budget_used.1 + hcc.budget_used.2;
-            result.set_item("total_tokens", total_used)?;
             result.set_item("budget_utilization",
                 if token_budget > 0 {
                     (total_used as f64 / token_budget as f64 * 10000.0).round() / 10000.0
@@ -1453,29 +1459,37 @@ impl EntrolyEngine {
 
         // Compute REINFORCE-with-baseline policy gradient
         let mut g = [0.0_f64; 4]; // [∂/∂w_r, ∂/∂w_f, ∂/∂w_s, ∂/∂w_e]
+        // λ* from the last forward bisection — use the SAME probability as the forward pass.
+        // p_i = σ((s_i − λ*·tokens_i)/τ) is the exact KKT soft selection probability.
+        // Reusing it here ensures advantage = (action − p_exact) × R is an unbiased estimator.
+        let lambda = self.last_lambda_star;
 
         for frag in self.fragments.values() {
-            // Linear score (pre-softcap — see note above)
+            // Linear score (pre-softcap — same landscape as forward pass)
             let score = self.w_recency   * frag.recency_score
                       + self.w_frequency * frag.frequency_score
                       + self.w_semantic  * frag.semantic_score
                       + self.w_entropy   * frag.entropy_score;
 
-            let p = Self::sigmoid(score / tau);
-            let dp = p * (1.0 - p) / tau; // sigmoid derivative
+            // Exact KKT probability: p_i = σ((s_i − λ*·tokens_i) / τ)
+            // Matches the forward bisection probability — no forward/backward mismatch.
+            let tc = frag.token_count as f64;
+            let p = Self::sigmoid((score - lambda * tc) / tau);
+            let dp = p * (1.0 - p) / tau; // σ'(·/τ) — focuses gradient on marginal fragments
 
             // REINFORCE baseline: advantage = (action - expected_action) × reward
             // action = 1 if selected, 0 if not
-            // expected_action = p (soft selection probability)
+            // expected_action = p (exact KKT soft probability)
             let action = if selected.contains(frag.fragment_id.as_str()) { 1.0 } else { 0.0 };
             let advantage = (action - p) * reward;
 
-            // Accumulate: advantage_i × σ'(score_i/τ) × feature_{i,k}
+            // Accumulate: advantage_i × σ'((s_i - λ*·tokens_i)/τ) × feature_{i,k}
             g[0] += advantage * dp * frag.recency_score;
             g[1] += advantage * dp * frag.frequency_score;
             g[2] += advantage * dp * frag.semantic_score;
             g[3] += advantage * dp * frag.entropy_score;
         }
+
 
         // ── Regime change detection ──
         // If gradient norm spikes >3× the running EMA, the task distribution shifted.
