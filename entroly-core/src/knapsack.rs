@@ -70,6 +70,17 @@ pub struct KnapsackResult {
     /// Forward: p_i = σ((s_i − λ*·tokens_i) / τ)
     /// Store in EntrolyEngine and reuse in REINFORCE backward pass for exact consistency.
     pub lambda_star: f64,
+    /// Adaptive Dual Gap Temperature signal: D(λ*) − primal (soft path only; 0.0 for hard).
+    ///
+    /// D(λ*) = τ · Σᵢ log(1 + exp((sᵢ−λ*·cᵢ)/τ)) + λ*·B  (log-sum-exp dual)
+    /// primal = actual total relevance of selected fragments
+    /// gap = D(λ*) − primal ∈ [0, τ·N·log(2)]
+    ///
+    /// gap ≈ 0 → weights converged, reduce temperature
+    /// gap ≈ τ·N·log(2) → all p_i ≈ 0.5, maximum uncertainty, keep temperature high
+    ///
+    /// Used by ADGT (Adaptive Dual Gap Temperature) to replace the ad-hoc 0.995 schedule.
+    pub dual_gap: f64,
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -123,6 +134,7 @@ pub fn knapsack_optimize(
             total_relevance: 0.0,
             method: "empty",
             lambda_star: 0.0,
+            dual_gap: 0.0,
         };
     }
 
@@ -149,6 +161,7 @@ pub fn knapsack_optimize(
             total_relevance,
             method: "pinned_only",
             lambda_star: 0.0,
+            dual_gap: 0.0,
         };
     }
 
@@ -180,13 +193,13 @@ pub fn knapsack_optimize(
         .collect();
 
     // ── Selection ────────────────────────────────────────────────────────────
-    let (method, mut selected, lambda_star) = if use_soft {
-        let (sel, lam) = soft_bisection_select(&scored, fragments, remaining_budget, temperature);
-        ("soft_bisection", sel, lam)
+    let (method, mut selected, lambda_star, dual_gap) = if use_soft {
+        let (sel, lam, gap) = soft_bisection_select(&scored, fragments, remaining_budget, temperature);
+        ("soft_bisection", sel, lam, gap)
     } else if scored.len() <= 2000 {
-        ("exact_dp", knapsack_dp(&scored, fragments, remaining_budget), 0.0)
+        ("exact_dp", knapsack_dp(&scored, fragments, remaining_budget), 0.0, 0.0)
     } else {
-        ("greedy_approx", knapsack_greedy(&scored, fragments, remaining_budget), 0.0)
+        ("greedy_approx", knapsack_greedy(&scored, fragments, remaining_budget), 0.0, 0.0)
     };
 
     // Merge pinned + selected
@@ -201,7 +214,7 @@ pub fn knapsack_optimize(
         })
         .sum();
 
-    KnapsackResult { selected_indices: selected, total_tokens, total_relevance, method, lambda_star }
+    KnapsackResult { selected_indices: selected, total_tokens, total_relevance, method, lambda_star, dual_gap }
 }
 
 // ── Public bisection helper ───────────────────────────────────────────────────
@@ -300,7 +313,7 @@ fn soft_bisection_select(
     fragments: &[ContextFragment],
     budget: u32,
     temperature: f64,
-) -> (Vec<usize>, f64) {
+) -> (Vec<usize>, f64, f64) {
     let tau = temperature.max(1e-4);
     let budget_f = budget as f64;
 
@@ -314,69 +327,76 @@ fn soft_bisection_select(
 
     // Fast path: λ=0 → p_i = σ(s_i/τ) ≈ 1 for all. If total E[tokens] ≤ B, include all.
     if expected_tokens(0.0) <= budget_f {
-        return (scored.iter().map(|&(idx, _)| idx).collect(), 0.0);
+        return (scored.iter().map(|&(idx, _)| idx).collect(), 0.0, 0.0);
     }
 
     // Find λ_hi s.t. g(λ_hi) < 0 (expected tokens < budget).
-    // λ_hi = max_score / (min_tokens · τ) makes σ((s_i - λ_hi·tokens_i)/τ) ≈ 0 for all items.
     let max_score = scored.iter().map(|&(_, s)| s).fold(f64::NEG_INFINITY, f64::max);
     let min_tokens = scored.iter()
         .map(|&(idx, _)| fragments[idx].token_count as f64)
         .fold(f64::INFINITY, f64::min)
         .max(1.0);
-    // Start hi at a value that drives σ → 0; double if still not below budget.
     let mut hi = (max_score + 5.0 * tau) / (min_tokens * tau).max(1e-10);
     let mut iters = 0;
-    while expected_tokens(hi) >= budget_f && iters < 60 {
-        hi *= 2.0;
-        iters += 1;
-    }
+    while expected_tokens(hi) >= budget_f && iters < 60 { hi *= 2.0; iters += 1; }
     if expected_tokens(hi) >= budget_f {
-        // Pathological case: fall back to greedy.
-        return (knapsack_greedy(scored, fragments, budget), 0.0);
+        return (knapsack_greedy(scored, fragments, budget), 0.0, 0.0);
     }
 
-    // 30-step bisection on λ ∈ [0, hi].
-    // Each iteration: O(N). Total: O(30·N).
+    // 30-step bisection on λ ∈ [0, hi]. Each iteration: O(N). Total: O(30·N).
     let mut lo = 0.0_f64;
     for _ in 0..30 {
         let mid = (lo + hi) * 0.5;
-        if expected_tokens(mid) > budget_f {
-            lo = mid;  // g(mid) > 0: λ too low, need to raise it
-        } else {
-            hi = mid;  // g(mid) < 0: λ too high, lower it
-        }
+        if expected_tokens(mid) > budget_f { lo = mid; } else { hi = mid; }
     }
     let lambda_star = (lo + hi) * 0.5;
 
     // Compute exact KKT probabilities at λ*.
-    // Sorting by p_i ≡ sorting by (s_i − λ*·tokens_i): items with best
-    // "adjusted score" (value minus Lagrange-weighted cost) go first.
-    // This is the reduced-cost ordering from LP duality.
+    // Sorting by p_i ≡ sorting by reduced cost (s_i − λ*·tokens_i) — LP duality ordering.
     let mut with_probs: Vec<(usize, f64)> = scored.iter().map(|&(idx, score)| {
         let tc = fragments[idx].token_count as f64;
         let p = sigmoid((score - lambda_star * tc) / tau);
         (idx, p)
     }).collect();
 
-    // Sort descending by pᵢ (= by reduced cost sᵢ − λ*·tokensᵢ).
     with_probs.sort_unstable_by(|a, b| {
         b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Hard budget enforcement via greedy fill.
-    // At τ → 0: p_i → I(s_i > λ*·tokens_i), recovering exact LP relaxation rounding.
     let mut selected = Vec::with_capacity(with_probs.len());
     let mut remaining = budget;
-    for (idx, _) in with_probs {
+    let mut primal_value = 0.0;
+    for &(idx, _) in &with_probs {
         let tc = fragments[idx].token_count;
         if tc <= remaining {
             selected.push(idx);
             remaining -= tc;
+            // Primal contribution: p_i · s_i (soft selection value)
+            let tc_f = tc as f64;
+            let p_final = sigmoid((scored.iter().find(|&&(i,_)| i==idx).map(|&(_,s)|s).unwrap_or(0.0)
+                - lambda_star * tc_f) / tau);
+            primal_value += p_final * scored.iter().find(|&&(i,_)| i==idx).map(|&(_,s)|s).unwrap_or(0.0);
         }
         if remaining == 0 { break; }
     }
-    (selected, lambda_star)
+
+    // ── Adaptive Dual Gap Temperature (ADGT) signal ──────────────────────────
+    // Compute D(λ*) = τ · Σ log(1 + exp((s_i − λ*·c_i)/τ)) + λ*·B  [log-sum-exp dual]
+    // This is the exact smooth upper bound on the primal objective.
+    // dual_gap = D(λ*) − primal ∈ [0, τ·N·log(2)]
+    //   → gap ≈ 0: weights converged, can lower temperature
+    //   → gap ≈ τ·N·log(2): all p_i ≈ 0.5, fully uncertain, keep temperature high
+    let dual_value: f64 = scored.iter().map(|&(idx, score)| {
+        let tc = fragments[idx].token_count as f64;
+        let z = (score - lambda_star * tc) / tau;
+        // Numerically stable log(1 + exp(z)) = log1p(exp(z))
+        tau * if z > 20.0 { z } else { (1.0_f64 + z.exp()).ln() }
+    }).sum::<f64>() + lambda_star * budget_f;
+
+    let dual_gap = (dual_value - primal_value).max(0.0);
+
+    (selected, lambda_star, dual_gap)
 }
 
 // ── Hard DP fallback (τ < 0.05) ──────────────────────────────────────────────

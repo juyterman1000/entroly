@@ -120,6 +120,10 @@ pub struct EntrolyEngine {
     // Stored here so apply_prism_rl_update can reuse the exact λ* to compute
     // p_i = σ((s_i − λ*·tokens_i)/τ) — closing the forward/backward probability gap.
     last_lambda_star: f64,
+    /// ADGT signal: dual gap D(λ*) − primal from last soft-selection forward pass.
+    /// Used to adapt temperature principally: large gap → keep τ high (exploring),
+    /// small gap → lower τ (converged). Replaces the ad-hoc 0.995 annealing schedule.
+    last_dual_gap: f64,
     gradient_norm_ema: f64,
 }
 
@@ -216,8 +220,9 @@ impl EntrolyEngine {
             ios_skeleton_info_factor: ios_skeleton_info_factor.clamp(0.01, 0.99),
             ios_reference_info_factor: ios_reference_info_factor.clamp(0.01, 0.99),
             ios_diversity_floor: ios_diversity_floor.clamp(0.0, 1.0),
-            gradient_temperature: 2.0, // Start soft — anneals via τ *= 0.995 each turn
+            gradient_temperature: 2.0, // Start soft — ADGT adapts this principally each turn
             last_lambda_star: 0.0,     // λ* from last forward pass — shared with REINFORCE
+            last_dual_gap: 0.0,        // D(λ*) − primal — ADGT temperature signal
             gradient_norm_ema: 0.0,
         }
     }
@@ -442,6 +447,8 @@ impl EntrolyEngine {
             let result1 = knapsack_optimize(&frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature);
             // Store λ* for the REINFORCE backward pass — ensures forward/backward p_i are identical.
             self.last_lambda_star = result1.lambda_star;
+            // Store ADGT signal — dual gap D(λ*)−primal from this forward pass.
+            self.last_dual_gap = result1.dual_gap;
             let initial_selected_ids: HashSet<String> = result1.selected_indices.iter()
                 .map(|&i| frags[i].fragment_id.clone())
                 .collect();
@@ -1516,15 +1523,45 @@ impl EntrolyEngine {
         }
 
 
-        // ── Regime change detection ──
-        // If gradient norm spikes >3× the running EMA, the task distribution shifted.
-        // Reset temperature to re-explore the weight space.
+        // ── Adaptive Dual Gap Temperature (ADGT) × PRISM Condition-Number Temperature (PCNT) ──
+        //
+        // Replaces the ad-hoc τ *= 0.995 schedule with a principled information-theoretic signal.
+        //
+        // ADGT: natural temperature derived from the duality gap G = D(λ*) − primal.
+        //   G ∈ [0, τ·N·log(2)]
+        //   G ≈ 0       → weights converged → lower τ (exploit sharp selection)
+        //   G ≈ τ·N·log(2) → all p_i ≈ 0.5 → full uncertainty → keep τ high (explore)
+        //   natural_tau_adgt = G / (N · log(2) · C)  where C=4 is a calibration scale
+        //
+        // PCNT: condition number κ = sqrt(λ_max / λ_min) of PRISM gradient covariance.
+        //   κ ≈ 1  → isotropic, well-conditioned weights → sharper selection OK
+        //   κ >> 1 → ill-conditioned → some dims highly variable → keep selection softer
+        //   modulation: τ_final = τ_adgt × sqrt(κ) / sqrt(d=4)  [normalized by dimension]
+        //
+        // These two signals are orthogonal:
+        //   ADGT measures "how far is the current selection from the continuous optimum?"
+        //   PCNT measures "how uncertain are the learned weights themselves?"
+        // Together they ensure τ is always calibrated to the actual optimization state.
         let g_norm = (g[0]*g[0] + g[1]*g[1] + g[2]*g[2] + g[3]*g[3]).sqrt();
         if self.gradient_norm_ema > 1e-8 && g_norm > self.gradient_norm_ema * 3.0 {
-            self.gradient_temperature = 2.0; // regime change — re-explore
+            // Regime change: task distribution shifted, reset to full exploration.
+            self.gradient_temperature = 2.0;
+        } else if self.last_dual_gap > 0.0 && self.fragments.len() > 1 {
+            // ADGT: normalize gap per fragment, scale by log(2) to bound on [0, τ]
+            let n = self.fragments.len() as f64;
+            let gap_per_frag = self.last_dual_gap / (n * 2_f64.ln());
+            // PCNT: condition number amplifies τ when weights are uncertain
+            let kappa = self.prism_optimizer.condition_number();
+            let kappa_norm = (kappa / 2.0).clamp(0.5, 4.0); // normalize: κ=4 → 2×, κ=1 → 0.5×
+            // Natural temperature: high gap + high κ → high τ; low gap + low κ → low τ
+            let natural_tau = (gap_per_frag * kappa_norm).clamp(0.1, 2.0);
+            // Slow EMA blend toward natural_tau (avoids oscillation)
+            self.gradient_temperature = 0.90 * self.gradient_temperature + 0.10 * natural_tau;
+            // Hard floor to prevent convergence to zero (min exploration needed)
+            self.gradient_temperature = self.gradient_temperature.max(0.1);
         } else {
-            // Normal annealing: τ *= 0.995 each update (soft→hard over ~460 turns)
-            self.gradient_temperature = (self.gradient_temperature * 0.995).max(0.1);
+            // No ADGT signal available (hard-path or early run): gentle decay as fallback
+            self.gradient_temperature = (self.gradient_temperature * 0.998).max(0.1);
         }
         self.gradient_norm_ema = 0.95 * self.gradient_norm_ema + 0.05 * g_norm;
 

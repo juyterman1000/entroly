@@ -170,6 +170,27 @@ impl PrismOptimizer {
 
         step
     }
+
+    /// Return the spectral condition number κ = sqrt(λ_max / λ_min) of the gradient covariance.
+    ///
+    /// κ encodes weight-space uncertainty:
+    ///   κ ≈ 1  → isotropic, well-conditioned weights (all dimensions equally informative)
+    ///   κ >> 1 → ill-conditioned (some dimensions highly variable, others stable)
+    ///
+    /// Used by PCNT (PRISM Condition-Number Temperature) to modulate selection sharpness:
+    /// high κ → softer selection (don't hard-commit when weights are uncertain).
+    pub fn condition_number(&self) -> f64 {
+        let (_, eigenvalues) = self.covariance.jacobi_eigendecomposition();
+        let max_eig = eigenvalues.iter().cloned().fold(f64::NEG_INFINITY, f64::max).max(1e-10);
+        let min_eig = eigenvalues.iter().cloned().fold(f64::INFINITY, f64::min).max(1e-10);
+        (max_eig / min_eig).sqrt()
+    }
+
+    /// Return current eigenvalues of the gradient covariance matrix.
+    pub fn eigenvalues(&self) -> [f64; 4] {
+        let (_, eigenvalues) = self.covariance.jacobi_eigendecomposition();
+        eigenvalues
+    }
 }
 
 #[cfg(test)]
