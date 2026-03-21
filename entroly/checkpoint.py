@@ -153,6 +153,9 @@ def _merge_fragments(
     return list(merged.values())
 
 
+_LOCK_SIZE = 1024  # Lock region size for Windows msvcrt
+
+
 def _acquire_file_lock(lock_path: Path) -> Any:
     """Acquire a file lock for distributed checkpoint safety.
 
@@ -166,7 +169,12 @@ def _acquire_file_lock(lock_path: Path) -> Any:
     except (ImportError, OSError):
         try:
             import msvcrt
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            # Seek to start and lock a meaningful region
+            lock_file.seek(0)
+            lock_file.write(" " * _LOCK_SIZE)
+            lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, _LOCK_SIZE)
         except (ImportError, OSError):
             pass  # Best-effort: if locking unavailable, proceed without
     return lock_file
@@ -180,7 +188,8 @@ def _release_file_lock(lock_file: Any) -> None:
     except (ImportError, OSError):
         try:
             import msvcrt
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, _LOCK_SIZE)
         except (ImportError, OSError):
             pass
     lock_file.close()

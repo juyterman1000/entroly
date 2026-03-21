@@ -1528,7 +1528,10 @@ def main():
             logger.warning(f"Failed to persist state on shutdown: {e}")
 
     atexit.register(_shutdown_handler)
-    signal.signal(signal.SIGTERM, lambda s, f: (_shutdown_handler(), sys.exit(0)))
+    try:
+        signal.signal(signal.SIGTERM, lambda s, f: (_shutdown_handler(), sys.exit(0)))
+    except (OSError, AttributeError):
+        pass  # SIGTERM not available on Windows
 
     # Auto-index the project on startup (zero config)
     try:

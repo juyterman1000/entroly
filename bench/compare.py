@@ -27,6 +27,7 @@ import math
 import re
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 # ─── Corpus: 20 realistic fragments from a production codebase ────────────────
@@ -134,7 +135,7 @@ def _unique_modules(selected: list[dict]) -> int:
     """Count unique top-level directories."""
     modules = set()
     for f in selected:
-        parts = f["source"].split("/")
+        parts = Path(f["source"]).parts
         modules.add(parts[0] if len(parts) > 1 else f["source"])
     return len(modules)
 
@@ -240,7 +241,7 @@ def strategy_entroly(corpus: list[dict], query: str, budget: int) -> list[dict]:
             continue
 
         # Submodular diversity: diminishing returns per module
-        parts = cand["source"].split("/")
+        parts = Path(cand["source"]).parts
         module = parts[0] if len(parts) > 1 else cand["source"]
         count = module_counts.get(module, 0)
         diversity_factor = 1.0 / (1.0 + count)

@@ -29,6 +29,7 @@ import logging
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -219,9 +220,8 @@ def _detect_ai_tool() -> dict:
                 "~/Library/Application Support/Claude/claude_desktop_config.json"
             )
         elif system == "Windows":
-            claude_cfg = os.path.join(
-                os.environ.get("APPDATA", ""), "Claude", "claude_desktop_config.json"
-            )
+            appdata = os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming")
+            claude_cfg = os.path.join(appdata, "Claude", "claude_desktop_config.json")
         else:
             claude_cfg = os.path.expanduser("~/.config/claude/claude_desktop_config.json")
 
@@ -471,7 +471,7 @@ def cmd_autotune(args):
         print(f"  {C.GRAY}To undo: entroly autotune --rollback{C.RESET}\n")
     except ImportError:
         # Fallback: run the script directly
-        os.system(f"python3 {os.path.join(os.path.dirname(__file__), '..', 'bench', 'autotune.py')} --iterations {args.iterations}")
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), '..', 'bench', 'autotune.py'), '--iterations', str(args.iterations)])
 
 
 def _check_upstream(config) -> None:
@@ -600,7 +600,7 @@ def cmd_benchmark(args):
 
     bench_script = os.path.join(os.path.dirname(__file__), "..", "bench", "compare.py")
     if os.path.exists(bench_script):
-        os.system(f"python3 {bench_script}")
+        subprocess.run([sys.executable, bench_script])
     else:
         print(f"  {C.RED}Benchmark script not found at {bench_script}{C.RESET}")
 
