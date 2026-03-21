@@ -171,7 +171,7 @@ entroly --help    # see all available commands
 
 **Get support:**
 
-If you run into any issue, email **support@entroly.dev** with:
+If you run into any issue, email **autobotbugfix@gmail.com** with:
 1. The output of `entroly doctor`
 2. A screenshot of the error
 3. Your OS (Windows/macOS/Linux) and Python version
