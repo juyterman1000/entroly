@@ -13,7 +13,9 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen" alt="PRs Welcome">
+  <img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="PyPI">
   <img src="https://img.shields.io/badge/Tests-113%20Passing-success" alt="Tests">
+  <img src="https://img.shields.io/badge/Docker-ghcr.io-blue?logo=docker" alt="Docker">
 </p>
 
 ---
@@ -272,19 +274,40 @@ claude mcp add entroly -- entroly
 
 ### Prompt Compiler Proxy (any IDE)
 ```bash
-entroly --proxy
-# or
-ENTROLY_PROXY_PORT=9377 python -m entroly.proxy
+pip install entroly[proxy]
+entroly proxy
 ```
 
-Every LLM request is intercepted, optimized with the full pipeline (ECC + IOS + EGTC + APA + SAST), and forwarded transparently. < 10ms overhead.
+Optional flags:
+```bash
+entroly proxy --quality 0.8       # Quality dial 0.0 (speed) → 1.0 (quality)
+entroly proxy --port 9377         # Custom port
+entroly proxy --force             # Force re-index codebase
+```
 
-### Docker (cross-platform)
+Every LLM request is intercepted, optimized with the full pipeline (ECC + IOS + EGTC + APA + SAST), and forwarded transparently. < 10ms overhead. Auto-indexes your codebase on startup.
+
+### Docker (cross-platform, build-once-run-everywhere)
 ```bash
 docker pull ghcr.io/juyterman1000/entroly:latest
 docker run --rm -p 9377:9377 ghcr.io/juyterman1000/entroly:latest
 ```
 Multi-arch: `linux/amd64` and `linux/arm64` (Apple Silicon, AWS Graviton).
+
+### Live Intelligence Dashboard
+
+The proxy auto-launches a live dashboard at `http://localhost:9378` showing real-time metrics:
+
+<p align="center">
+  <img src="docs/assets/dashboard.png" width="800" alt="Entroly Intelligence Dashboard">
+</p>
+
+- **Savings counter** — total cost saved, tokens saved, dedup hits
+- **PRISM Intelligence radar** — RL-learned weights evolving in real-time
+- **Code Health ring** — A-F grade with clone/dead-symbol/god-file detection
+- **SAST Security shield** — 55-rule scanner with CWE category breakdown
+- **Knapsack decisions** — per-fragment scores with inclusion/exclusion reasons
+- **Request flow sparkline** — live token savings per proxy request
 
 ---
 
@@ -404,6 +427,18 @@ EntrolyConfig(
 - PCNT: PRISM spectral condition number as a weight-uncertainty-aware temperature modulator
 
 ---
+
+## CLI Commands
+
+| Command | Purpose |
+|---------|--------|
+| `entroly serve` | Start MCP server (default — used by Cursor, Claude Code) |
+| `entroly proxy` | Start invisible prompt compiler proxy on :9377 |
+| `entroly dashboard` | Launch value dashboard on :9378 |
+| `entroly init` | Auto-detect project type and configure IDE integration |
+| `entroly health` | Run code health analysis (clones, dead symbols, god files) |
+| `entroly autotune` | Run autonomous hyperparameter optimization |
+| `entroly benchmark` | Run competitive benchmark (Entroly vs Raw vs Top-K) |
 
 ## Part of the Ebbiforge Ecosystem
 
