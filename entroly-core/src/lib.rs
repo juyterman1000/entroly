@@ -29,6 +29,7 @@ mod anomaly;
 mod utilization;
 mod semantic_dedup;
 mod conversation_pruner;
+mod channel;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -138,6 +139,13 @@ pub struct EntrolyEngine {
     last_archetype_id: Option<String>,
     /// Whether to use per-archetype weights (vs global weights).
     enable_query_personas: bool,
+
+    // Channel Coding Framework — information-theoretic context optimization
+    /// Whether to use channel coding (trailing pass + interleaving + modulated reward).
+    enable_channel_coding: bool,
+    /// EMA baseline for REINFORCE advantage A = R − μ (variance reduction).
+    /// Updated on every record_success / record_failure call.
+    reward_baseline_ema: f64,
 }
 
 /// Snapshot of the last optimization for explainability.
@@ -244,6 +252,8 @@ impl EntrolyEngine {
             ),
             last_archetype_id: None,
             enable_query_personas: true,
+            enable_channel_coding: true,
+            reward_baseline_ema: 0.0,
         }
     }
 
@@ -673,6 +683,32 @@ impl EntrolyEngine {
                 }
             }
 
+            // ── Channel Coding: Trailing Pass ──
+            // Fill the KKT/IOS token gap using marginal information gain
+            // instead of leaving unused budget on the table.
+            //
+            // CRITICAL: pass BOTH full and skeleton indices to prevent
+            // double-inclusion (a fragment at skeleton resolution must not
+            // be re-added at full resolution).
+            if self.enable_channel_coding {
+                let used_full: u32 = final_indices.iter().map(|&i| boosted_frags[i].token_count).sum();
+                let used_total = used_full + skeleton_tokens_used;
+                let token_gap = effective_budget.saturating_sub(used_total);
+                if token_gap > 0 {
+                    let mut all_selected = final_indices.clone();
+                    all_selected.extend_from_slice(&skeleton_indices);
+                    let trailing = channel::channel_trailing_pass(
+                        &boosted_frags,
+                        &all_selected,
+                        token_gap,
+                        &self.dep_graph,
+                    );
+                    for idx in trailing {
+                        final_indices.push(idx);
+                    }
+                }
+            }
+
             // Track savings
             let total_available: u32 = frags.iter().map(|f| f.token_count).sum();
             let full_tokens: u32 = final_indices.iter().map(|&i| frags[i].token_count).sum();
@@ -697,22 +733,35 @@ impl EntrolyEngine {
             let sufficiency = self.compute_sufficiency(&frags, &final_indices);
 
             // ── Context ordering: sort selected for LLM attention ──
-            let mut ordered_indices = final_indices.clone();
-            ordered_indices.sort_by(|&a, &b| {
-                let fa = &frags[a];
-                let fb = &frags[b];
-                let crit_a = file_criticality(&fa.source);
-                let crit_b = file_criticality(&fb.source);
-                let dep_count_a = self.dep_graph.reverse_deps(&fa.fragment_id).len();
-                let dep_count_b = self.dep_graph.reverse_deps(&fb.fragment_id).len();
-                let fm_a = feedback_mults.get(&fa.fragment_id).copied().unwrap_or(1.0);
-                let fm_b = feedback_mults.get(&fb.fragment_id).copied().unwrap_or(1.0);
-                let rel_a = compute_relevance(fa, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_a);
-                let rel_b = compute_relevance(fb, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_b);
-                let prio_a = compute_ordering_priority(rel_a, crit_a, fa.is_pinned, dep_count_a);
-                let prio_b = compute_ordering_priority(rel_b, crit_b, fb.is_pinned, dep_count_b);
-                prio_b.partial_cmp(&prio_a).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            let ordered_indices = if self.enable_channel_coding {
+                // Channel Coding: attention-aware semantic interleaving
+                // Respects causal ordering (defs before refs) + U-shaped attention
+                let relevances: Vec<f64> = final_indices.iter()
+                    .map(|&i| {
+                        let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
+                        compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
+                    })
+                    .collect();
+                channel::semantic_interleave(&frags, &final_indices, &relevances, &self.dep_graph)
+            } else {
+                let mut ordered = final_indices.clone();
+                ordered.sort_by(|&a, &b| {
+                    let fa = &frags[a];
+                    let fb = &frags[b];
+                    let crit_a = file_criticality(&fa.source);
+                    let crit_b = file_criticality(&fb.source);
+                    let dep_count_a = self.dep_graph.reverse_deps(&fa.fragment_id).len();
+                    let dep_count_b = self.dep_graph.reverse_deps(&fb.fragment_id).len();
+                    let fm_a = feedback_mults.get(&fa.fragment_id).copied().unwrap_or(1.0);
+                    let fm_b = feedback_mults.get(&fb.fragment_id).copied().unwrap_or(1.0);
+                    let rel_a = compute_relevance(fa, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_a);
+                    let rel_b = compute_relevance(fb, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_b);
+                    let prio_a = compute_ordering_priority(rel_a, crit_a, fa.is_pinned, dep_count_a);
+                    let prio_b = compute_ordering_priority(rel_b, crit_b, fb.is_pinned, dep_count_b);
+                    prio_b.partial_cmp(&prio_a).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                ordered
+            };
 
             // ── Build Explainability Snapshot ──
             let mut fragment_scores: Vec<FragmentScore> = Vec::with_capacity(frags.len());
@@ -1184,15 +1233,78 @@ impl EntrolyEngine {
 
     /// Record that the selected fragments led to a successful output.
     /// This feeds the reinforcement learning loop.
+    ///
+    /// Channel coding path: R = modulated_reward(suff), A = R − μ.
+    /// The advantage A is what drives the PRISM weight update,
+    /// while μ (EMA baseline) reduces gradient variance.
     pub fn record_success(&mut self, fragment_ids: Vec<String>) {
         self.feedback.record_success(&fragment_ids);
-        self.apply_prism_rl_update(&fragment_ids, 1.0);
+        let raw_reward = if self.enable_channel_coding {
+            let suff = self.last_optimization.as_ref()
+                .map(|s| s.sufficiency)
+                .unwrap_or(0.7);
+            channel::modulated_reward(true, suff)
+        } else {
+            1.0
+        };
+        // A = R − μ  (REINFORCE advantage with EMA baseline)
+        let advantage = raw_reward - self.reward_baseline_ema;
+        // μ ← 0.9·μ + 0.1·R  (~10-step memory horizon)
+        self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * raw_reward;
+        self.apply_prism_rl_update(&fragment_ids, advantage);
     }
 
     /// Record that the selected fragments led to a failed output.
+    ///
+    /// Channel coding path: R = modulated_reward(suff), A = R − μ.
+    /// Low sufficiency → stronger penalty → faster weight correction.
     pub fn record_failure(&mut self, fragment_ids: Vec<String>) {
         self.feedback.record_failure(&fragment_ids);
-        self.apply_prism_rl_update(&fragment_ids, -1.0);
+        let raw_reward = if self.enable_channel_coding {
+            let suff = self.last_optimization.as_ref()
+                .map(|s| s.sufficiency)
+                .unwrap_or(0.7);
+            channel::modulated_reward(false, suff)
+        } else {
+            -1.0
+        };
+        // A = R − μ
+        let advantage = raw_reward - self.reward_baseline_ema;
+        // μ ← 0.9·μ + 0.1·R
+        self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * raw_reward;
+        self.apply_prism_rl_update(&fragment_ids, advantage);
+    }
+
+    /// Record a continuous reward signal for the selected fragments.
+    ///
+    /// This is the preferred path when ΔPerplexity is available:
+    ///   R = PPL(response | no context) − PPL(response | context)
+    ///
+    /// Positive R means our context helped (perplexity dropped).
+    /// Negative R means our context hurt (perplexity rose — wrong context).
+    /// The advantage A = R − μ is computed internally with EMA baseline.
+    ///
+    /// Call this INSTEAD of record_success/record_failure when the
+    /// Python layer can compute ΔPPL from the LLM response.
+    pub fn record_reward(&mut self, fragment_ids: Vec<String>, reward: f64) {
+        // NaN safety: non-finite reward is treated as neutral (0.0)
+        let r = if reward.is_finite() { reward } else { 0.0 };
+        // Update feedback tracker based on sign
+        if r >= 0.0 {
+            self.feedback.record_success(&fragment_ids);
+        } else {
+            self.feedback.record_failure(&fragment_ids);
+        }
+        // A = R − μ
+        let advantage = r - self.reward_baseline_ema;
+        // μ ← 0.9·μ + 0.1·R
+        self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * r;
+        self.apply_prism_rl_update(&fragment_ids, advantage);
+    }
+
+    /// Enable or disable channel coding framework.
+    pub fn set_channel_coding_enabled(&mut self, enabled: bool) {
+        self.enable_channel_coding = enabled;
     }
 
     /// Classify a task query and return the recommended budget multiplier.
@@ -2067,6 +2179,7 @@ fn py_progressive_thresholds(
 /// Compress a single block at a given resolution level.
 /// Returns the compressed text.
 #[pyfunction]
+#[pyo3(signature = (role, content, token_count, resolution, tool_name=None))]
 fn py_compress_block(
     role: &str,
     content: &str,
@@ -2104,6 +2217,7 @@ fn py_compress_block(
 /// Classify a conversation block by role and content.
 /// Returns: "user", "assistant", "tool_call", "tool_result", "thinking", "system"
 #[pyfunction]
+#[pyo3(signature = (role, content, tool_name=None))]
 fn py_classify_block(role: &str, content: &str, tool_name: Option<String>) -> String {
     use conversation_pruner::classify_block;
     classify_block(role, content, tool_name.as_deref()).label().to_string()

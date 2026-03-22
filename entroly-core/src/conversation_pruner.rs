@@ -1454,7 +1454,7 @@ mod tests {
         assert_eq!(overlaps.len(), 4);
 
         for (i, &v) in overlaps.iter().enumerate() {
-            assert!(v >= 0.0 && v <= 1.0, "Overlap[{i}] = {v} out of range");
+            assert!((0.0..=1.0).contains(&v), "Overlap[{i}] = {v} out of range");
         }
 
         // Last block gets default 0.5
