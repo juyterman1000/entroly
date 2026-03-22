@@ -197,6 +197,10 @@ class ProxyConfig:
     enable_trajectory_convergence: bool = True
     enable_prompt_directives: bool = True
     enable_hierarchical_compression: bool = True
+    enable_conversation_compression: bool = True
+
+    # Context window size (auto-detected per model, this is the fallback)
+    context_window: int = 128_000
 
     # IOS: Information-Optimal Selection
     enable_ios: bool = True
@@ -254,6 +258,9 @@ class ProxyConfig:
             ),
             enable_trajectory_convergence=(
                 os.environ.get("ENTROLY_TRAJECTORY_CONVERGENCE", "1") != "0"
+            ),
+            enable_conversation_compression=(
+                os.environ.get("ENTROLY_CONVERSATION_COMPRESSION", "1") != "0"
             ),
             fisher_scale=float(
                 os.environ.get("ENTROLY_FISHER_SCALE", "0.55")

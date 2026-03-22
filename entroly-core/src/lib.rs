@@ -28,6 +28,7 @@ pub mod query_persona;
 mod anomaly;
 mod utilization;
 mod semantic_dedup;
+mod conversation_pruner;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -1955,6 +1956,156 @@ fn py_analyze_health_info() -> String {
     "{\"info\":\"Call engine.analyze_health() to get a full HealthReport for the current session.\"}".to_string()
 }
 
+// ─── Conversation Pruner PyO3 wrappers ───────────────────────────────────────
+
+/// Prune a conversation to fit within a token budget.
+///
+/// Uses multi-choice knapsack via KKT dual bisection with causal DAG
+/// coherence enforcement.  Returns JSON-encoded PruneResult.
+///
+/// `blocks` is a list of dicts: {index, role, content, token_count, tool_name?, timestamp}
+#[pyfunction]
+fn py_prune_conversation(
+    py: Python,
+    blocks: Vec<Bound<'_, PyDict>>,
+    token_budget: u32,
+    decay_lambda: f64,
+    protect_last: usize,
+) -> PyResult<String> {
+    use conversation_pruner::*;
+
+    let conv_blocks: Vec<ConvBlock> = blocks.iter().enumerate().map(|(i, d)| {
+        let index = d.get_item("index").ok().flatten()
+            .and_then(|v| v.extract::<usize>().ok()).unwrap_or(i);
+        let role: String = d.get_item("role").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or_default();
+        let content: String = d.get_item("content").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or_default();
+        let token_count: u32 = d.get_item("token_count").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or(0);
+        let tool_name: Option<String> = d.get_item("tool_name").ok().flatten()
+            .and_then(|v| v.extract().ok());
+        let timestamp: f64 = d.get_item("timestamp").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or(index as f64);
+
+        let kind = classify_block(&role, &content, tool_name.as_deref());
+        let sh = dedup::simhash(&content);
+
+        ConvBlock {
+            index,
+            kind,
+            token_count,
+            simhash: sh,
+            content,
+            role,
+            tool_name,
+            depends_on: vec![],
+            timestamp,
+        }
+    }).collect();
+
+    let result = prune_conversation(&conv_blocks, token_budget, decay_lambda, protect_last);
+    serde_json::to_string(&result)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("JSON error: {}", e)))
+}
+
+/// Progressive compression: assign resolutions based on context utilization.
+/// Returns JSON: [{index, resolution}]
+#[pyfunction]
+fn py_progressive_thresholds(
+    blocks: Vec<Bound<'_, PyDict>>,
+    utilization: f64,
+    recency_cutoff: usize,
+) -> PyResult<String> {
+    use conversation_pruner::*;
+
+    let conv_blocks: Vec<ConvBlock> = blocks.iter().enumerate().map(|(i, d)| {
+        let index = d.get_item("index").ok().flatten()
+            .and_then(|v| v.extract::<usize>().ok()).unwrap_or(i);
+        let role: String = d.get_item("role").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or_default();
+        let content: String = d.get_item("content").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or_default();
+        let token_count: u32 = d.get_item("token_count").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or(0);
+        let tool_name: Option<String> = d.get_item("tool_name").ok().flatten()
+            .and_then(|v| v.extract().ok());
+        let timestamp: f64 = d.get_item("timestamp").ok().flatten()
+            .and_then(|v| v.extract().ok()).unwrap_or(index as f64);
+
+        let kind = classify_block(&role, &content, tool_name.as_deref());
+        let sh = dedup::simhash(&content);
+
+        ConvBlock {
+            index,
+            kind,
+            token_count,
+            simhash: sh,
+            content,
+            role,
+            tool_name,
+            depends_on: vec![],
+            timestamp,
+        }
+    }).collect();
+
+    let assignments = progressive_thresholds(&conv_blocks, utilization, recency_cutoff);
+    let result: Vec<HashMap<String, String>> = assignments.iter().map(|(idx, res)| {
+        let mut m = HashMap::new();
+        m.insert("index".into(), idx.to_string());
+        m.insert("resolution".into(), res.as_str().to_string());
+        m
+    }).collect();
+
+    serde_json::to_string(&result)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("JSON error: {}", e)))
+}
+
+/// Compress a single block at a given resolution level.
+/// Returns the compressed text.
+#[pyfunction]
+fn py_compress_block(
+    role: &str,
+    content: &str,
+    token_count: u32,
+    resolution: &str,
+    tool_name: Option<String>,
+) -> String {
+    use conversation_pruner::*;
+
+    let kind = classify_block(role, content, tool_name.as_deref());
+    let sh = dedup::simhash(content);
+
+    let block = ConvBlock {
+        index: 0,
+        kind,
+        token_count,
+        simhash: sh,
+        content: content.to_string(),
+        role: role.to_string(),
+        tool_name,
+        depends_on: vec![],
+        timestamp: 0.0,
+    };
+
+    let res = match resolution {
+        "skeleton"    => Resolution::Skeleton,
+        "digest"      => Resolution::Digest,
+        "fingerprint" => Resolution::Fingerprint,
+        _             => Resolution::Verbatim,
+    };
+
+    compress_block(&block, res)
+}
+
+/// Classify a conversation block by role and content.
+/// Returns: "user", "assistant", "tool_call", "tool_result", "thinking", "system"
+#[pyfunction]
+fn py_classify_block(role: &str, content: &str, tool_name: Option<String>) -> String {
+    use conversation_pruner::classify_block;
+    classify_block(role, content, tool_name.as_deref()).label().to_string()
+}
+
 // ─── Extra standalone wrappers for direct test/utility access ────────────────
 
 /// Cross-fragment redundancy: how much of `text` is already covered by `others` [0,1].
@@ -2053,6 +2204,11 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_analyze_health_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_refine_heuristic, m)?)?;
+    // ── Conversation Pruner
+    m.add_function(wrap_pyfunction!(py_prune_conversation, m)?)?;
+    m.add_function(wrap_pyfunction!(py_progressive_thresholds, m)?)?;
+    m.add_function(wrap_pyfunction!(py_compress_block, m)?)?;
+    m.add_function(wrap_pyfunction!(py_classify_block, m)?)?;
     Ok(())
 }
 
