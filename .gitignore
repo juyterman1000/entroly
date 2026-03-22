@@ -2,13 +2,16 @@
 target/
 .venv/
 __pycache__/
+*.pyc
 dist/
 *.whl
 
-# Scratch / debug artifacts
+# Generated output
+bench/results.tsv
 test_out*.txt
+
+# Scratch / debug artifacts
 *.restored
 fix_readme.py
 update_readme_safe.py
 capture_metrics.py
-demo_value.py
