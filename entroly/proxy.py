@@ -23,6 +23,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 import sys
 import threading
@@ -460,7 +461,6 @@ class PromptCompilerProxy:
         warmup_task = asyncio.create_task(self._warmup_connection(target_url))
 
         # Per-client key for trajectory isolation (hash of auth header)
-        import hashlib
         auth_raw = headers.get("authorization", "") or headers.get("x-api-key", "")
         client_key = hashlib.sha256(auth_raw.encode()).hexdigest()[:12] if auth_raw else "_default"
 
@@ -761,7 +761,11 @@ class PromptCompilerProxy:
         """Forward a streaming request and proxy the SSE response."""
         # Check circuit breaker
         if not self._breaker.allow_request():
-            logger.warning("Circuit breaker open — forwarding unmodified")
+            return JSONResponse(
+                {"error": "circuit_breaker_open", "message": "Upstream API experiencing failures, retrying after cooldown"},
+                status_code=503,
+                headers={"Retry-After": str(int(self._breaker.cooldown_s))},
+            )
 
         async def event_generator():
             try:

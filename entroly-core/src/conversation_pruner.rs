@@ -343,19 +343,21 @@ fn build_forward_refs(deps: &[Vec<usize>]) -> HashMap<usize, usize> {
 /// Returns a score in [0, 1] where higher = more valuable = higher cost to prune.
 fn score_block(
     block: &ConvBlock,
-    all_blocks: &[ConvBlock],
+    block_pos: usize,
+    forward_value: f64,
+    n_blocks: usize,
     forward_refs: &HashMap<usize, usize>,
     now: f64,
     decay_lambda: f64,
 ) -> f64 {
-    let n = all_blocks.len() as f64;
+    let n = n_blocks as f64;
 
-    // 1. Forward value: bigram overlap with subsequent blocks.
+    // 1. Forward value: pre-computed by compute_all_forward_overlaps.
     //    Approximates I(v; Y_future) without requiring an LM.
-    let forward_value = compute_forward_overlap(block, all_blocks);
 
     // 2. Reference density: how many later blocks depend on this one?
-    let fwd_count = *forward_refs.get(&block.index).unwrap_or(&0) as f64;
+    //    forward_refs is keyed by position, not block.index.
+    let fwd_count = *forward_refs.get(&block_pos).unwrap_or(&0) as f64;
     let ref_density = (fwd_count / n.max(1.0)).min(1.0);
 
     // 3. Recency: Ebbinghaus exponential decay from latest timestamp.
@@ -386,45 +388,56 @@ fn score_block(
     raw.clamp(0.0, 1.0)
 }
 
-/// Bigram forward overlap: fraction of this block's bigrams that appear
-/// in at least one subsequent block.  Approximates I(v; Y_future).
-fn compute_forward_overlap(block: &ConvBlock, all_blocks: &[ConvBlock]) -> f64 {
-    let words: Vec<&str> = block.content.split_whitespace().collect();
-    if words.len() < 2 {
-        return 0.0;
+/// Pre-compute forward bigram overlap for ALL blocks in O(N·W) total.
+///
+/// Processes blocks right-to-left, accumulating a running union of
+/// "future" bigrams.  Each block's overlap = fraction of its bigrams
+/// found in the union of all subsequent blocks.
+///
+/// Replaces the old O(N²·W) per-block approach with a single reverse pass.
+/// The most recent block gets a default of 0.5 (moderate forward value).
+fn compute_all_forward_overlaps(blocks: &[ConvBlock]) -> Vec<f64> {
+    let n = blocks.len();
+    if n == 0 {
+        return vec![];
     }
 
-    let mut bigrams: HashSet<(&str, &str)> = HashSet::new();
-    for w in words.windows(2) {
-        bigrams.insert((w[0], w[1]));
-    }
-    if bigrams.is_empty() {
-        return 0.0;
-    }
-
-    // Count bigrams found in ANY subsequent block
-    let mut found = 0usize;
-    let subsequent: Vec<&ConvBlock> = all_blocks.iter()
-        .filter(|b| b.index > block.index)
+    // Pre-split all blocks into words once (avoids redundant splits)
+    let all_words: Vec<Vec<&str>> = blocks.iter()
+        .map(|b| b.content.split_whitespace().collect())
         .collect();
 
-    if subsequent.is_empty() {
-        return 0.5;  // most recent block gets moderate default value
-    }
+    let mut values = vec![0.0_f64; n];
+    let mut future_bigrams: HashSet<(&str, &str)> = HashSet::new();
 
-    for bigram in &bigrams {
-        for other in &subsequent {
-            let other_words: Vec<&str> = other.content.split_whitespace().collect();
-            let has_match = other_words.windows(2)
-                .any(|w| w[0] == bigram.0 && w[1] == bigram.1);
-            if has_match {
-                found += 1;
-                break;  // found in at least one subsequent block
+    // Reverse pass: for each block, check against all "later" bigrams
+    for i in (0..n).rev() {
+        let words = &all_words[i];
+
+        if words.len() < 2 {
+            values[i] = if future_bigrams.is_empty() { 0.5 } else { 0.0 };
+        } else {
+            let block_bigrams: Vec<(&str, &str)> = words.windows(2)
+                .map(|w| (w[0], w[1]))
+                .collect();
+
+            if future_bigrams.is_empty() {
+                values[i] = 0.5;  // most recent block → moderate default
+            } else {
+                let found = block_bigrams.iter()
+                    .filter(|bg| future_bigrams.contains(*bg))
+                    .count();
+                values[i] = (found as f64 / block_bigrams.len() as f64).min(1.0);
+            }
+
+            // Add this block's bigrams for earlier blocks to compare against
+            for bg in block_bigrams {
+                future_bigrams.insert(bg);
             }
         }
     }
 
-    (found as f64 / bigrams.len() as f64).min(1.0)
+    values
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -432,6 +445,7 @@ fn compute_forward_overlap(block: &ConvBlock, all_blocks: &[ConvBlock]) -> f64 {
 // ══════════════════════════════════════════════════════════════════════
 
 /// Multi-choice knapsack item: one block with 4 resolution options.
+#[allow(dead_code)]
 struct McItem {
     index: usize,
     value: f64,        // information value (higher = more costly to prune)
@@ -459,8 +473,8 @@ fn kkt_multichoice_bisect(
         return vec![];
     }
 
-    // Total tokens at Verbatim
-    let total_verbatim: u32 = items.iter().map(|it| it.tokens).sum();
+    // Total tokens at Verbatim (saturating to prevent u32 overflow on malformed data)
+    let total_verbatim: u32 = items.iter().map(|it| it.tokens).fold(0u32, u32::saturating_add);
 
     // Fast path: everything fits
     if total_verbatim <= token_budget {
@@ -484,9 +498,9 @@ fn kkt_multichoice_bisect(
     // compress everything non-protected to Fingerprint.
     if max_freeable < target_freed {
         let mut assignments = vec![Resolution::Verbatim; n];
-        for item in items {
+        for (pos, item) in items.iter().enumerate() {
             if !item.protected {
-                assignments[item.index] = Resolution::Fingerprint;
+                assignments[pos] = Resolution::Fingerprint;
             }
         }
         return assignments;
@@ -505,7 +519,7 @@ fn kkt_multichoice_bisect(
         let mut assignments = vec![Resolution::Verbatim; n];
         let mut total_freed = 0.0_f64;
 
-        for item in items {
+        for (pos, item) in items.iter().enumerate() {
             if item.protected {
                 continue;
             }
@@ -532,7 +546,7 @@ fn kkt_multichoice_bisect(
                 }
             }
 
-            assignments[item.index] = best_level;
+            assignments[pos] = best_level;
             total_freed += best_freed;
         }
 
@@ -606,6 +620,11 @@ fn protect_recent(
 
 /// Generate compressed content for a block at a given resolution.
 pub fn compress_block(block: &ConvBlock, resolution: Resolution) -> String {
+    // Guard: empty content produces a descriptive placeholder
+    if block.content.is_empty() && resolution != Resolution::Verbatim {
+        return format!("[empty {}]", block.kind.label());
+    }
+
     match resolution {
         Resolution::Verbatim => block.content.clone(),
 
@@ -638,7 +657,7 @@ pub fn compress_block(block: &ConvBlock, resolution: Resolution) -> String {
                 }
                 BlockKind::AssistantMessage => {
                     let sentences: Vec<&str> = block.content
-                        .split(|c: char| c == '.' || c == '\n')
+                        .split(['.', '\n'])
                         .filter(|s| s.trim().len() > 5)
                         .collect();
                     if sentences.len() <= 3 {
@@ -714,7 +733,7 @@ pub fn prune_conversation(
         };
     }
 
-    let total_before: u32 = blocks.iter().map(|b| b.token_count).sum();
+    let total_before: u32 = blocks.iter().map(|b| b.token_count).fold(0u32, u32::saturating_add);
 
     // Fast path: everything fits
     if total_before <= token_budget {
@@ -736,10 +755,13 @@ pub fn prune_conversation(
     let now = blocks.iter().map(|b| b.timestamp).fold(0.0_f64, f64::max);
 
     // 3. Score each block's information value
-    let items: Vec<McItem> = blocks.iter().map(|b| {
-        let value = score_block(b, blocks, &forward_refs, now, decay_lambda);
+    // Pre-compute forward overlaps in O(N·W) — replaces O(N²·W) per-block
+    let forward_values = compute_all_forward_overlaps(blocks);
+
+    let items: Vec<McItem> = blocks.iter().enumerate().map(|(pos, b)| {
+        let value = score_block(b, pos, forward_values[pos], blocks.len(), &forward_refs, now, decay_lambda);
         let protected = matches!(b.kind, BlockKind::UserMessage | BlockKind::SystemMessage);
-        McItem { index: b.index, value, tokens: b.token_count, protected }
+        McItem { index: pos, value, tokens: b.token_count, protected }
     }).collect();
 
     // 4. Solve multi-choice knapsack via KKT dual bisection
@@ -753,11 +775,11 @@ pub fn prune_conversation(
 
     // 7. Compute stats
     let total_after: u32 = blocks.iter().enumerate()
-        .map(|(i, b)| (b.token_count as f64 * assignments[i].token_fraction()) as u32)
-        .sum();
+        .map(|(i, b)| (b.token_count as f64 * assignments[i].token_fraction()).round() as u32)
+        .fold(0u32, u32::saturating_add);
     let blocks_compressed = assignments.iter().filter(|&&r| r != Resolution::Verbatim).count();
-    let info_loss: f64 = items.iter()
-        .map(|it| it.value * assignments[it.index].info_loss())
+    let info_loss: f64 = items.iter().enumerate()
+        .map(|(pos, it)| it.value * assignments[pos].info_loss())
         .sum();
 
     PruneResult {
@@ -798,7 +820,7 @@ pub fn progressive_thresholds(
     }
 
     for (i, block) in blocks.iter().enumerate() {
-        let is_old = block.index < recency_cutoff;
+        let is_old = i < recency_cutoff;
 
         match block.kind {
             BlockKind::UserMessage | BlockKind::SystemMessage => {}
@@ -1142,8 +1164,8 @@ mod tests {
         let blocks = vec![
             make_block(0, "user", "hello world", 10),
         ];
-        let overlap = compute_forward_overlap(&blocks[0], &blocks);
-        assert!((overlap - 0.5).abs() < 0.01, "Most recent block should get 0.5 default");
+        let overlaps = compute_all_forward_overlaps(&blocks);
+        assert!((overlaps[0] - 0.5).abs() < 0.01, "Most recent block should get 0.5 default");
     }
 
     #[test]
@@ -1153,12 +1175,293 @@ mod tests {
         let clean = make_block(1, "tool", &"def authenticate(user, password):\n    h = hashlib.sha256(password.encode())\n    return db.verify(user, h.hexdigest())\n".repeat(5), 500);
 
         let forward_refs = HashMap::new();
-        let val_noisy = score_block(&noisy, &[noisy.clone()], &forward_refs, 1.0, 0.1);
-        let val_clean = score_block(&clean, &[clean.clone()], &forward_refs, 1.0, 0.1);
+        let val_noisy = score_block(&noisy, 0, 0.5, 1, &forward_refs, 1.0, 0.1);
+        let val_clean = score_block(&clean, 0, 0.5, 1, &forward_refs, 1.0, 0.1);
 
         // Clean code should have at least as high a value as noisy base64-like content
         assert!(val_clean >= val_noisy * 0.9,
             "Clean code should score well relative to noise: clean={:.3} noisy={:.3}",
             val_clean, val_noisy);
+    }
+
+    // ── Edge case tests for fixed bugs ──
+
+    #[test]
+    fn test_non_sequential_block_indices_no_panic() {
+        // Bug #1: kkt_multichoice_bisect used block.index as array index.
+        // Non-sequential indices would panic with index-out-of-bounds.
+        let blocks = vec![
+            make_block(100, "user", "fix the bug", 50),
+            make_block(200, "tool", &"output ".repeat(100), 1000),
+            make_block(300, "assistant", "I see the issue", 30),
+        ];
+        // Must not panic regardless of block.index values
+        let result = prune_conversation(&blocks, 200, 0.1, 2);
+        assert_eq!(result.assignments.len(), 3);
+        // Output should map original block indices
+        assert_eq!(result.assignments[0].0, 100);
+        assert_eq!(result.assignments[1].0, 200);
+        assert_eq!(result.assignments[2].0, 300);
+    }
+
+    #[test]
+    fn test_budget_zero() {
+        // Budget of 0: should compress everything non-protected to Fingerprint
+        let blocks = vec![
+            make_block(0, "user", "hello", 50),
+            make_block(1, "tool", &"data ".repeat(100), 500),
+            make_block(2, "assistant", "response text here", 100),
+        ];
+        let result = prune_conversation(&blocks, 0, 0.1, 0);
+        // User stays Verbatim (protected), others should be compressed
+        assert_eq!(result.assignments[0].1, Resolution::Verbatim);
+    }
+
+    #[test]
+    fn test_budget_exceeds_total() {
+        // Budget larger than all tokens: everything stays Verbatim
+        let blocks = vec![
+            make_block(0, "user", "query", 100),
+            make_block(1, "tool", "result", 200),
+        ];
+        let result = prune_conversation(&blocks, u32::MAX, 0.1, 6);
+        assert!(result.assignments.iter().all(|(_, r)| *r == Resolution::Verbatim));
+        assert_eq!(result.method, "fits");
+    }
+
+    #[test]
+    fn test_compress_block_empty_content() {
+        // Bug #11: compress_block on empty content should not produce ""
+        let block = make_block(0, "tool", "", 0);
+        let compressed = compress_block(&block, Resolution::Skeleton);
+        assert!(compressed.contains("empty"), "Empty content should produce placeholder: {}", compressed);
+
+        let digest = compress_block(&block, Resolution::Digest);
+        assert!(digest.contains("empty"), "Empty digest should produce placeholder: {}", digest);
+
+        // Verbatim of empty should still be empty
+        let verbatim = compress_block(&block, Resolution::Verbatim);
+        assert_eq!(verbatim, "");
+    }
+
+    #[test]
+    fn test_negative_decay_lambda_clamped() {
+        // Negative decay should not cause exponential growth (recency stays in [0,1])
+        let blocks = vec![
+            make_block(0, "user", "fix the bug", 50),
+            make_block(1, "tool", &"output ".repeat(50), 500),
+        ];
+        let result = prune_conversation(&blocks, 100, -1.0, 2);
+        // Should not panic or produce NaN
+        assert!(!result.info_loss.is_nan(), "info_loss should not be NaN");
+        assert!(result.total_tokens_after <= result.total_tokens_before || result.method == "fits");
+    }
+
+    #[test]
+    fn test_forward_overlap_multiple_blocks() {
+        // Verify O(N) compute_all_forward_overlaps produces correct values
+        let blocks = vec![
+            make_block(0, "user", "fix the authentication bug in login", 20),
+            make_block(1, "tool", "def authenticate user password check", 100),
+            make_block(2, "assistant", "the authentication bug is in login validation", 50),
+        ];
+        let overlaps = compute_all_forward_overlaps(&blocks);
+        assert_eq!(overlaps.len(), 3);
+        // Block 0 shares "authentication" bigrams with block 2
+        assert!(overlaps[0] > 0.0, "Block 0 should have some forward overlap");
+        // Block 2 is last → gets default 0.5
+        assert!((overlaps[2] - 0.5).abs() < 0.01, "Last block should get 0.5 default");
+    }
+
+    #[test]
+    fn test_progressive_thresholds_position_based_recency() {
+        // Bug #9: progressive_thresholds was using block.index for recency,
+        // which breaks with non-sequential indices
+        let blocks = vec![
+            make_block(100, "user", "query", 50),
+            make_block(200, "tool", "old output text here", 500),
+            make_block(300, "assistant", "response", 200),
+        ];
+        // recency_cutoff=1 means blocks at position >= 1 are "recent"
+        let assignments = progressive_thresholds(&blocks, 0.75, 1);
+        // All assignments should have the original block indices
+        assert_eq!(assignments[0].0, 100);
+        assert_eq!(assignments[1].0, 200);
+        assert_eq!(assignments[2].0, 300);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Stress tests: adversarial inputs for every fixed bug
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn stress_random_indices_never_panic() {
+        // Bug #1: kkt_multichoice_bisect used block.index for array indexing.
+        // 20 iterations with wildly non-sequential indices.
+        for seed in 0..20 {
+            let indices: Vec<usize> = (0..10).map(|i| i * 1000 + seed * 37).collect();
+            let blocks: Vec<ConvBlock> = indices.iter().enumerate().map(|(i, &idx)| {
+                let role = if i % 3 == 0 { "user" } else if i % 3 == 1 { "tool" } else { "assistant" };
+                make_block(idx, role, &format!("content for block {i} with various words here"), 100 + (i as u32) * 50)
+            }).collect();
+
+            let result = prune_conversation(&blocks, 300, 0.1, 3);
+            assert_eq!(result.assignments.len(), blocks.len(), "seed={seed}");
+            for (j, (out_idx, _)) in result.assignments.iter().enumerate() {
+                assert_eq!(*out_idx, indices[j], "Output index mismatch at pos {j}, seed={seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn stress_budget_boundaries() {
+        let blocks: Vec<ConvBlock> = (0..5).map(|i| {
+            let role = if i == 0 { "user" } else { "tool" };
+            make_block(i, role, &format!("block {i} content data output"), 200)
+        }).collect();
+
+        for budget in [0, 1, 100, 199, 200, 201, 999, 1000, 1001, u32::MAX / 2, u32::MAX] {
+            let result = prune_conversation(&blocks, budget, 0.1, 2);
+            assert!(!result.info_loss.is_nan(), "NaN at budget={budget}");
+            assert!(!result.info_loss.is_infinite(), "Inf at budget={budget}");
+            assert!(result.total_tokens_after <= result.total_tokens_before || result.method == "fits",
+                "After > Before at budget={budget}: {} > {}", result.total_tokens_after, result.total_tokens_before);
+        }
+    }
+
+    #[test]
+    fn stress_protected_messages_invariant() {
+        let blocks = vec![
+            make_block(0, "system", "You are an assistant", 100),
+            make_block(1, "user", "Help me fix the login bug", 50),
+            make_block(2, "tool", &"output ".repeat(500), 5000),
+            make_block(3, "assistant", &"response ".repeat(500), 5000),
+            make_block(4, "user", "Thanks but there's another issue", 50),
+        ];
+
+        let result = prune_conversation(&blocks, 200, 0.1, 0);
+        for (idx, res) in &result.assignments {
+            match *idx {
+                0 | 1 | 4 => assert_eq!(*res, Resolution::Verbatim,
+                    "Protected block idx={idx} was compressed to {:?}", res),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn stress_compress_all_resolutions_all_kinds() {
+        let contents: Vec<String> = vec![
+            "".into(),
+            "x".into(),
+            "short".into(),
+            "word ".repeat(100),
+            "a".repeat(10000),
+            "line1\nline2\nline3\nline4\nline5".into(),
+            "...---===###".into(),
+        ];
+        let roles = ["user", "assistant", "tool", "tool_call", "thinking", "system"];
+        let resolutions = Resolution::all();
+
+        for content in &contents {
+            for role in &roles {
+                let block = make_block(0, role, content, 100);
+                for &res in resolutions.iter() {
+                    let compressed = compress_block(&block, res);
+                    if res == Resolution::Verbatim {
+                        assert_eq!(compressed, block.content);
+                    }
+                    if !block.content.is_empty() && res != Resolution::Verbatim {
+                        assert!(compressed.len() <= block.content.len() + 50,
+                            "Compressed larger for {role}/{res:?}: {} > {}",
+                            compressed.len(), block.content.len());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stress_dag_coherence_post_pruning() {
+        let blocks = vec![
+            make_block(0, "user", "run the test suite", 50),
+            make_block(1, "tool_call", "function_name(arg1, arg2)", 30),
+            make_block(2, "tool", &"test output results data ".repeat(50), 1000),
+            make_block(3, "assistant", "Tests passed with all checks", 20),
+        ];
+
+        let result = prune_conversation(&blocks, 200, 0.1, 1);
+        let assignment_map: HashMap<usize, Resolution> = result.assignments.iter().cloned().collect();
+
+        let tc_res = assignment_map[&1];
+        let tr_res = assignment_map[&2];
+        assert!(tc_res as u8 <= tr_res as u8 || tc_res == Resolution::Verbatim,
+            "DAG violated: tool_call={tc_res:?} but tool_result={tr_res:?}");
+    }
+
+    #[test]
+    fn stress_500_blocks_under_200ms() {
+        // Validates the O(N²) → O(N) fix in compute_all_forward_overlaps
+        let blocks: Vec<ConvBlock> = (0..500).map(|i| {
+            let role = match i % 4 { 0 => "user", 1 => "tool_call", 2 => "tool", _ => "assistant" };
+            make_block(i, role, &format!("block {i} content words here for overlap testing"), 50 + (i as u32) % 200)
+        }).collect();
+
+        let start = std::time::Instant::now();
+        let result = prune_conversation(&blocks, 5000, 0.1, 10);
+        let elapsed = start.elapsed();
+
+        assert!(elapsed.as_millis() < 200,
+            "500 blocks took {}ms (budget: 200ms)", elapsed.as_millis());
+        assert_eq!(result.assignments.len(), 500);
+    }
+
+    #[test]
+    fn stress_progressive_thresholds_all_utilizations() {
+        let blocks: Vec<ConvBlock> = (0..10).map(|i| {
+            let role = match i % 4 { 0 => "user", 1 => "tool_call", 2 => "tool", _ => "assistant" };
+            make_block(i * 100, role, &format!("content for block {i}"), 100)
+        }).collect();
+
+        for util_pct in [0.0, 0.50, 0.69, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.99, 1.0] {
+            let assignments = progressive_thresholds(&blocks, util_pct, 3);
+            assert_eq!(assignments.len(), blocks.len(), "util={util_pct}");
+
+            for (j, (out_idx, _)) in assignments.iter().enumerate() {
+                assert_eq!(*out_idx, j * 100, "Index mismatch at pos {j}, util={util_pct}");
+            }
+
+            for (idx, res) in &assignments {
+                let block = blocks.iter().find(|b| b.index == *idx).unwrap();
+                if matches!(block.kind, BlockKind::UserMessage | BlockKind::SystemMessage) {
+                    assert_eq!(*res, Resolution::Verbatim,
+                        "Protected block idx={idx} compressed at util={util_pct}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn stress_forward_overlap_correctness() {
+        let blocks = vec![
+            make_block(0, "user", "fix the authentication bug", 20),
+            make_block(1, "tool", "def authenticate user password validate check", 100),
+            make_block(2, "tool", "def authorize role permission access control", 100),
+            make_block(3, "assistant", "the authentication bug is in the validate check function", 50),
+        ];
+
+        let overlaps = compute_all_forward_overlaps(&blocks);
+        assert_eq!(overlaps.len(), 4);
+
+        for (i, &v) in overlaps.iter().enumerate() {
+            assert!(v >= 0.0 && v <= 1.0, "Overlap[{i}] = {v} out of range");
+        }
+
+        // Last block gets default 0.5
+        assert!((overlaps[3] - 0.5).abs() < 0.01);
+
+        // Block 1 shares "validate check" bigrams with block 3, block 2 doesn't
+        assert!(overlaps[1] > overlaps[2],
+            "Block 1 should share more with block 3: {} vs {}", overlaps[1], overlaps[2]);
     }
 }

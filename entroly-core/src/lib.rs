@@ -1933,7 +1933,10 @@ fn py_information_score(text: &str, other_fragments: Vec<String>) -> f64 {
 #[pyfunction]
 fn py_scan_content(content: &str, source: &str) -> String {
     let report = sast::scan_content(content, source);
-    serde_json::to_string(&report).unwrap_or_else(|e| format!("{{\"error\":\"{}\"}}", e))
+    serde_json::to_string(&report).unwrap_or_else(|e| {
+        let escaped = format!("{}", e).replace('\\', "\\\\").replace('"', "\\\"");
+        format!("{{\"error\":\"{}\"}}", escaped)
+    })
 }
 
 #[pyfunction]
@@ -1966,7 +1969,7 @@ fn py_analyze_health_info() -> String {
 /// `blocks` is a list of dicts: {index, role, content, token_count, tool_name?, timestamp}
 #[pyfunction]
 fn py_prune_conversation(
-    py: Python,
+    _py: Python,
     blocks: Vec<Bound<'_, PyDict>>,
     token_budget: u32,
     decay_lambda: f64,
