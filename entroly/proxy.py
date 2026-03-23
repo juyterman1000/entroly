@@ -49,6 +49,7 @@ from .proxy_transform import (
     format_context_block,
     format_hierarchical_context,
     inject_context_anthropic,
+    inject_context_gemini,
     inject_context_openai,
 )
 
@@ -327,6 +328,7 @@ class PromptCompilerProxy:
         # its own turn counter. Prevents concurrent IDE clients from
         # corrupting each other's EGTC temperature calibration.
         self._trajectory_turns: Dict[str, int] = {}  # client_key -> turn_count
+        self._trajectory_max_clients = 1000  # evict oldest beyond this
 
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
@@ -431,7 +433,7 @@ class PromptCompilerProxy:
 
         path = request.url.path
         headers = {k: v for k, v in request.headers.items()}
-        provider = detect_provider(path, headers)
+        provider = detect_provider(path, headers, body)
 
         # ── Progressive conversation compression ──
         # Surgically compress tool calls/results and thinking blocks when
@@ -449,6 +451,8 @@ class PromptCompilerProxy:
             target_url = self._resolve_target(provider, path)
             forward_headers = self._build_headers(headers, provider)
             is_streaming = body.get("stream", False)
+            if not is_streaming and "streamGenerateContent" in path:
+                is_streaming = True
             if is_streaming:
                 return await self._stream_response(target_url, forward_headers, body)
             return await self._forward_response(target_url, forward_headers, body)
@@ -461,7 +465,9 @@ class PromptCompilerProxy:
         warmup_task = asyncio.create_task(self._warmup_connection(target_url))
 
         # Per-client key for trajectory isolation (hash of auth header)
-        auth_raw = headers.get("authorization", "") or headers.get("x-api-key", "")
+        auth_raw = (headers.get("authorization", "")
+                    or headers.get("x-api-key", "")
+                    or headers.get("x-goog-api-key", ""))
         client_key = hashlib.sha256(auth_raw.encode()).hexdigest()[:12] if auth_raw else "_default"
 
         # Run the optimization pipeline (synchronous Rust, off the event loop)
@@ -469,7 +475,7 @@ class PromptCompilerProxy:
             user_message = extract_user_message(body, provider)
             if user_message:
                 pipeline_result = await asyncio.to_thread(
-                    self._run_pipeline, user_message, body
+                    self._run_pipeline, user_message, body, path
                 )
                 context_text = pipeline_result["context"]
                 pipeline_ms = pipeline_result["elapsed_ms"]
@@ -496,10 +502,19 @@ class PromptCompilerProxy:
 
                 if context_text:
                     # Gap #27 & #29: Track original vs optimized tokens
-                    original_tokens = sum(
-                        len(m.get("content", "").split())
-                        for m in body.get("messages", [])
-                    ) * 4 // 3
+                    if provider == "gemini":
+                        # Gemini uses contents/parts instead of messages
+                        original_tokens = sum(
+                            len(p.get("text", "").split())
+                            for item in body.get("contents", [])
+                            for p in item.get("parts", [])
+                            if isinstance(p, dict) and "text" in p
+                        ) * 4 // 3
+                    else:
+                        original_tokens = sum(
+                            len(m.get("content", "").split())
+                            for m in body.get("messages", [])
+                        ) * 4 // 3
                     optimized_tokens = len(context_text.split()) * 4 // 3
                     with self._stats_lock:
                         self._total_original_tokens += original_tokens
@@ -508,10 +523,12 @@ class PromptCompilerProxy:
                         self._last_pipeline_ms = pipeline_ms
                         self._last_query = _sanitize_query(user_message)
 
-                    if provider == "openai":
-                        body = inject_context_openai(body, context_text)
-                    else:
+                    if provider == "gemini":
+                        body = inject_context_gemini(body, context_text)
+                    elif provider == "anthropic":
                         body = inject_context_anthropic(body, context_text)
+                    else:
+                        body = inject_context_openai(body, context_text)
 
                     # EGTC v2: apply Fisher-derived optimal temperature
                     if self.config.enable_temperature_calibration and optimal_tau is not None:
@@ -526,12 +543,16 @@ class PromptCompilerProxy:
                                 c_min=self.config.trajectory_c_min,
                                 lam=self.config.trajectory_lambda,
                             )
-                        body = apply_temperature(body, optimal_tau)
+                        body = apply_temperature(body, optimal_tau, provider)
                         with self._stats_lock:
                             self._temperature_sum += optimal_tau
                             self._temperature_count += 1
                             self._last_temperature = optimal_tau
                             self._trajectory_turns[client_key] = self._trajectory_turns.get(client_key, 0) + 1
+                            # Evict oldest clients to prevent unbounded memory growth
+                            if len(self._trajectory_turns) > self._trajectory_max_clients:
+                                oldest = min(self._trajectory_turns, key=self._trajectory_turns.get)
+                                del self._trajectory_turns[oldest]
 
                     with self._stats_lock:
                         self._requests_optimized += 1
@@ -543,10 +564,18 @@ class PromptCompilerProxy:
                     # Startup banner: on first optimized request, print a
                     # human-visible confirmation so the user knows it's working.
                     if opt_count == 1:
-                        original_tokens = sum(
-                            len(m.get("content", "").split())
-                            for m in body.get("messages", [])
-                        ) * 4 // 3  # rough word→token estimate
+                        if provider == "gemini":
+                            original_tokens = sum(
+                                len(p.get("text", "").split())
+                                for item in body.get("contents", [])
+                                for p in item.get("parts", [])
+                                if isinstance(p, dict) and "text" in p
+                            ) * 4 // 3
+                        else:
+                            original_tokens = sum(
+                                len(m.get("content", "").split())
+                                for m in body.get("messages", [])
+                            ) * 4 // 3  # rough word→token estimate
                         optimized_tokens = len(context_text.split()) * 4 // 3
                         if original_tokens > 0:
                             saved_pct = max(0, (original_tokens - optimized_tokens)) * 100 // original_tokens
@@ -563,8 +592,8 @@ class PromptCompilerProxy:
                     )
         except Exception as e:
             # Cardinal rule: never block a request due to entroly errors
-            logger.debug("Pipeline error (forwarding unmodified): %s: %s",
-                         type(e).__name__, str(e)[:120])
+            logger.warning("Pipeline error (forwarding unmodified): %s: %s",
+                          type(e).__name__, str(e)[:200])
 
         # Await warmup (usually completes during pipeline, essentially free)
         await warmup_task
@@ -572,20 +601,24 @@ class PromptCompilerProxy:
         # Forward to real API (target_url already resolved above)
         forward_headers = self._build_headers(headers, provider)
         is_streaming = body.get("stream", False)
+        # Gemini: streaming is determined by URL path, not a body field.
+        # streamGenerateContent returns SSE — must be handled as streaming.
+        if not is_streaming and "streamGenerateContent" in path:
+            is_streaming = True
 
         if is_streaming:
             return await self._stream_response(target_url, forward_headers, body)
         else:
             return await self._forward_response(target_url, forward_headers, body)
 
-    def _run_pipeline(self, user_message: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    def _run_pipeline(self, user_message: str, body: Dict[str, Any], path: str = "") -> Dict[str, Any]:
         """Run the synchronous optimization pipeline. Called via asyncio.to_thread.
 
         Returns dict with keys: context, elapsed_ms, temperature.
         """
         t0 = time.perf_counter()
 
-        model = extract_model(body)
+        model = extract_model(body, path)
 
         # ── ECDB: Dynamic Budget Computation ──
         # We need vagueness for the budget, but the full query analysis
@@ -602,7 +635,8 @@ class PromptCompilerProxy:
                     vagueness=vagueness_pre,
                     total_fragments=frag_count,
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug("ECDB pre-analysis fallback: %s", e)
                 token_budget = compute_token_budget(model, self.config)
         else:
             token_budget = compute_token_budget(model, self.config)
@@ -925,6 +959,8 @@ class PromptCompilerProxy:
     def _resolve_target(self, provider: str, path: str) -> str:
         if provider == "anthropic":
             return f"{self.config.anthropic_base_url}{path}"
+        if provider == "gemini":
+            return f"{self.config.gemini_base_url}{path}"
         return f"{self.config.openai_base_url}{path}"
 
     def _build_headers(
@@ -938,6 +974,8 @@ class PromptCompilerProxy:
             forward["x-api-key"] = original["x-api-key"]
         if "anthropic-version" in original:
             forward["anthropic-version"] = original["anthropic-version"]
+        if "x-goog-api-key" in original:
+            forward["x-goog-api-key"] = original["x-goog-api-key"]
         return forward
 
     @staticmethod
@@ -1203,9 +1241,17 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse({"error": "invalid request body"}, status_code=400)
 
+    # Re-detect provider with body for model-name-based detection
+    provider = detect_provider(request.url.path, headers, body if isinstance(body, dict) else None)
+    target_url = proxy._resolve_target(provider, request.url.path)
+    forward_headers = proxy._build_headers(headers, provider)
+
     try:
         client = await proxy._ensure_client()
         is_streaming = body.get("stream", False) if isinstance(body, dict) else False
+        # Gemini: streaming determined by URL path, not body field
+        if not is_streaming and "streamGenerateContent" in request.url.path:
+            is_streaming = True
         if is_streaming:
             return await proxy._stream_response(target_url, forward_headers, body)
         response = await client.request(
@@ -1302,6 +1348,8 @@ def create_proxy_app(
         routes=[
             Route("/v1/chat/completions", proxy.handle_proxy, methods=["POST"]),
             Route("/v1/messages", proxy.handle_proxy, methods=["POST"]),
+            # Gemini: model name is embedded in the URL path
+            Route("/v1beta/models/{model_id:path}", proxy.handle_proxy, methods=["POST"]),
             Route("/health", _health),
             Route("/stats", _proxy_stats),
             Route("/context", _context_inspect),          # Gap #29

@@ -658,7 +658,7 @@ def cmd_config(args):
 
     # Group settings
     groups = {
-        "Network": ["port", "host", "openai_base_url", "anthropic_base_url"],
+        "Network": ["port", "host", "openai_base_url", "anthropic_base_url", "gemini_base_url"],
         "Quality": ["quality", "context_fraction"],
         "Features": [k for k in vars(config) if k.startswith("enable_")],
         "ECDB": [k for k in vars(config) if k.startswith("ecdb_")],
@@ -951,12 +951,21 @@ def cmd_batch(args):
 
     if result["status"] == "indexed":
         print(f"  {C.GREEN}Indexed {result['files_indexed']} files{C.RESET}")
+    elif result["status"] == "skipped":
+        print(f"  {C.GRAY}Using persistent index ({result.get('existing_fragments', 0)} fragments){C.RESET}")
 
     # Read queries from stdin or file
     import sys as _sys
     if args.input and args.input != "-":
-        with open(args.input) as f:
-            queries = [line.strip() for line in f if line.strip()]
+        try:
+            with open(args.input) as f:
+                queries = [line.strip() for line in f if line.strip()]
+        except FileNotFoundError:
+            print(f"  {C.RED}File not found: {args.input}{C.RESET}")
+            return
+        except (IOError, OSError) as e:
+            print(f"  {C.RED}Cannot read file: {e}{C.RESET}")
+            return
     else:
         queries = [line.strip() for line in _sys.stdin if line.strip()]
 
@@ -994,14 +1003,32 @@ def cmd_demo(args):
     engine = EntrolyEngine()
     result = auto_index(engine)
 
-    if result["status"] != "indexed" or result.get("files_indexed", 0) == 0:
+    if result["status"] == "indexed":
+        files_indexed = result["files_indexed"]
+        total_tokens_raw = result["total_tokens"]
+        if files_indexed == 0:
+            print(f"  {C.YELLOW}No files found to index.{C.RESET}")
+            print(f"  Run this from a project directory with source files.\n")
+            return
+        print(f"  {C.GREEN}Indexed {files_indexed} files ({total_tokens_raw:,} tokens total){C.RESET}\n")
+    elif result["status"] == "skipped":
+        # Persistent index already loaded — get stats from engine
+        existing = result.get("existing_fragments", 0)
+        if existing == 0:
+            print(f"  {C.YELLOW}No files found to index.{C.RESET}")
+            print(f"  Run this from a project directory with source files.\n")
+            return
+        if engine._use_rust:
+            stats = engine._rust.stats()
+            total_tokens_raw = stats.get("session", {}).get("total_tokens_tracked", 0)
+        else:
+            total_tokens_raw = getattr(engine, "_total_token_count", 0)
+        files_indexed = existing
+        print(f"  {C.GREEN}Using persistent index: {files_indexed} fragments ({total_tokens_raw:,} tokens total){C.RESET}\n")
+    else:
         print(f"  {C.YELLOW}No files found to index.{C.RESET}")
         print(f"  Run this from a project directory with source files.\n")
         return
-
-    files_indexed = result["files_indexed"]
-    total_tokens_raw = result["total_tokens"]
-    print(f"  {C.GREEN}Indexed {files_indexed} files ({total_tokens_raw:,} tokens total){C.RESET}\n")
 
     sample_queries = [
         "How does the authentication flow work?",

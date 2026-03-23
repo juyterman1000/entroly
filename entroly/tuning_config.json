@@ -2,9 +2,9 @@
   "_comment": "Single-file mutation target for Entroly's autotuner. The autotuner modifies ONLY this file. The benchmark harness and Rust core are read-only.",
   "weights": {
     "recency": 0.3,
-    "frequency": 0.25,
-    "semantic_sim": 0.25,
-    "entropy": 0.2
+    "frequency": 0.2,
+    "semantic": 0.25,
+    "entropy": 0.25
   },
   "decay": {
     "half_life_turns": 15,
@@ -32,14 +32,14 @@
     "initial_residual_lambda": 0.1
   },
   "ios": {
-    "skeleton_info_factor": 0.70,
+    "skeleton_info_factor": 0.7,
     "reference_info_factor": 0.15,
-    "diversity_floor": 0.10,
+    "diversity_floor": 0.1,
     "_comment": "MRK info retention factors and SDS diversity floor. Tunable by autotune."
   },
   "ecdb": {
     "min_budget": 500,
-    "max_fraction": 0.30,
+    "max_fraction": 0.3,
     "sigmoid_steepness": 3.0,
     "sigmoid_base": 0.5,
     "sigmoid_range": 1.5,

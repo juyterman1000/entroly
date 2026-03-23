@@ -22,20 +22,62 @@ from typing import Any, Dict, List, Optional
 from .proxy_config import ProxyConfig, context_window_for_model
 
 
-def detect_provider(path: str, headers: Dict[str, str]) -> str:
-    """Detect whether this is an OpenAI or Anthropic request.
+def detect_provider(
+    path: str,
+    headers: Dict[str, str],
+    body: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Detect the API provider from request path, headers, and body.
 
-    Returns "openai" or "anthropic".
+    Returns "openai", "anthropic", or "gemini".
+    Detection priority: path → headers → model name → default (openai).
+
+    OpenAI-compatible providers (OpenRouter, Ollama, DeepSeek, Mistral)
+    are detected as "openai" — they use the same API format and the
+    openai_base_url config lets users point to any compatible endpoint.
     """
+    # Path-based (most reliable)
     if "/v1/messages" in path:
         return "anthropic"
+    if "generateContent" in path or "streamGenerateContent" in path:
+        return "gemini"
+
+    # Header-based
+    if "x-goog-api-key" in headers:
+        return "gemini"
     if "x-api-key" in headers and "authorization" not in headers:
         return "anthropic"
+
+    # Body-format-based detection (safer than model-name detection).
+    # Model name is unreliable: Cursor/OpenRouter sends model="gemini-2.5-pro"
+    # through /v1/chat/completions in OpenAI format → must be handled as openai,
+    # not gemini. Only native Gemini API uses "contents" instead of "messages".
+    if body:
+        if "contents" in body and "messages" not in body:
+            return "gemini"
+
     return "openai"
 
 
 def extract_user_message(body: Dict[str, Any], provider: str) -> str:
     """Extract the latest user message text from the request body."""
+    # Gemini uses "contents" with "parts" instead of "messages"
+    if provider == "gemini":
+        contents = body.get("contents", [])
+        for item in reversed(contents):
+            if item.get("role", "user") != "user":
+                continue
+            parts = item.get("parts", [])
+            texts = [
+                p.get("text", "")
+                for p in parts
+                if isinstance(p, dict) and "text" in p
+            ]
+            if texts:
+                return " ".join(texts)
+        return ""
+
+    # OpenAI / Anthropic: standard "messages" array
     messages = body.get("messages", [])
     if not messages:
         return ""
@@ -58,9 +100,22 @@ def extract_user_message(body: Dict[str, Any], provider: str) -> str:
     return ""
 
 
-def extract_model(body: Dict[str, Any]) -> str:
-    """Extract the model name from the request body."""
-    return body.get("model", "")
+def extract_model(body: Dict[str, Any], path: str = "") -> str:
+    """Extract the model name from the request body or URL path.
+
+    Gemini embeds the model in the URL path rather than the body:
+        /v1beta/models/gemini-2.0-flash:generateContent
+    """
+    model = body.get("model", "")
+    if model:
+        return model
+    # Gemini: model in URL path
+    if "/models/" in path:
+        import re
+        m = re.search(r"/models/([^/:]+)", path)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def compute_token_budget(model: str, config: ProxyConfig) -> int:
@@ -259,6 +314,9 @@ def _deduplicate_fragments(
             seen.add(h)
             unique.append(frag)
     return unique
+
+
+
 
 
 def format_context_block(
@@ -503,6 +561,29 @@ def inject_context_anthropic(
     return body
 
 
+def inject_context_gemini(
+    body: Dict[str, Any], context_text: str
+) -> Dict[str, Any]:
+    """Inject optimized context into a Google Gemini generateContent request.
+
+    Uses the top-level "systemInstruction" field with a parts array.
+    Prepends to existing system instruction if present.
+    """
+    body = copy.deepcopy(body)
+    existing = body.get("systemInstruction")
+
+    if existing is None:
+        body["systemInstruction"] = {"parts": [{"text": context_text}]}
+    elif isinstance(existing, dict):
+        parts = existing.get("parts", [])
+        parts.insert(0, {"text": context_text})
+        existing["parts"] = parts
+    else:
+        body["systemInstruction"] = {"parts": [{"text": context_text}]}
+
+    return body
+
+
 # ══════════════════════════════════════════════════════════════════════
 # EGTC v2 — Entropy-Gap Temperature Calibration
 # ══════════════════════════════════════════════════════════════════════
@@ -708,12 +789,25 @@ def apply_trajectory_convergence(
 def apply_temperature(
     body: Dict[str, Any],
     tau: float,
+    provider: str = "openai",
 ) -> Dict[str, Any]:
     """Set the temperature in the request body, respecting user overrides.
 
     If the user explicitly set a temperature, we DON'T override it.
     We only inject when temperature is absent (the common case in IDE usage).
+
+    Gemini places temperature inside ``generationConfig`` rather than
+    at the top level.
     """
+    if provider == "gemini":
+        gen_config = body.get("generationConfig", {})
+        if "temperature" in gen_config:
+            return body  # user explicitly set it
+        body = copy.deepcopy(body)
+        body.setdefault("generationConfig", {})["temperature"] = tau
+        return body
+
+    # OpenAI / Anthropic
     if "temperature" in body:
         return body  # user explicitly set it — respect their choice
     body = copy.deepcopy(body)

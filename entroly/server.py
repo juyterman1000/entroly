@@ -29,6 +29,7 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -319,6 +320,9 @@ class EntrolyEngine:
             if self._use_rust:
                 result = self._rust.optimize(token_budget, refined_query)
                 result = dict(result)
+                # Normalize key: Rust returns "selected", Python uses "selected_fragments"
+                if "selected" in result and "selected_fragments" not in result:
+                    result["selected_fragments"] = result["selected"]
                 if refinement_info:
                     result["query_refinement"] = refinement_info
                 if query_analysis:
@@ -506,7 +510,6 @@ class EntrolyEngine:
 
     def _validate_checkpoint_dir(self) -> None:
         """Fix #5: Validate checkpoint directory is writable at startup."""
-        import os
         ckpt_dir = self.config.checkpoint_dir
         try:
             os.makedirs(ckpt_dir, exist_ok=True)
@@ -1192,8 +1195,7 @@ def create_mcp_server():
             - top_fix: most impactful remediation action
         """
         if engine._use_rust:
-            return engine._rust.scan_fragment.__func__(engine._rust, source) \
-                if False else _scan_via_rust_standalone(content, source)
+            return _scan_via_rust_standalone(content, source)
         # Python fallback — basic pattern matching
         return _sast_python_fallback(content, source)
 
@@ -1326,16 +1328,12 @@ def create_mcp_server():
         Returns JSON with ingestion result (same as remember_fragment).
         """
         modal = _mm_diagram(diagram_text, source, diagram_type)
-        result = engine.ingest_fragment(
+        data = engine.ingest_fragment(
             content=modal.text,
             source=source,
             token_count=modal.token_estimate,
             is_pinned=False,
         )
-        if isinstance(result, str):
-            data = json.loads(result)
-        else:
-            data = result
         data["modal_source_type"] = "diagram"
         data["diagram_type"] = diagram_type
         data["nodes_extracted"] = modal.metadata.get("node_count", 0)
@@ -1360,16 +1358,12 @@ def create_mcp_server():
             - tech_terms_identified
         """
         modal = _mm_voice(transcript, source)
-        result = engine.ingest_fragment(
+        data = engine.ingest_fragment(
             content=modal.text,
             source=source,
             token_count=modal.token_estimate,
             is_pinned=False,
         )
-        if isinstance(result, str):
-            data = json.loads(result)
-        else:
-            data = result
         data["modal_source_type"] = "voice"
         data["decisions_extracted"] = modal.metadata.get("decisions", 0)
         data["actions_extracted"] = modal.metadata.get("actions", 0)
@@ -1397,16 +1391,12 @@ def create_mcp_server():
             - symbols_changed: functions/classes modified
         """
         modal = _mm_diff(diff_text, source, commit_message)
-        result = engine.ingest_fragment(
+        data = engine.ingest_fragment(
             content=modal.text,
             source=source,
             token_count=modal.token_estimate,
             is_pinned=False,
         )
-        if isinstance(result, str):
-            data = json.loads(result)
-        else:
-            data = result
         data["modal_source_type"] = "diff"
         data["intent"] = modal.metadata.get("intent", "unknown")
         data["files_changed"] = modal.metadata.get("files_changed", 0)
@@ -1434,8 +1424,6 @@ def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
     Set to false to disable background tuning.
     """
     import threading
-    import os
-    from pathlib import Path
 
     # Check if autotuning is enabled in tuning_config.json
     config_path = Path(__file__).parent.parent / "bench" / "tuning_config.json"

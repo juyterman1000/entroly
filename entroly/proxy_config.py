@@ -37,6 +37,13 @@ MODEL_CONTEXT_WINDOWS = {
     "claude-3-5-sonnet-20241022": 200_000,
     "claude-3-5-haiku-20241022": 200_000,
     "claude-3-haiku-20240307": 200_000,
+    # Google Gemini
+    "gemini-2.5-pro": 1_048_576,
+    "gemini-2.5-flash": 1_048_576,
+    "gemini-2.0-flash": 1_048_576,
+    "gemini-2.0-flash-lite": 1_048_576,
+    "gemini-1.5-pro": 2_097_152,
+    "gemini-1.5-flash": 1_048_576,
 }
 
 _DEFAULT_CONTEXT_WINDOW = 128_000
@@ -183,6 +190,7 @@ class ProxyConfig:
 
     openai_base_url: str = "https://api.openai.com"
     anthropic_base_url: str = "https://api.anthropic.com"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com"
 
     # Single-dial quality knob: None = use explicit params, 0-1 = auto-derive
     quality: float | None = None
@@ -249,6 +257,10 @@ class ProxyConfig:
             ),
             anthropic_base_url=os.environ.get(
                 "ENTROLY_ANTHROPIC_BASE", "https://api.anthropic.com"
+            ),
+            gemini_base_url=os.environ.get(
+                "ENTROLY_GEMINI_BASE",
+                "https://generativelanguage.googleapis.com",
             ),
             context_fraction=float(
                 os.environ.get("ENTROLY_CONTEXT_FRACTION", "0.15")
