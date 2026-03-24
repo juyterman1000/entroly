@@ -234,6 +234,57 @@ If no pre-built wheel exists for your platform, install the [Rust toolchain](htt
 
 ---
 
+## Works with OpenClaw
+
+[OpenClaw](https://openclaw.ai) users run personal AI agents that manage email, calendar, code, and system administration — often with 50+ integrations and persistent memory files. The problem: a typical OpenClaw workspace has 20-40 files (SOUL.md, MEMORY.md, daily logs, skill definitions, tool schemas), totaling 8,000-15,000 tokens. A heartbeat agent with a 4K budget sees less than half its workspace.
+
+Entroly fixes this. It gives your OpenClaw agent full workspace visibility within any token budget by compressing each file to the right resolution.
+
+| | Without Entroly | With Entroly |
+|--|-----------------|--------------|
+| **Files visible** | 8 of 20 | 20 of 20 |
+| **Tokens used** | 4,096 (budget full) | 1,847 |
+| **Codebase coverage** | 40% | 100% |
+| **SOUL.md** | Full (if loaded first) | Full — always included verbatim |
+| **MEMORY.md** | Truncated at 60% | Full — critical context preserved |
+| **Today's daily log** | May not load at all | Skeleton — headers + action items |
+| **Last week's logs** | Never loaded | Reference — one-line summaries |
+| **Tool schemas** | Never loaded | Reference — name + signature |
+| **Old daily logs** | Never loaded | Reference — date + key outcomes |
+
+**How it works with OpenClaw:**
+
+```python
+from entroly.context_bridge import MultiAgentContext
+
+ctx = MultiAgentContext(
+    workspace_path="~/.openclaw/workspace",
+    token_budget=128_000,
+)
+ctx.ingest_workspace()
+
+# Main agent gets full optimized context
+main_context = ctx.load_hcc_context(query="check emails and summarize", token_budget=8192)
+
+# Heartbeat cron agent — 15% budget, auto lifecycle management
+ctx.schedule_cron("email_checker", "check for urgent emails", interval_seconds=900)
+
+# Subagent for deep work — inherits parent context, gets NKBE budget slice
+sub = ctx.spawn_subagent("main", "code_reviewer", "review PR #847 for security issues")
+```
+
+**What each component does for OpenClaw agents:**
+
+| Component | OpenClaw Use Case |
+|-----------|-------------------|
+| **HCC Compression** | SOUL.md in full, MEMORY.md in full, old logs as one-liners — 100% coverage in 40% fewer tokens |
+| **NKBE Budget Allocator** | When 5 subagents run simultaneously, each gets the mathematically optimal token slice |
+| **Cognitive Bus** | Email agent finds something urgent, code agent gets notified instantly via ISA-prioritized routing |
+| **LOD Manager** | Cron agents sleep at 0 tokens between runs, wake to 15% budget on schedule, never waste resources |
+| **AutoTune** | After 50 requests, Entroly learns that your SOUL.md and recent MEMORY.md entries matter most — weights auto-calibrate |
+
+---
+
 ## Part of the Ebbiforge Ecosystem
 
 Entroly integrates with [hippocampus-sharp-memory](https://pypi.org/project/hippocampus-sharp-memory/) for persistent cross-session memory and [Ebbiforge](https://pypi.org/project/ebbiforge/) for TF embeddings and RL weight learning. Both are optional.
