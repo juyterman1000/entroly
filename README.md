@@ -234,6 +234,79 @@ If no pre-built wheel exists for your platform, install the [Rust toolchain](htt
 
 ---
 
+## Works with OpenClaw
+
+[OpenClaw](https://openclaw.ai) is a personal AI assistant that manages email, calendar, code, and 50+ integrations — all from WhatsApp, Telegram, or any chat app. Its workspace holds your identity (SOUL.md), persistent memory (MEMORY.md), daily logs, skill definitions, and tool schemas.
+
+The problem: when your OpenClaw agent loads context for a task, it reads files sequentially until the token budget is full — then stops. Your agent can't see files it never loaded.
+
+Entroly fixes this. Measured on a real 24-file OpenClaw workspace:
+
+<p align="center">
+  <img src="docs/assets/openclaw_benchmark.png" alt="Entroly + OpenClaw — 100% coverage with 22.7% fewer tokens" width="840">
+</p>
+
+<p align="center">
+  <b>Benchmark: 2,048 Token Budget (typical heartbeat agent)</b>
+</p>
+
+| | Without Entroly | With Entroly |
+|--|-----------------|--------------|
+| **Files visible to AI** | 15 of 24 | **24 of 24** |
+| **Codebase coverage** | 62.5% | **100.0%** |
+| **Tokens used** | 2,031 (99.2% of budget) | 1,812 (88.5%) |
+| **Token savings** | — | **22.7%** |
+| **Optimization time** | — | 0.05ms |
+
+**9 files invisible** without Entroly — including email and system skill definitions, and all tool schemas your agent needs to function:
+
+```
+INVISIBLE without Entroly:
+  x skills/system.md          — agent can't manage Docker or disk cleanup
+  x tools/search_emails.json  — agent can't search your inbox
+  x tools/send_email.json     — agent can't send emails
+  x tools/disk_usage.json     — agent can't check disk space
+  x tools/docker_ps.json      — agent can't list containers
+  x tools/read_file.json      — agent can't read code files
+  x tools/run_tests.json      — agent can't run your tests
+  x tools/git_status.json     — agent can't check repo status
+  x tools/web_search.json     — agent can't search the web
+```
+
+Your user asks via WhatsApp: _"Check my emails and prep me for standup."_ Without Entroly, your agent literally cannot see the email skill definition. With Entroly, every file is loaded at the right compression level.
+
+> Reproduce this yourself: `python benchmarks/openclaw_benchmark.py`
+
+**Integration — 3 lines of code:**
+
+```python
+from entroly.context_bridge import MultiAgentContext
+
+ctx = MultiAgentContext(workspace_path="~/.openclaw/workspace", token_budget=128_000)
+ctx.ingest_workspace()
+
+# Main agent — full HCC-optimized context
+context = ctx.load_hcc_context(query="check emails and prep for standup", token_budget=8192)
+
+# Cron heartbeat — wakes every 15 min, auto LOD lifecycle
+ctx.schedule_cron("email_checker", "check for urgent emails", interval_seconds=900)
+
+# Subagent — inherits parent context, NKBE budget allocation
+sub = ctx.spawn_subagent("main", "code_reviewer", "review PR #847 for security issues")
+```
+
+**What each component does for OpenClaw:**
+
+| Component | What It Does For Your Agent |
+|-----------|---------------------------|
+| **HCC Compression** | SOUL.md verbatim, recent logs as skeletons, old logs as one-liners — 100% visibility, 22.7% fewer tokens |
+| **NKBE Budget Allocator** | 5 subagents running? Each gets the mathematically optimal token slice via KKT bisection |
+| **Cognitive Bus** | Email agent finds something urgent — code agent is notified instantly via ISA-prioritized routing |
+| **LOD Manager** | Cron agents sleep at 0 cost between runs, wake to 15% budget on schedule |
+| **AutoTune** | Learns that your SOUL.md and recent MEMORY.md entries matter most — weights self-calibrate |
+
+---
+
 ## Part of the Ebbiforge Ecosystem
 
 Entroly integrates with [hippocampus-sharp-memory](https://pypi.org/project/hippocampus-sharp-memory/) for persistent cross-session memory and [Ebbiforge](https://pypi.org/project/ebbiforge/) for TF embeddings and RL weight learning. Both are optional.
