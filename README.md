@@ -22,6 +22,34 @@
 
 ---
 
+## See It In Action
+
+<p align="center">
+  <img src="docs/assets/demo.svg" alt="Entroly Demo — 78% token savings in 8ms" width="800">
+</p>
+
+> **Run it yourself:** `pip install entroly && entroly demo`
+>
+> Open the [interactive HTML demo](docs/assets/demo.html) for the full animated experience, or generate your own with `python docs/generate_demo.py`.
+
+---
+
+## The Value
+
+<p align="center">
+  <img src="docs/assets/value.svg" alt="The Entroly Difference — before and after comparison" width="840">
+</p>
+
+---
+
+## How It Works
+
+<p align="center">
+  <img src="docs/assets/pipeline.svg" alt="Entroly Pipeline — 5-stage context optimization" width="880">
+</p>
+
+---
+
 ## What You Get
 
 - **40% token reduction** on average — your AI sees the same codebase, but pays for less
