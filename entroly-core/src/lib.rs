@@ -49,6 +49,7 @@ use depgraph::{DepGraph, extract_identifiers};
 use guardrails::{file_criticality, has_safety_signal, TaskType, FeedbackTracker, Criticality, compute_ordering_priority};
 use prism::PrismOptimizer;
 use query_persona::QueryPersonaManifold;
+use cache::CacheLookup;
 
 
 /// Process-wide monotonic counter — used only to seed each engine's instance_id.
@@ -294,6 +295,12 @@ impl EntrolyEngine {
         if self.enable_query_personas {
             self.query_manifold.lifecycle_tick();
         }
+
+        // EGSC cache: garbage-collect low-quality entries each turn.
+        // Entries with quality_score < 0.15 (those consistently receiving
+        // negative feedback via Wilson scoring) are removed, freeing
+        // cache slots for better candidates.
+        self.egsc_cache.gc(0.15);
     }
 
     /// Ingest a new context fragment.
@@ -425,6 +432,12 @@ impl EntrolyEngine {
             self.fragment_slot_ids.push(frag_id.clone());
             self.lsh_index.insert(fp, slot);
 
+            // EGSC cache: invalidate entries that overlap with the new fragment.
+            // A new fragment changes the context state, so cached optimization
+            // results referencing overlapping fragment sets may be stale.
+            let stale: HashSet<String> = std::iter::once(frag_id.clone()).collect();
+            let _invalidated = self.egsc_cache.invalidate(&stale);
+
             let result = PyDict::new(py);
             result.set_item("status", "ingested")?;
             result.set_item("fragment_id", &frag_id)?;
@@ -460,6 +473,66 @@ impl EntrolyEngine {
             } else {
                 token_budget
             };
+
+            // ── EGSC Cache: check for a cached optimization result ──
+            // The cache key is (query, current_fragment_ids). On hit, skip the
+            // entire IOS/knapsack/channel-coding pipeline — returns in O(1).
+            if !query.is_empty() {
+                let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
+                match self.egsc_cache.lookup(&query, &current_frag_ids) {
+                    CacheLookup::ExactHit { response, tokens_saved } => {
+                        self.total_tokens_saved += tokens_saved as u64;
+                        // Deserialize cached JSON result back to Python dict
+                        if let Ok(cached_value) = serde_json::from_str::<serde_json::Value>(&response) {
+                            let cache_result = PyDict::new(py);
+                            // Populate result from cached JSON
+                            if let Some(obj) = cached_value.as_object() {
+                                for (k, v) in obj {
+                                    match v {
+                                        serde_json::Value::Number(n) => {
+                                            if let Some(i) = n.as_i64() { let _ = cache_result.set_item(k.as_str(), i); }
+                                            else if let Some(f) = n.as_f64() { let _ = cache_result.set_item(k.as_str(), f); }
+                                        }
+                                        serde_json::Value::String(s) => { let _ = cache_result.set_item(k.as_str(), s.as_str()); }
+                                        serde_json::Value::Bool(b) => { let _ = cache_result.set_item(k.as_str(), *b); }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            cache_result.set_item("cache_hit", true)?;
+                            cache_result.set_item("cache_hit_type", "exact")?;
+                            cache_result.set_item("cache_tokens_saved", tokens_saved)?;
+                            return Ok(cache_result.into());
+                        }
+                    }
+                    CacheLookup::SemanticHit { response, tokens_saved, hamming_distance: ham, jaccard_similarity: jac } => {
+                        self.total_tokens_saved += tokens_saved as u64;
+                        if let Ok(cached_value) = serde_json::from_str::<serde_json::Value>(&response) {
+                            let cache_result = PyDict::new(py);
+                            if let Some(obj) = cached_value.as_object() {
+                                for (k, v) in obj {
+                                    match v {
+                                        serde_json::Value::Number(n) => {
+                                            if let Some(i) = n.as_i64() { let _ = cache_result.set_item(k.as_str(), i); }
+                                            else if let Some(f) = n.as_f64() { let _ = cache_result.set_item(k.as_str(), f); }
+                                        }
+                                        serde_json::Value::String(s) => { let _ = cache_result.set_item(k.as_str(), s.as_str()); }
+                                        serde_json::Value::Bool(b) => { let _ = cache_result.set_item(k.as_str(), *b); }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            cache_result.set_item("cache_hit", true)?;
+                            cache_result.set_item("cache_hit_type", "semantic")?;
+                            cache_result.set_item("cache_tokens_saved", tokens_saved)?;
+                            cache_result.set_item("cache_hamming_distance", ham)?;
+                            cache_result.set_item("cache_jaccard_similarity", (jac * 10000.0).round() / 10000.0)?;
+                            return Ok(cache_result.into());
+                        }
+                    }
+                    CacheLookup::Miss => {} // Continue to full optimization
+                }
+            }
 
             // Update semantic scores if query provided
             if !query.is_empty() {
@@ -943,6 +1016,36 @@ impl EntrolyEngine {
                 }
             }
             py_result.set_item("selected", selected_list)?;
+            py_result.set_item("cache_hit", false)?;
+
+            // ── EGSC Cache: store the optimization result for future lookups ──
+            // Build a lightweight JSON snapshot of the key result metrics.
+            // Fragment entropies feed the Thompson Sampling admission gate.
+            if !query.is_empty() {
+                let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
+                let entropies: Vec<(f64, u32)> = final_indices.iter()
+                    .chain(skeleton_indices.iter())
+                    .map(|&i| (frags[i].entropy_score, frags[i].token_count))
+                    .collect();
+                // Serialize a compact result snapshot for the cache
+                let cache_snapshot = serde_json::json!({
+                    "method": selection_method,
+                    "total_tokens": final_tokens,
+                    "context_efficiency": (context_efficiency * 10000.0).round() / 10000.0,
+                    "total_relevance": (total_rel * 10000.0).round() / 10000.0,
+                    "selected_count": ordered_indices.len() + skeleton_indices.len(),
+                    "skeleton_count": skeleton_indices.len(),
+                    "skeleton_tokens": skeleton_tokens_used,
+                    "tokens_saved": saved,
+                    "effective_budget": effective_budget,
+                    "sufficiency": (sufficiency * 10000.0).round() / 10000.0,
+                });
+                let response_json = cache_snapshot.to_string();
+                self.egsc_cache.store(
+                    &query, current_frag_ids, &entropies,
+                    response_json, final_tokens, self.current_turn,
+                );
+            }
 
             Ok(py_result.into())
         })
@@ -1053,6 +1156,25 @@ impl EntrolyEngine {
             dedup.set_item("indexed_fragments", self.dedup_index.size())?;
             dedup.set_item("duplicates_detected", self.dedup_index.duplicates_detected)?;
             result.set_item("dedup", dedup)?;
+
+            // EGSC Cache stats — exposed to Python for monitoring and debugging
+            let cs = self.egsc_cache.stats();
+            let cache_dict = PyDict::new(py);
+            cache_dict.set_item("entries", cs.total_entries)?;
+            cache_dict.set_item("lookups", cs.total_lookups)?;
+            cache_dict.set_item("exact_hits", cs.exact_hits)?;
+            cache_dict.set_item("semantic_hits", cs.semantic_hits)?;
+            cache_dict.set_item("misses", cs.misses)?;
+            cache_dict.set_item("hit_rate", (cs.hit_rate * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("tokens_saved", cs.total_tokens_saved)?;
+            cache_dict.set_item("admissions", cs.total_admissions)?;
+            cache_dict.set_item("rejections", cs.total_rejections)?;
+            cache_dict.set_item("evictions", cs.total_evictions)?;
+            cache_dict.set_item("invalidations", cs.total_invalidations)?;
+            cache_dict.set_item("admission_rate", (cs.admission_rate * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("entropy_threshold", (cs.entropy_threshold * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("shifts_detected", cs.shifts_detected)?;
+            result.set_item("cache", cache_dict)?;
 
             // Query Persona Manifold stats
             if self.enable_query_personas {
@@ -1246,6 +1368,9 @@ impl EntrolyEngine {
     /// while μ (EMA baseline) reduces gradient variance.
     pub fn record_success(&mut self, fragment_ids: Vec<String>) {
         self.feedback.record_success(&fragment_ids);
+        // EGSC cache: positive feedback → improve entry quality scores
+        let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
+        self.egsc_cache.record_feedback("", &frag_set, true);
         let raw_reward = if self.enable_channel_coding {
             let suff = self.last_optimization.as_ref()
                 .map(|s| s.sufficiency)
@@ -1267,6 +1392,9 @@ impl EntrolyEngine {
     /// Low sufficiency → stronger penalty → faster weight correction.
     pub fn record_failure(&mut self, fragment_ids: Vec<String>) {
         self.feedback.record_failure(&fragment_ids);
+        // EGSC cache: negative feedback → degrade entry quality scores
+        let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
+        self.egsc_cache.record_feedback("", &frag_set, false);
         let raw_reward = if self.enable_channel_coding {
             let suff = self.last_optimization.as_ref()
                 .map(|s| s.sufficiency)
