@@ -182,6 +182,7 @@ pub fn ios_select(
     enable_multi_resolution: bool,
     info_factors: &InfoFactors,
     diversity_floor: f64,
+    min_candidate_value: f64,
 ) -> SdsResult {
     if fragments.is_empty() {
         return SdsResult {
@@ -234,12 +235,13 @@ pub fn ios_select(
         if enable_multi_resolution {
             // Skeleton resolution — only if skeleton was extracted
             if let Some(skel_tc) = frag.skeleton_token_count {
-                if skel_tc < frag.token_count {
+                let skel_value = relevance * Resolution::Skeleton.info_factor(info_factors);
+                if skel_tc < frag.token_count && skel_value >= min_candidate_value {
                     candidates.push(Candidate {
                         frag_idx: i,
                         resolution: Resolution::Skeleton,
                         token_cost: skel_tc,
-                        base_value: relevance * Resolution::Skeleton.info_factor(info_factors),
+                        base_value: skel_value,
                         simhash: frag.simhash,
                     });
                 }
@@ -248,13 +250,16 @@ pub fn ios_select(
             // Reference resolution — always available, very cheap
             // Cost: ~5 tokens for "file:source.py" reference line
             let ref_tokens = (frag.source.len() as u32 / 4).clamp(3, 10);
-            candidates.push(Candidate {
-                frag_idx: i,
-                resolution: Resolution::Reference,
-                token_cost: ref_tokens,
-                base_value: relevance * Resolution::Reference.info_factor(info_factors),
-                simhash: frag.simhash,
-            });
+            let ref_value = relevance * Resolution::Reference.info_factor(info_factors);
+            if ref_value >= min_candidate_value {
+                candidates.push(Candidate {
+                    frag_idx: i,
+                    resolution: Resolution::Reference,
+                    token_cost: ref_tokens,
+                    base_value: ref_value,
+                    simhash: frag.simhash,
+                });
+            }
         }
     }
 
@@ -433,6 +438,7 @@ mod tests {
     }
 
     const DEFAULT_DIV_FLOOR: f64 = 0.1;
+    const DEFAULT_MIN_CANDIDATE_VALUE: f64 = 0.05;
 
     fn make_frag(id: &str, content: &str, tokens: u32, source: &str) -> ContextFragment {
         let mut f = ContextFragment::new(id.into(), content.into(), tokens, source.into());
@@ -444,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_empty_fragments() {
-        let result = ios_select(&[], 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&[], 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         assert!(result.selections.is_empty());
         assert_eq!(result.total_tokens, 0);
     }
@@ -452,7 +458,7 @@ mod tests {
     #[test]
     fn test_single_fragment_selected() {
         let frags = vec![make_frag("a", "def foo(): return 42", 50, "foo.py")];
-        let result = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         assert_eq!(result.selections.len(), 1);
         assert_eq!(result.selections[0], (0, Resolution::Full));
     }
@@ -466,7 +472,7 @@ mod tests {
         frags[0].is_pinned = true;
         frags[0].recency_score = 0.1; // Low recency shouldn't matter for pinned
 
-        let result = ios_select(&frags, 600, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&frags, 600, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
         assert!(selected_indices.contains(&0), "Pinned fragment must be included");
     }
@@ -481,11 +487,11 @@ mod tests {
         ];
 
         // With diversity: should prefer a + c (diverse) over a + b (redundant)
-        let result_div = ios_select(&frags, 200, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result_div = ios_select(&frags, 200, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         let _div_indices: Vec<usize> = result_div.selections.iter().map(|s| s.0).collect();
 
         // Without diversity: might select a + b (both have high relevance)
-        let result_no_div = ios_select(&frags, 200, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), false, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result_no_div = ios_select(&frags, 200, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), false, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
 
         // With diversity enabled, we should have higher diversity score
         assert!(result_div.diversity_score >= result_no_div.diversity_score,
@@ -509,8 +515,8 @@ mod tests {
         frags[2].skeleton_token_count = Some(30);
 
         // Budget: 500 tokens — can fit big(400) + one skeleton but not big + two full
-        let result_mr = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR);
-        let result_no_mr = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result_mr = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result_no_mr = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
 
         // Multi-resolution should cover more fragments
         let mr_frag_count = result_mr.selections.iter().map(|s| s.0).collect::<std::collections::HashSet<_>>().len();
@@ -529,7 +535,7 @@ mod tests {
             make_frag("c", "content c", 300, "c.py"),
         ];
 
-        let result = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         assert!(result.total_tokens <= 500,
             "Budget must be respected: {} > 500", result.total_tokens
         );
@@ -547,7 +553,7 @@ mod tests {
         feedback.insert("bad".to_string(), 0.3);
 
         // Budget for only one
-        let result = ios_select(&frags, 250, 0.3, 0.25, 0.25, 0.2, &feedback, true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&frags, 250, 0.3, 0.25, 0.25, 0.2, &feedback, true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
 
         assert!(selected_indices.contains(&0), "Feedback-boosted fragment should be preferred");
@@ -562,7 +568,7 @@ mod tests {
         frags[0].skeleton_token_count = Some(50);
 
         // Budget so small only reference fits
-        let result = ios_select(&frags, 15, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&frags, 15, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         if !result.selections.is_empty() {
             assert_eq!(result.selections[0].1, Resolution::Reference,
                 "With tiny budget, reference resolution should be chosen"
@@ -578,7 +584,7 @@ mod tests {
             make_frag("c", "react component jsx virtual dom rendering", 100, "c.py"),
         ];
 
-        let result = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         assert!(result.diversity_score >= 0.0 && result.diversity_score <= 1.0,
             "Diversity score must be in [0, 1], got {}", result.diversity_score
         );
@@ -597,11 +603,11 @@ mod tests {
         frags[1].skeleton_token_count = Some(30);
 
         // Generous budget: both full
-        let result_big = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result_big = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         let full_count_big = result_big.selections.iter().filter(|s| s.1 == Resolution::Full).count();
 
         // Tight budget: mix of full + skeleton/reference
-        let result_tight = ios_select(&frags, 250, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR);
+        let result_tight = ios_select(&frags, 250, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         let full_count_tight = result_tight.selections.iter().filter(|s| s.1 == Resolution::Full).count();
 
         assert!(full_count_big >= full_count_tight,
@@ -620,7 +626,7 @@ mod tests {
         ];
 
         let result = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2,
-            &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR);
+            &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
 
         assert_eq!(result.selections.len(), 3, "Fast path should select all 3");
         assert!(result.selections.iter().all(|s| s.1 == Resolution::Full),

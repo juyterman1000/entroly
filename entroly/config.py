@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import hashlib
 import os
+import tempfile
 
 
 def _project_checkpoint_dir() -> Path:
@@ -24,7 +25,17 @@ def _project_checkpoint_dir() -> Path:
         return Path(explicit)
     cwd = os.getcwd()
     project_hash = hashlib.sha256(cwd.encode()).hexdigest()[:12]
-    return Path(os.path.expanduser(f"~/.entroly/checkpoints/{project_hash}"))
+    default_dir = Path(os.path.expanduser(f"~/.entroly/checkpoints/{project_hash}"))
+    try:
+        default_dir.mkdir(parents=True, exist_ok=True)
+        probe = default_dir / ".entroly_write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return default_dir
+    except OSError:
+        fallback_dir = Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        return fallback_dir
 
 
 @dataclass

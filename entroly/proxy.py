@@ -622,6 +622,11 @@ class PromptCompilerProxy:
 
         model = extract_model(body, path)
 
+        # Auto-configure cache cost model from the model name.
+        # Zero-config: developers never need to call set_model() manually.
+        if model and hasattr(self.engine, 'set_model'):
+            self.engine.set_model(model)
+
         # ── ECDB: Dynamic Budget Computation ──
         # We need vagueness for the budget, but the full query analysis
         # happens inside optimize_context(). Do a lightweight pre-analysis
@@ -1075,6 +1080,12 @@ async def _record_outcome(request: Request) -> JSONResponse:
                 proxy.engine.record_success(fragment_ids)
             else:
                 proxy.engine.record_failure(fragment_ids)
+
+            # Report cache hit rate for observability
+            if hasattr(proxy.engine, 'cache_hit_rate'):
+                hit_rate = proxy.engine.cache_hit_rate()
+                if hit_rate > 0:
+                    logger.debug(f"Cache hit rate: {hit_rate:.2%}")
         except Exception as e:
             logger.debug("PRISM RL update skipped: %s", e)
 

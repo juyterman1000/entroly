@@ -207,7 +207,7 @@ pub fn semantic_interleave(
     dep_graph: &DepGraph,
 ) -> Vec<usize> {
     let n = selected_indices.len();
-    if n <= 2 {
+    if n <= 1 {
         return selected_indices.to_vec();
     }
 

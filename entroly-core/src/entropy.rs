@@ -167,6 +167,7 @@ pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
 /// When all pᵢ = 1/n (uniform distribution), H₂ = log₂(n).
 /// Used to normalize EGSC admission threshold to [0, 1] scale.
 #[inline]
+#[allow(dead_code)]
 pub fn renyi_max(n: usize) -> f64 {
     if n <= 1 { 0.0 } else { (n as f64).log2() }
 }

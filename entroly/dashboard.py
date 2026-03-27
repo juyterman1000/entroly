@@ -124,7 +124,40 @@ def _get_full_snapshot() -> dict:
     except Exception:
         snap["dep_graph"] = None
 
-    # 7. Recent proxy requests
+    try:
+        # 7. Cache intelligence — live EGSC + RAVEN-UCB observability
+        stats = snap.get("stats", {}) if isinstance(snap.get("stats"), dict) else {}
+        cache = stats.get("cache", {}) if isinstance(stats.get("cache"), dict) else {}
+        policy = stats.get("policy", {}) if isinstance(stats.get("policy"), dict) else {}
+        snap["cache_intelligence"] = _safe_json(
+            {
+                "entries": cache.get("entries", 0),
+                "lookups": cache.get("lookups", 0),
+                "exact_hits": cache.get("exact_hits", 0),
+                "semantic_hits": cache.get("semantic_hits", 0),
+                "tokens_saved": cache.get("tokens_saved", 0),
+                "hit_rate": cache.get("hit_rate", 0.0),
+                "hit_rate_ema": cache.get("hit_rate_ema", cache.get("hit_rate", 0.0)),
+                "thompson_alpha": cache.get("thompson_alpha", 0.0),
+                "thompson_beta": cache.get("thompson_beta", 0.0),
+                "adaptive_alpha": cache.get("adaptive_alpha", 0.0),
+                "admissions": cache.get("admissions", 0),
+                "rejections": cache.get("rejections", 0),
+                "invalidations": cache.get("invalidations", 0),
+                "total_resets": cache.get("total_resets", 0),
+                "exploration_rate": policy.get("adaptive_exploration_rate", 0.0),
+                "configured_exploration_rate": policy.get("configured_exploration_rate", 0.0),
+                "feedback_observations": policy.get("feedback_observations", 0),
+                "total_explorations": policy.get("total_explorations", 0),
+                "total_exploitations": policy.get("total_exploitations", 0),
+                "explore_ratio": policy.get("explore_ratio", 0.0),
+                "exploit_ratio": policy.get("exploit_ratio", 0.0),
+            }
+        )
+    except Exception:
+        snap["cache_intelligence"] = None
+
+    # 8. Recent proxy requests
     with _lock:
         snap["recent_requests"] = list(_request_log)
 
@@ -243,6 +276,20 @@ body::before{content:'';position:fixed;top:-50%;left:-50%;width:200%;height:200%
 .health-stats li{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:var(--dim);}
 .health-stats .hv{font-weight:700;color:var(--text);min-width:20px;text-align:right;}
 .health-rec{padding:10px;background:rgba(251,191,36,0.06);border-radius:10px;font-size:12px;color:var(--amber);margin-top:8px;line-height:1.4;}
+.cache-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;}
+.cache-kpi{padding:14px;border:1px solid var(--border);background:var(--glass);border-radius:12px;}
+.cache-kpi-label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1.1px;margin-bottom:6px;}
+.cache-kpi-val{font-size:24px;font-weight:800;font-feature-settings:'tnum';}
+.cache-kpi-sub{font-size:11px;color:var(--dim);margin-top:4px;}
+.cache-split{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.cache-block{padding:14px;border:1px solid var(--border);background:var(--glass);border-radius:12px;}
+.cache-block h3{font-size:12px;font-weight:700;margin-bottom:8px;}
+.cache-pair{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:12px;color:var(--dim);}
+.cache-pair strong{color:var(--text);font-weight:700;}
+.cache-meter{height:10px;display:flex;overflow:hidden;border-radius:999px;background:rgba(255,255,255,0.06);margin-top:10px;}
+.cache-meter-exploit{background:linear-gradient(90deg,var(--emerald),var(--cyan));}
+.cache-meter-explore{background:linear-gradient(90deg,var(--amber),var(--rose));}
+.cache-note{padding:10px 12px;margin-top:12px;background:rgba(34,211,238,0.06);border-radius:10px;font-size:12px;color:var(--cyan);line-height:1.5;}
 /* Tables */
 table{width:100%;border-collapse:collapse;}
 th{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--dim2);padding:10px 14px;
@@ -269,8 +316,8 @@ tr:hover td{background:rgba(255,255,255,0.015);}
 .finding-sev.high{background:var(--amber-glow);color:var(--amber);}
 .finding-file{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);}
 .finding-desc{font-size:11px;color:var(--dim);margin-top:2px;}
-@media(max-width:1100px){.hero{grid-template-columns:1fr 1fr;}.grid3{grid-template-columns:1fr 1fr;}.ba-panel{grid-template-columns:1fr;}}
-@media(max-width:768px){.hero,.grid2,.grid3{grid-template-columns:1fr;}.main{padding:16px;}}
+@media(max-width:1100px){.hero{grid-template-columns:1fr 1fr;}.grid3{grid-template-columns:1fr 1fr;}.ba-panel{grid-template-columns:1fr;}.cache-kpis{grid-template-columns:1fr 1fr;}.cache-split{grid-template-columns:1fr;}}
+@media(max-width:768px){.hero,.grid2,.grid3,.cache-kpis{grid-template-columns:1fr;}.main{padding:16px;}}
 </style>
 </head>
 <body>
@@ -294,6 +341,10 @@ tr:hover td{background:rgba(255,255,255,0.015);}
       <div class="ph"><h2>🏥 Code Health</h2><span id="hb" class="badge b-green">—</span></div>
       <div class="pb" id="health"></div>
     </div>
+  </div>
+  <div class="panel" style="margin-bottom:20px;">
+    <div class="ph"><h2>Cache Intelligence</h2><span id="cb" class="badge b-blue">—</span></div>
+    <div class="pb" id="cacheintel"></div>
   </div>
   <div id="grid3wrap"></div>
   <div class="panel" style="margin-bottom:28px;">
@@ -426,6 +477,38 @@ function renderHealth(d){
     ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.PI*2*p);ctx.strokeStyle=gc;ctx.lineWidth=8;ctx.lineCap='round';ctx.stroke();}
 }
 
+function renderCache(d){
+  const c=d.cache_intelligence||{},el=document.getElementById('cacheintel'),b=document.getElementById('cb');
+  if(!el||!b){return;}
+  const entries=c.entries||0,lookups=c.lookups||0,exact=c.exact_hits||0,semantic=c.semantic_hits||0;
+  const hitRateEma=c.hit_rate_ema||0,exploreRatio=c.explore_ratio||0,exploitRatio=c.exploit_ratio||0;
+  const warmState=entries===0?'Cold':hitRateEma>=0.30?'Warm':lookups>0?'Warming':'Idle';
+  b.textContent=warmState+' · '+pct(hitRateEma);
+  b.className='badge '+(hitRateEma>=0.30?'b-green':entries>0?'b-amber':'b-blue');
+  el.innerHTML=`<div class="cache-kpis">
+    <div class="cache-kpi"><div class="cache-kpi-label">Hit Rate EMA</div><div class="cache-kpi-val hv-green">${pct(hitRateEma)}</div><div class="cache-kpi-sub">${exact} exact · ${semantic} semantic</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Entries</div><div class="cache-kpi-val hv-blue">${fmt(entries)}</div><div class="cache-kpi-sub">${fmt(lookups)} lookups processed</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Tokens Saved</div><div class="cache-kpi-val hv-amber">${fmt(c.tokens_saved||0)}</div><div class="cache-kpi-sub">${c.invalidations||0} invalidations · ${c.total_resets||0} resets</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Explore / Exploit</div><div class="cache-kpi-val hv-rose">${pct(exploreRatio)} / ${pct(exploitRatio)}</div><div class="cache-kpi-sub">${c.total_explorations||0} explore · ${c.total_exploitations||0} exploit</div></div>
+  </div>
+  <div class="cache-split">
+    <div class="cache-block">
+      <h3>Thompson Gate</h3>
+      <div class="cache-pair"><span>Posterior α / β</span><strong>${(c.thompson_alpha||0).toFixed(2)} / ${(c.thompson_beta||0).toFixed(2)}</strong></div>
+      <div class="cache-pair"><span>Adaptive Rényi α</span><strong>${(c.adaptive_alpha||0).toFixed(4)}</strong></div>
+      <div class="cache-pair"><span>Admissions / Rejections</span><strong>${fmt(c.admissions||0)} / ${fmt(c.rejections||0)}</strong></div>
+    </div>
+    <div class="cache-block">
+      <h3>RAVEN-UCB</h3>
+      <div class="cache-pair"><span>Current exploration_rate</span><strong>${(c.exploration_rate||0).toFixed(4)}</strong></div>
+      <div class="cache-pair"><span>Configured cap</span><strong>${(c.configured_exploration_rate||0).toFixed(4)}</strong></div>
+      <div class="cache-pair"><span>Feedback observations</span><strong>${fmt(c.feedback_observations||0)}</strong></div>
+      <div class="cache-meter"><div class="cache-meter-exploit" style="width:${Math.max(0,Math.min(100,exploitRatio*100))}%;"></div><div class="cache-meter-explore" style="width:${Math.max(0,Math.min(100,exploreRatio*100))}%;"></div></div>
+    </div>
+  </div>
+  <div class="cache-note">Cache reuse is tracked by hit-rate EMA while exploration_rate is the annealed RAVEN-UCB coefficient. As feedback accumulates, the exploration side should shrink and the warm cache hit-rate should rise.</div>`;
+}
+
 function renderSecAndKnapsack(d){
   const sec=d.security,ex=d.explain,dg=d.dep_graph;
   let panels='<div class="grid3" style="margin-bottom:20px;">';
@@ -490,7 +573,7 @@ function renderRequests(d){
 
 async function refresh(){
   try{const r=await fetch('/api/metrics');const d=await r.json();
-    renderHero(d);renderBA(d);renderPrism(d);renderHealth(d);renderSecAndKnapsack(d);renderRequests(d);
+    renderHero(d);renderBA(d);renderPrism(d);renderHealth(d);renderCache(d);renderSecAndKnapsack(d);renderRequests(d);
   }catch(e){console.error('Refresh:',e);}
 }
 refresh();setInterval(refresh,3000);

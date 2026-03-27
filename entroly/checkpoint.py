@@ -276,8 +276,13 @@ class CheckpointManager:
         self._tool_calls_since_checkpoint = 0
         self._total_checkpoints_created = 0
 
-        # Ensure directory exists with restricted permissions (0700)
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists with restricted permissions (0700).
+        # Some environments cannot write to the default home-backed path,
+        # so fail over to a temp-backed directory instead of aborting startup.
+        try:
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self.checkpoint_dir = Path(tempfile.mkdtemp(prefix="entroly_ckpt_"))
         try:
             os.chmod(str(self.checkpoint_dir), 0o700)
         except OSError:

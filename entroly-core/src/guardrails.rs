@@ -112,22 +112,48 @@ pub fn has_safety_signal(content: &str) -> bool {
         return true;
     }
 
-    // Security warnings
+    // Explicit security warnings
     if lower.contains("security warning")
-        || lower.contains("cve-")
-        || lower.contains("vulnerability")
         || lower.contains("do not expose")
-        || lower.contains("secret")
-        || lower.contains("api_key")
-        || lower.contains("private key")
+        || lower.contains("do not commit")
+        || lower.contains("never commit")
+        || lower.contains("for internal use only")
+        || lower.contains("confidential")
     {
         return true;
     }
 
-    // Sandbox/safety notes
-    if lower.contains("unsafe")
+    // Secret-like assignments in real code should be pinned, but avoid
+    // matching prose or doc examples that merely mention api_key/secret_key.
+    for line in lower.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with('*')
+            || trimmed.starts_with('-')
+            || trimmed.starts_with("\"\"\"")
+            || trimmed.starts_with("'''")
+        {
+            continue;
+        }
+        if trimmed.contains('=')
+            && (trimmed.contains("secret_key")
+                || trimmed.contains("api_key")
+                || trimmed.contains("private_key"))
+        {
+            return true;
+        }
+    }
+
+    // Credential material that should never be silently stripped.
+    // Keep this list tight: broad keyword scans like "unsafe" or
+    // "vulnerability" caused ordinary source files and examples to be
+    // force-pinned, which defeated budget enforcement.
+    if lower.contains("-----begin private key-----")
         || lower.contains("⚠️")
-        || lower.contains("danger")
+        || lower.contains("aws_secret_access_key")
+        || lower.contains("x-api-key")
     {
         return true;
     }
@@ -251,12 +277,28 @@ pub fn compute_ordering_priority(
 }
 
 /// Feedback loop: record which fragments influenced a successful output.
+///
+/// Extended with per-fragment Welford variance tracking for RAVEN-UCB
+/// adaptive exploration (arXiv:2506.02933, June 2025).
 #[derive(Serialize, Deserialize)]
 pub struct FeedbackTracker {
     /// fragment_id → number of times it contributed to a successful output
     success_counts: HashMap<String, u32>,
     /// fragment_id → number of times it was present but output was bad
     failure_counts: HashMap<String, u32>,
+    // ── RAVEN-UCB: Per-fragment Welford variance tracking ──
+    /// fragment_id → total selection count in optimize()
+    #[serde(default)]
+    visit_counts: HashMap<String, u32>,
+    /// fragment_id → Welford running mean of reward
+    #[serde(default)]
+    welford_means: HashMap<String, f64>,
+    /// fragment_id → Welford M₂ accumulator (var = M₂/(n-1))
+    #[serde(default)]
+    welford_m2s: HashMap<String, f64>,
+    /// Total optimization calls (global clock t for α_t decay)
+    #[serde(default)]
+    total_observations: u64,
 }
 
 impl FeedbackTracker {
@@ -264,6 +306,10 @@ impl FeedbackTracker {
         FeedbackTracker {
             success_counts: HashMap::new(),
             failure_counts: HashMap::new(),
+            visit_counts: HashMap::new(),
+            welford_means: HashMap::new(),
+            welford_m2s: HashMap::new(),
+            total_observations: 0,
         }
     }
 
@@ -272,6 +318,7 @@ impl FeedbackTracker {
         for fid in fragment_ids {
             *self.success_counts.entry(fid.clone()).or_insert(0) += 1;
         }
+        self.record_reward_signal(fragment_ids, 1.0);
     }
 
     /// Record that these fragments were present during a failure.
@@ -279,6 +326,64 @@ impl FeedbackTracker {
         for fid in fragment_ids {
             *self.failure_counts.entry(fid.clone()).or_insert(0) += 1;
         }
+        self.record_reward_signal(fragment_ids, 0.0);
+    }
+
+    /// Welford online variance update — O(1) per fragment.
+    fn record_reward_signal(&mut self, fragment_ids: &[String], reward: f64) {
+        self.total_observations += 1;
+        for fid in fragment_ids {
+            let n = self.visit_counts.entry(fid.clone()).or_insert(0);
+            *n += 1;
+            let count = *n as f64;
+            let mean = self.welford_means.entry(fid.clone()).or_insert(0.0);
+            let m2 = self.welford_m2s.entry(fid.clone()).or_insert(0.0);
+            let delta1 = reward - *mean;
+            *mean += delta1 / count;
+            let delta2 = reward - *mean;
+            *m2 += delta1 * delta2;
+        }
+    }
+
+    /// Sample variance (Welford's M₂/(n-1)). Returns 1.0 for unseen fragments.
+    pub fn variance(&self, fragment_id: &str) -> f64 {
+        let n = *self.visit_counts.get(fragment_id).unwrap_or(&0);
+        if n < 2 { return 1.0; }
+        let m2 = *self.welford_m2s.get(fragment_id).unwrap_or(&0.0);
+        (m2 / (n as f64 - 1.0)).clamp(0.001, 1.0)
+    }
+
+    /// Visit count for a fragment.
+    pub fn visit_count(&self, fragment_id: &str) -> u32 {
+        *self.visit_counts.get(fragment_id).unwrap_or(&0)
+    }
+
+    /// Welford mean reward for a fragment.
+    pub fn welford_mean(&self, fragment_id: &str) -> f64 {
+        *self.welford_means.get(fragment_id).unwrap_or(&0.5)
+    }
+
+    /// Current annealed exploration coefficient α_t for RAVEN-UCB.
+    pub fn adaptive_exploration_rate(&self, alpha_0: f64) -> f64 {
+        let t = self.total_observations as f64;
+        alpha_0 / (t + std::f64::consts::E).ln()
+    }
+
+    /// RAVEN-UCB score: UCB_i = μ_i + α_t · √(σ²_i / (n_i + 1))
+    /// where α_t = α₀ / ln(t + e) self-anneals exploration.
+    ///
+    /// Reference: arXiv:2506.02933, June 2025.
+    pub fn ucb_score(&self, fragment_id: &str, alpha_0: f64) -> f64 {
+        let mu = self.welford_mean(fragment_id);
+        let sigma2 = self.variance(fragment_id);
+        let n = self.visit_count(fragment_id) as f64;
+        let alpha_t = self.adaptive_exploration_rate(alpha_0);
+        mu + alpha_t * (sigma2 / (n + 1.0)).sqrt()
+    }
+
+    /// Total optimization calls (global clock).
+    pub fn total_observations(&self) -> u64 {
+        self.total_observations
     }
 
     /// Compute a learned value adjustment for a fragment.
@@ -329,7 +434,11 @@ mod tests {
     fn test_safety_signals() {
         assert!(has_safety_signal("MIT License\nCopyright 2024"));
         assert!(has_safety_signal("# SECURITY WARNING: do not expose API keys"));
+        assert!(has_safety_signal("-----BEGIN PRIVATE KEY-----\nabc"));
+        assert!(has_safety_signal("SECRET_KEY = \"replace-me\""));
         assert!(!has_safety_signal("def hello(): return 'world'"));
+        assert!(!has_safety_signal("fn dangerous() { unsafe { do_work(); } }"));
+        assert!(!has_safety_signal("This vulnerability scanner checks api_key patterns."));
     }
 
     #[test]
@@ -364,5 +473,58 @@ mod tests {
 
         assert!(val_a > val_b, "Successful fragment should be valued higher");
         assert!(val_a > 1.0, "Mostly-successful fragment should boost above 1.0");
+    }
+
+    #[test]
+    fn test_ucb_variance_tracking() {
+        let mut tracker = FeedbackTracker::new();
+        let fragment = vec!["x".to_string()];
+        let rewards = [1.0, 0.0, 1.0, 1.0, 0.0];
+
+        for reward in rewards {
+            if reward > 0.0 {
+                tracker.record_success(&fragment);
+            } else {
+                tracker.record_failure(&fragment);
+            }
+        }
+
+        let batch_mean = 3.0 / 5.0;
+        let batch_rewards: [f64; 5] = [1.0, 0.0, 1.0, 1.0, 0.0];
+        let batch_variance = batch_rewards
+            .iter()
+            .map(|value| (*value - batch_mean).powi(2))
+            .sum::<f64>()
+            / 4.0;
+
+        assert!((tracker.welford_mean("x") - batch_mean).abs() < 1e-9);
+        assert!((tracker.variance("x") - batch_variance).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_raven_ucb_convergence() {
+        let mut tracker = FeedbackTracker::new();
+        let known = vec!["known".to_string()];
+
+        for _ in 0..5 {
+            tracker.record_success(&known);
+        }
+
+        let early_rate = tracker.adaptive_exploration_rate(2.0);
+        let early_known_ucb = tracker.ucb_score("known", 2.0);
+        let early_uncertain_ucb = tracker.ucb_score("uncertain", 2.0);
+        assert!(early_uncertain_ucb > early_known_ucb);
+
+        for _ in 0..500 {
+            tracker.record_success(&known);
+        }
+
+        let late_rate = tracker.adaptive_exploration_rate(2.0);
+        let late_known_ucb = tracker.ucb_score("known", 2.0);
+        let late_uncertain_ucb = tracker.ucb_score("uncertain", 2.0);
+
+        assert!(late_rate < early_rate);
+        assert!(late_rate < 0.4);
+        assert!(late_uncertain_ucb < late_known_ucb);
     }
 }
