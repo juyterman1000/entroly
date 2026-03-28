@@ -38,6 +38,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from .proxy_config import ProxyConfig
+from .value_tracker import get_tracker, estimate_cost
 from .proxy_transform import (
     apply_temperature,
     apply_trajectory_convergence,
@@ -561,6 +562,23 @@ class PromptCompilerProxy:
                         opt_count = self._requests_optimized
                         total_count = self._requests_total
 
+                    # ── Persistent value tracking ──
+                    try:
+                        _saved = max(0, original_tokens - optimized_tokens)
+                        _model = extract_model(body, path) or ""
+                        _coverage = (len(selected_frags) / max(self.engine._rust.fragment_count(), 1) * 100) if selected_frags and hasattr(self.engine, '_rust') else 0.0
+                        _confidence = avg_entropy if selected_frags else 0.0
+                        get_tracker().record(
+                            tokens_saved=_saved,
+                            model=_model,
+                            duplicates=0,
+                            optimized=True,
+                            coverage_pct=_coverage,
+                            confidence=_confidence,
+                        )
+                    except Exception:
+                        pass  # Never block a request for tracking
+
                     tau_str = f", τ={optimal_tau:.2f}" if optimal_tau else ""
 
                     # Startup banner: on first optimized request, print a
@@ -843,6 +861,15 @@ class PromptCompilerProxy:
                 saved_pct = max(0, (self._total_original_tokens - self._total_optimized_tokens)) * 100 // self._total_original_tokens
                 resp_headers["X-Entroly-Tokens-Saved-Pct"] = str(saved_pct)
             resp_headers["X-Entroly-Pipeline-Ms"] = f"{self._last_pipeline_ms:.1f}"
+            resp_headers["X-Entroly-Fragments"] = str(len(self._last_context_fragments))
+            # Confidence + coverage from value tracker
+            try:
+                _conf = get_tracker().get_confidence()
+                resp_headers["X-Entroly-Confidence"] = str(round(_conf.get("confidence", 0), 4))
+                resp_headers["X-Entroly-Coverage-Pct"] = str(round(_conf.get("coverage_pct", 0), 2))
+                resp_headers["X-Entroly-Cost-Saved-Today"] = f"${_conf.get('today', {}).get('cost_saved_usd', 0):.4f}"
+            except Exception:
+                pass
 
         return StreamingResponse(
             event_generator(),
@@ -913,6 +940,21 @@ class PromptCompilerProxy:
         with self._stats_lock:
             if self._last_temperature is not None:
                 resp_headers["X-Entroly-Temperature"] = f"{self._last_temperature:.4f}"
+            if self._last_tokens_saved_pct:
+                resp_headers["X-Entroly-Tokens-Saved-Pct"] = f"{self._last_tokens_saved_pct:.1f}"
+            if hasattr(self, '_last_fragment_count'):
+                resp_headers["X-Entroly-Fragments"] = str(getattr(self, '_last_fragment_count', 0))
+            if hasattr(self, '_last_confidence'):
+                resp_headers["X-Entroly-Confidence"] = f"{getattr(self, '_last_confidence', 0.0):.4f}"
+            if hasattr(self, '_last_coverage_pct'):
+                resp_headers["X-Entroly-Coverage-Pct"] = f"{getattr(self, '_last_coverage_pct', 0.0):.1f}"
+            # Today's cumulative cost saved
+            try:
+                tracker = get_tracker()
+                today_data = tracker.get_confidence().get("today", {})
+                resp_headers["X-Entroly-Cost-Saved-Today"] = f"${today_data.get('cost_saved_usd', 0.0):.4f}"
+            except Exception:
+                pass
 
         # Validate response content-type before parsing JSON
         content_type = response.headers.get("content-type", "")
@@ -1204,6 +1246,26 @@ async def _context_explain(request: Request) -> JSONResponse:
     })
 
 
+async def _confidence(request: Request) -> JSONResponse:
+    """Real-time confidence snapshot for IDE status bar widgets.
+
+    GET /confidence → {confidence, coverage_pct, session, today, lifetime, status}
+
+    Designed to be polled every 5-10s by a VS Code extension status bar item.
+    """
+    tracker = get_tracker()
+    return JSONResponse(tracker.get_confidence())
+
+
+async def _value_trends(request: Request) -> JSONResponse:
+    """Historical savings trends for dashboard charts.
+
+    GET /trends → {daily: [...], weekly: [...], monthly: [...], lifetime, session}
+    """
+    tracker = get_tracker()
+    return JSONResponse(tracker.get_trends())
+
+
 async def _toggle_bypass(request: Request) -> JSONResponse:
     """Gap #28: Toggle bypass mode at runtime via POST /bypass."""
     proxy = request.app.state.proxy
@@ -1375,6 +1437,8 @@ def create_proxy_app(
             Route("/bypass", _toggle_bypass, methods=["POST"]),    # Gap #28
             Route("/feedback", _fragment_feedback, methods=["POST"]),  # Gap #42
             Route("/explain", _context_explain),                       # Gap #43
+            Route("/confidence", _confidence),                         # IDE widget API
+            Route("/trends", _value_trends),                           # Dashboard trends
             # Catch-all: forward any unmatched path to upstream API
             # Must be LAST — Starlette matches routes in declaration order
             Route("/{path:path}", _catch_all, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]),

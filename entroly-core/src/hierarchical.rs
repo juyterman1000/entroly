@@ -433,7 +433,12 @@ pub fn hierarchical_compress(
     if l1_tokens > b1 {
         let max_chars = (b1 * 4) as usize;
         if l1_text.len() > max_chars {
-            l1_text.truncate(max_chars);
+            // Find nearest valid UTF-8 char boundary at or before max_chars
+            let safe_end = (0..=max_chars.min(l1_text.len()))
+                .rev()
+                .find(|&i| l1_text.is_char_boundary(i))
+                .unwrap_or(0);
+            l1_text.truncate(safe_end);
             // Find last newline to avoid cutting mid-line
             if let Some(last_nl) = l1_text.rfind('\n') {
                 l1_text.truncate(last_nl);
@@ -453,7 +458,11 @@ pub fn hierarchical_compress(
     if l2_tokens > b2 {
         let max_chars = (b2 * 4) as usize;
         if l2_text.len() > max_chars {
-            l2_text.truncate(max_chars);
+            let safe_end = (0..=max_chars.min(l2_text.len()))
+                .rev()
+                .find(|&i| l2_text.is_char_boundary(i))
+                .unwrap_or(0);
+            l2_text.truncate(safe_end);
             if let Some(last_nl) = l2_text.rfind('\n') {
                 l2_text.truncate(last_nl);
             }

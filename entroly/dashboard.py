@@ -63,6 +63,16 @@ def _get_full_snapshot() -> dict:
         "engine_available": _engine is not None,
     }
 
+    # Persistent value tracker (independent of engine — always available)
+    try:
+        from entroly.value_tracker import get_tracker
+        tracker = get_tracker()
+        snap["value_trends"] = tracker.get_trends()
+        snap["value_confidence"] = tracker.get_confidence()
+    except Exception:
+        snap["value_trends"] = None
+        snap["value_confidence"] = None
+
     if _engine is None:
         return snap
 
@@ -316,6 +326,27 @@ tr:hover td{background:rgba(255,255,255,0.015);}
 .finding-sev.high{background:var(--amber-glow);color:var(--amber);}
 .finding-file{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);}
 .finding-desc{font-size:11px;color:var(--dim);margin-top:2px;}
+/* Value Trends */
+.trends-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:20px;}
+.trends-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+.trends-header h2{font-size:14px;font-weight:700;}
+.trends-body{padding:20px;}
+.trends-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px;}
+.trends-kpi{padding:14px;border:1px solid var(--border);background:var(--glass);border-radius:12px;}
+.trends-kpi-label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1.1px;margin-bottom:6px;}
+.trends-kpi-val{font-size:24px;font-weight:800;font-feature-settings:'tnum';}
+.trends-kpi-sub{font-size:11px;color:var(--dim);margin-top:4px;}
+.trends-chart{height:80px;display:flex;align-items:flex-end;gap:3px;padding:8px 0;}
+.trends-chart .tbar{flex:1;border-radius:3px 3px 0 0;min-width:6px;transition:height 0.4s cubic-bezier(0.16,1,0.3,1);position:relative;}
+.trends-chart .tbar:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
+  background:var(--card);border:1px solid var(--border);padding:4px 8px;border-radius:6px;font-size:10px;white-space:nowrap;color:var(--text);z-index:10;}
+.trends-chart .tbar.cost{background:linear-gradient(180deg,var(--emerald),var(--cyan));}
+.trends-chart .tbar.tokens{background:linear-gradient(180deg,var(--blue),var(--violet));}
+.trends-tabs{display:flex;gap:8px;margin-bottom:12px;}
+.trends-tab{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;
+  background:var(--glass);border:1px solid var(--border);color:var(--dim);transition:all 0.2s;}
+.trends-tab.active{background:var(--emerald-glow);color:var(--emerald);border-color:rgba(52,211,153,0.3);}
+.trends-tab:hover{border-color:var(--border2);}
 @media(max-width:1100px){.hero{grid-template-columns:1fr 1fr;}.grid3{grid-template-columns:1fr 1fr;}.ba-panel{grid-template-columns:1fr;}.cache-kpis{grid-template-columns:1fr 1fr;}.cache-split{grid-template-columns:1fr;}}
 @media(max-width:768px){.hero,.grid2,.grid3,.cache-kpis{grid-template-columns:1fr;}.main{padding:16px;}}
 </style>
@@ -331,6 +362,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
     <span class="dismiss" onclick="this.parentElement.style.display='none'">✕</span>
   </div>
   <div class="hero" id="hero"></div>
+  <div id="valueTrends"></div>
   <div id="ba"></div>
   <div class="grid2">
     <div class="panel">
@@ -571,9 +603,46 @@ function renderRequests(d){
     <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim);">${r.query||'—'}</td></tr>`).join('');
 }
 
+let trendsView='daily';
+function renderValueTrends(d){
+  const vt=d.value_trends,vc=d.value_confidence,el=document.getElementById('valueTrends');
+  if(!el)return;
+  if(!vt||!vc||(!vt.lifetime.tokens_saved&&!vc.session.tokens_saved)){el.innerHTML='';return;}
+  const lt=vt.lifetime||{},sess=vc.session||{},today=vc.today||{};
+  const status=vc.status||'idle';
+  const statusColor=status==='active'?'var(--emerald)':'var(--dim)';
+  const days_active=Math.max(1,Math.round((lt.last_seen-lt.first_seen)/86400));
+  const daily_avg=lt.tokens_saved>0?(lt.cost_saved_usd/days_active):0;
+
+  // Select data based on current view
+  const chartData=trendsView==='daily'?vt.daily:trendsView==='weekly'?vt.weekly:vt.monthly;
+  const maxTokens=Math.max(...chartData.map(d=>d.tokens_saved||0),1);
+  const bars=chartData.map(d=>{
+    const h=Math.max(2,((d.tokens_saved||0)/maxTokens)*72);
+    const label=d.date||d.week||d.month||'';
+    return '<div class="tbar cost" style="height:'+h+'px;" data-tip="'+label+': '+fmt(d.tokens_saved||0)+' tokens / $'+(d.cost_saved||0).toFixed(4)+'"></div>';
+  }).join('');
+
+  el.innerHTML='<div class="trends-panel"><div class="trends-header"><h2>Lifetime Value</h2>'+
+    '<span class="badge" style="background:rgba(52,211,153,0.1);color:'+statusColor+';"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:'+statusColor+';margin-right:6px;'+(status==='active'?'box-shadow:0 0 8px var(--emerald);':'')+'"></span>'+status+'</span></div>'+
+    '<div class="trends-body">'+
+    '<div class="trends-kpis">'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Lifetime Saved</div><div class="trends-kpi-val hv-green">$'+(lt.cost_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+fmt(lt.tokens_saved||0)+' tokens across '+days_active+' day'+(days_active!==1?'s':'')+'</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Today</div><div class="trends-kpi-val hv-blue">$'+(today.cost_saved_usd||0).toFixed(4)+'</div><div class="trends-kpi-sub">'+fmt(today.tokens_saved||0)+' tokens · '+(today.requests||0)+' reqs</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">This Session</div><div class="trends-kpi-val hv-amber">'+fmt(sess.tokens_saved||0)+'</div><div class="trends-kpi-sub">$'+(sess.cost_saved_usd||0).toFixed(4)+' · '+(sess.requests||0)+' reqs</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Daily Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.requests_optimized||0)+' reqs optimized · '+(lt.duplicates_caught||0)+' dedup</div></div>'+
+    '</div>'+
+    '<div class="trends-tabs">'+
+    '<div class="trends-tab'+(trendsView==='daily'?' active':'')+'" onclick="trendsView=\'daily\'">Daily</div>'+
+    '<div class="trends-tab'+(trendsView==='weekly'?' active':'')+'" onclick="trendsView=\'weekly\'">Weekly</div>'+
+    '<div class="trends-tab'+(trendsView==='monthly'?' active':'')+'" onclick="trendsView=\'monthly\'">Monthly</div></div>'+
+    '<div class="trends-chart">'+bars+'</div>'+
+    '</div></div>';
+}
+
 async function refresh(){
   try{const r=await fetch('/api/metrics');const d=await r.json();
-    renderHero(d);renderBA(d);renderPrism(d);renderHealth(d);renderCache(d);renderSecAndKnapsack(d);renderRequests(d);
+    renderHero(d);renderValueTrends(d);renderBA(d);renderPrism(d);renderHealth(d);renderCache(d);renderSecAndKnapsack(d);renderRequests(d);
   }catch(e){console.error('Refresh:',e);}
 }
 refresh();setInterval(refresh,3000);
@@ -613,6 +682,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             snap = _get_full_snapshot()
             self.wfile.write(json.dumps(snap, default=str).encode())
+        elif self.path == "/api/trends":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
+            self.send_header("Cache-Control", "no-cache")
+            self._send_security_headers()
+            self.end_headers()
+            try:
+                from entroly.value_tracker import get_tracker
+                data = get_tracker().get_trends()
+            except Exception:
+                data = {}
+            self.wfile.write(json.dumps(data, default=str).encode())
+        elif self.path == "/api/confidence":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
+            self.send_header("Cache-Control", "no-cache")
+            self._send_security_headers()
+            self.end_headers()
+            try:
+                from entroly.value_tracker import get_tracker
+                data = get_tracker().get_confidence()
+            except Exception:
+                data = {}
+            self.wfile.write(json.dumps(data, default=str).encode())
         elif self.path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
