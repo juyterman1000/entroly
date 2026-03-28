@@ -619,6 +619,77 @@ class EntrolyEngine:
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, -1.0)
 
+    def record_reward(self, fragment_ids: List[str], reward: float) -> None:
+        """Record a continuous reward signal for selected fragments.
+
+        Unlike record_success/failure (binary), this allows graded feedback:
+          reward > 0 → positive signal (boost fragment weight)
+          reward < 0 → negative signal (suppress fragment weight)
+          reward = 0 → neutral
+
+        The Rust engine routes this to the EGSC cache's Thompson gate
+        and hit predictor for continuous learning.
+        """
+        if self._use_rust:
+            self._rust.record_reward(fragment_ids, reward)
+        # RL pruner also gets the continuous signal
+        for fid in fragment_ids:
+            self._pruner.apply_feedback(fid, reward)
+
+    def set_model(self, model_name: str) -> None:
+        """Auto-configure cache cost model from model name.
+
+        Covers 20+ models: OpenAI (gpt-4o, gpt-4, o1, o3), Anthropic
+        (claude-3.5), Google (gemini), DeepSeek, Meta (llama), Mistral.
+        Unknown models default to GPT-4o pricing ($0.000015/token).
+
+        Example::
+
+            engine.set_model("gpt-4o-mini")  # → $0.60/M tokens
+            engine.set_model("claude-3-opus")  # → $75/M tokens
+        """
+        if self._use_rust:
+            self._rust.set_model(model_name)
+
+    def set_cache_cost_per_token(self, cost: float) -> None:
+        """Set cost-per-token directly (power users only).
+
+        Most developers should use set_model() instead.
+        Default is already $0.000015 (GPT-4o output) — no config needed.
+        """
+        if self._use_rust:
+            self._rust.set_cache_cost_per_token(cost)
+
+    def cache_clear(self) -> None:
+        """Clear all cached LLM responses.
+
+        Useful when switching projects, after major refactors, or
+        when cache correctness is suspect.
+        """
+        if self._use_rust:
+            self._rust.cache_clear()
+
+    def cache_len(self) -> int:
+        """Return the number of entries in the response cache."""
+        if self._use_rust:
+            return self._rust.cache_len()
+        return 0
+
+    def cache_is_empty(self) -> bool:
+        """Check if the response cache is empty."""
+        if self._use_rust:
+            return self._rust.cache_is_empty()
+        return True
+
+    def cache_hit_rate(self) -> float:
+        """Return the cache hit rate (0.0 to 1.0).
+
+        This is the primary observability metric for the EGSC cache.
+        A healthy, warmed-up cache should show hit_rate > 0.3.
+        """
+        if self._use_rust:
+            return self._rust.cache_hit_rate()
+        return 0.0
 
     def prefetch_related(
         self,

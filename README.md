@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.png" width="200" alt="Entroly Logo">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="200" alt="Entroly Logo">
 </p>
 
 <h1 align="center">Entroly</h1>
@@ -38,7 +38,7 @@
 ## See It In Action
 
 <p align="center">
-  <img src="docs/assets/demo.svg" alt="Entroly Demo — 78% token savings in 8ms" width="800">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg" alt="Entroly Demo — 78% token savings in 8ms" width="800">
 </p>
 
 > **Run it yourself:** `pip install entroly && entroly demo`
@@ -64,6 +64,8 @@ You install it once. It runs invisibly. Your AI gives better answers and you spe
 | **78% fewer tokens per request** | Duplicate code, boilerplate, and low-information content are stripped automatically |
 | **100% codebase visibility** | Every file is represented — critical files in full, supporting files as signatures, peripheral files as references |
 | **AI responses improve over time** | Reinforcement learning adjusts context selection weights from session outcomes — no manual tuning |
+| **Persistent savings tracking** | Lifetime cost savings survive restarts — daily/weekly/monthly trends in the dashboard |
+| **Smart auto-config** | `entroly go` detects your project size, language, and team patterns to pick the optimal quality preset |
 | **Built-in security scanning** | 55 SAST rules catch hardcoded secrets, SQL injection, command injection, and 5 more CWE categories |
 | **Codebase health grades** | Clone detection, dead symbol finder, god file detection — get an A-F health grade for your project |
 | **< 10ms overhead** | The Rust engine adds under 10ms per request. You won't notice it |
@@ -91,37 +93,38 @@ These layers are **complementary.** Doc tools give you better docs. Memory gives
 
 ---
 
-## Install
+## 30-Second Quickstart
 
 ```bash
-pip install entroly
+pip install entroly[full]
+entroly go
 ```
 
-That's it. One command. Works on Linux, macOS, and Windows.
+**That's it.** `entroly go` auto-detects your project, configures your IDE, picks the optimal quality preset, starts the proxy and dashboard — all in one command.
 
-**Windows users:** If `pip` is not on your PATH, use `python -m pip install entroly`.
+Then point your AI tool's API base URL to `http://localhost:9377/v1`.
 
-### Connect to your AI tool
+### Or step by step
 
-**Cursor** — run `entroly init` in your project. It generates `.cursor/mcp.json` automatically.
-
-**Claude Code** — run `claude mcp add entroly -- entroly`.
-
-**VS Code / Windsurf** — run `entroly init`. Auto-detected.
-
-**Any other AI tool** — use proxy mode:
 ```bash
-pip install entroly[proxy]
-entroly proxy --quality balanced
+pip install entroly                # install
+entroly init                       # auto-detect IDE + generate config
+entroly proxy --quality balanced   # start the proxy
 ```
-Then point your AI tool's API base URL to `http://localhost:9377/v1`. Done.
+
+| AI Tool | Setup |
+|---------|-------|
+| **Cursor** | `entroly init` (generates `.cursor/mcp.json`) |
+| **Claude Code** | `claude mcp add entroly -- entroly` |
+| **VS Code / Windsurf** | `entroly init` (auto-detected) |
+| **Any other tool** | `entroly proxy` → point to `localhost:9377/v1` |
 
 ### Verify it's working
 
 ```bash
 entroly status     # check if the server/proxy is running
-entroly demo       # see a before/after comparison of token savings on your project
-entroly dashboard  # open the live metrics dashboard at localhost:9378
+entroly demo       # before/after comparison with dollar savings on YOUR project
+entroly dashboard  # live metrics: savings trends, health grade, security, PRISM weights
 ```
 
 ### Install options
@@ -239,11 +242,12 @@ Most AI tools use embedding-based retrieval (RAG). Entroly takes a fundamentally
 
 | Command | What it does |
 |---------|-------------|
-| `entroly init` | Detects your project and AI tool, generates config — one command setup |
+| `entroly go` | **One command to rule them all** — auto-detect, init, proxy, dashboard, smart quality |
+| `entroly init` | Detects your project and AI tool, generates config |
 | `entroly proxy` | Starts the invisible proxy. Point your AI tool to localhost:9377 |
-| `entroly demo` | Shows before/after token savings on your actual project |
+| `entroly demo` | Before/after comparison with **dollar savings** and file-level breakdown |
+| `entroly dashboard` | Live metrics: **lifetime savings trends**, health grade, PRISM weights, security, cache |
 | `entroly doctor` | Runs 7 diagnostic checks — finds problems before you do |
-| `entroly dashboard` | Live metrics: tokens saved, cost reduction, health grade, security findings |
 | `entroly health` | Codebase health grade (A-F): clones, dead code, god files, architecture violations |
 | `entroly role` | Weight presets for your workflow: `frontend`, `backend`, `sre`, `data`, `fullstack` |
 | `entroly autotune` | Auto-optimizes engine parameters using mutation-based search |
@@ -260,6 +264,9 @@ Most AI tools use embedding-based retrieval (RAG). Entroly takes a fundamentally
 
 Entroly is built for real-world reliability, not demos.
 
+- **Persistent value tracking** — lifetime savings stored in `~/.entroly/value_tracker.json`, survives restarts, feeds dashboard trend charts
+- **IDE status bar integration** — `/confidence` endpoint delivers real-time optimization confidence for VS Code widgets
+- **Rich response headers** — `X-Entroly-Confidence`, `X-Entroly-Coverage-Pct`, `X-Entroly-Cost-Saved-Today` on every response
 - **Connection recovery** — auto-reconnects dropped connections without restarting
 - **Large file protection** — 500 KB ceiling prevents out-of-memory on giant logs or vendor files
 - **Binary file detection** — 40+ file types (images, audio, video, archives, databases) are auto-skipped
@@ -429,8 +436,9 @@ Hybrid Rust + Python. All math runs in Rust via PyO3 (50-100x faster). MCP proto
 
 | Module | What |
 |--------|------|
-| **proxy.py** | Invisible HTTP reverse proxy |
+| **proxy.py** | Invisible HTTP reverse proxy with `/confidence` and `/trends` endpoints |
 | **proxy_transform.py** | Request parsing, context formatting, temperature calibration |
+| **value_tracker.py** | Persistent lifetime savings tracker — daily/weekly/monthly trends, atomic writes |
 | **server.py** | MCP server with 10+ tools and Python fallbacks |
 | **auto_index.py** | File-system crawler for automatic codebase indexing |
 | **checkpoint.py** | Gzipped JSON state serialization |

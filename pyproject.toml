@@ -9,6 +9,7 @@ version = "0.5.0"
 description = "Information-theoretic context optimization for AI coding agents. Knapsack-optimal token budgeting, Shannon entropy scoring, SimHash dedup, predictive pre-fetch. MCP server."
 readme = "README.md"
 license = { text = "MIT" }
+logo = { file = "docs/assets/logo.png", content-type = "image/png" }
 requires-python = ">=3.10"
 authors = [
     { name = "Ebbiforge", email = "fastrunner10090@gmail.com" },

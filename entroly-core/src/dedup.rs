@@ -27,6 +27,15 @@ fn hash_token(token: &str) -> u64 {
     u64::from_le_bytes(digest[..8].try_into().unwrap())
 }
 
+/// Hash normalized content so duplicate verification can distinguish
+/// truly repeated fragments from large files that merely share a stable
+/// SimHash despite minor semantic edits.
+#[inline]
+fn normalized_content_hash(text: &str) -> u64 {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    hash_token(&normalized)
+}
+
 /// Compute the 64-bit SimHash fingerprint of a text.
 ///
 /// Algorithm:
@@ -104,6 +113,10 @@ pub struct DedupIndex {
     /// fragment_id → fingerprint
     fingerprints: HashMap<String, u64>,
 
+    /// fragment_id → normalized content hash
+    #[serde(default)]
+    content_hashes: HashMap<String, u64>,
+
     pub duplicates_detected: u64,
 }
 
@@ -116,8 +129,13 @@ impl DedupIndex {
             bits_per_band: 64 / num_bands,
             buckets: (0..num_bands).map(|_| HashMap::new()).collect(),
             fingerprints: HashMap::new(),
+            content_hashes: HashMap::new(),
             duplicates_detected: 0,
         }
+    }
+
+    pub fn hamming_threshold(&self) -> u32 {
+        self.hamming_threshold
     }
 
     /// Extract band hashes from a fingerprint.
@@ -134,6 +152,7 @@ impl DedupIndex {
     /// Insert a fragment. Returns Some(duplicate_id) if near-dup found.
     pub fn insert(&mut self, fragment_id: &str, text: &str) -> Option<String> {
         let fp = simhash(text);
+        let content_hash = normalized_content_hash(text);
 
         // Check for candidates via band matching
         let bands = self.extract_bands(fp);
@@ -152,7 +171,8 @@ impl DedupIndex {
         // Verify with Hamming distance
         for cid in &candidates {
             if let Some(&existing_fp) = self.fingerprints.get(cid) {
-                if hamming_distance(fp, existing_fp) <= self.hamming_threshold {
+                let same_content = self.content_hashes.get(cid).copied() == Some(content_hash);
+                if same_content && hamming_distance(fp, existing_fp) <= self.hamming_threshold {
                     self.duplicates_detected += 1;
                     return Some(cid.clone());
                 }
@@ -161,6 +181,7 @@ impl DedupIndex {
 
         // No duplicate — insert
         self.fingerprints.insert(fragment_id.to_string(), fp);
+        self.content_hashes.insert(fragment_id.to_string(), content_hash);
         for (b, &band_hash) in bands.iter().enumerate() {
             self.buckets[b]
                 .entry(band_hash)
@@ -174,6 +195,7 @@ impl DedupIndex {
     /// Remove a fragment from the index.
     pub fn remove(&mut self, fragment_id: &str) {
         if let Some(fp) = self.fingerprints.remove(fragment_id) {
+            self.content_hashes.remove(fragment_id);
             let bands = self.extract_bands(fp);
             for (b, &band_hash) in bands.iter().enumerate() {
                 if let Some(ids) = self.buckets[b].get_mut(&band_hash) {

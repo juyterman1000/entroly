@@ -841,7 +841,10 @@ fn extract_assignment_lhs(line: &str) -> Option<String> {
             if next == b'=' || prev == b'!' || prev == b'<' || prev == b'>' || prev == b'=' {
                 continue;
             }
-            // LHS is everything before the =
+            // LHS is everything before the = (ensure safe UTF-8 boundary)
+            if !trimmed.is_char_boundary(i) {
+                continue;
+            }
             let lhs = trimmed[..i].trim();
             // Strip type annotation if present (Python: `var: Type`)
             let var_name = lhs.split(':').next()?.trim();
@@ -1112,7 +1115,10 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                     // Show key name but redact value: "api_key = [REDACTED]"
                     format!("{}= [REDACTED]", &trimmed[..eq_pos])
                 } else if trimmed.len() > 30 {
-                    format!("{}...[REDACTED]", &trimmed[..20])
+                    // Find nearest valid UTF-8 boundary at or before byte 20
+                    let safe = (0..=20.min(trimmed.len())).rev()
+                        .find(|&i| trimmed.is_char_boundary(i)).unwrap_or(0);
+                    format!("{}...[REDACTED]", &trimmed[..safe])
                 } else {
                     "[REDACTED — secret detected]".to_string()
                 }

@@ -32,6 +32,7 @@ mod conversation_pruner;
 mod channel;
 mod nkbe;
 mod cognitive_bus;
+mod cache;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -48,6 +49,7 @@ use depgraph::{DepGraph, extract_identifiers};
 use guardrails::{file_criticality, has_safety_signal, TaskType, FeedbackTracker, Criticality, compute_ordering_priority};
 use prism::PrismOptimizer;
 use query_persona::QueryPersonaManifold;
+use cache::CacheLookup;
 
 
 /// Process-wide monotonic counter — used only to seed each engine's instance_id.
@@ -148,6 +150,18 @@ pub struct EntrolyEngine {
     /// EMA baseline for REINFORCE advantage A = R − μ (variance reduction).
     /// Updated on every record_success / record_failure call.
     reward_baseline_ema: f64,
+
+    // EGSC — Entropy-Gated Submodular Cache (novel: no prior art)
+    egsc_cache: cache::EgscCache,
+    /// Last query string from optimize() — used to route feedback to the
+    /// correct cache entry. Without this, record_success/failure would hash
+    /// with empty query and never find the stored entry (BUG FIX).
+    last_query: String,
+    /// Effective budget from the most recent optimize() call.
+    last_effective_budget: u32,
+    /// Whether the last optimize() result came from a deterministic exploit
+    /// trajectory and is therefore safe to reinforce in EGSC.
+    last_cache_feedback_eligible: bool,
 }
 
 /// Snapshot of the last optimization for explainability.
@@ -256,6 +270,10 @@ impl EntrolyEngine {
             enable_query_personas: true,
             enable_channel_coding: true,
             reward_baseline_ema: 0.0,
+            egsc_cache: cache::EgscCache::default(),
+            last_query: String::new(),
+            last_effective_budget: 0,
+            last_cache_feedback_eligible: false,
         }
     }
 
@@ -289,6 +307,12 @@ impl EntrolyEngine {
         if self.enable_query_personas {
             self.query_manifold.lifecycle_tick();
         }
+
+        // EGSC cache: garbage-collect low-quality entries each turn.
+        // Entries with quality_score < 0.15 (those consistently receiving
+        // negative feedback via Wilson scoring) are removed, freeing
+        // cache slots for better candidates.
+        self.egsc_cache.gc(0.15);
     }
 
     /// Ingest a new context fragment.
@@ -420,6 +444,31 @@ impl EntrolyEngine {
             self.fragment_slot_ids.push(frag_id.clone());
             self.lsh_index.insert(fp, slot);
 
+            // EGSC cache: depth-weighted DAG invalidation on new fragment.
+            // Direct fragment (depth 0) is ALWAYS hard-invalidated regardless
+            // of dep graph completeness. Transitive dependents get progressively
+            // softer invalidation via exponential decay: w *= exp(-λ/depth).
+            let mut stale_closure: HashSet<String> = std::iter::once(frag_id.clone()).collect();
+            let mut depth_weights: HashMap<String, u32> = HashMap::new();
+            depth_weights.insert(frag_id.clone(), 0); // depth 0 = direct, always hard
+            // BFS through reverse deps with depth tracking (max depth 3)
+            let mut bfs_queue: std::collections::VecDeque<(String, u32)> = self.dep_graph
+                .reverse_deps(&frag_id)
+                .into_iter()
+                .map(|id| (id, 1))
+                .collect();
+            while let Some((id, depth)) = bfs_queue.pop_front() {
+                if depth > 3 || stale_closure.contains(&id) { continue; }
+                stale_closure.insert(id.clone());
+                depth_weights.insert(id.clone(), depth);
+                for rev in self.dep_graph.reverse_deps(&id) {
+                    if !stale_closure.contains(&rev) {
+                        bfs_queue.push_back((rev, depth + 1));
+                    }
+                }
+            }
+            let _invalidated = self.egsc_cache.invalidate_weighted(&stale_closure, &depth_weights);
+
             let result = PyDict::new(py);
             result.set_item("status", "ingested")?;
             result.set_item("fragment_id", &frag_id)?;
@@ -447,6 +496,10 @@ impl EntrolyEngine {
         Python::with_gil(|py| {
             self.total_optimizations += 1;
 
+            // Store query for cache feedback routing (used by record_success/failure)
+            self.last_query = query.clone();
+            self.last_cache_feedback_eligible = false;
+
             // Apply task-type budget multiplier
             let effective_budget = if !query.is_empty() {
                 let task_type = TaskType::classify(&query);
@@ -455,6 +508,97 @@ impl EntrolyEngine {
             } else {
                 token_budget
             };
+            self.last_effective_budget = effective_budget;
+
+            // ── RAVEN-UCB Adaptive Exploration (arXiv:2506.02933) ──
+            // Replace fixed ε-greedy with variance-aware UCB per fragment.
+            // UCB_i = μ_i + α_t · √(σ²_i / (n_i + 1))
+            // where α_t = α₀ / ln(t + e) self-anneals exploration → 0.
+            let alpha_0 = 2.0_f64; // initial exploration coefficient
+            let best_exploit = self.fragments.keys()
+                .map(|fid| self.feedback.welford_mean(fid))
+                .fold(0.0_f64, f64::max);
+            let t = self.feedback.total_observations() as f64;
+            let visit_threshold = if t > 1.0 { (2.0 * t.ln()).sqrt() } else { 2.0 };
+            let should_explore = self.fragments.keys().any(|fid| {
+                let ucb = self.feedback.ucb_score(fid, alpha_0);
+                let visits = self.feedback.visit_count(fid) as f64;
+                ucb > best_exploit && visits < visit_threshold
+            });
+
+            // ── EGSC Cache: check for a cached optimization result ──
+            // The cache key is (query, current_fragment_ids). On hit, skip the
+            // entire IOS/knapsack/channel-coding pipeline — returns in O(1).
+            if !query.is_empty() && !should_explore {
+                let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
+                match self.egsc_cache.lookup_with_budget(&query, &current_frag_ids, effective_budget) {
+                    CacheLookup::ExactHit { response, tokens_saved } => {
+                        self.total_tokens_saved += tokens_saved as u64;
+                        // Deserialize cached JSON result back to Python dict
+                        if let Ok(cached_value) = serde_json::from_str::<serde_json::Value>(&response) {
+                            let cache_result = PyDict::new(py);
+                            // Populate result from cached JSON
+                            if let Some(obj) = cached_value.as_object() {
+                                for (k, v) in obj {
+                                    if k == "selected_ids" { continue; } // handled separately
+                                    match v {
+                                        serde_json::Value::Number(n) => {
+                                            if let Some(i) = n.as_i64() { let _ = cache_result.set_item(k.as_str(), i); }
+                                            else if let Some(f) = n.as_f64() { let _ = cache_result.set_item(k.as_str(), f); }
+                                        }
+                                        serde_json::Value::String(s) => { let _ = cache_result.set_item(k.as_str(), s.as_str()); }
+                                        serde_json::Value::Bool(b) => { let _ = cache_result.set_item(k.as_str(), *b); }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            // Reconstruct selected_fragments from cached IDs + live fragments
+                            let selected_list = self.rebuild_selected_list(py, &cached_value)?;
+                            cache_result.set_item("selected", selected_list)?;
+                            cache_result.set_item("cache_hit", true)?;
+                            cache_result.set_item("cache_hit_type", "exact")?;
+                            cache_result.set_item("cache_tokens_saved", tokens_saved)?;
+                            cache_result.set_item("cache_eligible", true)?;
+                            cache_result.set_item("optimization_policy", "exploit")?;
+                            self.last_cache_feedback_eligible = true;
+                            return Ok(cache_result.into());
+                        }
+                    }
+                    CacheLookup::SemanticHit { response, tokens_saved, hamming_distance: ham, jaccard_similarity: jac } => {
+                        self.total_tokens_saved += tokens_saved as u64;
+                        if let Ok(cached_value) = serde_json::from_str::<serde_json::Value>(&response) {
+                            let cache_result = PyDict::new(py);
+                            if let Some(obj) = cached_value.as_object() {
+                                for (k, v) in obj {
+                                    if k == "selected_ids" { continue; }
+                                    match v {
+                                        serde_json::Value::Number(n) => {
+                                            if let Some(i) = n.as_i64() { let _ = cache_result.set_item(k.as_str(), i); }
+                                            else if let Some(f) = n.as_f64() { let _ = cache_result.set_item(k.as_str(), f); }
+                                        }
+                                        serde_json::Value::String(s) => { let _ = cache_result.set_item(k.as_str(), s.as_str()); }
+                                        serde_json::Value::Bool(b) => { let _ = cache_result.set_item(k.as_str(), *b); }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            // Reconstruct selected_fragments from cached IDs + live fragments
+                            let selected_list = self.rebuild_selected_list(py, &cached_value)?;
+                            cache_result.set_item("selected", selected_list)?;
+                            cache_result.set_item("cache_hit", true)?;
+                            cache_result.set_item("cache_hit_type", "semantic")?;
+                            cache_result.set_item("cache_tokens_saved", tokens_saved)?;
+                            cache_result.set_item("cache_hamming_distance", ham)?;
+                            cache_result.set_item("cache_jaccard_similarity", (jac * 10000.0).round() / 10000.0)?;
+                            cache_result.set_item("cache_eligible", true)?;
+                            cache_result.set_item("optimization_policy", "exploit")?;
+                            self.last_cache_feedback_eligible = true;
+                            return Ok(cache_result.into());
+                        }
+                    }
+                    CacheLookup::Miss => {} // Continue to full optimization
+                }
+            }
 
             // Update semantic scores if query provided
             if !query.is_empty() {
@@ -571,6 +715,7 @@ impl EntrolyEngine {
                     self.enable_ios_multi_resolution,
                     &info_factors,
                     self.ios_diversity_floor,
+                    self.min_relevance,
                 );
 
                 final_indices = Vec::new();
@@ -611,25 +756,17 @@ impl EntrolyEngine {
                         &ios_scored, &boosted_frags, ios_tokens_used, self.gradient_temperature
                     );
                 }
-            } else {
-                // ── Legacy Path: Standard knapsack + exploration + skeleton pass ──
-                selection_method = "legacy_knapsack";
-                let result = if dep_boosts.values().any(|&b| b > 0.3) {
-                    knapsack_optimize(&boosted_frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature)
-                } else {
-                    result1
-                };
 
-                final_indices = result.selected_indices.clone();
-
-                // ε-Greedy Exploration
-                let lcg_val = (self.total_optimizations.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)) % 1000;
-                let threshold = (self.exploration_rate * 1000.0) as u64;
-
-                if frags.len() > final_indices.len() && !final_indices.is_empty() && lcg_val < threshold {
-                    let selected_set: HashSet<usize> = final_indices.iter().copied().collect();
+                if frags.len() > final_indices.len() + skeleton_indices.len()
+                    && !final_indices.is_empty()
+                    && should_explore
+                {
+                    let selected_all: HashSet<usize> = final_indices.iter()
+                        .chain(skeleton_indices.iter())
+                        .copied()
+                        .collect();
                     let unselected: Vec<usize> = (0..frags.len())
-                        .filter(|i| !selected_set.contains(i) && !frags[*i].is_pinned)
+                        .filter(|i| !selected_all.contains(i) && !frags[*i].is_pinned)
                         .collect();
 
                     if !unselected.is_empty() {
@@ -647,7 +784,88 @@ impl EntrolyEngine {
                         }
 
                         if let Some(pos) = min_pos {
-                            let explore_idx = unselected[(lcg_val as usize) % unselected.len()];
+                            // RAVEN-UCB: pick unselected fragment with highest UCB score
+                            let explore_idx = *unselected.iter()
+                                .max_by(|&&a, &&b| {
+                                    let ucb_a = self.feedback.ucb_score(&frags[a].fragment_id, alpha_0);
+                                    let ucb_b = self.feedback.ucb_score(&frags[b].fragment_id, alpha_0);
+                                    ucb_a.partial_cmp(&ucb_b).unwrap_or(std::cmp::Ordering::Equal)
+                                })
+                                .unwrap();
+                            let old_tokens = frags[final_indices[pos]].token_count;
+                            let new_tokens = frags[explore_idx].token_count;
+                            if new_tokens <= old_tokens + 100 {
+                                explored_ids.push(frags[explore_idx].fragment_id.clone());
+                                final_indices[pos] = explore_idx;
+                                self.total_explorations += 1;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Legacy Path: Standard knapsack + exploration + skeleton pass
+                selection_method = "legacy_knapsack";
+                let result = if dep_boosts.values().any(|&b| b > 0.3) {
+                    knapsack_optimize(&boosted_frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature)
+                } else {
+                    result1
+                };
+                final_indices = result.selected_indices.clone();
+                // RAVEN-UCB Exploration (legacy path)
+                if frags.len() > final_indices.len() && !final_indices.is_empty() && should_explore {
+                    let selected_set: HashSet<usize> = final_indices.iter().copied().collect();
+                    let unselected: Vec<usize> = (0..frags.len())
+                        .filter(|i| !selected_set.contains(i) && !frags[*i].is_pinned)
+                        .collect();
+                    if !unselected.is_empty() {
+                        let mut min_rel = f64::MAX;
+                        let mut min_pos = None;
+                        for (pos, &idx) in final_indices.iter().enumerate() {
+                            if !frags[idx].is_pinned {
+                                let fm = feedback_mults.get(&frags[idx].fragment_id).copied().unwrap_or(1.0);
+                                let rel = compute_relevance(&frags[idx], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                                if rel < min_rel { min_rel = rel; min_pos = Some(pos); }
+                            }
+                        }
+                        if let Some(pos) = min_pos {
+                            let explore_idx = *unselected.iter()
+                                .max_by(|&&a, &&b| {
+                                    self.feedback.ucb_score(&frags[a].fragment_id, alpha_0)
+                                        .partial_cmp(&self.feedback.ucb_score(&frags[b].fragment_id, alpha_0))
+                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                }).unwrap();
+                            let old_tokens = frags[final_indices[pos]].token_count;
+                            let new_tokens = frags[explore_idx].token_count;
+                            if new_tokens <= old_tokens + 100 {
+                                explored_ids.push(frags[explore_idx].fragment_id.clone());
+                                final_indices[pos] = explore_idx;
+                                self.total_explorations += 1;
+                            }
+                        }
+                    }
+                }
+                if frags.len() > final_indices.len() && !final_indices.is_empty() && should_explore {
+                    let selected_set: HashSet<usize> = final_indices.iter().copied().collect();
+                    let unselected: Vec<usize> = (0..frags.len())
+                        .filter(|i| !selected_set.contains(i) && !frags[*i].is_pinned)
+                        .collect();
+                    if !unselected.is_empty() {
+                        let mut min_rel = f64::MAX;
+                        let mut min_pos = None;
+                        for (pos, &idx) in final_indices.iter().enumerate() {
+                            if !frags[idx].is_pinned {
+                                let fm = feedback_mults.get(&frags[idx].fragment_id).copied().unwrap_or(1.0);
+                                let rel = compute_relevance(&frags[idx], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                                if rel < min_rel { min_rel = rel; min_pos = Some(pos); }
+                            }
+                        }
+                        if let Some(pos) = min_pos {
+                            let explore_idx = *unselected.iter()
+                                .max_by(|&&a, &&b| {
+                                    self.feedback.ucb_score(&frags[a].fragment_id, alpha_0)
+                                        .partial_cmp(&self.feedback.ucb_score(&frags[b].fragment_id, alpha_0))
+                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                }).unwrap();
                             let old_tokens = frags[final_indices[pos]].token_count;
                             let new_tokens = frags[explore_idx].token_count;
                             if new_tokens <= old_tokens + 100 {
@@ -719,7 +937,11 @@ impl EntrolyEngine {
             self.total_tokens_saved += saved as u64;
 
             // Mark selected as accessed
-            for &idx in &final_indices {
+            let mut accessed_indices = final_indices.clone();
+            accessed_indices.extend(skeleton_indices.iter().copied());
+            accessed_indices.sort_unstable();
+            accessed_indices.dedup();
+            for &idx in &accessed_indices {
                 let fid = &frags[idx].fragment_id;
                 if let Some(f) = self.fragments.get_mut(fid) {
                     f.turn_last_accessed = self.current_turn;
@@ -730,6 +952,7 @@ impl EntrolyEngine {
             // ── Context Sufficiency Scoring ──
             // What fraction of referenced symbols have definitions in selected context?
             let selected_id_set: HashSet<String> = final_indices.iter()
+                .chain(skeleton_indices.iter())
                 .map(|&i| frags[i].fragment_id.clone())
                 .collect();
             let sufficiency = self.compute_sufficiency(&frags, &final_indices);
@@ -938,6 +1161,56 @@ impl EntrolyEngine {
                 }
             }
             py_result.set_item("selected", selected_list)?;
+            py_result.set_item("cache_hit", false)?;
+            let cache_eligible = !query.is_empty() && explored_ids.is_empty();
+            self.last_cache_feedback_eligible = cache_eligible;
+            py_result.set_item("cache_eligible", cache_eligible)?;
+            py_result.set_item(
+                "optimization_policy",
+                if explored_ids.is_empty() { "exploit" } else { "explore" },
+            )?;
+
+            // ── EGSC Cache: store the optimization result for future lookups ──
+            // Only realized exploit trajectories are memoizable. Exploratory
+            // selections are learning signals, not reusable answers.
+            if cache_eligible {
+                let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
+                let entropies: Vec<(f64, u32)> = final_indices.iter()
+                    .chain(skeleton_indices.iter())
+                    .map(|&i| (frags[i].entropy_score, frags[i].token_count))
+                    .collect();
+                // Serialize a compact result snapshot for the cache.
+                // CRITICAL: include selected_ids so we can reconstruct
+                // the full selected_fragments list on cache hit.
+                let selected_ids_json: Vec<serde_json::Value> = ordered_indices.iter()
+                    .map(|&i| serde_json::json!({"id": frags[i].fragment_id, "variant": "full"}))
+                    .chain(skeleton_indices.iter().map(|&i| {
+                        let variant = ios_resolutions.get(&i)
+                            .map(|r| r.as_str())
+                            .unwrap_or("skeleton");
+                        serde_json::json!({"id": frags[i].fragment_id, "variant": variant})
+                    }))
+                    .collect();
+                let cache_snapshot = serde_json::json!({
+                    "method": selection_method,
+                    "total_tokens": final_tokens,
+                    "context_efficiency": (context_efficiency * 10000.0).round() / 10000.0,
+                    "total_relevance": (total_rel * 10000.0).round() / 10000.0,
+                    "selected_count": ordered_indices.len() + skeleton_indices.len(),
+                    "skeleton_count": skeleton_indices.len(),
+                    "skeleton_tokens": skeleton_tokens_used,
+                    "tokens_saved": saved,
+                    "effective_budget": effective_budget,
+                    "budget_utilization": if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 },
+                    "sufficiency": (sufficiency * 10000.0).round() / 10000.0,
+                    "selected_ids": selected_ids_json,
+                });
+                let response_json = cache_snapshot.to_string();
+                self.egsc_cache.store_with_budget(
+                    &query, current_frag_ids, &entropies,
+                    response_json, final_tokens, self.current_turn, effective_budget,
+                );
+            }
 
             Ok(py_result.into())
         })
@@ -994,7 +1267,11 @@ impl EntrolyEngine {
                     .collect()
             };
 
-            scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scored.sort_unstable_by(|a, b| {
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.fragment_id.cmp(&b.0.fragment_id))
+            });
             scored.truncate(top_k);
 
             let result = pyo3::types::PyList::empty(py);
@@ -1013,7 +1290,7 @@ impl EntrolyEngine {
     }
 
     /// Get session statistics.
-    pub fn stats(&self) -> PyResult<PyObject> {
+    pub fn stats(&mut self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let total_tokens: u32 = self.fragments.values().map(|f| f.token_count).sum();
             let avg_entropy = if self.fragments.is_empty() {
@@ -1023,6 +1300,9 @@ impl EntrolyEngine {
                     / self.fragments.len() as f64
             };
             let pinned = self.fragments.values().filter(|f| f.is_pinned).count();
+            let feedback_observations = self.feedback.total_observations();
+            let adaptive_exploration_rate = self.feedback.adaptive_exploration_rate(2.0);
+            let total_exploitations = self.total_optimizations.saturating_sub(self.total_explorations);
 
             let result = PyDict::new(py);
 
@@ -1048,6 +1328,77 @@ impl EntrolyEngine {
             dedup.set_item("indexed_fragments", self.dedup_index.size())?;
             dedup.set_item("duplicates_detected", self.dedup_index.duplicates_detected)?;
             result.set_item("dedup", dedup)?;
+
+            let policy = PyDict::new(py);
+            policy.set_item("configured_exploration_rate", (self.exploration_rate * 10000.0).round() / 10000.0)?;
+            policy.set_item("adaptive_exploration_rate", (adaptive_exploration_rate * 10000.0).round() / 10000.0)?;
+            policy.set_item("feedback_observations", feedback_observations)?;
+            policy.set_item("total_explorations", self.total_explorations)?;
+            policy.set_item("total_exploitations", total_exploitations)?;
+            policy.set_item(
+                "explore_ratio",
+                if self.total_optimizations > 0 {
+                    (self.total_explorations as f64 / self.total_optimizations as f64 * 10000.0).round() / 10000.0
+                } else {
+                    0.0
+                },
+            )?;
+            policy.set_item(
+                "exploit_ratio",
+                if self.total_optimizations > 0 {
+                    (total_exploitations as f64 / self.total_optimizations as f64 * 10000.0).round() / 10000.0
+                } else {
+                    0.0
+                },
+            )?;
+            result.set_item("policy", policy)?;
+
+            // EGSC Cache stats — exposed to Python for monitoring and debugging
+            let cs = self.egsc_cache.stats();
+            let cache_dict = PyDict::new(py);
+            cache_dict.set_item("entries", cs.total_entries)?;
+            cache_dict.set_item("lookups", cs.total_lookups)?;
+            cache_dict.set_item("exact_hits", cs.exact_hits)?;
+            cache_dict.set_item("semantic_hits", cs.semantic_hits)?;
+            cache_dict.set_item("misses", cs.misses)?;
+            cache_dict.set_item("hit_rate", (cs.hit_rate * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("tokens_saved", cs.total_tokens_saved)?;
+            cache_dict.set_item("admissions", cs.total_admissions)?;
+            cache_dict.set_item("rejections", cs.total_rejections)?;
+            cache_dict.set_item("evictions", cs.total_evictions)?;
+            cache_dict.set_item("invalidations", cs.total_invalidations)?;
+            cache_dict.set_item("admission_rate", (cs.admission_rate * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("entropy_threshold", (cs.entropy_threshold * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("shifts_detected", cs.shifts_detected)?;
+            // Extended observability: Thompson gate, frequency sketch, cost tail, invalidation depth
+            cache_dict.set_item("avg_quality", (cs.avg_quality * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("adaptive_alpha", (cs.adaptive_alpha * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("thompson_alpha", (cs.thompson_alpha * 100.0).round() / 100.0)?;
+            cache_dict.set_item("thompson_beta", (cs.thompson_beta * 100.0).round() / 100.0)?;
+            cache_dict.set_item("freq_admissions", cs.freq_admissions)?;
+            cache_dict.set_item("freq_rejections", cs.freq_rejections)?;
+            cache_dict.set_item("p50_cost_saved", (cs.p50_cost_saved * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("p95_cost_saved", (cs.p95_cost_saved * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("p99_cost_saved", (cs.p99_cost_saved * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("hard_invalidations", cs.hard_invalidations)?;
+            cache_dict.set_item("soft_invalidations", cs.soft_invalidations)?;
+            cache_dict.set_item("invalidation_depth_counts", (cs.invalidation_depth_counts[0], cs.invalidation_depth_counts[1], cs.invalidation_depth_counts[2], cs.invalidation_depth_counts[3]))?;
+            cache_dict.set_item("total_resets", cs.total_resets)?;
+            cache_dict.set_item("hit_rate_ema", (cs.hit_rate_ema * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item("predictor_weights", (cs.predictor_weights[0], cs.predictor_weights[1], cs.predictor_weights[2], cs.predictor_weights[3], cs.predictor_weights[4]))?;
+            result.set_item("cache", cache_dict)?;
+
+            // Last selected fragment IDs — needed by context_bridge.record_outcome()
+            if let Some(ref snapshot) = self.last_optimization {
+                let last_ids: Vec<&str> = snapshot.fragment_scores.iter()
+                    .filter(|fs| fs.selected)
+                    .map(|fs| fs.fragment_id.as_str())
+                    .collect();
+                result.set_item("last_selected_ids", last_ids)?;
+            } else {
+                let empty: Vec<String> = vec![];
+                result.set_item("last_selected_ids", empty)?;
+            }
 
             // Query Persona Manifold stats
             if self.enable_query_personas {
@@ -1241,6 +1592,16 @@ impl EntrolyEngine {
     /// while μ (EMA baseline) reduces gradient variance.
     pub fn record_success(&mut self, fragment_ids: Vec<String>) {
         self.feedback.record_success(&fragment_ids);
+        // EGSC cache: positive feedback → improve entry quality scores
+        if self.last_cache_feedback_eligible {
+            let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
+            self.egsc_cache.record_feedback_with_budget(
+                &self.last_query,
+                &frag_set,
+                self.last_effective_budget,
+                true,
+            );
+        }
         let raw_reward = if self.enable_channel_coding {
             let suff = self.last_optimization.as_ref()
                 .map(|s| s.sufficiency)
@@ -1262,6 +1623,16 @@ impl EntrolyEngine {
     /// Low sufficiency → stronger penalty → faster weight correction.
     pub fn record_failure(&mut self, fragment_ids: Vec<String>) {
         self.feedback.record_failure(&fragment_ids);
+        // EGSC cache: negative feedback → degrade entry quality scores
+        if self.last_cache_feedback_eligible {
+            let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
+            self.egsc_cache.record_feedback_with_budget(
+                &self.last_query,
+                &frag_set,
+                self.last_effective_budget,
+                false,
+            );
+        }
         let raw_reward = if self.enable_channel_coding {
             let suff = self.last_optimization.as_ref()
                 .map(|s| s.sufficiency)
@@ -1294,8 +1665,26 @@ impl EntrolyEngine {
         // Update feedback tracker based on sign
         if r >= 0.0 {
             self.feedback.record_success(&fragment_ids);
+            if self.last_cache_feedback_eligible {
+                let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
+                self.egsc_cache.record_feedback_with_budget(
+                    &self.last_query,
+                    &frag_set,
+                    self.last_effective_budget,
+                    true,
+                );
+            }
         } else {
             self.feedback.record_failure(&fragment_ids);
+            if self.last_cache_feedback_eligible {
+                let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
+                self.egsc_cache.record_feedback_with_budget(
+                    &self.last_query,
+                    &frag_set,
+                    self.last_effective_budget,
+                    false,
+                );
+            }
         }
         // A = R − μ
         let advantage = r - self.reward_baseline_ema;
@@ -1307,6 +1696,41 @@ impl EntrolyEngine {
     /// Enable or disable channel coding framework.
     pub fn set_channel_coding_enabled(&mut self, enabled: bool) {
         self.enable_channel_coding = enabled;
+    }
+
+    // ── EGSC Cache Management API ──
+
+    /// Clear the EGSC cache (useful after major project changes).
+    pub fn cache_clear(&mut self) { self.egsc_cache.clear(); }
+
+    /// Get current cache entry count.
+    pub fn cache_len(&self) -> usize { self.egsc_cache.len() }
+
+    /// Check if cache is empty.
+    pub fn cache_is_empty(&self) -> bool { self.egsc_cache.is_empty() }
+
+    /// Get the current cache hit rate (from shift detector EMA).
+    pub fn cache_hit_rate(&mut self) -> f64 {
+        self.egsc_cache.stats().hit_rate
+    }
+
+    /// Set the cost model from a model name (auto-detects pricing).
+    ///
+    /// Covers 20+ models: OpenAI (gpt-4o, gpt-4, o1, o3), Anthropic (claude-3.5),
+    /// Google (gemini), DeepSeek, Meta (llama), Mistral, and more.
+    /// Unknown models default to GPT-4o pricing ($0.000015/token).
+    ///
+    /// Example: `engine.set_model("gpt-4o-mini")` → $0.60/M tokens
+    pub fn set_model(&mut self, model_name: &str) {
+        let cost_model = cache::CostModel::for_model(model_name);
+        self.egsc_cache.set_cost_per_token(cost_model.cost_per_token);
+    }
+
+    /// Set cost-per-token directly (power users only).
+    /// Most developers should use `set_model()` instead.
+    /// Default is already $0.000015 (GPT-4o output) — no config needed.
+    pub fn set_cache_cost_per_token(&mut self, cost: f64) {
+        self.egsc_cache.set_cost_per_token(cost);
     }
 
     /// Classify a task query and return the recommended budget multiplier.
@@ -1506,6 +1930,10 @@ impl EntrolyEngine {
             dep_graph: &self.dep_graph,
             feedback: &self.feedback,
             prism_optimizer: &self.prism_optimizer,
+            w_recency: self.w_recency,
+            w_frequency: self.w_frequency,
+            w_semantic: self.w_semantic,
+            w_entropy: self.w_entropy,
             current_turn: self.current_turn,
             id_counter: self.id_counter,
             max_fragments: self.max_fragments,
@@ -1514,6 +1942,10 @@ impl EntrolyEngine {
             total_fragments_ingested: self.total_fragments_ingested,
             total_duplicates_caught: self.total_duplicates_caught,
             total_explorations: self.total_explorations,
+            gradient_temperature: self.gradient_temperature,
+            gradient_norm_ema: self.gradient_norm_ema,
+            // EGSC cache warm-start: serialize cache state as nested JSON
+            cache_snapshot: self.egsc_cache.export_cache().ok(),
         };
         serde_json::to_string(&state).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Serialization failed: {}", e))
@@ -1527,8 +1959,9 @@ impl EntrolyEngine {
         let state: OwnedEngineState = serde_json::from_str(json_str).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Deserialization failed: {}", e))
         })?;
+        let dedup_threshold = state.dedup_index.hamming_threshold();
         self.fragments = state.fragments;
-        self.dedup_index = state.dedup_index;
+        self.dedup_index = DedupIndex::new(dedup_threshold);
         self.dep_graph = state.dep_graph;
         self.feedback = state.feedback;
         // Restore PRISM covariance if available; fall back to fresh optimizer to support
@@ -1536,6 +1969,10 @@ impl EntrolyEngine {
         if let Some(p) = state.prism_optimizer {
             self.prism_optimizer = p;
         }
+        self.w_recency = state.w_recency;
+        self.w_frequency = state.w_frequency;
+        self.w_semantic = state.w_semantic;
+        self.w_entropy = state.w_entropy;
         self.current_turn = state.current_turn;
         self.id_counter = state.id_counter;
         self.max_fragments = state.max_fragments;
@@ -1548,7 +1985,26 @@ impl EntrolyEngine {
         self.total_fragments_ingested = state.total_fragments_ingested;
         self.total_duplicates_caught = state.total_duplicates_caught;
         self.total_explorations = state.total_explorations;
+        self.gradient_temperature = state.gradient_temperature;
+        self.gradient_norm_ema = state.gradient_norm_ema;
+        let mut fragment_entries: Vec<(&String, &ContextFragment)> = self.fragments.iter().collect();
+        fragment_entries.sort_by(|a, b| a.0.cmp(b.0));
+        for (fid, frag) in fragment_entries {
+            self.dedup_index.insert(fid, &frag.content);
+        }
+        self.rebuild_lsh_index();
+        self.context_scorer.w_recency = self.w_recency;
+        self.context_scorer.w_frequency = self.w_frequency;
+        self.context_scorer.w_similarity = self.w_semantic;
+        self.context_scorer.w_entropy = self.w_entropy;
         self.last_optimization = None;
+        // EGSC cache warm-start: restore cache from checkpoint
+        if let Some(ref cache_json) = state.cache_snapshot {
+            match self.egsc_cache.import_cache(cache_json) {
+                Ok(n) => eprintln!("[entroly] Warm-start: restored {} EGSC cache entries", n),
+                Err(e) => eprintln!("[entroly] Cache restore skipped: {}", e),
+            }
+        }
         Ok(())
     }
 
@@ -1956,6 +2412,10 @@ struct EngineState<'a> {
     dep_graph: &'a DepGraph,
     feedback: &'a FeedbackTracker,
     prism_optimizer: &'a PrismOptimizer,
+    w_recency: f64,
+    w_frequency: f64,
+    w_semantic: f64,
+    w_entropy: f64,
     current_turn: u32,
     id_counter: u64,
     max_fragments: usize,
@@ -1964,6 +2424,11 @@ struct EngineState<'a> {
     total_fragments_ingested: u64,
     total_duplicates_caught: u64,
     total_explorations: u64,
+    gradient_temperature: f64,
+    gradient_norm_ema: f64,
+    /// EGSC cache snapshot (JSON) — warm-start persistence.
+    /// Nested JSON string to avoid coupling EngineState to cache internals.
+    cache_snapshot: Option<String>,
 }
 
 /// Owned state for deserialization.
@@ -1974,6 +2439,14 @@ struct OwnedEngineState {
     dep_graph: DepGraph,
     feedback: FeedbackTracker,
     prism_optimizer: Option<PrismOptimizer>,  // Optional for backward-compat with old checkpoints
+    #[serde(default = "default_w_recency")]
+    w_recency: f64,
+    #[serde(default = "default_w_frequency")]
+    w_frequency: f64,
+    #[serde(default = "default_w_semantic")]
+    w_semantic: f64,
+    #[serde(default = "default_w_entropy")]
+    w_entropy: f64,
     current_turn: u32,
     id_counter: u64,
     // Optional for backward-compat — old checkpoints lack this field.
@@ -1984,9 +2457,21 @@ struct OwnedEngineState {
     total_fragments_ingested: u64,
     total_duplicates_caught: u64,
     total_explorations: u64,
+    #[serde(default = "default_gradient_temperature")]
+    gradient_temperature: f64,
+    #[serde(default)]
+    gradient_norm_ema: f64,
+    /// EGSC cache snapshot — warm-start persistence (optional for backward-compat).
+    #[serde(default)]
+    cache_snapshot: Option<String>,
 }
 
 fn default_max_fragments() -> usize { 10_000 }
+fn default_w_recency() -> f64 { 0.30 }
+fn default_w_frequency() -> f64 { 0.25 }
+fn default_w_semantic() -> f64 { 0.25 }
+fn default_w_entropy() -> f64 { 0.20 }
+fn default_gradient_temperature() -> f64 { 2.0 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Standalone PyO3 functions (for direct access to math engines)
@@ -2268,6 +2753,82 @@ fn py_knapsack_optimize(
     (selected, stats)
 }
 
+// ── Non-PyO3 helper methods (can't be in #[pymethods] due to serde types) ──
+impl EntrolyEngine {
+    /// Reconstruct the `selected` PyList from cached fragment IDs + live fragment data.
+    ///
+    /// On cache hit, the stored JSON contains `selected_ids: [{id, variant}, ...]`.
+    /// We look up each fragment by ID in `self.fragments` and rebuild the full
+    /// dict with content, preview, scores — exactly matching the miss path output.
+    fn rebuild_selected_list(
+        &self,
+        py: Python<'_>,
+        cached_value: &serde_json::Value,
+    ) -> PyResult<PyObject> {
+        let selected_list = pyo3::types::PyList::empty(py);
+
+        if let Some(ids) = cached_value.get("selected_ids").and_then(|v| v.as_array()) {
+            for entry in ids {
+                let frag_id = match entry.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => continue,
+                };
+                let variant = entry.get("variant").and_then(|v| v.as_str()).unwrap_or("full");
+
+                if let Some(f) = self.fragments.get(frag_id) {
+                    let d = PyDict::new(py);
+                    d.set_item("id", &f.fragment_id)?;
+                    d.set_item("source", &f.source)?;
+                    d.set_item("variant", variant)?;
+                    d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
+
+                    let fm = self.feedback.learned_value(&f.fragment_id);
+                    let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                    d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
+
+                    match variant {
+                        "reference" => {
+                            let ref_tokens = (f.source.len() as u32 / 4).clamp(3, 10);
+                            d.set_item("token_count", ref_tokens)?;
+                            d.set_item("preview", format!("[ref] {}", &f.source))?;
+                            d.set_item("content", format!("[ref] {}", &f.source))?;
+                        }
+                        "skeleton" => {
+                            let tc = f.skeleton_token_count.unwrap_or(f.token_count);
+                            d.set_item("token_count", tc)?;
+                            let content = f.skeleton_content.as_deref().unwrap_or(&f.content);
+                            let preview = if content.len() > 100 {
+                                let mut end = 100;
+                                while end < content.len() && !content.is_char_boundary(end) { end += 1; }
+                                format!("{}...", &content[..end])
+                            } else {
+                                content.to_string()
+                            };
+                            d.set_item("preview", &preview)?;
+                            d.set_item("content", content)?;
+                        }
+                        _ => {
+                            // "full"
+                            d.set_item("token_count", f.token_count)?;
+                            let preview = if f.content.len() > 100 {
+                                let mut end = 100;
+                                while end < f.content.len() && !f.content.is_char_boundary(end) { end += 1; }
+                                format!("{}...", &f.content[..end])
+                            } else {
+                                f.content.clone()
+                            };
+                            d.set_item("preview", &preview)?;
+                            d.set_item("content", &f.content)?;
+                        }
+                    }
+                    selected_list.append(d)?;
+                }
+            }
+        }
+        Ok(selected_list.into())
+    }
+}
+
 /// Python-friendly DedupIndex — wraps the Rust DedupIndex struct.
 #[pyclass]
 struct PyDedupIndex {
@@ -2389,6 +2950,10 @@ mod tests {
             dep_graph: &dep_graph,
             feedback: &feedback,
             prism_optimizer: &prism_test,
+            w_recency: 0.30,
+            w_frequency: 0.25,
+            w_semantic: 0.25,
+            w_entropy: 0.20,
             current_turn: 5,
             id_counter: 2,
             max_fragments: 10_000,
@@ -2397,6 +2962,9 @@ mod tests {
             total_fragments_ingested: 5,
             total_duplicates_caught: 1,
             total_explorations: 0,
+            gradient_temperature: 2.0,
+            gradient_norm_ema: 0.0,
+            cache_snapshot: None,
         };
 
         let json = serde_json::to_string(&state).expect("failed to serialize OwnedEngineState to JSON");

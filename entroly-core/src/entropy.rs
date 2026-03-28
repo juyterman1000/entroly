@@ -100,6 +100,78 @@ pub fn renyi_entropy_2(text: &str) -> f64 {
     -sum_p_sq.log2()
 }
 
+/// Generalized Rényi entropy of order α over an arbitrary probability distribution.
+///
+/// H_α(p) = (1/(1-α)) · log₂(Σ pᵢᵅ)    for α ≠ 1
+///
+/// Special cases:
+///   α → 1  : Shannon entropy H₁ = -Σ pᵢ log₂(pᵢ)
+///   α = 2  : Collision entropy H₂ = -log₂(Σ pᵢ²)
+///   α → ∞  : Min-entropy H_∞ = -log₂(max pᵢ)
+///
+/// The input `scores` do NOT need to be normalized — this function
+/// normalizes them to a probability distribution internally.
+///
+/// Used by EGSC's admission gate: given per-fragment entropy scores
+/// s₁, ..., sₖ, we form pᵢ = sᵢ/Σsⱼ and compute H₂(p) to measure
+/// the *diversity* of information across the context set. High H₂
+/// means information is spread across many fragments (complex query);
+/// low H₂ means one fragment dominates (trivial query).
+///
+/// Reference: Rényi (1961) — "On measures of entropy and information"
+pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
+    if scores.is_empty() {
+        return 0.0;
+    }
+
+    // Filter out non-positive scores
+    let positive: Vec<f64> = scores.iter().copied().filter(|&s| s > 0.0).collect();
+    if positive.is_empty() {
+        return 0.0;
+    }
+
+    let total: f64 = positive.iter().sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+
+    // Normalize to probability distribution
+    let probs: Vec<f64> = positive.iter().map(|&s| s / total).collect();
+
+    // Special case: α → 1 is Shannon entropy
+    if (alpha - 1.0).abs() < 1e-10 {
+        return -probs.iter()
+            .filter(|&&p| p > 0.0)
+            .map(|&p| p * p.log2())
+            .sum::<f64>();
+    }
+
+    // Special case: α → ∞ is min-entropy
+    if alpha > 100.0 {
+        let max_p = probs.iter().cloned().fold(0.0_f64, f64::max);
+        return if max_p > 0.0 { -max_p.log2() } else { 0.0 };
+    }
+
+    // General case: H_α = (1/(1-α)) · log₂(Σ pᵢᵅ)
+    let sum_p_alpha: f64 = probs.iter().map(|&p| p.powf(alpha)).sum();
+
+    if sum_p_alpha <= 0.0 {
+        return 0.0;
+    }
+
+    (1.0 / (1.0 - alpha)) * sum_p_alpha.log2()
+}
+
+/// Maximum possible Rényi entropy for n elements: H₂_max = log₂(n).
+///
+/// When all pᵢ = 1/n (uniform distribution), H₂ = log₂(n).
+/// Used to normalize EGSC admission threshold to [0, 1] scale.
+#[inline]
+#[allow(dead_code)]
+pub fn renyi_max(n: usize) -> f64 {
+    if n <= 1 { 0.0 } else { (n as f64).log2() }
+}
+
 /// Shannon–Rényi divergence: H₁(X) - H₂(X).
 ///
 /// This measures "entropy inflation" — when Shannon entropy is high

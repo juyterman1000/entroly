@@ -2,6 +2,7 @@
 Entroly CLI — Zero-friction onboarding for AI coding agents.
 
 Commands:
+    entroly go          One command: auto-detect, init, proxy, and dashboard
     entroly init        Auto-detect project + AI tool, generate MCP config
     entroly serve       Start MCP server with auto-indexing
     entroly proxy       Start invisible prompt compiler proxy
@@ -993,12 +994,118 @@ def cmd_batch(args):
         print(f"\n  {C.GREEN}{C.BOLD}Processed {len(queries)} queries.{C.RESET}\n")
 
 
+def _recommend_quality(project: dict, file_count: int) -> str:
+    """Smart auto-config: recommend quality preset based on project characteristics."""
+    lang = project.get("primary", "unknown")
+    langs = project.get("languages", [])
+
+    # Large codebases → speed/fast to keep latency low
+    if file_count > 5000:
+        return "speed"
+    if file_count > 2000:
+        return "fast"
+
+    # Multi-language projects benefit from deeper analysis
+    if len(langs) >= 3:
+        return "quality"
+
+    # Language-specific heuristics
+    if lang in ("rust", "go", "java"):
+        # Strongly typed → balanced is enough, types carry context
+        return "balanced"
+    if lang in ("python", "javascript", "typescript"):
+        # Dynamic/flexible → quality helps disambiguate
+        return "quality" if file_count > 500 else "balanced"
+
+    return "balanced"
+
+
+def cmd_go(args):
+    """entroly go — one command to rule them all: init + proxy + dashboard."""
+    print(f"""
+{C.CYAN}{C.BOLD}  ⚡ Entroly Go{C.RESET} — full setup in one command
+""")
+
+    # Step 1: Detect project
+    project = _detect_project_type()
+    print(f"  {C.GRAY}Project:{C.RESET}  {C.BOLD}{project['name']}{C.RESET} ({', '.join(project['languages'])})")
+
+    # Step 2: Auto-detect AI tools and write configs
+    tools = _detect_ai_tool()
+    if tools["tools"]:
+        for tool in tools["tools"]:
+            try:
+                path = _write_config(tool)
+                print(f"  {C.GREEN}Configured{C.RESET} {tool['name']} ({path})")
+            except Exception as e:
+                print(f"  {C.YELLOW}Skipped{C.RESET} {tool['name']}: {e}")
+    else:
+        print(f"  {C.GRAY}No AI tool detected — proxy mode works with any tool{C.RESET}")
+
+    # Step 3: Initialize engine + auto-index
+    from entroly.server import EntrolyEngine
+    from entroly.auto_index import auto_index, start_incremental_watcher
+    from entroly.proxy import create_proxy_app
+    from entroly.proxy_config import ProxyConfig, resolve_quality
+
+    engine = EntrolyEngine()
+    result = auto_index(engine, force=getattr(args, "force", False))
+
+    file_count = 0
+    if result["status"] == "indexed":
+        file_count = result["files_indexed"]
+        print(f"  {C.GREEN}Indexed {file_count} files ({result['total_tokens']:,} tokens) in {result['duration_s']}s{C.RESET}")
+    elif result["status"] == "skipped":
+        file_count = result.get("existing_fragments", 0)
+        print(f"  {C.GRAY}Using persistent index ({file_count} fragments){C.RESET}")
+
+    # Step 4: Smart quality recommendation
+    config = ProxyConfig.from_env()
+    recommended = _recommend_quality(project, file_count)
+    quality_val = resolve_quality(getattr(args, "quality", None) or recommended)
+    config.quality = quality_val
+    config._apply_quality_dial(quality_val)
+    if args.port:
+        config.port = args.port
+
+    print(f"  {C.CYAN}Quality:{C.RESET}  {recommended} (auto-detected for {file_count} files)")
+
+    # Start file watcher
+    start_incremental_watcher(engine)
+
+    # Warm up engine
+    engine.optimize_context(token_budget=128000, query="project overview")
+
+    # Start proxy + dashboard
+    app = create_proxy_app(engine, config)
+
+    print(f"""
+  {C.GREEN}{C.BOLD}Ready!{C.RESET}
+
+  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
+  {C.GREEN}Dashboard:{C.RESET}  http://localhost:9378
+
+  {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
+  {C.GRAY}Every request: intercepted → optimized → forwarded. <10ms overhead.{C.RESET}
+  {C.GRAY}Press Ctrl+C to stop.{C.RESET}
+""")
+
+    try:
+        import uvicorn
+        uvicorn.run(app, host=config.host, port=config.port, log_level="warning")
+    except ImportError:
+        print(f"  {C.RED}uvicorn not installed. Install with: pip install uvicorn{C.RESET}")
+    except KeyboardInterrupt:
+        print(f"\n  {C.GRAY}Entroly stopped.{C.RESET}")
+
+
 def cmd_demo(args):
     """entroly demo — quick-win demo mode: before/after comparison (Gap #41)."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Demo{C.RESET} — see the value in 30 seconds\n")
 
     from entroly.server import EntrolyEngine
     from entroly.auto_index import auto_index
+    from entroly.value_tracker import estimate_cost
 
     engine = EntrolyEngine()
     result = auto_index(engine)
@@ -1012,7 +1119,6 @@ def cmd_demo(args):
             return
         print(f"  {C.GREEN}Indexed {files_indexed} files ({total_tokens_raw:,} tokens total){C.RESET}\n")
     elif result["status"] == "skipped":
-        # Persistent index already loaded — get stats from engine
         existing = result.get("existing_fragments", 0)
         if existing == 0:
             print(f"  {C.YELLOW}No files found to index.{C.RESET}")
@@ -1030,11 +1136,19 @@ def cmd_demo(args):
         print(f"  Run this from a project directory with source files.\n")
         return
 
+    # Smart quality recommendation
+    project = _detect_project_type()
+    recommended = _recommend_quality(project, files_indexed)
+    print(f"  {C.GRAY}Recommended quality preset: {C.CYAN}{recommended}{C.GRAY} for this project{C.RESET}\n")
+
     sample_queries = [
         "How does the authentication flow work?",
         "Find and fix potential SQL injection vulnerabilities",
         "Explain the module structure and dependency graph",
     ]
+
+    # Model cost estimates for dollar impact
+    models = ["gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"]
 
     budget = 4096
     print(f"  {C.BOLD}Without Entroly:{C.RESET} All {total_tokens_raw:,} tokens sent to LLM (wasteful)")
@@ -1049,13 +1163,36 @@ def cmd_demo(args):
         saved = total_tokens_raw - tokens_used
         total_saved += saved
         pct = (saved * 100) // max(total_tokens_raw, 1)
+
+        # Per-query cost estimate
+        cost_gpt4o = estimate_cost(saved, "gpt-4o")
+
+        # Show top selected files
+        top_files = [f.get("source", f.get("id", "?")).split("/")[-1].split("\\")[-1]
+                     for f in selected[:3]]
+        top_str = ", ".join(top_files) if top_files else "none"
+
         print(f"    {C.CYAN}Q:{C.RESET} {query[:60]}")
         print(f"       {C.GREEN}{len(selected)} fragments, {tokens_used:,} tokens{C.RESET} "
-              f"({C.BOLD}{pct}% reduction{C.RESET})\n")
+              f"({C.BOLD}{pct}% reduction{C.RESET}, ~${cost_gpt4o:.4f} saved)")
+        print(f"       {C.GRAY}Top files: {top_str}{C.RESET}\n")
 
     avg_pct = (total_saved * 100) // max(total_tokens_raw * len(sample_queries), 1)
-    print(f"  {C.GREEN}{C.BOLD}Average: {avg_pct}% fewer tokens sent to LLM{C.RESET}")
-    print(f"  {C.GRAY}Start using: entroly proxy --quality balanced{C.RESET}\n")
+
+    # Show projected savings across popular models
+    print(f"  {C.GREEN}{C.BOLD}Average: {avg_pct}% fewer tokens per request{C.RESET}\n")
+    print(f"  {C.BOLD}Projected daily savings (100 requests/day):{C.RESET}")
+    for model in models:
+        daily_cost = estimate_cost(total_saved // len(sample_queries) * 100, model)
+        monthly_cost = daily_cost * 30
+        print(f"    {C.CYAN}{model:25s}{C.RESET} ${daily_cost:>6.2f}/day  ${monthly_cost:>7.2f}/month")
+
+    print(f"""
+  {C.GREEN}{C.BOLD}Get started:{C.RESET}
+    {C.CYAN}entroly go{C.RESET}                One command: init + proxy + dashboard
+    {C.CYAN}entroly proxy --quality {recommended}{C.RESET}  Start optimizing
+""")
+
 
 
 def cmd_doctor(args):
@@ -1510,6 +1647,24 @@ def main():
         help="Restore previous tuning_config.json (undo last autotune)",
     )
 
+    # entroly go
+    go_parser = subparsers.add_parser(
+        "go",
+        help="One command: auto-detect, init, proxy, and dashboard",
+    )
+    go_parser.add_argument(
+        "--port", type=int, default=None,
+        help="Proxy port (default: 9377)",
+    )
+    go_parser.add_argument(
+        "--quality", type=str, default=None,
+        help="Override auto-detected quality (speed|fast|balanced|quality|max)",
+    )
+    go_parser.add_argument(
+        "--force", action="store_true",
+        help="Force re-index even if persistent index exists",
+    )
+
     # entroly proxy
     proxy_parser = subparsers.add_parser(
         "proxy",
@@ -1706,6 +1861,7 @@ def main():
     _dispatch = {
         "init": cmd_init,
         "serve": cmd_serve,
+        "go": cmd_go,
         "dashboard": cmd_dashboard,
         "health": cmd_health,
         "autotune": cmd_autotune,

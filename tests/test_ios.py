@@ -692,3 +692,109 @@ class TestEdgeCases:
         engine.advance_turn()
         result = engine.optimize(1000, "greet")
         assert len(result["selected"]) >= 1
+
+
+class TestIOSRegressionFixes:
+    """Regression coverage for IOS-specific production bugs."""
+
+    def test_negative_feedback_does_not_backfill_bad_reference(self):
+        """Strongly down-ranked fragments should not reappear as cheap references."""
+        engine = make_engine()
+        bad_id = ingest_fragment(engine, "def bad_code(): raise RuntimeError('broken')", "bad.py", 100)
+        good_id = ingest_fragment(engine, "def good_code(): return True", "good.py", 100)
+
+        for _ in range(10):
+            engine.record_failure([bad_id])
+            engine.record_success([good_id])
+
+        result = engine.optimize(110, "")
+        sources = [frag["source"] for frag in result["selected"]]
+
+        assert "good.py" in sources
+        assert "bad.py" not in sources, f"bad.py should stay out of selection: {result['selected']}"
+
+    def test_ios_exploration_can_vary_selected_set(self):
+        """Exploration must still fire when IOS is enabled."""
+        engine = make_engine(exploration_rate=0.1)
+
+        for i in range(20):
+            ingest_fragment(
+                engine,
+                f"def module_{i}():\n    value = {i}\n    return value * {i + 1}\n",
+                f"m{i}.py",
+                50,
+            )
+
+        selected_sets = set()
+        explored_calls = 0
+        for _ in range(50):
+            result = engine.optimize(250, "search")
+            selected_sets.add(tuple(sorted(frag["id"] for frag in result["selected"])))
+            if result.get("explored"):
+                explored_calls += 1
+
+        assert len(selected_sets) > 1, "IOS exploration should vary selected sets over repeated optimizations"
+        assert explored_calls > 0, "IOS exploration should report explored calls"
+
+    def test_exploration_does_not_seed_exploit_cache(self):
+        """Exploratory selections must not become exact-hit exploit cache entries."""
+        engine = make_engine(exploration_rate=1.0)
+
+        for i in range(20):
+            ingest_fragment(
+                engine,
+                f"def module_{i}():\n    value = {i}\n    return value * {i + 1}\n",
+                f"m{i}.py",
+                50,
+            )
+
+        exploratory = None
+        for _ in range(10):
+            result = engine.optimize(250, "search")
+            if result.get("explored"):
+                exploratory = result
+                break
+
+        assert exploratory is not None, "Expected at least one realized exploration call"
+        assert exploratory["cache_hit"] is False
+        assert exploratory["cache_eligible"] is False
+        assert exploratory["optimization_policy"] == "explore"
+
+        engine.set_exploration_rate(0.0)
+
+        exploit_first = engine.optimize(250, "search")
+        assert exploit_first["cache_hit"] is False
+        assert exploit_first["cache_eligible"] is True
+        assert exploit_first["optimization_policy"] == "exploit"
+
+        exploit_second = engine.optimize(250, "search")
+        assert exploit_second["cache_hit"] is True
+        assert exploit_second["cache_eligible"] is True
+        assert exploit_second["optimization_policy"] == "exploit"
+
+    def test_explain_selection_includes_compressed_variants(self):
+        """Explainability should stay in sync with reference/skeleton selections."""
+        engine = make_engine()
+        ingest_fragment(
+            engine,
+            "def primary_handler(data):\n    transformed = normalize(data)\n    return transformed\n",
+            "primary.py",
+            120,
+        )
+        ingest_fragment(
+            engine,
+            "def helper_one():\n    return 1\n\ndef helper_two():\n    return 2\n",
+            "helper.py",
+            120,
+        )
+
+        result = engine.optimize(123, "")
+        assert any(frag["variant"] != "full" for frag in result["selected"]), result["selected"]
+
+        explained = engine.explain_selection()
+        selected_sources = {frag["source"] for frag in result["selected"]}
+        explained_sources = {frag["source"] for frag in explained["included"]}
+
+        assert selected_sources.issubset(explained_sources), (
+            f"Selected sources missing from explain_selection: {selected_sources - explained_sources}"
+        )

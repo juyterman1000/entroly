@@ -3,11 +3,13 @@ import sys
 import shutil
 import json
 import logging
+import uuid
 from pathlib import Path
 
 # Force the test to use a temporary checkpoint dir to avoid polluting the host
 import tempfile
-temp_dir = tempfile.mkdtemp(prefix="entroly_test_")
+temp_dir = Path(tempfile.gettempdir()) / f"entroly_test_{uuid.uuid4().hex[:8]}"
+temp_dir.mkdir(parents=True, exist_ok=False)
 
 # Set up logging for the script
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -39,7 +41,7 @@ def run_functional_test():
     ]
     
     logger.info("\n--- Phase 1: Ingesting Context ---")
-    base_dir = Path(__file__).parent
+    base_dir = Path(__file__).resolve().parents[1]
     
     total_tokens = 0
     for filename in files_to_ingest:
@@ -129,7 +131,7 @@ def run_functional_test():
     logger.info("\n=== Functional Test Complete ===")
     
     # Cleanup
-    shutil.rmtree(temp_dir)
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     run_functional_test()
