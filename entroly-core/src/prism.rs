@@ -145,6 +145,7 @@ impl<const N: usize> SymMatrixN<N> {
 pub type SymMatrix4 = SymMatrixN<4>;
 
 /// Extended 5D matrix (Recency, Frequency, Semantic, Entropy, Resonance).
+#[allow(dead_code)]
 pub type SymMatrix5 = SymMatrixN<5>;
 
 // ════════════════════════════════════════════════════════════════════
@@ -166,9 +167,9 @@ impl SymMatrix4 {
     /// Export as a fixed 4x4 array (backward compat).
     pub fn to_array(&self) -> [[f64; 4]; 4] {
         let mut out = [[0.0; 4]; 4];
-        for i in 0..4 {
-            for j in 0..4 {
-                out[i][j] = self.data[i * 4 + j];
+        for (i, row) in out.iter_mut().enumerate() {
+            for (j, cell) in row.iter_mut().enumerate() {
+                *cell = self.data[i * 4 + j];
             }
         }
         out
@@ -247,14 +248,9 @@ impl<const N: usize> PrismOptimizerN<N> {
 
         // 4. Compute Q Λ^{-1/2} Q^T g
         // Project gradient into eigenspace: v = Q^T g
-        let mut v = vec![0.0f64; N];
-        for i in 0..N {
-            let mut sum = 0.0;
-            for j in 0..N {
-                sum += q.get(j, i) * g[j];
-            }
-            v[i] = sum;
-        }
+        let mut v: Vec<f64> = (0..N)
+            .map(|i| (0..N).map(|j| q.get(j, i) * g[j]).sum())
+            .collect();
 
         // Apply spectral shaping: v' = Λ^{-1/2} v
         for (vi, &scale) in v.iter_mut().zip(lambda_inv_sqrt.iter()) {
@@ -262,14 +258,12 @@ impl<const N: usize> PrismOptimizerN<N> {
         }
 
         // Project back to feature space: step = α Q v'
-        let mut step = vec![0.0f64; N];
-        for i in 0..N {
-            let mut sum = 0.0;
-            for j in 0..N {
-                sum += q.get(i, j) * v[j];
-            }
-            step[i] = sum * self.learning_rate;
-        }
+        let step: Vec<f64> = (0..N)
+            .map(|i| {
+                let dot: f64 = (0..N).map(|j| q.get(i, j) * v[j]).sum();
+                dot * self.learning_rate
+            })
+            .collect();
 
         step
     }
@@ -361,10 +355,15 @@ impl PrismOptimizer {
 
 /// Dimension indices for the 5D weight space.
 pub mod dim {
+    /// Recency dimension index.
     pub const RECENCY: usize = 0;
+    /// Frequency dimension index.
     pub const FREQUENCY: usize = 1;
+    /// Semantic dimension index.
     pub const SEMANTIC: usize = 2;
+    /// Entropy dimension index.
     pub const ENTROPY: usize = 3;
+    /// Resonance dimension index (5D only).
     pub const RESONANCE: usize = 4;
 }
 
@@ -384,15 +383,15 @@ impl PrismOptimizer5D {
     /// as the initial 4D dimensions — PRISM will discover its true variance
     /// from the first few gradient updates.
     pub fn from_4d(opt4: &PrismOptimizer) -> Self {
-        let mut cov = SymMatrixN::<5>::new();
-        // Copy 4x4 block
-        for i in 0..4 {
-            for j in 0..4 {
+        let mut cov = SymMatrix5::new();
+        // Copy 4x4 block (dims 0..RESONANCE are the base dimensions)
+        for i in 0..dim::RESONANCE {
+            for j in 0..dim::RESONANCE {
                 cov.set(i, j, opt4.covariance.get(i, j));
             }
         }
         // Initialize resonance dimension with cold-start prior
-        cov.set(4, 4, 1e-4);
+        cov.set(dim::RESONANCE, dim::RESONANCE, 1e-4);
 
         PrismOptimizerN {
             covariance: cov,
@@ -412,16 +411,11 @@ impl PrismOptimizer5D {
     pub fn resonance_diagnostics(&self) -> ResonanceDiagnostics {
         let (q, eigenvalues) = self.covariance.jacobi_eigendecomposition();
 
-        // Find which eigenvector is most aligned with the resonance axis (dim 4)
-        let mut max_alignment = 0.0f64;
-        let mut resonance_eig_idx = 0;
-        for col in 0..5 {
-            let alignment = q.get(4, col).abs();
-            if alignment > max_alignment {
-                max_alignment = alignment;
-                resonance_eig_idx = col;
-            }
-        }
+        // Find which eigenvector is most aligned with the resonance axis
+        let (resonance_eig_idx, max_alignment) = (0..5)
+            .map(|col| (col, q.get(dim::RESONANCE, col).abs()))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap_or((0, 0.0));
 
         let total_energy: f64 = eigenvalues.iter().map(|ev| ev.abs()).sum();
         let resonance_energy = if total_energy > 1e-15 {
@@ -430,16 +424,16 @@ impl PrismOptimizer5D {
             0.2 // uniform prior
         };
 
-        // Cross-correlations: C[4][0..3] normalized by sqrt(C[4][4] * C[k][k])
-        let c44 = self.covariance.get(4, 4).max(1e-15);
+        // Cross-correlations: C[res][0..res] normalized by sqrt(C[res][res] * C[k][k])
+        let c44 = self.covariance.get(dim::RESONANCE, dim::RESONANCE).max(1e-15);
         let mut cross = [0.0f64; 4];
-        for k in 0..4 {
+        for (k, c) in cross.iter_mut().enumerate() {
             let ckk = self.covariance.get(k, k).max(1e-15);
-            cross[k] = self.covariance.get(4, k) / (c44 * ckk).sqrt();
+            *c = self.covariance.get(dim::RESONANCE, k) / (c44 * ckk).sqrt();
         }
 
         // Calibrated = resonance variance has moved significantly from init
-        let is_calibrated = self.covariance.get(4, 4) > 5e-4;
+        let is_calibrated = self.covariance.get(dim::RESONANCE, dim::RESONANCE) > 5e-4;
 
         ResonanceDiagnostics {
             resonance_eigenvalue: eigenvalues[resonance_eig_idx],
@@ -492,7 +486,7 @@ mod tests {
 
         // Eigenvalues should contain all diagonal entries
         let mut sorted_eigs = eigs.clone();
-        sorted_eigs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        sorted_eigs.sort_by(|a, b| b.total_cmp(a));
         assert!((sorted_eigs[0] - 5.0).abs() < 1e-6);
         assert!((sorted_eigs[1] - 3.0).abs() < 1e-6);
         assert!((sorted_eigs[2] - 2.0).abs() < 1e-6);
@@ -563,7 +557,7 @@ mod tests {
 
         // Eigenvalues should contain all diagonal entries
         let mut sorted_eigs = eigs.clone();
-        sorted_eigs.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        sorted_eigs.sort_by(|a, b| b.total_cmp(a));
         assert!((sorted_eigs[0] - 5.0).abs() < 1e-6);
         assert!((sorted_eigs[1] - 4.0).abs() < 1e-6);
         assert!((sorted_eigs[2] - 3.0).abs() < 1e-6);
@@ -665,17 +659,31 @@ mod tests {
 
     #[test]
     fn test_5d_condition_number_increases_with_resonance() {
-        // Adding a new dimension with different variance should increase κ
+        // Start with a well-conditioned 4D system: diverse gradients → near-isotropic covariance.
+        // Then show that extending to 5D with an anisotropic resonance signal breaks isotropy.
         let mut opt4 = PrismOptimizer::new(0.01);
-        for _ in 0..20 {
-            opt4.compute_update(&[0.3, 0.3, 0.3, 0.3]);
+        // Cycle through axis-aligned gradients to build isotropic covariance
+        let basis: [[f64; 4]; 4] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for i in 0..40 {
+            opt4.compute_update(&basis[i % 4]);
         }
         let kappa_4 = opt4.condition_number();
 
         let mut opt5 = PrismOptimizer5D::from_4d(&opt4);
-        // Feed resonance gradients with very different variance
-        for _ in 0..20 {
-            opt5.compute_update(&[0.3, 0.3, 0.3, 0.3, 2.0]);
+        // Same base gradients, but resonance dimension has 10× larger variance
+        let basis5: [[f64; 5]; 4] = [
+            [1.0, 0.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0, 10.0],
+            [0.0, 0.0, 1.0, 0.0, 10.0],
+            [0.0, 0.0, 0.0, 1.0, 10.0],
+        ];
+        for i in 0..40 {
+            opt5.compute_update(&basis5[i % 4]);
         }
         let kappa_5 = opt5.condition_number();
 
@@ -731,7 +739,7 @@ mod tests {
 
         // Known eigenvalues: 4.0, 2.0, 2.0, 1.0, 0.5
         let mut sorted = eigs.clone();
-        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        sorted.sort_by(|a, b| b.total_cmp(a));
         assert!((sorted[0] - 4.0).abs() < 1e-6, "Expected 4.0, got {}", sorted[0]);
         assert!((sorted[1] - 2.0).abs() < 1e-6, "Expected 2.0, got {}", sorted[1]);
         assert!((sorted[2] - 2.0).abs() < 1e-6, "Expected 2.0, got {}", sorted[2]);
@@ -741,10 +749,9 @@ mod tests {
         // Verify reconstruction: Q Λ Q^T ≈ A
         for i in 0..5 {
             for j in 0..5 {
-                let mut reconstructed = 0.0;
-                for k in 0..5 {
-                    reconstructed += q.get(i, k) * eigs[k] * q.get(j, k);
-                }
+                let reconstructed: f64 = eigs.iter().enumerate()
+                    .map(|(k, &ek)| q.get(i, k) * ek * q.get(j, k))
+                    .sum();
                 let original = mat.get(i, j);
                 assert!((reconstructed - original).abs() < 1e-6,
                     "Reconstruction failed at [{i}][{j}]: {reconstructed:.6} vs {original:.6}");

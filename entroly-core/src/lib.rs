@@ -511,15 +511,8 @@ impl EntrolyEngine {
             self.last_effective_budget = effective_budget;
 
             // ── RAVEN-UCB Adaptive Exploration (arXiv:2506.02933) ──
-            // Replace fixed ε-greedy with variance-aware UCB per fragment.
-            // UCB_i = μ_i + α_t · √(σ²_i / (n_i + 1))
-            // where α_t = α₀ / ln(t + e) self-anneals exploration → 0.
-            let alpha_0 = 2.0_f64; // initial exploration coefficient
-            let best_exploit = self.fragments.keys()
-                .map(|fid| self.feedback.welford_mean(fid))
-                .fold(0.0_f64, f64::max);
-            let t = self.feedback.total_observations() as f64;
-            let visit_threshold = if t > 1.0 { (2.0 * t.ln()).sqrt() } else { 2.0 };
+            // α₀ is used in the exploration swap code (UCB score for picking swap target).
+            let alpha_0 = 2.0_f64;
             let should_explore = if self.exploration_rate > 0.0 {
                 // Configured rate: coin flip with the given probability.
                 // This ensures repeated calls produce varied selections.
@@ -657,10 +650,10 @@ impl EntrolyEngine {
             // Use per-archetype weights if PSM assigned, otherwise global weights
             let weights = if let Some(aw) = archetype_weights {
                 ScoringWeights {
-                    recency: aw[0],
-                    frequency: aw[1],
-                    semantic: aw[2],
-                    entropy: aw[3],
+                    recency: aw[prism::dim::RECENCY],
+                    frequency: aw[prism::dim::FREQUENCY],
+                    semantic: aw[prism::dim::SEMANTIC],
+                    entropy: aw[prism::dim::ENTROPY],
                 }
             } else {
                 ScoringWeights {
@@ -2367,10 +2360,10 @@ impl EntrolyEngine {
             let advantage = phi * frag.eligibility_trace * reward;
 
             // Accumulate: advantage_i × feature_{i,k}
-            g[0] += advantage * frag.recency_score;
-            g[1] += advantage * frag.frequency_score;
-            g[2] += advantage * frag.semantic_score;
-            g[3] += advantage * frag.entropy_score;
+            g[prism::dim::RECENCY]   += advantage * frag.recency_score;
+            g[prism::dim::FREQUENCY] += advantage * frag.frequency_score;
+            g[prism::dim::SEMANTIC]  += advantage * frag.semantic_score;
+            g[prism::dim::ENTROPY]   += advantage * frag.entropy_score;
         }
 
 
@@ -2393,7 +2386,7 @@ impl EntrolyEngine {
         //   ADGT measures "how far is the current selection from the continuous optimum?"
         //   PCNT measures "how uncertain are the learned weights themselves?"
         // Together they ensure τ is always calibrated to the actual optimization state.
-        let g_norm = (g[0]*g[0] + g[1]*g[1] + g[2]*g[2] + g[3]*g[3]).sqrt();
+        let g_norm = g.iter().map(|x| x * x).sum::<f64>().sqrt();
         if self.gradient_norm_ema > 1e-8 && g_norm > self.gradient_norm_ema * 3.0 {
             // Regime change: task distribution shifted, reset to full exploration.
             self.gradient_temperature = 2.0;
@@ -2420,10 +2413,10 @@ impl EntrolyEngine {
         let update = self.prism_optimizer.compute_update(&g);
 
         // Apply updates to weights
-        self.w_recency   += update[0];
-        self.w_frequency += update[1];
-        self.w_semantic  += update[2];
-        self.w_entropy   += update[3];
+        self.w_recency   += update[prism::dim::RECENCY];
+        self.w_frequency += update[prism::dim::FREQUENCY];
+        self.w_semantic  += update[prism::dim::SEMANTIC];
+        self.w_entropy   += update[prism::dim::ENTROPY];
 
         // Prevent collapse: clamp weights to positive bounds [0.05, 0.8]
         self.w_recency   = self.w_recency.clamp(0.05, 0.8);
