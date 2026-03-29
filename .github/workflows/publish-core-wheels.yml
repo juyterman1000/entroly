@@ -1,7 +1,6 @@
 name: Publish entroly-core wheels to PyPI
 
 # Builds native Python wheels and publishes to PyPI on release tags.
-# All platforms are required: Linux (x86_64 + aarch64), macOS (arm64 + x86_64), Windows (x86_64).
 
 on:
   push:
@@ -18,10 +17,16 @@ jobs:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+          args: --release --out dist -m entroly-core/Cargo.toml
           manylinux: auto
           target: ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
@@ -31,20 +36,22 @@ jobs:
 
   macos:
     name: macOS (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     strategy:
       matrix:
-        include:
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-          - target: x86_64-apple-darwin
-            runner: macos-latest
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+          args: --release --out dist -m entroly-core/Cargo.toml
           target: ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
@@ -56,10 +63,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+          args: --release --out dist -m entroly-core/Cargo.toml
           target: x86_64-pc-windows-msvc
       - uses: actions/upload-artifact@v4
         with:
