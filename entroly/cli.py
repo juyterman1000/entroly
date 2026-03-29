@@ -2,6 +2,8 @@
 Entroly CLI — Zero-friction onboarding for AI coding agents.
 
 Commands:
+    entroly optimize    Generate optimized context snapshot for a task
+    entroly feedback    Signal outcome quality to improve future context
     entroly go          One command: auto-detect, init, proxy, and dashboard
     entroly init        Auto-detect project + AI tool, generate MCP config
     entroly serve       Start MCP server with auto-indexing
@@ -1577,11 +1579,177 @@ complete -c entroly -n '__fish_seen_subcommand_from completions' -a 'bash zsh fi
         sys.exit(1)
 
 
+def cmd_optimize(args):
+    """entroly optimize — generate an optimized context snapshot for a specific task.
+
+    This is the primary command for subagent-driven workflows.
+    It indexes the codebase, selects the mathematically optimal files
+    for the given task, and outputs a structured markdown snapshot.
+    """
+    from entroly.server import EntrolyEngine
+    from entroly.auto_index import auto_index
+
+    task = getattr(args, "task", "") or ""
+    budget = getattr(args, "budget", 8192)
+    output_format = getattr(args, "format", "markdown")
+    quiet = getattr(args, "quiet", False)
+
+    if not quiet:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Optimize{C.RESET}", file=sys.stderr)
+        if task:
+            print(f"  Task: {C.GREEN}{task}{C.RESET}", file=sys.stderr)
+        print(f"  Budget: {budget:,} tokens\n", file=sys.stderr)
+
+    engine = EntrolyEngine()
+    result = auto_index(engine)
+
+    if result["status"] == "indexed":
+        files_indexed = result["files_indexed"]
+        total_tokens = result["total_tokens"]
+        if not quiet:
+            print(f"  Indexed {C.GREEN}{files_indexed}{C.RESET} files ({total_tokens:,} tokens)\n", file=sys.stderr)
+    elif result["status"] == "skipped":
+        existing = result.get("existing_fragments", 0)
+        if existing == 0:
+            print(f"  {C.YELLOW}No files found.{C.RESET} Run from a project directory.", file=sys.stderr)
+            return
+        files_indexed = existing
+        if not quiet:
+            print(f"  Using persistent index: {C.GREEN}{files_indexed}{C.RESET} fragments\n", file=sys.stderr)
+    else:
+        print(f"  {C.YELLOW}No files found.{C.RESET} Run from a project directory.", file=sys.stderr)
+        return
+
+    engine.advance_turn()
+    opt = engine.optimize_context(token_budget=budget, query=task)
+    selected = opt.get("selected_fragments", []) or opt.get("selected", [])
+    tokens_used = sum(f.get("token_count", 0) for f in selected)
+
+    if not quiet:
+        print(f"  Selected {C.GREEN}{len(selected)}{C.RESET} fragments ({tokens_used:,} tokens)\n", file=sys.stderr)
+
+    if output_format == "json":
+        import json as _json
+        output = {
+            "task": task,
+            "budget": budget,
+            "tokens_used": tokens_used,
+            "fragments": [
+                {
+                    "source": f.get("source", ""),
+                    "token_count": f.get("token_count", 0),
+                    "content": f.get("content", f.get("preview", "")),
+                }
+                for f in selected
+            ],
+        }
+        print(_json.dumps(output, indent=2))
+    else:
+        # Markdown output — designed for injection into agent prompts
+        lines = []
+        lines.append("# Codebase Context Snapshot")
+        lines.append("")
+        if task:
+            lines.append(f"**Task:** {task}")
+        lines.append(f"**Files:** {len(selected)} | **Tokens:** {tokens_used:,} / {budget:,}")
+        lines.append("")
+        for frag in selected:
+            source = frag.get("source", "unknown")
+            tc = frag.get("token_count", 0)
+            content = frag.get("content", "") or frag.get("preview", "")
+            # Detect language from file extension
+            ext = source.rsplit(".", 1)[-1] if "." in source else ""
+            lang_map = {
+                "py": "python", "rs": "rust", "js": "javascript",
+                "ts": "typescript", "go": "go", "rb": "ruby",
+                "java": "java", "c": "c", "cpp": "cpp", "h": "c",
+                "toml": "toml", "yaml": "yaml", "yml": "yaml",
+                "json": "json", "md": "markdown", "sh": "bash",
+            }
+            lang = lang_map.get(ext, "")
+            lines.append(f"## `{source}` ({tc} tokens)")
+            lines.append(f"```{lang}")
+            lines.append(content.rstrip())
+            lines.append("```")
+            lines.append("")
+        print("\n".join(lines))
+
+    # Save last optimization for feedback command
+    state_file = Path.home() / ".entroly" / "last_optimize.json"
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        with open(state_file, "w") as f:
+            _json.dump({
+                "fragment_ids": [fr.get("id", fr.get("fragment_id", "")) for fr in selected],
+                "task": task,
+                "tokens_used": tokens_used,
+            }, f)
+    except Exception:
+        pass
+
+
+def cmd_feedback(args):
+    """entroly feedback — signal outcome quality to improve future context selection.
+
+    After an agent completes a task using optimized context, run this to
+    tell Entroly whether the context was helpful. Entroly uses this to
+    adjust fragment relevance scores for future optimizations.
+    """
+    from entroly.server import EntrolyEngine
+
+    score = getattr(args, "score", None)
+    if score is None:
+        print(f"  {C.RED}--score is required.{C.RESET} Use a value between 0.0 (bad) and 1.0 (good).")
+        return
+
+    # Load the last optimization state
+    state_file = Path.home() / ".entroly" / "last_optimize.json"
+    if not state_file.exists():
+        print(f"  {C.YELLOW}No previous optimization found.{C.RESET}")
+        print(f"  Run {C.CYAN}entroly optimize --task \"...\" {C.RESET}first.")
+        return
+
+    try:
+        with open(state_file) as f:
+            state = json.load(f)
+    except Exception:
+        print(f"  {C.RED}Could not read last optimization state.{C.RESET}")
+        return
+
+    fragment_ids = state.get("fragment_ids", [])
+    task = state.get("task", "")
+
+    if not fragment_ids:
+        print(f"  {C.YELLOW}No fragments to provide feedback for.{C.RESET}")
+        return
+
+    engine = EntrolyEngine()
+
+    if score >= 0.7:
+        engine.record_success(fragment_ids)
+        icon = f"{C.GREEN}✓{C.RESET}"
+        label = "positive"
+    elif score <= 0.3:
+        engine.record_failure(fragment_ids)
+        icon = f"{C.RED}✗{C.RESET}"
+        label = "negative"
+    else:
+        engine.record_reward(fragment_ids, score - 0.5)
+        icon = f"{C.YELLOW}~{C.RESET}"
+        label = "neutral"
+
+    print(f"\n  {icon} Recorded {label} feedback (score={score:.1f}) for {len(fragment_ids)} fragments")
+    if task:
+        print(f"  Task: {C.GRAY}{task}{C.RESET}")
+    print(f"  {C.GRAY}Entroly will adjust future context selections based on this signal.{C.RESET}\n")
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="entroly",
-        description="Entroly — Information-theoretic context optimization for AI coding agents",
+        description="\u26a1 Entroly \u2014 Information-theoretic context optimization for AI coding agents",
     )
     parser.add_argument(
         "--version", "-V", action="version",
@@ -1693,6 +1861,38 @@ def main():
     proxy_parser.add_argument(
         "--bypass", action="store_true",
         help="Start in bypass mode (forward requests unmodified, no optimization)",
+    )
+
+    # entroly optimize
+    optimize_parser = subparsers.add_parser(
+        "optimize",
+        help="Generate optimized context snapshot for a task",
+    )
+    optimize_parser.add_argument(
+        "--task", "-t", type=str, default="",
+        help="Description of the task to optimize context for",
+    )
+    optimize_parser.add_argument(
+        "--budget", "-b", type=int, default=8192,
+        help="Token budget (default: 8192)",
+    )
+    optimize_parser.add_argument(
+        "--format", "-f", type=str, choices=["markdown", "json"], default="markdown",
+        help="Output format (default: markdown)",
+    )
+    optimize_parser.add_argument(
+        "--quiet", "-q", action="store_true",
+        help="Suppress progress output (only emit the snapshot)",
+    )
+
+    # entroly feedback
+    feedback_parser = subparsers.add_parser(
+        "feedback",
+        help="Signal outcome quality to improve future context selection",
+    )
+    feedback_parser.add_argument(
+        "--score", "-s", type=float, required=True,
+        help="Quality score: 0.0 (bad) to 1.0 (good)",
     )
 
     # entroly benchmark
@@ -1859,6 +2059,8 @@ def main():
         _check_for_update()
 
     _dispatch = {
+        "optimize": cmd_optimize,
+        "feedback": cmd_feedback,
         "init": cmd_init,
         "serve": cmd_serve,
         "go": cmd_go,
