@@ -21,7 +21,7 @@ jobs:
           args: --release --out dist --manifest-path entroly-core/Cargo.toml
           manylinux: auto
           target: x86_64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-x86_64
           path: dist
@@ -38,7 +38,7 @@ jobs:
           manylinux: manylinux_2_28
           target: aarch64-unknown-linux-gnu
           docker-options: -e CI -e PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-aarch64
           path: dist
@@ -56,7 +56,7 @@ jobs:
           command: build
           args: --release --out dist --manifest-path entroly-core/Cargo.toml
           target: universal2-apple-darwin
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-universal
           path: dist
@@ -71,7 +71,7 @@ jobs:
           command: build
           args: --release --out dist --manifest-path entroly-core/Cargo.toml
           target: x86_64-pc-windows-msvc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-windows
           path: dist
