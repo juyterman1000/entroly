@@ -38,7 +38,7 @@ dependencies = [
 [project.optional-dependencies]
 proxy = [
     "httpx>=0.27,<1",
-    "starlette>=0.37,<1",
+    "starlette>=0.37,<2",
     "uvicorn>=0.30,<1",
 ]
 native = [
@@ -48,7 +48,7 @@ full = [
     "entroly-core>=0.6.0,<1",
     "ebbiforge>=4.0.0,<5",
     "httpx>=0.27,<1",
-    "starlette>=0.37,<1",
+    "starlette>=0.37,<2",
     "uvicorn>=0.30,<1",
 ]
 
