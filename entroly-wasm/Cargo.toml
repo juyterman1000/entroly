@@ -1,0 +1,24 @@
+[package]
+name = "entroly-wasm"
+version = "0.6.2"
+edition = "2021"
+description = "WebAssembly build of Entroly — information-theoretic context optimization for JavaScript/TypeScript"
+
+[lib]
+name = "entroly_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# JS/Wasm bindings
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Hashing
+md-5 = "0.10"
+
+# Compression (checkpoint)
+flate2 = "1.0"
