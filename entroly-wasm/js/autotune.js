@@ -1,50 +1,15 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// Entroly Autotune v2 — Research-Grade Cross-Session Weight Optimization
-// ═══════════════════════════════════════════════════════════════════════════
+// Entroly Autotune v2 — Cross-Session Weight Optimization
 //
-// Implements state-of-the-art techniques from 2024-2026 research:
+// Learns optimal scoring weights (recency, frequency, semantic, entropy)
+// from real developer feedback across sessions. Replaces synthetic benchmarks
+// with a feedback journal that persists between restarts.
 //
-// 1. REWARD-WEIGHTED REGRESSION (Dayan & Hinton '97, Peters & Schaal '07)
-//    - Closed-form optimal weights: w* = Σ(r_i · w_i) / Σ(r_i)
-//    - Equivalent to M-step of EM for Gaussian policy optimization
-//    - Equivalent to REINFORCE with log-linear policy in the linear case
+// Key mechanisms:
+//   - Reward-weighted regression with advantage normalization
+//   - Exponential decay for non-stationarity (γ=0.995)
+//   - Per-dimension adaptive step sizes via SNR
+//   - Task-conditioned profiles (different weights for debugging vs features)
 //
-// 2. GLOBAL ADVANTAGE NORMALIZATION (REINFORCE++, Hu et al. 2025)
-//    - Normalize rewards across the entire journal, not per-query
-//    - Reduces variance, prevents overfitting to recent episodes
-//    - Advantage_i = (r_i - mean(r)) / (std(r) + ε)
-//
-// 3. EXPONENTIAL DECAY FOR NON-STATIONARITY (EXP3.S, Auer et al. '02)
-//    - Newer episodes get exponentially more weight: weight = γ^(age)
-//    - Handles concept drift (codebase evolves, developer habits change)
-//    - γ = 0.995 per episode (≈ half-life of 138 episodes)
-//
-// 4. ADAPTIVE STEP-SIZE PER DIMENSION (CMA-ES LED, NeurIPS 2024)
-//    - Track per-weight signal-to-noise ratio (SNR)
-//    - High SNR dimensions get larger steps (confident signal)
-//    - Low SNR dimensions get smaller steps (noisy signal)
-//
-// 5. FISHER INFORMATION REGULARIZATION
-//    - Natural gradient: Δw = F⁻¹ · ∇J(w) instead of raw gradient
-//    - For diagonal Gaussian: F_ii = 1/σ²_i (inverse variance)
-//    - Prevents over-updating in low-variance dimensions
-//
-// 6. REGRET-BOUNDED EXPLORATION (UCB1-style, Auer et al. '02)
-//    - Under-explored weight regions get exploration bonus
-//    - Bonus_i = c · √(ln(N) / N_i) where N_i = visits to region i
-//    - Ensures we don't get stuck in local optima
-//
-// 7. POLYAK-RUPPERT AVERAGING (Polyak '92, Ruppert '88)
-//    - Running average of all accepted weight vectors
-//    - Achieves optimal O(1/N) convergence rate
-//    - More robust than any single point estimate
-//
-// Mathematical guarantee:
-//   For N feedback episodes with bounded rewards in [-1, 1]:
-//   E[Regret(T)] ≤ O(√(d · T · ln(T)))  where d = 5 (dimensions)
-//   This is information-theoretically optimal for the linear bandit setting.
-//
-// ═══════════════════════════════════════════════════════════════════════════
 
 const fs = require('fs');
 const path = require('path');
