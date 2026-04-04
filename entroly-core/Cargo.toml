@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.23", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module"] }
 
 # Serialization (checkpoint)
 serde = { version = "1.0", features = ["derive"] }
