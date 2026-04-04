@@ -44,6 +44,22 @@ from .autotune import FeedbackJournal, TaskProfileOptimizer
 from .multimodal import ingest_image as _mm_image, ingest_diagram as _mm_diagram
 from .multimodal import ingest_voice as _mm_voice, ingest_diff as _mm_diff
 from .proxy_transform import calibrated_token_count as _calibrated_token_count
+from .epistemic_router import (
+    EpistemicRouter, EpistemicFlow, EpistemicIntent,
+    RoutingDecision, BeliefCoverage, classify_intent,
+)
+from .vault import (
+    VaultManager, VaultConfig, BeliefArtifact,
+    VerificationArtifact,
+)
+from .belief_compiler import BeliefCompiler
+from .verification_engine import VerificationEngine
+from .change_pipeline import ChangePipeline
+from .flow_orchestrator import FlowOrchestrator
+from .skill_engine import SkillEngine
+from .evolution_logger import EvolutionLogger
+from .change_listener import WorkspaceChangeListener
+from .repo_map import build_repo_map, render_repo_map_markdown
 # ── Rust engine import (preferred, 50-100× faster) ─────────────────
 try:
     from entroly_core import EntrolyEngine as RustEngine
@@ -439,12 +455,15 @@ class EntrolyEngine:
         self._index_path = str(Path(self.config.checkpoint_dir) / "index.json.gz")
         if self._use_rust:
             try:
-                loaded = self._rust.load_index(self._index_path)
-                if loaded:
-                    n = self._rust.fragment_count()
-                    logger.info(f"Loaded persistent index: {n} fragments from {self._index_path}")
+                if hasattr(self._rust, 'load_index'):
+                    loaded = self._rust.load_index(self._index_path)
+                    if loaded:
+                        n = self._rust.fragment_count()
+                        logger.info(f"Loaded persistent index: {n} fragments from {self._index_path}")
+                    else:
+                        logger.info("No persistent index found, starting fresh session")
                 else:
-                    logger.info("No persistent index found, starting fresh session")
+                    logger.debug("Rust engine does not support load_index — skipping persistent index")
             except Exception as e:
                 logger.warning(f"Failed to load persistent index: {e}")
 
@@ -1760,6 +1779,515 @@ def create_mcp_server():
         data["symbols_changed"] = modal.metadata.get("symbols_changed", [])
         return json.dumps(data, indent=2)
 
+    # ══════════════════════════════════════════════════════════════════
+    # CogOps: Epistemic Router + Vault (ADDITIVE — existing tools untouched)
+    # ══════════════════════════════════════════════════════════════════
+
+    # Initialize the epistemic router and vault manager
+    _vault_base = os.environ.get(
+        "ENTROLY_VAULT",
+        os.path.join(os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly")), "vault"),
+    )
+    _vault_mgr = VaultManager(VaultConfig(base_path=_vault_base))
+    _epistemic_router = EpistemicRouter(
+        vault_path=_vault_base,
+        miss_threshold=3,
+        freshness_hours=24.0,
+        min_confidence=0.6,
+    )
+
+    @mcp.tool()
+    def epistemic_route(
+        query: str,
+        is_event: bool = False,
+        event_type: str = "",
+    ) -> str:
+        """Route a query through the CogOps Epistemic Ingress Controller.
+
+        Inspects 4 signals (intent, belief coverage, freshness, risk) and
+        selects one of 5 canonical flows:
+
+          ① Fast Answer:          Belief → Action (fresh, verified, low-risk)
+          ② Verify Before Answer: Belief → Verification → Action (stale/risky)
+          ③ Compile On Demand:    Truth → Belief → Verification → Action (no beliefs)
+          ④ Change-Driven:        Event → Truth → Belief → ... (PR/commit/incident)
+          ⑤ Self-Improvement:     Misses → Evolution → Belief (repeated failures)
+
+        Call this BEFORE optimize_context to understand how the system should
+        approach your query. Existing tools work exactly as before.
+
+        Args:
+            query: The user query or event description
+            is_event: True if this is a change-driven event (PR, commit, etc.)
+            event_type: Type of event (pr, commit, release, incident, scheduled)
+        """
+        decision = _epistemic_router.route(
+            query=query,
+            is_event=is_event,
+            event_type=event_type or None,
+        )
+        return json.dumps(decision.to_dict(), indent=2)
+
+    @mcp.tool()
+    def vault_status() -> str:
+        """Show the current state of the CogOps Knowledge Vault.
+
+        Initializes the vault directory structure if needed, then returns
+        a coverage index: total beliefs, verification status, confidence
+        distribution, and routing statistics.
+
+        The vault is the persistent Living Exocortex — the system's
+        machine-auditable understanding of your codebase.
+        """
+        init_result = _vault_mgr.ensure_structure()
+        coverage = _vault_mgr.coverage_index()
+        routing_stats = _epistemic_router.stats()
+
+        return json.dumps({
+            "vault": init_result,
+            "coverage": coverage,
+            "routing": routing_stats,
+        }, indent=2)
+
+    @mcp.tool()
+    def vault_write_belief(
+        entity: str,
+        title: str,
+        body: str,
+        confidence: float = 0.7,
+        status: str = "inferred",
+        sources: str = "",
+        derived_from: str = "",
+    ) -> str:
+        """Write a belief artifact to the CogOps Knowledge Vault.
+
+        Beliefs are durable system understanding — what Entroly thinks
+        the codebase is. Each belief carries machine-auditable frontmatter:
+        claim_id, entity, status, confidence, sources, last_checked.
+
+        Args:
+            entity: The system entity this belief is about (e.g., 'auth::token_rotation')
+            title: Human-readable title
+            body: The belief content (markdown)
+            confidence: Machine-assigned confidence 0.0-1.0 (default: 0.7)
+            status: observed|inferred|verified|stale|hypothesis (default: inferred)
+            sources: Comma-separated source paths (e.g., 'src/auth.rs:142,src/token.rs:58')
+            derived_from: Comma-separated component names that produced this belief
+        """
+        artifact = BeliefArtifact(
+            entity=entity,
+            title=title,
+            body=body,
+            confidence=confidence,
+            status=status,
+            sources=[s.strip() for s in sources.split(",") if s.strip()] if sources else [],
+            derived_from=[d.strip() for d in derived_from.split(",") if d.strip()] if derived_from else [],
+        )
+        result = _vault_mgr.write_belief(artifact)
+        result["artifact"] = artifact.to_dict()
+        return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def vault_query(
+        entity: str = "",
+        list_all: bool = False,
+    ) -> str:
+        """Query the CogOps Knowledge Vault for existing beliefs.
+
+        Use this to check what the system already knows before compiling
+        new understanding. Supports lookup by entity name or listing all.
+
+        Args:
+            entity: Entity name to look up (fuzzy match)
+            list_all: If True, return all beliefs with frontmatter summary
+        """
+        if list_all:
+            beliefs = _vault_mgr.list_beliefs()
+            return json.dumps({"beliefs": beliefs, "total": len(beliefs)}, indent=2)
+
+        if entity:
+            result = _vault_mgr.read_belief(entity)
+            if result:
+                return json.dumps(result, indent=2)
+            return json.dumps({"status": "not_found", "entity": entity}, indent=2)
+
+        # Default: return coverage index
+        return json.dumps(_vault_mgr.coverage_index(), indent=2)
+
+    @mcp.tool()
+    def vault_write_action(
+        title: str,
+        content: str,
+        action_type: str = "report",
+    ) -> str:
+        """Write a task output or report to the CogOps Knowledge Vault.
+
+        Action artifacts are developer-facing outputs: PR briefs, answers,
+        architecture diagrams, slide decks, task reports. They live in
+        actions/ and are timestamped for traceability.
+
+        Args:
+            title: Title of the output
+            content: Full markdown content
+            action_type: Type tag (report, pr_brief, answer, diagram, context_pack)
+        """
+        result = _vault_mgr.write_action(title, content, action_type)
+        return json.dumps(result, indent=2)
+
+    # ══════════════════════════════════════════════════════════════════
+    # CogOps Phase 2: Data Plane Engines (Rust preferred, Python fallback)
+    #
+    # Rust engine handles all heavy computation. Python fallback ensures
+    # tools are always available for users without entroly_core installed.
+    # WASM/JS users are unaffected — CogOps is Python/Rust only.
+    #
+    # Epistemic layers:
+    #   Truth  → compile_beliefs (entity extraction, dependency resolution)
+    #   Belief → vault_write_belief, vault_query (beliefs/, frontmatter)
+    #   Verification → verify_beliefs, blast_radius (contradictions, staleness)
+    #   Action → execute_flow, process_change, coverage_gaps (PR briefs, flows)
+    #   Evolution → create_skill, manage_skills, refresh_beliefs (skills, promotion)
+    # ══════════════════════════════════════════════════════════════════
+
+    _source_dir = os.environ.get("ENTROLY_SOURCE", os.getcwd())
+
+    try:
+        from entroly_core import CogOpsEngine as _RustCogOps
+        _cogops = _RustCogOps(_vault_base, miss_threshold=3, freshness_hours=24.0, min_confidence=0.5)
+        _COGOPS_RUST = True
+        logger.info("CogOps: Rust engine loaded")
+    except ImportError:
+        _cogops = None
+        _COGOPS_RUST = False
+        logger.info("CogOps: using Python fallback (entroly_core not installed)")
+
+    # Python fallback engines — always initialized so tools work without Rust
+    _py_compiler = BeliefCompiler(_vault_mgr)
+    _py_verifier = VerificationEngine(_vault_mgr, freshness_hours=24.0, min_confidence=0.5)
+    _py_change_pipe = ChangePipeline(_vault_mgr, _py_verifier)
+    _py_skill_engine = SkillEngine(_vault_mgr)
+    _py_evolution = EvolutionLogger(vault_path=_vault_base, gap_threshold=3)
+    _py_orchestrator = FlowOrchestrator(
+        vault=_vault_mgr,
+        router=_epistemic_router,
+        compiler=_py_compiler,
+        verifier=_py_verifier,
+        change_pipe=_py_change_pipe,
+        evolution=_py_evolution,
+        source_dir=_source_dir,
+    )
+
+    _py_workspace_listener = WorkspaceChangeListener(
+        vault=_vault_mgr,
+        compiler=_py_compiler,
+        verifier=_py_verifier,
+        change_pipe=_py_change_pipe,
+        project_dir=_source_dir,
+    )
+
+    @mcp.tool()
+    def compile_beliefs(
+        directory: str = "",
+        max_files: int = 200,
+    ) -> str:
+        """Compile source code into belief artifacts (Truth → Belief pipeline).
+
+        Scans a directory for source files (.py, .rs, .ts, .js), extracts
+        code entities (classes, functions, structs, traits, imports),
+        resolves cross-file dependencies, and writes belief artifacts to
+        the vault with full frontmatter (claim_id, entity, status,
+        confidence, sources, last_checked, derived_from).
+
+        Args:
+            directory: Path to scan. Defaults to the project root.
+            max_files: Maximum files to process (default: 200)
+        """
+        target = directory or _source_dir
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.compile_beliefs(target, max_files), indent=2)
+        result = _py_compiler.compile_directory(target, max_files)
+        return json.dumps({
+            "status": "compiled", "files_processed": result.files_processed,
+            "beliefs_written": result.beliefs_written,
+            "entities_extracted": result.entities_extracted,
+            "errors": result.errors[:10], "engine": "python",
+        }, indent=2)
+
+    @mcp.tool()
+    def verify_beliefs() -> str:
+        """Run a full verification pass on all beliefs in the vault.
+
+        Checks for:
+        - Staleness (beliefs past their freshness window)
+        - Contradictions (conflicting claims about the same entity)
+        - Confidence divergence between same-entity beliefs
+        - Low confidence scores
+
+        Writes verification artifacts to vault/verification/.
+        """
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.verify_beliefs(), indent=2)
+        report = _py_verifier.full_verification_pass()
+        return json.dumps({**report.to_dict(), "engine": "python"}, indent=2)
+
+    @mcp.tool()
+    def blast_radius(changed_files: str) -> str:
+        """Analyze the blast radius of file changes on existing beliefs.
+
+        Given a list of changed files, determines which beliefs need
+        re-verification, which may be invalidated, and the overall risk
+        level (low/medium/high).
+
+        Args:
+            changed_files: Comma-separated list of changed file paths
+        """
+        files = [f.strip() for f in changed_files.split(",") if f.strip()]
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.blast_radius(files), indent=2)
+        br = _py_verifier.blast_radius(files)
+        return json.dumps({
+            "affected_beliefs": br.affected_beliefs, "affected_entities": br.affected_entities,
+            "risk_level": br.risk_level, "description": br.description, "engine": "python",
+        }, indent=2)
+
+    @mcp.tool()
+    def process_change(
+        diff_text: str,
+        commit_message: str = "",
+        pr_title: str = "",
+    ) -> str:
+        """Process a code change through the Change-Driven pipeline (Flow ④).
+
+        Full pipeline: Diff → ChangeSet → Review → Blast Radius → Vault
+
+        Classifies intent (bugfix/feature/refactor/test/security/performance),
+        runs code review (hardcoded secrets, TODOs, broad exceptions, unsafe),
+        computes belief impact, and returns a structured PR brief.
+
+        Args:
+            diff_text: Raw unified diff text (git diff output)
+            commit_message: Optional commit message for intent classification
+            pr_title: Optional PR title
+        """
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.process_change(diff_text, commit_message, pr_title), indent=2)
+        brief = _py_change_pipe.process_diff(diff_text, commit_message, pr_title)
+        return json.dumps({
+            "title": brief.title, "summary": brief.summary, "risk_level": brief.risk_level,
+            "intent": brief.changeset.intent,
+            "files_modified": brief.changeset.files_modified,
+            "lines_added": brief.changeset.lines_added, "lines_removed": brief.changeset.lines_removed,
+            "findings_count": len(brief.findings), "engine": "python",
+        }, indent=2)
+
+    @mcp.tool()
+    def execute_flow(
+        query: str,
+        diff_text: str = "",
+        is_event: bool = False,
+        event_type: str = "",
+    ) -> str:
+        """Execute a full canonical epistemic flow end-to-end.
+
+        Routes the query through the Epistemic Ingress Controller (4 signals:
+        intent, belief coverage, freshness, risk), then chains the appropriate
+        pipeline steps automatically:
+
+          ① Fast Answer:         Belief → Action
+          ② Verify Before Answer: Belief → Verification → Action
+          ③ Compile On Demand:   Truth → Belief → Verification → Action
+          ④ Change-Driven:       Event → Truth → Belief → Verification → Action
+          ⑤ Self-Improvement:    Misses → Verification → Evolution → Belief
+
+        Args:
+            query: The user query or event description
+            diff_text: Raw diff for change-driven flows (Flow ④)
+            is_event: True if this is a change-driven event
+            event_type: Type of event (pr, commit, release, incident, scheduled)
+        """
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.execute_flow(query, diff_text, is_event, event_type), indent=2)
+        flow_result = _py_orchestrator.execute(
+            query=query, diff_text=diff_text, is_event=is_event, event_type=event_type,
+        )
+        result_dict = flow_result.to_dict()
+        result_dict["engine"] = "python"
+        return json.dumps(result_dict, indent=2)
+
+    @mcp.tool()
+    def create_skill(
+        entity_key: str,
+        failing_queries: str,
+        intent: str = "",
+    ) -> str:
+        """Create a new skill from a capability gap (Evolution layer).
+
+        When the system repeatedly fails on a topic, this generates a
+        full skill package in vault/evolution/skills/<skill-id>/:
+        - SKILL.md — procedure/SOP
+        - tool.py — executable Python tool
+        - metrics.json — fitness tracking
+        - tests/test_cases.json — regression tests
+
+        Args:
+            entity_key: The entity this skill handles (e.g., 'protobuf_analysis')
+            failing_queries: Pipe-separated list of failing queries
+            intent: The intent class for this skill
+        """
+        queries = [q.strip() for q in failing_queries.split("|") if q.strip()]
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.create_skill(entity_key, queries), indent=2)
+        result = _py_skill_engine.create_skill(entity_key, queries, intent)
+        result["engine"] = "python"
+        return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def manage_skills(
+        action: str = "list",
+        skill_id: str = "",
+    ) -> str:
+        """Manage the CogOps skill lifecycle (Evolution layer).
+
+        Actions:
+        - list: Show all skills with status, fitness, and run counts
+        - benchmark: Run test cases and compute fitness score (0.0-1.0)
+        - promote: Promote (fitness >= 0.7) or prune (fitness <= 0.3)
+
+        Args:
+            action: list | benchmark | promote
+            skill_id: Required for benchmark/promote actions
+        """
+        if action == "list":
+            if _COGOPS_RUST:
+                skills = _cogops.list_skills()
+                return json.dumps({"skills": list(skills), "total": len(skills)}, indent=2)
+            skills = _py_skill_engine.list_skills()
+            return json.dumps({"skills": skills, "total": len(skills), "engine": "python"}, indent=2)
+
+        if not skill_id:
+            return json.dumps({"error": f"skill_id required for '{action}'"}, indent=2)
+
+        if action == "benchmark":
+            if _COGOPS_RUST:
+                return json.dumps(_cogops.benchmark_skill(skill_id), indent=2)
+            return json.dumps(_py_skill_engine.benchmark_skill(skill_id), indent=2)
+        elif action == "promote":
+            if _COGOPS_RUST:
+                return json.dumps(_cogops.promote_skill(skill_id), indent=2)
+            return json.dumps(_py_skill_engine.promote_or_prune(skill_id), indent=2)
+
+        return json.dumps({"error": f"Unknown action '{action}'. Use: list, benchmark, promote"}, indent=2)
+
+    @mcp.tool()
+    def coverage_gaps(
+        directory: str = "",
+    ) -> str:
+        """Find source files with no corresponding belief in the vault.
+
+        Scans a directory for source files (.py, .rs, .ts, .js) and checks
+        which ones have no belief artifact. Useful for identifying blind
+        spots before running compile_beliefs.
+
+        Args:
+            directory: Path to scan. Defaults to the project root.
+        """
+        target = directory or _source_dir
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.coverage_gaps(target), indent=2)
+        gaps = _py_verifier.coverage_gaps(target)
+        return json.dumps({
+            "gaps": [{"file": g.file_path, "reason": g.reason, "suggested_entity": g.suggested_entity} for g in gaps],
+            "total_gaps": len(gaps), "engine": "python",
+        }, indent=2)
+
+    @mcp.tool()
+    def refresh_beliefs(
+        changed_files: str,
+    ) -> str:
+        """Mark beliefs as stale after file changes (Flow ④ doc-refresh).
+
+        Given changed files, finds related beliefs and marks their status
+        as 'stale' so the next verify_beliefs pass will flag them for
+        re-compilation.
+
+        Args:
+            changed_files: Comma-separated list of changed file paths
+        """
+        files = [f.strip() for f in changed_files.split(",") if f.strip()]
+        if _COGOPS_RUST:
+            return json.dumps(_cogops.refresh_beliefs(files), indent=2)
+        result = _py_change_pipe.refresh_docs(files)
+        result["engine"] = "python"
+        return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def sync_workspace_changes(
+        directory: str = "",
+        force: bool = False,
+        max_files: int = 100,
+    ) -> str:
+        """Synchronize workspace file changes into the belief and verification layers.
+
+        Detects new, modified, and deleted source files, marks affected beliefs stale,
+        recompiles changed files into fresh beliefs, runs a verification pass, and writes
+        a sync report into actions/.
+        """
+        listener = _py_workspace_listener
+        if directory:
+            listener = WorkspaceChangeListener(
+                vault=_vault_mgr,
+                compiler=_py_compiler,
+                verifier=_py_verifier,
+                change_pipe=_py_change_pipe,
+                project_dir=directory,
+            )
+        result = listener.scan_once(force=force, max_files=max_files)
+        payload = result.to_dict()
+        payload["engine"] = "python"
+        return json.dumps(payload, indent=2)
+
+    @mcp.tool()
+    def repo_file_map(
+        format: str = "markdown",
+    ) -> str:
+        """Return the canonical Entroly file map across the Python, Rust core, and WASM repos.
+
+        Use this to understand ownership boundaries and where logic currently lives.
+        Supported formats: markdown, json.
+        """
+        grouped = build_repo_map(Path(_source_dir).resolve().parents[0])
+        if format.lower() == "json":
+            serializable = {
+                repo: [entry.__dict__ for entry in entries]
+                for repo, entries in grouped.items()
+            }
+            return json.dumps(serializable, indent=2)
+        return render_repo_map_markdown(grouped)
+
+    @mcp.tool()
+    def start_workspace_listener(
+        directory: str = "",
+        interval_s: int = 120,
+        force_initial: bool = False,
+        max_files: int = 100,
+    ) -> str:
+        """Start a background workspace listener that continuously feeds repo changes into CogOps.
+
+        This is the long-running change-driven bridge from repo activity into Belief CI.
+        """
+        listener = _py_workspace_listener
+        if directory:
+            listener = WorkspaceChangeListener(
+                vault=_vault_mgr,
+                compiler=_py_compiler,
+                verifier=_py_verifier,
+                change_pipe=_py_change_pipe,
+                project_dir=directory,
+            )
+        result = listener.start(interval_s=interval_s, max_files=max_files, force_initial=force_initial)
+        result["engine"] = "python"
+        return json.dumps(result, indent=2)
+
     return mcp, engine
 
 
@@ -1828,7 +2356,15 @@ def _start_autotune_daemon(engine: "EntrolyEngine") -> None:
             pass  # Windows has no nice()
 
         try:
-            from .autotune import run_autotune
+            from .autotune import CASES_PATH, run_autotune
+            if not CASES_PATH.exists():
+                logger.debug(
+                    "Autotune: bench/cases.json not found at %s — "
+                    "skipping benchmark-based autotune (pip install mode). "
+                    "Cross-session RL feedback tuning still active.",
+                    CASES_PATH,
+                )
+                return
             logger.info("Autotune: background self-tuning started (dynamic, low priority)")
 
             # Run in rounds of 10 iterations, hot-reload after each round

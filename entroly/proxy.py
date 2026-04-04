@@ -1916,6 +1916,16 @@ def create_proxy_app(
     except Exception as e:
         logger.debug(f"Autotune daemon not started: {e}")
 
+    # Starlette >= 0.21 removed on_startup/on_shutdown from __init__.
+    # Use lifespan context manager for forward-compatible startup/shutdown.
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _lifespan(app: Starlette):  # type: ignore[type-arg]
+        await proxy.startup()
+        yield
+        await proxy.shutdown()
+
     app = Starlette(
         routes=[
             Route("/v1/chat/completions", proxy.handle_proxy, methods=["POST"]),
@@ -1936,8 +1946,7 @@ def create_proxy_app(
             # Must be LAST — Starlette matches routes in declaration order
             Route("/{path:path}", _catch_all, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]),
         ],
-        on_startup=[proxy.startup],
-        on_shutdown=[proxy.shutdown],
+        lifespan=_lifespan,
     )
     app.state.proxy = proxy
     return app
