@@ -10,6 +10,7 @@ jobs:
   lint:
     name: Python Lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -19,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.12.9
 
       - name: Run ruff check
         run: ruff check entroly/
@@ -27,6 +28,7 @@ jobs:
   rust-tests:
     name: Rust Tests + Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: entroly-core
@@ -59,6 +61,7 @@ jobs:
   integration:
     name: Build Wheel + Functional Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -92,7 +95,7 @@ jobs:
           # maturin develop already installed entroly-core into the venv.
           # Install only the remaining runtime deps (mcp, httpx, starlette)
           # without re-resolving entroly-core from PyPI (0.3.0 isn't there yet).
-          .venv/bin/pip install -e . "mcp>=1.0.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil
+          .venv/bin/pip install -e . "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil
 
       - name: Verify imports
         run: |
@@ -106,8 +109,8 @@ jobs:
 
       - name: Run Python tests
         run: |
-          .venv/bin/pip install pytest
-          .venv/bin/pytest tests/ -v --tb=short
+          .venv/bin/pip install pytest pytest-timeout
+          .venv/bin/pytest tests/ -v --tb=short -x --timeout=60
 
       - name: Run entroly-core integration tests
         run: |

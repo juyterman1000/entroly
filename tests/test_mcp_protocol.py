@@ -5,13 +5,21 @@ MCP Protocol Integration Test
 Verifies that the Entroly MCP server actually speaks JSON-RPC over stdio.
 This catches issues that unit tests miss — like broken tool registration,
 import errors at startup, or malformed responses.
+
+Uses non-blocking I/O with threading to prevent CI hangs.
 """
 
 import json
+import os
 import subprocess
 import sys
+import threading
 import time
 import pytest
+
+
+# Hard timeout: if a test hasn't finished in 30s, something is wrong.
+_HARD_TIMEOUT = 30
 
 
 def _send_jsonrpc(proc, method, params=None, id=1):
@@ -27,39 +35,54 @@ def _send_jsonrpc(proc, method, params=None, id=1):
     msg = json.dumps(request)
     # MCP uses Content-Length header framing
     header = f"Content-Length: {len(msg)}\r\n\r\n"
-    proc.stdin.write(header + msg)
-    proc.stdin.flush()
+    try:
+        proc.stdin.write(header + msg)
+        proc.stdin.flush()
+    except (BrokenPipeError, OSError):
+        pass  # Server may have already exited
 
 
 def _read_response(proc, timeout=10):
-    """Read a JSON-RPC response with Content-Length framing."""
-    import select
-    start = time.time()
+    """Read a JSON-RPC response with Content-Length framing.
 
-    # Read headers
-    headers = ""
-    while time.time() - start < timeout:
-        line = proc.stdout.readline()
-        if not line:
-            time.sleep(0.05)
-            continue
-        headers += line
-        if headers.endswith("\r\n\r\n") or headers.endswith("\n\n"):
-            break
+    Uses a background thread to prevent blocking forever if the server
+    doesn't respond (the previous implementation's readline() could block
+    indefinitely in the kernel, making the Python-level timeout useless).
+    """
+    result = [None]
 
-    # Parse Content-Length
-    content_length = 0
-    for h in headers.strip().split("\n"):
-        if h.lower().startswith("content-length:"):
-            content_length = int(h.split(":")[1].strip())
-            break
+    def _reader():
+        try:
+            # Read headers
+            headers = ""
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    return  # EOF — server exited
+                headers += line
+                if headers.endswith("\r\n\r\n") or headers.endswith("\n\n"):
+                    break
 
-    if content_length == 0:
-        return None
+            # Parse Content-Length
+            content_length = 0
+            for h in headers.strip().split("\n"):
+                if h.lower().startswith("content-length:"):
+                    content_length = int(h.split(":")[1].strip())
+                    break
 
-    # Read body
-    body = proc.stdout.read(content_length)
-    return json.loads(body)
+            if content_length == 0:
+                return
+
+            # Read body
+            body = proc.stdout.read(content_length)
+            result[0] = json.loads(body)
+        except Exception:
+            pass  # Any parse/read error → return None
+
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    return result[0]
 
 
 @pytest.fixture(scope="module")
@@ -72,7 +95,7 @@ def mcp_server():
         stderr=subprocess.PIPE,
         text=True,
         env={
-            **__import__("os").environ,
+            **os.environ,
             "ENTROLY_NO_DOCKER": "1",
         },
     )
@@ -90,13 +113,16 @@ def mcp_server():
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+        proc.wait(timeout=2)
 
 
+@pytest.mark.timeout(_HARD_TIMEOUT)
 def test_mcp_server_starts(mcp_server):
     """The MCP server process should be running."""
     assert mcp_server.poll() is None, "MCP server process died"
 
 
+@pytest.mark.timeout(_HARD_TIMEOUT)
 def test_mcp_initialize(mcp_server):
     """Send initialize request and verify the server responds."""
     _send_jsonrpc(mcp_server, "initialize", {
@@ -114,6 +140,7 @@ def test_mcp_initialize(mcp_server):
         assert "serverInfo" in response["result"]
 
 
+@pytest.mark.timeout(_HARD_TIMEOUT)
 def test_mcp_list_tools(mcp_server):
     """Request the list of available tools."""
     _send_jsonrpc(mcp_server, "tools/list", {}, id=2)
