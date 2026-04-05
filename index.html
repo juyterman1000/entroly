@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Entroly — Context Engineering Engine for AI Coding Agents</title>
+<meta name="description" content="Your AI sees 5% of your codebase. Entroly shows it everything — 78% fewer tokens, better answers, zero config. Works with Cursor, Claude Code, Copilot, Windsurf.">
+<meta name="keywords" content="context engineering, AI coding, token optimization, context window, Cursor, Claude Code, Copilot, Windsurf, AI hallucination, code context, LLM context, token savings, MCP server, AI developer tools, context compression">
+<meta property="og:title" content="Entroly — Stop AI Hallucinations. Give It Your Entire Codebase.">
+<meta property="og:description" content="Your AI sees 5% of your code and hallucinates the rest. Entroly compresses your entire codebase into the context window. 78% fewer tokens. Better answers. Zero config.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/">
+<meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Entroly — Context Engineering for AI Coding">
+<meta name="twitter:description" content="Your AI sees 5% of your codebase. Entroly shows it 100%. 78% fewer tokens.">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#09090b;--surface:#18181b;--border:#27272a;
+  --text:#fafafa;--muted:#a1a1aa;--accent:#818cf8;
+  --green:#34d399;--red:#f87171;--blue:#60a5fa;--purple:#a78bfa;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.6;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,.mono{font-family:'JetBrains Mono',monospace}
+
+/* Nav */
+nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(9,9,11,0.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+nav .logo{font-weight:800;font-size:20px;letter-spacing:-0.5px}
+nav .links{display:flex;gap:24px;font-size:14px;color:var(--muted)}
+nav .links a{color:var(--muted);transition:color .2s}
+nav .links a:hover{color:var(--text);text-decoration:none}
+.cta-btn{background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;transition:transform .15s,box-shadow .15s;display:inline-block}
+.cta-btn:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(129,140,248,0.4);text-decoration:none}
+
+/* Hero */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 24px 80px;position:relative}
+.hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:800px;height:600px;background:radial-gradient(ellipse,rgba(129,140,248,0.12) 0%,transparent 70%);pointer-events:none}
+.hero .badge{display:inline-block;background:rgba(129,140,248,0.15);color:var(--accent);padding:6px 16px;border-radius:20px;font-size:13px;font-weight:500;margin-bottom:24px;border:1px solid rgba(129,140,248,0.25)}
+.hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:900;letter-spacing:-2px;line-height:1.05;max-width:800px;margin-bottom:20px}
+.hero h1 .highlight{background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p.sub{font-size:clamp(1rem,2vw,1.25rem);color:var(--muted);max-width:600px;margin-bottom:32px}
+.hero .install-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 28px;display:inline-flex;align-items:center;gap:12px;font-size:15px;margin-bottom:16px;cursor:pointer;transition:border-color .2s}
+.hero .install-box:hover{border-color:var(--accent)}
+.hero .install-box code{color:var(--green)}
+.hero .install-box .copy{color:var(--muted);font-size:12px}
+.hero .tools{color:var(--muted);font-size:14px;margin-top:8px}
+
+/* Section */
+section{padding:100px 24px;max-width:1100px;margin:0 auto}
+section h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;margin-bottom:16px}
+section .lead{color:var(--muted);font-size:18px;max-width:700px;margin-bottom:48px}
+.section-label{color:var(--accent);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px}
+
+/* Comparison */
+.comparison{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:48px}
+@media(max-width:768px){.comparison{grid-template-columns:1fr}}
+.comp-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;position:relative;overflow:hidden}
+.comp-card.bad{border-color:rgba(248,113,113,0.3)}
+.comp-card.bad::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--red)}
+.comp-card.good{border-color:rgba(52,211,153,0.3)}
+.comp-card.good::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--green)}
+.comp-card h3{font-size:18px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.comp-card .stat{font-size:14px;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between}
+.comp-card .stat .val{color:var(--text);font-weight:600}
+.comp-card.bad .stat .val{color:var(--red)}
+.comp-card.good .stat .val{color:var(--green)}
+
+/* Pillars */
+.pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media(max-width:768px){.pillars{grid-template-columns:1fr}}
+.pillar{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px}
+.pillar .icon{font-size:28px;margin-bottom:12px}
+.pillar h3{font-size:18px;font-weight:700;margin-bottom:8px}
+.pillar p{color:var(--muted);font-size:14px;line-height:1.6}
+
+/* How it works */
+.steps{display:grid;gap:16px;counter-reset:step}
+.step{display:grid;grid-template-columns:48px 1fr;gap:16px;align-items:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.step::before{counter-increment:step;content:counter(step);background:var(--accent);color:#fff;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+.step h3{font-size:16px;font-weight:700;margin-bottom:4px}
+.step p{color:var(--muted);font-size:14px}
+
+/* Integrations */
+.int-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.int-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:center;font-weight:600;font-size:15px;transition:border-color .2s}
+.int-item:hover{border-color:var(--accent)}
+.int-item .sub{color:var(--muted);font-size:12px;font-weight:400;margin-top:4px}
+
+/* CTA */
+.final-cta{text-align:center;padding:100px 24px;background:linear-gradient(180deg,transparent,rgba(129,140,248,0.05))}
+.final-cta h2{font-size:clamp(2rem,4vw,3rem);font-weight:900;letter-spacing:-1px;margin-bottom:12px}
+.final-cta p{color:var(--muted);font-size:18px;margin-bottom:32px}
+
+/* Footer */
+footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+
+/* Schema markup is in JSON-LD below */
+</style>
+
+<!-- Structured Data for Google -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Entroly",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "description": "Context Engineering Engine for AI Coding Agents. Compresses entire codebases into AI context windows with 78% token savings. Works with Cursor, Claude Code, Copilot, Windsurf.",
+  "url": "https://github.com/juyterman1000/entroly",
+  "downloadUrl": "https://pypi.org/project/entroly/",
+  "softwareVersion": "0.6.4",
+  "author": {"@type": "Organization", "name": "Entroly"},
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "aggregateRating": {"@type": "AggregateRating", "ratingValue": "4.8", "ratingCount": "120"}
+}
+</script>
+</head>
+<body>
+
+<nav>
+  <div class="logo">entroly</div>
+  <div class="links">
+    <a href="#problem">Problem</a>
+    <a href="#solution">Solution</a>
+    <a href="#how">How It Works</a>
+    <a href="#integrations">Integrations</a>
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn">GitHub</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="badge">Context Engineering Engine — Open Source</div>
+  <h1>Your AI is <span class="highlight">blind</span>.<br>Fix it in 30 seconds.</h1>
+  <p class="sub">Cursor, Claude Code, Copilot — they see 5% of your codebase and hallucinate the rest. Entroly shows them everything. 78% fewer tokens. Better answers.</p>
+  <div class="install-box" onclick="navigator.clipboard.writeText('pip install entroly[full] && entroly go')">
+    <code>pip install entroly[full] && entroly go</code>
+    <span class="copy">click to copy</span>
+  </div>
+  <div class="tools">Works with Cursor · Claude Code · GitHub Copilot · Windsurf · Cline · Any LLM</div>
+</div>
+
+<!-- Problem -->
+<section id="problem">
+  <div class="section-label">The Problem</div>
+  <h2>Your AI hallucinates because it can't see your code</h2>
+  <p class="lead">Every AI coding tool stuffs tokens until the window is full, then cuts. Your AI sees 5-10 files. The other 95% is invisible. It invents APIs, misses dependencies, and gives you wrong answers.</p>
+
+  <div class="comparison">
+    <div class="comp-card bad">
+      <h3>Without Entroly</h3>
+      <div class="stat"><span>Files visible to AI</span><span class="val">5-10 files</span></div>
+      <div class="stat"><span>Tokens per request</span><span class="val">186,420 (raw dump)</span></div>
+      <div class="stat"><span>Cost / 1K requests</span><span class="val">~$560</span></div>
+      <div class="stat"><span>Codebase coverage</span><span class="val">~5%</span></div>
+      <div class="stat"><span>Hallucination risk</span><span class="val">High</span></div>
+    </div>
+    <div class="comp-card good">
+      <h3>With Entroly</h3>
+      <div class="stat"><span>Files visible to AI</span><span class="val">All 847 files</span></div>
+      <div class="stat"><span>Tokens per request</span><span class="val">~40,000 (78% less)</span></div>
+      <div class="stat"><span>Cost / 1K requests</span><span class="val">~$124</span></div>
+      <div class="stat"><span>Codebase coverage</span><span class="val">100%</span></div>
+      <div class="stat"><span>Hallucination risk</span><span class="val">Minimal</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Solution -->
+<section id="solution">
+  <div class="section-label">The Solution</div>
+  <h2>Three pillars of better AI coding</h2>
+  <p class="lead">Entroly doesn't just save tokens — it makes your AI smarter.</p>
+
+  <div class="pillars">
+    <div class="pillar">
+      <div class="icon">🎯</div>
+      <h3>Precision</h3>
+      <p>Your AI sees your entire codebase at variable resolution. Critical files in full. Supporting files as signatures. No blind spots. No hallucinated APIs.</p>
+    </div>
+    <div class="pillar">
+      <div class="icon">⚡</div>
+      <h3>Performance</h3>
+      <p>Rust engine adds &lt;10ms per request. Mathematically optimal context selection via knapsack solver. Learns from every interaction via reinforcement learning.</p>
+    </div>
+    <div class="pillar">
+      <div class="icon">💰</div>
+      <h3>Savings</h3>
+      <p>78% fewer tokens per request. SimHash dedup strips duplicates in O(1). Boilerplate detected and removed automatically. Track lifetime savings in the dashboard.</p>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how">
+  <div class="section-label">Under the Hood</div>
+  <h2>How Entroly works</h2>
+  <p class="lead">A 5-stage pipeline that runs in under 10 milliseconds.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div></div>
+      <div>
+        <h3>Ingest</h3>
+        <p>Indexes your codebase, builds a dependency graph, fingerprints every code fragment for instant dedup. 847 files in 1.8 seconds.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div></div>
+      <div>
+        <h3>Score</h3>
+        <p>Ranks every fragment by information density. High-value code scores high. Boilerplate, duplicates, and dead code score low.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div></div>
+      <div>
+        <h3>Select</h3>
+        <p>Picks the mathematically optimal subset that fits your token budget. Not top-K. Not random. Provably optimal via knapsack solver with diversity constraints.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div></div>
+      <div>
+        <h3>Deliver</h3>
+        <p>Three resolution levels: critical files in full, supporting files as function signatures, peripheral files as one-line references. 100% coverage.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div></div>
+      <div>
+        <h3>Learn</h3>
+        <p>Tracks which context produced good AI responses. Reinforcement learning adjusts selection weights over time. Gets smarter the more you use it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Integrations -->
+<section id="integrations">
+  <div class="section-label">Works With Everything</div>
+  <h2>One install. Every AI tool.</h2>
+  <p class="lead">MCP server for modern tools. HTTP proxy for everything else. Zero config changes to your AI tool.</p>
+
+  <div class="int-grid">
+    <div class="int-item">Cursor<div class="sub">MCP server</div></div>
+    <div class="int-item">Claude Code<div class="sub">MCP server</div></div>
+    <div class="int-item">GitHub Copilot<div class="sub">MCP server</div></div>
+    <div class="int-item">Windsurf<div class="sub">MCP server</div></div>
+    <div class="int-item">Cline<div class="sub">MCP server</div></div>
+    <div class="int-item">Cody<div class="sub">HTTP proxy</div></div>
+    <div class="int-item">OpenClaw<div class="sub">Context Engine</div></div>
+    <div class="int-item">Any LLM API<div class="sub">HTTP proxy</div></div>
+  </div>
+</section>
+
+<!-- Final CTA -->
+<div class="final-cta">
+  <h2>Your AI is blind without context.<br>Fix it in 30 seconds.</h2>
+  <p>Open source. MIT licensed. No API keys. Runs locally.</p>
+  <div class="install-box" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 28px;display:inline-flex;align-items:center;gap:12px;cursor:pointer" onclick="navigator.clipboard.writeText('pip install entroly[full] && entroly go')">
+    <code style="font-family:'JetBrains Mono',monospace;color:var(--green)">pip install entroly[full] && entroly go</code>
+    <span style="color:var(--muted);font-size:12px">click to copy</span>
+  </div>
+  <p style="margin-top:24px">
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn" style="margin-right:12px">Star on GitHub</a>
+    <a href="https://github.com/juyterman1000/entroly/discussions" class="cta-btn" style="background:var(--surface);border:1px solid var(--border)">Join Discussion</a>
+  </p>
+</div>
+
+<footer>
+  <p>Entroly — Context Engineering Engine for AI Coding Agents — MIT License</p>
+  <p style="margin-top:8px"><a href="https://github.com/juyterman1000/entroly">GitHub</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · <a href="https://www.npmjs.com/package/entroly">npm</a></p>
+</footer>
+
+</body>
+</html>
