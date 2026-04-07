@@ -193,31 +193,91 @@ pub fn ios_select(
         };
     }
 
-    // ── Phase 1: Separate pinned fragments ──
+    // ── Phase 1: Budget-aware pinned fragment selection ──
+    //
+    // Old behavior: unconditionally include ALL pinned fragments, then use
+    // remaining budget for everything else. This breaks when pinned tokens
+    // exceed the budget (e.g. monorepos with 90 pinned files = 167K tokens
+    // on an 8K budget → remaining_budget = 0 → zero query-relevant selection).
+    //
+    // New behavior: pinned fragments get a STRONG relevance boost (10x) but
+    // are still subject to budget constraint. When total pinned tokens fit
+    // within 50% of budget, include all (fast path). When they don't, treat
+    // them as high-priority candidates in the greedy selection.
+    //
+    // This preserves the intent (critical files are almost always included)
+    // while preventing budget blowout in large monorepos.
+    let pinned_cap = token_budget / 2; // Reserve at least 50% for query-relevant fragments
+
+    let mut all_pinned: Vec<(usize, u32)> = Vec::new(); // (index, token_count)
+    let mut total_pinned_tokens: u32 = 0;
+    for (i, frag) in fragments.iter().enumerate() {
+        if frag.is_pinned {
+            all_pinned.push((i, frag.token_count));
+            total_pinned_tokens += frag.token_count;
+        }
+    }
+
     let mut pinned: Vec<(usize, Resolution)> = Vec::new();
     let mut pinned_tokens: u32 = 0;
     let mut pinned_hashes: Vec<u64> = Vec::new();
+    let mut demoted_pinned: Vec<usize> = Vec::new(); // Pinned fragments that didn't fit → become high-priority candidates
 
-    for (i, frag) in fragments.iter().enumerate() {
-        if frag.is_pinned {
+    if total_pinned_tokens <= pinned_cap {
+        // Fast path: all pinned fragments fit within cap
+        for &(i, _tc) in &all_pinned {
             pinned.push((i, Resolution::Full));
-            pinned_tokens += frag.token_count;
-            pinned_hashes.push(frag.simhash);
+            pinned_tokens += fragments[i].token_count;
+            pinned_hashes.push(fragments[i].simhash);
+        }
+    } else {
+        // Budget pressure: select top pinned fragments by relevance density,
+        // demote the rest to high-priority candidates.
+        // Sort pinned by entropy score (descending) as a proxy for importance.
+        let mut scored_pinned: Vec<(usize, f64)> = all_pinned.iter()
+            .map(|&(i, _)| {
+                let frag = &fragments[i];
+                let fm = feedback_mults.get(&frag.fragment_id).copied().unwrap_or(1.0);
+                let score = compute_relevance(frag, w_recency, w_frequency, w_semantic, w_entropy, fm);
+                (i, score)
+            })
+            .collect();
+        scored_pinned.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        for &(i, score) in &scored_pinned {
+            let tc = fragments[i].token_count;
+            if pinned_tokens + tc <= pinned_cap && score > 0.0 {
+                pinned.push((i, Resolution::Full));
+                pinned_tokens += tc;
+                pinned_hashes.push(fragments[i].simhash);
+            } else {
+                demoted_pinned.push(i);
+            }
         }
     }
 
     let remaining_budget = token_budget.saturating_sub(pinned_tokens);
 
     // ── Phase 2: Generate candidates ──
+    // Demoted pinned fragments enter as candidates with a 5x relevance boost.
+    // This ensures they're strongly preferred without being unconditional.
+    let demoted_set: std::collections::HashSet<usize> = demoted_pinned.iter().copied().collect();
+    let pinned_included_set: std::collections::HashSet<usize> = pinned.iter().map(|&(i, _)| i).collect();
     let mut candidates: Vec<Candidate> = Vec::new();
 
     for (i, frag) in fragments.iter().enumerate() {
-        if frag.is_pinned {
+        // Skip fragments already included as pinned
+        if pinned_included_set.contains(&i) {
             continue;
         }
 
         let fm = feedback_mults.get(&frag.fragment_id).copied().unwrap_or(1.0);
-        let relevance = compute_relevance(frag, w_recency, w_frequency, w_semantic, w_entropy, fm);
+        let mut relevance = compute_relevance(frag, w_recency, w_frequency, w_semantic, w_entropy, fm);
+
+        // Demoted pinned fragments get 5x boost — strongly preferred but budget-constrained
+        if demoted_set.contains(&i) {
+            relevance *= 5.0;
+        }
 
         if relevance <= 0.0 || frag.token_count == 0 {
             continue;
@@ -472,7 +532,7 @@ mod tests {
         frags[0].is_pinned = true;
         frags[0].recency_score = 0.1; // Low recency shouldn't matter for pinned
 
-        let result = ios_select(&frags, 600, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(&frags, 1100, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
         assert!(selected_indices.contains(&0), "Pinned fragment must be included");
     }

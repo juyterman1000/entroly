@@ -32,12 +32,30 @@ pub enum Criticality {
     Safety,
 }
 
+/// Count directory depth: how many path separators precede the basename.
+/// "file:package.json" → 0, "file:src/types.ts" → 1, "file:a/b/c.ts" → 2
+fn path_depth(path: &str) -> usize {
+    // Strip common prefixes like "file:" before counting
+    let clean = path.strip_prefix("file:").unwrap_or(path);
+    clean.matches('/').count() + clean.matches('\\').count()
+}
+
 /// Check if a file path matches critical file patterns.
+///
+/// Monorepo-aware: in monorepos (langfuse, turborepo, nx), config files like
+/// `package.json`, `tsconfig.json`, `types.ts` appear in *every* sub-package.
+/// Pinning all of them blows the budget (langfuse: 90 pinned = 167K tokens,
+/// budget = 8K). Only ROOT-level configs are Critical; nested copies are
+/// Important (score-boosted but budget-constrained).
 pub fn file_criticality(path: &str) -> Criticality {
     let lower = path.to_lowercase();
-    let basename = lower.rsplit('/').next().unwrap_or(&lower);
+    let basename = lower.rsplit('/').next()
+        .and_then(|b| b.rsplit('\\').next())
+        .unwrap_or(&lower);
+    let depth = path_depth(&lower);
+    let is_root = depth <= 1; // root or one level deep (file:package.json)
 
-    // SAFETY: License and security files — never drop
+    // SAFETY: License and security files — never drop (any depth)
     if matches!(basename,
         "license" | "license.md" | "license.txt"
         | "security.md" | "security.txt"
@@ -46,33 +64,24 @@ pub fn file_criticality(path: &str) -> Criticality {
         return Criticality::Safety;
     }
 
-    // CRITICAL: Config and schema files — always include
-    if matches!(basename,
+    // SAFETY: Terraform state files — NEVER drop (contain real infra state)
+    if basename == "terraform.tfstate" || basename == "terraform.tfstate.backup" {
+        return Criticality::Safety;
+    }
+
+    // ── Root-only Critical configs ──
+    // These are Critical ONLY at the project root. Nested copies in monorepo
+    // sub-packages are Important (score-boosted, not force-pinned).
+    let is_root_config = matches!(basename,
         "package.json" | "package-lock.json"
         | "requirements.txt" | "pyproject.toml" | "setup.py" | "setup.cfg"
         | "cargo.toml" | "cargo.lock"
-        | "tsconfig.json" | "webpack.config.js" | "webpack.config.ts"
-        | "vite.config.ts" | "vite.config.js" | "vite.config.mts"
-        | "next.config.js" | "next.config.mjs" | "next.config.ts"
-        | "angular.json" | "nuxt.config.ts" | "nuxt.config.js"
-        | "remix.config.js" | "remix.config.ts"
-        | "svelte.config.js" | "svelte.config.ts" | "astro.config.mjs"
-        | "tailwind.config.js" | "tailwind.config.ts" | "tailwind.config.mjs"
-        | "app.vue" | "nuxt.config.mjs"
-        | "gatsby-config.js" | "gatsby-config.ts"
-        | "next.config.mts"
-        | "postcss.config.js" | "postcss.config.mjs"
-        | "jest.config.js" | "jest.config.ts"
-        | "vitest.config.ts" | "vitest.config.js"
-        | "babel.config.js" | "babel.config.json" | ".babelrc"
-        | ".eslintrc.js" | ".eslintrc.json" | ".eslintrc.cjs"
-        | "eslint.config.js" | "eslint.config.mjs"
-        | "prettier.config.js" | ".prettierrc" | ".prettierrc.json"
-        | "dockerfile" | "docker-compose.yml" | "docker-compose.yaml"
-        | ".env" | ".env.example" | ".env.local"
+        | "tsconfig.json"
+        | "docker-compose.yml" | "docker-compose.yaml"
         | "makefile" | "cmakelists.txt"
         | "go.mod" | "go.sum"
         | ".gitignore" | ".dockerignore"
+        | ".env" | ".env.example" | ".env.local"
         // Terraform / IaC
         | "main.tf" | "variables.tf" | "outputs.tf" | "providers.tf"
         | "terraform.tfvars" | "backend.tf"
@@ -83,11 +92,38 @@ pub fn file_criticality(path: &str) -> Criticality {
         | "program.cs" | "startup.cs" | "appsettings.json"
         // Swift / iOS
         | "package.swift" | "podfile" | "cartfile"
-    ) {
-        return Criticality::Critical;
+    );
+    if is_root_config {
+        return if is_root { Criticality::Critical } else { Criticality::Important };
     }
 
-    // CRITICAL: Schema and type definition files
+    // ── Build tool configs: Critical at root, Important nested ──
+    let is_build_config = matches!(basename,
+        "webpack.config.js" | "webpack.config.ts"
+        | "vite.config.ts" | "vite.config.js" | "vite.config.mts"
+        | "next.config.js" | "next.config.mjs" | "next.config.ts" | "next.config.mts"
+        | "angular.json" | "nuxt.config.ts" | "nuxt.config.js" | "nuxt.config.mjs"
+        | "remix.config.js" | "remix.config.ts"
+        | "svelte.config.js" | "svelte.config.ts" | "astro.config.mjs"
+        | "tailwind.config.js" | "tailwind.config.ts" | "tailwind.config.mjs"
+        | "app.vue"
+        | "gatsby-config.js" | "gatsby-config.ts"
+        | "postcss.config.js" | "postcss.config.mjs"
+        | "jest.config.js" | "jest.config.ts"
+        | "vitest.config.ts" | "vitest.config.js"
+        | "babel.config.js" | "babel.config.json" | ".babelrc"
+        | ".eslintrc.js" | ".eslintrc.json" | ".eslintrc.cjs"
+        | "eslint.config.js" | "eslint.config.mjs"
+        | "prettier.config.js" | ".prettierrc" | ".prettierrc.json"
+        | "dockerfile"
+    );
+    if is_build_config {
+        return if is_root { Criticality::Critical } else { Criticality::Important };
+    }
+
+    // ── Schema/type files: ALWAYS Important (never Critical) ──
+    // In monorepos, types.ts / models.py appear in dozens of packages.
+    // Pinning all of them destroys the budget. Score-boost is sufficient.
     if basename.ends_with(".proto")
         || basename.ends_with(".graphql")
         || basename.ends_with(".schema.json")
@@ -99,15 +135,13 @@ pub fn file_criticality(path: &str) -> Criticality {
         || basename == "models.py"
         || basename == "schema.py"
         || basename == "schema.rs"
-        || basename.ends_with(".tf")
-        || basename.ends_with(".hcl")
     {
-        return Criticality::Critical;
+        return Criticality::Important;
     }
 
-    // SAFETY: Terraform state files — NEVER drop (contain real infra state)
-    if basename == "terraform.tfstate" || basename == "terraform.tfstate.backup" {
-        return Criticality::Safety;
+    // Terraform / HCL files (not root-level ones already handled above)
+    if basename.ends_with(".tf") || basename.ends_with(".hcl") {
+        return if is_root { Criticality::Critical } else { Criticality::Important };
     }
 
     // IMPORTANT: Test files — high value for understanding
@@ -139,32 +173,27 @@ pub fn file_criticality(path: &str) -> Criticality {
 }
 
 /// Check content for safety signals that must never be stripped.
+///
+/// IMPORTANT: This must be TIGHT. Every match here force-pins the fragment,
+/// bypassing the budget. Broad patterns like "copyright" or "⚠️" caused
+/// hundreds of files to be pinned in real codebases, destroying budget
+/// enforcement entirely (langfuse: 90 pinned files = 167K tokens on 8K budget).
+///
+/// Rule: only pin content that would be DANGEROUS to omit (active secrets,
+/// private keys). License headers and copyright notices are boilerplate —
+/// they get a score boost via Criticality::Important, not a force-pin.
 pub fn has_safety_signal(content: &str) -> bool {
     let lower = content.to_lowercase();
 
-    // License headers
-    if lower.contains("mit license")
-        || lower.contains("apache license")
-        || lower.contains("gnu general public")
-        || lower.contains("copyright")
-        || lower.contains("all rights reserved")
+    // Actual credential material — dangerous to silently strip
+    if lower.contains("-----begin private key-----")
+        || lower.contains("-----begin rsa private key-----")
+        || lower.contains("aws_secret_access_key")
     {
         return true;
     }
 
-    // Explicit security warnings
-    if lower.contains("security warning")
-        || lower.contains("do not expose")
-        || lower.contains("do not commit")
-        || lower.contains("never commit")
-        || lower.contains("for internal use only")
-        || lower.contains("confidential")
-    {
-        return true;
-    }
-
-    // Secret-like assignments in real code should be pinned, but avoid
-    // matching prose or doc examples that merely mention api_key/secret_key.
+    // Secret-like assignments in real code (not comments/docs)
     for line in lower.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with('#')
@@ -184,18 +213,6 @@ pub fn has_safety_signal(content: &str) -> bool {
         {
             return true;
         }
-    }
-
-    // Credential material that should never be silently stripped.
-    // Keep this list tight: broad keyword scans like "unsafe" or
-    // "vulnerability" caused ordinary source files and examples to be
-    // force-pinned, which defeated budget enforcement.
-    if lower.contains("-----begin private key-----")
-        || lower.contains("⚠️")
-        || lower.contains("aws_secret_access_key")
-        || lower.contains("x-api-key")
-    {
-        return true;
     }
 
     false
@@ -472,12 +489,18 @@ mod tests {
 
     #[test]
     fn test_safety_signals() {
-        assert!(has_safety_signal("MIT License\nCopyright 2024"));
-        assert!(has_safety_signal("# SECURITY WARNING: do not expose API keys"));
+        // Real credential material — always pinned
         assert!(has_safety_signal("-----BEGIN PRIVATE KEY-----\nabc"));
+        assert!(has_safety_signal("-----BEGIN RSA PRIVATE KEY-----\nabc"));
+        assert!(has_safety_signal("AWS_SECRET_ACCESS_KEY=AKIA123"));
         assert!(has_safety_signal("SECRET_KEY = \"replace-me\""));
+        assert!(has_safety_signal("api_key = \"sk-live-abc123\""));
+        // License/copyright handled via file_criticality, not content scan
+        assert!(!has_safety_signal("MIT License\nCopyright 2024"));
+        // Normal code — never pinned
         assert!(!has_safety_signal("def hello(): return 'world'"));
         assert!(!has_safety_signal("fn dangerous() { unsafe { do_work(); } }"));
+        // Comment mentioning api_key — not a real assignment
         assert!(!has_safety_signal("This vulnerability scanner checks api_key patterns."));
     }
 
