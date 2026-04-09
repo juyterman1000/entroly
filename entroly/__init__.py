@@ -25,3 +25,9 @@ Quick Setup (Claude Code)::
 """
 
 __version__ = "0.6.4"
+
+# SDK: 3-line integration for any AI application
+try:
+    from .sdk import compress, compress_messages  # noqa: F401
+except ImportError:
+    pass  # Graceful degradation if dependencies missing
