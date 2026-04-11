@@ -221,6 +221,7 @@ pub struct EntrolyEngine {
     full_util_ema: f64,
     /// Base belief info factor (before query-adaptive modulation).
     /// Preserved so archetype modulation is relative to the learned base.
+    #[allow(dead_code)]
     base_belief_info_factor: f64,
 }
 
@@ -768,21 +769,20 @@ impl EntrolyEngine {
                         let sl = source.to_lowercase();
                         let cpt = if sl.ends_with(".py") || sl.ends_with(".pyw") { 3.0 }
                             else if sl.ends_with(".rs") { 3.5 }
-                            else if sl.ends_with(".ts") || sl.ends_with(".tsx") { 3.2 }
-                            else if sl.ends_with(".js") || sl.ends_with(".jsx") || sl.ends_with(".mjs") { 3.2 }
+                            else if sl.ends_with(".ts") || sl.ends_with(".tsx")
+                                    || sl.ends_with(".js") || sl.ends_with(".jsx") || sl.ends_with(".mjs")
+                                    || sl.ends_with(".sh") || sl.ends_with(".bash")
+                                    || sl.ends_with(".rb") { 3.2 }
                             else if sl.ends_with(".go") { 3.3 }
-                            else if sl.ends_with(".java") || sl.ends_with(".kt") || sl.ends_with(".cs") { 3.5 }
+                            else if sl.ends_with(".java") || sl.ends_with(".kt") || sl.ends_with(".cs")
+                                    || sl.ends_with(".swift") || sl.ends_with(".sql") { 3.5 }
                             else if sl.ends_with(".c") || sl.ends_with(".cpp") || sl.ends_with(".cc")
                                     || sl.ends_with(".h") || sl.ends_with(".hpp") { 3.8 }
                             else if sl.ends_with(".json") { 2.8 }
                             else if sl.ends_with(".yaml") || sl.ends_with(".yml") || sl.ends_with(".toml") { 3.0 }
                             else if sl.ends_with(".md") || sl.ends_with(".txt") || sl.ends_with(".rst") { 4.5 }
-                            else if sl.ends_with(".html") || sl.ends_with(".css") || sl.ends_with(".scss") { 3.0 }
-                            else if sl.ends_with(".sh") || sl.ends_with(".bash") { 3.2 }
-                            else if sl.ends_with(".rb") { 3.2 }
-                            else if sl.ends_with(".php") { 3.0 }
-                            else if sl.ends_with(".swift") { 3.5 }
-                            else if sl.ends_with(".sql") { 3.5 }
+                            else if sl.ends_with(".html") || sl.ends_with(".css") || sl.ends_with(".scss")
+                                    || sl.ends_with(".php") { 3.0 }
                             else {
                                 // Fallback: use non-alpha ratio heuristic for unknown types
                                 let non_alpha = content.chars().filter(|c| !c.is_alphabetic()).count();
@@ -1448,7 +1448,7 @@ impl EntrolyEngine {
                                             .next()
                                             .unwrap_or(&f.source)
                                             .rsplit('.')
-                                            .last()
+                                            .next_back()
                                             .unwrap_or("")
                                             .to_lowercase();
                                         if stem == link_lower || f.source.to_lowercase().contains(&link_lower) {
@@ -2834,9 +2834,9 @@ impl EntrolyEngine {
 
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     // Strip YAML frontmatter (between --- delimiters)
-                    let body = if content.starts_with("---") {
-                        if let Some(end) = content[3..].find("---") {
-                            content[end + 6..].trim().to_string()
+                    let body = if let Some(stripped) = content.strip_prefix("---") {
+                        if let Some(end) = stripped.find("---") {
+                            stripped[end + 3..].trim().to_string()
                         } else {
                             content.clone()
                         }
