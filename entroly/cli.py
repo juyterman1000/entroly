@@ -1269,7 +1269,7 @@ def cmd_wrap(args):
 
     if agent == "cursor":
         print(f"\n  {C.BOLD}Cursor Configuration:{C.RESET}")
-        print(f"  Open Cursor Settings → Models → Override OpenAI Base URL:")
+        print("  Open Cursor Settings → Models → Override OpenAI Base URL:")
         print(f"    {C.CYAN}http://localhost:{port}/v1{C.RESET}")
         print(f"\n  {C.GRAY}All Cursor requests will be automatically optimized.{C.RESET}\n")
         return
@@ -1338,8 +1338,8 @@ def cmd_learn(args):
 
     if learnings:
         print(f"\n  {C.BOLD}Learnings:{C.RESET}")
-        for l in learnings:
-            print(f"    {C.YELLOW}• {l}{C.RESET}")
+        for msg in learnings:
+            print(f"    {C.YELLOW}• {msg}{C.RESET}")
 
     if getattr(args, "apply", False) and learnings:
         for fname in ["CLAUDE.md", "AGENTS.md"]:
@@ -1348,7 +1348,7 @@ def cmd_learn(args):
                 existing = fpath.read_text(encoding="utf-8", errors="replace")
                 if "## Entroly Learnings" not in existing:
                     section = "\n\n## Entroly Learnings (auto-generated)\n\n"
-                    section += "\n".join(f"- {l}" for l in learnings) + "\n"
+                    section += "\n".join(f"- {msg}" for msg in learnings) + "\n"
                     fpath.write_text(existing + section, encoding="utf-8")
                     print(f"\n  {C.GREEN}Written learnings to {fname}{C.RESET}")
                 else:
