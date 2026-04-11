@@ -220,8 +220,8 @@ pub struct EntrolyEngine {
     belief_util_ema: f64,
     full_util_ema: f64,
     /// Base belief info factor (before query-adaptive modulation).
-    /// Preserved so archetype modulation is relative to the learned base.
-    #[allow(dead_code)]
+    /// Updated by the closed-loop EMA feedback — converges to the optimal
+    /// belief density for the specific codebase via online gradient descent.
     base_belief_info_factor: f64,
 }
 
@@ -1239,14 +1239,25 @@ impl EntrolyEngine {
                     else if is_repair { 0.30 }
                     else { 0.50 };  // default: neutral
 
-                // Closed-loop modulation: adjust based on utilization feedback
+                // Closed-loop modulation: adjust base via utilization feedback
                 let util_ratio = if self.full_util_ema > 0.01 {
                     (self.belief_util_ema / self.full_util_ema).clamp(0.3, 2.0)
                 } else {
                     1.0  // no data yet, neutral
                 };
 
-                self.ios_belief_info_factor = (archetype_factor * util_ratio)
+                // Online gradient step: shift base toward observed optimum
+                //   base ← base + η · (util_ratio - 1.0)
+                // If beliefs are well-utilized (ratio > 1), base increases.
+                // If poorly utilized (ratio < 1), base decreases.
+                let learning_rate = 0.02;
+                self.base_belief_info_factor = (self.base_belief_info_factor
+                    + learning_rate * (util_ratio - 1.0))
+                    .clamp(0.15, 0.90);
+
+                // Final factor = learned base × archetype modulation
+                self.ios_belief_info_factor = (self.base_belief_info_factor * archetype_factor
+                    / 0.50)  // normalize: archetype_factor=0.50 is neutral
                     .clamp(0.15, 0.90);
             }
 
