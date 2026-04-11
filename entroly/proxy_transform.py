@@ -330,6 +330,117 @@ def _deduplicate_fragments(
 
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Context Report — Inline Trust Signal
+# ══════════════════════════════════════════════════════════════════════
+#
+# The #1 adoption blocker for senior engineers: "How do I know you're
+# not stripping the code I actually need?"
+#
+# This function generates a 1-2 line report appended to the injected
+# context block that shows EXACTLY what was included at what resolution.
+# Cost: ~40-60 tokens. Trust value: immeasurable.
+#
+# Example output:
+#   [Entroly: worker.ts (Full), schema.prisma (Full), types.ts (Full),
+#    + 8 files (Signatures), 12 files (Reference only). GET /explain for details.]
+# ══════════════════════════════════════════════════════════════════════
+
+# On by default — set ENTROLY_CONTEXT_REPORT=0 to disable
+import os as _os
+_CONTEXT_REPORT_ENABLED = _os.environ.get("ENTROLY_CONTEXT_REPORT", "1") != "0"
+
+
+def build_context_report(
+    fragments: list[dict[str, Any]],
+    hcc_result: dict[str, Any] | None = None,
+) -> str:
+    """Generate a human-readable inline report of what Entroly included.
+
+    This is the single most important trust-building feature:
+    developers can see at a glance that critical files are at full
+    resolution while only tangential imports are compressed.
+
+    Returns empty string if context report is disabled or no fragments.
+    """
+    if not _CONTEXT_REPORT_ENABLED:
+        return ""
+    if not fragments and hcc_result is None:
+        return ""
+
+    # ── Flat path: fragments have variant metadata ──
+    if fragments:
+        full_frags = [f for f in fragments if f.get("variant", "full") == "full"]
+        belief_frags = [f for f in fragments if f.get("variant") == "belief"]
+        skel_frags = [f for f in fragments if f.get("variant") == "skeleton"]
+        ref_frags = [f for f in fragments if f.get("variant") == "reference"]
+
+        parts: list[str] = []
+
+        # Show up to 5 full-resolution file names (the ones that matter)
+        if full_frags:
+            names = []
+            for f in full_frags[:5]:
+                source = f.get("source", "unknown")
+                # Extract just the filename from paths like "file:src/auth/login.py"
+                basename = source.rsplit("/", 1)[-1].removeprefix("file:")
+                names.append(f"{basename} (Full)")
+            if len(full_frags) > 5:
+                names.append(f"+{len(full_frags) - 5} more (Full)")
+            parts.append(", ".join(names))
+
+        # Summarize compressed resolutions as counts
+        if belief_frags:
+            parts.append(f"{len(belief_frags)} files (Belief summary)")
+        if skel_frags:
+            parts.append(f"{len(skel_frags)} files (Signatures only)")
+        if ref_frags:
+            parts.append(f"{len(ref_frags)} files (Reference only)")
+
+        if not parts:
+            return ""
+
+        total_tokens = sum(f.get("token_count", 0) for f in fragments)
+        report = f"[Entroly: {', '.join(parts)}. {total_tokens:,} tokens. GET /explain for details.]"
+        return report
+
+    # ── HCC path: hierarchical compression result ──
+    if hcc_result is not None:
+        coverage = hcc_result.get("coverage", {})
+        l1_files = coverage.get("level1_files", 0) if isinstance(coverage, dict) else 0
+        l2_files = coverage.get("level2_cluster_files", 0) if isinstance(coverage, dict) else 0
+        l3_frags = hcc_result.get("level3_fragments", [])
+        l3_count = len(l3_frags) if isinstance(l3_frags, list) else 0
+
+        parts = []
+        if l3_count > 0:
+            # Show up to 3 full-resolution file names from L3
+            names = []
+            for f in l3_frags[:3]:
+                source = f.get("source", "unknown")
+                basename = source.rsplit("/", 1)[-1].removeprefix("file:")
+                names.append(basename)
+            l3_label = ", ".join(names)
+            if l3_count > 3:
+                l3_label += f", +{l3_count - 3} more"
+            parts.append(f"{l3_label} (Full)")
+        if l2_files > 0:
+            parts.append(f"{l2_files} files (Signatures)")
+        if l1_files > 0:
+            parts.append(f"{l1_files} files (Overview)")
+
+        if not parts:
+            return ""
+
+        l1_tokens = hcc_result.get("level1_tokens", 0)
+        l2_tokens = hcc_result.get("level2_tokens", 0)
+        l3_tokens = hcc_result.get("level3_tokens", 0)
+        total = l1_tokens + l2_tokens + l3_tokens
+        return f"[Entroly: {', '.join(parts)}. {total:,} tokens. GET /explain for details.]"
+
+    return ""
+
+
 def format_context_block(
     fragments: list[dict[str, Any]],
     security_issues: list[str],
@@ -436,6 +547,12 @@ def format_context_block(
             parts.append(f"- {issue}")
         parts.append("")
 
+    # Inline Context Report — trust signal for senior engineers
+    report = build_context_report(fragments)
+    if report:
+        parts.append(report)
+        parts.append("")
+
     parts.append("--- End Context ---")
     return "\n".join(parts)
 
@@ -530,6 +647,12 @@ def format_hierarchical_context(
         parts.append("## Security Warnings")
         for issue in security_issues:
             parts.append(f"- {issue}")
+        parts.append("")
+
+    # Inline Context Report — trust signal for senior engineers
+    report = build_context_report([], hcc_result)
+    if report:
+        parts.append(report)
         parts.append("")
 
     parts.append("--- End Context ---")

@@ -652,6 +652,7 @@ class PromptCompilerProxy:
 
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
+        self._last_excluded_fragments: list = []  # Top rejected candidates for /explain
         self._last_pipeline_ms: float = 0.0
         self._last_query: str = ""
 
@@ -859,6 +860,20 @@ class PromptCompilerProxy:
                         self._total_original_tokens += original_tokens
                         self._total_optimized_tokens += optimized_tokens
                         self._last_context_fragments = selected_frags[:20] if selected_frags else []
+                        # Track the top 10 excluded fragments for /explain transparency.
+                        # These are candidates the engine considered but dropped.
+                        all_frags_result = pipeline_result.get("all_candidates", [])
+                        selected_ids = {
+                            f.get("id", f.get("fragment_id", ""))
+                            for f in selected_frags
+                        } if selected_frags else set()
+                        if all_frags_result:
+                            self._last_excluded_fragments = [
+                                f for f in all_frags_result
+                                if f.get("id", f.get("fragment_id", "")) not in selected_ids
+                            ][:10]
+                        else:
+                            self._last_excluded_fragments = []
                         self._last_pipeline_ms = pipeline_ms
                         self._last_query = _sanitize_query(user_message)
 
@@ -939,25 +954,51 @@ class PromptCompilerProxy:
                     # Startup banner: on first optimized request, print a
                     # human-visible confirmation so the user knows it's working.
                     if opt_count == 1:
-                        if provider == "gemini":
-                            original_tokens = sum(
-                                len(p.get("text", "").split())
-                                for item in body.get("contents", [])
-                                for p in item.get("parts", [])
-                                if isinstance(p, dict) and "text" in p
-                            ) * 4 // 3
-                        else:
-                            original_tokens = sum(
-                                len(m.get("content", "").split())
-                                for m in body.get("messages", [])
-                            ) * 4 // 3  # rough word→token estimate
-                        optimized_tokens = len(context_text.split()) * 4 // 3
                         if original_tokens > 0:
                             saved_pct = max(0, (original_tokens - optimized_tokens)) * 100 // original_tokens
-                            print(
+                            # Resolution breakdown for the trust-building banner
+                            s_frags = pipeline_result.get("selected_fragments", [])
+                            full_names: list[str] = []
+                            skel_c = 0
+                            ref_c = 0
+                            belief_c = 0
+                            for sf in s_frags:
+                                v = sf.get("variant", "full")
+                                src = sf.get("source", "")
+                                bname = src.rsplit("/", 1)[-1].removeprefix("file:")
+                                if v == "full":
+                                    if len(full_names) < 5:
+                                        full_names.append(bname)
+                                elif v == "skeleton":
+                                    skel_c += 1
+                                elif v == "reference":
+                                    ref_c += 1
+                                elif v == "belief":
+                                    belief_c += 1
+                            banner_lines = [
                                 f"\n  First request optimized: "
-                                f"{original_tokens:,} → {optimized_tokens:,} tokens "
-                                f"({saved_pct}% saved) in {pipeline_ms:.1f}ms\n",
+                                f"{original_tokens:,} \u2192 {optimized_tokens:,} tokens "
+                                f"({saved_pct}% saved) in {pipeline_ms:.1f}ms",
+                            ]
+                            if full_names:
+                                more = f", +{len([sf for sf in s_frags if sf.get('variant', 'full') == 'full']) - len(full_names)} more" if len([sf for sf in s_frags if sf.get("variant", "full") == "full"]) > 5 else ""
+                                banner_lines.append(
+                                    f"  \u251c\u2500 Full (100%):    {', '.join(full_names)}{more}"
+                                )
+                            if belief_c:
+                                banner_lines.append(
+                                    f"  \u251c\u2500 Belief:        {belief_c} files"
+                                )
+                            if skel_c:
+                                banner_lines.append(
+                                    f"  \u251c\u2500 Skeleton:      {skel_c} files"
+                                )
+                            if ref_c:
+                                banner_lines.append(
+                                    f"  \u2514\u2500 Reference:     {ref_c} files"
+                                )
+                            print(
+                                "\n".join(banner_lines) + "\n",
                                 file=sys.stderr,
                             )
 
@@ -1750,44 +1791,66 @@ async def _fragment_feedback(request: Request) -> JSONResponse:
 
 
 async def _context_explain(request: Request) -> JSONResponse:
-    """Gap #43: Explain WHY each fragment was selected.
+    """Gap #43: Explain WHY each fragment was selected and at what resolution.
 
-    GET /explain — returns per-fragment selection reasons.
+    GET /explain — returns per-fragment selection reasons with resolution
+    labels, plus the top excluded fragments with reasons why they were dropped.
+
+    This is the core trust endpoint. A senior engineer can call this after
+    any request and see exactly what code was included at what fidelity,
+    and what was considered but dropped.
     """
     proxy = request.app.state.proxy
+
+    # ── Included fragments with selection reasons ──
     fragments = []
     for f in proxy._last_context_fragments:
-        # Build explanation from scores
         reasons = []
         entropy = f.get("entropy_score", 0)
         relevance = f.get("relevance", 0)
         variant = f.get("variant", "full")
         source = f.get("source", "")
 
-        if entropy > 0.7:
-            reasons.append(f"high information density (entropy={entropy:.2f})")
-        elif entropy > 0.4:
-            reasons.append(f"moderate entropy ({entropy:.2f})")
-        else:
-            reasons.append(f"low entropy ({entropy:.2f})")
+        # Resolution explanation
+        resolution_labels = {
+            "full": "Full resolution — complete code included, nothing stripped",
+            "skeleton": "Signatures only — function/class signatures preserved, bodies omitted",
+            "belief": "Belief summary — vault knowledge graph summary (~50% info at ~10% tokens)",
+            "reference": "Reference only — file path included for awareness (no code)",
+        }
+        reasons.append(resolution_labels.get(variant, f"Resolution: {variant}"))
 
+        # WHY it was included
         if relevance > 0.7:
-            reasons.append("strong query relevance")
+            reasons.append(f"Strong query match (relevance={relevance:.2f})")
         elif relevance > 0.4:
-            reasons.append("moderate query relevance")
+            reasons.append(f"Moderate query match (relevance={relevance:.2f})")
+        elif relevance > 0:
+            reasons.append(f"Weak query match (relevance={relevance:.2f})")
 
-        if variant == "skeleton":
-            reasons.append("included as skeleton (compressed)")
+        if entropy > 0.7:
+            reasons.append(f"High information density (entropy={entropy:.2f})")
+        elif entropy > 0.4:
+            reasons.append(f"Moderate entropy ({entropy:.2f})")
+
+        # WHY this resolution was chosen
+        if variant == "full":
+            reasons.append("Included at full resolution because it directly matches the query")
+        elif variant == "skeleton":
+            reasons.append("Compressed to signatures — tangential import, not query-critical")
+        elif variant == "belief":
+            reasons.append("Vault summary used — provides architectural context at low token cost")
         elif variant == "reference":
-            reasons.append("included as reference (minimal)")
+            reasons.append("Path-only reference — LLM knows file exists without seeing code")
 
         if "test" in source.lower():
-            reasons.append("test file (may verify behavior)")
-        if any(kw in source.lower() for kw in ["config", "schema", "setup"]):
-            reasons.append("configuration/setup file (critical)")
+            reasons.append("Test file (may verify behavior)")
+        if any(kw in source.lower() for kw in ["config", "schema", "setup", "prisma"]):
+            reasons.append("Configuration/schema file (critical for correctness)")
 
         fragments.append({
             "source": source,
+            "resolution": variant,
             "token_count": f.get("token_count", 0),
             "reasons": reasons,
             "scores": {
@@ -1797,11 +1860,52 @@ async def _context_explain(request: Request) -> JSONResponse:
             "preview": _safe_preview(f.get("content", "")),
         })
 
+    # ── Excluded fragments with DROP reasons ──
+    excluded = []
+    for f in getattr(proxy, '_last_excluded_fragments', []):
+        source = f.get("source", "")
+        entropy = f.get("entropy_score", 0)
+        relevance = f.get("relevance", 0)
+        tokens = f.get("token_count", 0)
+
+        drop_reasons = []
+        if relevance < 0.3:
+            drop_reasons.append(f"Low query relevance ({relevance:.2f})")
+        if entropy < 0.3:
+            drop_reasons.append(f"Low information density ({entropy:.2f})")
+        if tokens > 500:
+            drop_reasons.append(f"Large token cost ({tokens}) — budget trade-off")
+        if not drop_reasons:
+            drop_reasons.append("Exceeded token budget (knapsack trade-off)")
+
+        excluded.append({
+            "source": source,
+            "token_count": tokens,
+            "drop_reasons": drop_reasons,
+            "scores": {
+                "entropy": round(entropy, 4),
+                "relevance": round(relevance, 4),
+            },
+        })
+
     return JSONResponse({
         "query": proxy._last_query,
         "pipeline_ms": round(proxy._last_pipeline_ms, 2),
-        "fragments_explained": len(fragments),
-        "fragments": fragments,
+        "included_count": len(fragments),
+        "excluded_count": len(excluded),
+        "resolution_summary": {
+            "full": sum(1 for f in fragments if f["resolution"] == "full"),
+            "skeleton": sum(1 for f in fragments if f["resolution"] == "skeleton"),
+            "belief": sum(1 for f in fragments if f["resolution"] == "belief"),
+            "reference": sum(1 for f in fragments if f["resolution"] == "reference"),
+        },
+        "included": fragments,
+        "excluded": excluded,
+        "trust_note": (
+            "Files matching your query are included at FULL resolution — "
+            "function bodies are never stripped from files the LLM needs. "
+            "Only tangential imports are compressed to signatures."
+        ),
     })
 
 

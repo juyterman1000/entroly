@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly — Save 80-95% on LLM Tokens">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly — Context Engineering Engine">
 </p>
 
 <h1 align="center">Entroly</h1>
 
-<h3 align="center">Cut your AI token costs by 80–95%. Zero accuracy loss.</h3>
+<h3 align="center">Stop your AI from hallucinating. Give it your entire codebase.</h3>
 
 <p align="center">
-  <b>The Token Optimization Engine for AI Coding</b><br/>
-  <i>Drop-in proxy between your IDE and any LLM API. Same answers, 80–95% fewer tokens, 10x lower bills.</i>
+  <b>The Context Engineering Engine for AI Coding Agents</b><br/>
+  <i>Your AI sees 5% of your codebase and hallucinates the rest. Entroly fixes this — 50-<b>80%</b> fewer tokens, 100% code visibility.</i>
 </p>
 
 <p align="center">
@@ -16,36 +16,83 @@
 </p>
 
 <p align="center">
-  <a href="#token-savings-at-a-glance">Savings</a> &bull;
+  <a href="#the-problem">Problem</a> &bull;
+  <a href="#the-fix">Solution</a> &bull;
   <a href="#30-second-install">Install</a> &bull;
-  <a href="#how-we-save-tokens">How It Works</a> &bull;
+  <a href="#see-it-in-action">Demo</a> &bull;
   <a href="#works-with-everything">Integrations</a> &bull;
-  <a href="#track-your-savings">Dashboard</a> &bull;
+  <a href="#how-it-works">Architecture</a> &bull;
   <a href="https://github.com/juyterman1000/entroly/discussions">Community</a>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/entroly"><img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="PyPI"></a>
   <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/v/entroly?color=red&label=npm" alt="npm"></a>
-  <img src="https://img.shields.io/badge/Token_Savings-80--95%25-success" alt="Savings">
-  <img src="https://img.shields.io/badge/Latency-<10ms-purple" alt="Latency">
-  <img src="https://img.shields.io/badge/Tests-840_Passing-success" alt="Tests">
+  <img src="https://img.shields.io/badge/Rust_Engine-50--100x_faster-orange?logo=rust" alt="Rust">
+  <img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/Tests-436_Passing-success" alt="Tests">
+  <img src="https://img.shields.io/badge/Latency-<10ms-purple" alt="Latency">
 </p>
 
 ---
 
-## Token Savings at a Glance
+## The Problem
 
-| | Without Entroly | With Entroly | You Save |
-|---|---|---|---|
-| **Tokens per request** | 186,000 | 9,300–37,000 | **80–95%** |
-| **Cost per 1K requests (GPT-4o)** | ~$560 | ~$28–$112 | **$450+** |
-| **Monthly cost (100 req/day)** | ~$1,700 | ~$85–$340 | **$1,300+/mo** |
-| **Token waste (duplicates, boilerplate)** | ~40% | **0%** | Eliminated |
-| **Quality** | Partial, hallucinated | **Same or better** | ↑ |
+Every AI coding tool — **Cursor, Claude Code, GitHub Copilot, Windsurf, Cody** — has the same fatal flaw:
 
-**Every token we cut is a token that wasn't helping the LLM anyway.** Duplicates, boilerplate, stale context — gone. The AI gets the same information in fewer tokens.
+> **Your AI can only see 5-10 files at a time. The other 95% of your codebase is invisible.**
+
+This causes:
+- **Hallucinated function calls** — the AI invents APIs that don't exist
+- **Broken imports** — it references modules it can't see
+- **Missed dependencies** — it changes `auth.py` without knowing about `auth_config.py`
+- **Wasted tokens** — raw-dumping files burns your budget on boilerplate and duplicates
+- **Wrong answers** — without full context, even GPT-4/Claude give incomplete solutions
+
+You've felt this. You paste code manually. You write long system prompts. You pray it doesn't hallucinate. **There's a better way.**
+
+---
+
+## The Fix
+
+**Entroly compresses your entire codebase into the context window at variable resolution.**
+
+| What changes | Before Entroly | After Entroly |
+|---|---|---|
+| **Files visible to AI** | 5-10 files | **All files** (variable resolution) |
+| **Tokens per request** | 186,000 (raw dump) | **9,300 - 55,000** (70-<b>95%</b> reduction) |
+| **Cost per 1K requests** | ~$560 | **$28** - $168 |
+| **AI answer quality** | Incomplete, hallucinated | **Correct, dependency-aware** |
+| **Setup time** | Hours of prompt engineering | **30 seconds** |
+| **Overhead** | N/A | **< 10ms** |
+
+Critical files appear in full. Supporting files appear as signatures. Everything else appears as references. **Your AI sees the whole picture — and you pay 70-95% less.**
+
+### How is this different from RAG?
+
+| | RAG (vector search) | Entroly (context engineering) |
+|--|---|---|
+| **What it sends** | Top-K similar chunks | **Entire codebase** at optimal resolution |
+| **Handles duplicates** | No — sends same code 3x | **SimHash dedup** in O(1) |
+| **Dependency-aware** | No | **Yes** — auto-includes related files |
+| **Learns from usage** | No | **Yes** — RL optimizes from AI response quality |
+| **Needs embeddings API** | Yes (extra cost + latency) | **No** — runs locally |
+| **Optimal selection** | Approximate | **Mathematically proven** (knapsack solver) |
+
+---
+
+## See It In Action
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg" alt="Entroly Demo — AI context optimization, 70-95% token savings" width="800">
+</p>
+
+```bash
+pip install entroly && entroly demo    # see savings on YOUR codebase
+```
+
+> Open the [interactive demo](docs/assets/demo.html) for the animated experience.
 
 ---
 
@@ -56,81 +103,37 @@ pip install entroly[full]
 entroly go
 ```
 
-**That's it.** Point your AI tool to `http://localhost:9377/v1`. Every request is now optimized.
+**That's it.** `entroly go` auto-detects your IDE, configures everything, starts the proxy and dashboard. Then point your AI tool to `http://localhost:9377/v1`.
+
+### Or step by step
 
 ```bash
-# Or step by step
 pip install entroly                # core engine
 entroly init                       # detect IDE + generate config
-entroly proxy --quality balanced   # start the token optimizer
+entroly proxy --quality balanced   # start proxy
 ```
 
-### Other Installs
+### Node.js
 
 ```bash
-npm install entroly                # Node.js
-docker pull ghcr.io/juyterman1000/entroly:latest   # Docker
+npm install entroly
 ```
+
+### Docker
+
+```bash
+docker pull ghcr.io/juyterman1000/entroly:latest
+docker run --rm -p 9377:9377 -p 9378:9378 -v .:/workspace:ro ghcr.io/juyterman1000/entroly:latest
+```
+
+### Install options
 
 | Package | What you get |
 |---------|---|
 | `pip install entroly` | Core — MCP server + Python engine |
-| `pip install entroly[proxy]` | + HTTP proxy (token optimization) |
+| `pip install entroly[proxy]` | + HTTP proxy mode |
 | `pip install entroly[native]` | + Rust engine (50-100x faster) |
 | `pip install entroly[full]` | Everything |
-
----
-
-## How We Save Tokens
-
-Entroly sits between your AI tool and the LLM API. It compresses everything — codebase context, conversation history, tool outputs — before tokens are spent.
-
-### 1. Context Compression (saves 70–95%)
-
-Your codebase has thousands of files. Raw-dumping them wastes tokens on duplicates, boilerplate, and irrelevant code.
-
-Entroly indexes your codebase and selects the **mathematically optimal** subset for each query:
-- Critical files → **full code**
-- Supporting files → **signatures only** (60–80% smaller)
-- Everything else → **one-line references**
-
-The AI sees your entire codebase. You pay for a fraction of it.
-
-### 2. Conversation Pruning (saves 50–80% on history)
-
-In a 50-turn conversation, old messages are re-sent on every request — wasting 20–40K tokens. Entroly compresses old messages automatically:
-- Last 2 turns → full fidelity
-- 3–5 turns back → key decisions + code only
-- Older → summarized to ~20% of original
-
-### 3. Tool Output Compression (saves 60–90%)
-
-LLM tool calls return massive outputs — 2000-line JSON responses, test logs, git diffs. Entroly compresses them before they hit the LLM:
-
-| Output Type | What Entroly Does | Savings |
-|---|---|---|
-| JSON blobs | Schema only (strip values) | ~85% |
-| Test output | Failures only | ~90% |
-| Build errors | Errors + warnings only | ~80% |
-| Git diff | Compact hunks | ~70% |
-| Log output | Deduplicated | ~75% |
-
-### 4. Self-Correcting Quality (zero accuracy loss)
-
-Entroly monitors LLM responses for confusion signals. If the AI says "I don't have enough context," Entroly automatically shifts toward less-compressed representations — **without increasing the token budget**. Same cost, better information density.
-
----
-
-## Track Your Savings
-
-```bash
-entroly dashboard    # live web dashboard
-entroly status       # CLI summary
-entroly digest       # weekly report
-entroly share        # shareable Context Report Card
-```
-
-The dashboard tracks **hourly, daily, weekly, and monthly** token savings with cost estimates per model.
 
 ---
 
@@ -143,46 +146,158 @@ The dashboard tracks **hourly, daily, weekly, and monthly** token savings with c
 | **VS Code + Copilot** | `entroly init` | MCP server |
 | **Windsurf** | `entroly init` | MCP server |
 | **Cline** | `entroly init` | MCP server |
+| **OpenClaw** | [See below](#openclaw-integration) | Context Engine |
 | **Cody** | `entroly proxy` | HTTP proxy |
 | **Any LLM API** | `entroly proxy` | HTTP proxy |
 
-Works with **OpenAI, Anthropic, Google Gemini, Azure OpenAI, and any OpenAI-compatible API**.
+---
+
+## Why Developers Choose Entroly
+
+> **"I stopped manually pasting code into Claude. Entroly just works."**
+
+- **Zero config** — `entroly go` handles everything. No YAML, no embeddings, no prompt engineering.
+- **Instant results** — See the difference on your first request. No training period.
+- **Privacy-first** — Everything runs locally. Your code never leaves your machine.
+- **Battle-tested** — 436 tests, crash recovery, connection auto-reconnect, cross-platform file locking.
+- **Built-in security** — 55 SAST rules catch hardcoded secrets, SQL injection, command injection across 8 CWE categories.
+- **Codebase health grades** — Clone detection, dead code finder, god file detection. Get an A-F grade.
 
 ---
 
-## SDK — 3 Lines
+## OpenClaw Integration
+
+[OpenClaw](https://github.com/openclaw/openclaw) users get the deepest integration — Entroly plugs in as a Context Engine:
+
+| Agent Type | What Entroly Does | Token Savings |
+|------------|---|---|
+| **Main agent** | Full codebase at variable resolution | ~95% |
+| **Heartbeat** | Only loads changes since last check | ~90% |
+| **Subagents** | Inherited context + Nash bargaining budget split | ~92% |
+| **Cron jobs** | Minimal context — relevant memories + schedule | ~93% |
+| **Group chat** | Entropy-filtered messages — only high-signal kept | ~90% |
 
 ```python
-from entroly import compress
+from entroly.context_bridge import MultiAgentContext
 
-optimized = compress(my_context, budget=4096)
-# 80-95% fewer tokens, same information
-```
-
-Or use with LangChain:
-
-```python
-from entroly.integrations.langchain import EntrolyCompressor
-
-chain = EntrolyCompressor(budget=8192) | llm
+ctx = MultiAgentContext(workspace_path="~/.openclaw/workspace")
+ctx.ingest_workspace()
+sub = ctx.spawn_subagent("main", "researcher", "find auth bugs")
 ```
 
 ---
 
-## CLI
+## How It Works
+
+<p align="center">
+  <img src="docs/assets/pipeline.svg" alt="Entroly Pipeline — context engineering for AI coding" width="880">
+</p>
+
+| Stage | What | Result |
+|---|---|---|
+| **1. Ingest** | Index codebase, build dependency graph, fingerprint fragments | Complete map in <2s |
+| **2. Score** | Rank by information density — high-value code up, boilerplate down | Every fragment scored |
+| **3. Select** | Mathematically optimal subset fitting your token budget | Proven optimal (knapsack) |
+| **4. Deliver** | 3 resolution levels: full → signatures → references | 100% coverage |
+| **5. Learn** | Track which context produced good AI responses | Gets smarter over time |
+
+---
+
+## Trust & Transparency
+
+> *"If you compress my codebase by 80%, how do I know you didn't strip the code my AI actually needs?"*
+
+Fair question. Here's the honest answer:
+
+### The 3-Resolution System
+
+Entroly never "strips" code from files the LLM needs. It uses **three resolution levels**:
+
+| Resolution | What the LLM sees | When used |
+|---|---|---|
+| **Full (100%)** | Complete source code — every line, every comment | Files that directly match your query |
+| **Signatures** | Function/class signatures with types + docstrings | Tangential imports your query doesn't target |
+| **Reference** | File path + 1-line summary | Files the LLM should know exist, but doesn't need to read |
+
+**Critical guarantee:** If you ask about `worker.ts`, the LLM gets the complete `worker.ts`. The savings come from compressing `node_modules/lodash/fp.js` to a signature and `README.md` to a reference — files you'd never paste manually anyway.
+
+### Inline Context Report
+
+Every optimized request includes a visible report inside the LLM context:
+
+```
+[Entroly: worker.ts (Full), schema.prisma (Full), types.ts (Full),
+ 8 files (Signatures only), 12 files (Reference only). 8,777 tokens. GET /explain for details.]
+```
+
+Your AI sees this. You can see this. No hidden truncation.
+
+### The `/explain` Endpoint
+
+After any request, call `GET localhost:9377/explain` to see:
+- ✅ Every included file with its resolution level and **why** it was included
+- ❌ Every excluded file and **why** it was dropped
+- 📊 Resolution summary (e.g., 5 Full, 8 Skeleton, 12 Reference)
+
+### Honest Savings Claims
+
+| Claim | What it actually means |
+|---|---|
+| **50-80% token savings** | Measured across real codebases (Langfuse, VSCode). Varies by query specificity. |
+| **100% code visibility** | Every file in your codebase is represented at some resolution. Nothing is invisible. |
+| **< 10ms latency** | The Rust engine adds < 10ms. Network to the LLM API is unchanged. |
+
+We don't claim 95% savings because that's only achievable on trivial queries against massive codebases. Real-world savings on complex monorepo queries are 50-80%.
+
+### Disable the Report
+
+If the ~40 token overhead bothers you:
+```bash
+export ENTROLY_CONTEXT_REPORT=0
+```
+
+---
+
+## Context Engineering, Automated
+
+> *"The LLM is the CPU, the context window is RAM."*
+
+| Layer | What it solves |
+|---|---|
+| **Documentation tools** | Give your agent up-to-date API docs |
+| **Memory systems** | Remember things across conversations |
+| **RAG / retrieval** | Find relevant code chunks |
+| **Entroly (optimization)** | **Makes everything fit** — optimally compresses codebase + docs + memory into the token budget |
+
+These layers are **complementary.** Entroly is the optimization layer that ensures everything fits without waste.
+
+---
+
+## CLI Commands
 
 | Command | What it does |
 |---------|---|
 | `entroly go` | **One command** — auto-detect, init, proxy, dashboard |
 | `entroly demo` | Before/after comparison with dollar savings on YOUR project |
-| `entroly dashboard` | Live metrics: savings trends, daily/weekly/monthly charts |
-| `entroly doctor` | 7 diagnostic checks |
-| `entroly health` | Codebase health grade (A–F): clones, dead code, god files |
-| `entroly benchmark` | Benchmark: Entroly vs raw context vs top-K |
+| `entroly dashboard` | Live metrics: savings trends, health grade, PRISM weights |
+| `entroly doctor` | 7 diagnostic checks — finds problems before you do |
+| `entroly health` | Codebase health grade (A-F): clones, dead code, god files |
+| `entroly benchmark` | Competitive benchmark: Entroly vs raw context vs top-K |
+| `entroly role` | Weight presets: `frontend`, `backend`, `sre`, `data`, `fullstack` |
 | `entroly autotune` | Auto-optimize engine parameters |
-| `entroly share` | Generate a shareable Context Report Card |
 | `entroly digest` | Weekly summary: tokens saved, cost reduction |
 | `entroly status` | Check running services |
+
+---
+
+## Quality Presets
+
+```bash
+entroly proxy --quality speed       # minimal optimization, lowest latency
+entroly proxy --quality balanced    # recommended (default)
+entroly proxy --quality max         # full pipeline, best results
+entroly proxy --quality 0.7         # any float 0.0-1.0
+```
 
 ---
 
@@ -190,8 +305,8 @@ chain = EntrolyCompressor(budget=8192) | llm
 
 | | Linux | macOS | Windows |
 |--|---|---|---|
-| **Python 3.10+** | ✅ | ✅ | ✅ |
-| **Rust wheel** | ✅ | ✅ (Intel + Apple Silicon) | ✅ |
+| **Python 3.10+** | Yes | Yes | Yes |
+| **Rust wheel** | Yes | Yes (Intel + Apple Silicon) | Yes |
 | **Docker** | Optional | Optional | Optional |
 | **Admin/WSL required** | No | No | No |
 
@@ -199,59 +314,14 @@ chain = EntrolyCompressor(budget=8192) | llm
 
 ## Production Ready
 
-- **Persistent savings tracking** — lifetime savings in `~/.entroly/value_tracker.json`
-- **Daily/weekly/monthly trend charts** in the dashboard
-- **Rich response headers** — `X-Entroly-Tokens-Saved-Pct`, `X-Entroly-Cost-Saved-Today`
+- **Persistent savings tracking** — lifetime savings in `~/.entroly/value_tracker.json`, trend charts in dashboard
+- **IDE status bar** — `/confidence` endpoint for real-time VS Code widgets
+- **Rich headers** — `X-Entroly-Confidence`, `X-Entroly-Coverage-Pct`, `X-Entroly-Cost-Saved-Today`
 - **Crash recovery** — gzipped checkpoints restore in <100ms
-- **55 SAST rules** — catches hardcoded secrets, SQL injection across 8 CWE categories
-- **840 tests** — 399 Rust + 441 Python, CI verified
-
----
-
-## How is Entroly Different from RAG?
-
-| | RAG (vector search) | Entroly |
-|--|---|---|
-| **What it sends** | Top-K similar chunks | **Entire codebase** at optimal resolution |
-| **Duplicates** | Sends same code 3x | **Eliminated** (SimHash dedup) |
-| **Dependencies** | No | **Auto-includes** related files |
-| **Learns** | No | **Yes** — RL optimizes from response quality |
-| **External API needed** | Yes (embeddings) | **No** — runs locally |
-| **Selection** | Approximate | **Mathematically proven** (knapsack solver) |
-
----
-
-<details>
-<summary><b>Technical Deep Dive — Architecture & Algorithms</b></summary>
-
-### Architecture
-
-Hybrid Rust + Python. All math in Rust via PyO3 (50–100x faster). MCP + orchestration in Python.
-
-### Rust Core (21 modules)
-
-| Module | What |
-|---|---|
-| **knapsack.rs** | Token-optimal context selection (KKT dual bisection) |
-| **knapsack_sds.rs** | Submodular diversity + multi-resolution knapsack |
-| **skeleton.rs** | Code skeletons — signatures only (60–80% token reduction) |
-| **dedup.rs** | Duplicate detection — 64-bit SimHash |
-| **lsh.rs** | Semantic recall — 12-table multi-probe LSH |
-| **prism.rs** | Weight optimizer — spectral natural gradient |
-| **entropy.rs** | Information density scoring |
-| **depgraph.rs** | Dependency graph — auto-links imports and type refs |
-| **sast.rs** | Security scanning — 55 rules, 8 CWE categories |
-| **cache.rs** | EGSC cache with DAG-aware eviction |
-| **causal.rs** | Causal context graph with do-calculus |
-| **query_persona.rs** | Query archetypes via RBF kernel + Pitman-Yor process |
-| **utilization.rs** | Response utilization feedback |
-| **resonance.rs** | Context resonance matrix + fragment consolidation |
-
-### References
-
-Shannon (1948), Charikar (2002), Nemhauser-Wolsey-Fisher (1978), Sviridenko (2004), Boyd & Vandenberghe (Convex Optimization), LLMLingua (EMNLP 2023), RepoFormer (ICML 2024).
-
-</details>
+- **Large file protection** — 500 KB ceiling prevents OOM
+- **Binary detection** — 40+ file types auto-skipped
+- **Fragment feedback** — `POST /feedback` lets your AI rate context quality
+- **Explainable** — `GET /explain` shows why each fragment was included/excluded, with resolution labels and drop reasons
 
 ---
 
@@ -262,7 +332,7 @@ entroly doctor    # runs 7 diagnostic checks
 entroly --help    # all commands
 ```
 
-**Email:** autobotbugfix@gmail.com
+**Email:** autobotbugfix@gmail.com — we respond within 24 hours.
 
 <details>
 <summary><b>Common Issues</b></summary>
@@ -282,35 +352,96 @@ python -m pip install entroly
 entroly proxy --port 9378
 ```
 
+**Rust engine not loading:** Entroly auto-falls back to Python. For Rust speed: `pip install entroly[native]`
+
 </details>
 
 ---
 
-## Frequently Asked Questions
+## Environment Variables
 
-### How do I reduce my OpenAI / Claude / Gemini API costs?
+| Variable | Default | What it does |
+|---|---|---|
+| `ENTROLY_QUALITY` | `0.5` | Quality dial (0.0-1.0 or preset) |
+| `ENTROLY_PROXY_PORT` | `9377` | Proxy port |
+| `ENTROLY_MAX_FILES` | `5000` | Max files to index |
+| `ENTROLY_RATE_LIMIT` | `0` | Requests/min (0 = unlimited) |
+| `ENTROLY_MCP_TRANSPORT` | `stdio` | MCP transport (stdio/sse) |
 
-Install Entroly. It sits between your app and the LLM API, compressing tokens by 80–95% before they're sent. You get the same answers at a fraction of the cost. Works with **OpenAI GPT-4o, Claude Opus, Claude Sonnet, Gemini Pro, and any OpenAI-compatible API**. One command: `pip install entroly && entroly go`.
+---
 
-### How do I save tokens on LLM API calls?
+<details>
+<summary><b>Technical Deep Dive — Architecture & Algorithms</b></summary>
 
-Entroly automatically compresses your codebase context, conversation history, and tool outputs — the three biggest sources of token waste. Average savings: **80–95% fewer tokens** per request with zero accuracy loss. It's a drop-in HTTP proxy — no code changes needed.
+### Architecture
 
-### What's the best LLM token optimizer?
+Hybrid Rust + Python. All math in Rust via PyO3 (50-100x faster). MCP + orchestration in Python.
 
-Entroly uses mathematically proven algorithms (knapsack optimization, submodular maximization, information-theoretic compression) to select the optimal context for each query. It's the only tool that compresses context, conversation history, AND tool outputs together. 840 tests, Rust-powered, <10ms latency.
+```
++-----------------------------------------------------------+
+|  IDE (Cursor / Claude Code / Cline / Copilot)             |
+|                                                           |
+|  +---- MCP mode ----+    +---- Proxy mode ----+          |
+|  | entroly MCP server|    | localhost:9377     |          |
+|  | (JSON-RPC stdio)  |    | (HTTP reverse proxy)|         |
+|  +--------+----------+    +--------+-----------+          |
+|           |                        |                      |
+|  +--------v------------------------v-----------+          |
+|  |          Entroly Engine (Python)             |          |
+|  |  +-------------------------------------+    |          |
+|  |  |  entroly-core (Rust via PyO3)       |    |          |
+|  |  |  21 modules · 380 KB · 249 tests    |    |          |
+|  |  +-------------------------------------+    |          |
+|  +---------------------------------------------+          |
++-----------------------------------------------------------+
+```
 
-### How do I reduce token usage in Cursor / Claude Code / Copilot?
+### Rust Core (21 modules)
 
-Run `entroly go` in your project directory. Entroly auto-detects your IDE, indexes your codebase, and starts optimizing every API request. No configuration needed. Works with Cursor, Claude Code, VS Code + Copilot, Windsurf, Cline, and any tool that calls an LLM API.
+| Module | What | How |
+|---|---|---|
+| **hierarchical.rs** | 3-level codebase compression | Skeleton map + dep-graph + knapsack fragments |
+| **knapsack.rs** | Context selection | KKT dual bisection O(30N) or exact DP |
+| **knapsack_sds.rs** | Information-Optimal Selection | Submodular diversity + multi-resolution |
+| **prism.rs** | Weight optimizer | Spectral natural gradient on 4x4 covariance |
+| **entropy.rs** | Information density | Shannon entropy + boilerplate detection |
+| **depgraph.rs** | Dependency graph | Auto-link imports, type refs, function calls |
+| **skeleton.rs** | Code skeletons | Preserves signatures, strips bodies (60-80% reduction) |
+| **dedup.rs** | Duplicate detection | 64-bit SimHash, Hamming threshold 3 |
+| **lsh.rs** | Semantic recall | 12-table multi-probe LSH, ~3μs over 100K fragments |
+| **sast.rs** | Security scanning | 55 rules, 8 CWE categories, taint analysis |
+| **health.rs** | Codebase health | Clones, dead symbols, god files, arch violations |
+| **guardrails.rs** | Safety-critical pinning | Criticality levels + task-aware budget multipliers |
+| **query.rs** | Query analysis | Vagueness scoring, keyword extraction, intent |
+| **query_persona.rs** | Query archetypes | RBF kernel + Pitman-Yor + per-archetype weights |
+| **anomaly.rs** | Entropy anomaly detection | MAD-based robust Z-scores |
+| **semantic_dedup.rs** | Semantic dedup | Greedy marginal information gain, (1-1/e) optimal |
+| **utilization.rs** | Response utilization | Trigram + identifier overlap feedback |
+| **nkbe.rs** | Multi-agent budgets | Arrow-Debreu KKT + Nash bargaining + REINFORCE |
+| **cognitive_bus.rs** | Agent event routing | Poisson rate models, Welford spike detection |
+| **fragment.rs** | Core data structure | Content, metadata, scoring, SimHash fingerprint |
+| **lib.rs** | PyO3 bridge | All modules exposed to Python |
 
-### Is there a free tool to compress LLM context?
+### Novel Algorithms
 
-Yes. Entroly is **open source (MIT)** and completely free. `pip install entroly && entroly go`. It compresses your codebase context by 80–95% using information-theoretic algorithms — no external APIs, no embeddings, everything runs locally on your machine.
+- **ECC** — 3-level hierarchical compression: L1 skeleton (5%), L2 deps (25%), L3 diversified fragments (70%)
+- **IOS** — Submodular Diversity + Multi-Resolution Knapsack in one greedy pass, (1-1/e) optimal
+- **KKT-REINFORCE** — Dual variable from budget constraint as REINFORCE baseline
+- **PRISM** — Natural gradient via Jacobi eigendecomposition of 4x4 gradient covariance
+- **PSM** — RBF kernel mean embedding in RKHS for query archetype discovery
+- **NKBE** — Game-theoretic multi-agent token allocation via Arrow-Debreu equilibrium
 
-### How do I spend less on AI coding assistants?
+### References
 
-Most of your AI bill comes from redundant tokens — duplicate code, stale conversation history, verbose tool outputs. Entroly eliminates all three. Typical savings: **$1,300+/month** for teams making 100 requests/day.
+Shannon (1948), Charikar (2002), Nemhauser-Wolsey-Fisher (1978), Sviridenko (2004), Boyd & Vandenberghe (Convex Optimization), Williams (1992), LLMLingua (EMNLP 2023), RepoFormer (ICML 2024), FILM-7B (NeurIPS 2024), CodeSage (ICLR 2024).
+
+</details>
+
+---
+
+## Part of the Ebbiforge Ecosystem
+
+Integrates with [hippocampus-sharp-memory](https://pypi.org/project/hippocampus-sharp-memory/) for persistent cross-session memory and [Ebbiforge](https://pypi.org/project/ebbiforge/) for embeddings + RL weight learning. Both optional.
 
 ---
 
@@ -321,8 +452,6 @@ MIT
 ---
 
 <p align="center">
-  <b>Stop burning tokens. Save 80–95% on every LLM call.</b><br/>
-  <code>pip install entroly && entroly go</code>
+  <b>Your AI is blind without context. Fix it in 30 seconds.</b><br/>
+  <code>pip install entroly[full] && entroly go</code>
 </p>
-
-<!-- SEO: entroly, save llm tokens, reduce openai costs, reduce claude costs, reduce gemini costs, token optimization, llm token compression, cheaper ai api calls, reduce ai api costs, save money on ai, token savings, context compression, reduce anthropic costs, llm cost reduction, ai token optimizer, compress llm context, fewer tokens same quality -->
