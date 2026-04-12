@@ -60,6 +60,11 @@ _MODEL_COSTS_PER_1K = {
 
 _DEFAULT_COST_PER_1K = 0.003  # Conservative default
 
+# ── Evolution Budget Guardrail ──────────────────────────────────────────
+# The evolution daemon may only spend τ% of lifetime savings on LLM synthesis.
+# Budget(t) = τ · S(t) − C_spent(t)  →  guaranteed token-negative.
+EVOLUTION_TAX_RATE = 0.05  # 5% of lifetime savings
+
 
 def estimate_cost(tokens_saved: int, model: str = "") -> float:
     """Estimate USD saved for a given number of tokens and model."""
@@ -136,7 +141,7 @@ class ValueTracker:
     @staticmethod
     def _defaults() -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": 2,
             "lifetime": {
                 "tokens_saved": 0,
                 "cost_saved_usd": 0.0,
@@ -145,6 +150,10 @@ class ValueTracker:
                 "duplicates_caught": 0,
                 "first_seen": time.time(),
                 "last_seen": time.time(),
+                # Evolution budget accounting (Pillar 1)
+                "evolution_spent_usd": 0.0,
+                "evolution_attempts": 0,
+                "evolution_successes": 0,
             },
             "daily": {},    # "YYYY-MM-DD" -> {tokens_saved, cost_saved, requests}
             "weekly": {},   # "YYYY-WNN" -> {tokens_saved, cost_saved, requests}
@@ -326,6 +335,90 @@ class ValueTracker:
             "lifetime": self.get_lifetime(),
             "session": self.get_session(),
         }
+
+    # ── Evolution Budget Guardrail (Pillar 1) ─────────────────────────────
+
+    def get_evolution_budget(self) -> dict[str, Any]:
+        """Return the available evolution budget.
+
+        Budget = τ · lifetime_savings − total_spent
+        The system can only spend τ% (5%) of its lifetime savings on
+        LLM-based skill synthesis. This guarantees token-negativity.
+
+        Returns:
+            {
+                "available_usd": float,   # remaining evolution budget
+                "total_earned_usd": float, # τ · lifetime savings
+                "total_spent_usd": float,  # already debited
+                "can_evolve": bool,        # available > 0
+                "tax_rate": float,         # τ
+            }
+        """
+        with self._lock:
+            lt = self._data.get("lifetime", {})
+            lifetime_saved = lt.get("cost_saved_usd", 0.0)
+            total_spent = lt.get("evolution_spent_usd", 0.0)
+            total_earned = lifetime_saved * EVOLUTION_TAX_RATE
+            available = max(0.0, total_earned - total_spent)
+
+            return {
+                "available_usd": round(available, 6),
+                "total_earned_usd": round(total_earned, 6),
+                "total_spent_usd": round(total_spent, 6),
+                "can_evolve": available > 0.001,  # > 0.1 cent floor
+                "tax_rate": EVOLUTION_TAX_RATE,
+            }
+
+    def record_evolution_spend(
+        self,
+        cost_usd: float,
+        success: bool = False,
+    ) -> dict[str, Any]:
+        """Debit an evolution attempt from the budget.
+
+        Called by the evolution daemon after an LLM-based synthesis attempt.
+        Only succeeds if the budget allows it (fail-safe: checks again here).
+
+        Args:
+            cost_usd: Cost of this evolution attempt.
+            success: Whether the synthesized skill passed benchmarks.
+
+        Returns:
+            {"status": "recorded" | "rejected", "remaining_usd": float}
+        """
+        with self._lock:
+            lt = self._data.get("lifetime", {})
+            lifetime_saved = lt.get("cost_saved_usd", 0.0)
+            current_spent = lt.get("evolution_spent_usd", 0.0)
+            total_earned = lifetime_saved * EVOLUTION_TAX_RATE
+            available = total_earned - current_spent
+
+            if cost_usd > available + 0.001:  # 0.1 cent tolerance
+                logger.warning(
+                    "Evolution spend rejected: $%.4f requested, $%.4f available",
+                    cost_usd, available,
+                )
+                return {
+                    "status": "rejected",
+                    "remaining_usd": round(max(0.0, available), 6),
+                }
+
+            lt["evolution_spent_usd"] = round(current_spent + cost_usd, 6)
+            lt["evolution_attempts"] = lt.get("evolution_attempts", 0) + 1
+            if success:
+                lt["evolution_successes"] = lt.get("evolution_successes", 0) + 1
+
+            self._save()
+
+            remaining = max(0.0, total_earned - lt["evolution_spent_usd"])
+            logger.info(
+                "Evolution spend recorded: $%.4f (remaining: $%.4f, success=%s)",
+                cost_usd, remaining, success,
+            )
+            return {
+                "status": "recorded",
+                "remaining_usd": round(remaining, 6),
+            }
 
 
 # ── Module-level singleton (lazy-init) ───────────────────────────────────

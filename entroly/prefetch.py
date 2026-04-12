@@ -38,6 +38,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -205,6 +206,12 @@ class PrefetchEngine:
         # Recent access history for learning
         self._recent_accesses: list[tuple[str, int]] = []  # (path, turn)
 
+        # Self-improvement: hit rate tracking
+        self._pending_predictions: dict[str, set[str]] = {}
+        self._hits: int = 0
+        self._total_predictions: int = 0
+        self._component_bus: Any = None
+
     def record_access(self, file_path: str, turn: int) -> None:
         """
         Record that a file was accessed at a given turn.
@@ -283,14 +290,77 @@ class PrefetchEngine:
 
         # Sort by confidence and limit results
         predictions.sort(key=lambda p: p.confidence, reverse=True)
+
+        # Track predictions for hit rate self-improvement
+        self._pending_predictions[file_path] = {
+            p.path for p in predictions[:max_results]
+        }
+
         return predictions[:max_results]
+
+    # ── Self-Improvement: Hit Rate Tracking & Adaptive Window ──────
+
+    def record_actual_access(self, file_path: str) -> None:
+        """Record that a file was actually accessed by the agent.
+
+        Checks if this file was predicted by any pending prediction set.
+        Computes hit rate and auto-adjusts co_access_window.
+        """
+        for source, predicted_paths in list(self._pending_predictions.items()):
+            if file_path in predicted_paths:
+                self._hits += 1
+                predicted_paths.discard(file_path)
+            # After enough accesses, record misses for remaining predictions
+        self._total_predictions += 1
+
+        # Self-tune every 20 accesses
+        if self._total_predictions % 20 == 0 and self._total_predictions > 0:
+            self._self_tune_window()
+
+    def _self_tune_window(self) -> None:
+        """Auto-adjust co_access_window based on hit rate.
+
+        Formula: if hit_rate > 0.8 → widen window (capture more co-accesses)
+                 if hit_rate < 0.4 → narrow window (reduce noise)
+                 otherwise → stable
+
+        This is a bandit-style exploration/exploitation trade-off
+        on the prediction radius.
+        """
+        if self._total_predictions < 5:
+            return
+
+        hit_rate = self._hits / max(self._total_predictions, 1)
+
+        if hit_rate > 0.80 and self.co_access_window < 15:
+            self.co_access_window += 1
+        elif hit_rate < 0.40 and self.co_access_window > 2:
+            self.co_access_window -= 1
+
+        # Log to component bus if available
+        if self._component_bus:
+            self._component_bus.log(
+                component="prefetch",
+                metric="hit_rate",
+                value=hit_rate,
+                params={"co_access_window": float(self.co_access_window)},
+            )
+
+    def set_component_bus(self, bus: Any) -> None:
+        """Attach a ComponentFeedbackBus for persistent metric logging."""
+        self._component_bus = bus
 
     def stats(self) -> dict:
         total_pairs = sum(
             len(targets) for targets in self._co_access.values()
         )
+        hit_rate = self._hits / max(self._total_predictions, 1)
         return {
             "tracked_files": len(self._co_access),
             "co_access_pairs": total_pairs // 2,  # Undirected
             "recent_accesses": len(self._recent_accesses),
+            "co_access_window": self.co_access_window,
+            "prediction_hits": self._hits,
+            "total_predictions": self._total_predictions,
+            "hit_rate": round(hit_rate, 4),
         }

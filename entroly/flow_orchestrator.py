@@ -79,6 +79,7 @@ class FlowOrchestrator:
         self._change_pipe = change_pipe
         self._evolution = evolution
         self._source_dir = source_dir or "."
+        self._component_bus: Any = None
 
     def execute(
         self,
@@ -114,6 +115,20 @@ class FlowOrchestrator:
         result = executor(query, decision, diff_text)
         result.duration_ms = (time.time() - t0) * 1000
         result.metadata["routing"] = decision.to_dict()
+
+        # ── Self-improvement: feed outcome back to router ──────────
+        # This closes the feedback loop: every flow execution tells the
+        # router whether it succeeded, enabling adaptive threshold tuning.
+        flow_success = result.status == "completed" and len(result.beliefs_used) > 0
+        try:
+            self._router.record_outcome(
+                flow=result.flow,
+                success=flow_success,
+                confidence=decision.coverage.confidence,
+                component_bus=self._component_bus,
+            )
+        except Exception:
+            pass  # Never fail the flow for self-improvement
 
         logger.info(
             f"FlowOrchestrator: {result.flow} completed in {result.duration_ms:.0f}ms | "
@@ -344,15 +359,28 @@ class FlowOrchestrator:
         """â‘¤ Self-Improvement: Misses â†’ Verification â†’ Evolution â†’ Belief"""
         result = FlowResult(flow="self_improvement", status="completed")
 
-        # Step 1: Record the miss
+        # Step 1: Record the miss (with source files for structural synthesis)
         result.steps_completed.append("miss_recording")
         entity_key = self._router._extract_entity_key(query)
+
+        # Extract source files from compiled beliefs for Pillar 2 structural synthesis
+        source_files: list[str] = []
+        try:
+            beliefs = self._find_relevant_beliefs(query)
+            for b in beliefs:
+                src = b.get("source_file", b.get("source", ""))
+                if src and src not in source_files:
+                    source_files.append(src)
+        except Exception:
+            pass
+
         miss_result = self._evolution.record_miss(
             query=query,
             entity_key=entity_key,
             intent=decision.intent.value,
             flow_attempted=decision.flow.value,
             reason=decision.reasoning,
+            source_files=source_files,
         )
 
         # Step 2: Run verification to understand what's broken

@@ -35,6 +35,8 @@ class MissRecord:
     timestamp: float = field(default_factory=time.time)
     flow_attempted: str = ""
     reason: str = ""
+    # Source files relevant to this miss (for structural synthesis)
+    source_files: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +46,7 @@ class MissRecord:
             "timestamp": self.timestamp,
             "flow_attempted": self.flow_attempted,
             "reason": self.reason,
+            "source_files": self.source_files,
             "iso_time": datetime.fromtimestamp(
                 self.timestamp, tz=timezone.utc
             ).isoformat(),
@@ -88,6 +91,7 @@ class EvolutionLogger:
         intent: str = "",
         flow_attempted: str = "",
         reason: str = "",
+        source_files: list[str] | None = None,
     ) -> dict[str, Any]:
         """Record a miss and check if it triggers a skill gap."""
         record = MissRecord(
@@ -96,6 +100,7 @@ class EvolutionLogger:
             intent=intent,
             flow_attempted=flow_attempted,
             reason=reason,
+            source_files=source_files or [],
         )
         self._misses.append(record)
         self._entity_misses[entity_key] += 1
@@ -135,6 +140,35 @@ class EvolutionLogger:
                 )[:10]
             ),
         }
+
+    def get_pending_gaps(self) -> list[dict[str, Any]]:
+        """Return all reported skill gaps with their context.
+
+        Used by the EvolutionDaemon to iterate over gaps that need
+        structural synthesis or LLM-based skill creation.
+        """
+        results = []
+        for entity_key in self._reported_gaps:
+            related = [m for m in self._misses if m.entity_key == entity_key]
+            source_files: list[str] = []
+            for m in related:
+                source_files.extend(m.source_files)
+            # Deduplicate preserving order
+            seen: set[str] = set()
+            unique_sources = []
+            for s in source_files:
+                if s not in seen:
+                    seen.add(s)
+                    unique_sources.append(s)
+
+            results.append({
+                "entity_key": entity_key,
+                "miss_count": self._entity_misses[entity_key],
+                "queries": [m.query for m in related[-10:]],
+                "intents": list(set(m.intent for m in related if m.intent)),
+                "source_files": unique_sources,
+            })
+        return results
 
     def _write_skill_gap(self, entity_key: str, miss_count: int) -> dict[str, Any]:
         """Write a skill gap report to vault/evolution/."""

@@ -314,6 +314,98 @@ class EpistemicRouter:
         logger.info(f"EpistemicRouter: miss recorded for '{key}' "
                      f"(count={self._miss_counts[key]})")
 
+    def record_outcome(
+        self,
+        flow: str,
+        success: bool,
+        confidence: float = 0.0,
+        component_bus: Any = None,
+    ) -> None:
+        """Record the outcome of a routed flow for self-improvement.
+
+        After each flow execution, this logs the result so the router
+        can adaptively tune its thresholds. Every 10 episodes, the
+        router self-tunes toward flows with higher success rates.
+
+        Zero token cost — pure local O(1) computation.
+
+        Args:
+            flow: Flow name (e.g., 'fast_answer', 'compile_on_demand')
+            success: Whether the flow produced a satisfactory result
+            confidence: Confidence of the result (0.0-1.0)
+            component_bus: Optional ComponentFeedbackBus for persistent logging
+        """
+        if not hasattr(self, "_flow_outcomes"):
+            self._flow_outcomes: dict[str, list[bool]] = {}
+            self._total_outcomes = 0
+
+        self._flow_outcomes.setdefault(flow, []).append(success)
+        self._total_outcomes = getattr(self, "_total_outcomes", 0) + 1
+
+        # Log to component bus for cross-session persistence
+        if component_bus:
+            component_bus.log(
+                component="epistemic_router",
+                metric="flow_success",
+                value=1.0 if success else 0.0,
+                params={"flow": flow, "confidence": confidence},
+            )
+
+        # Self-tune every 10 episodes
+        if self._total_outcomes % 10 == 0:
+            self._self_tune()
+
+    def _self_tune(self) -> None:
+        """Adaptive threshold tuning from flow outcome history.
+
+        Adjusts routing parameters based on which flows succeed most:
+        - If fast_answer has high success → lower min_confidence (trust more)
+        - If compile_on_demand is frequently needed → lower freshness_hours
+        - If self_improvement triggers too often → raise miss_threshold
+        - If self_improvement triggers too rarely → lower miss_threshold
+
+        Mathematical basis: Online gradient-free optimization (SPSA).
+        θ_{t+1} = θ_t + α · sign(success_rate - target_rate) · step
+        """
+        if not hasattr(self, "_flow_outcomes"):
+            return
+
+        for flow, outcomes in self._flow_outcomes.items():
+            if len(outcomes) < 3:
+                continue
+            recent = outcomes[-10:]  # Last 10 outcomes
+            success_rate = sum(recent) / len(recent)
+
+            if flow == "fast_answer":
+                # High success → trust beliefs more (lower confidence threshold)
+                # Low success → require higher confidence before fast-answering
+                if success_rate > 0.8:
+                    self._min_confidence = max(0.3, self._min_confidence - 0.02)
+                elif success_rate < 0.5:
+                    self._min_confidence = min(0.9, self._min_confidence + 0.02)
+
+            elif flow == "compile_on_demand":
+                # Frequently triggered → beliefs are going stale faster
+                # Reduce freshness window to proactively recompile
+                if success_rate < 0.6:
+                    self._freshness_hours = max(4.0, self._freshness_hours - 1.0)
+                elif success_rate > 0.9:
+                    self._freshness_hours = min(72.0, self._freshness_hours + 1.0)
+
+            elif flow == "self_improvement":
+                # High success → miss threshold is well calibrated
+                # Low success → too many false positives, raise threshold
+                if success_rate < 0.4:
+                    self._miss_threshold = min(10, self._miss_threshold + 1)
+                elif success_rate > 0.8 and self._miss_threshold > 2:
+                    self._miss_threshold = max(2, self._miss_threshold - 1)
+
+        logger.debug(
+            f"EpistemicRouter self-tune: miss_threshold={self._miss_threshold}, "
+            f"freshness_hours={self._freshness_hours:.1f}, "
+            f"min_confidence={self._min_confidence:.2f}"
+        )
+
     def stats(self) -> dict[str, Any]:
         """Return routing statistics for observability."""
         flow_counts: dict[str, int] = {}

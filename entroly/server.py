@@ -35,7 +35,8 @@ from pathlib import Path
 from typing import Any
 
 from .adaptive_pruner import EntrolyPruner, FragmentGuard
-from .autotune import FeedbackJournal, TaskProfileOptimizer
+from .autotune import ComponentFeedbackBus, DreamingLoop, FeedbackJournal, TaskProfileOptimizer
+from .cache_aligner import CacheAligner
 from .belief_compiler import BeliefCompiler
 from .change_listener import WorkspaceChangeListener
 from .change_pipeline import ChangePipeline
@@ -44,6 +45,7 @@ from .config import EntrolyConfig
 from .epistemic_router import (
     EpistemicRouter,
 )
+from .evolution_daemon import EvolutionDaemon
 from .evolution_logger import EvolutionLogger
 from .flow_orchestrator import FlowOrchestrator
 from .multimodal import ingest_diagram as _mm_diagram
@@ -55,6 +57,7 @@ from .proxy_transform import calibrated_token_count as _calibrated_token_count
 from .query_refiner import QueryRefiner
 from .repo_map import build_repo_map, render_repo_map_markdown
 from .skill_engine import SkillEngine
+from .value_tracker import ValueTracker, get_tracker
 from .vault import (
     BeliefArtifact,
     VaultConfig,
@@ -1215,6 +1218,12 @@ def create_mcp_server():
         engine._turn_counter += 1
         engine.advance_turn()  # One turn per optimization request
 
+        # ── Signal activity to Evolution Daemon (gates dreaming) ──
+        try:
+            _evolution_daemon.record_activity()
+        except Exception:
+            pass
+
         # ── Vault Belief Bridge: lazy load on first optimize ──
         # Scan vault/beliefs/*.md, match to ingested fragments by basename,
         # and attach belief content so IOS can select at Belief resolution.
@@ -1241,6 +1250,19 @@ def create_mcp_server():
         task_type, task_confidence = _task_profiles.apply_to_engine(engine, query)
 
         result = engine.optimize_context(token_budget, query)
+
+        # ── Record savings to ValueTracker (funds evolution budget) ──
+        tokens_saved = result.get("tokens_saved", 0)
+        if tokens_saved > 0:
+            try:
+                _value_tracker.record(
+                    tokens_saved=tokens_saved,
+                    model=result.get("model", ""),
+                    duplicates=result.get("duplicates_caught", 0),
+                    optimized=True,
+                )
+            except Exception:
+                pass  # Never fail the optimization for tracking
 
         # Capture optimization context for feedback attribution
         _last_opt_ctx = {
@@ -2004,6 +2026,30 @@ def create_mcp_server():
         evolution=_py_evolution,
         source_dir=_source_dir,
     )
+
+    # ── Evolution Daemon: autonomous self-improvement (3 pillars) ──
+    # Pillar 1: ValueTracker funds evolution via "tax on savings"
+    # Pillar 2: StructuralSynthesizer creates tools at $0 (CPU-only)
+    # Pillar 3: DreamingLoop optimizes weights during idle time
+    _value_tracker = get_tracker()
+    _cache_aligner = CacheAligner(similarity_threshold=0.90)
+
+    # Universal self-improvement bus — every component logs metrics here
+    _component_bus = ComponentFeedbackBus(_checkpoint_dir)
+
+    _evolution_daemon = EvolutionDaemon(
+        vault=_vault_mgr,
+        evolution_logger=_py_evolution,
+        value_tracker=_value_tracker,
+        feedback_journal=_feedback_journal,
+        rust_engine=engine._rust if engine._use_rust else None,
+    )
+    _evolution_daemon.start()  # non-blocking background thread
+    logger.info("EvolutionDaemon: autonomous self-improvement started")
+
+    # Wire ComponentFeedbackBus to all self-improving components
+    _py_orchestrator._component_bus = _component_bus
+    engine._prefetch.set_component_bus(_component_bus)
 
     _py_workspace_listener = WorkspaceChangeListener(
         vault=_vault_mgr,
