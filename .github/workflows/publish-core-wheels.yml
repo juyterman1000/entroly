@@ -14,7 +14,7 @@ jobs:
     name: Linux (x86_64)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -30,7 +30,7 @@ jobs:
     name: Linux (aarch64)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -47,7 +47,7 @@ jobs:
     name: macOS (universal2)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -65,7 +65,7 @@ jobs:
     name: Windows (x86_64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: PyO3/maturin-action@v1
         with:
           command: build
