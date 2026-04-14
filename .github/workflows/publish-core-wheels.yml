@@ -81,7 +81,7 @@ jobs:
     name: Publish to PyPI
     needs: [linux-x86_64, linux-aarch64, macos-universal, windows]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || github.event_name == 'workflow_dispatch'
     permissions:
       id-token: write
     steps:
