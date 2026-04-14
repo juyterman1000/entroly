@@ -63,6 +63,16 @@ function cmdOptimize(args) {
   const budget = parseInt(args[0] || '128000', 10);
   const query = args.slice(1).join(' ') || '';
 
+  if (!query) {
+    console.error(`${C.YELLOW || ''}! Missing task. Usage: entroly-wasm optimize <budget> "<task>"${C.RESET || ''}`);
+    console.error(`  Example: entroly-wasm optimize 8000 "fix the auth bug"`);
+    process.exit(2);
+  }
+  if (engine.fragment_count() < 2) {
+    console.error(`${C.YELLOW || ''}! Only ${engine.fragment_count()} fragment indexed — cd into a real repo before optimizing.${C.RESET || ''}`);
+    process.exit(2);
+  }
+
   engine.advance_turn();
   const result = engine.optimize(budget, query);
 

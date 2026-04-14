@@ -3150,6 +3150,7 @@ def main():
         "finetune": cmd_finetune,
         "wrap": cmd_wrap,
         "learn": cmd_learn,
+        "share": cmd_share,
     }
 
     handler = _dispatch.get(args.command)
