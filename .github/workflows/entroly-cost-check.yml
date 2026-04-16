@@ -1,0 +1,104 @@
+name: Entroly Cost Check
+on: [pull_request]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  cost-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Analyze PR Token Cost
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const CHARS_PER_TOKEN = 4;
+            const COMPRESSION_RATIO = 0.07;
+            const COST_PER_MILLION = 3.00;
+
+            const CODE_EXTS = new Set([
+              '.js','.ts','.jsx','.tsx','.py','.rs','.go','.java','.c','.cpp',
+              '.h','.cs','.rb','.php','.swift','.kt','.vue','.svelte','.sql',
+              '.sh','.yaml','.yml','.json','.toml','.html','.css','.md'
+            ]);
+
+            function isCode(f) {
+              const ext = f.slice(f.lastIndexOf('.')).toLowerCase();
+              return CODE_EXTS.has(ext);
+            }
+
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 300
+            });
+
+            const codeFiles = files.filter(f => isCode(f.filename));
+            if (codeFiles.length === 0) {
+              console.log('No code files changed — skipping.');
+              return;
+            }
+
+            let totalChars = 0;
+            for (const f of codeFiles) {
+              totalChars += (f.patch || '').length * 3;
+            }
+
+            const fullCtx = totalChars * 12;
+            const tokensWithout = Math.ceil(fullCtx / CHARS_PER_TOKEN);
+            const tokensWith = Math.ceil(tokensWithout * COMPRESSION_RATIO);
+            const costWithout = (tokensWithout / 1e6) * COST_PER_MILLION;
+            const costWith = (tokensWith / 1e6) * COST_PER_MILLION;
+            const saved = costWithout - costWith;
+            const pct = Math.round((1 - COMPRESSION_RATIO) * 100);
+            const monthly = saved * 80;
+
+            const fmt = n => n.toLocaleString('en-US');
+            const usd = n => `$${n.toFixed(2)}`;
+
+            const body = [
+              `### 📊 Entroly Token Cost Analysis`,
+              ``,
+              `This PR touches **${codeFiles.length} code files**.`,
+              ``,
+              `| Metric | Without Entroly | With Entroly |`,
+              `|--------|:-:|:-:|`,
+              `| Context tokens | ${fmt(tokensWithout)} | ${fmt(tokensWith)} |`,
+              `| Estimated cost | ${usd(costWithout)} | ${usd(costWith)} |`,
+              `| **Savings** | — | **${pct}% (${usd(saved)})** |`,
+              ``,
+              `> 💡 **Monthly projection:** ${usd(monthly)}/mo saved (est. 80 PRs/mo).`,
+              ``,
+              `<sub>Powered by <a href="https://github.com/juyterman1000/entroly">Entroly</a> — the self-evolving context engine.</sub>`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number
+            });
+
+            const existing = comments.find(c =>
+              c.body && c.body.includes('Entroly Token Cost Analysis')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body
+              });
+            }
