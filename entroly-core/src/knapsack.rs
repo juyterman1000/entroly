@@ -30,11 +30,6 @@
 //! Exact 0/1 DP with budget quantization: O(N × Q), Q = 1000.
 //! Used when weights have converged (τ is at floor) for maximum precision.
 //!
-//! References:
-//!   Kellerer, Pferschy, Pisinger. "Knapsack Problems" (Springer, 2004)
-//!   Williams. "Simple Statistical Gradient-Following Algorithms..." (1992)
-//!   Boyd & Vandenberghe. "Convex Optimization", §5.2 Lagrange duality (2004)
-
 use std::collections::HashMap;
 use crate::fragment::{compute_relevance, ContextFragment};
 

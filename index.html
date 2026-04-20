@@ -1,360 +1,691 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Entroly — Context Engineering Engine for AI Coding Agents</title>
-<meta name="description" content="Your AI sees 5% of your codebase and hallucinates the rest. Entroly fixes this — 95% fewer tokens, 100% code visibility. Works with Cursor, Claude Code, Copilot.">
-<meta name="keywords" content="context engineering, AI coding, token optimization, context window, Cursor, Claude Code, Copilot, Windsurf, AI hallucination, code context, LLM context, token savings, MCP server, AI developer tools, context compression">
-<meta property="og:title" content="Entroly — Stop AI Hallucinations. Give It Your Entire Codebase.">
-<meta property="og:description" content="Your AI sees 5% of your code and hallucinates the rest. Entroly compresses your entire codebase into the context window. 95% fewer tokens. 100% visibility. Zero config.">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://juyterman1000.github.io/entroly/">
-<meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Entroly — Context Engineering for AI Coding">
-<meta name="twitter:description" content="Your AI sees 5% of your codebase. Entroly shows it 100%. 95% fewer tokens.">
-<link rel="canonical" href="https://juyterman1000.github.io/entroly/">
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Entroly — Context Engineering Engine for AI Coding Agents</title>
+  <meta name="description"
+    content="Your AI sees 5% of your codebase and hallucinates the rest. Entroly fixes this — 95% fewer tokens, 100% code visibility. Works with Cursor, Claude Code, Copilot.">
+  <meta name="keywords"
+    content="context engineering, AI coding, token optimization, context window, Cursor, Claude Code, Copilot, Windsurf, AI hallucination, code context, LLM context, token savings, MCP server, AI developer tools, context compression">
+  <meta property="og:title" content="Entroly — Stop AI Hallucinations. Give It Your Entire Codebase.">
+  <meta property="og:description"
+    content="Your AI sees 5% of your code and hallucinates the rest. Entroly compresses your entire codebase into the context window. 95% fewer tokens. 100% visibility. Zero config.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Entroly — Context Engineering for AI Coding">
+  <meta name="twitter:description" content="Your AI sees 5% of your codebase. Entroly shows it 100%. 95% fewer tokens.">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
-:root {
-  --bg: #050508;
-  --surface: #0e0e15;
-  --border: rgba(255, 255, 255, 0.08);
-  --text: #f8fafc;
-  --muted: #94a3b8;
-  --accent: #818cf8;
-  --accent-glow: rgba(129, 140, 248, 0.4);
-  --green: #4ade80;
-  --red: #f87171;
-  --purple: #c084fc;
-}
+    :root {
+      --bg: #050508;
+      --surface: #0e0e15;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #818cf8;
+      --accent-glow: rgba(129, 140, 248, 0.4);
+      --green: #4ade80;
+      --red: #f87171;
+      --purple: #c084fc;
+    }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Inter', system-ui, sans-serif;
-  line-height: 1.6;
-  overflow-x: hidden;
-  -webkit-font-smoothing: antialiased;
-}
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-h1, h2, h3, .logo { font-family: 'Outfit', sans-serif; }
+    html {
+      scroll-behavior: smooth;
+    }
 
-/* Grid Background */
-.bg-grid {
-  position: fixed;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: radial-gradient(ellipse at center, black, transparent 80%);
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0.4;
-}
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
 
-/* Nav */
-nav {
-  position: fixed;
-  top: 0; width: 100%; z-index: 100;
-  background: rgba(5, 5, 8, 0.7);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border);
-  height: 64px; display: flex; align-items: center; justify-content: center;
-}
-.nav-content {
-  width: 100%; max-width: 1200px; padding: 0 24px;
-  display: flex; align-items: center; justify-content: space-between;
-}
-nav .logo { font-weight: 800; font-size: 22px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
-nav .logo img { width: 24px; height: 24px; }
-nav .links { display: flex; gap: 32px; font-size: 14px; font-weight: 500; }
-nav .links a { color: var(--muted); transition: color .2s; text-decoration: none; }
-nav .links a:hover { color: var(--text); }
+    h1,
+    h2,
+    h3,
+    .logo {
+      font-family: 'Outfit', sans-serif;
+    }
 
-/* Buttons */
-.btn {
-  padding: 10px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;
-  transition: all .2s; border: 1px solid transparent; cursor: pointer; text-decoration: none;
-  display: inline-flex; align-items: center; gap: 8px;
-}
-.btn-primary { background: var(--accent); color: white; box-shadow: 0 0 20px var(--accent-glow); }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 30px var(--accent-glow); }
-.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
-.btn-secondary:hover { background: #16161f; border-color: var(--muted); }
+    /* Grid Background */
+    .bg-grid {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: radial-gradient(var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: radial-gradient(ellipse at center, black, transparent 80%);
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0.4;
+    }
 
-/* Hero */
-.hero {
-  padding: 160px 24px 100px; display: flex; flex-direction: column; align-items: center; text-align: center;
-  position: relative; overflow: hidden;
-}
-.hero-glow {
-  position: absolute; top: -100px; left: 50%; transform: translateX(-50%);
-  width: 600px; height: 600px; background: radial-gradient(circle, rgba(129,140,248,0.15), transparent 70%);
-  z-index: -1;
-}
-.badge {
-  background: rgba(129, 140, 248, 0.1); border: 1px solid rgba(129, 140, 248, 0.2);
-  color: var(--accent); padding: 6px 14px; border-radius: 100px; font-size: 13px; font-weight: 600;
-  margin-bottom: 24px; text-transform: uppercase; letter-spacing: 1px;
-}
-.hero h1 {
-  font-size: clamp(2.5rem, 8vw, 4.8rem); font-weight: 800; line-height: 1; letter-spacing: -3px;
-  max-width: 900px; margin-bottom: 24px;
-}
-.hero h1 span {
-  background: linear-gradient(to right, var(--accent), var(--purple));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.hero p { font-size: clamp(1.1rem, 2vw, 1.4rem); color: var(--muted); max-width: 650px; margin-bottom: 40px; }
+    /* Nav */
+    nav {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 100;
+      background: rgba(5, 5, 8, 0.7);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-.install-cmd {
-  background: #000; border: 1px solid var(--border); border-radius: 12px;
-  padding: 16px 24px; font-family: 'JetBrains Mono', monospace; display: flex; gap: 16px;
-  align-items: center; transition: border-color .3s; cursor: pointer;
-}
-.install-cmd:hover { border-color: var(--accent); }
-.install-cmd .prompt { color: var(--muted); user-select: none; }
-.install-cmd .cmd { color: var(--green); }
-.install-cmd .copy { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .nav-content {
+      width: 100%;
+      max-width: 1200px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
 
-/* Dashboard Preview */
-.preview {
-  max-width: 1000px; width: 100%; margin: 60px auto 0;
-  border-radius: 16px; border: 1px solid var(--border);
-  background: var(--surface); box-shadow: 0 40px 100px rgba(0,0,0,0.5);
-  overflow: hidden; aspect-ratio: 16/9; position: relative;
-}
-.preview img { width: 100%; height: 100%; object-fit: cover; }
+    nav .logo {
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
-/* Stats */
-.stats-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;
-  max-width: 1200px; margin: 0 auto; padding: 0 24px 100px;
-}
-@media(max-width: 768px) { .stats-grid { grid-template-columns: 1fr 1fr; } }
-.stat-card { text-align: center; padding: 24px; }
-.stat-card .val { font-size: 42px; font-weight: 800; color: var(--text); font-family: 'Outfit', sans-serif; line-height: 1; }
-.stat-card .label { font-size: 14px; color: var(--muted); margin-top: 8px; }
+    nav .logo img {
+      width: 24px;
+      height: 24px;
+    }
 
-/* Section Layout */
-section { padding: 120px 24px; max-width: 1200px; margin: 0 auto; }
-.section-header { margin-bottom: 60px; }
-.section-header .tag { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 2px; font-size: 12px; margin-bottom: 12px; display: block; }
-.section-header h2 { font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; letter-spacing: -1.5px; }
+    nav .links {
+      display: flex;
+      gap: 32px;
+      font-size: 14px;
+      font-weight: 500;
+    }
 
-/* Comparison */
-.comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-@media(max-width: 768px) { .comp-grid { grid-template-columns: 1fr; } }
-.comp-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 40px;
-  position: relative; overflow: hidden;
-}
-.comp-card.good { border-color: rgba(74, 222, 128, 0.2); }
-.comp-card.good::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background: var(--green); }
-.comp-card.bad::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background: var(--red); }
-.comp-card h3 { font-size: 20px; margin-bottom: 24px; }
-.row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 15px; }
-.row .lbl { color: var(--muted); }
-.row .val { font-weight: 600; font-family: 'JetBrains Mono', monospace; }
-.comp-card.good .val { color: var(--green); }
-.comp-card.bad .val { color: var(--red); }
+    nav .links a {
+      color: var(--muted);
+      transition: color .2s;
+      text-decoration: none;
+    }
 
-/* Features */
-.feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-@media(max-width: 900px) { .feat-grid { grid-template-columns: 1fr 1fr; } }
-@media(max-width: 600px) { .feat-grid { grid-template-columns: 1fr; } }
-.feat-card {
-  background: var(--surface); border: 1px solid var(--border); padding: 32px; border-radius: 20px;
-  transition: all .3s;
-}
-.feat-card:hover { transform: translateY(-4px); border-color: var(--accent); background: #12121c; }
-.feat-card .icon { font-size: 32px; margin-bottom: 20px; }
-.feat-card h3 { font-size: 18px; margin-bottom: 12px; }
-.feat-card p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    nav .links a:hover {
+      color: var(--text);
+    }
 
-/* Final CTA */
-.cta-banner {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 24px;
-  padding: 80px 40px; text-align: center; margin: 100px 24px;
-  position: relative; overflow: hidden;
-}
-.cta-banner h2 { font-size: 40px; margin-bottom: 20px; }
-.cta-banner p { color: var(--muted); font-size: 18px; margin-bottom: 40px; }
+    /* Buttons */
+    .btn {
+      padding: 10px 24px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all .2s;
+      border: 1px solid transparent;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
 
-footer {
-  padding: 60px 24px; text-align: center; border-top: 1px solid var(--border);
-  color: var(--muted); font-size: 14px;
-}
-footer a { color: var(--text); margin: 0 12px; }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
 
-/* Animations */
-[data-reveal] { opacity: 0; transform: translateY(20px); transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
-[data-reveal].active { opacity: 1; transform: translateY(0); }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 30px var(--accent-glow);
+    }
 
-</style>
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #16161f;
+      border-color: var(--muted);
+    }
+
+    /* Hero */
+    .hero {
+      padding: 160px 24px 100px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-glow {
+      position: absolute;
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(129, 140, 248, 0.15), transparent 70%);
+      z-index: -1;
+    }
+
+    .badge {
+      background: rgba(129, 140, 248, 0.1);
+      border: 1px solid rgba(129, 140, 248, 0.2);
+      color: var(--accent);
+      padding: 6px 14px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 8vw, 4.8rem);
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -3px;
+      max-width: 900px;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(to right, var(--accent), var(--purple));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: clamp(1.1rem, 2vw, 1.4rem);
+      color: var(--muted);
+      max-width: 650px;
+      margin-bottom: 40px;
+    }
+
+    .install-cmd {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      transition: border-color .3s;
+      cursor: pointer;
+    }
+
+    .install-cmd:hover {
+      border-color: var(--accent);
+    }
+
+    .install-cmd .prompt {
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .install-cmd .cmd {
+      color: var(--green);
+    }
+
+    .install-cmd .copy {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Dashboard Preview */
+    .preview {
+      max-width: 1000px;
+      width: 100%;
+      margin: 60px auto 0;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      aspect-ratio: 16/9;
+      position: relative;
+    }
+
+    .preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px 100px;
+    }
+
+    @media(max-width: 768px) {
+      .stats-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .stat-card {
+      text-align: center;
+      padding: 24px;
+    }
+
+    .stat-card .val {
+      font-size: 42px;
+      font-weight: 800;
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      line-height: 1;
+    }
+
+    .stat-card .label {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    /* Section Layout */
+    section {
+      padding: 120px 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-header {
+      margin-bottom: 60px;
+    }
+
+    .section-header .tag {
+      color: var(--accent);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    .section-header h2 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+    }
+
+    /* Comparison */
+    .comp-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+
+    @media(max-width: 768px) {
+      .comp-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .comp-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .comp-card.good {
+      border-color: rgba(74, 222, 128, 0.2);
+    }
+
+    .comp-card.good::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--green);
+    }
+
+    .comp-card.bad::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--red);
+    }
+
+    .comp-card h3 {
+      font-size: 20px;
+      margin-bottom: 24px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      font-size: 15px;
+    }
+
+    .row .lbl {
+      color: var(--muted);
+    }
+
+    .row .val {
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .comp-card.good .val {
+      color: var(--green);
+    }
+
+    .comp-card.bad .val {
+      color: var(--red);
+    }
+
+    /* Features */
+    .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    @media(max-width: 900px) {
+      .feat-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media(max-width: 600px) {
+      .feat-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .feat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 32px;
+      border-radius: 20px;
+      transition: all .3s;
+    }
+
+    .feat-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+      background: #12121c;
+    }
+
+    .feat-card .icon {
+      font-size: 32px;
+      margin-bottom: 20px;
+    }
+
+    .feat-card h3 {
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+
+    .feat-card p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* Final CTA */
+    .cta-banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 80px 40px;
+      text-align: center;
+      margin: 100px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-banner h2 {
+      font-size: 40px;
+      margin-bottom: 20px;
+    }
+
+    .cta-banner p {
+      color: var(--muted);
+      font-size: 18px;
+      margin-bottom: 40px;
+    }
+
+    footer {
+      padding: 60px 24px;
+      text-align: center;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    footer a {
+      color: var(--text);
+      margin: 0 12px;
+    }
+
+    /* Animations */
+    [data-reveal] {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    [data-reveal].active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
 </head>
+
 <body>
 
-<div class="bg-grid"></div>
+  <div class="bg-grid"></div>
 
-<nav>
-  <div class="nav-content">
-    <div class="logo">
-      <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" alt="E">
-      entroly
+  <nav>
+    <div class="nav-content">
+      <div class="logo">
+        <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" alt="E">
+        entroly
+      </div>
+      <div class="links">
+        <a href="#why">Why Entroly</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/juyterman1000/entroly">GitHub</a>
+        <a href="#install" class="btn btn-primary" style="padding: 6px 16px;">Install</a>
+      </div>
     </div>
-    <div class="links">
-      <a href="#why">Why Entroly</a>
-      <a href="#how">How it works</a>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-glow"></div>
+    <div class="badge">Open Source Context Engineering</div>
+    <h1>Your AI is <span>Blind</span>.<br>Fix it in 30 seconds.</h1>
+    <p>Cursor, Claude Code, and Copilot only see 5% of your codebase. Entroly shows them everything — with <span
+        style="opacity:0.6;font-weight:400">70-</span><b style="color:var(--text);font-weight:800">95%</b> fewer tokens.
+    </p>
+
+    <div id="install" class="install-cmd"
+      onclick="navigator.clipboard.writeText('pip install entroly[full] && entroly go')">
+      <span class="prompt">$</span>
+      <span class="cmd">pip install entroly[full] && entroly go</span>
+      <span class="copy">Click to copy</span>
+    </div>
+
+    <div style="margin-top: 16px; font-size: 13px; color: var(--muted);">
+      Works with <b>Cursor</b> · <b>Claude Code</b> · <b>Copilot</b> · <b>Windsurf</b> · <b>Cline</b>
+    </div>
+
+    <div class="preview">
+      <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg"
+        alt="Entroly Demo — 70-95% token savings">
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="val"><span style="opacity:0.4;font-size:0.6em;font-weight:400">70-</span>95%</div>
+      <div class="label">Token Reduction</div>
+    </div>
+    <div class="stat-card">
+      <div class="val">100%</div>
+      <div class="label">Code Visibility</div>
+    </div>
+    <div class="stat-card">
+      <div class="val">&lt;8ms</div>
+      <div class="label">Engine Latency</div>
+    </div>
+    <div class="stat-card">
+      <div class="val">436</div>
+      <div class="label">Tests Passing</div>
+    </div>
+  </div>
+
+  <section id="why">
+    <div class="section-header">
+      <span class="tag">The Problem</span>
+      <h2>RAG isn't enough for coding.</h2>
+    </div>
+
+    <div class="comp-grid">
+      <div class="comp-card bad" data-reveal>
+        <h3>Standard Context</h3>
+        <div class="row"><span class="lbl">Files visible</span><span class="val">5-10 files</span></div>
+        <div class="row"><span class="lbl">Visibility</span><span class="val">~5%</span></div>
+        <div class="row"><span class="lbl">Tokens used</span><span class="val">186,420 (Raw)</span></div>
+        <div class="row"><span class="lbl">Cost / 1K Req</span><span class="val">$560.00</span></div>
+        <div class="row" style="border:0"><span class="lbl">Quality</span><span class="val">Hallucination risk</span>
+        </div>
+      </div>
+
+      <div class="comp-card good" data-reveal>
+        <h3>With Entroly</h3>
+        <div class="row"><span class="lbl">Files visible</span><span class="val">ALL 847 files</span></div>
+        <div class="row"><span class="lbl">Visibility</span><span class="val">100%</span></div>
+        <div class="row"><span class="lbl">Tokens used</span><span class="val"><span
+              style="opacity:0.5;font-weight:400">9,300 -</span> 55,000</span></div>
+        <div class="row"><span class="lbl">Cost / 1K Req</span><span class="val"><span
+              style="opacity:0.5;font-weight:400">$28 -</span> $168</span></div>
+        <div class="row" style="border:0"><span class="lbl">Quality</span><span class="val">Dependency Aware</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="section-header">
+      <span class="tag">Features</span>
+      <h2>Context Engineering, Automated.</h2>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat-card" data-reveal>
+        <div class="icon">📦</div>
+        <h3>Zero-Config Install</h3>
+        <p>One command auto-detects your IDE, language, and project structure. No manual prompt engineering required.
+        </p>
+      </div>
+      <div class="feat-card" data-reveal>
+        <div class="icon">🦀</div>
+        <h3>Rust Performance</h3>
+        <p>A high-performance Rust core (via PyO3) processes your entire codebase in under 10ms. Scale to millions of
+          lines.</p>
+      </div>
+      <div class="feat-card" data-reveal>
+        <div class="icon">🧠</div>
+        <h3>PRISM Optimizer</h3>
+        <p>Reinforcement Learning adjusts context weights based on AI response quality. Gets smarter every time you
+          code.</p>
+      </div>
+      <div class="feat-card" data-reveal>
+        <div class="icon">🔒</div>
+        <h3>Built-in Security</h3>
+        <p>55 SAST rules catch hardcoded secrets and SQL injection before they reach the AI. Security by design.</p>
+      </div>
+      <div class="feat-card" data-reveal>
+        <div class="icon">📊</div>
+        <h3>Health Scoring</h3>
+        <p>Get an A-F grade for your codebase health. Detect god files, dead code, and cross-module clones
+          automatically.</p>
+      </div>
+      <div class="feat-card" data-reveal>
+        <div class="icon">🤖</div>
+        <h3>Agent Native</h3>
+        <p>First-class support for Multi-Agent systems. Nash bargaining for token budgets between sub-agents.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="cta-banner" data-reveal>
+    <h2>Stop paying for boilerplate.</h2>
+    <p>Free your AI from context blindness today.</p>
+    <a href="https://github.com/juyterman1000/entroly" class="btn btn-primary"
+      style="padding: 12px 32px; font-size: 16px;">View on GitHub</a>
+    <div style="margin-top: 24px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--green);">
+      pip install entroly && entroly go
+    </div>
+  </div>
+
+  <footer>
+    <p>Entroly — Apache-2.0 Licensed Project</p>
+    <p style="margin-top: 16px;">
       <a href="https://github.com/juyterman1000/entroly">GitHub</a>
-      <a href="#install" class="btn btn-primary" style="padding: 6px 16px;">Install</a>
-    </div>
-  </div>
-</nav>
+      <a href="https://pypi.org/project/entroly/">PyPI</a>
+      <a href="https://www.npmjs.com/package/entroly/">npm</a>
+    </p>
+  </footer>
 
-<div class="hero">
-  <div class="hero-glow"></div>
-  <div class="badge">Open Source Context Engineering</div>
-  <h1>Your AI is <span>Blind</span>.<br>Fix it in 30 seconds.</h1>
-  <p>Cursor, Claude Code, and Copilot only see 5% of your codebase. Entroly shows them everything — with <span style="opacity:0.6;font-weight:400">70-</span><b style="color:var(--text);font-weight:800">95%</b> fewer tokens.</p>
-  
-  <div id="install" class="install-cmd" onclick="navigator.clipboard.writeText('pip install entroly[full] && entroly go')">
-    <span class="prompt">$</span>
-    <span class="cmd">pip install entroly[full] && entroly go</span>
-    <span class="copy">Click to copy</span>
-  </div>
-  
-  <div style="margin-top: 16px; font-size: 13px; color: var(--muted);">
-    Works with <b>Cursor</b> · <b>Claude Code</b> · <b>Copilot</b> · <b>Windsurf</b> · <b>Cline</b>
-  </div>
+  <script>
+    // Reveal on scroll
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('active');
+        }
+      });
+    }, { threshold: 0.1 });
 
-  <div class="preview">
-    <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg" alt="Entroly Demo — 70-95% token savings">
-  </div>
-</div>
-
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="val"><span style="opacity:0.4;font-size:0.6em;font-weight:400">70-</span>95%</div>
-    <div class="label">Token Reduction</div>
-  </div>
-  <div class="stat-card">
-    <div class="val">100%</div>
-    <div class="label">Code Visibility</div>
-  </div>
-  <div class="stat-card">
-    <div class="val">&lt;8ms</div>
-    <div class="label">Engine Latency</div>
-  </div>
-  <div class="stat-card">
-    <div class="val">436</div>
-    <div class="label">Tests Passing</div>
-  </div>
-</div>
-
-<section id="why">
-  <div class="section-header">
-    <span class="tag">The Problem</span>
-    <h2>RAG isn't enough for coding.</h2>
-  </div>
-  
-  <div class="comp-grid">
-    <div class="comp-card bad" data-reveal>
-      <h3>Standard Context</h3>
-      <div class="row"><span class="lbl">Files visible</span><span class="val">5-10 files</span></div>
-      <div class="row"><span class="lbl">Visibility</span><span class="val">~5%</span></div>
-      <div class="row"><span class="lbl">Tokens used</span><span class="val">186,420 (Raw)</span></div>
-      <div class="row"><span class="lbl">Cost / 1K Req</span><span class="val">$560.00</span></div>
-      <div class="row" style="border:0"><span class="lbl">Quality</span><span class="val">Hallucination risk</span></div>
-    </div>
-    
-    <div class="comp-card good" data-reveal>
-      <h3>With Entroly</h3>
-      <div class="row"><span class="lbl">Files visible</span><span class="val">ALL 847 files</span></div>
-      <div class="row"><span class="lbl">Visibility</span><span class="val">100%</span></div>
-      <div class="row"><span class="lbl">Tokens used</span><span class="val"><span style="opacity:0.5;font-weight:400">9,300 -</span> 55,000</span></div>
-      <div class="row"><span class="lbl">Cost / 1K Req</span><span class="val"><span style="opacity:0.5;font-weight:400">$28 -</span> $168</span></div>
-      <div class="row" style="border:0"><span class="lbl">Quality</span><span class="val">Dependency Aware</span></div>
-    </div>
-  </div>
-</section>
-
-<section id="features">
-  <div class="section-header">
-    <span class="tag">Features</span>
-    <h2>Context Engineering, Automated.</h2>
-  </div>
-  
-  <div class="feat-grid">
-    <div class="feat-card" data-reveal>
-      <div class="icon">📦</div>
-      <h3>Zero-Config Install</h3>
-      <p>One command auto-detects your IDE, language, and project structure. No manual prompt engineering required.</p>
-    </div>
-    <div class="feat-card" data-reveal>
-      <div class="icon">🦀</div>
-      <h3>Rust Performance</h3>
-      <p>A high-performance Rust core (via PyO3) processes your entire codebase in under 10ms. Scale to millions of lines.</p>
-    </div>
-    <div class="feat-card" data-reveal>
-      <div class="icon">🧠</div>
-      <h3>PRISM Optimizer</h3>
-      <p>Reinforcement Learning adjusts context weights based on AI response quality. Gets smarter every time you code.</p>
-    </div>
-    <div class="feat-card" data-reveal>
-      <div class="icon">🔒</div>
-      <h3>Built-in Security</h3>
-      <p>55 SAST rules catch hardcoded secrets and SQL injection before they reach the AI. Security by design.</p>
-    </div>
-    <div class="feat-card" data-reveal>
-      <div class="icon">📊</div>
-      <h3>Health Scoring</h3>
-      <p>Get an A-F grade for your codebase health. Detect god files, dead code, and cross-module clones automatically.</p>
-    </div>
-    <div class="feat-card" data-reveal>
-      <div class="icon">🤖</div>
-      <h3>Agent Native</h3>
-      <p>First-class support for Multi-Agent systems. Nash bargaining for token budgets between sub-agents.</p>
-    </div>
-  </div>
-</section>
-
-<div class="cta-banner" data-reveal>
-  <h2>Stop paying for boilerplate.</h2>
-  <p>Free your AI from context blindness today.</p>
-  <a href="https://github.com/juyterman1000/entroly" class="btn btn-primary" style="padding: 12px 32px; font-size: 16px;">View on GitHub</a>
-  <div style="margin-top: 24px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--green);">
-    pip install entroly && entroly go
-  </div>
-</div>
-
-<footer>
-  <p>Entroly — Apache-2.0 Licensed Project</p>
-  <p style="margin-top: 16px;">
-    <a href="https://github.com/juyterman1000/entroly">GitHub</a>
-    <a href="https://pypi.org/project/entroly/">PyPI</a>
-    <a href="https://www.npmjs.com/package/entroly/">npm</a>
-  </p>
-</footer>
-
-<script>
-// Reveal on scroll
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('active');
-    }
-  });
-}, { threshold: 0.1 });
-
-document.querySelectorAll('[data-reveal]').forEach(el => observer.observe(el));
-</script>
+    document.querySelectorAll('[data-reveal]').forEach(el => observer.observe(el));
+  </script>
 
 </body>
+
 </html>

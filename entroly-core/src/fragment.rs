@@ -154,7 +154,7 @@ pub fn compute_relevance(
     let raw = base * feedback_multiplier;
 
     // ── Logit Softcap ──────────────────────────────────────────────
-    // f(x) = c · tanh(x / c)  [Gemini, Anil et al. 2024]
+    // f(x) = c · tanh(x / c)
     //
     // Compresses [0, ∞) → [0, c) while preserving rank ordering.
     // Properties:

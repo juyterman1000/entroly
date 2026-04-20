@@ -25,13 +25,6 @@
 //!   Layer 1: Exact Hash  (O(1), ~1μs)   — FNV-1a(query + frag_ids) → HashMap
 //!   Layer 2: SimHash LSH (O(L×k), ~10μs) — LshIndex multi-probe → Hamming ≤ adaptive τ
 //!
-//! References:
-//!   - Rényi (1961) — "On measures of entropy and information"
-//!   - Nemhauser, Wolsey & Fisher (1978) — submodular maximization guarantees
-//!   - Thompson (1933) — posterior sampling for sequential decisions
-//!   - Minoux (1978) — accelerated greedy for submodular functions
-//!   - Charikar (2002) — SimHash locality-sensitive hashing
-
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use serde::{Serialize, Deserialize};
@@ -718,7 +711,7 @@ impl Default for ThompsonGate {
 // Contribution 2: Cost-Aware Submodular Diversity Eviction
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Heap entry for lazy greedy eviction (Minoux 1978).
+/// Heap entry for lazy greedy eviction (lazy greedy).
 #[derive(Clone)]
 struct LazyHeapEntry {
     hash: u64,
@@ -747,7 +740,7 @@ impl Ord for LazyHeapEntry {
 /// f(S) = Σ_{i∈S} utility(eᵢ) · diversity(eᵢ, S\{i})
 /// where utility incorporates cost model and time decay.
 ///
-/// Lazy evaluation (Minoux 1978): maintain a max-heap of marginals,
+/// Lazy evaluation (lazy greedy): maintain a max-heap of marginals,
 /// only recompute when a candidate reaches the heap top.
 /// Amortized O(n log n) per eviction vs O(n²) naive.
 pub struct SubmodularEvictor;
@@ -812,7 +805,7 @@ impl SubmodularEvictor {
         (freq_value + cost_value + diversity_bonus) * recency * entry.quality_score.max(0.01) * dag_factor
     }
 
-    /// Lazy greedy victim selection (Minoux 1978).
+    /// Lazy greedy victim selection (lazy greedy).
     ///
     /// Returns the hash of the entry with LOWEST value to evict.
     pub fn select_victim_lazy(

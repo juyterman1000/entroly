@@ -75,14 +75,6 @@
 //! 4. **Progressive temporal LOD** instead of one-shot compression
 //! 5. **Submodular optimality guarantee** (1-1/e ≈ 63%)
 //!
-//! References:
-//!   - Nemhauser, Wolsey, Fisher (1978) — submodular set functions
-//!   - Boyd & Vandenberghe (2004) — KKT conditions, §5.2 Lagrange duality
-//!   - Kellerer, Pferschy, Pisinger (2004) — MCKP
-//!   - Shannon (1948) — mutual information
-//!   - Rényi (1961) — collision entropy
-//!   - Ebbinghaus (1885) — forgetting curve
-
 use std::collections::{HashMap, HashSet};
 use serde::{Serialize, Deserialize};
 use crate::entropy::{shannon_entropy, renyi_entropy_2};

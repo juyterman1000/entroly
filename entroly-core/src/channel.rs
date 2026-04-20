@@ -21,11 +21,6 @@
 //! All algorithms: O(N log N) or better, pure CPU, <1ms on i5/16GB for 1000
 //! fragments.  Zero external dependencies.
 //!
-//! # References
-//!   - Shannon, "A Mathematical Theory of Communication" (1948)
-//!   - Liu et al., "Lost in the Middle" (2023) — U-shaped attention profile
-//!   - Nemhauser et al., "Submodular Maximization" (1978) — greedy ≥ (1−1/e)·OPT
-
 use std::collections::{HashMap, HashSet};
 use crate::fragment::ContextFragment;
 use crate::depgraph::DepGraph;
@@ -177,7 +172,7 @@ pub fn channel_trailing_pass(
 ///   α(p, L) = 0.4·exp(−p/(0.15·L)) + 0.4·exp(−(L−p−1)/(0.15·L)) + 0.2
 ///
 /// U-shaped: peaks at start (primacy) and end (recency), valley in the
-/// middle.  Models "Lost in the Middle" (Liu et al., 2023).
+/// middle — models the "Lost in the Middle" attention profile.
 #[inline]
 pub fn attention_weight(position: usize, total: usize) -> f64 {
     if total <= 1 {
@@ -383,11 +378,6 @@ pub fn modulated_reward(success: bool, sufficiency: f64) -> f64 {
 //   SDR(A,B) = structural_sim - content_sim
 //   If SDR > threshold → contradictory pair → evict lower-relevance fragment
 //
-// References:
-//   - Charikar (2002) — SimHash for similarity estimation
-//   - NeurIPS 2025/2026 — Semantic Volume for uncertainty quantification
-//   - FORGE '26 — Knowledge-Conflicting Hallucination taxonomy
-
 /// Result of contradiction scan.
 #[derive(Debug, Clone)]
 pub struct ContradictionReport {
@@ -505,10 +495,9 @@ pub fn contradiction_guard(
 // ═══════════════════════════════════════════════════════════════════
 //
 // Post-pass on semantic_interleave() output. Solves the "Lost in the
-// Middle" problem (Liu et al. 2023; arxiv 2026 geometric proof) by
-// placing highest-importance fragments at attention peaks.
+// Middle" problem by placing highest-importance fragments at attention peaks.
 //
-// The key insight from "Found in the Middle" (Google Research 2025):
+// Key insight:
 //   α(p, L) has peaks at p=0 (primacy) and p=L-1 (recency).
 //   We should assign fragments to positions that maximize:
 //     Σᵢ importance(i) × α(position(i), L)
@@ -520,12 +509,6 @@ pub fn contradiction_guard(
 // CONSTRAINT: Causal ordering must be preserved. We only reorder within
 // the same causal level. Cross-level reordering would break def→ref chains.
 //
-// References:
-//   - Liu et al. (2023) — "Lost in the Middle: How LMs Use Long Contexts"
-//   - Google Research (2025) — "Found in the Middle: Calibrating LLM Attention"
-//   - ACL Findings (2025) — Hidden state positional scaling
-//   - arXiv (2026) — U-shape as geometric property of causal transformers
-
 /// Apply bookend attention calibration to an ordered index sequence.
 ///
 /// Within each causal level, reorders fragments so that the most important

@@ -14,9 +14,8 @@
 //!   3. If ΔI > τ (default 0.3): add cᵢ to S
 //!   4. Return S
 //!
-//! This is exactly the lazy greedy algorithm for monotone submodular
-//! maximization under a knapsack constraint (Nemhauser, Wolsey,
-//! Fisher 1978). Guarantee: (1 - 1/e) ≈ 63% of optimal.
+//! This is the lazy greedy algorithm for monotone submodular
+//! maximization under a knapsack constraint. Guarantee: (1 - 1/e) ≈ 63% of optimal.
 //!
 //! Runs as a pre-filter BEFORE IOS selection: removes informationally
 //! redundant candidates, then IOS optimizes the remaining unique ones.

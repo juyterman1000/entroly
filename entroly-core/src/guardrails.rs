@@ -326,7 +326,7 @@ pub fn compute_ordering_priority(
 /// Feedback loop: record which fragments influenced a successful output.
 ///
 /// Extended with per-fragment Welford variance tracking for RAVEN-UCB
-/// adaptive exploration (arXiv:2506.02933, June 2025).
+/// adaptive exploration.
 #[derive(Serialize, Deserialize)]
 pub struct FeedbackTracker {
     /// fragment_id → number of times it contributed to a successful output
@@ -418,8 +418,6 @@ impl FeedbackTracker {
 
     /// RAVEN-UCB score: UCB_i = μ_i + α_t · √(σ²_i / (n_i + 1))
     /// where α_t = α₀ / ln(t + e) self-anneals exploration.
-    ///
-    /// Reference: arXiv:2506.02933, June 2025.
     pub fn ucb_score(&self, fragment_id: &str, alpha_0: f64) -> f64 {
         let mu = self.welford_mean(fragment_id);
         let sigma2 = self.variance(fragment_id);

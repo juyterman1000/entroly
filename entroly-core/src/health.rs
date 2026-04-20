@@ -1,14 +1,11 @@
 //! Codebase Health Analysis Engine
 //!
-//! Research grounding:
-//!   - 2025 arXiv (Jan): LLM+AST graph modeling for Type-4 semantic clone detection.
-//!     Key insight: SimHash handles Type-1/2/3 (structural similarity); for Type-3/4
+//! Approach:
+//!   - SimHash handles Type-1/2/3 clones (structural similarity); for Type-3/4
 //!     (semantic), we use dep-graph co-occurrence as an AST proxy.
-//!   - 2026 arXiv: "AI-friendly code" — CodeHealth score correlates with LLM
-//!     processing ease. We compute 5 dimensions: coupling, naming, complexity,
+//!   - CodeHealth score across 5 dimensions: coupling, naming, complexity,
 //!     duplication ratio, dead-symbol ratio.
-//!   - DebtGuardian (arXiv Nov 2025): technical debt via source code changes.
-//!     We adapt the batch-level detection approach applied to our fragment store.
+//!   - Batch-level technical debt detection applied to the fragment store.
 //!
 //! The engine computes:
 //!   1. **Clone Detection**: SimHash Hamming distance for Type-1/2/3 clones.
@@ -41,7 +38,7 @@ pub struct ClonePair {
     pub recommendation: String,
 }
 
-/// Clone types (after Koschke et al., adapted for SimHash detection).
+/// Clone types (adapted for SimHash detection).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum CloneType {
     /// Type-1: Exact or near-exact (SimHash Hamming ≤ 2). Identical modulo whitespace.
@@ -521,7 +518,7 @@ fn find_naming_issues(fragments: &[&ContextFragment]) -> Vec<NamingIssue> {
 // ═══════════════════════════════════════════════════════════════════
 // CodeHealth Score
 ///
-/// Inspired by CodeHealth (2026 arXiv) and SonarQube's maintainability.
+/// Inspired by SonarQube's maintainability metric.
 /// Formula:
 ///   score = 100 × (1 - Σ penalty_i)
 ///

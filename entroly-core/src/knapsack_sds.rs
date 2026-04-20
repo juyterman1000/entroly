@@ -8,7 +8,7 @@
 //!    diminishing returns. SDS penalizes redundancy using SimHash
 //!    Hamming distance as a proxy for content overlap.
 //!
-//!    Algorithm: Lazy greedy (Minoux 1978) with diversity penalty.
+//!    Algorithm: Lazy greedy with diversity penalty.
 //!    Guarantee: (1 - 1/e) ≈ 63% of optimal for monotone submodular
 //!    functions under cardinality/knapsack constraint.
 //!
@@ -22,13 +22,6 @@
 //!    Combined with SDS, each candidate is a (fragment, resolution)
 //!    pair with resolution-adjusted value and diversity penalty.
 //!
-//! References:
-//!   - Nemhauser, Wolsey, Fisher (1978) — Submodular maximization
-//!   - Sviridenko (2004) — Submodular knapsack approximation
-//!   - Minoux (1978) — Lazy greedy acceleration
-//!   - Kellerer, Pferschy, Pisinger (2004) — MCKP
-//!   - Charikar (2002) — SimHash for similarity estimation
-
 use std::collections::HashMap;
 use crate::dedup::hamming_distance;
 use crate::fragment::{ContextFragment, compute_relevance};

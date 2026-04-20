@@ -10,11 +10,6 @@
 //!   - Stack-allocated 256-element histogram (vs heap-allocated Counter)
 //!   - Zero-copy string slicing for n-gram extraction
 //!
-//! References:
-//!   - Shannon (1948) — Information Theory
-//!   - ICPC (arXiv 2025) — per-token information scoring
-//!   - LLMLingua (EMNLP 2023) — prompt compression
-
 use std::collections::HashSet;
 use rayon::prelude::*;
 use std::io::Write;
@@ -170,8 +165,6 @@ pub fn normalized_entropy(text: &str) -> f64 {
 /// Used as a secondary signal in the IOS knapsack: fragments with
 /// high Shannon but low Rényi are "entropy-inflated" (many unique
 /// but low-information chars) and should be down-weighted.
-///
-/// Reference: Rényi (1961) — "On measures of entropy and information"
 #[inline]
 pub fn renyi_entropy_2(text: &str) -> f64 {
     if text.is_empty() {
@@ -213,8 +206,6 @@ pub fn renyi_entropy_2(text: &str) -> f64 {
 /// the *diversity* of information across the context set. High H₂
 /// means information is spread across many fragments (complex query);
 /// low H₂ means one fragment dominates (trivial query).
-///
-/// Reference: Rényi (1961) — "On measures of entropy and information"
 pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
     if scores.is_empty() {
         return 0.0;
@@ -435,7 +426,7 @@ fn is_boilerplate(trimmed: &str) -> bool {
 /// O(k) integer ops where k = len(sample_fps), vs O(k × file_size) string hashing.
 /// For k=50 sample fragments, ~900x faster on 5KB files.
 ///
-/// Mathematical basis (Charikar 2002 LSH):
+/// Mathematical basis (SimHash LSH):
 ///   Pr[simhash(A)[i] == simhash(B)[i]] ≈ 1 - θ/π
 /// where θ = arccos(cosine_similarity(A, B)).
 /// Hamming distance in SimHash space monotonically approximates content dissimilarity.

@@ -9,11 +9,6 @@
 //! optimized for context fragments instead of memory episodes.
 //! Uses the same multi-table bucketing approach.
 //!
-//! References:
-//!   - Charikar (2002) — SimHash
-//!   - Proximity (arXiv 2026) — LSH-bucketed semantic caching
-//!   - ebbiforge-core LSHIndex — 16-table multi-probe design
-
 use std::collections::{HashMap, HashSet};
 use md5::{Md5, Digest};
 use serde::{Deserialize, Serialize};

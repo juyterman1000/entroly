@@ -20,10 +20,6 @@
 //!   Graph-constrained knapsack (NP-hard in general, but tractable
 //!   for typical code dependency graphs with ~500 nodes)
 //!
-//! References:
-//!   - Sourcegraph's Code Intelligence — graph-based code navigation
-//!   - Code Property Graphs (Yamaguchi et al., 2014)
-
 use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 

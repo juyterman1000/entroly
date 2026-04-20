@@ -33,11 +33,6 @@
 //!   3. **Birth/Death**: Pitman-Yor process — new archetypes emerge organically
 //!   4. **Per-archetype PRISM**: Each archetype learns its own 4D weight vector
 //!
-//! # References
-//!   - Muandet et al., "Kernel Mean Embedding of Distributions" (2017)
-//!   - Gretton et al., "A Kernel Two-Sample Test" (JMLR 2012)
-//!   - Ishwaran & James, "Gibbs Sampling for Pitman-Yor" (2001)
-
 use serde::{Serialize, Deserialize};
 use crate::prism::PrismOptimizer;
 

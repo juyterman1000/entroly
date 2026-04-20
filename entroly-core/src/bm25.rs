@@ -5,7 +5,7 @@
 //! It was never designed for query-document relevance — a 15-word query has a completely
 //! different term distribution than a 500-line source file, producing random noise (~0.45±0.03).
 //!
-//! BM25 (Robertson et al., 1994 "Okapi BM25") is the gold standard for term-based retrieval.
+//! BM25 is the gold standard for term-based retrieval.
 //! It answers: "how relevant is this document to this query?" using:
 //!   - Term Frequency (TF): saturating — diminishing returns for repeated terms
 //!   - Inverse Document Frequency (IDF): rare terms matter more
@@ -18,15 +18,10 @@
 //!
 //! # Complexity: O(Q × D × L) where Q=query terms, D=documents, L=avg doc length
 //! For 500 documents × 10 query terms: ~5000 string scans, <5ms in Rust.
-//!
-//! # References:
-//!   - Robertson & Zaragoza (2009). "The Probabilistic Relevance Framework: BM25 and Beyond"
-//!   - Lü et al. (2024). "BGE-M3: Multi-Granularity Retrieval" (hybrid sparse+dense, NeurIPS)
-//!   - Zhang et al. (2025). "CodeRanker: Repo-Level Code Retrieval" (path+symbol boosting)
 
 use std::collections::HashMap;
 
-/// BM25 parameters (Okapi defaults, well-studied)
+/// BM25 parameters (well-studied defaults)
 const K1: f64 = 1.2;    // Term frequency saturation. Higher = more weight to repeated terms.
 const B: f64 = 0.75;     // Length normalization. 0 = no normalization, 1 = full normalization.
 
@@ -91,7 +86,7 @@ impl BM25Index {
         BM25Index { num_docs, avg_dl, df }
     }
 
-    /// Compute IDF for a single term using the Robertson-Sparck Jones formula:
+    /// Compute IDF for a single term:
     ///   IDF(t) = ln((N - df(t) + 0.5) / (df(t) + 0.5) + 1)
     ///
     /// This gives high scores to rare terms and low (but non-negative) scores to common terms.
@@ -203,7 +198,7 @@ impl BM25Index {
             }
         }
 
-        // ── Query Coverage Bonus (Lv & Zhai, CIKM 2011) ──
+        // ── Query Coverage Bonus ──
         // Documents matching MORE unique query terms get a superlinear bonus.
         // This prevents a file with high TF for one common term from outranking
         // a file that matches 4/5 query terms with moderate TF each.
@@ -218,13 +213,27 @@ impl BM25Index {
         // Combine: BM25 base + structural signals + coverage bonus
         let combined = bm25_base + path_boost + identifier_boost + coverage_bonus;
 
-        BM25Score {
+        let out = BM25Score {
             query_coverage: coverage,
             bm25_base,
             path_boost,
             identifier_boost,
             combined,
-        }
+        };
+
+        // Decomposition invariant:
+        //   combined = bm25_base + path_boost + identifier_boost + coverage^1.5 * 0.5 * bm25_base
+        // Asserting here both guards against scoring-formula drift and ensures every
+        // explainability field is a load-bearing part of the final score.
+        debug_assert!({
+            let expected = out.bm25_base
+                + out.path_boost
+                + out.identifier_boost
+                + out.query_coverage.powf(1.5) * 0.5 * out.bm25_base;
+            (out.combined - expected).abs() < 1e-9
+        });
+
+        out
     }
 }
 
@@ -300,7 +309,7 @@ pub fn split_identifier(id: &str) -> Vec<String> {
             if i > 0 && ch.is_uppercase() {
                 // Check for acronyms: "HTMLParser" → don't split "HTML"
                 let prev_upper = chars[i - 1].is_uppercase();
-                let next_lower = chars.get(i + 1).map_or(false, |c| c.is_lowercase());
+                let next_lower = chars.get(i + 1).is_some_and(|c| c.is_lowercase());
 
                 if !prev_upper || next_lower {
                     if !current.is_empty() {
@@ -334,8 +343,8 @@ fn is_code_stopword(word: &str) -> bool {
         "trait" | "where" | "match" | "ref" | "move" | "async" | "await" | "unsafe" |
         "crate" | "super" | "type" | "const" | "static" |
         // General
-        "var" | "const" | "new" | "this" | "null" | "void" | "int" | "str" | "bool" |
-        "the" | "and" | "for" | "not" | "are" | "but" | "was" | "all" | "any" | "can" |
+        "var" | "new" | "this" | "null" | "void" | "int" | "str" | "bool" |
+        "the" | "are" | "but" | "was" | "all" | "any" | "can" |
         "had" | "her" | "his" | "how" | "its" | "may" | "our" | "out" | "too" | "who" |
         "has" | "have" | "that" | "then" | "than" | "these" | "those" | "does" | "done"
     )
@@ -414,6 +423,22 @@ mod tests {
         // state.py MUST score higher than config.py for a "StateGraph" query
         assert!(s1.combined > s2.combined, "state.py ({}) should rank above config.py ({})", s1.combined, s2.combined);
         assert!(s1.combined > s3.combined, "state.py ({}) should rank above memory.py ({})", s1.combined, s3.combined);
+
+        // Score decomposition invariant (coverage-augmented BM25):
+        //   combined = bm25_base + path_boost + identifier_boost + coverage^1.5 * 0.5 * bm25_base
+        // This guards against silent regressions in the explainability breakdown.
+        for s in [&s1, &s2, &s3] {
+            let expected = s.bm25_base
+                + s.path_boost
+                + s.identifier_boost
+                + s.query_coverage.powf(1.5) * 0.5 * s.bm25_base;
+            assert!(
+                (s.combined - expected).abs() < 1e-9,
+                "decomposition broken: combined={} vs sum={} (base={}, path={}, id={}, cov={})",
+                s.combined, expected, s.bm25_base, s.path_boost, s.identifier_boost, s.query_coverage,
+            );
+            assert!((0.0..=1.0).contains(&s.query_coverage));
+        }
     }
 
     #[test]

@@ -693,7 +693,7 @@ impl EntrolyEngine {
                 // Content fragments have non-zero SimHashes — LSH lookups from real
                 // content never land in bucket 0, so the shadow bucket is naturally
                 // isolated. Mixing path-hash into this space would corrupt all
-                // distance thresholds and break Charikar 2002 LSH guarantees.
+                // distance thresholds and break SimHash LSH guarantees.
                 let stub_fp: u64 = 0;
 
                 let mut frag = ContextFragment::new(
@@ -887,7 +887,7 @@ impl EntrolyEngine {
             //
             // Formula: entropy = 0.40×ent + 0.30×bp + 0.30×simhash_uniqueness - noise_penalty
             // Same weights as information_score(), but uniqueness comes from SimHash distance
-            // instead of n-gram Jaccard overlap. Error bound ≈ 12.5% per Charikar 2002.
+            // instead of n-gram Jaccard overlap. Error bound ≈ 12.5%.
             // Sample: only content fragments with valid SimHash (has_simhash=true).
             // Stubs (has_simhash=false) must not pollute the sample — they have no
             // semantic fingerprint and would bias uniqueness scores high.
@@ -1071,7 +1071,7 @@ impl EntrolyEngine {
             };
             self.last_effective_budget = effective_budget;
 
-            // ── RAVEN-UCB Adaptive Exploration (arXiv:2506.02933) ──
+            // ── RAVEN-UCB Adaptive Exploration ──
             // α₀ is used in the exploration swap code (UCB score for picking swap target).
             let alpha_0 = 2.0_f64;
             let should_explore = if self.exploration_rate > 0.0 {
@@ -1170,11 +1170,6 @@ impl EntrolyEngine {
             //   2. Causal chain (structural): dep graph from query-matched files
             //   3. PageRank (centrality): hub files many others depend on
             //   4. NCD (compression): reranker for top-50 candidates
-            //
-            // References:
-            //   - Robertson & Zaragoza (2009) — BM25
-            //   - Li & Vitányi (2004) — NCD universal similarity metric
-            //   - GraphCodeAgent (arxiv 2025) — graph retrieval beats dense
             if !query.is_empty() {
                 let query_terms: Vec<String> = bm25::tokenize_code(&query);
 
@@ -1277,9 +1272,6 @@ impl EntrolyEngine {
                 // Files whose filename matches a kernel term are about that
                 // concept — they should rank at the top regardless of generic
                 // term frequency.
-                //
-                // Ref: Robertson & Sparck Jones (1976), "Relevance weighting
-                //      of search terms"
                 let mut term_idfs: Vec<(String, f64)> = query_terms.iter()
                     .map(|t| (t.clone(), bm25_idx.idf(t)))
                     .collect();
@@ -1385,7 +1377,7 @@ impl EntrolyEngine {
                     }
                 }
 
-                // ── Entity Query Routing (RANGER-style, ICLR 2025) ──────
+                // ── Entity Query Routing ──────
                 // For entity queries ("StateGraph", "ChatOpenAI"), files that
                 // DEFINE the entity must outrank files that merely import it.
                 //
@@ -1508,7 +1500,7 @@ impl EntrolyEngine {
             // utilization feedback (belief_util_ema / full_util_ema).
             // This LEARNS the optimal belief factor from actual LLM responses.
             //
-            // Mathematical foundation: Rate-Distortion Theory (Shannon 1959).
+            // Mathematical foundation: Rate-Distortion Theory.
             //   R(D) = min_{p(ŷ|y)} I(Y; Ŷ)  s.t.  E[d(Y, Ŷ)] ≤ D
             // Beliefs are the encoder ŷ that minimizes bitrate R for a given
             // distortion D. Different query archetypes tolerate different D.
@@ -2018,7 +2010,7 @@ impl EntrolyEngine {
             // ── Spectral Contradiction Guard ──
             // Detect and evict fragments that are structurally similar but
             // semantically contradictory (e.g., two versions of the same class).
-            // Based on SimHash Divergence Ratio (SDR) — NeurIPS 2025/FORGE '26.
+            // Based on SimHash Divergence Ratio (SDR).
             let contradictions_evicted;
             let final_indices = if self.enable_channel_coding {
                 let pre_relevances: Vec<f64> = final_indices.iter()
@@ -2060,7 +2052,6 @@ impl EntrolyEngine {
 
                 // Bookend Attention Calibration: within each causal level,
                 // place highest-importance fragments at U-shaped attention peaks.
-                // "Found in the Middle" (Google Research 2025), ACL Findings 2025.
                 let rel_map: std::collections::HashMap<usize, f64> = final_indices.iter()
                     .zip(relevances.iter())
                     .map(|(&idx, &rel)| (idx, rel))
@@ -3766,8 +3757,7 @@ impl EntrolyEngine {
         // fragments accumulate false positive weight.
         //
         // Solution: Weight each fragment's advantage by its *marginal information
-        // contribution* — a Shapley-inspired decomposition (ICML 2025 ViaSHAP;
-        // NeurIPS 2025 FastSVERL).
+        // contribution* — a Shapley-inspired decomposition.
         //
         // φᵢ = entropy_i / Σⱼ∈S(entropy_j)  (information share)
         //

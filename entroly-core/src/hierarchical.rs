@@ -8,18 +8,11 @@
 //!   Level 2: Dep-Graph Cluster — expanded skeletons for query-connected files
 //!   Level 3: Full Content — knapsack-optimal fragments at full resolution
 //!
-//! Novel contributions (verified against literature):
-//!   1. Symbol-reachability slicing via dep graph (cf. NeurIPS 2025 backward slicing)
-//!   2. Submodular diversity selection (extends Nemhauser 1978 to code context)
-//!   3. Entropy-gated per-fragment resolution (novel combination)
-//!   4. PageRank centrality for budget allocation (novel application to code)
-//!
-//! References:
-//!   - Weiser (1981) "Program Slicing" — backward/forward slice theory
-//!   - Nemhauser et al. (1978) — submodular maximization (1-1/e) guarantee
-//!   - Shannon (1959) — Rate-Distortion theorem
-//!   - RepoFormer (ICML 2024 Oral) — selective retrieval improves over always-retrieve
-//!   - FILM-7B (NeurIPS 2024) — structure-first layout avoids lost-in-the-middle
+//! Novel contributions:
+//!   1. Symbol-reachability slicing via dep graph
+//!   2. Submodular diversity selection applied to code context
+//!   3. Entropy-gated per-fragment resolution
+//!   4. PageRank centrality for budget allocation
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use crate::fragment::ContextFragment;
@@ -366,8 +359,8 @@ pub fn allocate_budget(
 ///
 /// This naturally prevents: 5 auth files < 3 auth + 1 db + 1 config
 ///
-/// Guarantee: greedy selection with this objective achieves
-/// (1 - 1/e) ≈ 0.63 of optimal (Nemhauser et al., 1978).
+/// Guarantee: greedy selection with this submodular objective achieves
+/// (1 - 1/e) ≈ 0.63 of optimal.
 pub fn submodular_marginal_gain(
     candidate_source: &str,
     candidate_relevance: f64,

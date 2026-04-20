@@ -1,16 +1,16 @@
 //! SAST — Static Application Security Testing Engine
 //!
-//! Research grounding:
-//!   - IRIS (ICLR 2025): Neuro-symbolic approach combining pattern matching with
-//!     whole-repository taint-flow reasoning. Key insight: single-line pattern matching
-//!     produces ~60% false positive rate; taint-flow context reduces it to ~15%.
-//!   - MoCQ (arXiv 2025): LLM + classic vulnerability checker pattern generation.
-//!   - FDSP (2024): Iterative refinement via static analysis feedback.
+//! Approach:
+//!   - Neuro-symbolic: pattern matching combined with whole-repository taint-flow
+//!     reasoning. Single-line pattern matching alone produces ~60% false positive
+//!     rate; taint-flow context reduces it to ~15%.
+//!   - LLM-augmented vulnerability checker pattern generation.
+//!   - Iterative refinement via static analysis feedback.
 //!
 //! This engine implements:
 //!   1. **55 rules** across 8 CWE categories (language-aware)
 //!   2. **Taint-flow simulation**: tracks user-controlled sources across lines
-//!      to reduce false positives (inspired by IRIS whole-repo reasoning)
+//!      to reduce false positives (whole-repo reasoning)
 //!   3. **CVSS v3.1-inspired scoring**: impact * exploitability * scope
 //!   4. **Fix recommendations**: every rule carries a concrete fix string
 //!   5. **False-positive suppression**: test files, comment blocks, constant strings
@@ -1918,7 +1918,7 @@ fn is_non_code_file(source: &str) -> bool {
 
 // ═══════════════════════════════════════════════════════════════════
 // Taint-flow simulation
-/// Inspired by IRIS (ICLR 2025): track user-controlled sources across lines.
+/// Track user-controlled sources across lines.
 /// This is a lightweight single-function approximation — no full dataflow graph.
 /// Sources: function parameters named after common input patterns,
 ///          request.*, form.*, args.*, query.*, input(), sys.argv.
@@ -2142,7 +2142,7 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
         conf *= 0.1;
     }
 
-    // Taint-aware rules get a confidence boost when triggered (IRIS insight)
+    // Taint-aware rules get a confidence boost when triggered
     if rule.taint_aware {
         conf = (conf * 1.2).min(1.0);
     }
@@ -2190,7 +2190,7 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
     let is_non_code = is_non_code_file(source);
     let lines: Vec<&str> = content.lines().collect();
 
-    // Taint analysis (IRIS-inspired): one pass to collect sources, one to propagate
+    // Taint analysis: one pass to collect sources, one to propagate
     let direct_sources = collect_taint_sources(&lines);
     let tainted_vars = propagate_taint(&lines, &direct_sources);
 

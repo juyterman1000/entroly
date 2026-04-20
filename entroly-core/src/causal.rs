@@ -34,8 +34,7 @@
 //! # Temporal Causal Chains (Transfer Entropy)
 //!
 //! Beyond single-turn causality, we track which fragments at turn T−1
-//! **causally enable** success at turn T. Inspired by transfer entropy
-//! (Schreiber, Physical Review Letters 2000; Barnett et al., 2009):
+//! **causally enable** success at turn T. Inspired by transfer entropy:
 //!
 //!   TE(A→B) ≈ E[Y | B at T, A at T−1] − E[Y | B at T, ¬A at T−1]
 //!

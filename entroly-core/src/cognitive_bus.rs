@@ -29,11 +29,6 @@
 //! Welford Spike Detection (online, no windowing):
 //!   is_spike = (x − μ̄) > k·σ    // k=3, immediate broadcast, bypass queue
 //!
-//! References:
-//!   - Jaques et al., "Social Influence as Intrinsic Motivation", ICML 2019
-//!   - McClelland et al., "Complementary Learning Systems", Psych Review 1995
-//!   - agentOS cognitive_bus.rs — ISA routing, Poisson models
-
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::{BinaryHeap, HashMap, VecDeque};

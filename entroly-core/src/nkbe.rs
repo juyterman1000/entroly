@@ -18,11 +18,6 @@
 //! REINFORCE gradient (RL weight learning) adjusts agent priorities
 //! based on outcome quality.
 //!
-//! References:
-//!   - Nash (1950), "The Bargaining Problem"
-//!   - Arrow & Debreu (1954), "Existence of Equilibrium for a Competitive Economy"
-//!   - Patel et al., "Fair Scheduling for LLM Serving", arXiv:2401.00588
-
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
