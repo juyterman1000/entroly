@@ -1015,7 +1015,6 @@ def cmd_export(args):
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Export{C.RESET}\n")
 
     entroly_dir = Path.home() / ".entroly"
-    entroly_dir / "checkpoints"
     tuning_config = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
 
     export_data = {
@@ -1088,8 +1087,9 @@ def cmd_drift(args):
         print(f"  {C.RED}Cannot read tuning_config.json: {e}{C.RESET}")
         return
 
-    # Default weights for comparison
-    defaults = {"recency": 0.3, "frequency": 0.25, "semantic_sim": 0.25, "entropy": 0.2}
+    # Default weights for comparison. Keep keys in sync with cmd_doctor and
+    # migrate defaults — mismatched keys silently report bogus drift.
+    defaults = {"recency": 0.30, "frequency": 0.25, "semantic": 0.25, "entropy": 0.20}
     current = config.get("weights", {})
 
     total_drift = 0.0
@@ -1280,12 +1280,18 @@ def cmd_wrap(args):
             stderr=subprocess.DEVNULL,
         )
         import time as _time
+        started = False
         for _ in range(30):
             _time.sleep(0.2)
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(0.3)
                 if s.connect_ex(("127.0.0.1", port)) == 0:
+                    started = True
                     break
+        if not started:
+            print(f"  {C.RED}Proxy failed to start on port {port} within 6s.{C.RESET}")
+            print(f"  {C.GRAY}Try: entroly proxy --port {port} in another terminal to see the error.{C.RESET}\n")
+            return
         print(f"  {C.GREEN}Proxy running at http://localhost:{port}{C.RESET}")
     else:
         print(f"  {C.GREEN}Proxy already running at http://localhost:{port}{C.RESET}")
@@ -2083,8 +2089,9 @@ def cmd_digest(args):
 
         print(f"  {C.BOLD}Requests:{C.RESET} {total:,} total, {optimized:,} optimized")
         print(f"  {C.BOLD}Tokens saved:{C.RESET} {saved:,} ({savings_pct})")
-        est_cost = saved * 0.000003
-        print(f"  {C.BOLD}Estimated cost saved:{C.RESET} ${est_cost:.2f}")
+        from entroly.value_tracker import estimate_cost
+        est_cost = estimate_cost(saved, "gpt-4o")
+        print(f"  {C.BOLD}Estimated cost saved:{C.RESET} ${est_cost:.2f} {C.GRAY}(at GPT-4o input rate){C.RESET}")
         print(f"  {C.BOLD}Pipeline latency:{C.RESET} {mean_ms:.1f}ms avg")
         if error_rate > 0:
             color = C.RED if error_rate > 0.1 else C.YELLOW
@@ -2268,11 +2275,13 @@ def cmd_completions(args):
     """entroly completions {bash|zsh|fish} — output shell completion script."""
     shell = args.shell
     commands = [
-        "init", "serve", "proxy", "dashboard", "health",
+        "init", "go", "serve", "proxy", "dashboard", "health",
         "autotune", "benchmark", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
-        "batch", "demo", "doctor", "digest", "migrate", "role",
-        "completions",
+        "batch", "wrap", "learn", "share", "demo",
+        "doctor", "digest", "migrate", "role", "completions",
+        "optimize", "feedback", "compile", "verify", "sync",
+        "search", "docs", "finetune",
     ]
     cmd_list = " ".join(commands)
 
@@ -2321,9 +2330,10 @@ complete -c entroly -n '__fish_seen_subcommand_from completions' -a 'bash zsh fi
 def cmd_optimize(args):
     """entroly optimize — generate an optimized context snapshot for a specific task.
 
-    This is the primary command for subagent-driven workflows.
-    It indexes the codebase, selects the mathematically optimal files
-    for the given task, and outputs a structured markdown snapshot.
+    Indexes the codebase and selects files under a token budget using the
+    knapsack approximation (0/1 DP when feasible, density-greedy otherwise —
+    not exact optimum; knapsack is NP-hard). Outputs a markdown snapshot
+    suitable for injection into a subagent prompt.
     """
     from entroly.auto_index import auto_index
     from entroly.server import EntrolyEngine
@@ -2753,10 +2763,10 @@ def cmd_docs(args):
         from entroly_core import CogOpsEngine
         engine = CogOpsEngine(vault_base)
         result = engine.compile_docs(target, max_files)
-        engine_name = "rust"
     except ImportError:
-        result = {"docs_found": 0, "docs_compiled": 0, "entities": []}
-        engine_name = "python"
+        print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
+        print(f"  {C.GRAY}Install with: pip install entroly-core{C.RESET}\n")
+        return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
     print(f"  {C.GREEN}Docs compiled:{C.RESET}   {result.get('docs_compiled', 0)}")
@@ -2765,7 +2775,7 @@ def cmd_docs(args):
         print(f"  {C.GREEN}Entities:{C.RESET}")
         for e in entities:
             print(f"    {C.GRAY}- {e}{C.RESET}")
-    print(f"\n  {C.GREEN}Documentation beliefs persisted.{C.RESET} ({engine_name} engine)\n")
+    print(f"\n  {C.GREEN}Documentation beliefs persisted.{C.RESET}\n")
 
 
 def cmd_finetune(args):
@@ -2796,16 +2806,19 @@ def cmd_finetune(args):
         from entroly_core import CogOpsEngine
         engine = CogOpsEngine(vault_base)
         result = engine.export_training_data(output, "jsonl")
-        engine_name = "rust"
     except ImportError:
-        result = {"beliefs_used": 0, "training_pairs": 0, "beliefs_skipped": 0, "total_tokens_approx": 0}
-        engine_name = "python"
+        print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
+        print(f"  {C.GRAY}Install with: pip install entroly-core{C.RESET}\n")
+        return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
     print(f"  {C.GREEN}Beliefs skipped:{C.RESET}  {result.get('beliefs_skipped', 0)} (low confidence / stale)")
     print(f"  {C.GREEN}Training pairs:{C.RESET}   {result.get('training_pairs', 0)}")
     print(f"  {C.GREEN}Approx tokens:{C.RESET}    {result.get('total_tokens_approx', 0):,}")
-    print(f"\n  {C.GREEN}Training data exported.{C.RESET} ({engine_name} engine)")
+    if result.get("training_pairs", 0) == 0:
+        print(f"\n  {C.YELLOW}No training pairs written.{C.RESET} Run {C.CYAN}entroly compile{C.RESET} first to populate the vault.\n")
+        return
+    print(f"\n  {C.GREEN}Training data exported.{C.RESET}")
     print(f"  {C.GRAY}Use with: openai api fine_tuning.jobs.create -t {output}{C.RESET}\n")
 
 
