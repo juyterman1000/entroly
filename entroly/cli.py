@@ -2408,8 +2408,31 @@ def cmd_optimize(args):
         return
 
     engine.advance_turn()
-    opt = engine.optimize_context(token_budget=budget, query=task)
-    selected = opt.get("selected_fragments", []) or opt.get("selected", [])
+    selector = getattr(args, "selector", "knapsack")
+    if selector == "dopt":
+        # Bayesian D-optimal re-selection over the full fragment store.
+        # recall() caps at ~25 items and biases toward stale stubs; we bypass
+        # it and run log-det greedy directly on export_fragments. See
+        # entroly/dopt_selector.py for the objective and algorithm.
+        from entroly.dopt_selector import select as dopt_select
+        candidates = [dict(f) for f in engine._rust.export_fragments()]
+        exclude_patterns = getattr(args, "exclude", []) or []
+        if exclude_patterns:
+            candidates = [
+                c for c in candidates
+                if not any(p in (c.get("source") or "") for p in exclude_patterns)
+            ]
+        selected = dopt_select(candidates, token_budget=budget, query=task)
+        opt = {
+            "selected_fragments": selected,
+            "total_tokens": sum(f.get("token_count") or (len(f.get("content", "")) // 4) for f in selected),
+            "recommended_budget": budget,
+            "task_type": "",
+        }
+    else:
+        opt = engine.optimize_context(token_budget=budget, query=task)
+        selected = opt.get("selected_fragments", []) or opt.get("selected", [])
+
     # Deduplicate fragments by source path
     seen_sources = set()
     deduped = []
@@ -3002,6 +3025,14 @@ def main():
     optimize_parser.add_argument(
         "--quiet", "-q", action="store_true",
         help="Suppress progress output (only emit the snapshot)",
+    )
+    optimize_parser.add_argument(
+        "--selector", type=str, choices=["knapsack", "dopt"], default="knapsack",
+        help="Selection objective: knapsack (linear score) or dopt (Bayesian D-optimal log-det)",
+    )
+    optimize_parser.add_argument(
+        "--exclude", type=str, action="append", default=[],
+        help="Substring to exclude from the fragment source path (repeatable; dopt selector only)",
     )
 
     # entroly feedback

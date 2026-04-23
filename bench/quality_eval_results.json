@@ -1,0 +1,121 @@
+{
+  "tasks": [
+    {
+      "id": "knapsack_selector",
+      "baseline_tokens": 32000,
+      "entroly_tokens": 4189,
+      "compressed_tokens": 11876,
+      "baseline": {
+        "correctness": 5,
+        "specificity": 4,
+        "reasoning": "The candidate accurately describes the use of a 0/1 dynamic programming approach and a density-greedy method, but lacks specific details about sorting by score/tokens."
+      },
+      "entroly": {
+        "correctness": 1,
+        "specificity": 1,
+        "reasoning": "The candidate answer does not match the ground truth's factual claims about using a 0/1 knapsack-style selection and instead describes a different method involving submodular objectives and greedy algorithms."
+      },
+      "compressed": {
+        "correctness": 4,
+        "specificity": 3,
+        "reasoning": "The candidate correctly describes the use of a 0/1 dynamic programming approach and a density-greedy method, but lacks detail on when each method is used and does not mention the exact conditions for switching between them."
+      }
+    },
+    {
+      "id": "sast_rule_tiers",
+      "baseline_tokens": 32000,
+      "entroly_tokens": 4233,
+      "compressed_tokens": 11078,
+      "baseline": {
+        "correctness": 4,
+        "specificity": 4,
+        "reasoning": "The candidate correctly identifies the distinction between taint-aware and pattern-only rules and mentions the `taint_aware` field, but it inaccurately refers to it as part of the `SastRule` struct instead of the `taint_flow` field."
+      },
+      "entroly": {
+        "correctness": 3,
+        "specificity": 3,
+        "reasoning": "The candidate describes functions related to taint analysis but does not mention the 'taint_flow' field or how findings are counted into totals, which are key elements in the ground truth."
+      },
+      "compressed": {
+        "correctness": 4,
+        "specificity": 4,
+        "reasoning": "The candidate correctly describes the distinction between taint-aware and pattern-only rules, but incorrectly names the field as 'taint_aware' instead of 'taint_flow' and omits details about the security report's role in counting findings."
+      }
+    },
+    {
+      "id": "jaccard_contradiction",
+      "baseline_tokens": 32000,
+      "entroly_tokens": 4053,
+      "compressed_tokens": 19366,
+      "baseline": {
+        "correctness": 1,
+        "specificity": 1,
+        "reasoning": "The candidate answer incorrectly states that the context does not contain information about the Jaccard contradiction guard, missing the detailed explanation provided in the ground truth."
+      },
+      "entroly": {
+        "correctness": 1,
+        "specificity": 1,
+        "reasoning": "The candidate answer incorrectly describes the Jaccard contradiction guard, mentioning SimHash and content divergence instead of path token comparison and Jaccard similarity."
+      },
+      "compressed": {
+        "correctness": 1,
+        "specificity": 1,
+        "reasoning": "The candidate answer incorrectly states that the context does not contain information about the Jaccard contradiction guard, missing the detailed explanation provided in the ground truth."
+      }
+    },
+    {
+      "id": "context_score_formula",
+      "baseline_tokens": 32000,
+      "entroly_tokens": 4178,
+      "compressed_tokens": 11876,
+      "baseline": {
+        "correctness": 3,
+        "specificity": 3,
+        "reasoning": "The candidate correctly identifies the geometric mean concept but incorrectly scales the formula and introduces unnecessary complexity with the product notation and N factor."
+      },
+      "entroly": {
+        "correctness": 1,
+        "specificity": 1,
+        "reasoning": "The candidate answer incorrectly states that the formula is not provided, while the ground truth clearly describes the formula for the Context Score."
+      },
+      "compressed": {
+        "correctness": 4,
+        "specificity": 5,
+        "reasoning": "The candidate correctly describes the formula as a geometric mean using logarithms and exponentiation, but does not explicitly mention the geometric mean penalizing factors going to zero."
+      }
+    },
+    {
+      "id": "feedback_command",
+      "baseline_tokens": 32000,
+      "entroly_tokens": 4284,
+      "compressed_tokens": 11876,
+      "baseline": {
+        "correctness": 3,
+        "specificity": 3,
+        "reasoning": "The candidate correctly describes the mapping of 'success' to a score of 1.0 and the adjustment of fragment relevance scores, but incorrectly introduces a scoring range and lacks specific function names like 'record_success'."
+      },
+      "entroly": {
+        "correctness": 3,
+        "specificity": 3,
+        "reasoning": "The candidate correctly identifies the purpose of the command and mentions the `record_success(fragment_ids)` function, but it introduces additional elements like `ResonanceMatrix` and `CausalContextGraph` that are not mentioned in the ground truth."
+      },
+      "compressed": {
+        "correctness": 3,
+        "specificity": 3,
+        "reasoning": "The candidate correctly identifies that 'success' maps to a score of 1.0 but lacks details about reading the JSON file and specific function calls like EntrolyEngine.record_success."
+      }
+    }
+  ],
+  "totals": {
+    "b_tok": 160000,
+    "e_tok": 20937,
+    "c_tok": 66072,
+    "b_corr": 16,
+    "e_corr": 9,
+    "c_corr": 16,
+    "b_spec": 15,
+    "e_spec": 9,
+    "c_spec": 16
+  },
+  "n": 5
+}
