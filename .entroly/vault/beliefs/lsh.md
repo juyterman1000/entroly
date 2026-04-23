@@ -1,12 +1,12 @@
 ---
-claim_id: 99c224a8-1632-40ef-915c-664e3d7d8858
+claim_id: 2b6a2b5a-4db6-446c-a97a-c1e57c0c2475
 entity: lsh
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/lsh.rs:123
-  - entroly-core/src/lsh.rs:192
-last_checked: 2026-04-14T04:12:29.646258+00:00
+  - entroly-wasm\src\lsh.rs:111
+  - entroly-wasm\src\lsh.rs:179
+last_checked: 2026-04-23T03:07:07.904093+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -15,7 +15,7 @@ derived_from:
 # Module: lsh
 
 **Language:** rust
-**Lines of code:** 314
+**Lines of code:** 301
 
 ## Types
 - `pub struct LshIndex` — Multi-Probe LSH Index for sub-linear SimHash similarity search.  Public API: - `insert(fp, idx)` — called on every `ingest()` - `remove(fp, idx)` — called on eviction / dedup replacement - `query(fp) 

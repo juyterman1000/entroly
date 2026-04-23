@@ -1,7 +1,7 @@
 ---
 claim_id: ba4e5ca5-40a7-4f41-958e-560ded7818e8
 entity: autotune.js::MAX_BLEND_RATE
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

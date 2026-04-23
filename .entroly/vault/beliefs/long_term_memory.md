@@ -1,20 +1,20 @@
 ---
-claim_id: e71a56d2-a631-40c8-a84b-8e89a36f7653
+claim_id: bd9baec4-5b0b-46e6-b508-02fa3473f4d1
 entity: long_term_memory
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/long_term_memory.py:79
-  - entroly/long_term_memory.py:108
-  - entroly/long_term_memory.py:71
-  - entroly/long_term_memory.py:87
-  - entroly/long_term_memory.py:123
-  - entroly/long_term_memory.py:153
-  - entroly/long_term_memory.py:156
-  - entroly/long_term_memory.py:164
-  - entroly/long_term_memory.py:228
-  - entroly/long_term_memory.py:278
-last_checked: 2026-04-14T04:12:29.467050+00:00
+  - entroly\long_term_memory.py:79
+  - entroly\long_term_memory.py:108
+  - entroly\long_term_memory.py:71
+  - entroly\long_term_memory.py:87
+  - entroly\long_term_memory.py:123
+  - entroly\long_term_memory.py:153
+  - entroly\long_term_memory.py:156
+  - entroly\long_term_memory.py:164
+  - entroly\long_term_memory.py:228
+  - entroly\long_term_memory.py:278
+last_checked: 2026-04-23T03:07:07.810958+00:00
 derived_from:
   - belief_compiler
   - sast

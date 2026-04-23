@@ -1,11 +1,11 @@
 ---
-claim_id: 719856dc-e52c-4317-a7ba-74cfa679f063
+claim_id: baec5303-32b0-445f-af1a-f414576621ec
 entity: workspace
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-wasm/js/workspace.js:12
-last_checked: 2026-04-14T04:12:29.738190+00:00
+  - entroly-wasm\js\workspace.js:12
+last_checked: 2026-04-23T03:07:07.884630+00:00
 derived_from:
   - belief_compiler
   - sast

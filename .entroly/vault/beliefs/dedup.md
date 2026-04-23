@@ -1,15 +1,15 @@
 ---
-claim_id: a81ece7c-510c-4cfd-8f08-01db7fbc9e5f
+claim_id: 46a920c7-db57-45b9-8b8a-cfe5b46a7645
 entity: dedup
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/dedup.rs:105
-  - entroly-core/src/dedup.rs:23
-  - entroly-core/src/dedup.rs:34
-  - entroly-core/src/dedup.rs:46
-  - entroly-core/src/dedup.rs:92
-last_checked: 2026-04-14T04:12:29.584978+00:00
+  - entroly-wasm\src\dedup.rs:105
+  - entroly-wasm\src\dedup.rs:23
+  - entroly-wasm\src\dedup.rs:34
+  - entroly-wasm\src\dedup.rs:46
+  - entroly-wasm\src\dedup.rs:92
+last_checked: 2026-04-23T03:07:07.893272+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -18,7 +18,7 @@ derived_from:
 # Module: dedup
 
 **Language:** rust
-**Lines of code:** 256
+**Lines of code:** 245
 
 ## Types
 - `pub struct DedupIndex` — LSH-bucketed deduplication index.  Split 64-bit fingerprints into 4 bands of 16 bits. Two fingerprints sharing any band → candidate pair. Verify with full Hamming distance.  Same approach as ebbiforge

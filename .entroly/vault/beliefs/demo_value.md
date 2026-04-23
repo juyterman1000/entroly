@@ -1,5 +1,5 @@
 ---
-claim_id: 798fa2fd-c6da-4ec6-8aa0-575266768423
+claim_id: ba4f32f5-b9c3-4a6c-b065-5aba881ea934
 entity: demo_value
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - examples\demo_value.py:151
   - examples\demo_value.py:81
   - examples\demo_value.py:94
-last_checked: 2026-04-14T04:12:09.413931+00:00
+last_checked: 2026-04-23T03:07:07.913978+00:00
 derived_from:
   - belief_compiler
   - sast

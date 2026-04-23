@@ -1,12 +1,12 @@
 ---
-claim_id: 1bd39ce1-293e-4fdb-9b9f-322e514fae9a
+claim_id: ada9833e-943f-4ce0-895e-9c27f3325b41
 entity: test_repo_map
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - tests\test_repo_map.py:6
   - tests\test_repo_map.py:19
-last_checked: 2026-04-14T04:12:09.438986+00:00
+last_checked: 2026-04-23T03:07:07.942440+00:00
 derived_from:
   - belief_compiler
   - sast

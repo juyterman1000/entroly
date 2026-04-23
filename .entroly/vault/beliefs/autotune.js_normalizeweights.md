@@ -1,7 +1,7 @@
 ---
 claim_id: 149c51c6-81b3-4473-ad68-49687fbcc458
 entity: autotune.js::normalizeWeights
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

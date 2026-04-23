@@ -1,19 +1,19 @@
 ---
-claim_id: 410cfc0b-6b2b-41e0-8153-7d981202e68c
+claim_id: f045edbd-b2ea-4a31-83fc-293b71e38c9f
 entity: hierarchical
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/hierarchical.rs:29
-  - entroly-core/src/hierarchical.rs:54
-  - entroly-core/src/hierarchical.rs:82
-  - entroly-core/src/hierarchical.rs:175
-  - entroly-core/src/hierarchical.rs:224
-  - entroly-core/src/hierarchical.rs:326
-  - entroly-core/src/hierarchical.rs:372
-  - entroly-core/src/hierarchical.rs:392
-  - entroly-core/src/hierarchical.rs:416
-last_checked: 2026-04-14T04:12:29.607129+00:00
+  - entroly-wasm\src\hierarchical.rs:29
+  - entroly-wasm\src\hierarchical.rs:54
+  - entroly-wasm\src\hierarchical.rs:82
+  - entroly-wasm\src\hierarchical.rs:175
+  - entroly-wasm\src\hierarchical.rs:224
+  - entroly-wasm\src\hierarchical.rs:326
+  - entroly-wasm\src\hierarchical.rs:372
+  - entroly-wasm\src\hierarchical.rs:392
+  - entroly-wasm\src\hierarchical.rs:416
+last_checked: 2026-04-23T03:07:07.899900+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -62,3 +62,7 @@ derived_from:
 - `crate::depgraph::DepGraph`
 - `crate::fragment::ContextFragment`
 - `std::collections::`
+
+## Linked Beliefs
+- [[DepGraph]]
+- [[ContextFragment]]

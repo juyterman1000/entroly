@@ -1,7 +1,7 @@
 ---
-claim_id: ad196cd8-fd39-4857-8aeb-af9c75f95c23
+claim_id: b2bf10f3-4e22-4109-8cb4-de706b31581c
 entity: test_context_bridge
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - tests\test_context_bridge.py:30
@@ -14,7 +14,7 @@ sources:
   - tests\test_context_bridge.py:379
   - tests\test_context_bridge.py:32
   - tests\test_context_bridge.py:38
-last_checked: 2026-04-14T04:12:09.424054+00:00
+last_checked: 2026-04-23T03:07:07.926126+00:00
 derived_from:
   - belief_compiler
   - sast

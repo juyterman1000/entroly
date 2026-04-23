@@ -1,18 +1,18 @@
 ---
-claim_id: 58bbc1b3-a2fd-465e-8846-22d3acb42dca
+claim_id: 7a579d11-4200-4769-935f-93cf830a52c9
 entity: universal_compress
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/universal_compress.py:50
-  - entroly/universal_compress.py:127
-  - entroly/universal_compress.py:248
-  - entroly/universal_compress.py:277
-  - entroly/universal_compress.py:308
-  - entroly/universal_compress.py:341
-  - entroly/universal_compress.py:357
-  - entroly/universal_compress.py:382
-last_checked: 2026-04-14T04:12:29.521985+00:00
+  - entroly\universal_compress.py:50
+  - entroly\universal_compress.py:127
+  - entroly\universal_compress.py:248
+  - entroly\universal_compress.py:277
+  - entroly\universal_compress.py:308
+  - entroly\universal_compress.py:341
+  - entroly\universal_compress.py:357
+  - entroly\universal_compress.py:382
+last_checked: 2026-04-23T03:07:07.822541+00:00
 derived_from:
   - belief_compiler
   - sast

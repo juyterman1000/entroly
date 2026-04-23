@@ -1,5 +1,5 @@
 ---
-claim_id: b3d9eb1e-9d04-406c-8043-bd8dfafad0ad
+claim_id: a8dd34a7-b187-4d7d-8ed0-cac0bc185fc4
 entity: test_deep_functional
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_deep_functional.py:114
   - tests\test_deep_functional.py:122
   - tests\test_deep_functional.py:132
-last_checked: 2026-04-14T04:12:09.424054+00:00
+last_checked: 2026-04-23T03:07:07.927202+00:00
 derived_from:
   - belief_compiler
   - sast

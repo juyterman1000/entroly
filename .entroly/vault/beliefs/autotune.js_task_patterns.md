@@ -1,7 +1,7 @@
 ---
 claim_id: c41c444d-f88a-4c4c-8cf6-a7b4046e03ef
 entity: autotune.js::TASK_PATTERNS
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

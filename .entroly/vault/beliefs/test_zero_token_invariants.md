@@ -1,5 +1,5 @@
 ---
-claim_id: 0b4083de-df32-418a-be19-44938105b0b8
+claim_id: ff959feb-761a-4236-b442-6236eca5b259
 entity: test_zero_token_invariants
 status: inferred
 confidence: 0.75
@@ -7,7 +7,7 @@ sources:
   - tests\test_zero_token_invariants.py:28
   - tests\test_zero_token_invariants.py:76
   - tests\test_zero_token_invariants.py:25
-last_checked: 2026-04-14T04:12:09.442011+00:00
+last_checked: 2026-04-23T03:07:07.945227+00:00
 derived_from:
   - belief_compiler
   - sast

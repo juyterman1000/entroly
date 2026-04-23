@@ -1,7 +1,7 @@
 ---
 claim_id: 52663f16-9936-4f0a-81e9-e7dab54c2614
 entity: autotune.js::FeedbackJournal
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

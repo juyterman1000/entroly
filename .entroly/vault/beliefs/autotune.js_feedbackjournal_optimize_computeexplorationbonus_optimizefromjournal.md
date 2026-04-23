@@ -17,7 +17,7 @@ entity: autotune.js::FeedbackJournal,
   WEIGHT_KEYS,
   DEFAULTS,
 
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

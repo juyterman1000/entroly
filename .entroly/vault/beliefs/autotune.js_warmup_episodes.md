@@ -1,7 +1,7 @@
 ---
 claim_id: 89088e4b-8e3a-44f6-8b08-a4bb93fd002e
 entity: autotune.js::WARMUP_EPISODES
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

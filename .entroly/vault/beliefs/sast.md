@@ -1,20 +1,20 @@
 ---
-claim_id: 939ea09b-0734-4f35-85d1-f197aebd4a67
+claim_id: e67579e3-d71e-4411-b729-1494522dd1f8
 entity: sast
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/sast.rs:64
-  - entroly-core/src/sast.rs:103
-  - entroly-core/src/sast.rs:120
-  - entroly-core/src/sast.rs:30
-  - entroly-core/src/sast.rs:1887
-  - entroly-core/src/sast.rs:1912
-  - entroly-core/src/sast.rs:1937
-  - entroly-core/src/sast.rs:1995
-  - entroly-core/src/sast.rs:2018
-  - entroly-core/src/sast.rs:2060
-last_checked: 2026-04-14T04:12:29.675472+00:00
+  - entroly-wasm\src\sast.rs:53
+  - entroly-wasm\src\sast.rs:74
+  - entroly-wasm\src\sast.rs:91
+  - entroly-wasm\src\sast.rs:30
+  - entroly-wasm\src\sast.rs:1858
+  - entroly-wasm\src\sast.rs:1883
+  - entroly-wasm\src\sast.rs:1908
+  - entroly-wasm\src\sast.rs:1966
+  - entroly-wasm\src\sast.rs:1989
+  - entroly-wasm\src\sast.rs:2031
+last_checked: 2026-04-23T03:07:07.909218+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: sast
 
 **Language:** rust
-**Lines of code:** 2882
+**Lines of code:** 2853
 
 ## Types
 - `pub struct SastRule` — A single SAST rule.

@@ -1,16 +1,16 @@
 ---
-claim_id: 2dd4e9db-70a9-47a2-a5ad-d02050a33ae1
+claim_id: f0dac78d-e384-4f6c-8478-20cfbe178e96
 entity: slack_gateway
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/integrations/slack_gateway.py:36
-  - entroly/integrations/slack_gateway.py:37
-  - entroly/integrations/slack_gateway.py:50
-  - entroly/integrations/slack_gateway.py:53
-  - entroly/integrations/slack_gateway.py:63
-  - entroly/integrations/slack_gateway.py:68
-last_checked: 2026-04-14T04:12:29.463170+00:00
+  - entroly\integrations\slack_gateway.py:36
+  - entroly\integrations\slack_gateway.py:37
+  - entroly\integrations\slack_gateway.py:50
+  - entroly\integrations\slack_gateway.py:53
+  - entroly\integrations\slack_gateway.py:63
+  - entroly\integrations\slack_gateway.py:68
+last_checked: 2026-04-23T03:07:07.830007+00:00
 derived_from:
   - belief_compiler
   - sast

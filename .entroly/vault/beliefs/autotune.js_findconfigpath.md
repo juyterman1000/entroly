@@ -1,7 +1,7 @@
 ---
 claim_id: 95dacef4-8c9a-405a-bab5-c0c45cdfd4f9
 entity: autotune.js::findConfigPath
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

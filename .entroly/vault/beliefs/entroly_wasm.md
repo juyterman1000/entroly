@@ -1,5 +1,5 @@
 ---
-claim_id: 5ac5727c-6ca6-44e0-9967-ab5529ec069e
+claim_id: e3a40a8f-cbfc-4f07-a97c-9d2a23d39e02
 entity: entroly_wasm
 status: inferred
 confidence: 0.75
@@ -12,7 +12,7 @@ sources:
   - entroly-wasm\pkg\entroly_wasm.js:397
   - entroly-wasm\pkg\entroly_wasm.js:406
   - entroly-wasm\pkg\entroly_wasm.js:445
-last_checked: 2026-04-14T04:12:09.386887+00:00
+last_checked: 2026-04-23T03:07:07.886756+00:00
 derived_from:
   - belief_compiler
   - sast

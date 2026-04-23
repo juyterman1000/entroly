@@ -1,7 +1,7 @@
 ---
 claim_id: 4d5304a0-d386-4b37-beb3-e7068974a80c
 entity: autotune.js::saveConfig
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

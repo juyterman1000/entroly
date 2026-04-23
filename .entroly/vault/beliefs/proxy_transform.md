@@ -1,20 +1,20 @@
 ---
-claim_id: 050729a3-41e9-4dde-9c31-9c59b9161ad9
+claim_id: d6660f52-6dad-4289-8e3b-b0b5ff02a84a
 entity: proxy_transform
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/proxy_transform.py:27
-  - entroly/proxy_transform.py:64
-  - entroly/proxy_transform.py:105
-  - entroly/proxy_transform.py:123
-  - entroly/proxy_transform.py:165
-  - entroly/proxy_transform.py:247
-  - entroly/proxy_transform.py:354
-  - entroly/proxy_transform.py:444
-  - entroly/proxy_transform.py:560
-  - entroly/proxy_transform.py:662
-last_checked: 2026-04-14T04:12:29.494067+00:00
+  - entroly\proxy_transform.py:27
+  - entroly\proxy_transform.py:64
+  - entroly\proxy_transform.py:105
+  - entroly\proxy_transform.py:123
+  - entroly\proxy_transform.py:165
+  - entroly\proxy_transform.py:247
+  - entroly\proxy_transform.py:354
+  - entroly\proxy_transform.py:444
+  - entroly\proxy_transform.py:560
+  - entroly\proxy_transform.py:662
+last_checked: 2026-04-23T03:07:07.816239+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: proxy_transform
 
 **Language:** python
-**Lines of code:** 1724
+**Lines of code:** 1910
 
 
 ## Functions
@@ -102,6 +102,14 @@ derived_from:
     injected_context: str = "",
     provider: str = "openai",
 ) -> tuple[list[dict], dict]`
+- `def distill_response(
+    text: str,
+    mode: str = "full",
+) -> tuple[str, int, int]`
+- `def distill_response_sse_chunk(
+    chunk_text: str,
+    mode: str = "full",
+) -> str`
 
 ## Dependencies
 - `.proxy_config`

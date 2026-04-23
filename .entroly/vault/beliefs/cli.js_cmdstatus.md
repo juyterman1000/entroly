@@ -1,7 +1,7 @@
 ---
 claim_id: 3dd7952f-f0c3-43b6-9eeb-92563d8e227e
 entity: cli.js::cmdStatus
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

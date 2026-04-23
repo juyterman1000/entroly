@@ -1,11 +1,11 @@
 ---
-claim_id: 06d04d29-9642-4b3b-86eb-1aef1e04d176
+claim_id: 5ae4427b-ce2e-40d3-a2b2-4f3facd888c5
 entity: functional_test
 status: inferred
 confidence: 0.75
 sources:
   - tests\functional_test.py:24
-last_checked: 2026-04-14T04:12:09.418695+00:00
+last_checked: 2026-04-23T03:07:07.920090+00:00
 derived_from:
   - belief_compiler
   - sast

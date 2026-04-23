@@ -1,20 +1,20 @@
 ---
-claim_id: 7f291d82-2d68-48bf-b008-3f5175f06775
+claim_id: 664d2923-213a-4896-a474-953f5a16e021
 entity: proxy
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/proxy.py:104
-  - entroly/proxy.py:148
-  - entroly/proxy.py:173
-  - entroly/proxy.py:320
-  - entroly/proxy.py:490
-  - entroly/proxy.py:629
-  - entroly/proxy.py:111
-  - entroly/proxy.py:119
-  - entroly/proxy.py:130
-  - entroly/proxy.py:135
-last_checked: 2026-04-14T04:12:29.484616+00:00
+  - entroly\proxy.py:104
+  - entroly\proxy.py:148
+  - entroly\proxy.py:173
+  - entroly\proxy.py:320
+  - entroly\proxy.py:490
+  - entroly\proxy.py:629
+  - entroly\proxy.py:111
+  - entroly\proxy.py:119
+  - entroly\proxy.py:130
+  - entroly\proxy.py:135
+last_checked: 2026-04-23T03:07:07.814368+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: proxy
 
 **Language:** python
-**Lines of code:** 2169
+**Lines of code:** 2260
 
 ## Types
 - `class _CircuitBreaker()` — SIRS-inspired circuit breaker: open after N consecutive failures, half-open after cooldown period, close on success. Inspired by the refractory period in agentOS/scheduler.rs SIRS routing.

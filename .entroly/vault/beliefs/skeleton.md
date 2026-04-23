@@ -1,20 +1,20 @@
 ---
-claim_id: 717b4ebd-01ce-4248-a59c-5cc689204402
+claim_id: e62d3f78-be9a-4417-a281-7c244f6e05f6
 entity: skeleton
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/skeleton.rs:1981
-  - entroly-core/src/skeleton.rs:39
-  - entroly-core/src/skeleton.rs:85
-  - entroly-core/src/skeleton.rs:128
-  - entroly-core/src/skeleton.rs:133
-  - entroly-core/src/skeleton.rs:139
-  - entroly-core/src/skeleton.rs:305
-  - entroly-core/src/skeleton.rs:489
-  - entroly-core/src/skeleton.rs:676
-  - entroly-core/src/skeleton.rs:805
-last_checked: 2026-04-14T04:12:29.685600+00:00
+  - entroly-wasm\src\skeleton.rs:1981
+  - entroly-wasm\src\skeleton.rs:39
+  - entroly-wasm\src\skeleton.rs:85
+  - entroly-wasm\src\skeleton.rs:128
+  - entroly-wasm\src\skeleton.rs:133
+  - entroly-wasm\src\skeleton.rs:139
+  - entroly-wasm\src\skeleton.rs:305
+  - entroly-wasm\src\skeleton.rs:489
+  - entroly-wasm\src\skeleton.rs:676
+  - entroly-wasm\src\skeleton.rs:805
+last_checked: 2026-04-23T03:07:07.911029+00:00
 derived_from:
   - belief_compiler
   - sast

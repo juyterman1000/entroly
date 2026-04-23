@@ -1,17 +1,17 @@
 ---
-claim_id: 597b7f08-74ce-4019-be62-0e442f04833a
+claim_id: 99f3760e-f058-4368-b165-d83fad98920f
 entity: anomaly
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/anomaly.rs:65
-  - entroly-core/src/anomaly.rs:85
-  - entroly-core/src/anomaly.rs:44
-  - entroly-core/src/anomaly.rs:93
-  - entroly-core/src/anomaly.rs:106
-  - entroly-core/src/anomaly.rs:119
-  - entroly-core/src/anomaly.rs:264
-last_checked: 2026-04-14T04:12:29.534720+00:00
+  - entroly-wasm\src\anomaly.rs:58
+  - entroly-wasm\src\anomaly.rs:78
+  - entroly-wasm\src\anomaly.rs:44
+  - entroly-wasm\src\anomaly.rs:86
+  - entroly-wasm\src\anomaly.rs:99
+  - entroly-wasm\src\anomaly.rs:112
+  - entroly-wasm\src\anomaly.rs:257
+last_checked: 2026-04-23T03:07:07.887834+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -20,7 +20,7 @@ derived_from:
 # Module: anomaly
 
 **Language:** rust
-**Lines of code:** 379
+**Lines of code:** 372
 
 ## Types
 - `pub struct EntropyAnomaly` — A single entropy anomaly detected in the codebase.
@@ -38,3 +38,7 @@ derived_from:
 - `crate::fragment::ContextFragment`
 - `serde::`
 - `std::collections::HashMap`
+
+## Linked Beliefs
+- [[boilerplate_ratio]]
+- [[ContextFragment]]

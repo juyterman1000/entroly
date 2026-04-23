@@ -194,14 +194,15 @@ This is from this repo's vault, not a roadmap:
 
 ### Accuracy Retention
 
-Compression doesn't hurt accuracy — we measured it:
+Compression doesn't hurt accuracy — we measured it (n=100, gpt-4o-mini, Wilson 95% CIs):
 
-| Benchmark | Baseline | With Entroly | Retention |
+| Benchmark | Baseline (95% CI) | With Entroly (95% CI) | Retention |
 |---|---|---|---|
-| NeedleInAHaystack | 100% | 100% | **100%** |
-| HumanEval | 13.3% | 13.3% | **100%** |
-| GSM8K | 86.7% | 80.0% | **92%** |
-| SQuAD 2.0 | 93.3% | 86.7% | **92%** |
+| NeedleInAHaystack | 100% [83.9–100%] | 100% [83.9–100%] | **100.0%** |
+| GSM8K | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** |
+| SQuAD 2.0 | 84.0% [75.6–89.9%] | 83.0% [74.5–89.1%] | **98.8%** |
+
+> Confidence intervals overlap on every benchmark — accuracy is statistically indistinguishable from baseline. Reproduce: `python -m bench.accuracy --benchmark all --model gpt-4o-mini --samples 100`
 
 ### CI/CD Integration
 

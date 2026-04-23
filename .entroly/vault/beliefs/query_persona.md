@@ -1,18 +1,18 @@
 ---
-claim_id: 2deeb073-f137-41ef-9344-875c2c6a742a
+claim_id: c2e95971-c58c-41a0-96a1-4067ee899074
 entity: query_persona
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/query_persona.rs:73
-  - entroly-core/src/query_persona.rs:133
-  - entroly-core/src/query_persona.rs:256
-  - entroly-core/src/query_persona.rs:339
-  - entroly-core/src/query_persona.rs:414
-  - entroly-core/src/query_persona.rs:649
-  - entroly-core/src/query_persona.rs:660
-  - entroly-core/src/query_persona.rs:384
-last_checked: 2026-04-14T04:12:29.660650+00:00
+  - entroly-wasm\src\query_persona.rs:73
+  - entroly-wasm\src\query_persona.rs:133
+  - entroly-wasm\src\query_persona.rs:256
+  - entroly-wasm\src\query_persona.rs:339
+  - entroly-wasm\src\query_persona.rs:414
+  - entroly-wasm\src\query_persona.rs:649
+  - entroly-wasm\src\query_persona.rs:660
+  - entroly-wasm\src\query_persona.rs:384
+last_checked: 2026-04-23T03:07:07.907435+00:00
 derived_from:
   - belief_compiler
   - sast

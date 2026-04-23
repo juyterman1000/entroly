@@ -1,14 +1,14 @@
 ---
-claim_id: 8cfa0583-1387-465d-ae6d-34f6408c88f1
+claim_id: ab3bfa2d-f8ff-4784-809c-c47cb8ec37bf
 entity: benchmark_harness
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/benchmark_harness.py:43
-  - entroly/benchmark_harness.py:26
-  - entroly/benchmark_harness.py:39
-  - entroly/benchmark_harness.py:40
-last_checked: 2026-04-14T04:12:29.407585+00:00
+  - entroly\benchmark_harness.py:43
+  - entroly\benchmark_harness.py:26
+  - entroly\benchmark_harness.py:39
+  - entroly\benchmark_harness.py:40
+last_checked: 2026-04-23T03:07:07.792191+00:00
 derived_from:
   - belief_compiler
   - sast

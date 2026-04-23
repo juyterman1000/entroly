@@ -1,12 +1,12 @@
 ---
-claim_id: 7f0cc7e4-f09f-41c5-8088-b17428a56ee1
+claim_id: bf11a823-a3be-4acf-b21a-9f5f529f5c2a
 entity: _docker_launcher
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/_docker_launcher.py:90
-  - entroly/_docker_launcher.py:22
-last_checked: 2026-04-14T04:12:29.392685+00:00
+  - entroly\_docker_launcher.py:90
+  - entroly\_docker_launcher.py:22
+last_checked: 2026-04-23T03:07:07.826649+00:00
 derived_from:
   - belief_compiler
   - sast

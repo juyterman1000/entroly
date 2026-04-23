@@ -1,7 +1,7 @@
 ---
 claim_id: c1471a98-18f3-4f44-93af-20f9e4b26a53
 entity: autotune.js::DECAY_GAMMA
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

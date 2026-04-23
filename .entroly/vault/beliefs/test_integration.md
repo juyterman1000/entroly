@@ -1,20 +1,20 @@
 ---
-claim_id: b6d97eee-2227-47f2-a6a2-0922546262c0
+claim_id: 39850f8a-5ac0-41fd-826d-9144abf425a4
 entity: test_integration
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/tests/test_integration.py:657
-  - entroly-core/tests/test_integration.py:15
-  - entroly-core/tests/test_integration.py:34
-  - entroly-core/tests/test_integration.py:40
-  - entroly-core/tests/test_integration.py:49
-  - entroly-core/tests/test_integration.py:59
-  - entroly-core/tests/test_integration.py:72
-  - entroly-core/tests/test_integration.py:78
-  - entroly-core/tests/test_integration.py:90
-  - entroly-core/tests/test_integration.py:96
-last_checked: 2026-04-14T04:12:29.699559+00:00
+  - entroly-core\tests\test_integration.py:661
+  - entroly-core\tests\test_integration.py:15
+  - entroly-core\tests\test_integration.py:34
+  - entroly-core\tests\test_integration.py:40
+  - entroly-core\tests\test_integration.py:49
+  - entroly-core\tests\test_integration.py:59
+  - entroly-core\tests\test_integration.py:72
+  - entroly-core\tests\test_integration.py:78
+  - entroly-core\tests\test_integration.py:90
+  - entroly-core\tests\test_integration.py:96
+last_checked: 2026-04-23T03:07:07.863374+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: test_integration
 
 **Language:** python
-**Lines of code:** 818
+**Lines of code:** 822
 
 ## Types
 - `class DataPipeline()` — ETL pipeline for processing events.
@@ -60,7 +60,7 @@ derived_from:
 - `def test_unknown_task()`
 - `def test_optimize_empty()`
 - `def test_optimize_selects_within_budget()`
-- `def test_optimize_adaptive_budget()` — Bug tracing query should get 1.5x budget.
+- `def test_optimize_adaptive_budget()` — Bug tracing query surfaces a 1.5x recommended budget (advisory).
 - `def test_optimize_pinned_always_included()`
 - `def test_optimize_sufficiency()`
 - `def test_optimize_returns_ordered()`
@@ -107,3 +107,6 @@ derived_from:
 - `pathlib`
 - `sys`
 - `traceback`
+
+## Linked Beliefs
+- [[entroly_core]]

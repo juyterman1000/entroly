@@ -1,15 +1,15 @@
 ---
-claim_id: d4666ff5-92ac-4ef8-8207-87725d601ee2
+claim_id: 4e7a04c4-04dd-417a-9127-2025864e4af7
 entity: resonance
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/resonance.rs:136
-  - entroly-core/src/resonance.rs:293
-  - entroly-core/src/resonance.rs:392
-  - entroly-core/src/resonance.rs:327
-  - entroly-core/src/resonance.rs:458
-last_checked: 2026-04-14T04:12:29.664992+00:00
+  - entroly-wasm\src\resonance.rs:136
+  - entroly-wasm\src\resonance.rs:293
+  - entroly-wasm\src\resonance.rs:392
+  - entroly-wasm\src\resonance.rs:327
+  - entroly-wasm\src\resonance.rs:458
+last_checked: 2026-04-23T03:07:07.908263+00:00
 derived_from:
   - belief_compiler
   - sast

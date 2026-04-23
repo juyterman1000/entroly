@@ -1,7 +1,7 @@
 ---
 claim_id: 299f4e4b-9061-4cdb-b364-a684e99db6cc
 entity: autotune.js::DEFAULTS
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

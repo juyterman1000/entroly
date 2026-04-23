@@ -1,14 +1,14 @@
 ---
-claim_id: c0abf9e6-3de3-4971-b2de-ec6de3d9280c
+claim_id: 45e95e6b-36ad-4348-9f79-dd4e7325c610
 entity: needle_heatmap
 status: inferred
 confidence: 0.75
 sources:
-  - bench/needle_heatmap.py:29
-  - bench/needle_heatmap.py:47
-  - bench/needle_heatmap.py:107
-  - bench/needle_heatmap.py:163
-last_checked: 2026-04-14T04:12:29.389047+00:00
+  - bench\needle_heatmap.py:29
+  - bench\needle_heatmap.py:47
+  - bench\needle_heatmap.py:107
+  - bench\needle_heatmap.py:163
+last_checked: 2026-04-23T03:07:07.782882+00:00
 derived_from:
   - belief_compiler
   - sast

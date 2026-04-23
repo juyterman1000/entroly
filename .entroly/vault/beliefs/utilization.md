@@ -1,15 +1,15 @@
 ---
-claim_id: 8ab2e21f-d697-463f-8016-3e9780db1153
+claim_id: 58a42577-f190-4759-88a9-386e52808fce
 entity: utilization
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/utilization.rs:28
-  - entroly-core/src/utilization.rs:43
-  - entroly-core/src/utilization.rs:55
-  - entroly-core/src/utilization.rs:73
-  - entroly-core/src/utilization.rs:82
-last_checked: 2026-04-14T04:12:29.687862+00:00
+  - entroly-wasm\src\utilization.rs:28
+  - entroly-wasm\src\utilization.rs:43
+  - entroly-wasm\src\utilization.rs:55
+  - entroly-wasm\src\utilization.rs:73
+  - entroly-wasm\src\utilization.rs:82
+last_checked: 2026-04-23T03:07:07.911906+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -37,3 +37,7 @@ derived_from:
 - `crate::fragment::ContextFragment`
 - `serde::`
 - `std::collections::HashSet`
+
+## Linked Beliefs
+- [[extract_identifiers]]
+- [[ContextFragment]]

@@ -1,7 +1,7 @@
 ---
 claim_id: 6e755513-5433-4a3f-b957-9f7bf58cacc0
 entity: cli.js::fs
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

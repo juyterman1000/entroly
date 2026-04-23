@@ -1,20 +1,20 @@
 ---
-claim_id: 006f561d-de3c-41d5-a81e-3508c6bda6ae
+claim_id: 6267c5ff-f68f-4cb6-a916-ebcacf0196aa
 entity: test_brutal
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/tests/test_brutal.py:53
-  - entroly-core/tests/test_brutal.py:106
-  - entroly-core/tests/test_brutal.py:113
-  - entroly-core/tests/test_brutal.py:171
-  - entroly-core/tests/test_brutal.py:23
-  - entroly-core/tests/test_brutal.py:54
-  - entroly-core/tests/test_brutal.py:59
-  - entroly-core/tests/test_brutal.py:68
-  - entroly-core/tests/test_brutal.py:85
-  - entroly-core/tests/test_brutal.py:123
-last_checked: 2026-04-14T04:12:29.692930+00:00
+  - entroly-core\tests\test_brutal.py:53
+  - entroly-core\tests\test_brutal.py:106
+  - entroly-core\tests\test_brutal.py:113
+  - entroly-core\tests\test_brutal.py:171
+  - entroly-core\tests\test_brutal.py:23
+  - entroly-core\tests\test_brutal.py:54
+  - entroly-core\tests\test_brutal.py:59
+  - entroly-core\tests\test_brutal.py:68
+  - entroly-core\tests\test_brutal.py:85
+  - entroly-core\tests\test_brutal.py:123
+last_checked: 2026-04-23T03:07:07.862170+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -98,6 +98,9 @@ derived_from:
 - `typing`
 - `unittest.mock`
 - `uuid`
+
+## Linked Beliefs
+- [[entroly_core]]
 
 ## Key Invariants
 - test_explain_scores_are_bounded: All score dimensions must be in valid ranges.

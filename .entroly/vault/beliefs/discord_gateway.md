@@ -1,16 +1,16 @@
 ---
-claim_id: 3a6d8571-5237-4db1-a78d-344389b4de25
+claim_id: d02ed3a7-b2ee-4916-8b93-557a5aa55eb6
 entity: discord_gateway
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/integrations/discord_gateway.py:39
-  - entroly/integrations/discord_gateway.py:40
-  - entroly/integrations/discord_gateway.py:55
-  - entroly/integrations/discord_gateway.py:58
-  - entroly/integrations/discord_gateway.py:68
-  - entroly/integrations/discord_gateway.py:73
-last_checked: 2026-04-14T04:12:29.460602+00:00
+  - entroly\integrations\discord_gateway.py:39
+  - entroly\integrations\discord_gateway.py:40
+  - entroly\integrations\discord_gateway.py:55
+  - entroly\integrations\discord_gateway.py:58
+  - entroly\integrations\discord_gateway.py:68
+  - entroly\integrations\discord_gateway.py:73
+last_checked: 2026-04-23T03:07:07.828288+00:00
 derived_from:
   - belief_compiler
   - sast

@@ -1,20 +1,20 @@
 ---
-claim_id: 0f2ca7fc-820c-45aa-808b-a62cb33790bf
+claim_id: 5e9f6015-652b-4dfc-b851-49b51946f0f2
 entity: adaptive_pruner
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/adaptive_pruner.py:39
-  - entroly/adaptive_pruner.py:128
-  - entroly/adaptive_pruner.py:50
-  - entroly/adaptive_pruner.py:59
-  - entroly/adaptive_pruner.py:62
-  - entroly/adaptive_pruner.py:82
-  - entroly/adaptive_pruner.py:112
-  - entroly/adaptive_pruner.py:142
-  - entroly/adaptive_pruner.py:148
-  - entroly/adaptive_pruner.py:151
-last_checked: 2026-04-14T04:12:29.394246+00:00
+  - entroly\adaptive_pruner.py:39
+  - entroly\adaptive_pruner.py:128
+  - entroly\adaptive_pruner.py:50
+  - entroly\adaptive_pruner.py:59
+  - entroly\adaptive_pruner.py:62
+  - entroly\adaptive_pruner.py:82
+  - entroly\adaptive_pruner.py:112
+  - entroly\adaptive_pruner.py:142
+  - entroly\adaptive_pruner.py:148
+  - entroly\adaptive_pruner.py:151
+last_checked: 2026-04-23T03:07:07.786079+00:00
 derived_from:
   - belief_compiler
   - sast

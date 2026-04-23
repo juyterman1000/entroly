@@ -1,7 +1,7 @@
 ---
 claim_id: 22e6e72e-367d-4644-ae8c-7108f0482d39
 entity: cli.js::cmdOptimize
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

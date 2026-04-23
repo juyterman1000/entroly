@@ -1,7 +1,7 @@
 ---
 claim_id: 7d01e97a-e199-449e-b693-1e0051e37e91
 entity: cli.js::cmdClean
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

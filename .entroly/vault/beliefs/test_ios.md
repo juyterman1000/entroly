@@ -1,5 +1,5 @@
 ---
-claim_id: 6c97e3d9-8107-42ee-91f5-52785db4ca37
+claim_id: f07e6239-a8ee-40a8-bea3-7844eb3fe08d
 entity: test_ios
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_ios.py:406
   - tests\test_ios.py:439
   - tests\test_ios.py:504
-last_checked: 2026-04-14T04:12:09.431895+00:00
+last_checked: 2026-04-23T03:07:07.936246+00:00
 derived_from:
   - belief_compiler
   - sast

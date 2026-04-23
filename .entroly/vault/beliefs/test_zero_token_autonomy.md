@@ -1,5 +1,5 @@
 ---
-claim_id: fbcb476b-cc58-43cf-8040-e9332ad288c0
+claim_id: e91535ae-74cb-4442-bffb-3ff753aaf3e5
 entity: test_zero_token_autonomy
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_zero_token_autonomy.py:472
   - tests\test_zero_token_autonomy.py:510
   - tests\test_zero_token_autonomy.py:567
-last_checked: 2026-04-14T04:12:09.441486+00:00
+last_checked: 2026-04-23T03:07:07.944322+00:00
 derived_from:
   - belief_compiler
   - sast

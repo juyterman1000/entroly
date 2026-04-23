@@ -1,7 +1,7 @@
 ---
 claim_id: aab314fb-a9d9-45e7-a3d2-9ab134913296
 entity: autotune.js::computeExplorationBonus
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

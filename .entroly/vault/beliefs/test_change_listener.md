@@ -1,14 +1,14 @@
 ---
-claim_id: 15da1954-3262-44d4-bb4c-b42636560b84
+claim_id: 3ec7ea40-3d95-4548-8253-3a42ddb0a8a6
 entity: test_change_listener
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - tests\test_change_listener.py:8
   - tests\test_change_listener.py:14
   - tests\test_change_listener.py:34
   - tests\test_change_listener.py:37
-last_checked: 2026-04-14T04:12:09.421966+00:00
+last_checked: 2026-04-23T03:07:07.924229+00:00
 derived_from:
   - belief_compiler
   - sast

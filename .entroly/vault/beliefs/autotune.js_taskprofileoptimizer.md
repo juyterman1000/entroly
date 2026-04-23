@@ -1,7 +1,7 @@
 ---
 claim_id: 9b40d3f2-7b52-4641-901b-241e5c60ff44
 entity: autotune.js::TaskProfileOptimizer
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

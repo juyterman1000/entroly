@@ -1,20 +1,20 @@
 ---
-claim_id: 3ad7156b-4655-4f92-98c1-32a6d4061c16
+claim_id: ec191468-974c-4cfc-b37c-166efe85f7bd
 entity: context_bridge
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/context_bridge.py:50
-  - entroly/context_bridge.py:65
-  - entroly/context_bridge.py:74
-  - entroly/context_bridge.py:84
-  - entroly/context_bridge.py:255
-  - entroly/context_bridge.py:265
-  - entroly/context_bridge.py:407
-  - entroly/context_bridge.py:416
-  - entroly/context_bridge.py:424
-  - entroly/context_bridge.py:468
-last_checked: 2026-04-14T04:12:29.441163+00:00
+  - entroly\context_bridge.py:50
+  - entroly\context_bridge.py:65
+  - entroly\context_bridge.py:74
+  - entroly\context_bridge.py:84
+  - entroly\context_bridge.py:255
+  - entroly\context_bridge.py:265
+  - entroly\context_bridge.py:407
+  - entroly\context_bridge.py:416
+  - entroly\context_bridge.py:424
+  - entroly\context_bridge.py:468
+last_checked: 2026-04-23T03:07:07.801413+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -254,4 +254,5 @@ derived_from:
 - `typing`
 
 ## Linked Beliefs
+- [[config]]
 - [[AgentContext]]

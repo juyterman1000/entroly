@@ -1,7 +1,7 @@
 ---
 claim_id: d7694820-f82b-4d3b-b24f-58d81a3bef17
 entity: autotune.js::runAutotune
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

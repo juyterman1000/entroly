@@ -1,20 +1,20 @@
 ---
-claim_id: 94003c5f-a084-4edb-82ef-0c9e89d0dd1f
+claim_id: a31fe83b-2b13-475d-bd4c-c2ead17ea8cf
 entity: belief_compiler
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/belief_compiler.py:43
-  - entroly/belief_compiler.py:61
-  - entroly/belief_compiler.py:74
-  - entroly/belief_compiler.py:283
-  - entroly/belief_compiler.py:413
-  - entroly/belief_compiler.py:34
-  - entroly/belief_compiler.py:55
-  - entroly/belief_compiler.py:108
-  - entroly/belief_compiler.py:286
-  - entroly/belief_compiler.py:291
-last_checked: 2026-04-14T04:12:29.406033+00:00
+  - entroly\belief_compiler.py:43
+  - entroly\belief_compiler.py:61
+  - entroly\belief_compiler.py:74
+  - entroly\belief_compiler.py:283
+  - entroly\belief_compiler.py:413
+  - entroly\belief_compiler.py:34
+  - entroly\belief_compiler.py:55
+  - entroly\belief_compiler.py:108
+  - entroly\belief_compiler.py:286
+  - entroly\belief_compiler.py:291
+last_checked: 2026-04-23T03:07:07.791120+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: belief_compiler
 
 **Language:** python
-**Lines of code:** 701
+**Lines of code:** 702
 
 ## Types
 - `class CodeEntity()` — An entity extracted from source code.

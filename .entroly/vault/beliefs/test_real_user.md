@@ -1,5 +1,5 @@
 ---
-claim_id: efde59bc-2ecf-44ed-af50-51798328d64a
+claim_id: d694e98a-df7f-4e8a-941b-05ef0db8d9e8
 entity: test_real_user
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_real_user.py:36
   - tests\test_real_user.py:37
   - tests\test_real_user.py:39
-last_checked: 2026-04-14T04:12:09.438986+00:00
+last_checked: 2026-04-23T03:07:07.941701+00:00
 derived_from:
   - belief_compiler
   - sast

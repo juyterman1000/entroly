@@ -1,16 +1,16 @@
 ---
-claim_id: 2835984d-aeb8-4e6d-9e96-2920266aa665
+claim_id: f6b909d1-93f8-4ef5-bb6a-e8ddc4cb36ff
 entity: langchain
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/integrations/langchain.py:30
-  - entroly/integrations/langchain.py:40
-  - entroly/integrations/langchain.py:57
-  - entroly/integrations/langchain.py:80
-  - entroly/integrations/langchain.py:84
-  - entroly/integrations/langchain.py:88
-last_checked: 2026-04-14T04:12:29.460602+00:00
+  - entroly\integrations\langchain.py:30
+  - entroly\integrations\langchain.py:40
+  - entroly\integrations\langchain.py:57
+  - entroly\integrations\langchain.py:80
+  - entroly\integrations\langchain.py:84
+  - entroly\integrations\langchain.py:88
+last_checked: 2026-04-23T03:07:07.829161+00:00
 derived_from:
   - belief_compiler
   - sast

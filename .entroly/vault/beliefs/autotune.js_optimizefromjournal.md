@@ -1,7 +1,7 @@
 ---
 claim_id: c8d03ea8-6cad-41e3-a881-b05bacf15aec
 entity: autotune.js::optimizeFromJournal
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

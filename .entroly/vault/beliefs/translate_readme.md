@@ -1,11 +1,11 @@
 ---
-claim_id: bb50c9cb-a2e3-4ef7-9224-34646e5e19cb
+claim_id: 9c8a7506-7263-4bc7-ab2c-5ba2a050ca2d
 entity: translate_readme
 status: inferred
 confidence: 0.75
 sources:
   - translate_readme.py:5
-last_checked: 2026-04-14T04:12:09.271455+00:00
+last_checked: 2026-04-23T03:07:07.775903+00:00
 derived_from:
   - belief_compiler
   - sast

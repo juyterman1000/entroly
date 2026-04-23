@@ -1,5 +1,5 @@
 ---
-claim_id: 17cfb8f4-406e-4ca1-8cc1-58f826219ecd
+claim_id: 25708686-5512-41da-80c3-3be4a61bb624
 entity: test_egtc_v2
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_egtc_v2.py:329
   - tests\test_egtc_v2.py:365
   - tests\test_egtc_v2.py:396
-last_checked: 2026-04-14T04:12:09.428339+00:00
+last_checked: 2026-04-23T03:07:07.931692+00:00
 derived_from:
   - belief_compiler
   - sast

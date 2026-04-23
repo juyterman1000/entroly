@@ -1,12 +1,12 @@
 ---
-claim_id: 64c40083-0af2-4b61-a846-c05c333387dc
+claim_id: 9b3fb0bb-49fc-4a46-bcdf-042403861e4d
 entity: causal
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/causal.rs:154
-  - entroly-core/src/causal.rs:175
-last_checked: 2026-04-14T04:12:29.552123+00:00
+  - entroly-wasm\src\causal.rs:154
+  - entroly-wasm\src\causal.rs:175
+last_checked: 2026-04-23T03:07:07.889833+00:00
 derived_from:
   - belief_compiler
   - sast

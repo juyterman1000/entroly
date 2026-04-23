@@ -1,7 +1,7 @@
 ---
 claim_id: 39b405f3-b915-48b7-b681-c3f7c7f4ab83
 entity: cli.js::path
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

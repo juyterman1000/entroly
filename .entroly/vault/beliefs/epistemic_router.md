@@ -1,20 +1,20 @@
 ---
-claim_id: 6354d479-0490-4287-92f9-2e74662dd4c7
+claim_id: 486873ba-3232-403a-8af8-f85cc694803f
 entity: epistemic_router
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/epistemic_router.py:39
-  - entroly/epistemic_router.py:56
-  - entroly/epistemic_router.py:65
-  - entroly/epistemic_router.py:77
-  - entroly/epistemic_router.py:88
-  - entroly/epistemic_router.py:197
-  - entroly/epistemic_router.py:98
-  - entroly/epistemic_router.py:172
-  - entroly/epistemic_router.py:180
-  - entroly/epistemic_router.py:209
-last_checked: 2026-04-14T04:12:29.449555+00:00
+  - entroly\epistemic_router.py:39
+  - entroly\epistemic_router.py:56
+  - entroly\epistemic_router.py:65
+  - entroly\epistemic_router.py:77
+  - entroly\epistemic_router.py:88
+  - entroly\epistemic_router.py:197
+  - entroly\epistemic_router.py:98
+  - entroly\epistemic_router.py:172
+  - entroly\epistemic_router.py:180
+  - entroly\epistemic_router.py:209
+last_checked: 2026-04-23T03:07:07.806221+00:00
 derived_from:
   - belief_compiler
   - sast

@@ -1,7 +1,7 @@
 ---
-claim_id: 0396feba-d850-4013-9380-5ba2e36d6276
+claim_id: 45dc1e64-f249-486f-ab39-fae3e63134a8
 entity: test_cogops_smoke
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - tests\test_cogops_smoke.py:37
@@ -11,7 +11,7 @@ sources:
   - tests\test_cogops_smoke.py:15
   - tests\test_cogops_smoke.py:16
   - tests\test_cogops_smoke.py:45
-last_checked: 2026-04-14T04:12:09.424054+00:00
+last_checked: 2026-04-23T03:07:07.925192+00:00
 derived_from:
   - belief_compiler
   - sast

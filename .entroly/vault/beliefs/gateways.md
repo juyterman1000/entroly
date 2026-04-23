@@ -1,14 +1,14 @@
 ---
-claim_id: e3f1d4e6-9633-4345-9e4f-011f32acb42b
+claim_id: 6e3b4374-d5eb-49f2-b7ac-a2ba16fd6e33
 entity: gateways
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-wasm/js/gateways.js:17
-  - entroly-wasm/js/gateways.js:61
-  - entroly-wasm/js/gateways.js:91
-  - entroly-wasm/js/gateways.js:120
-last_checked: 2026-04-14T04:12:29.721897+00:00
+  - entroly-wasm\js\gateways.js:17
+  - entroly-wasm\js\gateways.js:61
+  - entroly-wasm\js\gateways.js:91
+  - entroly-wasm\js\gateways.js:120
+last_checked: 2026-04-23T03:07:07.878502+00:00
 derived_from:
   - belief_compiler
   - sast

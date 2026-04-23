@@ -1,16 +1,16 @@
 ---
-claim_id: 5c93e6b3-07fb-441c-b7c4-e1046032121c
+claim_id: 1cd2a057-0685-4e31-8003-667b4dc0ab1f
 entity: proxy_config
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/proxy_config.py:180
-  - entroly/proxy_config.py:52
-  - entroly/proxy_config.py:145
-  - entroly/proxy_config.py:243
-  - entroly/proxy_config.py:18
-  - entroly/proxy_config.py:136
-last_checked: 2026-04-14T04:12:29.486658+00:00
+  - entroly\proxy_config.py:180
+  - entroly\proxy_config.py:52
+  - entroly\proxy_config.py:145
+  - entroly\proxy_config.py:243
+  - entroly\proxy_config.py:18
+  - entroly\proxy_config.py:136
+last_checked: 2026-04-23T03:07:07.815248+00:00
 derived_from:
   - belief_compiler
   - sast

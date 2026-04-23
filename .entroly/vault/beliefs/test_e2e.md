@@ -1,5 +1,5 @@
 ---
-claim_id: c70a1ec2-c0ec-47fb-bfe7-e05b0aa62307
+claim_id: bb054fbc-1de6-4309-b718-fceffe12c061
 entity: test_e2e
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_e2e.py:146
   - tests\test_e2e.py:155
   - tests\test_e2e.py:164
-last_checked: 2026-04-14T04:12:09.426942+00:00
+last_checked: 2026-04-23T03:07:07.929262+00:00
 derived_from:
   - belief_compiler
   - sast

@@ -1,20 +1,20 @@
 ---
-claim_id: e83996fb-45df-4b51-94f6-778dc87f5bbd
+claim_id: 050f8009-d1e5-4d04-8642-ef7d465bcb0f
 entity: knapsack
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/knapsack.rs:44
-  - entroly-core/src/knapsack.rs:64
-  - entroly-core/src/knapsack.rs:91
-  - entroly-core/src/knapsack.rs:107
-  - entroly-core/src/knapsack.rs:123
-  - entroly-core/src/knapsack.rs:242
-  - entroly-core/src/knapsack.rs:311
-  - entroly-core/src/knapsack.rs:412
-  - entroly-core/src/knapsack.rs:474
-  - entroly-core/src/knapsack.rs:498
-last_checked: 2026-04-14T04:12:29.611695+00:00
+  - entroly-wasm\src\knapsack.rs:44
+  - entroly-wasm\src\knapsack.rs:63
+  - entroly-wasm\src\knapsack.rs:90
+  - entroly-wasm\src\knapsack.rs:106
+  - entroly-wasm\src\knapsack.rs:122
+  - entroly-wasm\src\knapsack.rs:241
+  - entroly-wasm\src\knapsack.rs:310
+  - entroly-wasm\src\knapsack.rs:411
+  - entroly-wasm\src\knapsack.rs:473
+  - entroly-wasm\src\knapsack.rs:497
+last_checked: 2026-04-23T03:07:07.900964+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: knapsack
 
 **Language:** rust
-**Lines of code:** 628
+**Lines of code:** 627
 
 ## Types
 - `pub struct ScoringWeights` — Weights for the four-dimensional relevance scoring.

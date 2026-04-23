@@ -1,16 +1,16 @@
 ---
-claim_id: 3d43f2c2-64b6-4660-8d14-b7f54c881ace
+claim_id: 64b65ffa-8a12-4075-b411-204d2e850f46
 entity: dashboard
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/dashboard.py:776
-  - entroly/dashboard.py:38
-  - entroly/dashboard.py:779
-  - entroly/dashboard.py:789
-  - entroly/dashboard.py:843
-  - entroly/dashboard.py:280
-last_checked: 2026-04-14T04:12:29.444421+00:00
+  - entroly\dashboard.py:776
+  - entroly\dashboard.py:38
+  - entroly\dashboard.py:779
+  - entroly\dashboard.py:789
+  - entroly\dashboard.py:843
+  - entroly\dashboard.py:280
+last_checked: 2026-04-23T03:07:07.802384+00:00
 derived_from:
   - belief_compiler
   - sast

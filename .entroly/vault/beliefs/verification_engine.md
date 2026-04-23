@@ -1,20 +1,20 @@
 ---
-claim_id: 40a53038-9a5c-46d9-a598-7027131b05b9
+claim_id: d2b42e82-e3a9-4f0c-9414-ceb51da8c3d2
 entity: verification_engine
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/verification_engine.py:35
-  - entroly/verification_engine.py:46
-  - entroly/verification_engine.py:57
-  - entroly/verification_engine.py:65
-  - entroly/verification_engine.py:75
-  - entroly/verification_engine.py:118
-  - entroly/verification_engine.py:87
-  - entroly/verification_engine.py:126
-  - entroly/verification_engine.py:136
-  - entroly/verification_engine.py:180
-last_checked: 2026-04-14T04:12:29.531814+00:00
+  - entroly\verification_engine.py:35
+  - entroly\verification_engine.py:46
+  - entroly\verification_engine.py:57
+  - entroly\verification_engine.py:65
+  - entroly\verification_engine.py:75
+  - entroly\verification_engine.py:118
+  - entroly\verification_engine.py:87
+  - entroly\verification_engine.py:126
+  - entroly\verification_engine.py:136
+  - entroly\verification_engine.py:180
+last_checked: 2026-04-23T03:07:07.825799+00:00
 derived_from:
   - belief_compiler
   - sast

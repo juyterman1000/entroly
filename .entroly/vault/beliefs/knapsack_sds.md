@@ -1,16 +1,16 @@
 ---
-claim_id: cda3558e-08aa-4d97-8ab6-6b11b59ccd2d
+claim_id: 07554eb3-f268-4d5c-affe-756a3e62a5d1
 entity: knapsack_sds
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/knapsack_sds.rs:64
-  - entroly-core/src/knapsack_sds.rs:109
-  - entroly-core/src/knapsack_sds.rs:45
-  - entroly-core/src/knapsack_sds.rs:130
-  - entroly-core/src/knapsack_sds.rs:152
-  - entroly-core/src/knapsack_sds.rs:190
-last_checked: 2026-04-14T04:12:29.614945+00:00
+  - entroly-wasm\src\knapsack_sds.rs:50
+  - entroly-wasm\src\knapsack_sds.rs:91
+  - entroly-wasm\src\knapsack_sds.rs:38
+  - entroly-wasm\src\knapsack_sds.rs:112
+  - entroly-wasm\src\knapsack_sds.rs:134
+  - entroly-wasm\src\knapsack_sds.rs:172
+last_checked: 2026-04-23T03:07:07.902083+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -19,12 +19,12 @@ derived_from:
 # Module: knapsack_sds
 
 **Language:** rust
-**Lines of code:** 733
+**Lines of code:** 636
 
 ## Types
-- `pub struct InfoFactors` — Configurable information retention factors for each resolution level. These control the value/cost trade-off in multi-resolution knapsack. Tunable via tuning_config.json → autotune daemon.  Belief fac
+- `pub struct InfoFactors` — Configurable information retention factors for each resolution level. These control the value/cost trade-off in multi-resolution knapsack. Tunable via tuning_config.json → autotune daemon.
 - `pub struct SdsResult` — Result of the IOS selection.
-- `pub enum Resolution` — Resolution level for a selected fragment.  Hierarchical Context Synthesis: four abstraction levels that mirror how engineers actually hold code in working memory. Full      → raw code (100% info, 100%
+- `pub enum Resolution` — Resolution level for a selected fragment.
 
 ## Functions
 - `fn diversity_factor(candidate_hash: u64, selected_hashes: &[u64]) -> f64` — Similarity is estimated from SimHash Hamming distance: sim(a, b) = 1 - hamming(a, b) / 64  When the selected set is empty, diversity = 1.0 (no penalty).  Returns a value in [0, 1] where: 1.0 = complet
@@ -48,3 +48,6 @@ derived_from:
 - `crate::dedup::hamming_distance`
 - `crate::fragment::`
 - `std::collections::HashMap`
+
+## Linked Beliefs
+- [[hamming_distance]]

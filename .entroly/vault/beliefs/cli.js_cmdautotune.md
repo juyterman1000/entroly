@@ -1,7 +1,7 @@
 ---
 claim_id: 55ebd63c-3ee9-4a00-ad0f-782cb74178ac
 entity: cli.js::cmdAutotune
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

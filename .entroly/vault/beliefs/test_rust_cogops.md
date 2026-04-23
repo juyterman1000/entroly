@@ -1,7 +1,7 @@
 ---
-claim_id: 28131433-a651-4be0-89a6-d22a75802715
+claim_id: 6ea24c64-848b-4a6b-b4e7-db4749593767
 entity: test_rust_cogops
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - tests\test_rust_cogops.py:28
@@ -9,7 +9,7 @@ sources:
   - tests\test_rust_cogops.py:30
   - tests\test_rust_cogops.py:32
   - tests\test_rust_cogops.py:6
-last_checked: 2026-04-14T04:12:09.438986+00:00
+last_checked: 2026-04-23T03:07:07.943186+00:00
 derived_from:
   - belief_compiler
   - sast

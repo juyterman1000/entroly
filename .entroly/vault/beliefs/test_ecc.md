@@ -1,5 +1,5 @@
 ---
-claim_id: b55e97f0-6c67-4098-bda0-cbf1657c7a2c
+claim_id: 13cb1768-dbab-42a4-b640-59268962a451
 entity: test_ecc
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_ecc.py:90
   - tests\test_ecc.py:102
   - tests\test_ecc.py:117
-last_checked: 2026-04-14T04:12:09.428339+00:00
+last_checked: 2026-04-23T03:07:07.930243+00:00
 derived_from:
   - belief_compiler
   - sast

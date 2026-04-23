@@ -1,16 +1,16 @@
 ---
-claim_id: b88ff12d-3c06-4231-be97-eb897acb6e80
+claim_id: 31a2d5e0-8160-44ed-b115-1810891ec2b3
 entity: semantic_dedup
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/semantic_dedup.rs:133
-  - entroly-core/src/semantic_dedup.rs:43
-  - entroly-core/src/semantic_dedup.rs:50
-  - entroly-core/src/semantic_dedup.rs:72
-  - entroly-core/src/semantic_dedup.rs:99
-  - entroly-core/src/semantic_dedup.rs:142
-last_checked: 2026-04-14T04:12:29.677606+00:00
+  - entroly-wasm\src\semantic_dedup.rs:133
+  - entroly-wasm\src\semantic_dedup.rs:43
+  - entroly-wasm\src\semantic_dedup.rs:50
+  - entroly-wasm\src\semantic_dedup.rs:72
+  - entroly-wasm\src\semantic_dedup.rs:99
+  - entroly-wasm\src\semantic_dedup.rs:142
+last_checked: 2026-04-23T03:07:07.910087+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -43,3 +43,7 @@ derived_from:
 - `crate::depgraph::extract_identifiers`
 - `crate::fragment::ContextFragment`
 - `std::collections::HashSet`
+
+## Linked Beliefs
+- [[extract_identifiers]]
+- [[ContextFragment]]

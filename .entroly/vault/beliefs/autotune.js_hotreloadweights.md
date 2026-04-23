@@ -1,7 +1,7 @@
 ---
 claim_id: 986fa75e-4ed6-4eaa-b7bc-f33bceb79666
 entity: autotune.js::hotReloadWeights
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

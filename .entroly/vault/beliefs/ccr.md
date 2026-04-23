@@ -1,18 +1,18 @@
 ---
-claim_id: aa00447a-0a07-47aa-b3d5-d099daa7d95d
+claim_id: 02020930-3e2c-4d68-b23f-3159f76b9df1
 entity: ccr
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/ccr.py:24
-  - entroly/ccr.py:43
-  - entroly/ccr.py:50
-  - entroly/ccr.py:86
-  - entroly/ccr.py:100
-  - entroly/ccr.py:118
-  - entroly/ccr.py:123
-  - entroly/ccr.py:144
-last_checked: 2026-04-14T04:12:29.409612+00:00
+  - entroly\ccr.py:24
+  - entroly\ccr.py:43
+  - entroly\ccr.py:50
+  - entroly\ccr.py:86
+  - entroly\ccr.py:100
+  - entroly\ccr.py:118
+  - entroly\ccr.py:123
+  - entroly\ccr.py:144
+last_checked: 2026-04-23T03:07:07.794488+00:00
 derived_from:
   - belief_compiler
   - sast

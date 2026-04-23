@@ -1,20 +1,20 @@
 ---
-claim_id: 6a9d06ad-94bb-4806-8e55-493ab23514f6
+claim_id: b76dd981-f265-452d-acee-14a0f0621975
 entity: prefetch
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/prefetch.py:45
-  - entroly/prefetch.py:181
-  - entroly/prefetch.py:91
-  - entroly/prefetch.py:103
-  - entroly/prefetch.py:133
-  - entroly/prefetch.py:161
-  - entroly/prefetch.py:200
-  - entroly/prefetch.py:215
-  - entroly/prefetch.py:234
-  - entroly/prefetch.py:303
-last_checked: 2026-04-14T04:12:29.473825+00:00
+  - entroly\prefetch.py:45
+  - entroly\prefetch.py:181
+  - entroly\prefetch.py:91
+  - entroly\prefetch.py:103
+  - entroly\prefetch.py:133
+  - entroly\prefetch.py:161
+  - entroly\prefetch.py:200
+  - entroly\prefetch.py:215
+  - entroly\prefetch.py:234
+  - entroly\prefetch.py:303
+last_checked: 2026-04-23T03:07:07.812608+00:00
 derived_from:
   - belief_compiler
   - sast

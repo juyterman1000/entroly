@@ -1,7 +1,7 @@
 ---
 claim_id: 856aaa0a-0f74-40e4-9aab-32f19e711546
 entity: autotune.js::MAX_WEIGHT
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

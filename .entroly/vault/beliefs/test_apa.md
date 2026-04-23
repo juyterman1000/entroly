@@ -1,5 +1,5 @@
 ---
-claim_id: bad48329-1cbf-4721-9071-b5b4b662d7cb
+claim_id: b3a96640-7638-4c9a-a220-d93583278e5e
 entity: test_apa
 status: inferred
 confidence: 0.75
@@ -14,7 +14,7 @@ sources:
   - tests\test_apa.py:41
   - tests\test_apa.py:49
   - tests\test_apa.py:56
-last_checked: 2026-04-14T04:12:09.420965+00:00
+last_checked: 2026-04-23T03:07:07.921128+00:00
 derived_from:
   - belief_compiler
   - sast

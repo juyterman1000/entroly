@@ -1,5 +1,5 @@
 ---
-claim_id: 80f5092d-b737-4c42-b5e0-9f030975332d
+claim_id: f4094afc-5690-410c-b704-89932e05a5fd
 entity: super_extractor
 status: inferred
 confidence: 0.75
@@ -8,7 +8,7 @@ sources:
   - scripts\super_extractor.py:25
   - scripts\super_extractor.py:45
   - scripts\super_extractor.py:53
-last_checked: 2026-04-14T04:12:09.415573+00:00
+last_checked: 2026-04-23T03:07:07.918229+00:00
 derived_from:
   - belief_compiler
   - sast

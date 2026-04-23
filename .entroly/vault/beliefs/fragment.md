@@ -1,14 +1,14 @@
 ---
-claim_id: 82b36816-1724-4f47-90fe-7e3303760a19
+claim_id: 3fde34e2-64bb-4660-bfb8-4939bef58e83
 entity: fragment
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/fragment.rs:16
-  - entroly-core/src/fragment.rs:135
-  - entroly-core/src/fragment.rs:179
-  - entroly-core/src/fragment.rs:192
-last_checked: 2026-04-14T04:12:29.596765+00:00
+  - entroly-wasm\src\fragment.rs:14
+  - entroly-wasm\src\fragment.rs:84
+  - entroly-wasm\src\fragment.rs:128
+  - entroly-wasm\src\fragment.rs:141
+last_checked: 2026-04-23T03:07:07.896920+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -17,7 +17,7 @@ derived_from:
 # Module: fragment
 
 **Language:** rust
-**Lines of code:** 268
+**Lines of code:** 217
 
 ## Types
 - `pub struct ContextFragment` — A single piece of context (code snippet, file content, tool result, etc.)
@@ -39,5 +39,4 @@ derived_from:
 )` — Apply Ebbinghaus forgetting curve decay to all fragments.  recency(t) = exp(-λ · Δt) where λ = ln(2) / half_life  Same math as ebbiforge-core HippocampusEngine.
 
 ## Dependencies
-- `pyo3::prelude::`
 - `serde::`

@@ -1,7 +1,7 @@
 ---
 claim_id: d5a8901e-f67f-4687-ad81-8b0cd01e3f84
 entity: autotune.js::WEIGHT_KEYS
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

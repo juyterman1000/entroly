@@ -1,0 +1,53 @@
+[
+  {
+    "benchmark": "gsm8k",
+    "retention": 1.0118,
+    "token_savings_pct": 3.6,
+    "cost_savings_pct": 3.6,
+    "baseline_accuracy": 0.85,
+    "baseline_ci_95": [0.767, 0.907],
+    "entroly_accuracy": 0.86,
+    "entroly_ci_95": [0.779, 0.915],
+    "baseline_avg_tokens": 392.5,
+    "entroly_avg_tokens": 378.4,
+    "samples": 100,
+    "model": "gpt-4o-mini",
+    "date": "2026-04-22",
+    "engine_version": "0.8.4",
+    "notes": "Pass-through fix applied: no compression on zero-context queries. BM25+GGCR retrieval engine deployed."
+  },
+  {
+    "benchmark": "needle",
+    "retention": 1.0,
+    "token_savings_pct": 0.0,
+    "cost_savings_pct": 0.0,
+    "baseline_accuracy": 1.0,
+    "baseline_ci_95": [0.839, 1.0],
+    "entroly_accuracy": 1.0,
+    "entroly_ci_95": [0.839, 1.0],
+    "baseline_avg_tokens": 0,
+    "entroly_avg_tokens": 0,
+    "samples": 20,
+    "model": "gpt-4o-mini",
+    "date": "2026-04-22",
+    "engine_version": "0.8.4",
+    "notes": "NeedleInAHaystack at 4K-32K context sizes. Pass-through at 50K budget."
+  },
+  {
+    "benchmark": "squad",
+    "retention": 0.9881,
+    "token_savings_pct": 0.8,
+    "cost_savings_pct": 0.8,
+    "baseline_accuracy": 0.84,
+    "baseline_ci_95": [0.756, 0.899],
+    "entroly_accuracy": 0.83,
+    "entroly_ci_95": [0.745, 0.891],
+    "baseline_avg_tokens": 0,
+    "entroly_avg_tokens": 0,
+    "samples": 100,
+    "model": "gpt-4o-mini",
+    "date": "2026-04-22",
+    "engine_version": "0.8.4",
+    "notes": "SQuAD 2.0 reading comprehension. Short paragraphs pass through at 50K budget."
+  }
+]

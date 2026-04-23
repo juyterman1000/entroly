@@ -1,7 +1,7 @@
 ---
 claim_id: bb7c19c9-a1c4-4fe0-884b-f91b5835c167
 entity: autotune.js::JOURNAL_MAX_AGE_MS
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

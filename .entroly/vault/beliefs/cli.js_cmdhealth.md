@@ -1,7 +1,7 @@
 ---
 claim_id: 4e14371f-797e-435d-82d6-8058ed6212e0
 entity: cli.js::cmdHealth
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

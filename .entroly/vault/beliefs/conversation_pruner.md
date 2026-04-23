@@ -1,20 +1,20 @@
 ---
-claim_id: b1fc10ba-6b64-4298-9152-e219bac4e890
+claim_id: 37ad6133-7b4f-4827-99fa-1fd8524ff8f2
 entity: conversation_pruner
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/conversation_pruner.rs:188
-  - entroly-core/src/conversation_pruner.rs:212
-  - entroly-core/src/conversation_pruner.rs:96
-  - entroly-core/src/conversation_pruner.rs:134
-  - entroly-core/src/conversation_pruner.rs:232
-  - entroly-core/src/conversation_pruner.rs:264
-  - entroly-core/src/conversation_pruner.rs:323
-  - entroly-core/src/conversation_pruner.rs:344
-  - entroly-core/src/conversation_pruner.rs:399
-  - entroly-core/src/conversation_pruner.rs:467
-last_checked: 2026-04-14T04:12:29.581633+00:00
+  - entroly-wasm\src\conversation_pruner.rs:188
+  - entroly-wasm\src\conversation_pruner.rs:212
+  - entroly-wasm\src\conversation_pruner.rs:96
+  - entroly-wasm\src\conversation_pruner.rs:134
+  - entroly-wasm\src\conversation_pruner.rs:232
+  - entroly-wasm\src\conversation_pruner.rs:264
+  - entroly-wasm\src\conversation_pruner.rs:323
+  - entroly-wasm\src\conversation_pruner.rs:344
+  - entroly-wasm\src\conversation_pruner.rs:399
+  - entroly-wasm\src\conversation_pruner.rs:466
+last_checked: 2026-04-23T03:07:07.892340+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: conversation_pruner
 
 **Language:** rust
-**Lines of code:** 1468
+**Lines of code:** 1467
 
 ## Types
 - `pub struct ConvBlock` — A single conversation block with causal metadata.

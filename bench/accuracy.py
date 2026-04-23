@@ -34,6 +34,7 @@ Requires: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY set in environmen
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import re
@@ -47,6 +48,21 @@ from typing import Any
 # ── Data types ────────────────────────────────────────────────────────
 
 
+def _wilson_ci(correct: int, total: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score 95% CI for a binomial proportion (default z=1.96).
+
+    More reliable than normal-approximation at small n / extreme p.
+    Returns (low, high).
+    """
+    if total <= 0:
+        return (0.0, 0.0)
+    p = correct / total
+    denom = 1.0 + z * z / total
+    center = (p + z * z / (2 * total)) / denom
+    half = (z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total))) / denom
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
 @dataclass
 class BenchmarkResult:
     """Result of a single benchmark run."""
@@ -55,6 +71,8 @@ class BenchmarkResult:
     samples: int
     correct: int
     accuracy: float
+    ci_low: float
+    ci_high: float
     avg_tokens: float
     avg_latency_ms: float
     total_cost_usd: float
@@ -153,52 +171,66 @@ def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 
 
 def _compress_messages(messages: list[dict], budget: int, query: str = "") -> list[dict]:
-    """Compress messages through Entroly Engine with query-awareness."""
-    try:
-        from bench.evaluate import create_engine_from_config, load_tuning_config
-        config = load_tuning_config()
-        # boost semantic weight for needle retrieval accuracy
-        config["weights"]["semantic_sim"] = 4.0
-        engine = create_engine_from_config(config)
+    """Compress messages through Entroly's QCCR selector.
 
-        system_chunks = []
-        user_query = ""
-        chunk_map = {}
-        for m in messages:
-            if m["role"] == "system":
-                # Split huge haystacks into ingestible chunks
-                chunks = m["content"].split("\n")
-                current_chunk = []
-                current_len = 0
-                for line in chunks:
-                    current_chunk.append(line)
-                    current_len += len(line)
-                    if current_len > 4000:  # ~1000 tokens
-                        text = "\n".join(current_chunk)
-                        res = engine.ingest(text, "chunk", len(text)//4, False)
-                        chunk_map[dict(res)["fragment_id"]] = text
-                        current_chunk = []
-                        current_len = 0
-                if current_chunk:
-                    text = "\n".join(current_chunk)
-                    res = engine.ingest(text, "chunk", len(text)//4, False)
-                    chunk_map[dict(res)["fragment_id"]] = text
-            else:
-                user_query = m["content"]
+    Pass-through rules (honest eval — don't inject noise where compression
+    can't help):
+      - No system context present  → return messages unchanged
+      - Context already under budget → return messages unchanged
+
+    Only runs the selector when there's actually something to compress.
+    """
+    system_text = ""
+    user_query = ""
+    for m in messages:
+        if m["role"] == "system":
+            system_text = m["content"]
+        elif m["role"] == "user":
+            user_query = m["content"]
+
+    if not system_text.strip():
+        return messages
+
+    # ~4 chars/token; if context already fits comfortably, pass through
+    if len(system_text) <= budget * 4:
+        return messages
+
+    try:
+        from entroly.qccr import select as qccr_select
+
+        # Chunk system content into file-like fragments so QCCR can operate.
+        # One "file" ≈ one paragraph boundary. 400-char sentences preserve
+        # locality for needle-style queries.
+        chunk_size = 400
+        chunks = [
+            system_text[i : i + chunk_size]
+            for i in range(0, len(system_text), chunk_size)
+        ]
+        fragments = [
+            {
+                "id": f"f{i}",
+                "source": f"chunk_{i // 8}.txt",  # group 8 chunks per pseudo-file
+                "content": c,
+                "tokens": len(c) // 4,
+            }
+            for i, c in enumerate(chunks)
+        ]
 
         query_to_use = query or user_query
-        result = dict(engine.optimize(budget, query_to_use))
-        selected = result.get("selected", [])
-        
-        # Reconstruct system prompt with selected high-info fragments
-        compressed_text = "\n...\n".join([chunk_map.get(dict(item).get("id"), "") for item in selected])
-        
+        selected = qccr_select(fragments, token_budget=budget, query=query_to_use)
+        compressed_text = "\n".join(
+            (s.get("content") or "") for s in selected
+        ).strip()
+
+        if not compressed_text:
+            return messages  # selector returned nothing → don't corrupt prompt
+
         return [
             {"role": "system", "content": f"Context:\n{compressed_text}"},
-            {"role": "user", "content": user_query}
+            {"role": "user", "content": user_query},
         ]
     except Exception as e:
-        print(f"Engine failed: {e}")
+        print(f"  QCCR compression failed: {e} — falling back to raw messages")
         return messages
 
 
@@ -540,12 +572,16 @@ def _run_mode(
             print(f"    [{i+1}/{len(items)}] accuracy={pct:.0f}%")
 
     n = len(items)
+    valid = max(n - errors, 1)
+    ci_lo, ci_hi = _wilson_ci(correct, valid)
     return BenchmarkResult(
         benchmark=benchmark,
         mode=mode,
         samples=n,
         correct=correct,
-        accuracy=round(correct / max(n - errors, 1), 4),
+        accuracy=round(correct / valid, 4),
+        ci_low=round(ci_lo, 4),
+        ci_high=round(ci_hi, 4),
         avg_tokens=round(total_tokens / max(n, 1), 1),
         avg_latency_ms=round(total_latency / max(n, 1), 1),
         total_cost_usd=round(total_cost, 4),
@@ -586,8 +622,8 @@ Examples:
         help="LLM model to use (default: gpt-4o-mini)",
     )
     parser.add_argument(
-        "--samples", "-n", type=int, default=50,
-        help="Number of samples per benchmark (default: 50)",
+        "--samples", "-n", type=int, default=200,
+        help="Number of samples per benchmark (default: 200). n=50 is noise.",
     )
     parser.add_argument(
         "--budget", type=int, default=50_000,
@@ -619,34 +655,38 @@ Examples:
                 "token_savings_pct": r.token_savings_pct,
                 "cost_savings_pct": r.cost_savings_pct,
                 "baseline_accuracy": r.baseline.accuracy,
+                "baseline_ci_95": [r.baseline.ci_low, r.baseline.ci_high],
                 "entroly_accuracy": r.entroly.accuracy,
+                "entroly_ci_95": [r.entroly.ci_low, r.entroly.ci_high],
                 "baseline_avg_tokens": r.baseline.avg_tokens,
                 "entroly_avg_tokens": r.entroly.avg_tokens,
+                "samples": r.baseline.samples,
             })
         print(json.dumps(output, indent=2))
     else:
-        print("\n" + "=" * 72)
+        print("\n" + "=" * 88)
         print("  ENTROLY ACCURACY RETENTION BENCHMARKS")
-        print("=" * 72)
-        print(f"  Model: {args.model}  |  Budget: {args.budget:,} tokens")
-        print("-" * 72)
-        print(f"  {'Benchmark':<14} {'Baseline':>10} {'Entroly':>10} {'Retention':>10} {'Token Save':>12} {'Cost Save':>10}")
-        print("-" * 72)
+        print("=" * 88)
+        print(f"  Model: {args.model}  |  Budget: {args.budget:,} tokens  |  Samples: {args.samples}")
+        print("-" * 88)
+        print(f"  {'Benchmark':<12} {'Baseline (95% CI)':>24} {'Entroly (95% CI)':>24} {'Retention':>10} {'Token Save':>12}")
+        print("-" * 88)
         for r in all_reports:
+            b_ci = f"{r.baseline.accuracy:.1%} [{r.baseline.ci_low:.1%}-{r.baseline.ci_high:.1%}]"
+            e_ci = f"{r.entroly.accuracy:.1%} [{r.entroly.ci_low:.1%}-{r.entroly.ci_high:.1%}]"
             print(
-                f"  {r.benchmark:<14} "
-                f"{r.baseline.accuracy:>9.1%} "
-                f"{r.entroly.accuracy:>9.1%} "
+                f"  {r.benchmark:<12} "
+                f"{b_ci:>24} "
+                f"{e_ci:>24} "
                 f"{r.retention:>9.1%} "
-                f"{r.token_savings_pct:>10.1f}% "
-                f"{r.cost_savings_pct:>9.1f}%"
+                f"{r.token_savings_pct:>10.1f}%"
             )
-        print("-" * 72)
+        print("-" * 88)
         if all_reports:
             avg_retention = sum(r.retention for r in all_reports) / len(all_reports)
             avg_savings = sum(r.token_savings_pct for r in all_reports) / len(all_reports)
-            print(f"  {'AVERAGE':<14} {'':>10} {'':>10} {avg_retention:>9.1%} {avg_savings:>10.1f}%")
-        print("=" * 72)
+            print(f"  {'AVERAGE':<12} {'':>24} {'':>24} {avg_retention:>9.1%} {avg_savings:>10.1f}%")
+        print("=" * 88)
         print()
 
 

@@ -1,11 +1,11 @@
 ---
-claim_id: ad8b5ee0-a157-4565-96a0-b10a0ad08eb6
+claim_id: 1b2a159e-8119-4e7e-b35c-31680bcf9593
 entity: skills
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-wasm/js/skills.js:13
-last_checked: 2026-04-14T04:12:29.730634+00:00
+  - entroly-wasm\js\skills.js:13
+last_checked: 2026-04-23T03:07:07.881524+00:00
 derived_from:
   - belief_compiler
   - sast

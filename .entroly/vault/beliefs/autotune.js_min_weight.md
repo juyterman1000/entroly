@@ -1,7 +1,7 @@
 ---
 claim_id: 1ad4a457-9afd-4aea-8b71-a620ebd43d38
 entity: autotune.js::MIN_WEIGHT
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

@@ -1,7 +1,7 @@
 ---
 claim_id: 9106517a-8ee9-4304-92d8-5e2487256bda
 entity: autotune.js::loadConfig
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

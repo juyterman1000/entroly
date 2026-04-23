@@ -1,7 +1,7 @@
 ---
-claim_id: 594bbb8e-ef60-4ce5-a3a9-1d507883dd19
+claim_id: adb2e318-8c8c-4e52-a858-c5caf4d38a2f
 entity: vault_graph_cli
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - scripts\vault_graph_cli.py:14
@@ -12,7 +12,7 @@ sources:
   - scripts\vault_graph_cli.py:164
   - scripts\vault_graph_cli.py:174
   - scripts\vault_graph_cli.py:192
-last_checked: 2026-04-14T04:12:09.418695+00:00
+last_checked: 2026-04-23T03:07:07.919206+00:00
 derived_from:
   - belief_compiler
   - sast

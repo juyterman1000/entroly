@@ -1,20 +1,20 @@
 ---
-claim_id: 6c7fc59b-17dc-4aab-b68e-dd9c38d198fa
+claim_id: 4613311e-b1f0-45af-8e45-5d3bb7b2782b
 entity: health
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/health.rs:56
-  - entroly-core/src/health.rs:98
-  - entroly-core/src/health.rs:108
-  - entroly-core/src/health.rs:119
-  - entroly-core/src/health.rs:130
-  - entroly-core/src/health.rs:139
-  - entroly-core/src/health.rs:69
-  - entroly-core/src/health.rs:169
-  - entroly-core/src/health.rs:236
-  - entroly-core/src/health.rs:321
-last_checked: 2026-04-14T04:12:29.604090+00:00
+  - entroly-wasm\src\health.rs:33
+  - entroly-wasm\src\health.rs:66
+  - entroly-wasm\src\health.rs:76
+  - entroly-wasm\src\health.rs:87
+  - entroly-wasm\src\health.rs:98
+  - entroly-wasm\src\health.rs:107
+  - entroly-wasm\src\health.rs:46
+  - entroly-wasm\src\health.rs:137
+  - entroly-wasm\src\health.rs:204
+  - entroly-wasm\src\health.rs:289
+last_checked: 2026-04-23T03:07:07.898846+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: health
 
 **Language:** rust
-**Lines of code:** 851
+**Lines of code:** 819
 
 ## Types
 - `pub struct ClonePair` — A pair of fragments that are near-duplicates (code clones).
@@ -73,3 +73,8 @@ derived_from:
 - `crate::fragment::ContextFragment`
 - `serde::`
 - `std::collections::`
+
+## Linked Beliefs
+- [[hamming_distance]]
+- [[DepGraph]]
+- [[ContextFragment]]

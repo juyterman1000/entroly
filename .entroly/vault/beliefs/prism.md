@@ -1,13 +1,13 @@
 ---
-claim_id: 3c034130-690d-4467-a621-4e3c9dd8ce66
+claim_id: 5a69a4c0-8007-45d3-834c-d97ca2c414a6
 entity: prism
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/prism.rs:33
-  - entroly-core/src/prism.rs:203
-  - entroly-core/src/prism.rs:450
-last_checked: 2026-04-14T04:12:29.656342+00:00
+  - entroly-wasm\src\prism.rs:33
+  - entroly-wasm\src\prism.rs:202
+  - entroly-wasm\src\prism.rs:447
+last_checked: 2026-04-23T03:07:07.905724+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -16,7 +16,7 @@ derived_from:
 # Module: prism
 
 **Language:** rust
-**Lines of code:** 762
+**Lines of code:** 759
 
 ## Types
 - `pub struct SymMatrixN` — An NxN symmetric matrix stored as a flat array for tracking gradient covariance.  Uses `N * N` flat layout (row-major) since const generic expressions like `[f64; N * N]` require nightly features. The

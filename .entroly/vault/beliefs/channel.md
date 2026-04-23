@@ -1,20 +1,20 @@
 ---
-claim_id: 463aeacf-4720-4970-881f-d1127a2dd94d
+claim_id: 398df1d6-93d4-42a8-9520-30330b425534
 entity: channel
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/channel.rs:394
-  - entroly-core/src/channel.rs:41
-  - entroly-core/src/channel.rs:59
-  - entroly-core/src/channel.rs:76
-  - entroly-core/src/channel.rs:100
-  - entroly-core/src/channel.rs:183
-  - entroly-core/src/channel.rs:203
-  - entroly-core/src/channel.rs:319
-  - entroly-core/src/channel.rs:359
-  - entroly-core/src/channel.rs:412
-last_checked: 2026-04-14T04:12:29.559204+00:00
+  - entroly-wasm\src\channel.rs:393
+  - entroly-wasm\src\channel.rs:41
+  - entroly-wasm\src\channel.rs:59
+  - entroly-wasm\src\channel.rs:76
+  - entroly-wasm\src\channel.rs:100
+  - entroly-wasm\src\channel.rs:182
+  - entroly-wasm\src\channel.rs:202
+  - entroly-wasm\src\channel.rs:318
+  - entroly-wasm\src\channel.rs:358
+  - entroly-wasm\src\channel.rs:411
+last_checked: 2026-04-23T03:07:07.890709+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: channel
 
 **Language:** rust
-**Lines of code:** 1331
+**Lines of code:** 1330
 
 ## Types
 - `pub struct ContradictionReport` — Result of contradiction scan.
@@ -71,3 +71,7 @@ derived_from:
 - `crate::fragment::ContextFragment`
 - `crate::guardrails::`
 - `std::collections::`
+
+## Linked Beliefs
+- [[DepGraph]]
+- [[ContextFragment]]

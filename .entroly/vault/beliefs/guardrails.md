@@ -1,17 +1,16 @@
 ---
-claim_id: ee6a73f0-ad2b-4b02-a654-ab1c955b65ed
+claim_id: 4e239328-293d-4bc6-a815-730621944f8a
 entity: guardrails
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/guardrails.rs:341
-  - entroly-core/src/guardrails.rs:24
-  - entroly-core/src/guardrails.rs:241
-  - entroly-core/src/guardrails.rs:37
-  - entroly-core/src/guardrails.rs:50
-  - entroly-core/src/guardrails.rs:185
-  - entroly-core/src/guardrails.rs:309
-last_checked: 2026-04-14T04:12:29.599997+00:00
+  - entroly-wasm\src\guardrails.rs:314
+  - entroly-wasm\src\guardrails.rs:24
+  - entroly-wasm\src\guardrails.rs:214
+  - entroly-wasm\src\guardrails.rs:36
+  - entroly-wasm\src\guardrails.rs:142
+  - entroly-wasm\src\guardrails.rs:282
+last_checked: 2026-04-23T03:07:07.897799+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -20,17 +19,16 @@ derived_from:
 # Module: guardrails
 
 **Language:** rust
-**Lines of code:** 594
+**Lines of code:** 561
 
 ## Types
 - `pub struct FeedbackTracker` — Feedback loop: record which fragments influenced a successful output.  Extended with per-fragment Welford variance tracking for RAVEN-UCB adaptive exploration (arXiv:2506.02933, June 2025).
 - `pub enum Criticality` — Criticality level — overrides entropy and relevance scoring.
-- `pub enum TaskType` — Adaptive budget allocation based on task type.  Different tasks need different context volumes: - Bug tracing: LARGE budget (need call chains, logs, history) - Refactoring: MEDIUM budget (need interfa
+- `pub enum TaskType` — Returns a multiplier [1.0, 10.0] for the relevance score. Adaptive budget allocation based on task type.  Different tasks need different context volumes: - Bug tracing: LARGE budget (need call chains,
 
 ## Functions
-- `fn path_depth(path: &str) -> usize` — Count directory depth: how many path separators precede the basename. "file:package.json" → 0, "file:src/types.ts" → 1, "file:a/b/c.ts" → 2
-- `fn file_criticality(path: &str) -> Criticality` — Check if a file path matches critical file patterns.  Monorepo-aware: in monorepos (langfuse, turborepo, nx), config files like `package.json`, `tsconfig.json`, `types.ts` appear in *every* sub-packag
-- `fn has_safety_signal(content: &str) -> bool` —  IMPORTANT: This must be TIGHT. Every match here force-pins the fragment, bypassing the budget. Broad patterns like "copyright" or "⚠️" caused hundreds of files to be pinned in real codebases, destroy
+- `fn file_criticality(path: &str) -> Criticality` — Check if a file path matches critical file patterns.
+- `fn has_safety_signal(content: &str) -> bool` — Check content for safety signals that must never be stripped.
 - `fn compute_ordering_priority(
     relevance: f64,
     criticality: Criticality,
@@ -43,4 +41,4 @@ derived_from:
 - `std::collections::HashMap`
 
 ## Key Invariants
-- has_safety_signal:  IMPORTANT: This must be TIGHT. Every match here force-pins the fragment, bypassing the budget. Broa
+- has_safety_signal: Check content for safety signals that must never be stripped.

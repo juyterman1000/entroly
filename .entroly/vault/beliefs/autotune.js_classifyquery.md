@@ -1,7 +1,7 @@
 ---
 claim_id: 32ae7965-11dd-4d42-a5e2-54a1b10ea349
 entity: autotune.js::classifyQuery
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

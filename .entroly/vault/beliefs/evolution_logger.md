@@ -1,17 +1,17 @@
 ---
-claim_id: 7f5c11b4-fa83-40d8-bd58-54b6a22175d8
+claim_id: c4fd0f57-7047-4860-b43c-5891a886be47
 entity: evolution_logger
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/evolution_logger.py:30
-  - entroly/evolution_logger.py:56
-  - entroly/evolution_logger.py:41
-  - entroly/evolution_logger.py:64
-  - entroly/evolution_logger.py:87
-  - entroly/evolution_logger.py:129
-  - entroly/evolution_logger.py:144
-last_checked: 2026-04-14T04:12:29.454221+00:00
+  - entroly\evolution_logger.py:30
+  - entroly\evolution_logger.py:56
+  - entroly\evolution_logger.py:41
+  - entroly\evolution_logger.py:64
+  - entroly\evolution_logger.py:87
+  - entroly\evolution_logger.py:129
+  - entroly\evolution_logger.py:144
+last_checked: 2026-04-23T03:07:07.808125+00:00
 derived_from:
   - belief_compiler
   - sast

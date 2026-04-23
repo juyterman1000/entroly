@@ -1,7 +1,7 @@
 ---
 claim_id: be29f6bd-0fbb-4679-852b-cda9cc156732
 entity: cli.js::cmdGateways
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - cli.js

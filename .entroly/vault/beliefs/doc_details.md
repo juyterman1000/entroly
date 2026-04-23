@@ -5,7 +5,7 @@ status: inferred
 confidence: 0.80
 sources:
   - docs\DETAILS.md
-last_checked: 2026-04-14T04:12:40Z
+last_checked: 2026-04-21T11:47:05Z
 derived_from:
   - doc_compiler
 ---
@@ -13,7 +13,7 @@ derived_from:
 # Doc: Python
 
 **Source:** `docs\DETAILS.md`
-**Words:** 4830
+**Words:** 5331
 **Type:** documentation
 
 ## Sections
@@ -40,6 +40,8 @@ derived_from:
 - ### Pillar 2 — Local Structural Induction ($0, Deterministic)
 - ### Pillar 3 — Dreaming Loop (Idle-Time Self-Play)
 - ### The Closed Loop
+- ### Pillar 4 — Federated Swarm Learning
+- ### Pillar 5 — Response Distillation
 - ### Make The Autonomy Visible
 - ### Why This Matters
 - ### What Makes It Self-Improving?
@@ -69,8 +71,5 @@ derived_from:
 - ## Environment Variables
 - ### Architecture
 - ### Rust Core (21 modules)
-- ### Novel Algorithms
-- ### References
-- ## Part of the Ebbiforge Ecosystem
 - ## License
 

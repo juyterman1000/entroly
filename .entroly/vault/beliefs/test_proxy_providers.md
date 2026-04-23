@@ -1,7 +1,7 @@
 ---
-claim_id: ad65ef48-1ca5-4f42-9626-7441a28f131a
+claim_id: c6d9a4d0-737c-43b9-ad30-496374d333f3
 entity: test_proxy_providers
-status: stale
+status: inferred
 confidence: 0.75
 sources:
   - tests\test_proxy_providers.py:52
@@ -14,7 +14,7 @@ sources:
   - tests\test_proxy_providers.py:314
   - tests\test_proxy_providers.py:345
   - tests\test_proxy_providers.py:375
-last_checked: 2026-04-14T04:12:09.437930+00:00
+last_checked: 2026-04-23T03:07:07.940720+00:00
 derived_from:
   - belief_compiler
   - sast

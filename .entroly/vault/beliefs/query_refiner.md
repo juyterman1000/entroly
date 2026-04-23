@@ -1,18 +1,18 @@
 ---
-claim_id: f719bac3-4e93-451c-9cae-9b7c0ed38bad
+claim_id: 102e0edd-782a-4135-89a2-c6ea87e82dcc
 entity: query_refiner
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/query_refiner.py:43
-  - entroly/query_refiner.py:27
-  - entroly/query_refiner.py:34
-  - entroly/query_refiner.py:54
-  - entroly/query_refiner.py:63
-  - entroly/query_refiner.py:83
-  - entroly/query_refiner.py:113
-  - entroly/query_refiner.py:146
-last_checked: 2026-04-14T04:12:29.495095+00:00
+  - entroly\query_refiner.py:43
+  - entroly\query_refiner.py:27
+  - entroly\query_refiner.py:34
+  - entroly\query_refiner.py:54
+  - entroly\query_refiner.py:63
+  - entroly\query_refiner.py:83
+  - entroly\query_refiner.py:113
+  - entroly\query_refiner.py:146
+last_checked: 2026-04-23T03:07:07.817119+00:00
 derived_from:
   - belief_compiler
   - sast

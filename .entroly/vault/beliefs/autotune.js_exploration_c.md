@@ -1,7 +1,7 @@
 ---
 claim_id: 456d5088-d596-44ff-b504-bad0dc8a8f0d
 entity: autotune.js::EXPLORATION_C
-status: inferred
+status: stale
 confidence: 0.6
 sources:
   - autotune.js

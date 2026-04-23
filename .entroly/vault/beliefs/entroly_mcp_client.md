@@ -1,11 +1,11 @@
 ---
-claim_id: 7238d8aa-6bc7-486f-97c7-a9bbd1826431
+claim_id: 90f87d42-1551-48bc-9a3b-5249437025e5
 entity: entroly_mcp_client
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/entroly_mcp_client.py:5
-last_checked: 2026-04-14T04:12:29.446454+00:00
+  - entroly\entroly_mcp_client.py:5
+last_checked: 2026-04-23T03:07:07.805355+00:00
 derived_from:
   - belief_compiler
   - sast

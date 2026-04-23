@@ -1,20 +1,20 @@
 ---
-claim_id: 056ef2f1-d3fb-4936-9f1d-a86f7abf4538
+claim_id: b7bc02e8-77b0-472e-8830-81dd75c060da
 entity: depgraph
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/depgraph.rs:32
-  - entroly-core/src/depgraph.rs:61
-  - entroly-core/src/depgraph.rs:44
-  - entroly-core/src/depgraph.rs:762
-  - entroly-core/src/depgraph.rs:793
-  - entroly-core/src/depgraph.rs:1010
-  - entroly-core/src/depgraph.rs:1042
-  - entroly-core/src/depgraph.rs:1053
-  - entroly-core/src/depgraph.rs:1068
-  - entroly-core/src/depgraph.rs:1252
-last_checked: 2026-04-14T04:12:29.591071+00:00
+  - entroly-wasm\src\depgraph.rs:32
+  - entroly-wasm\src\depgraph.rs:61
+  - entroly-wasm\src\depgraph.rs:44
+  - entroly-wasm\src\depgraph.rs:763
+  - entroly-wasm\src\depgraph.rs:794
+  - entroly-wasm\src\depgraph.rs:1011
+  - entroly-wasm\src\depgraph.rs:1043
+  - entroly-wasm\src\depgraph.rs:1054
+  - entroly-wasm\src\depgraph.rs:1069
+  - entroly-wasm\src\depgraph.rs:1253
+last_checked: 2026-04-23T03:07:07.894159+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -23,7 +23,7 @@ derived_from:
 # Module: depgraph
 
 **Language:** rust
-**Lines of code:** 1433
+**Lines of code:** 1434
 
 ## Types
 - `pub struct Dependency` — A directed dependency between two fragments.

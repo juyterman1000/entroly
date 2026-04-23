@@ -1,17 +1,17 @@
 ---
-claim_id: c82d365a-6754-485a-99eb-4b7adf19eb0a
+claim_id: 2ef355c1-607f-44b4-b344-3ae296b6eb21
 entity: telegram_gateway
 status: inferred
 confidence: 0.75
 sources:
-  - entroly/integrations/telegram_gateway.py:51
-  - entroly/integrations/telegram_gateway.py:52
-  - entroly/integrations/telegram_gateway.py:74
-  - entroly/integrations/telegram_gateway.py:78
-  - entroly/integrations/telegram_gateway.py:90
-  - entroly/integrations/telegram_gateway.py:109
-  - entroly/integrations/telegram_gateway.py:48
-last_checked: 2026-04-14T04:12:29.465025+00:00
+  - entroly\integrations\telegram_gateway.py:51
+  - entroly\integrations\telegram_gateway.py:52
+  - entroly\integrations\telegram_gateway.py:74
+  - entroly\integrations\telegram_gateway.py:78
+  - entroly\integrations\telegram_gateway.py:90
+  - entroly\integrations\telegram_gateway.py:109
+  - entroly\integrations\telegram_gateway.py:48
+last_checked: 2026-04-23T03:07:07.830908+00:00
 derived_from:
   - belief_compiler
   - sast

@@ -1,20 +1,20 @@
 ---
-claim_id: f7a430f5-e275-41db-bc4c-9ce8cb3be0d5
+claim_id: 710e3afb-3089-4aec-838c-0a5ba8a9c202
 entity: cache
 status: inferred
 confidence: 0.75
 sources:
-  - entroly-core/src/cache.rs:47
-  - entroly-core/src/cache.rs:136
-  - entroly-core/src/cache.rs:221
-  - entroly-core/src/cache.rs:286
-  - entroly-core/src/cache.rs:409
-  - entroly-core/src/cache.rs:495
-  - entroly-core/src/cache.rs:529
-  - entroly-core/src/cache.rs:598
-  - entroly-core/src/cache.rs:753
-  - entroly-core/src/cache.rs:874
-last_checked: 2026-04-14T04:12:29.546360+00:00
+  - entroly-wasm\src\cache.rs:47
+  - entroly-wasm\src\cache.rs:136
+  - entroly-wasm\src\cache.rs:221
+  - entroly-wasm\src\cache.rs:286
+  - entroly-wasm\src\cache.rs:409
+  - entroly-wasm\src\cache.rs:495
+  - entroly-wasm\src\cache.rs:529
+  - entroly-wasm\src\cache.rs:598
+  - entroly-wasm\src\cache.rs:753
+  - entroly-wasm\src\cache.rs:874
+last_checked: 2026-04-23T03:07:07.888896+00:00
 derived_from:
   - belief_compiler
   - sast
@@ -49,3 +49,6 @@ derived_from:
 - `serde::`
 - `std::cmp::Ordering`
 - `std::collections::`
+
+## Linked Beliefs
+- [[LshIndex]]

@@ -1,15 +1,15 @@
 ---
-claim_id: 0307acb0-b6ab-49ca-9188-bc6f41f95c03
+claim_id: 3d3ed66a-8cbf-4ab7-8f14-4ddb2e75f06c
 entity: accuracy
 status: inferred
 confidence: 0.75
 sources:
-  - bench/accuracy.py:51
-  - bench/accuracy.py:66
-  - bench/accuracy.py:243
-  - bench/accuracy.py:445
-  - bench/accuracy.py:560
-last_checked: 2026-04-14T04:12:29.381677+00:00
+  - bench\accuracy.py:51
+  - bench\accuracy.py:66
+  - bench\accuracy.py:243
+  - bench\accuracy.py:445
+  - bench\accuracy.py:560
+last_checked: 2026-04-23T03:07:07.778548+00:00
 derived_from:
   - belief_compiler
   - sast
