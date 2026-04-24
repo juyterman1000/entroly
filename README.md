@@ -37,7 +37,7 @@
   <img src="https://img.shields.io/npm/v/entroly?color=red&label=npm">
   <img src="https://img.shields.io/badge/Tests-484_passing-success">
   <img src="https://img.shields.io/badge/Latency-<10ms-purple">
-  <img src="https://img.shields.io/badge/License-MIT-green">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-green">
 </p>
 
 ---

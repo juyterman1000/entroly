@@ -33,7 +33,7 @@
   <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/v/entroly?color=red&label=npm" alt="npm"></a>
   <img src="https://img.shields.io/badge/Rust_Engine-50--100x_faster-orange?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
   <img src="https://img.shields.io/badge/Tests-484_Passing-success" alt="Tests">
   <img src="https://img.shields.io/badge/Latency-<10ms-purple" alt="Latency">
 </p>

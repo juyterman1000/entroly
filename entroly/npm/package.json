@@ -1,6 +1,6 @@
 {
-  "name": "@ebbiforge/entroly-mcp",
-  "version": "0.8.4",
+  "name": "entroly-mcp",
+  "version": "0.8.5",
   "description": "Information-theoretic context optimization MCP server for AI coding agents.",
   "main": "index.js",
   "bin": {
@@ -16,10 +16,10 @@
   "keywords": [
     "mcp",
     "context-optimization",
-    "ebbiforge",
+    "entroly",
     "ai",
     "agents"
   ],
-  "author": "Ebbiforge Team",
+  "author": "entroly",
   "license": "Apache-2.0"
 }

@@ -11,7 +11,7 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [
-    { name = "Ebbiforge", email = "fastrunner10090@gmail.com" },
+    { name = "entroly", email = "fastrunner10090@gmail.com" },
 ]
 keywords = [
     "mcp", "context-optimization", "token-cost", "agentic-ai",

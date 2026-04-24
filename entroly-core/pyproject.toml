@@ -4,19 +4,19 @@ build-backend = "maturin"
 
 [project]
 name = "entroly-core"
-version = "0.8.4"
+version = "0.8.5"
 description = "Rust core for Entroly — information-theoretic context optimization (knapsack, entropy, dedup, SAST, query analysis)"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
-    { name = "Ebbiforge Team", email = "fastrunner10090@gmail.com" },
+    { name = "entroly", email = "fastrunner10090@gmail.com" },
 ]
 keywords = ["mcp", "context-optimization", "knapsack", "entropy", "rust", "pyo3"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",

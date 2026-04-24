@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "0.8.2",
+  "version": "0.8.5",
   "description": "Information-theoretic context optimization for AI coding agents. Zero-friction, pure WebAssembly — no Python dependency.",
   "main": "index.js",
   "types": "pkg/entroly_wasm.d.ts",
@@ -45,7 +45,7 @@
     "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
   ],
   "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },
-  "author": "Ebbiforge Team",
+  "author": "entroly",
   "license": "Apache-2.0",
   "engines": { "node": ">=16.0.0" }
 }
