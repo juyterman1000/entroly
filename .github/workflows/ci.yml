@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -48,7 +48,7 @@ jobs:
       - name: Set up Python
         # pyo3 needs libpython at link time when the extension-module feature
         # is off (which it is for `cargo test --lib`).
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -85,7 +85,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
