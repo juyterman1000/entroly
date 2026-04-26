@@ -21,9 +21,12 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from .vault import VaultManager
+
+if TYPE_CHECKING:
+    from .reward_crystallizer import CrystallizationEvent
 
 logger = logging.getLogger(__name__)
 
@@ -188,14 +191,14 @@ class SkillSynthesizer:
             f"Sample queries that earned high reward:\n"
             + "\n".join(f"- {q!r}" for q in event.sample_queries[:5])
             + "\n\n"
-            f"## Selection strategy (snapshot at crystallization)\n"
-            f"PRISM weight profile that delivered the wins:\n"
+            "## Selection strategy (snapshot at crystallization)\n"
+            "PRISM weight profile that delivered the wins:\n"
             + "\n".join(
                 f"- `{k}` = {v:.4f}"
                 for k, v in sorted(event.weight_profile.items())
             )
             + "\n\n"
-            f"## Fragment recipe (most-frequently selected)\n"
+            "## Fragment recipe (most-frequently selected)\n"
             + "\n".join(f"- `{fid}`" for fid in event.fragment_recipe[:8])
             + "\n"
         )

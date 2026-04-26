@@ -476,16 +476,16 @@ class EntrolyEngine:
         self._crystallization_callback: Any = None
         self._crystallized_count: int = 0
 
-        # ── Per-fragment high-reward selection counter ────────────
+        # ── Per-fragment selection counter ─────────────────────────
         # Drives the "consider pinning" memory nudge (P1.D1). A fragment
-        # repeatedly selected during high-reward optimizations is a
-        # crystallization candidate at the *fact* level — analogous to
-        # the crystallizer at the *strategy* level.
-        self._high_reward_selections: dict[str, int] = {}
-        # External callback fired when the engine wants to surface the
-        # FeedbackJournal feed (P2.2). Decoupled the same way as the
-        # crystallization callback so the engine stays free of journal
-        # IO concerns. Wired by create_mcp_server.
+        # repeatedly selected across optimizations is a persistence
+        # candidate — if it keeps appearing, it's worth pinning.
+        self._fragment_selection_counts: dict[str, int] = {}
+        # Tracks when D2 nudge last fired so we don't spam every call.
+        self._crystallized_at_last_nudge: int = 0
+        # External callback for FeedbackJournal logging from genuine
+        # outcome signals (record_success/failure), not budget-shape
+        # implicit rewards. Wired by create_mcp_server.
         self._journal_callback: Any = None
 
         # Fix #5: Validate that the checkpoint directory is writable at startup.
@@ -709,57 +709,19 @@ class EntrolyEngine:
                 except Exception as cryst_err:
                     logger.debug("crystallizer error: %s", cryst_err)
 
-                # ── P2.1: Implicit reward → Wilson per-fragment attribution ──
-                # The implicit reward is computed every optimize_context() but
-                # today only updates OnlinePrism (global Dirichlet). Wilson
-                # per-fragment tracker is only updated by the rare explicit
-                # record_outcome path. This wire closes the gap: fragments
-                # that are consistently selected during high/low-reward
-                # optimizations get their Wilson scores updated automatically.
-                #
-                # Gate: only attribute when reward is in the tails of the
-                # distribution (|reward - baseline| > 0.15). Middle-of-the-
-                # road rewards are dominated by budget-shape noise, not
-                # fragment quality signal.
+                # ── P1: Count fragment selections for pin-candidate nudges ─
+                # Simple frequency counter: fragments that keep getting
+                # selected are worth pinning. No reward gating — selection
+                # frequency is the right signal (the fragment keeps appearing
+                # because the scoring pipeline considers it valuable).
                 try:
-                    signed_reward = reward - pre_baseline
-                    if abs(signed_reward) > 0.15 and frag_ids:
-                        clipped = max(-1.0, min(1.0, signed_reward))
-                        if clipped > 0:
-                            self._wilson.record_success(frag_ids)
-                        else:
-                            self._wilson.record_failure(frag_ids)
-                        # Also feed continuous signal to Rust + AdaptivePruner
-                        self.record_reward(frag_ids, clipped)
-
-                        # ── P1: Track high-reward fragment selections ────
-                        # Fragments repeatedly selected in high-reward contexts
-                        # are candidates for "consider pinning" memory nudges.
-                        if clipped > 0.3:
-                            for fid in frag_ids:
-                                self._high_reward_selections[fid] = (
-                                    self._high_reward_selections.get(fid, 0) + 1
-                                )
+                    if frag_ids:
+                        for fid in frag_ids:
+                            self._fragment_selection_counts[fid] = (
+                                self._fragment_selection_counts.get(fid, 0) + 1
+                            )
                 except Exception:
-                    pass  # Never fail optimize for attribution
-
-                # ── P2.2: Implicit reward → FeedbackJournal ──────────────
-                # FeedbackJournal.log() only fires on explicit record_outcome
-                # MCP calls. Most agents (Cursor, Claude Code) never call it,
-                # which starves TaskProfileOptimizer and DreamingLoop. This
-                # wire feeds them with signal from every optimize_context().
-                # Same tail-gate: only log episodes with meaningful signal.
-                try:
-                    if abs(reward - pre_baseline) > 0.15 and self._journal_callback:
-                        self._journal_callback(
-                            weights=pre_weights,
-                            reward=max(-1.0, min(1.0, reward - pre_baseline)),
-                            selected_count=len(selected) if isinstance(selected, list) else 0,
-                            query=query or "",
-                            token_budget=token_budget,
-                        )
-                except Exception:
-                    pass  # Never fail optimize for journal logging
+                    pass
 
                 # Apply updated weights to the live engine
                 if self._online_prism._n >= 3:  # Wait for warmup
@@ -833,13 +795,11 @@ class EntrolyEngine:
 
         Three deterministic detectors:
 
-        D1 — High-reward fragment selected ≥5 times but not pinned.
-             "This fragment keeps being useful — consider pinning it."
+        D1 — Fragment selected ≥10 times across optimizations, not pinned.
+             "This fragment keeps appearing — consider pinning it."
 
-        D2 — Crystallizer just fired.
+        D2 — Crystallizer just promoted a NEW skill (fires once per event).
              "A query pattern was just promoted to a skill."
-
-        D3 — (Future) High cluster reward but no vault belief exists.
 
         Returns a list of nudge dicts, each with:
             type: "pin_candidate" | "skill_crystallized"
@@ -848,8 +808,10 @@ class EntrolyEngine:
         """
         nudges: list[dict[str, Any]] = []
 
-        # D1: Fragments selected ≥5 times in high-reward contexts
-        PIN_THRESHOLD = 5
+        # D1: Fragments selected ≥10 times across optimizations
+        # Selection frequency is the right signal — fragments that keep
+        # appearing are valued by the scoring pipeline and worth pinning.
+        PIN_THRESHOLD = 10
         selected = result.get("selected_fragments", result.get("selected", []))
         selected_ids: set[str] = set()
         if isinstance(selected, list):
@@ -859,9 +821,8 @@ class EntrolyEngine:
                     if fid:
                         selected_ids.add(fid)
 
-        for fid, count in list(self._high_reward_selections.items()):
+        for fid, count in list(self._fragment_selection_counts.items()):
             if count >= PIN_THRESHOLD and fid in selected_ids:
-                # Check if already pinned (Python fallback only; Rust tracks internally)
                 is_pinned = False
                 if not self._use_rust:
                     frag = self._fragments.get(fid)
@@ -873,36 +834,29 @@ class EntrolyEngine:
                         "fragment_id": fid,
                         "selection_count": count,
                         "message": (
-                            f"Fragment '{fid}' has been selected in {count} "
-                            f"high-reward optimizations but is not pinned. "
-                            f"Consider calling remember_fragment with is_pinned=True "
-                            f"or vault_write_belief to preserve it permanently."
+                            f"Fragment '{fid}' has been selected {count} times "
+                            f"but is not pinned. Consider calling "
+                            f"remember_fragment with is_pinned=True to "
+                            f"preserve it permanently."
                         ),
                     })
-                    # Reset counter after surfacing (don't nag)
-                    self._high_reward_selections[fid] = 0
+                    # Reset after surfacing (don't nag)
+                    self._fragment_selection_counts[fid] = 0
 
-        # D2: Crystallizer just fired (check if crystallization happened this call)
-        cryst_info = result.get("crystallization", {})
-        if cryst_info.get("lifetime_crystallized", 0) == self._crystallized_count and self._crystallized_count > 0:
-            # Check if it JUST incremented (compare with what was set in the flow)
-            pass  # The crystallization event is already in result["crystallization"]
-        # Simpler: if crystallized_count > 0 and there's an active skill_crystallized
-        # event, the crystallizer block already logged it. Surface it as a nudge.
-        if self._crystallized_count > 0:
-            recent_clusters = cryst_info.get("active_clusters", 0)
-            total_obs = cryst_info.get("total_observations", 0)
-            if recent_clusters > 0:
-                nudges.append({
-                    "type": "skill_crystallized",
-                    "lifetime_skills": self._crystallized_count,
-                    "active_clusters": recent_clusters,
-                    "message": (
-                        f"{self._crystallized_count} query patterns have been "
-                        f"promoted to reusable skills. {recent_clusters} clusters "
-                        f"are being tracked for potential future crystallization."
-                    ),
-                })
+        # D2: Crystallizer promoted a NEW skill since last nudge
+        # Only fires when count increments — not every call.
+        if self._crystallized_count > self._crystallized_at_last_nudge:
+            new_skills = self._crystallized_count - self._crystallized_at_last_nudge
+            self._crystallized_at_last_nudge = self._crystallized_count
+            nudges.append({
+                "type": "skill_crystallized",
+                "new_skills": new_skills,
+                "lifetime_skills": self._crystallized_count,
+                "message": (
+                    f"{new_skills} new query pattern(s) just promoted to "
+                    f"reusable skills ({self._crystallized_count} total)."
+                ),
+            })
 
         return nudges
 
@@ -918,17 +872,49 @@ class EntrolyEngine:
         else:
             return self._recall_python(query, top_k)
 
+    def _log_outcome_to_journal(
+        self,
+        fragment_ids: list[str],
+        reward: float,
+    ) -> None:
+        """Feed FeedbackJournal from genuine outcome signals only.
+
+        Called by record_success (+1.0) and record_failure (-1.0) —
+        both come from real user validation (explicit record_outcome
+        MCP calls or proxy rephrase/topic-change detection). Never
+        from budget-shape implicit rewards.
+        """
+        if not self._journal_callback:
+            return
+        try:
+            # Reconstruct current weights for the journal entry
+            weights = {
+                "w_r": self.config.weight_recency,
+                "w_f": self.config.weight_frequency,
+                "w_s": self.config.weight_semantic_sim,
+                "w_e": self.config.weight_entropy,
+            }
+            self._journal_callback(
+                weights=weights,
+                reward=reward,
+                selected_count=len(fragment_ids),
+                query="",  # Not available at record time
+                token_budget=0,
+            )
+        except Exception:
+            pass  # Never fail outcome recording for journal IO
+
     def record_success(self, fragment_ids: list[str]) -> None:
         """Record that selected fragments led to a successful output."""
         if self._use_rust:
             self._rust.record_success(fragment_ids)
         else:
             self._wilson.record_success(fragment_ids)
-        # Fix #2: Wire AdaptivePruner RL feedback on every record_success call.
-        # apply_feedback(+1.0) boosts the learned weights for features that
-        # were present when the fragment was selected and led to success.
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, 1.0)
+        # Feed FeedbackJournal from genuine outcome signal.
+        # This is real user-validated quality, not budget-shape proxy.
+        self._log_outcome_to_journal(fragment_ids, reward=1.0)
 
     def record_failure(self, fragment_ids: list[str]) -> None:
         """Record that selected fragments led to a failed output."""
@@ -936,11 +922,10 @@ class EntrolyEngine:
             self._rust.record_failure(fragment_ids)
         else:
             self._wilson.record_failure(fragment_ids)
-        # Fix #2: Wire AdaptivePruner RL feedback on every record_failure call.
-        # apply_feedback(-1.0) down-weights feature combinations that led to
-        # unhelpful context selections.
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, -1.0)
+        # Feed FeedbackJournal from genuine outcome signal.
+        self._log_outcome_to_journal(fragment_ids, reward=-1.0)
 
     def record_reward(self, fragment_ids: list[str], reward: float) -> None:
         """Record a continuous reward signal for selected fragments.
