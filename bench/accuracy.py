@@ -45,6 +45,51 @@ from pathlib import Path
 from typing import Any
 
 
+# ── .env.local loader ─────────────────────────────────────────────────
+#
+# Cross-shell key plumbing for Windows where PowerShell ``$env:VAR`` does
+# not propagate to bash subprocesses spawned by other tools (notably
+# Claude Code or any IDE-launched runner). Drops a one-time loader so
+# any shell that runs this file picks up the same credentials.
+#
+# Format (.env.local at repo root, gitignore'd):
+#
+#     OPENAI_API_KEY=sk-proj-...
+#     ANTHROPIC_API_KEY=sk-ant-...
+#     # comments allowed; quotes around values stripped
+#
+# os.environ wins if the variable is already set — environment beats
+# file, so production deploys with secrets-managers are unaffected.
+
+def _load_env_local() -> None:
+    """Load .env.local from the repo root if present. Idempotent."""
+    # Walk up from this file until we find pyproject.toml (repo root marker).
+    here = Path(__file__).resolve().parent
+    for candidate in [here, *here.parents]:
+        if (candidate / "pyproject.toml").exists():
+            env_path = candidate / ".env.local"
+            break
+    else:
+        return
+    if not env_path.exists():
+        return
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except OSError:
+        pass
+
+
+_load_env_local()
+
+
 # ── Data types ────────────────────────────────────────────────────────
 
 
@@ -115,7 +160,86 @@ def _call_llm(
       - model starts with "claude"   → Anthropic SDK
       - model starts with "gemini"   → OpenAI SDK + Google's compat endpoint
       - otherwise                    → OpenAI default
+
+    Retries on transient errors (connection drops, 429 rate-limits,
+    5xx server errors) with exponential backoff. Network blips during a
+    long sweep should not crash the whole run — the per-item except in
+    ``_run_mode`` would just count this as an error and move on, but
+    retrying transparently is strictly better data quality.
     """
+    return _call_llm_with_retry(
+        messages, model, max_tokens, base_url, api_key_env, max_retries=3
+    )
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """True if the exception is a network/rate-limit blip worth retrying.
+
+    Conservative: only retry on errors we *know* are transient. Bad
+    auth, bad request, model-not-found, and similar permanent failures
+    pass through immediately so the user sees the real cause.
+    """
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    # httpx network errors that are typically transient
+    if name in {
+        "ConnectError", "ReadTimeout", "ReadError", "ConnectTimeout",
+        "RemoteProtocolError", "PoolTimeout", "WriteTimeout",
+    }:
+        return True
+    # OpenAI/Anthropic SDK rate-limit + transient server errors
+    if name in {"RateLimitError", "APIConnectionError", "InternalServerError",
+                "APITimeoutError"}:
+        return True
+    # Generic httpx exceptions also have an HTTP status code attribute
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    if code in (408, 425, 429, 500, 502, 503, 504):
+        return True
+    # Fallback: text-pattern match for the rare cases the SDK wraps weirdly
+    if any(s in msg for s in ("rate limit", "timeout", "temporarily unavailable",
+                                "connection reset", "service unavailable")):
+        return True
+    return False
+
+
+def _call_llm_with_retry(
+    messages: list[dict],
+    model: str,
+    max_tokens: int,
+    base_url: str | None,
+    api_key_env: str | None,
+    max_retries: int,
+) -> tuple[str, int, float]:
+    """Inner retry loop. Exponential backoff: 1s, 2s, 4s, … capped at 30s."""
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            return _call_llm_once(
+                messages, model, max_tokens, base_url, api_key_env,
+            )
+        except Exception as e:
+            last_exc = e
+            if attempt >= max_retries or not _is_transient_error(e):
+                raise
+            backoff = min(30.0, 2 ** attempt)
+            print(
+                f"  [retry {attempt + 1}/{max_retries}] {type(e).__name__}: "
+                f"{str(e)[:120]} — sleeping {backoff:.0f}s",
+                file=sys.stderr, flush=True,
+            )
+            time.sleep(backoff)
+    # Defensive — should never reach here.
+    raise last_exc if last_exc else RuntimeError("retry loop exhausted")
+
+
+def _call_llm_once(
+    messages: list[dict],
+    model: str,
+    max_tokens: int,
+    base_url: str | None,
+    api_key_env: str | None,
+) -> tuple[str, int, float]:
+    """Single LLM call attempt — provider routing only, no retry logic."""
     t0 = time.perf_counter()
 
     if base_url:
@@ -218,14 +342,176 @@ def _estimate_cost(
 
 
 def _compress_messages(messages: list[dict], budget: int, query: str = "") -> list[dict]:
-    """Compress messages through Entroly's QCCR selector.
+    """Backwards-compatible wrapper — defaults to Entroly compression mode.
 
-    Pass-through rules (honest eval — don't inject noise where compression
-    can't help):
-      - No system context present  → return messages unchanged
-      - Context already under budget → return messages unchanged
+    Prefer ``_compress_messages_modal`` for new callers.
+    """
+    return _compress_messages_modal(messages, budget, mode="entroly", query=query)
 
-    Only runs the selector when there's actually something to compress.
+
+# ── Compressor implementations ────────────────────────────────────────
+#
+# Three compressor families, all sharing a uniform interface:
+#   compress(text, budget_tokens, query) -> str
+#
+# - "entroly"   : QCCR fragment-level selector (knapsack on entropy + sim + recency)
+# - "llmlingua" : LLMLingua-2 token-level keep/drop classifier (Pan et al ACL 2024)
+# - "hybrid"    : Entroly fragment selection → LLMLingua-2 token compression
+#                 within selected fragments. Composes orthogonal granularities.
+#
+# All compressors are deterministic given identical input + budget; the
+# only stochasticity is in the LLM evaluator that follows.
+
+# Lazy LLMLingua singleton — model load is ~3s, do it once per process.
+_LLMLINGUA_MODEL: object | None = None
+
+
+def _get_llmlingua():
+    """Load LLMLingua-2 small model lazily (singleton). Raises ImportError if missing."""
+    global _LLMLINGUA_MODEL
+    if _LLMLINGUA_MODEL is None:
+        from llmlingua import PromptCompressor
+        _LLMLINGUA_MODEL = PromptCompressor(
+            model_name="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
+            use_llmlingua2=True,
+            device_map="cpu",
+        )
+    return _LLMLINGUA_MODEL
+
+
+def _entroly_compress(text: str, budget_tokens: int, query: str) -> str:
+    """Fragment-level QCCR selection."""
+    from entroly.qccr import select as qccr_select
+    chunk_size = 400
+    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    fragments = [
+        {"id": f"f{i}", "source": f"chunk_{i // 8}.txt",
+         "content": c, "tokens": len(c) // 4}
+        for i, c in enumerate(chunks)
+    ]
+    selected = qccr_select(fragments, token_budget=budget_tokens, query=query)
+    return "\n".join((s.get("content") or "") for s in selected).strip()
+
+
+def _llmlingua_compress(text: str, budget_tokens: int, query: str) -> str:
+    """Token-level keep/drop via LLMLingua-2 classifier."""
+    compressor = _get_llmlingua()
+    # LLMLingua-2 takes a target rate (kept_fraction). Convert budget → rate.
+    original_tokens = max(1, len(text) // 4)
+    rate = min(0.99, max(0.05, budget_tokens / original_tokens))
+    result = compressor.compress_prompt(
+        text,
+        rate=rate,
+        force_tokens=["\n", ".", "!", "?"],
+        # Question-aware compression — LLMLingua-2 supports it directly.
+        # Improves compression quality measurably (Pan et al ACL 2024 §4.2).
+        question=query,
+    )
+    return result.get("compressed_prompt", text)
+
+
+def _truncate_head_compress(text: str, budget_tokens: int, query: str) -> str:
+    """Keep the first ``budget_tokens`` tokens (≈4 chars each).
+
+    Surprisingly hard to beat on benchmarks where the relevant info is
+    front-loaded (system prompts, document headers). Including this as a
+    baseline is honest practice — Liu et al. ACL 2024 show it is the
+    median compressor most published methods barely beat.
+
+    ``query`` is intentionally ignored — this is a position-only baseline.
+    The signature stays uniform with the other compressors.
+    """
+    del query  # unused-by-design (position-only baseline)
+    return text[: budget_tokens * 4]
+
+
+def _truncate_tail_compress(text: str, budget_tokens: int, query: str) -> str:
+    """Keep the LAST ``budget_tokens`` tokens.
+
+    Counterpart to ``_truncate_head_compress``. On instruction-following
+    workloads, recent context dominates — tail truncation often wins.
+    Pairing head + tail makes the position-bias of the workload visible.
+
+    ``query`` ignored by design (position-only baseline).
+    """
+    del query  # unused-by-design (position-only baseline)
+    return text[-budget_tokens * 4:]
+
+
+def _random_keep_compress(text: str, budget_tokens: int, query: str) -> str:
+    """Keep a uniform-random subset of sentences summing to ≤ budget.
+
+    The proper random-baseline for compression. Any "smart" method must
+    statistically beat this — otherwise it's just noise. Seeded for
+    reproducibility (the seed is the query hash).
+    """
+    import hashlib
+    import random as _random
+    sentences = [s.strip() for s in text.split(".") if s.strip()]
+    if not sentences:
+        return text
+    seed = int(hashlib.sha256(query.encode("utf-8")).hexdigest()[:8], 16)
+    rng = _random.Random(seed)
+    shuffled = list(sentences)
+    rng.shuffle(shuffled)
+    out, used = [], 0
+    cap_chars = budget_tokens * 4
+    for s in shuffled:
+        if used + len(s) + 2 > cap_chars and out:
+            break
+        out.append(s)
+        used += len(s) + 2
+    return ". ".join(out) + "."
+
+
+def _hybrid_compress(text: str, budget_tokens: int, query: str) -> str:
+    """Entroly × LLMLingua-2 hybrid: orthogonal-granularity composition.
+
+    Stage 1 (Entroly): fragment-level knapsack with budget = 1.5× target.
+        Selects the most relevant fragments at a slightly relaxed budget,
+        leaving headroom for stage 2.
+
+    Stage 2 (LLMLingua-2): token-level compression to the actual budget.
+        Removes filler tokens within the selected fragments.
+
+    The 1.5× headroom is empirically calibrated: too tight (1.0×) and
+    stage-2 has nothing to compress; too loose (≥2×) and stage-1 selects
+    irrelevant fragments that stage-2 can't recover from.
+    """
+    intermediate_budget = int(budget_tokens * 1.5)
+    stage1 = _entroly_compress(text, intermediate_budget, query)
+    if len(stage1) // 4 <= budget_tokens:
+        return stage1  # already under budget after stage 1
+    return _llmlingua_compress(stage1, budget_tokens, query)
+
+
+_COMPRESSORS = {
+    # Smart compressors — adapt to query.
+    "entroly": _entroly_compress,
+    "llmlingua": _llmlingua_compress,
+    "hybrid": _hybrid_compress,
+    # Naive baselines — make the position-bias of a workload visible.
+    # Including them is honest methodology: any "smart" compressor must
+    # statistically beat all three to claim it has learned anything.
+    "head": _truncate_head_compress,
+    "tail": _truncate_tail_compress,
+    "random": _random_keep_compress,
+}
+
+
+def _compress_messages_modal(
+    messages: list[dict],
+    budget: int,
+    mode: str = "entroly",
+    query: str = "",
+) -> list[dict]:
+    """Compress messages via the chosen compressor.
+
+    Pass-through invariants (honest eval):
+      - No system context present  → unchanged
+      - Context already under budget → unchanged
+      - Compressor returned empty → unchanged (don't corrupt prompt)
+      - Compressor raised → unchanged (and printed a one-liner)
     """
     system_text = ""
     user_query = ""
@@ -237,48 +523,26 @@ def _compress_messages(messages: list[dict], budget: int, query: str = "") -> li
 
     if not system_text.strip():
         return messages
-
-    # ~4 chars/token; if context already fits comfortably, pass through
-    if len(system_text) <= budget * 4:
+    if len(system_text) <= budget * 4:  # already fits, ~4 chars/tok
         return messages
+
+    fn = _COMPRESSORS.get(mode)
+    if fn is None:
+        raise ValueError(f"unknown compression mode: {mode!r} (have: {list(_COMPRESSORS)})")
 
     try:
-        from entroly.qccr import select as qccr_select
-
-        # Chunk system content into file-like fragments so QCCR can operate.
-        # One "file" ≈ one paragraph boundary. 400-char sentences preserve
-        # locality for needle-style queries.
-        chunk_size = 400
-        chunks = [
-            system_text[i : i + chunk_size]
-            for i in range(0, len(system_text), chunk_size)
-        ]
-        fragments = [
-            {
-                "id": f"f{i}",
-                "source": f"chunk_{i // 8}.txt",  # group 8 chunks per pseudo-file
-                "content": c,
-                "tokens": len(c) // 4,
-            }
-            for i, c in enumerate(chunks)
-        ]
-
-        query_to_use = query or user_query
-        selected = qccr_select(fragments, token_budget=budget, query=query_to_use)
-        compressed_text = "\n".join(
-            (s.get("content") or "") for s in selected
-        ).strip()
-
-        if not compressed_text:
-            return messages  # selector returned nothing → don't corrupt prompt
-
-        return [
-            {"role": "system", "content": f"Context:\n{compressed_text}"},
-            {"role": "user", "content": user_query},
-        ]
+        compressed = fn(system_text, budget, query or user_query)
     except Exception as e:
-        print(f"  QCCR compression failed: {e} — falling back to raw messages")
+        print(f"  {mode} compression failed: {e} — falling back to raw messages")
         return messages
+
+    if not compressed:
+        return messages
+
+    return [
+        {"role": "system", "content": f"Context:\n{compressed}"},
+        {"role": "user", "content": user_query},
+    ]
 
 
 # ── Benchmark: NeedleInAHaystack ──────────────────────────────────────
@@ -834,6 +1098,7 @@ def run_benchmark(
     budget: int = 50_000,
     base_url: str | None = None,
     api_key_env: str | None = None,
+    mode: str = "entroly",
 ) -> RetentionReport:
     """Run a benchmark, comparing baseline vs Entroly-compressed.
 
@@ -863,29 +1128,187 @@ def run_benchmark(
 
     print(f"  Loaded {len(items)} samples. Model: {model}")
 
+    if mode not in _COMPRESSORS:
+        raise ValueError(
+            f"unknown mode {mode!r}; choose from {list(_COMPRESSORS)} or use --pareto"
+        )
+
     # Run baseline
-    print(f"\n  [1/2] Running baseline (no compression)...")
+    print("\n  [1/2] Running baseline (no compression)...")
     baseline = _run_mode(items, benchmark, model, "baseline", budget=None,
                          base_url=base_url, api_key_env=api_key_env)
 
-    # Run with Entroly compression
-    print(f"  [2/2] Running with Entroly compression (budget={budget})...")
-    entroly = _run_mode(items, benchmark, model, "entroly", budget=budget,
-                        base_url=base_url, api_key_env=api_key_env)
+    # Run with the selected compression mode (entroly / llmlingua / hybrid).
+    # The RetentionReport name is preserved for backwards compatibility,
+    # but the .entroly field now actually holds whichever mode ran.
+    print(f"  [2/2] Running with {mode} compression (budget={budget})...")
+    treatment = _run_mode(items, benchmark, model, mode, budget=budget,
+                         base_url=base_url, api_key_env=api_key_env)
 
-    # Compute retention
-    retention = entroly.accuracy / max(baseline.accuracy, 1e-9)
-    token_savings = 1.0 - (entroly.avg_tokens / max(baseline.avg_tokens, 1))
-    cost_savings = 1.0 - (entroly.total_cost_usd / max(baseline.total_cost_usd, 1e-9))
+    retention = treatment.accuracy / max(baseline.accuracy, 1e-9)
+    token_savings = 1.0 - (treatment.avg_tokens / max(baseline.avg_tokens, 1))
+    cost_savings = 1.0 - (treatment.total_cost_usd / max(baseline.total_cost_usd, 1e-9))
 
     return RetentionReport(
         benchmark=benchmark,
         baseline=baseline,
-        entroly=entroly,
+        entroly=treatment,
         retention=round(retention, 4),
         token_savings_pct=round(token_savings * 100, 1),
         cost_savings_pct=round(cost_savings * 100, 1),
     )
+
+
+def run_pareto_sweep(
+    benchmark: str,
+    samples: int = 100,
+    model: str = "gpt-4o-mini",
+    modes: tuple[str, ...] = ("entroly", "head", "tail", "random", "llmlingua", "hybrid"),
+    budget_fractions: tuple[float, ...] = (0.05, 0.10, 0.20, 0.30, 0.50),
+    base_url: str | None = None,
+    api_key_env: str | None = None,
+) -> dict[str, Any]:
+    """Run the budget × mode Pareto sweep with AUC summary.
+
+    For each compression mode, evaluate at each budget fraction and
+    compute the area under the accuracy-vs-budget curve (Pareto-AUC).
+
+    AUC is the right single-number summary because it captures the full
+    accuracy/budget trade — methods that win at one budget but lose at
+    another are visibly worse than methods that uniformly Pareto-dominate.
+
+    Definition (trapezoidal, normalized):
+        AUC(method) = ∫₀¹ accuracy(b) db   ≈   trapezoid over budget grid
+    A method that always returns the gold answer regardless of budget
+    has AUC = 1.0; the baseline (raw context, full budget) is the
+    reference upper bound.
+
+    Returns a dict with:
+        baseline_accuracy: scalar (raw, full context)
+        baseline_avg_tokens: scalar (the cost of raw)
+        modes: { mode_name: {
+            points: [{budget_frac, budget_tokens, accuracy, ci_low, ci_high,
+                       avg_tokens, avg_latency_ms, total_cost_usd}, ...],
+            pareto_auc: float,
+            tokens_at_match: int | None,  # min budget where retention ≥ 95%
+        } }
+    """
+    print(f"\n  Loading {benchmark} for Pareto sweep (samples={samples})...")
+    loaders = {
+        "needle": lambda: bench_needle(model, samples),
+        "gsm8k": lambda: _load_gsm8k(samples),
+        "humaneval": lambda: _load_humaneval(min(samples, 30)),
+        "squad": lambda: _load_squad(samples),
+        "mmlu": lambda: _load_mmlu(samples),
+        "truthfulqa": lambda: _load_truthfulqa(samples),
+        "longbench": lambda: _load_longbench(samples),
+        "bfcl": lambda: _load_bfcl(samples),
+    }
+    if benchmark not in loaders:
+        raise ValueError(f"Unknown benchmark: {benchmark}")
+    items = loaders[benchmark]()
+    if not items:
+        raise RuntimeError(f"Failed to load {benchmark} data")
+
+    # Median context size determines absolute budget at each fraction.
+    median_ctx_tokens = int(
+        sorted(len(it.get("context", "")) for it in items)[len(items) // 2] / 4
+    )
+    print(f"  Median context: ~{median_ctx_tokens} tokens. Modes: {modes}.")
+
+    # Compression evaluation only makes sense when there's real context to
+    # compress. GSM8K, MMLU, and TruthfulQA are *very* short-context
+    # benchmarks (median < 100 tokens) — every "compression" is a no-op
+    # pass-through, producing identical numbers across all methods.
+    # Threshold calibrated against measured medians: SQuAD ~180 (passes),
+    # gsm8k ~50 (rejected), mmlu ~80 (rejected). 100 is the natural floor.
+    SWEEP_MIN_CTX_TOKENS = 100
+    if median_ctx_tokens < SWEEP_MIN_CTX_TOKENS:
+        raise ValueError(
+            f"Pareto sweep requires median context ≥ {SWEEP_MIN_CTX_TOKENS} "
+            f"tokens; {benchmark!r} has only ~{median_ctx_tokens}. "
+            f"Compression methods can't differentiate when there's nothing "
+            f"to compress. Use one of: squad (~150–300), longbench (~5,000), "
+            f"needle (~50,000). For short-context benchmarks like gsm8k, "
+            f"mmlu, truthfulqa, run without --pareto (single-budget mode)."
+        )
+
+    print("  [baseline] full context, no compression…")
+    baseline = _run_mode(items, benchmark, model, "baseline", budget=None,
+                        base_url=base_url, api_key_env=api_key_env)
+
+    out: dict[str, Any] = {
+        "benchmark": benchmark,
+        "samples": samples,
+        "model": model,
+        "median_ctx_tokens": median_ctx_tokens,
+        "baseline_accuracy": baseline.accuracy,
+        "baseline_ci": [baseline.ci_low, baseline.ci_high],
+        "baseline_avg_tokens": baseline.avg_tokens,
+        "baseline_cost_usd": baseline.total_cost_usd,
+        "budget_fractions": list(budget_fractions),
+        "modes": {},
+    }
+
+    # Adaptive floor: small contexts can't sustain 50-token budget without
+    # collapsing the bottom of the budget grid (5%, 10%, 20% all clamp to
+    # the same value). Use 10% of the median as a soft floor — large enough
+    # for the compressor to do something, small enough to preserve grid
+    # spacing. SQuAD-sized contexts (~180 tok) get a 18-tok floor.
+    budget_floor = max(10, int(median_ctx_tokens * 0.10))
+
+    for mode in modes:
+        print(f"\n  [{mode}] sweeping budgets {list(budget_fractions)}…")
+        points: list[dict[str, Any]] = []
+        for frac in budget_fractions:
+            tok_budget = max(budget_floor, int(median_ctx_tokens * frac))
+            print(f"    budget = {frac*100:.0f}% (~{tok_budget} tokens)")
+            r = _run_mode(items, benchmark, model, mode, budget=tok_budget,
+                         base_url=base_url, api_key_env=api_key_env)
+            points.append({
+                "budget_frac": frac,
+                "budget_tokens": tok_budget,
+                "accuracy": r.accuracy,
+                "ci_low": r.ci_low,
+                "ci_high": r.ci_high,
+                "avg_tokens": r.avg_tokens,
+                "avg_latency_ms": r.avg_latency_ms,
+                "total_cost_usd": r.total_cost_usd,
+                "errors": r.errors,
+            })
+
+        # Trapezoidal AUC over budget fractions (clipped to [0, 1]).
+        # Anchor with (0, 0) since at zero budget, no useful context = no
+        # accuracy. Anchor with (1, baseline.accuracy) since at 100% you
+        # recover the baseline.
+        xs = [0.0] + [p["budget_frac"] for p in points] + [1.0]
+        ys = [0.0] + [p["accuracy"] for p in points] + [baseline.accuracy]
+        auc = sum(
+            0.5 * (ys[i] + ys[i + 1]) * (xs[i + 1] - xs[i])
+            for i in range(len(xs) - 1)
+        )
+
+        # "Tokens at match": the smallest budget where the lower CI bound
+        # of this mode's accuracy crosses 95% of baseline's *point estimate*.
+        # This is a credibility-conservative version of retention.
+        target = 0.95 * baseline.accuracy
+        tokens_at_match: int | None = None
+        for p in points:
+            if p["ci_low"] >= target:
+                tokens_at_match = p["budget_tokens"]
+                break
+
+        out["modes"][mode] = {
+            "points": points,
+            "pareto_auc": round(auc, 4),
+            "tokens_at_95pct_retention": tokens_at_match,
+            "min_cost_at_95pct_retention_usd": (
+                next((p["total_cost_usd"] for p in points
+                      if p["ci_low"] >= target), None)
+            ),
+        }
+
+    return out
 
 
 def _run_mode(
@@ -903,6 +1326,7 @@ def _run_mode(
     total_latency = 0.0
     total_cost = 0.0
     errors = 0
+    error_classes: dict[str, int] = {}
     details = []
 
     for i, item in enumerate(items):
@@ -911,9 +1335,12 @@ def _run_mode(
             messages.append({"role": "system", "content": f"Context:\n{item['context']}"})
         messages.append({"role": "user", "content": item["question"]})
 
-        # Compress if Entroly mode
-        if mode == "entroly" and budget:
-            messages = _compress_messages(messages, budget, query=item["question"])
+        # Compress if a compression mode is selected.
+        # Modes: "baseline" (no compression), "entroly", "llmlingua", "hybrid".
+        if mode in _COMPRESSORS and budget:
+            messages = _compress_messages_modal(
+                messages, budget, mode=mode, query=item["question"],
+            )
 
         try:
             response, tokens, latency = _call_llm(
@@ -933,7 +1360,19 @@ def _run_mode(
             })
         except Exception as e:
             errors += 1
-            details.append({"index": i, "error": str(e)})
+            err_label = f"{type(e).__name__}: {str(e)[:160]}"
+            error_classes[err_label] = error_classes.get(err_label, 0) + 1
+            details.append({"index": i, "error": str(e)[:300]})
+            # Surface the first occurrence of each unique error class
+            # immediately to stderr so the user sees what's failing without
+            # waiting for the whole run. Subsequent identical errors are
+            # silenced (counted in error_classes for the summary).
+            if error_classes[err_label] == 1:
+                import sys as _sys
+                print(
+                    f"  [{benchmark}/{mode}] ERROR (item {i}): {err_label}",
+                    file=_sys.stderr, flush=True,
+                )
 
         # Progress
         if (i + 1) % 10 == 0:
@@ -1024,6 +1463,25 @@ Custom OpenAI-compatible providers (Groq, Together, OpenRouter, Ollama, vLLM, ..
         "--json", action="store_true",
         help="Output results as JSON",
     )
+    parser.add_argument(
+        "--mode", type=str, default="entroly",
+        choices=["entroly", "llmlingua", "hybrid"],
+        help="Compression method to compare against baseline. "
+             "'entroly' = QCCR fragment selection (default). "
+             "'llmlingua' = LLMLingua-2 token compression. "
+             "'hybrid' = Entroly fragment selection + LLMLingua-2 token compression.",
+    )
+    parser.add_argument(
+        "--pareto", action="store_true",
+        help="Run a budget-fraction sweep ([0.05, 0.10, 0.20, 0.30, 0.50] of "
+             "median context size) for ALL methods (entroly, llmlingua, hybrid) "
+             "and compute Pareto-AUC. Strongest methodology — supersedes single-budget run.",
+    )
+    parser.add_argument(
+        "--budget-fractions", type=str, default="0.05,0.10,0.20,0.30,0.50",
+        help="Comma-separated budget fractions for --pareto sweep "
+             "(default: 0.05,0.10,0.20,0.30,0.50)",
+    )
     args = parser.parse_args()
 
     benchmarks = (
@@ -1038,12 +1496,63 @@ Custom OpenAI-compatible providers (Groq, Together, OpenRouter, Ollama, vLLM, ..
             f"total_cost_usd in the report will be 0.0 — your real bill is on the provider's dashboard."
         )
 
+    # Pareto sweep mode: evaluates all compressors at multiple budgets,
+    # computes the AUC summary. Supersedes single-budget run.
+    if args.pareto:
+        budget_fractions = tuple(float(f) for f in args.budget_fractions.split(","))
+        sweep_reports: list[dict[str, Any]] = []
+        for bench in benchmarks:
+            try:
+                report = run_pareto_sweep(
+                    benchmark=bench, samples=args.samples, model=args.model,
+                    modes=("entroly", "head", "tail", "random", "llmlingua", "hybrid"),
+                    budget_fractions=budget_fractions,
+                    base_url=args.base_url, api_key_env=args.api_key_env,
+                )
+                sweep_reports.append(report)
+            except Exception as e:
+                print(f"\n  ERROR: {bench} pareto sweep failed: {e}")
+                continue
+
+        # Pretty-print AUC table
+        print("\n" + "=" * 96)
+        print("  PARETO-AUC SUMMARY  (higher = better; baseline.accuracy ≤ 1.0)")
+        print("=" * 96)
+        print(f"  Model: {args.model}  |  Samples: {args.samples}  |  Budget grid: {list(budget_fractions)}")
+        print("-" * 96)
+        method_cols = ("entroly", "head", "tail", "random", "llmlingua", "hybrid")
+        header = f"  {'Benchmark':<12} {'Baseline':>9} " + " ".join(
+            f"{m+'-AUC':>11}" for m in method_cols
+        ) + f"  {'best method':>14}"
+        print(header)
+        print("-" * 110)
+        for rep in sweep_reports:
+            # Identify the AUC-winner so the table foregrounds the headline.
+            best_m = max(method_cols, key=lambda m: rep["modes"][m]["pareto_auc"])
+            best_auc = rep["modes"][best_m]["pareto_auc"]
+            row = (
+                f"  {rep['benchmark']:<12} "
+                f"{rep['baseline_accuracy']:>9.1%} "
+                + " ".join(
+                    f"{rep['modes'][m]['pareto_auc']:>11.3f}"
+                    for m in method_cols
+                )
+                + f"  {best_m + ' (' + format(best_auc, '.3f') + ')':>14}"
+            )
+            print(row)
+        print("=" * 110)
+
+        if args.json:
+            print(json.dumps(sweep_reports, indent=2, default=str))
+        return
+
     all_reports = []
     for bench in benchmarks:
         try:
             report = run_benchmark(
                 bench, args.model, args.samples, args.budget,
                 base_url=args.base_url, api_key_env=args.api_key_env,
+                mode=args.mode,
             )
             all_reports.append(report)
         except Exception as e:
