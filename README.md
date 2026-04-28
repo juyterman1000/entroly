@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/juyterman1000-entroly-badge.png)](https://mseep.ai/app/juyterman1000-entroly)
+
 <p align="center">
   <a href="docs/i18n/README.zh-CN.md">🇨🇳 中文</a> •
   <a href="docs/i18n/README.ja.md">🇯🇵 日本語</a> •
