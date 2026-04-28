@@ -29,7 +29,7 @@
 <h3 align="center">Your AI coding tools only see 5% of your codebase.<br/>Entroly gives them the full picture — for a fraction of the cost.</h3>
 
 <p align="center">
-  <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>📊 Live Dashboard →</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>Live demo →</b></a>
+  <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>📊 Live Dashboard →</b></a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg"><b>Live demo →</b></a>
 </p>
 
 <p align="center">
