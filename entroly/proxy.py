@@ -1257,10 +1257,19 @@ class PromptCompilerProxy:
                     security_issues.append(f"[{source}] {issue}")
 
         # LTM memories (already injected by optimize_context, but we want to
-        # show them in the context block for transparency)
+        # show them in the context block for transparency).
+        # Defensive access: ``hasattr`` returns True for an attribute set to
+        # None — must also check for not-None before calling .active. The
+        # engine *should* now initialize _ltm itself (see EntrolyEngine
+        # init), but this guards against any path that bypasses that init.
         ltm_memories: list[dict] = []
-        if self.config.enable_ltm and hasattr(self.engine, '_ltm') and self.engine._ltm.active:
-            ltm_memories = self.engine._ltm.recall_relevant(
+        _ltm = getattr(self.engine, '_ltm', None)
+        if (
+            self.config.enable_ltm
+            and _ltm is not None
+            and getattr(_ltm, 'active', False)
+        ):
+            ltm_memories = _ltm.recall_relevant(
                 user_message, top_k=3, min_retention=0.3
             )
 

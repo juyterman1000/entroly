@@ -484,6 +484,23 @@ class EntrolyEngine:
         self._fragment_cache: dict[str, dict[str, Any]] = {}
         self._fragment_cache_dirty: bool = True
 
+        # ── Long-term memory (Hippocampus integration) ────────────
+        # Initialized here (not in create_mcp_server) so that anyone
+        # constructing an EntrolyEngine directly — proxy users, SDK
+        # users, tests — gets a working engine. Falls back to None
+        # when hippocampus-sharp-memory isn't installed; consumers
+        # must guard with ``getattr(engine, '_ltm', None) is not None``
+        # to handle both "absent" and "present-but-disabled" cases.
+        try:
+            from .long_term_memory import LongTermMemory, is_available
+            if is_available():
+                self._ltm = LongTermMemory()
+            else:
+                self._ltm = None
+        except Exception as _ltm_err:
+            logger.debug("LongTermMemory init skipped: %s", _ltm_err)
+            self._ltm = None
+
         # ── Per-fragment selection counter ─────────────────────────
         # Drives the "consider pinning" memory nudge (P1.D1). A fragment
         # repeatedly selected across optimizations is a persistence
