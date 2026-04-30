@@ -37,7 +37,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from .proxy_config import ProxyConfig
+from .adaptive_budget import AdaptiveBudgetModel, extract_features
+from .proxy_config import ProxyConfig, context_window_for_model
 from .proxy_transform import (
     apply_temperature,
     apply_trajectory_convergence,
@@ -695,6 +696,10 @@ class PromptCompilerProxy:
         # Pipeline latency tracking (Welford online stats)
         self._pipeline_stats = _WelfordStats()
 
+        # ACB: Adaptive Compression Budget — per-query learned budget predictor
+        self._acb = AdaptiveBudgetModel()
+
+
         # Passive implicit feedback — closes the RL loop without IDE cooperation
         self._feedback_tracker = ImplicitFeedbackTracker()
         self._enable_passive_feedback = (
@@ -1123,11 +1128,36 @@ class PromptCompilerProxy:
         if model and hasattr(self.engine, 'set_model'):
             self.engine.set_model(model)
 
-        # ── ECDB: Dynamic Budget Computation ──
-        # We need vagueness for the budget, but the full query analysis
-        # happens inside optimize_context(). Do a lightweight pre-analysis
-        # to get vagueness for budget calibration.
-        if self.config.enable_dynamic_budget:
+        # ── Budget Computation: ACB → ECDB → Static ──
+        # Priority: (1) ACB learned per-query budget when confident,
+        # (2) ECDB sigmoid-based dynamic budget, (3) static fallback.
+        token_budget = None
+        acb_prediction = None
+
+        # (1) ACB: Adaptive Compression Budget
+        if self.config.enable_adaptive_budget:
+            try:
+                ctx_text = ""  # lightweight — no full context assembly yet
+                acb_features = extract_features(
+                    user_message, ctx_text, task_type=None,
+                )
+                ctx_window = context_window_for_model(model or "")
+                acb_prediction = self._acb.predict(acb_features)
+                if acb_prediction.get("fallback") is None:
+                    # Model is confident — use its learned budget
+                    ratio = acb_prediction["budget_used"]
+                    token_budget = max(200, int(ctx_window * ratio))
+                    logger.debug(
+                        "ACB: budget_ratio=%.3f → %d tokens (se=%.4f, n=%d)",
+                        ratio, token_budget,
+                        acb_prediction.get("budget_se") or 0,
+                        acb_prediction.get("n_training", 0),
+                    )
+            except Exception as e:
+                logger.debug("ACB fallback: %s", e)
+
+        # (2) ECDB: Entropy-Calibrated Dynamic Budget
+        if token_budget is None and self.config.enable_dynamic_budget:
             try:
                 from entroly_core import py_analyze_query
                 summaries = []  # Empty summaries for quick vagueness estimate
@@ -1140,8 +1170,9 @@ class PromptCompilerProxy:
                 )
             except Exception as e:
                 logger.debug("ECDB pre-analysis fallback: %s", e)
-                token_budget = compute_token_budget(model, self.config)
-        else:
+
+        # (3) Static fallback
+        if token_budget is None:
             token_budget = compute_token_budget(model, self.config)
 
         # Rate-Distortion self-correction: shift IOS toward full-resolution

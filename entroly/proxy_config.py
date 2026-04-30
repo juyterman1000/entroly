@@ -232,6 +232,11 @@ class ProxyConfig:
     ecdb_codebase_divisor: float = 200.0
     ecdb_codebase_cap: float = 2.0
 
+    # ACB: Adaptive Compression Budget — per-query learned budget predictor.
+    # When True and the ACB model is trained (≥20 examples), budget is predicted
+    # per-query. Before that, falls through to ECDB / static.
+    enable_adaptive_budget: bool = True
+
     # IOS: tunable info factors and diversity floor
     ios_skeleton_info_factor: float = 0.70
     ios_reference_info_factor: float = 0.15
