@@ -332,8 +332,6 @@ def generate_report(
             evt_type = o.get("event_type", "")
             tool = o.get("tool", evt_type)
             value = o.get("value", "")
-            source = o.get("source", "")
-
             # Only process hook/CI-sourced verifiable events
             if evt_type not in ("test", "build", "lint", "typecheck", "format",
                                 "test_result", "ci_result", "command_exit"):

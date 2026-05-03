@@ -455,7 +455,7 @@ def generate_scaffold(
             lines.append(f"- `{src_short}` → `{tgt_short}` ({label})")
 
             # Enforce token budget: ~4 chars per token, check periodically
-            current_chars = sum(len(l) for l in lines)
+            current_chars = sum(len(line) for line in lines)
             if current_chars > max_tokens * 4:
                 remaining = len(edges) - edges.index((src, tgt, symbols)) - 1
                 if remaining > 0:

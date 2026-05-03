@@ -37,12 +37,17 @@ The router NEVER:
 
 from __future__ import annotations
 
+import json
 import logging
+import math
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 logger = logging.getLogger("entroly.ravs.router")
 
@@ -424,13 +429,6 @@ MODEL_TIERS: dict[str, dict[str, Any]] = {
 }
 
 # ── Task archetype classifier ──────────────────────────────────────────
-
-import json
-import math
-import os
-import re
-from pathlib import Path
-from typing import Optional
 
 _ARCHETYPE_PATTERNS: list[tuple[re.Pattern, str]] = [
     # Test-related

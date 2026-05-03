@@ -1284,7 +1284,7 @@ def cmd_wrap(args):
                 args.agent_args.pop(idx)
             except ValueError:
                 pass
-                
+
     port = port or 9377
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Wrap — {spec['name']}{C.RESET}\n")
 
@@ -1338,7 +1338,7 @@ def cmd_wrap(args):
         executable = shutil.which(agent_cmd[0])
         if executable is None:
             raise FileNotFoundError()
-        
+
         agent_cmd[0] = executable
         subprocess.run(agent_cmd, env=env)
     except FileNotFoundError:
@@ -2960,7 +2960,7 @@ def cmd_ravs(args):
             if result:
                 print(f"  \u2713 Captured: {result.get('tool')} \u2192 {result.get('event_type')}/{result.get('value')}")
             else:
-                print(f"  \u00b7 Skipped: not a verifiable command")
+                print("  \u00b7 Skipped: not a verifiable command")
         return
 
     if ravs_action != "report":
