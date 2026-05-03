@@ -29,4 +29,4 @@ md-5 = "0.11"
 flate2 = "1.0"
 
 # Concurrency
-rayon = "1.8"
+rayon = "1.12"
