@@ -1021,11 +1021,57 @@ def start_dashboard(engine: Any = None, port: int = 9378, daemon: bool = True):
     global _engine
     _engine = engine
 
+    # Auto-register a lightweight daemon state so the control API
+    # works even when called from `entroly go` / `entroly proxy`
+    # (not just `entroly daemon`).
+    from entroly.daemon import get_daemon, _register_control_api, EntrolyDaemon
+    if get_daemon() is None:
+        _lite = EntrolyDaemon.__new__(EntrolyDaemon)
+        _lite.state = __import__("entroly.daemon", fromlist=["EntrolyDaemonState"]).EntrolyDaemonState()
+        _lite.state.status = "running"
+        _lite.state.started_at = __import__("time").time()
+        _lite.state.dashboard.running = True
+        _lite.state.dashboard.port = port
+        _lite._engine = engine
+        _lite._proxy_server = None
+        _lite._dashboard_server = None
+        _lite._workers = {}
+        _lite._shutdown = __import__("threading").Event()
+        _lite._lock = __import__("threading").Lock()
+        _lite._host = "127.0.0.1"
+        _lite._enable_proxy = True
+        _lite._enable_mcp = False
+        _lite._repo_paths = [__import__("os").getcwd()]
+
+        # Populate repo state from engine
+        try:
+            stats = engine._rust.stats() if hasattr(engine, "_rust") else {}
+            sess = stats.get("session", {})
+            _lite.state.repos.append(
+                __import__("entroly.daemon", fromlist=["RepoState"]).RepoState(
+                    path=__import__("os").getcwd(),
+                    watching=True,
+                    indexed_files=sess.get("fragments_tracked", 0),
+                    total_tokens=sess.get("total_tokens_tracked", 0),
+                    last_sync=__import__("time").time(),
+                )
+            )
+        except Exception:
+            pass
+
+        _register_control_api(_lite)
+
     class _ReuseAddrHTTPServer(HTTPServer):
         allow_reuse_address = True
+
+        def process_request(self, request, client_address):
+            """Handle each request in a new thread to avoid blocking."""
+            t = threading.Thread(target=self.finish_request, args=(request, client_address), daemon=True)
+            t.start()
 
     server = _ReuseAddrHTTPServer(("127.0.0.1", port), DashboardHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=daemon)
     thread.start()
     logger.info(f"Dashboard live at http://localhost:{port}")
     return server
+
