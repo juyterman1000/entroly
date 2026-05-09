@@ -112,6 +112,8 @@ font-size:13px;font-weight:500;transform:translateY(80px);opacity:0;transition:a
 .toast.show{transform:translateY(0);opacity:1;}
 .toast.ok{border-color:rgba(52,211,153,0.3);color:var(--emerald);}
 .toast.err{border-color:rgba(251,113,133,0.3);color:var(--rose);}
+@keyframes flash{0%{background:rgba(102,126,234,0.15)}100%{background:transparent}}
+.flash{animation:flash 1.5s ease-out;}
 /* Federation warning */
 .fed-warn{padding:12px 16px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);
 border-radius:10px;font-size:12px;color:var(--amber);line-height:1.5;margin-bottom:12px;}
@@ -178,12 +180,12 @@ border-radius:10px;font-size:12px;color:var(--amber);line-height:1.5;margin-bott
 <div class="section">
 <div class="section-title">Learning &amp; Intelligence</div>
 <div class="grid">
-  <div class="card"><div class="card-h"><h3>&#129504; PRISM Weights</h3><span class="badge b-violet">RL-Learned</span></div>
+  <div class="card"><div class="card-h"><h3>&#129504; PRISM Weights</h3><span class="badge b-violet" id="prismBadge">Default</span></div>
   <div class="card-b">
     <div id="weightsPanel">Loading...</div>
     <div class="btn-group">
-      <button class="btn btn-primary" onclick="ctrlPost('/api/control/learning/autotune')">&#9889; Run Autotune</button>
-      <button class="btn btn-danger" onclick="if(confirm('Reset all learned weights?'))ctrlPost('/api/control/learning/reset')">Reset Weights</button>
+      <button class="btn btn-primary" onclick="runAutotune()">&#9889; Run Autotune</button>
+      <button class="btn btn-danger" onclick="resetWeights()">Reset Weights</button>
     </div>
   </div></div>
 
@@ -229,17 +231,19 @@ border-radius:10px;font-size:12px;color:var(--amber);line-height:1.5;margin-bott
 function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;
 t.className='toast show '+(ok?'ok':'err');setTimeout(()=>t.className='toast',2500);}
 
-async function ctrlPost(url,body={}){
+async function ctrlPost(url,body={},msg='Done'){
   try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const d=await r.json();if(d.ok)toast(d.ok?'Done':'Error');else toast(d.error||'Failed',false);refresh();}
+  const d=await r.json();if(d.ok)toast(msg);else toast(d.error||'Failed',false);refresh();}
   catch(e){toast('Connection error',false);}}
 
-function toggleOpt(el){ctrlPost(el.checked?'/api/control/optimization/enable':'/api/control/optimization/pause');}
-function toggleBypass(el){ctrlPost('/api/control/bypass',{enabled:el.checked});}
-function toggleLearn(el){ctrlPost('/api/control/learning/enable',{enabled:el.checked});}
-function toggleFed(el){if(el.checked)ctrlPost('/api/control/federation/enable');else ctrlPost('/api/control/federation/disable');}
+function toggleOpt(el){ctrlPost(el.checked?'/api/control/optimization/enable':'/api/control/optimization/pause',{},el.checked?'Optimization enabled':'Optimization paused');}
+function toggleBypass(el){ctrlPost('/api/control/bypass',{enabled:el.checked},{},el.checked?'Bypass mode ON — requests forwarded raw':'Bypass mode OFF');}
+function toggleLearn(el){ctrlPost('/api/control/learning/enable',{enabled:el.checked},el.checked?'Local learning enabled — weights will adapt from feedback':'Local learning paused — weights frozen');}
+function toggleFed(el){if(el.checked)ctrlPost('/api/control/federation/enable',{},'Federation enabled');else ctrlPost('/api/control/federation/disable',{},'Federation disabled');}
 function setQuality(m){document.querySelectorAll('.quality-opt').forEach(b=>b.classList.toggle('active',b.dataset.q===m));
-ctrlPost('/api/control/quality',{mode:m});}
+ctrlPost('/api/control/quality',{mode:m},'Quality set to '+m);}
+async function runAutotune(){toast('Running autotune...');await ctrlPost('/api/control/learning/autotune',{},'Autotune triggered — weights will update on next proxy request');document.getElementById('weightsPanel').classList.add('flash');setTimeout(()=>document.getElementById('weightsPanel').classList.remove('flash'),1600);}
+async function resetWeights(){if(!confirm('Reset all learned weights to defaults?'))return;await ctrlPost('/api/control/learning/reset',{},'Weights reset to defaults (R=0.30 F=0.25 S=0.25 E=0.20)');document.getElementById('weightsPanel').classList.add('flash');setTimeout(()=>document.getElementById('weightsPanel').classList.remove('flash'),1600);}
 
 function renderWeights(w){if(!w||!w.recency)return'<div style="color:var(--dim)">No weights</div>';
 const colors=['#667eea','#f5576c','#4facfe','#43e97b'];
@@ -306,6 +310,10 @@ async function refresh(){
 
   try{const lr=await fetch('/api/control/learning');const l=await lr.json();
   document.getElementById('weightsPanel').innerHTML=renderWeights(l.weights);
+  const w=l.weights||{};
+  const isDefault=(w.recency===0.3&&w.frequency===0.25&&w.semantic===0.25&&w.entropy===0.2);
+  document.getElementById('prismBadge').textContent=isDefault?'Default':'RL-Learned';
+  document.getElementById('prismBadge').className='badge '+(isDefault?'b-amber':'b-violet');
   document.getElementById('learnToggle').checked=l.local_enabled;
   document.getElementById('vaultBadge').textContent=l.local_enabled?'Active':'Paused';
   document.getElementById('vaultBadge').className='badge '+(l.local_enabled?'b-green':'b-amber');
