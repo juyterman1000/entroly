@@ -259,8 +259,9 @@ function renderContext(ctx){if(!ctx||(!ctx.included&&!ctx.excluded))return'<div 
 const inc=ctx.included||[];const exc=ctx.excluded||[];
 let h='<div style="font-size:12px;color:var(--dim);margin-bottom:8px;">'+inc.length+' included &middot; '+exc.length+' excluded</div>';
 inc.slice(0,8).forEach(f=>{const src=(f.source||f.id||'').split(/[\\/]/).pop();
+const sc=f.scores||{}; const score=(sc.composite||0);
 h+=`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);">
-<span style="color:var(--emerald);">&#10003; ${src}</span><span style="color:var(--dim);">${f.tokens||f.token_count||0} tok</span></div>`;});
+<span style="color:var(--emerald);">&#10003; ${src}</span><span style="color:var(--dim);font-family:'JetBrains Mono',monospace;">${(score*100).toFixed(1)}%</span></div>`;});
 return h;}
 
 async function refreshLogs(){
@@ -291,7 +292,15 @@ async function refresh(){
     document.getElementById('fedToggle').checked=s.federation.enabled;
     document.getElementById('fedBadge').textContent=s.federation.enabled?s.federation.mode.toUpperCase():'OFF';
     document.getElementById('fedBadge').className='badge '+(s.federation.enabled?'b-green':'b-amber');
-    renderReposFromState(s.repos);
+    // Enrich repo data with live engine stats via /api/metrics
+    let repos=s.repos||[];
+    try{const mr=await fetch('/api/metrics');const md=await mr.json();
+      const ss=(md.stats||{}).session||{};
+      if(repos.length>0&&(repos[0].indexed_files||0)===0&&ss.total_fragments>0){
+        repos[0].indexed_files=ss.total_fragments;
+        repos[0].total_tokens=ss.total_tokens_tracked||0;}
+    }catch(e){}
+    renderReposFromState(repos);
   }catch(e){document.getElementById('statusPill').className='status-pill off';
   document.getElementById('statusText').textContent='Disconnected';}
 
