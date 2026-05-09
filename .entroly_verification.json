@@ -1,0 +1,110 @@
+{
+  "version": "0.15.0",
+  "repository": "C:\\Users\\abhis\\entroly",
+  "files_indexed": 394,
+  "total_tokens": 901955,
+  "index_time_s": 0.529,
+  "avg_savings_pct": 86.8,
+  "avg_latency_ms": 18.9,
+  "passed": 16,
+  "failed": 0,
+  "total": 16,
+  "results": [
+    {
+      "id": "IDX-1",
+      "name": "Indexing < 2 seconds",
+      "status": "PASS",
+      "detail": "0.529s"
+    },
+    {
+      "id": "IDX-2",
+      "name": "Files indexed > 0",
+      "status": "PASS",
+      "detail": "394 files"
+    },
+    {
+      "id": "SAV-1",
+      "name": "Savings >= 90% at 32K budget",
+      "status": "PASS",
+      "detail": "96.6%"
+    },
+    {
+      "id": "SAV-2",
+      "name": "Savings >= 95% at 8K budget",
+      "status": "PASS",
+      "detail": "99.1%"
+    },
+    {
+      "id": "SAV-3",
+      "name": "Average savings >= 70% (128K budget)",
+      "status": "PASS",
+      "detail": "86.8%"
+    },
+    {
+      "id": "LAT-1",
+      "name": "Average latency < 100ms",
+      "status": "PASS",
+      "detail": "18.9ms"
+    },
+    {
+      "id": "COV-1",
+      "name": "Multiple file types indexed",
+      "status": "PASS",
+      "detail": "9 types"
+    },
+    {
+      "id": "ENT-1",
+      "name": "All fragments have entropy scores",
+      "status": "PASS",
+      "detail": "384/384"
+    },
+    {
+      "id": "ENT-2",
+      "name": "Entropy variance > 0.1 (non-trivial scoring)",
+      "status": "PASS",
+      "detail": "Range: 0.8589"
+    },
+    {
+      "id": "SRC-1",
+      "name": "Source code >= config in selection",
+      "status": "PASS",
+      "detail": "Code=132 vs Config=13"
+    },
+    {
+      "id": "DUP-1",
+      "name": "No duplicate files in selection",
+      "status": "PASS",
+      "detail": "154 selected, 154 unique"
+    },
+    {
+      "id": "ENG-1",
+      "name": "Rust engine loaded",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "ENG-2",
+      "name": "Python >= 3.10",
+      "status": "PASS",
+      "detail": "Python 3.10"
+    },
+    {
+      "id": "ENG-3",
+      "name": "Version 0.15.0",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "SDK-1",
+      "name": "SDK compress importable",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "LOCAL-1",
+      "name": "No API key required",
+      "status": "PASS",
+      "detail": "All operations ran without API keys"
+    }
+  ]
+}
