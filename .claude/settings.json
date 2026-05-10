@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Project-shared Claude Code settings for the entroly repo. Personal overrides go in .claude/settings.local.json (which is gitignored).",
+
+  "enabledMcpjsonServers": [
+    "entroly"
+  ],
+  "enableAllProjectMcpServers": true,
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "_comment": "Feed every tool outcome into the RAVS event log. Powers `entroly ravs report` and the Bayesian routing layer. Quiet + best-effort: a missing entroly binary or a slow capture never blocks Claude Code.",
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|TodoWrite",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "entroly ravs capture --stdin --quiet 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  },
+
+  "permissions": {
+    "_comment": "Pre-approved local commands so contributors don't get nagged for permission on routine entroly dev workflows.",
+    "allow": [
+      "Bash(python bench/trust_bench.py)",
+      "Bash(python -m tests.verify_claims)",
+      "Bash(pytest tests/ -v)",
+      "Bash(ruff check entroly/)",
+      "Bash(cd entroly-core && cargo test --lib)",
+      "Bash(cd entroly-core && cargo clippy --all-targets -- -D warnings)",
+      "Bash(maturin develop --release)",
+      "Bash(entroly --version)",
+      "Bash(entroly doctor)",
+      "Bash(entroly health)",
+      "Bash(entroly digest)",
+      "Bash(entroly ravs report)",
+      "Bash(entroly ravs capture --stdin --quiet 2>/dev/null || true)"
+    ]
+  }
+}

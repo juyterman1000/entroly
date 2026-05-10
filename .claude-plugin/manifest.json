@@ -1,0 +1,52 @@
+{
+  "name": "entroly",
+  "version": "0.16.0",
+  "description": "Token-saving proxy and context compression engine for AI coding agents. 38 supported tools, MCP-native, deterministic Rust core.",
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "repository": "https://github.com/juyterman1000/entroly",
+  "license": "Apache-2.0",
+  "install": {
+    "command": "pip install entroly",
+    "alternatives": {
+      "brew": "brew tap juyterman1000/entroly && brew install entroly",
+      "npm": "npm install -g entroly-wasm",
+      "pipx": "pipx install entroly",
+      "from-source": "git clone https://github.com/juyterman1000/entroly && cd entroly && pip install -e \".[full]\""
+    }
+  },
+  "mcp": {
+    "command": "entroly",
+    "args": ["serve"],
+    "env": {}
+  },
+  "capabilities": [
+    "context-compression",
+    "knapsack-selection",
+    "shannon-entropy-scoring",
+    "bm25-retrieval",
+    "simhash-dedup",
+    "dependency-graph",
+    "session-memory",
+    "code-search",
+    "static-security-scan",
+    "ravs-cost-routing",
+    "federated-learning",
+    "skill-synthesis"
+  ],
+  "languages": [
+    "python", "rust", "typescript", "javascript", "go", "java",
+    "c", "cpp", "csharp", "ruby", "php", "swift", "kotlin",
+    "scala", "yaml", "toml", "json", "markdown", "shell"
+  ],
+  "agents": {
+    "cli": ["claude", "codex", "aider", "copilot", "gemini", "qwen", "opencode", "crush", "hermes", "pi", "ollama"],
+    "mcp": ["cursor", "windsurf", "vscode", "claude-desktop", "claude-code", "zed"],
+    "config": ["cline", "roo", "continue", "cody", "amp", "kiro", "qoder", "trae", "antigravity", "amazonq", "verdent", "jetbrains", "neovim", "emacs", "sublime", "helix", "tabby", "twinny", "fittencode", "tabnine", "supermaven"]
+  },
+  "documentation": {
+    "readme": "README.md",
+    "cookbook": "cookbook/README.md",
+    "details": "docs/DETAILS.md",
+    "benchmarks": "BENCHMARKS.md"
+  }
+}

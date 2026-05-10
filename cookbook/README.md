@@ -96,12 +96,27 @@ a file, formatting). Paying Opus prices for `pytest` is waste. RAVS watches
 your outcomes, builds a confidence model per task type, and starts routing the
 safe ones to Haiku — only after the data says it's safe.
 
-Enable it once:
+Enable it once — add this `PostToolUse` hook to your `.claude/settings.json`:
 
-```bash
-# Add to .claude/settings.json hooks (one entry, 60 seconds)
-entroly ravs install-hook
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|TodoWrite",
+        "hooks": [
+          { "type": "command", "command": "entroly ravs capture --stdin --quiet 2>/dev/null || true" }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+> The `2>/dev/null || true` tail is intentional: a missing entroly binary or a
+> slow capture should never block Claude Code. Failure is silent and harmless.
+> The entroly repo's own [`.claude/settings.json`](../.claude/settings.json)
+> ships this hook — copy it as a reference.
 
 Then use Claude Code normally for a week. After enough observations:
 

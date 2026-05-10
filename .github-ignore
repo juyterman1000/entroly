@@ -1,0 +1,23 @@
+# Patterns blocked by .githooks/pre-push when pushing to GitHub.
+#
+# One path or directory pattern per line. Trailing slash means
+# "this directory and everything under it." Blank lines and lines
+# starting with # are ignored.
+#
+# Bypass for a one-off push: git push --no-verify
+#
+# This file ships intentionally minimal. Add patterns here when you
+# keep internal docs, experimental skills, or proprietary helpers
+# alongside the public source and want a safety net.
+
+# Example: a private experiments/ folder you don't want to leak.
+# experiments/
+
+# Example: an internal notes file checked in by mistake.
+# NOTES_INTERNAL.md
+
+# Personal RAVS event logs and tuning state should never reach GitHub.
+.entroly/ravs/events.jsonl
+.entroly/ravs/state.json
+bench/results.tsv
+bench/tuning_config.*.bak.json

@@ -1,0 +1,10 @@
+{
+  "_comment": "Recommended extensions for the entroly repo. VS Code prompts contributors to install these on first open.",
+  "recommendations": [
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+    "redhat.vscode-yaml"
+  ]
+}
