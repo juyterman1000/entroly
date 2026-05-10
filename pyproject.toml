@@ -8,7 +8,7 @@ version = "0.16.0"
 
 description = "The token saving proxy and context compression engine for AI coding agents. Reduce LLM API costs by 80% while providing full codebase context to Cursor, Claude Code, and Copilot."
 readme = "README.md"
-license = "Apache-2.0"
+license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 logo = { file = "docs/assets/logo.png", content-type = "image/png" }
 requires-python = ">=3.10"
