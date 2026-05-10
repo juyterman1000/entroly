@@ -641,7 +641,7 @@ function renderHero(d){
         <div class="hm-label">${secTotal>0?'Findings':'All Clear'}</div>
         <div class="hm-sub">${secTotal>0?(d.security.critical_total||0)+' crit · '+(d.security.high_total||0)+' high':'No vulnerabilities'}</div></div>
       <div class="hero-metric hm-reqs"><div class="hm-icon">⚡</div>
-        <div class="hm-val hv-cyan">${reqCount}</div>
+        <div class="hm-val hv-cyan">${realReqs}</div>
         <div class="hm-label">Requests</div>
         <div class="hm-sub">${dedupCount} dedup hits</div></div>
     </div>`;
@@ -922,78 +922,49 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         self.send_header("Referrer-Policy", "no-referrer")
 
+    # Maps URL path → daemon-state key for the read-only control GETs.
+    _CONTROL_GET_ROUTES = {
+        "/api/control/status": "status",
+        "/api/control/repos": "repos",
+        "/api/control/learning": "learning",
+        "/api/control/federation": "federation",
+        "/api/control/context/last": "context_last",
+        "/api/control/logs": "logs",
+    }
+
     def do_GET(self):
-        if self.path == "/" or self.path == "/dashboard":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self._send_security_headers()
-            self.end_headers()
-            self.wfile.write(DASHBOARD_HTML.encode())
+        # Static HTML
+        if self.path in ("/", "/dashboard"):
+            self._send_html(DASHBOARD_HTML)
         elif self.path == "/controls":
             from entroly.controls_html import CONTROLS_HTML
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self._send_security_headers()
-            self.end_headers()
-            self.wfile.write(CONTROLS_HTML.encode())
+            self._send_html(CONTROLS_HTML)
+        # JSON read APIs (CORS so other localhost dashboards can query)
         elif self.path == "/api/metrics":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
-            self.send_header("Cache-Control", "no-cache")
-            self._send_security_headers()
-            self.end_headers()
-            snap = _get_full_snapshot()
-            self.wfile.write(json.dumps(snap, default=str).encode())
+            self._send_json(200, _get_full_snapshot())
         elif self.path == "/api/trends":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
-            self.send_header("Cache-Control", "no-cache")
-            self._send_security_headers()
-            self.end_headers()
-            try:
-                from entroly.value_tracker import get_tracker
-                data = get_tracker().get_trends()
-            except Exception:
-                data = {}
-            self.wfile.write(json.dumps(data, default=str).encode())
+            self._send_json(200, self._safe_tracker_call("get_trends"))
         elif self.path == "/api/confidence":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
-            self.send_header("Cache-Control", "no-cache")
-            self._send_security_headers()
-            self.end_headers()
-            try:
-                from entroly.value_tracker import get_tracker
-                data = get_tracker().get_confidence()
-            except Exception:
-                data = {}
-            self.wfile.write(json.dumps(data, default=str).encode())
+            self._send_json(200, self._safe_tracker_call("get_confidence"))
         elif self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self._send_security_headers()
-            self.end_headers()
-            self.wfile.write(b'{"status":"ok"}')
-        elif self.path == "/api/control/status":
-            self._handle_control_get("status")
-        elif self.path == "/api/control/repos":
-            self._handle_control_get("repos")
-        elif self.path == "/api/control/learning":
-            self._handle_control_get("learning")
-        elif self.path == "/api/control/federation":
-            self._handle_control_get("federation")
-        elif self.path == "/api/control/context/last":
-            self._handle_control_get("context_last")
-        elif self.path == "/api/control/logs":
-            self._handle_control_get("logs")
+            # Health probe — no CORS, kept tight for internal liveness checks.
+            self._respond(200, "application/json", b'{"status":"ok"}')
+        # Control API reads
+        elif self.path in self._CONTROL_GET_ROUTES:
+            self._handle_control_get(self._CONTROL_GET_ROUTES[self.path])
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_json(404, {"error": "not found", "path": self.path})
+
+    @staticmethod
+    def _safe_tracker_call(method: str) -> dict:
+        """Call a value_tracker method, returning {} on any failure rather
+        than letting the exception bubble into a 500. The caller decides
+        what HTTP status to send."""
+        try:
+            from entroly.value_tracker import get_tracker
+            return getattr(get_tracker(), method)()
+        except Exception:
+            return {}
 
     def do_POST(self):
         """Handle Control API POST requests."""
@@ -1096,15 +1067,46 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         self._send_json(status_code, result)
 
-    def _send_json(self, status_code: int, payload: dict) -> None:
-        """Single response writer for the control API. Ensures consistent
-        headers (CORS, security) and avoids drift between handlers."""
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
+    def _respond(
+        self,
+        status: int,
+        content_type: str,
+        body: bytes,
+        *,
+        no_cache: bool = False,
+        cors_origin: str | None = None,
+    ) -> None:
+        """Single response writer for *all* routes (HTML, JSON, health).
+        Centralizing here is the only way headers (CORS, CSP, cache) stay
+        in sync across handlers — every previous drift bug came from
+        copy-pasted send_header blocks falling out of step."""
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        if no_cache:
+            self.send_header("Cache-Control", "no-cache")
+        if cors_origin:
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
         self._send_security_headers()
         self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
+        if body:
+            self.wfile.write(body)
+
+    def _send_json(self, status: int, payload: dict, *, cors: bool = True) -> None:
+        self._respond(
+            status,
+            "application/json",
+            json.dumps(payload, default=str).encode(),
+            no_cache=True,
+            cors_origin="http://localhost:9378" if cors else None,
+        )
+
+    def _send_html(self, body: str) -> None:
+        self._respond(
+            200,
+            "text/html; charset=utf-8",
+            body.encode(),
+            no_cache=True,
+        )
 
     def do_OPTIONS(self):
         """Handle CORS preflight for control API."""
@@ -1149,13 +1151,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             data = {"error": f"unknown key: {key}"}
 
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
-        self.send_header("Cache-Control", "no-cache")
-        self._send_security_headers()
-        self.end_headers()
-        self.wfile.write(json.dumps(data, default=str).encode())
+        # Daemon-down should be 503 so callers can branch on status; key-down
+        # is a server-side bug surfaced as 200+error for the existing UI.
+        status = 503 if daemon is None else 200
+        self._send_json(status, data)
 
 
 def start_dashboard(engine: Any = None, port: int = 9378, daemon: bool = True):
