@@ -1604,14 +1604,20 @@ class EntrolyEngine:
                 "avg_entropy_score": round(avg_entropy, 4),
                 "pinned_fragments": sum(1 for f in fragments if f.is_pinned),
             },
-            "savings": {
-                "total_tokens_saved": self._total_tokens_saved,
-                "total_duplicates_caught": self._total_duplicates_caught,
-                "total_optimizations": self._total_optimizations,
-                "total_fragments_ingested": self._total_fragments_ingested,
-                "estimated_cost_saved_usd": round(
-                    self._total_tokens_saved * 0.000003, 4
-                ),
+            # Engine-internal efficiency telemetry. NOT money saved.
+            # `dedup_tokens_avoided` counts tokens the engine did not have to
+            # re-ingest because of SimHash dedup. `cache_tokens_served` counts
+            # tokens an EGSC cache hit returned without recomputation. Both go
+            # up during CLI compile/optimize even when no LLM call ever
+            # happened — so neither one can be priced as "cost saved." The
+            # only honest cost-saved number lives in value_tracker (lifetime
+            # view), which is incremented exclusively by proxy.py when a real
+            # request is intercepted.
+            "engine": {
+                "dedup_tokens_avoided": self._total_tokens_saved,
+                "duplicates_caught": self._total_duplicates_caught,
+                "optimize_calls": self._total_optimizations,
+                "fragments_ingested": self._total_fragments_ingested,
             },
             "dedup": self._dedup.stats(),
             "prefetch": self._prefetch.stats(),
@@ -2511,15 +2517,27 @@ def create_mcp_server():
         current_turn = session.get("current_turn", 0)
         pinned = session.get("pinned", 0)
 
-        tokens_saved = savings.get("total_tokens_saved", 0)
+        # Engine-internal telemetry (incremented by ingest/optimize regardless
+        # of real LLM traffic). Safe to display as engine activity, NOT money.
         dupes = savings.get("total_duplicates_caught", 0)
         total_opts = savings.get("total_optimizations", 0)
         total_ingested = savings.get("total_fragments_ingested", 0)
 
         # ── 💰 MONEY ──
+        # Truth source: value_tracker (proxy-only). Never derive $ from
+        # engine telemetry — that would inflate on every CLI compile/optimize.
         naive_cost = mem.get("naive_cost_per_call_usd", 0)
         optimized_cost = mem.get("optimized_cost_per_call_usd", 0)
-        cost_saved_usd = savings.get("estimated_cost_saved_usd", 0)
+        try:
+            from entroly.value_tracker import get_tracker
+            _lt = get_tracker().get_trends().get("lifetime", {})
+            cost_saved_usd = float(_lt.get("cost_saved_usd", 0) or 0)
+            real_tokens_saved = int(_lt.get("tokens_saved", 0) or 0)
+            real_requests = int(_lt.get("requests_optimized", 0) or 0)
+        except Exception:
+            cost_saved_usd = 0.0
+            real_tokens_saved = 0
+            real_requests = 0
         savings_pct = ((naive_cost - optimized_cost) / max(naive_cost, 1e-9)) * 100 if naive_cost > 0 else 0
         session_roi = naive_cost * total_opts - optimized_cost * total_opts
 
@@ -2583,16 +2601,21 @@ def create_mcp_server():
 
         dashboard = {
             "💰 money": {
-                "tokens_saved_total": f"{tokens_saved:,}",
                 "cost_saved_total_usd": f"${cost_saved_usd:.4f}",
+                "tokens_saved_total": f"{real_tokens_saved:,}",
+                "real_llm_requests": real_requests,
                 "cost_per_call_without_entroly": f"${naive_cost:.4f}",
                 "cost_per_call_with_entroly": f"${optimized_cost:.4f}",
                 "savings_pct": f"{savings_pct:.0f}%",
                 "session_roi_usd": f"${session_roi:.4f}",
                 "insight": (
-                    f"Each optimize call costs ${optimized_cost:.4f} instead of ${naive_cost:.4f}. "
-                    f"Over {total_opts} calls, that's ${session_roi:.4f} saved."
-                    if total_opts > 0 else "Run optimize_context to see savings."
+                    f"${cost_saved_usd:.4f} saved across {real_requests} real LLM requests "
+                    f"intercepted by the proxy. Engine ran {total_opts} internal optimize "
+                    f"calls (CLI/MCP); those don't count toward $ saved."
+                    if real_requests > 0 else
+                    f"No LLM requests intercepted yet — point your AI tool at "
+                    f"http://localhost:9377/v1 to start saving. Engine is ready "
+                    f"({total_opts} internal optimize calls run, {dupes} dupes caught)."
                 ),
             },
             "⚡ performance": {
@@ -3682,7 +3705,7 @@ def main():
         from importlib.metadata import version as _pkg_version
         _version = _pkg_version("entroly")
     except Exception:
-        _version = "0.9.0"
+        _version = "0.16.0"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

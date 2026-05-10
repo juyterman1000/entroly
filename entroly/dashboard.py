@@ -56,11 +56,24 @@ def _safe_json(obj: Any) -> Any:
     return obj
 
 
+def _record_section_error(snap: dict, section: str, exc: BaseException) -> None:
+    """Append a structured error so the dashboard JS can render a banner.
+    Per-section error fields (`snap[section] = {"error": str(e)}` or `None`)
+    are kept for backward-compat, but they're invisible to the user — the
+    `errors` array is what gets surfaced in the UI."""
+    snap.setdefault("errors", []).append({
+        "section": section,
+        "type": type(exc).__name__,
+        "message": str(exc) or repr(exc),
+    })
+
+
 def _get_full_snapshot() -> dict:
     """Pull ALL real data from the engine subsystems."""
     snap: dict[str, Any] = {
         "ts": time.time(),
         "engine_available": _engine is not None,
+        "errors": [],
     }
 
     # Persistent value tracker (independent of engine — always available)
@@ -69,15 +82,21 @@ def _get_full_snapshot() -> dict:
         tracker = get_tracker()
         snap["value_trends"] = tracker.get_trends()
         snap["value_confidence"] = tracker.get_confidence()
-    except Exception:
+    except Exception as e:
         snap["value_trends"] = None
         snap["value_confidence"] = None
+        _record_section_error(snap, "value_tracker", e)
 
     if _engine is None:
         return snap
 
     try:
-        # 1. Core stats — tokens saved, cost, dedup, turns
+        # 1. Core stats — engine telemetry only. NEVER prices "$ saved" from
+        # these numbers; the only source of truth for money saved is
+        # value_trends.lifetime (proxy-only). The Rust struct historically
+        # exposed a `savings` block with a fabricated `estimated_cost_saved_usd`
+        # field that conflated CLI dedup with real LLM savings — we normalize
+        # that block to `engine` here and strip the misleading cost field.
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             stats = _engine._rust.stats()
             stats = dict(stats)
@@ -88,9 +107,19 @@ def _get_full_snapshot() -> dict:
             stats = _engine.stats()
         else:
             stats = {}
+        if isinstance(stats, dict) and "savings" in stats:
+            sv = stats.pop("savings")
+            if isinstance(sv, dict):
+                stats["engine"] = {
+                    "dedup_tokens_avoided": sv.get("total_tokens_saved", 0),
+                    "duplicates_caught": sv.get("total_duplicates_caught", 0),
+                    "optimize_calls": sv.get("total_optimizations", 0),
+                    "fragments_ingested": sv.get("total_fragments_ingested", 0),
+                }
         snap["stats"] = _safe_json(stats)
     except Exception as e:
         snap["stats"] = {"error": str(e)}
+        _record_section_error(snap, "stats", e)
 
     try:
         # 2. PRISM RL weights — the learned scoring weights
@@ -102,40 +131,45 @@ def _get_full_snapshot() -> dict:
                 "semantic": round(getattr(rust, "w_semantic", 0.25), 4),
                 "entropy": round(getattr(rust, "w_entropy", 0.2), 4),
             }
-    except Exception:
+    except Exception as e:
         snap["prism_weights"] = None
+        _record_section_error(snap, "prism_weights", e)
 
     try:
         # 3. Health analysis — code health grade
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             health_json = _engine._rust.analyze_health()
             snap["health"] = _safe_json(json.loads(health_json))
-    except Exception:
+    except Exception as e:
         snap["health"] = None
+        _record_section_error(snap, "health", e)
 
     try:
         # 4. SAST security report
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             sec_json = _engine._rust.security_report()
             snap["security"] = _safe_json(json.loads(sec_json))
-    except Exception:
+    except Exception as e:
         snap["security"] = None
+        _record_section_error(snap, "security", e)
 
     try:
         # 5. Knapsack explainability — last optimization decisions
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             explain = _engine._rust.explain_selection()
             snap["explain"] = _safe_json(dict(explain))
-    except Exception:
+    except Exception as e:
         snap["explain"] = None
+        _record_section_error(snap, "explain", e)
 
     try:
         # 6. Dependency graph stats
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             dg = _engine._rust.dep_graph_stats()
             snap["dep_graph"] = _safe_json(dict(dg))
-    except Exception:
+    except Exception as e:
         snap["dep_graph"] = None
+        _record_section_error(snap, "dep_graph", e)
 
     try:
         # 7. Cache intelligence — live EGSC + RAVEN-UCB observability
@@ -167,8 +201,9 @@ def _get_full_snapshot() -> dict:
                 "exploit_ratio": policy.get("exploit_ratio", 0.0),
             }
         )
-    except Exception:
+    except Exception as e:
         snap["cache_intelligence"] = None
+        _record_section_error(snap, "cache_intelligence", e)
 
     try:
         # 8. Context Resonance + Coverage + Consolidation stats
@@ -198,10 +233,11 @@ def _get_full_snapshot() -> dict:
             "mean_causal_mass": causal.get("mean_causal_mass", 0.0),
             "base_rate": causal.get("base_rate", 0.0),
         })
-    except Exception:
+    except Exception as e:
         snap["resonance"] = None
         snap["consolidation"] = None
         snap["causal"] = None
+        _record_section_error(snap, "resonance/consolidation/causal", e)
 
     # 9. Recent proxy requests
     with _lock:
@@ -272,8 +308,9 @@ def _get_full_snapshot() -> dict:
             "entity_count": len(set(entities)),
             "engine": "rust",
         })
-    except Exception:
+    except Exception as e:
         snap["cogops"] = None
+        _record_section_error(snap, "cogops", e)
 
     return snap
 
@@ -497,6 +534,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
     💡 Point your AI tool's API base URL to <code>http://localhost:9377/v1</code> to start optimizing every LLM call.
     <span class="dismiss" onclick="this.parentElement.style.display='none'">✕</span>
   </div>
+  <div id="errBanner" style="display:none;margin-bottom:16px;padding:12px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.4);border-radius:10px;color:#fecaca;font-size:13px;line-height:1.5;"></div>
   <div class="hero" id="hero"></div>
   <div id="valueTrends"></div>
   <div id="ba"></div>
@@ -537,17 +575,23 @@ let hasRequests=false;
 
 let heroSparkData=[];
 function renderHero(d){
-  const s=d.stats||{},sv=s.savings||{},ss=s.session||{},dd=s.dedup||{};
+  // Single source of truth for "saved": value_trends.lifetime (proxy-only).
+  // stats.engine is internal efficiency telemetry — never priced as $$.
+  const s=d.stats||{},eng=s.engine||s.savings||{},ss=s.session||{},dd=s.dedup||{};
   const frags=ss.total_fragments||0;
   const secTotal=(d.security&&!d.security.error)?((d.security.critical_total||0)+(d.security.high_total||0)):0;
   const h=d.health||{};
   const grade=h.health_grade||'?';
   const score=h.code_health_score||0;
   const gc={'A':'var(--emerald)','B':'var(--blue)','C':'var(--amber)','D':'#e3872d','F':'var(--rose)'}[grade]||'var(--dim)';
-  const tokensSaved=sv.total_tokens_saved||0;
-  const costSaved=sv.estimated_cost_saved_usd||0;
+  const lt=(d.value_trends&&d.value_trends.lifetime)||{};
+  const realCost=lt.cost_saved_usd||0;
+  const realTokens=lt.tokens_saved||0;
+  const realReqs=lt.requests_optimized||0;
+  const dedupCount=dd.duplicates_detected||eng.duplicates_caught||eng.total_duplicates_caught||0;
+  const optCalls=eng.optimize_calls||eng.total_optimizations||0;
   const reqs=d.recent_requests||[];
-  if(reqs.length>0)hasRequests=true;
+  if(realReqs>0)hasRequests=true;
   const w=document.getElementById('whisper');
   if(w&&hasRequests)w.style.display='none';
 
@@ -568,11 +612,13 @@ function renderHero(d){
   const sparkBars=heroSparkData.map(v=>'<div class="hbar" style="height:'+Math.max(3,v/mx*44)+'px;"></div>').join('');
   const sparkHTML=heroSparkData.length>0?'<div class="hero-spark">'+sparkBars+'</div>':'';
 
-  // Big number: cost if available, else tokens
-  const bigNum=costSaved>0?'$'+costSaved.toFixed(2):tokensSaved>0?fmt(tokensSaved):'—';
-  const bigLabel=costSaved>0?'ESTIMATED COST SAVED':tokensSaved>0?'TOKENS SAVED':'AWAITING FIRST REQUEST';
-  const reqCount=reqs.length;
-  const subtitle=tokensSaved>0?`<b>${fmt(tokensSaved)}</b> tokens optimized across <b>${reqCount}</b> request${reqCount!==1?'s':''}`:'Send your first LLM request through the proxy to see savings';
+  // Headline = REAL savings only. Pre-traffic state shows what's READY,
+  // not a fake projected dollar amount.
+  const bigNum=realReqs>0?'$'+realCost.toFixed(2):fmt(frags);
+  const bigLabel=realReqs>0?'COST SAVED':'FRAGMENTS READY';
+  const subtitle=realReqs>0
+    ?`<b>${fmt(realTokens)}</b> tokens saved across <b>${realReqs}</b> real LLM request${realReqs!==1?'s':''}`
+    :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
     <div class="hero-impact">
@@ -597,12 +643,12 @@ function renderHero(d){
       <div class="hero-metric hm-reqs"><div class="hm-icon">⚡</div>
         <div class="hm-val hv-cyan">${reqCount}</div>
         <div class="hm-label">Requests</div>
-        <div class="hm-sub">${(dd.duplicates_detected||sv.total_duplicates_caught||0)} dedup hits</div></div>
+        <div class="hm-sub">${dedupCount} dedup hits</div></div>
     </div>`;
 }
 
 function renderBA(d){
-  const s=d.stats||{},ss=s.session||{},sv=s.savings||{};
+  const s=d.stats||{},ss=s.session||{};
   const ex=d.explain||{};
   const totalTokens=ss.total_tokens_tracked||ss.total_token_count||ss.total_tokens_ingested||0;
   const selected=ex.included||[];
@@ -827,10 +873,27 @@ function renderCogops(d){
   </div>`;
 }
 
+function renderErrors(items){
+  const el=document.getElementById('errBanner');
+  if(!el){return;}
+  if(!items||items.length===0){el.style.display='none';el.innerHTML='';return;}
+  const head=`<b>${items.length} subsystem error${items.length!==1?'s':''}</b> — dashboard data may be incomplete.`;
+  const list=items.slice(0,5).map(x=>`<div style="margin-top:6px;opacity:.85"><code style="background:rgba(239,68,68,.12);padding:1px 6px;border-radius:4px">${x.section||'?'}</code> ${x.type||'Error'}: ${(x.message||'').substring(0,200)}</div>`).join('');
+  const more=items.length>5?`<div style="margin-top:6px;opacity:.6">…and ${items.length-5} more</div>`:'';
+  el.innerHTML=head+list+more;el.style.display='block';
+}
+
 async function refresh(){
-  try{const r=await fetch('/api/metrics');const d=await r.json();
+  try{
+    const r=await fetch('/api/metrics');
+    if(!r.ok){renderErrors([{section:'http',type:'HTTPError',message:'/api/metrics returned '+r.status}]);return;}
+    const d=await r.json();
+    renderErrors(d.errors||[]);
     renderHero(d);renderValueTrends(d);renderBA(d);renderPrism(d);renderHealth(d);renderCache(d);renderCogops(d);renderSecAndKnapsack(d);renderRequests(d);
-  }catch(e){console.error('Refresh:',e);}
+  }catch(e){
+    console.error('Refresh:',e);
+    renderErrors([{section:'fetch',type:e.name||'Error',message:e.message||String(e)}]);
+  }
 }
 refresh();setInterval(refresh,3000);
 </script>
@@ -937,15 +1000,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         from entroly.daemon import get_daemon
         daemon = get_daemon()
 
-        # Read POST body
+        # Read POST body. Reject malformed JSON loudly — silent fallback to
+        # `{}` lets bad payloads enable features by accident (every handler
+        # below uses `body.get("enabled", True)` style defaults).
         content_length = int(self.headers.get("Content-Length", 0))
-        body = {}
+        body: dict = {}
         if content_length > 0:
             raw = self.rfile.read(content_length)
             try:
-                body = json.loads(raw)
-            except (json.JSONDecodeError, ValueError):
-                body = {}
+                parsed = json.loads(raw)
+            except (json.JSONDecodeError, ValueError) as e:
+                self._send_json(400, {
+                    "ok": False,
+                    "error": "invalid JSON body",
+                    "detail": str(e),
+                })
+                return
+            if not isinstance(parsed, dict):
+                self._send_json(400, {
+                    "ok": False,
+                    "error": "JSON body must be an object",
+                    "got": type(parsed).__name__,
+                })
+                return
+            body = parsed
 
         result = {"ok": False, "error": "unknown route"}
         status_code = 404
@@ -1016,12 +1094,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 daemon=True,
             ).start()
 
+        self._send_json(status_code, result)
+
+    def _send_json(self, status_code: int, payload: dict) -> None:
+        """Single response writer for the control API. Ensures consistent
+        headers (CORS, security) and avoids drift between handlers."""
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "http://localhost:9378")
         self._send_security_headers()
         self.end_headers()
-        self.wfile.write(json.dumps(result).encode())
+        self.wfile.write(json.dumps(payload).encode())
 
     def do_OPTIONS(self):
         """Handle CORS preflight for control API."""

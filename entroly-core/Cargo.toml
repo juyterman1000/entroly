@@ -1,6 +1,6 @@
 [package]
 name = "entroly-core"
-version = "0.15.1"
+version = "0.16.0"
 edition = "2021"
 description = "Rust core for Entroly — information-theoretic context optimization"
 

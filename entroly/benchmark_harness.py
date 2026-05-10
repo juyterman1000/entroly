@@ -110,9 +110,14 @@ def run_benchmark(engine: Any, budget_seconds: float = 10.0) -> dict[str, Any]:
     if timed_out:
         ctx_eff = max(0.0, ctx_eff - 0.5)
 
+    # `dedup_tokens_avoided` is engine-internal efficiency telemetry (used as
+    # a fitness signal here, NOT as user-visible savings). The only honest
+    # source for "money saved" is value_tracker, which is decoupled from
+    # benchmark runs.
+    sv = stats.get("savings", {}) or stats.get("engine", {})
     return {
         "context_efficiency": ctx_eff,
-        "total_tokens_saved": stats.get("savings", {}).get("total_tokens_saved", 0),
+        "dedup_tokens_avoided": sv.get("total_tokens_saved", sv.get("dedup_tokens_avoided", 0)),
         "num_fragments_selected": len(result.get("selected", [])),
         "wall_seconds": round(wall, 3),
         "timed_out": timed_out,
