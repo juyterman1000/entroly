@@ -13,7 +13,7 @@ jobs:
           fetch-depth: 0
 
       - name: Analyze PR Token Cost
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const CHARS_PER_TOKEN = 4;
