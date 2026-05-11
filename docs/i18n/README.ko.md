@@ -20,7 +20,35 @@
 <h3 align="center">당신의 AI 코딩 도구는 코드베이스의 5%만 봅니다.<br/>Entroly는 전체 그림을 보여줍니다 — 극히 적은 비용으로.</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>설치</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>벤치마크</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ 지원 에이전트</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>대시보드</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>라이브 데모 →</b></a>
+</p>
+
+---
+
+### 자가 개선 — 컨텍스트 엔진이 코드베이스를 학습하는 것을 관찰하세요
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly 자가 개선" width="800">
+</p>
+
+### 수익 — 실시간 토큰 절약과 비용 절감
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly 수익" width="800">
+</p>
+
+### 컨텍스트 품질 — 전후 비교
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly 컨텍스트 품질" width="800">
 </p>
 
 ---

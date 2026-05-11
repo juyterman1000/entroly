@@ -20,7 +20,25 @@
 <h3 align="center">AI kodlama araçlarınız kod tabanınızın yalnızca %5'ini görüyor.<br/>Entroly onlara tam resmi verir — maliyetin küçük bir kısmı karşılığında.</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>Kurulum</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>Kıyaslama</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ desteklenen ajan</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>Canlı demo →</b></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly kendini geliştirme" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly kâr" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly bağlam kalitesi" width="800">
 </p>
 
 ---

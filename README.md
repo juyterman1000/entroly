@@ -34,7 +34,7 @@
   <a href="#install"><b>Install</b></a> ·
   <a href="cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="#benchmarks"><b>Benchmarks</b></a> ·
-  <a href="#works-with-your-stack"><b>38 supported agents</b></a> ·
+  <a href="#works-with-your-stack"><b>65+ supported agents</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a> ·
   <a href="https://huggingface.co/spaces/entroly/entroly-context-compression"><img src="https://img.shields.io/badge/🤗_Live_Demo-Hugging_Face-yellow?style=flat" alt="Live Demo"></a>
 </p>
@@ -53,7 +53,7 @@
     <code>http://localhost:9378</code>.
     <br/>
     See the <a href="cookbook/README.md"><b>Cookbook</b></a> for 10 concrete recipes,
-    or pick your stack from the <a href="#works-with-your-stack">38 supported agents</a> below.
+    or pick your stack from the <a href="#works-with-your-stack">65+ supported agents</a> below.
   </sub>
 </p>
 
@@ -71,6 +71,30 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg" alt="Entroly Demo — AI context optimization, 70-95% token savings" width="800">
 </p>
+
+### Self-Improvement — Watch the context engine learn your codebase
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly self-improvement — PRISM weights evolving over time" width="800">
+</p>
+
+> PRISM weights shift automatically as you work. Day 1: generic. Day 30: tuned to *your* codebase. Zero config.
+
+### Profit — Token savings and money saved in real time
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly profit — 70-95% token savings, dollars saved per session" width="800">
+</p>
+
+> Run `entroly demo` on your own repo. The dashboard shows token savings per request, cumulative dollar savings, and monthly profit projections.
+
+### Context Quality — Before vs After
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly context quality improvement over time" width="800">
+</p>
+
+> Run `entroly benchmark --compare-baseline` to see how context quality improves as PRISM learns which files matter for your workflow.
 
 ---
 
@@ -362,7 +386,7 @@ Zero cloud dependencies. Zero data exfiltration risk. Everything runs on your CP
 
 <a id="works-with-your-stack"></a>
 
-## Works With Your Stack — 38 Agents, One Command
+## Works With Your Stack — 65+ Agents, One Command
 
 `entroly wrap <agent>` does the right thing for every tool. Three integration kinds, picked automatically:
 
@@ -385,6 +409,9 @@ Zero cloud dependencies. Zero data exfiltration risk. Everything runs on your CP
 | Hermes | `entroly wrap hermes` |
 | Pi Coding Agent | `entroly wrap pi` |
 | Ollama | `entroly wrap ollama` |
+| Goose (Block) | `entroly wrap goose` |
+| Mentat | `entroly wrap mentat` |
+| SWE-agent | `entroly wrap sweagent` |
 
 ### MCP-aware IDEs (auto-merge `mcp.json`)
 
@@ -395,6 +422,8 @@ Zero cloud dependencies. Zero data exfiltration risk. Everything runs on your CP
 | VS Code (Copilot Chat / MCP) | `entroly wrap vscode` | `.vscode/mcp.json` |
 | Claude Desktop | `entroly wrap claude-desktop` | OS-specific Claude config dir |
 | Zed | `entroly wrap zed` | `~/.config/zed/settings.json` |
+| Kiro (AWS) | `entroly wrap kiro` | `.kiro/mcp.json` |
+| PearAI | `entroly wrap pearai` | `.pearai/mcp.json` |
 
 ### Other IDEs (copy-paste snippet)
 
@@ -407,12 +436,48 @@ Zero cloud dependencies. Zero data exfiltration risk. Everything runs on your CP
 | Continue | `continue` | | Twinny | `twinny` |
 | Sourcegraph Cody | `cody` | | Fitten Code | `fittencode` |
 | Sourcegraph Amp | `amp` | | Tabnine Enterprise | `tabnine` |
-| Kiro | `kiro` | | Supermaven | `supermaven` |
-| Qoder | `qoder` | | Sublime Text | `sublime` |
-| Trae | `trae` | | Emacs (gptel / aider.el) | `emacs` |
-| Antigravity | `antigravity` | | Neovim (avante / codecompanion) | `neovim` |
-| Amazon Q Developer | `amazonq` | | JetBrains AI Assistant | `jetbrains` |
-| Verdent | `verdent` | | | |
+| Qoder | `qoder` | | Supermaven | `supermaven` |
+| Trae | `trae` | | Sublime Text | `sublime` |
+| Antigravity | `antigravity` | | Emacs (gptel / aider.el) | `emacs` |
+| Amazon Q Developer | `amazonq` | | Neovim (avante / codecompanion) | `neovim` |
+| Verdent | `verdent` | | JetBrains AI / Junie | `jetbrains` |
+| Augment Code | `augment` | | CodeGeeX | `codegeex` |
+| Blackbox AI | `blackbox` | | Pieces | `pieces` |
+| Genie AI | `genie` | | CodeCompanion.nvim | `codecompanion` |
+| avante.nvim | `avante` | | nvim.ai | `nvimai` |
+| Morph Rift | `rift` | | Traycer | `traycer` |
+
+### Autonomous cloud agents (HTTP proxy)
+
+Entroly's proxy intercepts LLM API calls — these agents work automatically when pointed at `localhost:9377`:
+
+| Agent | What it is |
+|---|---|
+| Devin (Cognition) | Fully autonomous AI software engineer |
+| Jules (Google) | Async agent: clones repo, plans, executes, opens PR |
+| GitHub Copilot Workspace | Cloud-based multi-file changes from GitHub issues |
+| Sweep | GitHub app that turns issues into PRs |
+| Factory AI | Cloud-based autonomous coding agents platform |
+| Replit Agent | Cloud IDE agent that plans, writes, tests, deploys |
+
+### AI app builders (HTTP proxy)
+
+| Agent | What it is |
+|---|---|
+| v0 (Vercel) | AI React/UI component generator |
+| Bolt (StackBlitz) | Browser-based AI app builder |
+| Lovable | Full-stack AI app builder |
+| Pythagora | AI app generation from natural language specs |
+
+### Code review agents (HTTP proxy / CLI wrap)
+
+| Agent | What it is |
+|---|---|
+| Qodo (CodiumAI) | Multi-agent code review: bugs, security, test gaps |
+| CodeRabbit | AI PR reviewer with inline comments |
+| Greptile | Independent AI code review, Claude Code plugin |
+| Snyk | AI-powered security scanning |
+| CodeAnt AI | Automated code review and quality |
 
 ### Library / framework integration
 
@@ -423,11 +488,13 @@ Zero cloud dependencies. Zero data exfiltration risk. Everything runs on your CP
 | **Nous Hermes (Local/ChatML)** | `from entroly.integrations.hermes import safe_compress_hermes` |
 | **CI / token-budget gate** | `entroly batch --budget 8000 --fail-over-budget` |
 
-Also: OpenAI API · Anthropic API · Google Vertex · AWS Bedrock · Groq · Together · OpenRouter · Ollama · vLLM · 100+ models.
+Also: OpenAI API · Anthropic API · Google Vertex · AWS Bedrock · Groq · Together · OpenRouter · Ollama · vLLM · Poolside · 100+ models.
 
 > Don't see your tool? `entroly wrap` (no agent) prints the full grouped list, and the [Cookbook](cookbook/README.md) has copy-paste recipes for the most common workflows.
 
 ---
+
+<a id="benchmarks"></a>
 
 ## Benchmarks
 

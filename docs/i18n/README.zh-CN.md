@@ -29,7 +29,25 @@
 <h3 align="center">你的AI编程工具只能看到代码库的5%。<br/>Entroly让它们看到全貌——只需极低成本。</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>安装</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>基准测试</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ 支持的代理</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>仪表盘</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>在线演示 →</b></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly 自我改进" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly 利润" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly 上下文质量" width="800">
 </p>
 
 <p align="center">

@@ -20,7 +20,25 @@
 <h3 align="center">आपके AI कोडिंग टूल्स कोडबेस का सिर्फ 5% देखते हैं।<br/>Entroly उन्हें पूरी तस्वीर देता है — बहुत कम कीमत पर।</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>इंस्टॉल</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>बेंचमार्क</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ समर्थित एजेंट</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>डैशबोर्ड</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>लाइव डेमो →</b></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly स्व-सुधार" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly लाभ" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly कॉन्टेक्स्ट गुणवत्ता" width="800">
 </p>
 
 ---

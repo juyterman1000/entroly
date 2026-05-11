@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 480" width="840" height="480">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .t { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+      .tb { font-weight: 700; }
+      .g  { fill: #50fa7b; }
+      .c  { fill: #8be9fd; }
+      .y  { fill: #f1fa8c; }
+      .r  { fill: #ff5555; }
+      .p  { fill: #bd93f9; }
+      .o  { fill: #ffb86c; }
+      .w  { fill: #f8f8f2; }
+      .d  { fill: #6272a4; }
+    </style>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#282a36"/>
+      <stop offset="100%" stop-color="#1e1f29"/>
+    </linearGradient>
+    <linearGradient id="tb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#44475a"/>
+      <stop offset="100%" stop-color="#383a4a"/>
+    </linearGradient>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect width="840" height="480" fill="#0d0e17"/>
+  <g filter="url(#sh)">
+    <rect x="20" y="12" width="800" height="456" rx="10" fill="url(#bg)" stroke="#44475a" stroke-width="1"/>
+  </g>
+  <rect x="20" y="12" width="800" height="36" rx="10" fill="url(#tb)"/>
+  <rect x="20" y="38" width="800" height="10" fill="url(#tb)"/>
+  <circle cx="44" cy="30" r="6" fill="#ff5f56"/>
+  <circle cx="64" cy="30" r="6" fill="#ffbd2e"/>
+  <circle cx="84" cy="30" r="6" fill="#27c93f"/>
+  <text x="420" y="34" text-anchor="middle" class="t d" font-size="12">entroly — profit</text>
+
+  <!-- Phase 1: entroly demo output -->
+  <g opacity="1">
+    <animate attributeName="opacity" values="1;1;1;0;0;0" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly demo</text>
+    <text x="40" y="100" class="t d">Scanning 394 files (901,247 tokens)...</text>
+    <text x="40" y="125" class="t w">┌────────────────────────────────────────────────────┐</text>
+    <text x="40" y="145" class="t w">│</text><text x="52" y="145" class="t o tb">  Before Entroly</text><text x="240" y="145" class="t w">│</text><text x="252" y="145" class="t g tb">  After Entroly</text><text x="470" y="145" class="t w">│</text>
+    <text x="40" y="165" class="t w">├────────────────────────────────────────────────────┤</text>
+    <text x="40" y="185" class="t w">│</text><text x="52" y="185" class="t r">  186,000 tokens</text><text x="240" y="185" class="t w">│</text><text x="252" y="185" class="t g">  9,300 tokens</text><text x="470" y="185" class="t w">│</text>
+    <text x="40" y="205" class="t w">│</text><text x="52" y="205" class="t r">  $0.56 / request</text><text x="240" y="205" class="t w">│</text><text x="252" y="205" class="t g">  $0.028 / request</text><text x="470" y="205" class="t w">│</text>
+    <text x="40" y="225" class="t w">│</text><text x="52" y="225" class="t r">  $16,800 / month</text><text x="240" y="225" class="t w">│</text><text x="252" y="225" class="t g">  $840 / month</text><text x="470" y="225" class="t w">│</text>
+    <text x="40" y="245" class="t w">└────────────────────────────────────────────────────┘</text>
+    <text x="40" y="280" class="t g tb">  Token savings:  95.0%</text>
+    <text x="40" y="300" class="t g tb">  Cost savings:   $15,960 / month</text>
+    <text x="40" y="330" class="t p">  Latency overhead: 8ms</text>
+  </g>
+
+  <!-- Phase 2: Live session savings -->
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;0;1;1;1" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly digest</text>
+    <text x="40" y="100" class="t g tb">═══ Entroly Profit Report ═══</text>
+    <text x="40" y="130" class="t w">  Today:</text>
+    <text x="40" y="150" class="t w">    Requests proxied       </text><text x="310" y="150" class="t g tb">1,247</text>
+    <text x="40" y="170" class="t w">    Tokens saved            </text><text x="310" y="170" class="t g tb">219,481,000</text>
+    <text x="40" y="190" class="t w">    Money saved             </text><text x="310" y="190" class="t g tb">$658.44</text>
+    <text x="40" y="220" class="t w">  This month:</text>
+    <text x="40" y="240" class="t w">    Total tokens saved      </text><text x="310" y="240" class="t g tb">4.2B</text>
+    <text x="40" y="260" class="t w">    Total money saved       </text><text x="310" y="260" class="t g tb">$12,614.00</text>
+    <text x="40" y="280" class="t w">    Average savings rate    </text><text x="310" y="280" class="t g tb">94.7%</text>
+    <text x="40" y="310" class="t w">  Lifetime:</text>
+    <text x="40" y="330" class="t w">    Total money saved       </text><text x="310" y="330" class="t g tb">$41,892.00</text>
+    <text x="40" y="360" class="t p tb">  ✓ Entroly is free. This is pure profit.</text>
+  </g>
+</svg>

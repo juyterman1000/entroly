@@ -20,7 +20,25 @@
 <h3 align="center">Deine KI-Coding-Tools sehen nur 5% deiner Codebase.<br/>Entroly gibt ihnen das volle Bild — für einen Bruchteil der Kosten.</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>Installation</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>Benchmarks</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ unterstützte Agenten</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>Live-Demo →</b></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly Selbstverbesserung" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly Profit" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly Kontextqualität" width="800">
 </p>
 
 ---

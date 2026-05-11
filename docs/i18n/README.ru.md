@@ -20,7 +20,25 @@
 <h3 align="center">Ваши инструменты ИИ видят только 5% кодовой базы.<br/>Entroly даёт им полную картину — за малую долю стоимости.</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>Установка</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>Бенчмарки</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ поддерживаемых агентов</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Дашборд</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>Живая демо →</b></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly самообучение" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly прибыль" width="800">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly качество контекста" width="800">
 </p>
 
 ---

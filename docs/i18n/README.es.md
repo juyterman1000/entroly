@@ -20,7 +20,35 @@
 <h3 align="center">Tus herramientas de IA solo ven el 5% de tu código.<br/>Entroly les da la imagen completa — por una fracción del costo.</h3>
 
 <p align="center">
+  <a href="../../README.md#install"><b>Instalar</b></a> ·
+  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
+  <a href="../../README.md#benchmarks"><b>Benchmarks</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>65+ agentes soportados</b></a> ·
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
+</p>
+
+<p align="center">
   <code>npm install entroly-wasm && npx entroly-wasm</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>Demo en vivo →</b></a>
+</p>
+
+---
+
+### Auto-Mejora — Observa cómo el motor de contexto aprende tu código
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly auto-mejora" width="800">
+</p>
+
+### Ganancias — Ahorro de tokens y dinero en tiempo real
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly ganancias" width="800">
+</p>
+
+### Calidad del Contexto — Antes vs Después
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly calidad del contexto" width="800">
 </p>
 
 ---
