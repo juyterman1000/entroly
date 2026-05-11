@@ -28,6 +28,8 @@
 
 <h3 align="center">Your AI coding tools only see 5% of your codebase.<br/>Entroly gives them the full picture — for a fraction of the cost.</h3>
 
+<p align="center"><strong>🏆 The first self-improving context engine for AI coding.</strong><br/><sub>Entroly is the first open-source tool to ship a runtime that <em>learns your codebase patterns over time</em> — automatically improving compression quality, retrieval accuracy, and cost savings with every session. No other context engine adapts. Entroly does.</sub></p>
+
 <p align="center">
   <a href="#install"><b>Install</b></a> ·
   <a href="cookbook/README.md"><b>Cookbook</b></a> ·
