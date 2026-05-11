@@ -75,7 +75,7 @@
 ### Self-Improvement — Watch the context engine learn your codebase
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.gif" alt="Entroly self-improvement — PRISM weights evolving over time" width="800">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly self-improvement — PRISM weights evolving over time" width="800">
 </p>
 
 > PRISM weights shift automatically as you work. Day 1: generic. Day 30: tuned to *your* codebase. Zero config.
@@ -83,7 +83,7 @@
 ### Profit — Token savings and money saved in real time
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.gif" alt="Entroly profit — 70-95% token savings, dollars saved per session" width="800">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly profit — 70-95% token savings, dollars saved per session" width="800">
 </p>
 
 > Run `entroly demo` on your own repo. The dashboard shows token savings per request, cumulative dollar savings, and monthly profit projections.
@@ -91,7 +91,7 @@
 ### Context Quality — Before vs After
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.gif" alt="Entroly context quality improvement over time" width="800">
+  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly context quality improvement over time" width="800">
 </p>
 
 > Run `entroly benchmark --compare-baseline` to see how context quality improves as PRISM learns which files matter for your workflow.

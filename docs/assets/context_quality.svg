@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 480" width="840" height="480">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .t { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+      .tb { font-weight: 700; }
+      .g  { fill: #50fa7b; }
+      .c  { fill: #8be9fd; }
+      .y  { fill: #f1fa8c; }
+      .r  { fill: #ff5555; }
+      .p  { fill: #bd93f9; }
+      .o  { fill: #ffb86c; }
+      .w  { fill: #f8f8f2; }
+      .d  { fill: #6272a4; }
+    </style>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#282a36"/>
+      <stop offset="100%" stop-color="#1e1f29"/>
+    </linearGradient>
+    <linearGradient id="tb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#44475a"/>
+      <stop offset="100%" stop-color="#383a4a"/>
+    </linearGradient>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect width="840" height="480" fill="#0d0e17"/>
+  <g filter="url(#sh)">
+    <rect x="20" y="12" width="800" height="456" rx="10" fill="url(#bg)" stroke="#44475a" stroke-width="1"/>
+  </g>
+  <rect x="20" y="12" width="800" height="36" rx="10" fill="url(#tb)"/>
+  <rect x="20" y="38" width="800" height="10" fill="url(#tb)"/>
+  <circle cx="44" cy="30" r="6" fill="#ff5f56"/>
+  <circle cx="64" cy="30" r="6" fill="#ffbd2e"/>
+  <circle cx="84" cy="30" r="6" fill="#27c93f"/>
+  <text x="420" y="34" text-anchor="middle" class="t d" font-size="12">entroly — context quality</text>
+
+  <!-- Phase 1: Before (baseline) -->
+  <g opacity="1">
+    <animate attributeName="opacity" values="1;1;1;0;0;0" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly benchmark --baseline</text>
+    <text x="40" y="100" class="t d">Running context quality benchmark (day 1)...</text>
+    <text x="40" y="130" class="t o tb">  ═══ Baseline Context Quality ═══</text>
+    <text x="40" y="160" class="t w">  Hit Rate (gold files)     </text><text x="340" y="160" class="t y">82.0%</text>
+    <text x="420" y="160" class="t y">████████░░</text>
+    <text x="40" y="180" class="t w">  Recall@5                  </text><text x="340" y="180" class="t y">34.0%</text>
+    <text x="420" y="180" class="t y">███░░░░░░░</text>
+    <text x="40" y="200" class="t w">  Recall@10                 </text><text x="340" y="200" class="t y">58.0%</text>
+    <text x="420" y="200" class="t y">██████░░░░</text>
+    <text x="40" y="220" class="t w">  MRR                       </text><text x="340" y="220" class="t y">0.340</text>
+    <text x="40" y="240" class="t w">  Utilization score         </text><text x="340" y="240" class="t y">0.61</text>
+    <text x="420" y="240" class="t y">██████░░░░</text>
+    <text x="40" y="270" class="t w">  Health grade:             </text><text x="340" y="270" class="t y tb">B-</text>
+    <text x="40" y="300" class="t d">  Baseline saved. Run your sessions, then --compare-baseline.</text>
+  </g>
+
+  <!-- Phase 2: After (improved) -->
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;0;1;1;1" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly benchmark --compare-baseline</text>
+    <text x="40" y="100" class="t g">Comparing against baseline after 30 days of learning...</text>
+    <text x="40" y="130" class="t g tb">  ═══ Improved Context Quality ═══</text>
+    <text x="40" y="160" class="t w">  Hit Rate (gold files)     </text><text x="340" y="160" class="t g">100.0%</text>
+    <text x="420" y="160" class="t g">██████████</text>
+    <text x="560" y="160" class="t g tb">+18.0%</text>
+    <text x="40" y="180" class="t w">  Recall@5                  </text><text x="340" y="180" class="t g">42.0%</text>
+    <text x="420" y="180" class="t g">████░░░░░░</text>
+    <text x="560" y="180" class="t g tb">+8.0%</text>
+    <text x="40" y="200" class="t w">  Recall@10                 </text><text x="340" y="200" class="t g">70.0%</text>
+    <text x="420" y="200" class="t g">███████░░░</text>
+    <text x="560" y="200" class="t g tb">+12.0%</text>
+    <text x="40" y="220" class="t w">  MRR                       </text><text x="340" y="220" class="t g">0.420</text>
+    <text x="560" y="220" class="t g tb">+0.080</text>
+    <text x="40" y="240" class="t w">  Utilization score         </text><text x="340" y="240" class="t g">0.89</text>
+    <text x="420" y="240" class="t g">█████████░</text>
+    <text x="560" y="240" class="t g tb">+0.28</text>
+    <text x="40" y="270" class="t w">  Health grade:             </text><text x="340" y="270" class="t g tb">A</text>
+    <text x="380" y="270" class="t g"> (was B-)</text>
+    <text x="40" y="300" class="t g tb">  ✓ Context quality improved across all metrics.</text>
+    <text x="40" y="325" class="t p">  PRISM learned which files matter for your workflow — automatically.</text>
+  </g>
+</svg>
