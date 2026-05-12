@@ -22,6 +22,12 @@ TARGETS = [
     ("entroly/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{v}"'),
     ("entroly/cli.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{v}"'),
     ("entroly/server.py", r'_version\s*=\s*"[^"]+"', '_version = "{v}"'),
+    (".claude-plugin/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("entroly/daemon.py", r'version:\s*str\s*=\s*"[^"]+"', 'version: str = "{v}"'),
+    # Homebrew: URL pin only. The sha256 changes per-release and must be
+    # updated manually after the PyPI tarball is published.
+    ("packaging/homebrew/entroly.rb",
+        r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', 'entroly-{v}.tar.gz'),
 ]
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+([-+].+)?$")
