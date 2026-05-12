@@ -2254,12 +2254,12 @@ impl EntrolyEngine {
                     0.25,  // sdr_threshold
                     0.60,  // structural_threshold
                 );
-                contradictions_evicted = report.pairs_found;
+                contradictions_evicted = report.evicted_count;
                 if report.pairs_found > 0 {
                     #[cfg(debug_assertions)]
                     eprintln!(
                         "[entroly] Contradiction guard: evicted {} fragments ({} pairs)",
-                        report.evicted.len(), report.pairs_found,
+                        report.evicted_count, report.pairs_found,
                     );
                 }
                 filtered

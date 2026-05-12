@@ -388,8 +388,8 @@ pub fn modulated_reward(success: bool, sufficiency: f64) -> f64 {
 /// Result of contradiction scan.
 #[derive(Debug, Clone)]
 pub struct ContradictionReport {
-    /// Indices (into selected_indices) that were evicted as contradictions.
-    pub evicted: Vec<usize>,
+    /// Number of fragments evicted as contradictions.
+    pub evicted_count: usize,
     /// Number of contradictory pairs found.
     pub pairs_found: usize,
 }
@@ -416,7 +416,7 @@ pub fn contradiction_guard(
     if n <= 1 {
         return (
             selected_indices.to_vec(),
-            ContradictionReport { evicted: Vec::new(), pairs_found: 0 },
+            ContradictionReport { evicted_count: 0, pairs_found: 0 },
         );
     }
 
@@ -493,12 +493,12 @@ pub fn contradiction_guard(
         .map(|idx| selected_indices[idx])
         .collect();
 
-    let evicted: Vec<usize> = evicted_set.into_iter().collect();
+    let evicted_count = evicted_set.len();
 
     (
         filtered,
         ContradictionReport {
-            evicted,
+            evicted_count,
             pairs_found,
         },
     )
