@@ -364,16 +364,40 @@ def auto_index(
     if _ignore_patterns:
         logger.info(f".entrolyignore loaded: {len(_ignore_patterns)} patterns")
 
-    # Skip if engine already has fragments (loaded from persistent index)
+    # Skip if engine already has fragments (loaded from persistent index).
+    # The skip path returns the SAME schema as the fresh-index path: callers
+    # read files_indexed / total_tokens / duration_s without caring whether
+    # work was performed this call. `status` tells them.
     if not force and engine._use_rust:
         existing = engine._rust.fragment_count()
         if existing > 0:
+            try:
+                frags = list(engine._rust.export_fragments())
+                existing_files = len({f.get("source", "") for f in frags if f.get("source")})
+                existing_tokens = sum(int(f.get("token_count", 0)) for f in frags)
+            except Exception:
+                # Fragment export failed; degrade honestly — caller sees
+                # status=skipped and existing_fragments still gives them
+                # something to work with, but file/token counts are unknown.
+                existing_files = 0
+                existing_tokens = 0
             logger.info(
-                f"Auto-index skipped: {existing} fragments already loaded "
-                f"from persistent index"
+                f"Auto-index skipped: {existing} fragments ({existing_files} files) "
+                f"already loaded from persistent index"
             )
             return {
                 "status": "skipped",
+                "files_indexed": existing_files,
+                "total_tokens": existing_tokens,
+                "beliefs_attached": 0,
+                "duration_s": 0.0,
+                "read_s": 0.0,
+                "ingest_s": 0.0,
+                "discovery_method": "cache",
+                "skipped_too_large": 0,
+                "skipped_unreadable": 0,
+                "project_dir": project_dir,
+                # Skip-specific diagnostics (kept for callers that care):
                 "reason": "persistent_index_loaded",
                 "existing_fragments": existing,
             }

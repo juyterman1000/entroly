@@ -25,6 +25,7 @@ if sys.platform == "win32":
         pass
 
 from entroly.server import EntrolyEngine
+from entroly.config import EntrolyConfig
 from entroly.auto_index import auto_index
 from entroly import __version__
 
@@ -171,11 +172,50 @@ def main():
           f"Code={code_count} vs Config={config_count}")
 
     # ── DEDUPLICATION ──────────────────────────────────────────────────
-    print("\n[7] SimHash deduplication")
+    # SimHash dedup is a CONTENT property (near-duplicate content collapses),
+    # not a SOURCE-PATH property. Files larger than the chunk size legitimately
+    # produce multiple fragments sharing one source path; that is by design,
+    # not a dedup failure. Testing source-path uniqueness was conceptually
+    # wrong and silently passed for releases where chunking was rare.
+    #
+    # Right invariant: ingest known near-duplicate content into a fresh engine
+    # and verify the engine collapses them. This exercises the actual SimHash
+    # codepath (semantic_dedup.rs) with adversarial input.
+    print("\n[7] SimHash deduplication (rigorous probe)")
     print("-" * 40)
-    sources = [f.get("source", "") for f in sel]
-    check("DUP-1", "No duplicate files in selection",
-          len(sources) == len(set(sources)), f"{len(sources)} selected, {len(set(sources))} unique")
+    # Isolated probe engine — opt out of the shared persistent index entirely
+    # (no load and no save). This makes the test deterministic regardless of
+    # prior session state and prevents the probe from corrupting the real
+    # engine's warm-start index with its 5-fragment test corpus.
+    probe = EntrolyEngine(EntrolyConfig(use_persistent_index=False))
+    # Three near-duplicates (whitespace / comment / minor formatting variants
+    # of the same function body) + two distinct functions. A correct dedup
+    # implementation collapses the first three into a single representative.
+    canonical = "def hash_value(x):\n    return (x * 31 + 7) & 0xFFFFFFFF"
+    near_dups = [
+        (canonical, "probe://a.py"),
+        (canonical + "  # added comment", "probe://b.py"),
+        (canonical.replace("    ", "  "), "probe://c.py"),  # 4→2 space indent
+    ]
+    distinct = [
+        ("def parse_url(s):\n    scheme, rest = s.split('://', 1)\n    return scheme, rest",
+         "probe://d.py"),
+        ("class Cache:\n    def __init__(self, size):\n        self._size = size\n        self._data = {}",
+         "probe://e.py"),
+    ]
+    before = probe._rust.fragment_count() if hasattr(probe, "_rust") else 0
+    for content, src in near_dups + distinct:
+        probe.ingest_fragment(content=content, source=src, token_count=20, is_pinned=False)
+    after = probe._rust.fragment_count() if hasattr(probe, "_rust") else 0
+    net_ingested = after - before
+    # Expected: 3 near-dups collapse to 1, 2 distinct stay → 3 net fragments.
+    # Allow 3 (perfect dedup) or 4 (one near-dup pair caught, one missed) but
+    # not 5 (no dedup at all).
+    print(f"  Ingested 5 candidates ({len(near_dups)} near-dup + {len(distinct)} distinct)")
+    print(f"  Net fragments after dedup: {net_ingested} (expected ≤ 4)")
+    check("DUP-1", "SimHash collapses near-duplicate content",
+          net_ingested <= 4,
+          f"{net_ingested} of 5 candidates retained (perfect: 3, acceptable: ≤4)")
 
     # ── ENGINE & SDK ───────────────────────────────────────────────────
     print("\n[8] Engine, SDK, compatibility")

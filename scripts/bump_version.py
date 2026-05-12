@@ -28,6 +28,9 @@ TARGETS = [
     # updated manually after the PyPI tarball is published.
     ("packaging/homebrew/entroly.rb",
         r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', 'entroly-{v}.tar.gz'),
+    # Homebrew release runbook (example bash). Two `VER=...` lines.
+    ("packaging/homebrew/README.md",
+        r'VER=[0-9]+\.[0-9]+\.[0-9]+', 'VER={v}'),
 ]
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+([-+].+)?$")
@@ -41,7 +44,7 @@ def main(argv: list[str]) -> int:
     for rel, pattern, template in TARGETS:
         path = ROOT / rel
         text = path.read_text(encoding="utf-8")
-        updated, n = re.subn(pattern, template.format(v=new), text, count=1, flags=re.MULTILINE)
+        updated, n = re.subn(pattern, template.format(v=new), text, flags=re.MULTILINE)
         if n == 0:
             print(f"!! no match in {rel}", file=sys.stderr)
             return 1

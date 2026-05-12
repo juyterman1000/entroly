@@ -521,8 +521,11 @@ class EntrolyEngine:
         # ── Persistent Repo-Level Indexing ──
         # On startup, try to load a previous session's index for instant warm retrieval.
         # Index is stored at <checkpoint_dir>/index.json.gz (gzip-compressed JSON).
+        # Gated by config.use_persistent_index, which controls BOTH the load
+        # path here and the save path in auto_checkpoint(), so test/probe
+        # engines that opt out are fully ephemeral (no read, no write).
         self._index_path = str(Path(self.config.checkpoint_dir) / "index.json.gz")
-        if self._use_rust:
+        if self._use_rust and self.config.use_persistent_index:
             try:
                 loaded = self._rust.load_index(self._index_path)
                 if loaded:
@@ -538,6 +541,8 @@ class EntrolyEngine:
                 logger.info("No persistent index found, starting fresh session")
             except Exception as e:
                 logger.warning(f"Failed to load persistent index: {e}")
+        elif self._use_rust:
+            logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
 
         # GC freeze at startup: Python's cyclic GC causes ~500ms stalls on large
         # heaps. Freeze all existing long-lived objects and disable automatic
@@ -1339,11 +1344,15 @@ class EntrolyEngine:
             }
             # Export full engine state (not empty fragments)
             engine_state = self._rust.export_state()
-            # Auto-persist repo-level index alongside checkpoint
-            try:
-                self._rust.persist_index(self._index_path)
-            except Exception as e:
-                logger.debug(f"Failed to persist index: {e}")
+            # Auto-persist repo-level index alongside checkpoint, but only if
+            # this engine is wired to the shared index. Ephemeral engines
+            # (config.use_persistent_index=False) MUST NOT write — otherwise
+            # they'd overwrite another caller's index with their tiny state.
+            if self.config.use_persistent_index:
+                try:
+                    self._rust.persist_index(self._index_path)
+                except Exception as e:
+                    logger.debug(f"Failed to persist index: {e}")
             return self._checkpoint_mgr.save(
                 fragments=[],
                 dedup_fingerprints={},

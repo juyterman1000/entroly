@@ -89,6 +89,19 @@ class EntrolyConfig:
     auto_checkpoint_interval: int = 5
     """Auto-checkpoint every N tool calls."""
 
+    use_persistent_index: bool = True
+    """Controls the shared warm-start index at `<checkpoint_dir>/index.json.gz`.
+
+    When True (production default), EntrolyEngine loads the index on construction
+    and writes back on every auto-checkpoint so subsequent sessions warm-start
+    instantly.
+
+    When False, the engine neither reads nor writes the shared index — it is
+    fully ephemeral. Use this for isolated engines (tests, probes, multi-tenant
+    workers, anything where state from another session would contaminate
+    results, or where saving could corrupt another caller's state).
+    """
+
     # ── Server ──────────────────────────────────────────────────────────
     server_name: str = "entroly"
     server_version: str = field(
