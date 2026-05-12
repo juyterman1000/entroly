@@ -24,11 +24,30 @@
   <a href="https://mcpmarket.com/daily/top-mcp-server-list-march-26-2026"><img src="https://img.shields.io/badge/%231_MCP_Market-Ranked_Server-gold?style=for-the-badge&logo=starship&logoColor=white" alt="#1 on MCP Market"></a>
 </p>
 
-<h1 align="center">Entroly — Cut AI Token Costs by 70–95%</h1>
+<h1 align="center">Entroly — Stop Your AI From Making Things Up</h1>
 
-<h3 align="center">Your AI coding tools only see 5% of your codebase.<br/>Entroly gives them the full picture — for a fraction of the cost.</h3>
+<h3 align="center">Catch hallucinations. Cut your AI bill by 70–95%.<br/>Set up in 30 seconds.</h3>
 
-<p align="center"><strong>🏆 The first self-improving context engine for AI coding.</strong><br/><sub>Entroly is the first open-source tool to ship a runtime that <em>learns your codebase patterns over time</em> — automatically improving compression quality, retrieval accuracy, and cost savings with every session. No other context engine adapts. Entroly does.</sub></p>
+<p align="center"><strong>🛡️ The only AI helper that shows its work.</strong><br/><sub>Your AI invents functions that don't exist, makes up API names, and bills you for "thinking" about thousands of code lines it never reads. Entroly catches every made-up answer by tracing it back to your real code — and shrinks what you send the AI by 95%, so you pay less for honest answers.</sub></p>
+
+<p align="center">
+  <strong>💰 Lower bill</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>🎯 Honest answers</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>⚡ 30-second install</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>🔌 Works with Claude, Cursor, Copilot, Codex</strong>
+</p>
+
+<p align="center">
+  <a href="https://huggingface.co/spaces/entroly/entroly-context-compression"><img src="https://img.shields.io/badge/▶_Try_It_Live-No_Install_Needed-FF4B4B?style=for-the-badge&logo=huggingface&logoColor=white" height="42" alt="Try the live demo on Hugging Face"></a>&nbsp;&nbsp;
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><img src="https://img.shields.io/badge/📊_See_The_Dashboard-Live-2EA44F?style=for-the-badge" height="42" alt="See the live dashboard"></a>
+</p>
+
+<p align="center">
+  <sub>
+    <strong>Don't trust the claims? Paste your own code into the live demo</strong> →
+    watch entroly shrink it 70–95% and show you exactly which lines the AI will see. 60 seconds. No install.
+  </sub>
+</p>
 
 <p align="center">
   <a href="#install"><b>Install</b></a> ·
@@ -98,13 +117,17 @@
 
 ---
 
-## The Problem — and the Bottom-Line Impact
+## The Problem — Your AI Is Lying To You, And You're Paying For It
 
-Every AI coding tool — Claude, Cursor, Copilot, Codex — has the same blind spot: **it only sees 5–10 files at a time.** The other 95% of your codebase is invisible. This causes hallucinated APIs, broken imports, missed dependencies, and wasted developer hours fixing AI-generated mistakes.
+Two things go wrong with AI coding tools today, and they cost you real money:
 
-Models keep getting bigger — **Claude Opus 4.7** just dropped with even more capability and even higher per-token costs. Larger context windows don't solve the problem; they make it worse. You're paying for 186,000 tokens per request — most of which is duplicated boilerplate.
+**1. Your AI makes things up.** It invents function names that don't exist in your code. It calls APIs that aren't real. It writes import statements for packages you've never installed. Your team spends hours fixing AI mistakes — code that looked right but was built on lies.
 
-> **Entroly fixes both problems in 30 seconds.** It compresses your entire codebase into the AI context window at variable resolution, so your AI sees everything — and you pay for almost none of it.
+**2. You're paying for AI to "read" code it never actually sees.** Every request sends ~186,000 tokens to the AI, but the AI can only really focus on a tiny slice. The rest is wasted — duplicated boilerplate, unread comments, expensive noise. Bigger AI models don't fix this — they make it *worse* by charging more per token.
+
+> **Entroly fixes both in 30 seconds.** It shrinks what you send the AI by 70–95% (you save money), and traces every answer your AI gives back to lines of code in your repo (so you catch the lies). You see exactly which files the AI looked at and which words came from where. **No more guessing. No more wasted spend. No more invented APIs.**
+
+— *A small team spending $15K/month on AI typically saves $10K–$14K in the first month. Open source. Free.*
 
 ---
 
@@ -172,16 +195,18 @@ compressed = compress(api_response, budget=2000)
 messages = compress_messages(messages, budget=30000)
 ```
 
-**What happens under the hood:**
+**Here's what entroly actually does, in plain English:**
 
-1. **Index** — Maps your entire codebase in <2 seconds (Rust data plane)
-2. **Score** — Ranks every file by Kolmogorov information density
-3. **Select** — Picks the mathematically optimal subset (submodular knapsack with (1-1/e) guarantee)
-4. **Deliver** — Critical files go in full, supporting files as signatures, everything else as references
-5. **Learn** — PRISM RL tracks what works, gets smarter over time
-6. **Verify** — RAVS decomposes requests, routes cheap paths to deterministic executors, and verifies every answer
+1. **Reads your whole codebase** in under 2 seconds — every file, every folder.
+2. **Figures out what matters** for your specific question (e.g. "fix this login bug" → pulls the auth files, ignores the marketing copy).
+3. **Sends only the relevant parts** to your AI — a small, targeted bundle instead of a 200,000-token data dump.
+4. **Watches what your AI says back** — every function name, every API call, every line of code — and traces each one to the file it came from.
+5. **Flags anything the AI made up** — if a function name doesn't exist in your repo, you see it in red before it ships.
+6. **Gets smarter every day** — learns which files matter for your team's workflow and uses that to make better picks next time.
 
-Your AI now sees 100% of your codebase. You pay for 5–30% of the tokens. And the work that *can* be verified *is* verified.
+> **The result for you:** Your AI sees your whole project (not just 5%), gives you honest answers (not made-up ones), and the bill drops 70–95% (you only pay for what the AI actually reads).
+
+<sub>*Want the math? <a href="#works-with-your-stack">Skip to the technical details</a> or read <a href="docs/DETAILS.md">docs/DETAILS.md</a> for the full algorithmic spec (BIPT, NKBE, Causal Context Graph, Resonance Matrix, and more).*</sub>
 
 ---
 
