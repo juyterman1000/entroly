@@ -4,7 +4,7 @@ PKGBUILD for installing entroly on Arch Linux via the AUR.
 
 ## Status
 
-Placeholder. AUR submission is on the v0.18.x roadmap. Until then, Arch
+Placeholder. AUR submission is on the v0.19.x roadmap. Until then, Arch
 users should install via `pip install entroly`.
 
 ## Submission checklist

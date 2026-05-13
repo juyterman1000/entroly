@@ -1,4 +1,4 @@
-"""Allow `python -m entroly` to invoke the CLI."""
-from entroly.cli import main
+"""Allow `python -m entroly` to invoke the packaged launcher."""
+from entroly._rust_launcher import main
 
 main()

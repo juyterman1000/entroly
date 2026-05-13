@@ -35,4 +35,4 @@ of independent reproduction is welcome and credited.
 
 ---
 
-*Last updated: v0.19.0.*
+*Last updated: v0.19.1 (System 1 ↔ System 2 coupling shipped).*

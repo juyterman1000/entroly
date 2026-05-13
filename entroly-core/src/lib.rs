@@ -10,57 +10,62 @@
 //!
 //! Python only handles the MCP protocol (no AI libraries in Rust).
 //! All computation happens here in Rust.
-mod fragment;
-mod knapsack;
-mod knapsack_sds;
-mod entropy;
+mod anomaly;
+pub mod archetype;
+mod bm25;
+mod cache;
+mod causal;
+mod channel;
+mod cognitive_bus;
+pub mod cogops;
+mod conversation_pruner;
 mod dedup;
 mod depgraph;
+mod entropy;
+mod fragment;
 mod guardrails;
-mod lsh;
-mod prism;
-mod skeleton;
-mod sast;
 mod health;
-mod query;
 mod hierarchical;
-pub mod query_persona;
-mod anomaly;
-mod utilization;
-mod semantic_dedup;
-mod conversation_pruner;
-mod channel;
+mod knapsack;
+mod knapsack_sds;
+mod lsh;
 mod nkbe;
-mod cognitive_bus;
-mod cache;
+mod prism;
+mod query;
+pub mod query_persona;
 mod resonance;
-mod causal;
-pub mod archetype;
-pub mod cogops;
-mod bm25;
+mod sast;
+mod semantic_dedup;
+mod skeleton;
+mod utilization;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use std::collections::{HashMap, HashSet};
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use fragment::{ContextFragment, compute_relevance};
-use knapsack::{knapsack_optimize, compute_lambda_star, ScoringWeights};
-use knapsack_sds::{ios_select, Resolution, InfoFactors};
-use entropy::{information_score, shannon_entropy, normalized_entropy, boilerplate_ratio, renyi_entropy_2, entropy_divergence};
-use dedup::{simhash, hamming_distance, DedupIndex};
 use bm25::BM25Index;
-use depgraph::{DepGraph, extract_identifiers};
-use guardrails::{file_criticality, has_safety_signal, TaskType, FeedbackTracker, Criticality, compute_ordering_priority};
+use cache::CacheLookup;
+use causal::CausalContextGraph;
+use dedup::{hamming_distance, simhash, DedupIndex};
+use depgraph::{extract_identifiers, DepGraph};
+use entropy::{
+    boilerplate_ratio, entropy_divergence, information_score, normalized_entropy, renyi_entropy_2,
+    shannon_entropy,
+};
+use fragment::{compute_relevance, ContextFragment};
+use guardrails::{
+    compute_ordering_priority, file_criticality, has_safety_signal, Criticality, FeedbackTracker,
+    TaskType,
+};
+use knapsack::{compute_lambda_star, knapsack_optimize, ScoringWeights};
+use knapsack_sds::{ios_select, InfoFactors, Resolution};
 use prism::PrismOptimizer;
 use prism::PrismOptimizer5D;
 use query_persona::QueryPersonaManifold;
-use cache::CacheLookup;
 use resonance::ResonanceMatrix;
-use causal::CausalContextGraph;
-
 
 /// Process-wide monotonic counter — used only to seed each engine's instance_id.
 /// Guarantees every EntrolyEngine instance gets a unique prefix, making
@@ -362,8 +367,8 @@ impl EntrolyEngine {
             gradient_norm_ema: 0.0,
             query_manifold: QueryPersonaManifold::new(
                 [w_recency, w_frequency, w_semantic, w_entropy],
-                1.0,   // Pitman-Yor alpha
-                0.25,  // Pitman-Yor discount
+                1.0,  // Pitman-Yor alpha
+                0.25, // Pitman-Yor discount
             ),
             last_archetype_id: None,
             enable_query_personas: true,
@@ -392,8 +397,8 @@ impl EntrolyEngine {
             prev_selected_ids: Vec::new(),
             prev_explored_ids: Vec::new(),
             // Belief Utilization Auto-Tuning
-            belief_util_ema: 0.5,  // neutral start
-            full_util_ema: 0.5,    // neutral start
+            belief_util_ema: 0.5, // neutral start
+            full_util_ema: 0.5,   // neutral start
             base_belief_info_factor: ios_belief_info_factor.clamp(0.01, 0.99),
         }
     }
@@ -410,7 +415,9 @@ impl EntrolyEngine {
         }
 
         // Collect IDs to evict (avoid borrow conflict with dedup_index)
-        let to_evict: Vec<String> = self.fragments.iter()
+        let to_evict: Vec<String> = self
+            .fragments
+            .iter()
             .filter(|(_, f)| f.recency_score < self.min_relevance && !f.is_pinned)
             .map(|(k, _)| k.clone())
             .collect();
@@ -418,7 +425,8 @@ impl EntrolyEngine {
         for id in &to_evict {
             self.dedup_index.remove(id);
         }
-        self.fragments.retain(|_, f| f.recency_score >= self.min_relevance || f.is_pinned);
+        self.fragments
+            .retain(|_, f| f.recency_score >= self.min_relevance || f.is_pinned);
 
         // Rebuild LSH slot index after eviction (slots may have shifted).
         // This is O(N) but eviction is infrequent (happens once per turn).
@@ -452,20 +460,31 @@ impl EntrolyEngine {
         // Run every 5 turns (not every turn — consolidation is O(N²)
         // and near-duplicates accumulate slowly).
         if self.current_turn.is_multiple_of(5) && self.fragments.len() > 10 {
-            let frag_data: Vec<(String, u64, f64, bool, u32)> = self.fragments.values()
+            let frag_data: Vec<(String, u64, f64, bool, u32)> = self
+                .fragments
+                .values()
                 .map(|f| {
                     let fm = self.feedback.learned_value(&f.fragment_id);
-                    (f.fragment_id.clone(), f.simhash, fm, f.is_pinned, f.token_count)
+                    (
+                        f.fragment_id.clone(),
+                        f.simhash,
+                        fm,
+                        f.is_pinned,
+                        f.token_count,
+                    )
                 })
                 .collect();
 
             let groups = resonance::find_consolidation_groups(
-                &frag_data, self.consolidation_hamming_threshold
+                &frag_data,
+                self.consolidation_hamming_threshold,
             );
 
             for group in &groups {
                 // Transfer access counts from losers to winner
-                let total_access: u32 = group.consolidated_ids.iter()
+                let total_access: u32 = group
+                    .consolidated_ids
+                    .iter()
                     .filter_map(|id| self.fragments.get(id))
                     .map(|f| f.access_count)
                     .sum();
@@ -494,7 +513,13 @@ impl EntrolyEngine {
     /// Ingest a new context fragment.
     ///
     /// Pipeline: tokens → SimHash → dedup → entropy → criticality → depgraph → store
-    pub fn ingest(&mut self, content: String, source: String, token_count: u32, is_pinned: bool) -> PyResult<PyObject> {
+    pub fn ingest(
+        &mut self,
+        content: String,
+        source: String,
+        token_count: u32,
+        is_pinned: bool,
+    ) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             self.total_fragments_ingested += 1;
 
@@ -529,9 +554,11 @@ impl EntrolyEngine {
             // Check for duplicates
             if let Some(dup_id) = self.dedup_index.insert(&frag_id, &content) {
                 self.total_duplicates_caught += 1;
-                self.total_tokens_saved += tc as u64;  // Bug fix: accumulate tokens saved
+                self.total_tokens_saved += tc as u64; // Bug fix: accumulate tokens saved
 
-                let max_freq = self.fragments.values()
+                let max_freq = self
+                    .fragments
+                    .values()
                     .map(|f| f.access_count)
                     .max()
                     .unwrap_or(1);
@@ -539,7 +566,9 @@ impl EntrolyEngine {
                 if let Some(existing) = self.fragments.get_mut(&dup_id) {
                     existing.access_count += 1;
                     existing.turn_last_accessed = self.current_turn;
-                    existing.frequency_score = (existing.access_count as f64 / max_freq.max(existing.access_count) as f64).min(1.0);
+                    existing.frequency_score = (existing.access_count as f64
+                        / max_freq.max(existing.access_count) as f64)
+                        .min(1.0);
                 }
 
                 let result = PyDict::new(py);
@@ -552,7 +581,8 @@ impl EntrolyEngine {
             // Compute entropy score (deterministic: sorted by fragment_id)
             let mut sorted_frags: Vec<&ContextFragment> = self.fragments.values().collect();
             sorted_frags.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
-            let other_contents: Vec<String> = sorted_frags.iter()
+            let other_contents: Vec<String> = sorted_frags
+                .iter()
                 .take(50)
                 .map(|f| f.content.clone())
                 .collect();
@@ -562,7 +592,6 @@ impl EntrolyEngine {
             let type_mult = crate::entropy::source_type_multiplier(&source);
             let mass_mult = crate::entropy::information_mass_factor(tc);
             let entropy = (raw_entropy * type_mult * mass_mult).clamp(0.0, 1.0);
-
 
             // NEW: Criticality check — config, schema, license files get protected
             let criticality = file_criticality(&source);
@@ -586,12 +615,13 @@ impl EntrolyEngine {
             // Exception: apply a minimum entropy floor for critical files so they
             // don't get ranked last when everything else is equal.
             let effective_entropy = if criticality >= Criticality::Important {
-                entropy.max(0.5)  // Floor: critical files never score below 0.5
+                entropy.max(0.5) // Floor: critical files never score below 0.5
             } else {
                 entropy
             };
 
-            let mut frag = ContextFragment::new(frag_id.clone(), content.clone(), tc, source.clone());
+            let mut frag =
+                ContextFragment::new(frag_id.clone(), content.clone(), tc, source.clone());
             frag.recency_score = 1.0;
             frag.entropy_score = effective_entropy;
             frag.turn_created = self.current_turn;
@@ -599,7 +629,7 @@ impl EntrolyEngine {
             frag.access_count = 1;
             frag.is_pinned = effective_pinned;
             frag.simhash = fp;
-            frag.has_simhash = true;  // content-derived fingerprint
+            frag.has_simhash = true; // content-derived fingerprint
 
             // Hierarchical fragmentation: extract skeleton for code files
             if let Some(skel) = skeleton::extract_skeleton(&content, &source) {
@@ -633,14 +663,17 @@ impl EntrolyEngine {
             let mut stale_closure: HashSet<String> = std::iter::once(frag_id.clone()).collect();
             let mut depth_weights: HashMap<String, u32> = HashMap::new();
             depth_weights.insert(frag_id.clone(), 0); // depth 0 = direct, always hard
-            // BFS through reverse deps with depth tracking (max depth 3)
-            let mut bfs_queue: std::collections::VecDeque<(String, u32)> = self.dep_graph
+                                                      // BFS through reverse deps with depth tracking (max depth 3)
+            let mut bfs_queue: std::collections::VecDeque<(String, u32)> = self
+                .dep_graph
                 .reverse_deps(&frag_id)
                 .into_iter()
                 .map(|id| (id, 1))
                 .collect();
             while let Some((id, depth)) = bfs_queue.pop_front() {
-                if depth > 3 || stale_closure.contains(&id) { continue; }
+                if depth > 3 || stale_closure.contains(&id) {
+                    continue;
+                }
                 stale_closure.insert(id.clone());
                 depth_weights.insert(id.clone(), depth);
                 for rev in self.dep_graph.reverse_deps(&id) {
@@ -649,13 +682,18 @@ impl EntrolyEngine {
                     }
                 }
             }
-            let _invalidated = self.egsc_cache.invalidate_weighted(&stale_closure, &depth_weights);
+            let _invalidated = self
+                .egsc_cache
+                .invalidate_weighted(&stale_closure, &depth_weights);
 
             let result = PyDict::new(py);
             result.set_item("status", "ingested")?;
             result.set_item("fragment_id", &frag_id)?;
             result.set_item("token_count", tc)?;
-            result.set_item("entropy_score", (effective_entropy * 10000.0).round() / 10000.0)?;
+            result.set_item(
+                "entropy_score",
+                (effective_entropy * 10000.0).round() / 10000.0,
+            )?;
             result.set_item("criticality", format!("{:?}", criticality))?;
             result.set_item("is_pinned", effective_pinned)?;
             result.set_item("total_fragments", self.fragments.len())?;
@@ -731,18 +769,13 @@ impl EntrolyEngine {
                 // distance thresholds and break SimHash LSH guarantees.
                 let stub_fp: u64 = 0;
 
-                let mut frag = ContextFragment::new(
-                    frag_id.clone(),
-                    stub,
-                    token_estimate,
-                    source,
-                );
+                let mut frag = ContextFragment::new(frag_id.clone(), stub, token_estimate, source);
                 frag.recency_score = 0.2;
                 frag.entropy_score = 0.35;
                 frag.turn_created = self.current_turn;
                 frag.turn_last_accessed = self.current_turn;
                 frag.access_count = 0;
-                frag.simhash = stub_fp;  // sentinel: excluded from all similarity ops
+                frag.simhash = stub_fp; // sentinel: excluded from all similarity ops
                 frag.has_simhash = false; // stubs never participate in LSH or SimHash similarity
                 frag.is_pinned = false;
 
@@ -786,14 +819,15 @@ impl EntrolyEngine {
                 source: String,
                 token_count: u32,
                 simhash: u64,
-                skeleton_token_estimate: Option<u32>,  // TPSE Phase A: speculative cost
+                skeleton_token_estimate: Option<u32>, // TPSE Phase A: speculative cost
                 criticality: Criticality,
                 has_safety: bool,
-                kolmo: f64, // Kolmogorov entropy: single O(N) proxy for ent+bp
+                kolmo: f64,       // Kolmogorov entropy: single O(N) proxy for ent+bp
                 language: String, // e.g. "python", "rust", "typescript"
             }
 
-            let precomputed: Vec<PreComputed> = items.into_par_iter()
+            let precomputed: Vec<PreComputed> = items
+                .into_par_iter()
                 .map(|(content, source, tc)| {
                     let token_count = if tc == 0 {
                         // ── Calibrated Per-Language Token Estimation ──────────
@@ -805,28 +839,64 @@ impl EntrolyEngine {
                         // This directly improves IOS selection quality — the knapsack
                         // can't make good decisions with 25% error in cost estimates.
                         let sl = source.to_lowercase();
-                        let cpt = if sl.ends_with(".py") || sl.ends_with(".pyw") { 3.0 }
-                            else if sl.ends_with(".rs") { 3.5 }
-                            else if sl.ends_with(".ts") || sl.ends_with(".tsx")
-                                    || sl.ends_with(".js") || sl.ends_with(".jsx") || sl.ends_with(".mjs")
-                                    || sl.ends_with(".sh") || sl.ends_with(".bash")
-                                    || sl.ends_with(".rb") { 3.2 }
-                            else if sl.ends_with(".go") { 3.3 }
-                            else if sl.ends_with(".java") || sl.ends_with(".kt") || sl.ends_with(".cs")
-                                    || sl.ends_with(".swift") || sl.ends_with(".sql") { 3.5 }
-                            else if sl.ends_with(".c") || sl.ends_with(".cpp") || sl.ends_with(".cc")
-                                    || sl.ends_with(".h") || sl.ends_with(".hpp") { 3.8 }
-                            else if sl.ends_with(".json") { 2.8 }
-                            else if sl.ends_with(".yaml") || sl.ends_with(".yml") || sl.ends_with(".toml") { 3.0 }
-                            else if sl.ends_with(".md") || sl.ends_with(".txt") || sl.ends_with(".rst") { 4.5 }
-                            else if sl.ends_with(".html") || sl.ends_with(".css") || sl.ends_with(".scss")
-                                    || sl.ends_with(".php") { 3.0 }
-                            else {
-                                // Fallback: use non-alpha ratio heuristic for unknown types
-                                let non_alpha = content.chars().filter(|c| !c.is_alphabetic()).count();
-                                let ratio = non_alpha as f64 / content.len().max(1) as f64;
-                                if ratio > 0.4 { 5.0 } else { 4.0 }
-                            };
+                        let cpt = if sl.ends_with(".py") || sl.ends_with(".pyw") {
+                            3.0
+                        } else if sl.ends_with(".rs") {
+                            3.5
+                        } else if sl.ends_with(".ts")
+                            || sl.ends_with(".tsx")
+                            || sl.ends_with(".js")
+                            || sl.ends_with(".jsx")
+                            || sl.ends_with(".mjs")
+                            || sl.ends_with(".sh")
+                            || sl.ends_with(".bash")
+                            || sl.ends_with(".rb")
+                        {
+                            3.2
+                        } else if sl.ends_with(".go") {
+                            3.3
+                        } else if sl.ends_with(".java")
+                            || sl.ends_with(".kt")
+                            || sl.ends_with(".cs")
+                            || sl.ends_with(".swift")
+                            || sl.ends_with(".sql")
+                        {
+                            3.5
+                        } else if sl.ends_with(".c")
+                            || sl.ends_with(".cpp")
+                            || sl.ends_with(".cc")
+                            || sl.ends_with(".h")
+                            || sl.ends_with(".hpp")
+                        {
+                            3.8
+                        } else if sl.ends_with(".json") {
+                            2.8
+                        } else if sl.ends_with(".yaml")
+                            || sl.ends_with(".yml")
+                            || sl.ends_with(".toml")
+                        {
+                            3.0
+                        } else if sl.ends_with(".md")
+                            || sl.ends_with(".txt")
+                            || sl.ends_with(".rst")
+                        {
+                            4.5
+                        } else if sl.ends_with(".html")
+                            || sl.ends_with(".css")
+                            || sl.ends_with(".scss")
+                            || sl.ends_with(".php")
+                        {
+                            3.0
+                        } else {
+                            // Fallback: use non-alpha ratio heuristic for unknown types
+                            let non_alpha = content.chars().filter(|c| !c.is_alphabetic()).count();
+                            let ratio = non_alpha as f64 / content.len().max(1) as f64;
+                            if ratio > 0.4 {
+                                5.0
+                            } else {
+                                4.0
+                            }
+                        };
                         (content.len() as f64 / cpt).max(1.0) as u32
                     } else {
                         tc
@@ -850,22 +920,52 @@ impl EntrolyEngine {
                     // Ratios calibrated on skeleton.rs test corpus (Python/Rust/JS/Go/Java/C++).
                     let skel_ratio = {
                         let sl = source.to_lowercase();
-                        if sl.ends_with(".py") || sl.ends_with(".go") || sl.ends_with(".pyw") { 0.20 }
-                        else if sl.ends_with(".rs") || sl.ends_with(".java") || sl.ends_with(".kt")
-                                || sl.ends_with(".cs") || sl.ends_with(".swift") { 0.25 }
-                        else if sl.ends_with(".js") || sl.ends_with(".ts") || sl.ends_with(".tsx")
-                                || sl.ends_with(".jsx") || sl.ends_with(".mjs") || sl.ends_with(".mts") { 0.22 }
-                        else if sl.ends_with(".c") || sl.ends_with(".cpp") || sl.ends_with(".cc")
-                                || sl.ends_with(".h") || sl.ends_with(".hpp") { 0.30 }
-                        else if sl.ends_with(".rb") || sl.ends_with(".php") { 0.25 }
-                        else if sl.ends_with(".vue") || sl.ends_with(".svelte") { 0.28 }
-                        else if sl.ends_with(".html") || sl.ends_with(".css") || sl.ends_with(".scss") { 0.30 }
-                        else if sl.ends_with(".sh") || sl.ends_with(".bash") { 0.20 }
-                        else { 0.0 }  // Unknown language: no skeleton possible
+                        if sl.ends_with(".py") || sl.ends_with(".go") || sl.ends_with(".pyw") {
+                            0.20
+                        } else if sl.ends_with(".rs")
+                            || sl.ends_with(".java")
+                            || sl.ends_with(".kt")
+                            || sl.ends_with(".cs")
+                            || sl.ends_with(".swift")
+                        {
+                            0.25
+                        } else if sl.ends_with(".js")
+                            || sl.ends_with(".ts")
+                            || sl.ends_with(".tsx")
+                            || sl.ends_with(".jsx")
+                            || sl.ends_with(".mjs")
+                            || sl.ends_with(".mts")
+                        {
+                            0.22
+                        } else if sl.ends_with(".c")
+                            || sl.ends_with(".cpp")
+                            || sl.ends_with(".cc")
+                            || sl.ends_with(".h")
+                            || sl.ends_with(".hpp")
+                        {
+                            0.30
+                        } else if sl.ends_with(".rb") || sl.ends_with(".php") {
+                            0.25
+                        } else if sl.ends_with(".vue") || sl.ends_with(".svelte") {
+                            0.28
+                        } else if sl.ends_with(".html")
+                            || sl.ends_with(".css")
+                            || sl.ends_with(".scss")
+                        {
+                            0.30
+                        } else if sl.ends_with(".sh") || sl.ends_with(".bash") {
+                            0.20
+                        } else {
+                            0.0
+                        } // Unknown language: no skeleton possible
                     };
                     let skeleton_token_estimate = if skel_ratio > 0.0 && token_count > 10 {
                         let est = (token_count as f64 * skel_ratio).max(3.0) as u32;
-                        if est < token_count { Some(est) } else { None }
+                        if est < token_count {
+                            Some(est)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
@@ -874,29 +974,59 @@ impl EntrolyEngine {
                     // Populate language field for downstream calibrated operations.
                     let language = {
                         let sl = source.to_lowercase();
-                        if sl.ends_with(".py") || sl.ends_with(".pyw") { "python" }
-                        else if sl.ends_with(".rs") { "rust" }
-                        else if sl.ends_with(".ts") || sl.ends_with(".tsx") { "typescript" }
-                        else if sl.ends_with(".js") || sl.ends_with(".jsx") || sl.ends_with(".mjs") { "javascript" }
-                        else if sl.ends_with(".go") { "go" }
-                        else if sl.ends_with(".java") { "java" }
-                        else if sl.ends_with(".kt") { "kotlin" }
-                        else if sl.ends_with(".cs") { "csharp" }
-                        else if sl.ends_with(".c") || sl.ends_with(".h") { "c" }
-                        else if sl.ends_with(".cpp") || sl.ends_with(".cc") || sl.ends_with(".hpp") { "cpp" }
-                        else if sl.ends_with(".rb") { "ruby" }
-                        else if sl.ends_with(".php") { "php" }
-                        else if sl.ends_with(".swift") { "swift" }
-                        else if sl.ends_with(".sh") || sl.ends_with(".bash") { "shell" }
-                        else if sl.ends_with(".json") { "json" }
-                        else if sl.ends_with(".yaml") || sl.ends_with(".yml") { "yaml" }
-                        else if sl.ends_with(".toml") { "toml" }
-                        else if sl.ends_with(".md") || sl.ends_with(".rst") { "markdown" }
-                        else if sl.ends_with(".html") { "html" }
-                        else if sl.ends_with(".css") || sl.ends_with(".scss") { "css" }
-                        else if sl.ends_with(".sql") { "sql" }
-                        else { "unknown" }
-                    }.to_string();
+                        if sl.ends_with(".py") || sl.ends_with(".pyw") {
+                            "python"
+                        } else if sl.ends_with(".rs") {
+                            "rust"
+                        } else if sl.ends_with(".ts") || sl.ends_with(".tsx") {
+                            "typescript"
+                        } else if sl.ends_with(".js")
+                            || sl.ends_with(".jsx")
+                            || sl.ends_with(".mjs")
+                        {
+                            "javascript"
+                        } else if sl.ends_with(".go") {
+                            "go"
+                        } else if sl.ends_with(".java") {
+                            "java"
+                        } else if sl.ends_with(".kt") {
+                            "kotlin"
+                        } else if sl.ends_with(".cs") {
+                            "csharp"
+                        } else if sl.ends_with(".c") || sl.ends_with(".h") {
+                            "c"
+                        } else if sl.ends_with(".cpp")
+                            || sl.ends_with(".cc")
+                            || sl.ends_with(".hpp")
+                        {
+                            "cpp"
+                        } else if sl.ends_with(".rb") {
+                            "ruby"
+                        } else if sl.ends_with(".php") {
+                            "php"
+                        } else if sl.ends_with(".swift") {
+                            "swift"
+                        } else if sl.ends_with(".sh") || sl.ends_with(".bash") {
+                            "shell"
+                        } else if sl.ends_with(".json") {
+                            "json"
+                        } else if sl.ends_with(".yaml") || sl.ends_with(".yml") {
+                            "yaml"
+                        } else if sl.ends_with(".toml") {
+                            "toml"
+                        } else if sl.ends_with(".md") || sl.ends_with(".rst") {
+                            "markdown"
+                        } else if sl.ends_with(".html") {
+                            "html"
+                        } else if sl.ends_with(".css") || sl.ends_with(".scss") {
+                            "css"
+                        } else if sl.ends_with(".sql") {
+                            "sql"
+                        } else {
+                            "unknown"
+                        }
+                    }
+                    .to_string();
 
                     PreComputed {
                         content,
@@ -933,20 +1063,24 @@ impl EntrolyEngine {
             // all priority tiers. Without this, priority-sorted batch puts all impl
             // code first → entropy sample is 100% impl → test/config uniqueness inflated.
             let batch_stride = (precomputed.len() / 25).max(1);
-            let sample_fps: Vec<u64> = self.fragments.values()
+            let sample_fps: Vec<u64> = self
+                .fragments
+                .values()
                 .filter(|f| f.has_simhash)
                 .take(25)
                 .map(|f| f.simhash)
                 .chain(
-                    precomputed.iter()
+                    precomputed
+                        .iter()
                         .step_by(batch_stride)
                         .take(25)
-                        .map(|p| p.simhash)
+                        .map(|p| p.simhash),
                 )
                 .collect();
             let sample_ok = sample_fps.len() >= MIN_SAMPLE;
 
-            let entropies: Vec<f64> = precomputed.par_iter()
+            let entropies: Vec<f64> = precomputed
+                .par_iter()
                 .map(|p| {
                     let raw_entropy = if !sample_ok {
                         // Too few hydrated references for cross-corpus uniqueness.
@@ -983,7 +1117,6 @@ impl EntrolyEngine {
                 })
                 .collect();
 
-
             let phase2_ms = t0.elapsed().as_millis() as u64 - phase1_ms;
 
             // ── Phase 3: Sequential insert (mutates self) ──
@@ -996,7 +1129,9 @@ impl EntrolyEngine {
             // ingest_paths_stubs(), the stub must be removed. This keeps the HashMap
             // lean and prevents the knapsack from seeing stale stubs with wildly
             // overestimated token_count (estimated from file size, not actual content).
-            let stub_index: HashMap<String, String> = self.fragments.iter()
+            let stub_index: HashMap<String, String> = self
+                .fragments
+                .iter()
                 .filter(|(id, f)| !f.has_simhash && id.starts_with("sh"))
                 .map(|(id, f)| (f.source.clone(), id.clone()))
                 .collect();
@@ -1039,7 +1174,8 @@ impl EntrolyEngine {
                     entropy
                 };
 
-                let mut frag = ContextFragment::new(frag_id.clone(), pre.content, pre.token_count, pre.source);
+                let mut frag =
+                    ContextFragment::new(frag_id.clone(), pre.content, pre.token_count, pre.source);
                 frag.recency_score = 1.0;
                 frag.entropy_score = effective_entropy;
                 frag.turn_created = self.current_turn;
@@ -1047,10 +1183,10 @@ impl EntrolyEngine {
                 frag.access_count = 1;
                 frag.is_pinned = effective_pinned;
                 frag.simhash = pre.simhash;
-                frag.has_simhash = true;  // content-derived fingerprint
-                // TPSE Phase A: skeleton_token_count = speculative estimate.
-                // skeleton_content remains None — materialized lazily in optimize()
-                // Phase B, only for the K fragments IOS selects at Skeleton resolution.
+                frag.has_simhash = true; // content-derived fingerprint
+                                         // TPSE Phase A: skeleton_token_count = speculative estimate.
+                                         // skeleton_content remains None — materialized lazily in optimize()
+                                         // Phase B, only for the K fragments IOS selects at Skeleton resolution.
                 frag.skeleton_token_count = pre.skeleton_token_estimate;
                 frag.language = pre.language;
 
@@ -1091,7 +1227,10 @@ impl EntrolyEngine {
             result.set_item("duration_ms", elapsed_ms)?;
             result.set_item("phase1_ms", phase1_ms)?;
             result.set_item("phase2_ms", phase2_ms)?;
-            result.set_item("phase3_ms", elapsed_ms.saturating_sub(phase1_ms + phase2_ms))?;
+            result.set_item(
+                "phase3_ms",
+                elapsed_ms.saturating_sub(phase1_ms + phase2_ms),
+            )?;
             Ok(result.into())
         })
     }
@@ -1151,23 +1290,41 @@ impl EntrolyEngine {
             // entire IOS/knapsack/channel-coding pipeline — returns in O(1).
             if !query.is_empty() && !should_explore {
                 let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
-                match self.egsc_cache.lookup_with_budget(&query, &current_frag_ids, effective_budget) {
-                    CacheLookup::ExactHit { response, tokens_saved } => {
+                match self.egsc_cache.lookup_with_budget(
+                    &query,
+                    &current_frag_ids,
+                    effective_budget,
+                ) {
+                    CacheLookup::ExactHit {
+                        response,
+                        tokens_saved,
+                    } => {
                         self.total_tokens_saved += tokens_saved as u64;
                         // Deserialize cached JSON result back to Python dict
-                        if let Ok(cached_value) = serde_json::from_str::<serde_json::Value>(&response) {
+                        if let Ok(cached_value) =
+                            serde_json::from_str::<serde_json::Value>(&response)
+                        {
                             let cache_result = PyDict::new(py);
                             // Populate result from cached JSON
                             if let Some(obj) = cached_value.as_object() {
                                 for (k, v) in obj {
-                                    if k == "selected_ids" { continue; } // handled separately
+                                    if k == "selected_ids" {
+                                        continue;
+                                    } // handled separately
                                     match v {
                                         serde_json::Value::Number(n) => {
-                                            if let Some(i) = n.as_i64() { let _ = cache_result.set_item(k.as_str(), i); }
-                                            else if let Some(f) = n.as_f64() { let _ = cache_result.set_item(k.as_str(), f); }
+                                            if let Some(i) = n.as_i64() {
+                                                let _ = cache_result.set_item(k.as_str(), i);
+                                            } else if let Some(f) = n.as_f64() {
+                                                let _ = cache_result.set_item(k.as_str(), f);
+                                            }
                                         }
-                                        serde_json::Value::String(s) => { let _ = cache_result.set_item(k.as_str(), s.as_str()); }
-                                        serde_json::Value::Bool(b) => { let _ = cache_result.set_item(k.as_str(), *b); }
+                                        serde_json::Value::String(s) => {
+                                            let _ = cache_result.set_item(k.as_str(), s.as_str());
+                                        }
+                                        serde_json::Value::Bool(b) => {
+                                            let _ = cache_result.set_item(k.as_str(), *b);
+                                        }
                                         _ => {}
                                     }
                                 }
@@ -1184,20 +1341,36 @@ impl EntrolyEngine {
                             return Ok(cache_result.into());
                         }
                     }
-                    CacheLookup::SemanticHit { response, tokens_saved, hamming_distance: ham, jaccard_similarity: jac } => {
+                    CacheLookup::SemanticHit {
+                        response,
+                        tokens_saved,
+                        hamming_distance: ham,
+                        jaccard_similarity: jac,
+                    } => {
                         self.total_tokens_saved += tokens_saved as u64;
-                        if let Ok(cached_value) = serde_json::from_str::<serde_json::Value>(&response) {
+                        if let Ok(cached_value) =
+                            serde_json::from_str::<serde_json::Value>(&response)
+                        {
                             let cache_result = PyDict::new(py);
                             if let Some(obj) = cached_value.as_object() {
                                 for (k, v) in obj {
-                                    if k == "selected_ids" { continue; }
+                                    if k == "selected_ids" {
+                                        continue;
+                                    }
                                     match v {
                                         serde_json::Value::Number(n) => {
-                                            if let Some(i) = n.as_i64() { let _ = cache_result.set_item(k.as_str(), i); }
-                                            else if let Some(f) = n.as_f64() { let _ = cache_result.set_item(k.as_str(), f); }
+                                            if let Some(i) = n.as_i64() {
+                                                let _ = cache_result.set_item(k.as_str(), i);
+                                            } else if let Some(f) = n.as_f64() {
+                                                let _ = cache_result.set_item(k.as_str(), f);
+                                            }
                                         }
-                                        serde_json::Value::String(s) => { let _ = cache_result.set_item(k.as_str(), s.as_str()); }
-                                        serde_json::Value::Bool(b) => { let _ = cache_result.set_item(k.as_str(), *b); }
+                                        serde_json::Value::String(s) => {
+                                            let _ = cache_result.set_item(k.as_str(), s.as_str());
+                                        }
+                                        serde_json::Value::Bool(b) => {
+                                            let _ = cache_result.set_item(k.as_str(), *b);
+                                        }
                                         _ => {}
                                     }
                                 }
@@ -1209,7 +1382,10 @@ impl EntrolyEngine {
                             cache_result.set_item("cache_hit_type", "semantic")?;
                             cache_result.set_item("cache_tokens_saved", tokens_saved)?;
                             cache_result.set_item("cache_hamming_distance", ham)?;
-                            cache_result.set_item("cache_jaccard_similarity", (jac * 10000.0).round() / 10000.0)?;
+                            cache_result.set_item(
+                                "cache_jaccard_similarity",
+                                (jac * 10000.0).round() / 10000.0,
+                            )?;
                             cache_result.set_item("cache_eligible", true)?;
                             cache_result.set_item("optimization_policy", "exploit")?;
                             self.last_cache_feedback_eligible = true;
@@ -1287,15 +1463,19 @@ impl EntrolyEngine {
                 // ── Complexity: O(N × Q) where N=files, Q=query terms ──
 
                 // Step 1: Standard BM25 scoring
-                let doc_tuples: Vec<(String, String, String)> = self.fragments.iter()
+                let doc_tuples: Vec<(String, String, String)> = self
+                    .fragments
+                    .iter()
                     .map(|(id, f)| (id.clone(), f.content.clone(), f.source.clone()))
                     .collect();
                 let bm25_idx = BM25Index::build(&doc_tuples);
 
-                let mut bm25_raw: HashMap<String, f64> = HashMap::with_capacity(self.fragments.len());
+                let mut bm25_raw: HashMap<String, f64> =
+                    HashMap::with_capacity(self.fragments.len());
                 for (fid, frag) in &self.fragments {
                     let identifiers = extract_identifiers(&frag.content);
-                    let score = bm25_idx.score(&query_terms, &frag.content, &frag.source, &identifiers);
+                    let score =
+                        bm25_idx.score(&query_terms, &frag.content, &frag.source, &identifiers);
                     // Store CONTENT-ONLY score (bm25_base + coverage bonus)
                     // Do NOT include path_boost here — path is handled by the tier system
                     let coverage_bonus = score.query_coverage.powf(1.5) * 0.5 * score.bm25_base;
@@ -1336,7 +1516,9 @@ impl EntrolyEngine {
                 let mut path_df: HashMap<String, usize> = HashMap::new();
                 for qt in &query_terms {
                     let qt_lower = qt.to_lowercase();
-                    let count = self.fragments.values()
+                    let count = self
+                        .fragments
+                        .values()
                         .filter(|f| f.source.to_lowercase().contains(&qt_lower))
                         .count();
                     path_df.insert(qt_lower, count);
@@ -1344,7 +1526,8 @@ impl EntrolyEngine {
 
                 // Compute Path-IDF for each query term
                 let n = self.fragments.len() as f64;
-                let path_idfs: HashMap<String, f64> = query_terms.iter()
+                let path_idfs: HashMap<String, f64> = query_terms
+                    .iter()
                     .map(|qt| {
                         let qt_lower = qt.to_lowercase();
                         let df = *path_df.get(&qt_lower).unwrap_or(&0) as f64;
@@ -1357,21 +1540,27 @@ impl EntrolyEngine {
                 // Step 3: Compute basename frequency for hub dampening
                 let mut basename_freq: HashMap<String, usize> = HashMap::new();
                 for frag in self.fragments.values() {
-                    let fname = frag.source.rsplit(&['/', '\\'][..])
-                        .next().unwrap_or("").to_lowercase();
+                    let fname = frag
+                        .source
+                        .rsplit(&['/', '\\'][..])
+                        .next()
+                        .unwrap_or("")
+                        .to_lowercase();
                     *basename_freq.entry(fname).or_insert(0) += 1;
                 }
 
                 // Step 4: Dual-IDF TPKS scoring
                 let fid_order: Vec<String> = self.fragments.keys().cloned().collect();
-                let raw_vec: Vec<f64> = fid_order.iter()
+                let raw_vec: Vec<f64> = fid_order
+                    .iter()
                     .map(|fid| bm25_raw.get(fid).copied().unwrap_or(0.0))
                     .collect();
                 let max_raw = raw_vec.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 let min_raw = raw_vec.iter().cloned().fold(f64::INFINITY, f64::min);
                 let range = (max_raw - min_raw).max(1e-10);
 
-                let mut tpks_scores: HashMap<String, f64> = HashMap::with_capacity(self.fragments.len());
+                let mut tpks_scores: HashMap<String, f64> =
+                    HashMap::with_capacity(self.fragments.len());
                 for fid in &fid_order {
                     let frag = &self.fragments[fid];
                     let src_lower = frag.source.to_lowercase();
@@ -1384,7 +1573,8 @@ impl EntrolyEngine {
                     // Sum Path-IDF of ALL query terms that appear in the path.
                     // No threshold, no top-N filtering — every matching term
                     // contributes proportional to how rare it is IN PATHS.
-                    let path_tier: f64 = query_terms.iter()
+                    let path_tier: f64 = query_terms
+                        .iter()
                         .filter_map(|qt| {
                             let qt_lower = qt.to_lowercase();
                             if src_lower.contains(&qt_lower) {
@@ -1396,8 +1586,12 @@ impl EntrolyEngine {
                         .sum();
 
                     // (c) Hub dampening: 1/sqrt(freq) for generic basenames
-                    let fname = frag.source.rsplit(&['/', '\\'][..])
-                        .next().unwrap_or("").to_lowercase();
+                    let fname = frag
+                        .source
+                        .rsplit(&['/', '\\'][..])
+                        .next()
+                        .unwrap_or("")
+                        .to_lowercase();
                     let freq = *basename_freq.get(&fname).unwrap_or(&1);
                     let hub_dampen = if freq > 3 && path_tier < 1.0 {
                         // Only dampen hubs without meaningful path matches
@@ -1462,14 +1656,15 @@ impl EntrolyEngine {
                 //   - Tier-invariant: no compression can cross tiers
 
                 // Sort all files by TPKS score (descending)
-                let mut sorted_tpks: Vec<(String, f64)> = tpks_scores.iter()
-                    .map(|(k, &v)| (k.clone(), v))
-                    .collect();
-                sorted_tpks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                let mut sorted_tpks: Vec<(String, f64)> =
+                    tpks_scores.iter().map(|(k, &v)| (k.clone(), v)).collect();
+                sorted_tpks
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 // Assign rank-percentile scores
                 let total = sorted_tpks.len().max(1) as f64;
-                let mut rank_scores: HashMap<String, f64> = HashMap::with_capacity(sorted_tpks.len());
+                let mut rank_scores: HashMap<String, f64> =
+                    HashMap::with_capacity(sorted_tpks.len());
                 for (rank, (fid, _)) in sorted_tpks.iter().enumerate() {
                     // Rank 0 (best) → 1.0, rank N-1 (worst) → 0.05
                     let percentile = 1.0 - (rank as f64 / total);
@@ -1478,14 +1673,16 @@ impl EntrolyEngine {
                 }
 
                 // Causal chain (BFS from TPKS-top seeds)
-                let seed_ids: Vec<String> = sorted_tpks.iter()
+                let seed_ids: Vec<String> = sorted_tpks
+                    .iter()
                     .take(10)
                     .filter(|(_, s)| *s > 0.5)
                     .map(|(id, _)| id.clone())
                     .collect();
                 let causal_set: HashSet<String> = if !seed_ids.is_empty() {
                     hierarchical::identify_cluster(&self.dep_graph, &seed_ids, 2)
-                        .into_iter().collect()
+                        .into_iter()
+                        .collect()
                 } else {
                     HashSet::new()
                 };
@@ -1493,10 +1690,15 @@ impl EntrolyEngine {
                 // PageRank (tie-breaker only, max 2% influence)
                 let pr_ids: Vec<String> = self.fragments.keys().cloned().collect();
                 let pagerank = hierarchical::compute_pagerank(&self.dep_graph, &pr_ids, 15);
-                let max_pr = pagerank.values().cloned().fold(0.0_f64, f64::max).max(1e-10);
+                let max_pr = pagerank
+                    .values()
+                    .cloned()
+                    .fold(0.0_f64, f64::max)
+                    .max(1e-10);
 
                 // NCD (top-50 by TPKS, tie-breaker only)
-                let top_candidates: Vec<String> = sorted_tpks.iter()
+                let top_candidates: Vec<String> = sorted_tpks
+                    .iter()
                     .take(50)
                     .map(|(id, _)| id.clone())
                     .collect();
@@ -1504,7 +1706,8 @@ impl EntrolyEngine {
                 for fid in &top_candidates {
                     if let Some(frag) = self.fragments.get(fid) {
                         let end = frag.content.len().min(2048);
-                        let safe = (0..=end).rev()
+                        let safe = (0..=end)
+                            .rev()
                             .find(|&i| frag.content.is_char_boundary(i))
                             .unwrap_or(0);
                         let sample = &frag.content[..safe];
@@ -1519,11 +1722,11 @@ impl EntrolyEngine {
 
                     // Structural tie-breakers (max 3% total influence)
                     let causal_adj = if causal_set.contains(fid) { 0.015 } else { 0.0 };
-                    let pr_adj = (pagerank.get(fid).copied().unwrap_or(0.0) / max_pr).min(1.0) * 0.01;
+                    let pr_adj =
+                        (pagerank.get(fid).copied().unwrap_or(0.0) / max_pr).min(1.0) * 0.01;
                     let ncd_adj = ncd_scores.get(fid).copied().unwrap_or(0.0) * 0.005;
 
-                    frag.semantic_score = (base + causal_adj + pr_adj + ncd_adj)
-                        .clamp(0.0, 1.0);
+                    frag.semantic_score = (base + causal_adj + pr_adj + ncd_adj).clamp(0.0, 1.0);
 
                     // ── Path-Tier Full-Dimension Override ──────────────
                     // PRISM composite = Σ w_i × score_i / Σ w_i
@@ -1580,7 +1783,8 @@ impl EntrolyEngine {
                 // IMPORTANT: Extract entities from the RAW query (preserves
                 // CamelCase), NOT from query_terms (already lowercased).
                 let raw_words: Vec<&str> = query.split_whitespace().collect();
-                let entities: Vec<String> = raw_words.iter()
+                let entities: Vec<String> = raw_words
+                    .iter()
                     .filter(|w| {
                         let chars: Vec<char> = w.chars().collect();
                         // CamelCase: has uppercase letter after position 0
@@ -1651,39 +1855,46 @@ impl EntrolyEngine {
             }
 
             // Build feedback multipliers for all fragments
-            let feedback_mults: HashMap<String, f64> = self.fragments.keys()
+            let feedback_mults: HashMap<String, f64> = self
+                .fragments
+                .keys()
                 .map(|fid| (fid.clone(), self.feedback.learned_value(fid)))
                 .collect();
 
             // ── Query Persona Manifold: assign query to archetype ──
             // Build feature vector from TF-IDF analysis, route to archetype,
             // and use per-archetype learned weights if available.
-            let (archetype_weights, archetype_id) = if self.enable_query_personas && !query.is_empty() {
-                let fragment_summaries: Vec<String> = self.fragments.values()
-                    .take(50)
-                    .map(|f| f.source.clone())
-                    .collect();
-                let analysis = query::analyze_query(&query, &fragment_summaries);
+            let (archetype_weights, archetype_id) =
+                if self.enable_query_personas && !query.is_empty() {
+                    let fragment_summaries: Vec<String> = self
+                        .fragments
+                        .values()
+                        .take(50)
+                        .map(|f| f.source.clone())
+                        .collect();
+                    let analysis = query::analyze_query(&query, &fragment_summaries);
 
-                // Build TF-IDF score vector for PSM embedding
-                let tfidf_scores: Vec<f64> = analysis.key_terms.iter()
-                    .enumerate()
-                    .map(|(i, _)| 1.0 / (i as f64 + 1.0)) // rank-weighted scores
-                    .collect();
+                    // Build TF-IDF score vector for PSM embedding
+                    let tfidf_scores: Vec<f64> = analysis
+                        .key_terms
+                        .iter()
+                        .enumerate()
+                        .map(|(i, _)| 1.0 / (i as f64 + 1.0)) // rank-weighted scores
+                        .collect();
 
-                let features = query_persona::build_query_features(
-                    &tfidf_scores,
-                    analysis.vagueness_score,
-                    query.len(),
-                    analysis.key_terms.len(),
-                    analysis.needs_refinement,
-                );
+                    let features = query_persona::build_query_features(
+                        &tfidf_scores,
+                        analysis.vagueness_score,
+                        query.len(),
+                        analysis.key_terms.len(),
+                        analysis.needs_refinement,
+                    );
 
-                let (aid, weights, _is_new) = self.query_manifold.assign(&features);
-                (Some(weights), Some(aid))
-            } else {
-                (None, None)
-            };
+                    let (aid, weights, _is_new) = self.query_manifold.assign(&features);
+                    (Some(weights), Some(aid))
+                } else {
+                    (None, None)
+                };
             self.last_archetype_id = archetype_id.clone();
 
             // ── Query-Adaptive Belief Info Factor (Change 1) ──────────────
@@ -1704,29 +1915,45 @@ impl EntrolyEngine {
                 let query_lower = query.to_lowercase();
                 // Heuristic intent detection from query text (fast, no model needed)
                 let is_architecture = query_lower.contains("architecture")
-                    || query_lower.contains("how does") || query_lower.contains("how do")
-                    || query_lower.contains("explain") || query_lower.contains("overview")
-                    || query_lower.contains("design") || query_lower.contains("pattern");
+                    || query_lower.contains("how does")
+                    || query_lower.contains("how do")
+                    || query_lower.contains("explain")
+                    || query_lower.contains("overview")
+                    || query_lower.contains("design")
+                    || query_lower.contains("pattern");
                 let is_onboarding = query_lower.contains("onboard")
-                    || query_lower.contains("walkthrough") || query_lower.contains("getting started")
-                    || query_lower.contains("what does") || query_lower.contains("what is");
-                let is_research = query_lower.contains("compare") || query_lower.contains("difference")
-                    || query_lower.contains("alternative") || query_lower.contains("tradeoff");
-                let is_repair = query_lower.contains("fix") || query_lower.contains("bug")
-                    || query_lower.contains("error") || query_lower.contains("crash")
-                    || query_lower.contains("line ") || query_lower.contains("debug");
+                    || query_lower.contains("walkthrough")
+                    || query_lower.contains("getting started")
+                    || query_lower.contains("what does")
+                    || query_lower.contains("what is");
+                let is_research = query_lower.contains("compare")
+                    || query_lower.contains("difference")
+                    || query_lower.contains("alternative")
+                    || query_lower.contains("tradeoff");
+                let is_repair = query_lower.contains("fix")
+                    || query_lower.contains("bug")
+                    || query_lower.contains("error")
+                    || query_lower.contains("crash")
+                    || query_lower.contains("line ")
+                    || query_lower.contains("debug");
 
-                let archetype_factor = if is_architecture { 0.85 }
-                    else if is_onboarding { 0.80 }
-                    else if is_research { 0.75 }
-                    else if is_repair { 0.30 }
-                    else { 0.50 };  // default: neutral
+                let archetype_factor = if is_architecture {
+                    0.85
+                } else if is_onboarding {
+                    0.80
+                } else if is_research {
+                    0.75
+                } else if is_repair {
+                    0.30
+                } else {
+                    0.50
+                }; // default: neutral
 
                 // Closed-loop modulation: adjust base via utilization feedback
                 let util_ratio = if self.full_util_ema > 0.01 {
                     (self.belief_util_ema / self.full_util_ema).clamp(0.3, 2.0)
                 } else {
-                    1.0  // no data yet, neutral
+                    1.0 // no data yet, neutral
                 };
 
                 // Online gradient step: shift base toward observed optimum
@@ -1740,7 +1967,7 @@ impl EntrolyEngine {
 
                 // Final factor = learned base × archetype modulation
                 self.ios_belief_info_factor = (self.base_belief_info_factor * archetype_factor
-                    / 0.50)  // normalize: archetype_factor=0.50 is neutral
+                    / 0.50) // normalize: archetype_factor=0.50 is neutral
                     .clamp(0.15, 0.90);
             }
 
@@ -1755,15 +1982,19 @@ impl EntrolyEngine {
                 let max_pin_budget = effective_budget * 40 / 100;
                 let mut pin_budget_used: u32 = 0;
                 // Build candidates with (fid, token_count, tpks_score)
-                let mut pin_candidates: Vec<(String, u32, f64)> = precision_file_ids.iter()
+                let mut pin_candidates: Vec<(String, u32, f64)> = precision_file_ids
+                    .iter()
                     .filter_map(|(fid, tpks)| {
-                        self.fragments.get(fid).map(|f| (fid.clone(), f.token_count, *tpks))
+                        self.fragments
+                            .get(fid)
+                            .map(|f| (fid.clone(), f.token_count, *tpks))
                     })
                     .collect();
                 // Sort by TPKS descending — pin highest-precision files first!
                 // Files matching 3 query terms in path get pinned before
                 // files matching only 1 term.
-                pin_candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                pin_candidates
+                    .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
                 for (fid, tc, _) in &pin_candidates {
                     if pin_budget_used + tc <= max_pin_budget {
                         pin_budget_used += tc;
@@ -1798,12 +2029,20 @@ impl EntrolyEngine {
             // ── Dependency-aware score boosting ──
             // First pass with basic knapsack to discover initial selection,
             // then compute dep boosts from that selection.
-            let result1 = knapsack_optimize(&frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature);
+            let result1 = knapsack_optimize(
+                &frags,
+                effective_budget,
+                &weights,
+                &feedback_mults,
+                self.gradient_temperature,
+            );
             // Store λ* for the REINFORCE backward pass — ensures forward/backward p_i are identical.
             self.last_lambda_star = result1.lambda_star;
             // Store ADGT signal — dual gap D(λ*)−primal from this forward pass.
             self.last_dual_gap = result1.dual_gap;
-            let initial_selected_ids: HashSet<String> = result1.selected_indices.iter()
+            let initial_selected_ids: HashSet<String> = result1
+                .selected_indices
+                .iter()
                 .map(|&i| frags[i].fragment_id.clone())
                 .collect();
             let dep_boosts = self.dep_graph.compute_dep_boosts(&initial_selected_ids);
@@ -1812,53 +2051,62 @@ impl EntrolyEngine {
             // For each unselected fragment, compute how much it "resonates" with
             // the initial selection. High resonance → the pair has historically
             // produced better LLM outputs together.
-            let resonance_bonuses: HashMap<String, f64> = if self.enable_resonance && !self.resonance_matrix.is_empty() {
-                let selected_refs: Vec<&str> = initial_selected_ids.iter().map(|s| s.as_str()).collect();
-                let candidate_refs: Vec<&str> = frags.iter()
-                    .filter(|f| !initial_selected_ids.contains(&f.fragment_id))
-                    .map(|f| f.fragment_id.as_str())
-                    .collect();
-                self.resonance_matrix.batch_resonance_bonuses(&candidate_refs, &selected_refs)
-            } else {
-                HashMap::new()
-            };
+            let resonance_bonuses: HashMap<String, f64> =
+                if self.enable_resonance && !self.resonance_matrix.is_empty() {
+                    let selected_refs: Vec<&str> =
+                        initial_selected_ids.iter().map(|s| s.as_str()).collect();
+                    let candidate_refs: Vec<&str> = frags
+                        .iter()
+                        .filter(|f| !initial_selected_ids.contains(&f.fragment_id))
+                        .map(|f| f.fragment_id.as_str())
+                        .collect();
+                    self.resonance_matrix
+                        .batch_resonance_bonuses(&candidate_refs, &selected_refs)
+                } else {
+                    HashMap::new()
+                };
 
             // ── Causal Context Graph: gravity + temporal bonuses ──
             // Information gravity: causally important fragments get a retrieval bonus.
             // Temporal chains: fragments enabled by previous selection get a bonus.
-            let causal_gravity: HashMap<String, f64> = if self.enable_causal && !self.causal_graph.is_empty() {
-                let candidate_refs: Vec<&str> = frags.iter()
-                    .map(|f| f.fragment_id.as_str())
-                    .collect();
-                self.causal_graph.gravity_bonuses(&candidate_refs)
-            } else {
-                HashMap::new()
-            };
-            let causal_temporal: HashMap<String, f64> = if self.enable_causal && !self.causal_graph.is_empty() {
-                let candidate_refs: Vec<&str> = frags.iter()
-                    .map(|f| f.fragment_id.as_str())
-                    .collect();
-                let prev_refs: Vec<&str> = self.prev_selected_ids.iter()
-                    .map(|s| s.as_str())
-                    .collect();
-                self.causal_graph.temporal_bonuses(&candidate_refs, &prev_refs)
-            } else {
-                HashMap::new()
-            };
+            let causal_gravity: HashMap<String, f64> =
+                if self.enable_causal && !self.causal_graph.is_empty() {
+                    let candidate_refs: Vec<&str> =
+                        frags.iter().map(|f| f.fragment_id.as_str()).collect();
+                    self.causal_graph.gravity_bonuses(&candidate_refs)
+                } else {
+                    HashMap::new()
+                };
+            let causal_temporal: HashMap<String, f64> =
+                if self.enable_causal && !self.causal_graph.is_empty() {
+                    let candidate_refs: Vec<&str> =
+                        frags.iter().map(|f| f.fragment_id.as_str()).collect();
+                    let prev_refs: Vec<&str> =
+                        self.prev_selected_ids.iter().map(|s| s.as_str()).collect();
+                    self.causal_graph
+                        .temporal_bonuses(&candidate_refs, &prev_refs)
+                } else {
+                    HashMap::new()
+                };
 
             // ── Coverage Estimator: capture semantic vs structural candidate sets ──
             // N₁ = semantic candidates (fragments with semantic_score > threshold)
             let semantic_threshold = 0.15;
-            let semantic_candidate_ids: HashSet<String> = frags.iter()
+            let semantic_candidate_ids: HashSet<String> = frags
+                .iter()
                 .filter(|f| f.semantic_score > semantic_threshold)
                 .map(|f| f.fragment_id.clone())
                 .collect();
             // N₂ = structural candidates (initial selection + dep boost targets)
-            let structural_candidate_ids: HashSet<String> = initial_selected_ids.iter().cloned()
+            let structural_candidate_ids: HashSet<String> = initial_selected_ids
+                .iter()
+                .cloned()
                 .chain(dep_boosts.keys().filter(|k| dep_boosts[*k] > 0.3).cloned())
                 .collect();
             // m = overlap
-            let candidate_overlap = semantic_candidate_ids.intersection(&structural_candidate_ids).count();
+            let candidate_overlap = semantic_candidate_ids
+                .intersection(&structural_candidate_ids)
+                .count();
             self.last_semantic_candidates = semantic_candidate_ids.len();
             self.last_structural_candidates = structural_candidate_ids.len();
             self.last_candidate_overlap = candidate_overlap;
@@ -1879,7 +2127,8 @@ impl EntrolyEngine {
                             // Apply as additive boost to semantic score, scaled by w_resonance.
                             // Positive resonance → boost, negative → suppress.
                             let resonance_effect = self.w_resonance * res_bonus;
-                            frag.semantic_score = (frag.semantic_score + resonance_effect).clamp(0.0, 1.0);
+                            frag.semantic_score =
+                                (frag.semantic_score + resonance_effect).clamp(0.0, 1.0);
                         }
                     }
                 }
@@ -1932,13 +2181,16 @@ impl EntrolyEngine {
                     match resolution {
                         Resolution::Full => final_indices.push(*idx),
                         Resolution::Skeleton => skeleton_indices.push(*idx),
-                        Resolution::Belief => skeleton_indices.push(*idx),    // Beliefs use alternative content like skeletons
+                        Resolution::Belief => skeleton_indices.push(*idx), // Beliefs use alternative content like skeletons
                         Resolution::Reference => skeleton_indices.push(*idx), // References handled like skeletons in output
                     }
                     ios_resolutions.insert(*idx, *resolution);
                 }
                 skeleton_tokens_used = ios_result.total_tokens.saturating_sub(
-                    final_indices.iter().map(|&i| frags[i].token_count).sum::<u32>()
+                    final_indices
+                        .iter()
+                        .map(|&i| frags[i].token_count)
+                        .sum::<u32>(),
                 );
                 ios_diversity_score = Some(ios_result.diversity_score);
 
@@ -1955,7 +2207,8 @@ impl EntrolyEngine {
                 // capture SEMANTIC relationships written by the BeliefCompiler.
                 {
                     let mut wiki_boosts: HashMap<usize, f64> = HashMap::new();
-                    let selected_set: HashSet<usize> = final_indices.iter()
+                    let selected_set: HashSet<usize> = final_indices
+                        .iter()
                         .chain(skeleton_indices.iter())
                         .copied()
                         .collect();
@@ -1968,9 +2221,12 @@ impl EntrolyEngine {
                                     let link_lower = link.to_lowercase();
                                     // Match link target against fragment source stems
                                     for (j, f) in frags.iter().enumerate() {
-                                        if selected_set.contains(&j) { continue; }
+                                        if selected_set.contains(&j) {
+                                            continue;
+                                        }
                                         // Extract filename stem from source path
-                                        let stem = f.source
+                                        let stem = f
+                                            .source
                                             .rsplit(&['/', '\\'][..])
                                             .next()
                                             .unwrap_or(&f.source)
@@ -1978,7 +2234,9 @@ impl EntrolyEngine {
                                             .next_back()
                                             .unwrap_or("")
                                             .to_lowercase();
-                                        if stem == link_lower || f.source.to_lowercase().contains(&link_lower) {
+                                        if stem == link_lower
+                                            || f.source.to_lowercase().contains(&link_lower)
+                                        {
                                             let entry = wiki_boosts.entry(j).or_insert(0.0);
                                             *entry = (*entry + 0.15).min(0.45); // cap at 0.45
                                         }
@@ -1991,7 +2249,8 @@ impl EntrolyEngine {
                     // Apply wiki-link boosts to unselected fragments
                     for (&idx, &boost) in &wiki_boosts {
                         if boost > 0.0 {
-                            frags[idx].semantic_score = (frags[idx].semantic_score + boost).min(1.0);
+                            frags[idx].semantic_score =
+                                (frags[idx].semantic_score + boost).min(1.0);
                         }
                     }
                 }
@@ -2011,9 +2270,13 @@ impl EntrolyEngine {
                 // After materialization, actual skeleton_token_count replaces the
                 // estimate. Channel Coding trailing pass fills any budget gap.
                 for &(idx, ref resolution) in &ios_result.selections {
-                    if *resolution == Resolution::Skeleton && frags[idx].skeleton_content.is_none() {
-                        if let Some(skel) = skeleton::extract_skeleton(&frags[idx].content, &frags[idx].source) {
-                            let skel_non_alpha = skel.chars().filter(|c| !c.is_alphabetic()).count();
+                    if *resolution == Resolution::Skeleton && frags[idx].skeleton_content.is_none()
+                    {
+                        if let Some(skel) =
+                            skeleton::extract_skeleton(&frags[idx].content, &frags[idx].source)
+                        {
+                            let skel_non_alpha =
+                                skel.chars().filter(|c| !c.is_alphabetic()).count();
                             let skel_r = skel_non_alpha as f64 / skel.len().max(1) as f64;
                             let skel_cpt = if skel_r > 0.4 { 5.0 } else { 4.0 };
                             let skel_tc = (skel.len() as f64 / skel_cpt).max(1.0) as u32;
@@ -2038,20 +2301,32 @@ impl EntrolyEngine {
                 // making apply_prism_rl_update's p_i consistent with the IOS forward pass.
                 if self.gradient_temperature >= 0.05 {
                     // Build scored slice from boosted_frags for the bisection (mirror IOS inputs)
-                    let ios_scored: Vec<(usize, f64)> = boosted_frags.iter().enumerate()
+                    let ios_scored: Vec<(usize, f64)> = boosted_frags
+                        .iter()
+                        .enumerate()
                         .filter_map(|(i, f)| {
-                            if f.is_pinned { return None; }
+                            if f.is_pinned {
+                                return None;
+                            }
                             let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-                            let s = (weights.recency   * f.recency_score
-                                   + weights.frequency * f.frequency_score
-                                   + weights.semantic  * f.semantic_score
-                                   + weights.entropy   * f.entropy_score) * fm.max(0.01);
-                            if s > 0.0 && f.token_count > 0 { Some((i, s)) } else { None }
+                            let s = (weights.recency * f.recency_score
+                                + weights.frequency * f.frequency_score
+                                + weights.semantic * f.semantic_score
+                                + weights.entropy * f.entropy_score)
+                                * fm.max(0.01);
+                            if s > 0.0 && f.token_count > 0 {
+                                Some((i, s))
+                            } else {
+                                None
+                            }
                         })
                         .collect();
                     let ios_tokens_used = ios_result.total_tokens;
                     self.last_lambda_star = compute_lambda_star(
-                        &ios_scored, &boosted_frags, ios_tokens_used, self.gradient_temperature
+                        &ios_scored,
+                        &boosted_frags,
+                        ios_tokens_used,
+                        self.gradient_temperature,
                     );
                 }
 
@@ -2059,7 +2334,8 @@ impl EntrolyEngine {
                     && !final_indices.is_empty()
                     && should_explore
                 {
-                    let selected_all: HashSet<usize> = final_indices.iter()
+                    let selected_all: HashSet<usize> = final_indices
+                        .iter()
                         .chain(skeleton_indices.iter())
                         .copied()
                         .collect();
@@ -2072,8 +2348,18 @@ impl EntrolyEngine {
                         let mut min_pos = None;
                         for (pos, &idx) in final_indices.iter().enumerate() {
                             if !frags[idx].is_pinned {
-                                let fm = feedback_mults.get(&frags[idx].fragment_id).copied().unwrap_or(1.0);
-                                let rel = compute_relevance(&frags[idx], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                                let fm = feedback_mults
+                                    .get(&frags[idx].fragment_id)
+                                    .copied()
+                                    .unwrap_or(1.0);
+                                let rel = compute_relevance(
+                                    &frags[idx],
+                                    self.w_recency,
+                                    self.w_frequency,
+                                    self.w_semantic,
+                                    self.w_entropy,
+                                    fm,
+                                );
                                 if rel < min_rel {
                                     min_rel = rel;
                                     min_pos = Some(pos);
@@ -2084,7 +2370,8 @@ impl EntrolyEngine {
                         if let Some(pos) = min_pos {
                             // Pick exploration target: random when using rate-based exploration,
                             // UCB-max when using threshold-based exploration.
-                            let explore_idx = if self.exploration_rate > 0.0 && unselected.len() > 1 {
+                            let explore_idx = if self.exploration_rate > 0.0 && unselected.len() > 1
+                            {
                                 // xorshift64 PRNG for varied exploration target selection
                                 let mut x = self.rng_state;
                                 x ^= x << 13;
@@ -2095,11 +2382,16 @@ impl EntrolyEngine {
                                 unselected[pick]
                             } else {
                                 // RAVEN-UCB: pick unselected fragment with highest UCB score
-                                *unselected.iter()
+                                *unselected
+                                    .iter()
                                     .max_by(|&&a, &&b| {
-                                        let ucb_a = self.feedback.ucb_score(&frags[a].fragment_id, alpha_0);
-                                        let ucb_b = self.feedback.ucb_score(&frags[b].fragment_id, alpha_0);
-                                        ucb_a.partial_cmp(&ucb_b).unwrap_or(std::cmp::Ordering::Equal)
+                                        let ucb_a =
+                                            self.feedback.ucb_score(&frags[a].fragment_id, alpha_0);
+                                        let ucb_b =
+                                            self.feedback.ucb_score(&frags[b].fragment_id, alpha_0);
+                                        ucb_a
+                                            .partial_cmp(&ucb_b)
+                                            .unwrap_or(std::cmp::Ordering::Equal)
                                     })
                                     .unwrap()
                             };
@@ -2117,13 +2409,20 @@ impl EntrolyEngine {
                 // Legacy Path: Standard knapsack + exploration + skeleton pass
                 selection_method = "legacy_knapsack";
                 let result = if dep_boosts.values().any(|&b| b > 0.3) {
-                    knapsack_optimize(&boosted_frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature)
+                    knapsack_optimize(
+                        &boosted_frags,
+                        effective_budget,
+                        &weights,
+                        &feedback_mults,
+                        self.gradient_temperature,
+                    )
                 } else {
                     result1
                 };
                 final_indices = result.selected_indices.clone();
                 // RAVEN-UCB Exploration (legacy path)
-                if frags.len() > final_indices.len() && !final_indices.is_empty() && should_explore {
+                if frags.len() > final_indices.len() && !final_indices.is_empty() && should_explore
+                {
                     let selected_set: HashSet<usize> = final_indices.iter().copied().collect();
                     let unselected: Vec<usize> = (0..frags.len())
                         .filter(|i| !selected_set.contains(i) && !frags[*i].is_pinned)
@@ -2133,18 +2432,38 @@ impl EntrolyEngine {
                         let mut min_pos = None;
                         for (pos, &idx) in final_indices.iter().enumerate() {
                             if !frags[idx].is_pinned {
-                                let fm = feedback_mults.get(&frags[idx].fragment_id).copied().unwrap_or(1.0);
-                                let rel = compute_relevance(&frags[idx], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
-                                if rel < min_rel { min_rel = rel; min_pos = Some(pos); }
+                                let fm = feedback_mults
+                                    .get(&frags[idx].fragment_id)
+                                    .copied()
+                                    .unwrap_or(1.0);
+                                let rel = compute_relevance(
+                                    &frags[idx],
+                                    self.w_recency,
+                                    self.w_frequency,
+                                    self.w_semantic,
+                                    self.w_entropy,
+                                    fm,
+                                );
+                                if rel < min_rel {
+                                    min_rel = rel;
+                                    min_pos = Some(pos);
+                                }
                             }
                         }
                         if let Some(pos) = min_pos {
-                            let explore_idx = *unselected.iter()
+                            let explore_idx = *unselected
+                                .iter()
                                 .max_by(|&&a, &&b| {
-                                    self.feedback.ucb_score(&frags[a].fragment_id, alpha_0)
-                                        .partial_cmp(&self.feedback.ucb_score(&frags[b].fragment_id, alpha_0))
+                                    self.feedback
+                                        .ucb_score(&frags[a].fragment_id, alpha_0)
+                                        .partial_cmp(
+                                            &self
+                                                .feedback
+                                                .ucb_score(&frags[b].fragment_id, alpha_0),
+                                        )
                                         .unwrap_or(std::cmp::Ordering::Equal)
-                                }).unwrap();
+                                })
+                                .unwrap();
                             let old_tokens = frags[final_indices[pos]].token_count;
                             let new_tokens = frags[explore_idx].token_count;
                             if new_tokens <= old_tokens + 100 {
@@ -2157,18 +2476,31 @@ impl EntrolyEngine {
                 }
 
                 // Skeleton Substitution pass
-                let full_tokens_legacy: u32 = final_indices.iter().map(|&i| frags[i].token_count).sum();
+                let full_tokens_legacy: u32 =
+                    final_indices.iter().map(|&i| frags[i].token_count).sum();
                 let selected_set: HashSet<usize> = final_indices.iter().copied().collect();
                 let mut unselected_with_skel: Vec<(usize, f64)> = (0..frags.len())
                     .filter(|i| !selected_set.contains(i))
                     .filter(|i| frags[*i].skeleton_token_count.is_some())
                     .map(|i| {
-                        let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                        let rel = compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                        let fm = feedback_mults
+                            .get(&frags[i].fragment_id)
+                            .copied()
+                            .unwrap_or(1.0);
+                        let rel = compute_relevance(
+                            &frags[i],
+                            self.w_recency,
+                            self.w_frequency,
+                            self.w_semantic,
+                            self.w_entropy,
+                            fm,
+                        );
                         (i, rel)
                     })
                     .collect();
-                unselected_with_skel.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                unselected_with_skel.sort_unstable_by(|a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                });
 
                 let mut skel_budget = effective_budget.saturating_sub(full_tokens_legacy);
                 for (idx, _rel) in unselected_with_skel {
@@ -2190,7 +2522,10 @@ impl EntrolyEngine {
             // double-inclusion (a fragment at skeleton resolution must not
             // be re-added at full resolution).
             if self.enable_channel_coding {
-                let used_full: u32 = final_indices.iter().map(|&i| boosted_frags[i].token_count).sum();
+                let used_full: u32 = final_indices
+                    .iter()
+                    .map(|&i| boosted_frags[i].token_count)
+                    .sum();
                 let used_total = used_full + skeleton_tokens_used;
                 let token_gap = effective_budget.saturating_sub(used_total);
                 if token_gap > 0 {
@@ -2228,10 +2563,10 @@ impl EntrolyEngine {
                 }
             }
 
-
             // ── Context Sufficiency Scoring ──
             // What fraction of referenced symbols have definitions in selected context?
-            let selected_id_set: HashSet<String> = final_indices.iter()
+            let selected_id_set: HashSet<String> = final_indices
+                .iter()
                 .chain(skeleton_indices.iter())
                 .map(|&i| frags[i].fragment_id.clone())
                 .collect();
@@ -2243,16 +2578,29 @@ impl EntrolyEngine {
             // Based on SimHash Divergence Ratio (SDR).
             let contradictions_evicted;
             let final_indices = if self.enable_channel_coding {
-                let pre_relevances: Vec<f64> = final_indices.iter()
+                let pre_relevances: Vec<f64> = final_indices
+                    .iter()
                     .map(|&i| {
-                        let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                        compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
+                        let fm = feedback_mults
+                            .get(&frags[i].fragment_id)
+                            .copied()
+                            .unwrap_or(1.0);
+                        compute_relevance(
+                            &frags[i],
+                            self.w_recency,
+                            self.w_frequency,
+                            self.w_semantic,
+                            self.w_entropy,
+                            fm,
+                        )
                     })
                     .collect();
                 let (filtered, report) = channel::contradiction_guard(
-                    &frags, &final_indices, &pre_relevances,
-                    0.25,  // sdr_threshold
-                    0.60,  // structural_threshold
+                    &frags,
+                    &final_indices,
+                    &pre_relevances,
+                    0.25, // sdr_threshold
+                    0.60, // structural_threshold
                 );
                 contradictions_evicted = report.evicted_count;
                 if report.pairs_found > 0 {
@@ -2272,17 +2620,34 @@ impl EntrolyEngine {
             let ordered_indices = if self.enable_channel_coding {
                 // Channel Coding: attention-aware semantic interleaving
                 // Respects causal ordering (defs before refs) + U-shaped attention
-                let relevances: Vec<f64> = final_indices.iter()
+                let relevances: Vec<f64> = final_indices
+                    .iter()
                     .map(|&i| {
-                        let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                        compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
+                        let fm = feedback_mults
+                            .get(&frags[i].fragment_id)
+                            .copied()
+                            .unwrap_or(1.0);
+                        compute_relevance(
+                            &frags[i],
+                            self.w_recency,
+                            self.w_frequency,
+                            self.w_semantic,
+                            self.w_entropy,
+                            fm,
+                        )
                     })
                     .collect();
-                let interleaved = channel::semantic_interleave(&frags, &final_indices, &relevances, &self.dep_graph);
+                let interleaved = channel::semantic_interleave(
+                    &frags,
+                    &final_indices,
+                    &relevances,
+                    &self.dep_graph,
+                );
 
                 // Bookend Attention Calibration: within each causal level,
                 // place highest-importance fragments at U-shaped attention peaks.
-                let rel_map: std::collections::HashMap<usize, f64> = final_indices.iter()
+                let rel_map: std::collections::HashMap<usize, f64> = final_indices
+                    .iter()
                     .zip(relevances.iter())
                     .map(|(&idx, &rel)| (idx, rel))
                     .collect();
@@ -2298,11 +2663,29 @@ impl EntrolyEngine {
                     let dep_count_b = self.dep_graph.reverse_deps(&fb.fragment_id).len();
                     let fm_a = feedback_mults.get(&fa.fragment_id).copied().unwrap_or(1.0);
                     let fm_b = feedback_mults.get(&fb.fragment_id).copied().unwrap_or(1.0);
-                    let rel_a = compute_relevance(fa, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_a);
-                    let rel_b = compute_relevance(fb, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_b);
-                    let prio_a = compute_ordering_priority(rel_a, crit_a, fa.is_pinned, dep_count_a);
-                    let prio_b = compute_ordering_priority(rel_b, crit_b, fb.is_pinned, dep_count_b);
-                    prio_b.partial_cmp(&prio_a).unwrap_or(std::cmp::Ordering::Equal)
+                    let rel_a = compute_relevance(
+                        fa,
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm_a,
+                    );
+                    let rel_b = compute_relevance(
+                        fb,
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm_b,
+                    );
+                    let prio_a =
+                        compute_ordering_priority(rel_a, crit_a, fa.is_pinned, dep_count_a);
+                    let prio_b =
+                        compute_ordering_priority(rel_b, crit_b, fb.is_pinned, dep_count_b);
+                    prio_b
+                        .partial_cmp(&prio_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 ordered
             };
@@ -2332,10 +2715,20 @@ impl EntrolyEngine {
             // ── Build Explainability Snapshot ──
             let mut fragment_scores: Vec<FragmentScore> = Vec::with_capacity(frags.len());
             for frag in frags.iter() {
-                let fm = feedback_mults.get(&frag.fragment_id).copied().unwrap_or(1.0);
+                let fm = feedback_mults
+                    .get(&frag.fragment_id)
+                    .copied()
+                    .unwrap_or(1.0);
                 let db = dep_boosts.get(&frag.fragment_id).copied().unwrap_or(0.0);
                 let crit = file_criticality(&frag.source);
-                let composite = compute_relevance(frag, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                let composite = compute_relevance(
+                    frag,
+                    self.w_recency,
+                    self.w_frequency,
+                    self.w_semantic,
+                    self.w_entropy,
+                    fm,
+                );
                 let is_selected = selected_id_set.contains(&frag.fragment_id);
                 let is_explored = explored_ids.contains(&frag.fragment_id);
 
@@ -2379,16 +2772,20 @@ impl EntrolyEngine {
             // context_efficiency = sum(entropy_i * actual_tokens_i) / total_tokens
             // Uses resolution-aware token counts to match actual context window.
             let context_efficiency = if final_tokens > 0 {
-                let weighted_entropy: f64 = final_indices.iter()
+                let weighted_entropy: f64 = final_indices
+                    .iter()
                     .map(|&i| frags[i].entropy_score * frags[i].token_count as f64)
                     .sum::<f64>()
-                    + skeleton_indices.iter()
+                    + skeleton_indices
+                        .iter()
                         .map(|&i| {
                             let actual_tc = match ios_resolutions.get(&i) {
                                 Some(&Resolution::Reference) => {
                                     (frags[i].source.len() as u32 / 4).clamp(3, 10)
                                 }
-                                _ => frags[i].skeleton_token_count.unwrap_or(frags[i].token_count),
+                                _ => frags[i]
+                                    .skeleton_token_count
+                                    .unwrap_or(frags[i].token_count),
                             };
                             frags[i].entropy_score * actual_tc as f64
                         })
@@ -2418,16 +2815,34 @@ impl EntrolyEngine {
             let py_result = PyDict::new(py);
             py_result.set_item("method", selection_method)?;
             py_result.set_item("total_tokens", final_tokens)?;
-            py_result.set_item("context_efficiency", (context_efficiency * 10000.0).round() / 10000.0)?;
+            py_result.set_item(
+                "context_efficiency",
+                (context_efficiency * 10000.0).round() / 10000.0,
+            )?;
             // Compute total relevance from selected fragments
-            let total_rel: f64 = final_indices.iter().chain(skeleton_indices.iter())
+            let total_rel: f64 = final_indices
+                .iter()
+                .chain(skeleton_indices.iter())
                 .map(|&i| {
-                    let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                    compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
+                    let fm = feedback_mults
+                        .get(&frags[i].fragment_id)
+                        .copied()
+                        .unwrap_or(1.0);
+                    compute_relevance(
+                        &frags[i],
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm,
+                    )
                 })
                 .sum();
             py_result.set_item("total_relevance", (total_rel * 10000.0).round() / 10000.0)?;
-            py_result.set_item("selected_count", ordered_indices.len() + skeleton_indices.len())?;
+            py_result.set_item(
+                "selected_count",
+                ordered_indices.len() + skeleton_indices.len(),
+            )?;
             py_result.set_item("skeleton_count", skeleton_indices.len())?;
             py_result.set_item("skeleton_tokens", skeleton_tokens_used)?;
             py_result.set_item("tokens_saved", saved)?;
@@ -2435,13 +2850,22 @@ impl EntrolyEngine {
             py_result.set_item("user_budget", token_budget)?;
             py_result.set_item("recommended_budget", recommended_budget)?;
             py_result.set_item("task_type", task_type_label.as_str())?;
-            py_result.set_item("budget_utilization",
-                if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 }
+            py_result.set_item(
+                "budget_utilization",
+                if effective_budget > 0 {
+                    (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0
+                } else {
+                    0.0
+                },
             )?;
             py_result.set_item("sufficiency", (sufficiency * 10000.0).round() / 10000.0)?;
             if sufficiency < 0.7 {
-                py_result.set_item("sufficiency_warning",
-                    format!("Only {:.0}% of referenced symbols have definitions in context", sufficiency * 100.0)
+                py_result.set_item(
+                    "sufficiency_warning",
+                    format!(
+                        "Only {:.0}% of referenced symbols have definitions in context",
+                        sufficiency * 100.0
+                    ),
                 )?;
             }
             if !explored_ids.is_empty() {
@@ -2464,16 +2888,28 @@ impl EntrolyEngine {
                 self.last_structural_candidates,
                 self.last_candidate_overlap,
             );
-            py_result.set_item("coverage", (coverage_est.coverage * 10000.0).round() / 10000.0)?;
-            py_result.set_item("coverage_confidence", (coverage_est.confidence * 10000.0).round() / 10000.0)?;
+            py_result.set_item(
+                "coverage",
+                (coverage_est.coverage * 10000.0).round() / 10000.0,
+            )?;
+            py_result.set_item(
+                "coverage_confidence",
+                (coverage_est.confidence * 10000.0).round() / 10000.0,
+            )?;
             py_result.set_item("coverage_gap", coverage_est.estimated_gap.round())?;
             py_result.set_item("coverage_risk", coverage_est.risk_level)?;
 
             // ── Resonance diagnostics ──
             if self.enable_resonance {
                 py_result.set_item("resonance_pairs", self.resonance_matrix.len())?;
-                py_result.set_item("resonance_strength", (self.resonance_matrix.mean_strength() * 10000.0).round() / 10000.0)?;
-                py_result.set_item("w_resonance", (self.w_resonance * 10000.0).round() / 10000.0)?;
+                py_result.set_item(
+                    "resonance_strength",
+                    (self.resonance_matrix.mean_strength() * 10000.0).round() / 10000.0,
+                )?;
+                py_result.set_item(
+                    "w_resonance",
+                    (self.w_resonance * 10000.0).round() / 10000.0,
+                )?;
             }
 
             // ── Causal Context Graph diagnostics ──
@@ -2482,7 +2918,10 @@ impl EntrolyEngine {
                 py_result.set_item("causal_tracked", cs.tracked_fragments)?;
                 py_result.set_item("causal_interventional", cs.interventional_fragments)?;
                 py_result.set_item("causal_gravity_sources", cs.gravity_sources)?;
-                py_result.set_item("causal_mean_mass", (cs.mean_causal_mass * 10000.0).round() / 10000.0)?;
+                py_result.set_item(
+                    "causal_mean_mass",
+                    (cs.mean_causal_mass * 10000.0).round() / 10000.0,
+                )?;
                 py_result.set_item("causal_temporal_links", cs.temporal_links)?;
             }
 
@@ -2496,9 +2935,19 @@ impl EntrolyEngine {
                 d.set_item("token_count", f.token_count)?;
                 d.set_item("variant", "full")?;
                 let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-                let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                let rel = compute_relevance(
+                    f,
+                    self.w_recency,
+                    self.w_frequency,
+                    self.w_semantic,
+                    self.w_entropy,
+                    fm,
+                );
                 d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
-                d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
+                d.set_item(
+                    "entropy_score",
+                    (f.entropy_score * 10000.0).round() / 10000.0,
+                )?;
                 let preview = if f.content.len() > 100 {
                     let mut end = 100;
                     while end < f.content.len() && !f.content.is_char_boundary(end) {
@@ -2515,7 +2964,10 @@ impl EntrolyEngine {
             // Append skeleton/reference fragments (lower priority, after full fragments)
             for &idx in &skeleton_indices {
                 let f = &frags[idx];
-                let resolution = ios_resolutions.get(&idx).copied().unwrap_or(Resolution::Skeleton);
+                let resolution = ios_resolutions
+                    .get(&idx)
+                    .copied()
+                    .unwrap_or(Resolution::Skeleton);
                 let variant_str = resolution.as_str();
 
                 if resolution == Resolution::Reference {
@@ -2527,9 +2979,19 @@ impl EntrolyEngine {
                     d.set_item("token_count", ref_tokens)?;
                     d.set_item("variant", variant_str)?;
                     let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-                    let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                    let rel = compute_relevance(
+                        f,
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm,
+                    );
                     d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
-                    d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
+                    d.set_item(
+                        "entropy_score",
+                        (f.entropy_score * 10000.0).round() / 10000.0,
+                    )?;
                     d.set_item("preview", format!("[ref] {}", &f.source))?;
                     d.set_item("content", format!("[ref] {}", &f.source))?;
                     selected_list.append(d)?;
@@ -2538,19 +3000,33 @@ impl EntrolyEngine {
                     // This is the Hierarchical Context Synthesis bridge:
                     //   200 tokens of belief REPLACE 800 tokens of code,
                     //   saving ~600 tokens per fragment with near-zero info loss.
-                    if let (Some(ref belief), Some(belief_tc)) = (&f.belief_content, f.belief_token_count) {
+                    if let (Some(ref belief), Some(belief_tc)) =
+                        (&f.belief_content, f.belief_token_count)
+                    {
                         let d = PyDict::new(py);
                         d.set_item("id", &f.fragment_id)?;
                         d.set_item("source", &f.source)?;
                         d.set_item("token_count", belief_tc)?;
                         d.set_item("variant", "belief")?;
                         let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-                        let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                        let rel = compute_relevance(
+                            f,
+                            self.w_recency,
+                            self.w_frequency,
+                            self.w_semantic,
+                            self.w_entropy,
+                            fm,
+                        );
                         d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
-                        d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
+                        d.set_item(
+                            "entropy_score",
+                            (f.entropy_score * 10000.0).round() / 10000.0,
+                        )?;
                         let preview = if belief.len() > 100 {
                             let mut end = 100;
-                            while end < belief.len() && !belief.is_char_boundary(end) { end += 1; }
+                            while end < belief.len() && !belief.is_char_boundary(end) {
+                                end += 1;
+                            }
                             format!("{}...", &belief[..end])
                         } else {
                             belief.clone()
@@ -2563,16 +3039,28 @@ impl EntrolyEngine {
                     // this fragment was selected at Belief resolution but no vault
                     // belief was attached. The channel coding trailing pass
                     // will fill the gap with other fragments.
-                } else if let (Some(ref skel_content), Some(skel_tc)) = (&f.skeleton_content, f.skeleton_token_count) {
+                } else if let (Some(ref skel_content), Some(skel_tc)) =
+                    (&f.skeleton_content, f.skeleton_token_count)
+                {
                     let d = PyDict::new(py);
                     d.set_item("id", &f.fragment_id)?;
                     d.set_item("source", &f.source)?;
                     d.set_item("token_count", skel_tc)?;
                     d.set_item("variant", variant_str)?;
                     let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-                    let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                    let rel = compute_relevance(
+                        f,
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm,
+                    );
                     d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
-                    d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
+                    d.set_item(
+                        "entropy_score",
+                        (f.entropy_score * 10000.0).round() / 10000.0,
+                    )?;
                     let preview = if skel_content.len() > 100 {
                         let mut end = 100;
                         while end < skel_content.len() && !skel_content.is_char_boundary(end) {
@@ -2594,7 +3082,11 @@ impl EntrolyEngine {
             py_result.set_item("cache_eligible", cache_eligible)?;
             py_result.set_item(
                 "optimization_policy",
-                if explored_ids.is_empty() { "exploit" } else { "explore" },
+                if explored_ids.is_empty() {
+                    "exploit"
+                } else {
+                    "explore"
+                },
             )?;
 
             // ── EGSC Cache: store the optimization result for future lookups ──
@@ -2602,17 +3094,20 @@ impl EntrolyEngine {
             // selections are learning signals, not reusable answers.
             if cache_eligible {
                 let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
-                let entropies: Vec<(f64, u32)> = final_indices.iter()
+                let entropies: Vec<(f64, u32)> = final_indices
+                    .iter()
                     .chain(skeleton_indices.iter())
                     .map(|&i| (frags[i].entropy_score, frags[i].token_count))
                     .collect();
                 // Serialize a compact result snapshot for the cache.
                 // CRITICAL: include selected_ids so we can reconstruct
                 // the full selected_fragments list on cache hit.
-                let selected_ids_json: Vec<serde_json::Value> = ordered_indices.iter()
+                let selected_ids_json: Vec<serde_json::Value> = ordered_indices
+                    .iter()
                     .map(|&i| serde_json::json!({"id": frags[i].fragment_id, "variant": "full"}))
                     .chain(skeleton_indices.iter().map(|&i| {
-                        let variant = ios_resolutions.get(&i)
+                        let variant = ios_resolutions
+                            .get(&i)
                             .map(|r| r.as_str())
                             .unwrap_or("skeleton");
                         serde_json::json!({"id": frags[i].fragment_id, "variant": variant})
@@ -2634,15 +3129,21 @@ impl EntrolyEngine {
                 });
                 let response_json = cache_snapshot.to_string();
                 self.egsc_cache.store_with_budget(
-                    &query, current_frag_ids, &entropies,
-                    response_json, final_tokens, self.current_turn, effective_budget,
+                    &query,
+                    current_frag_ids,
+                    &entropies,
+                    response_json,
+                    final_tokens,
+                    self.current_turn,
+                    effective_budget,
                 );
             }
 
             // ── Causal Context Graph: store selected/explored for feedback path ──
             // These are used by record_success/failure/reward to build CausalTraces.
             if self.enable_causal {
-                let all_selected: Vec<String> = ordered_indices.iter()
+                let all_selected: Vec<String> = ordered_indices
+                    .iter()
                     .chain(skeleton_indices.iter())
                     .map(|&i| frags[i].fragment_id.clone())
                     .collect();
@@ -2673,15 +3174,16 @@ impl EntrolyEngine {
 
             // Resolve slots → fragments, compute composite scores
             let mut scored: Vec<(&ContextFragment, f64)> = if !candidates.is_empty() {
-                candidates.iter()
+                candidates
+                    .iter()
                     .filter_map(|&slot| {
                         let frag_id = self.fragment_slot_ids.get(slot)?;
                         self.fragments.get(frag_id)
                     })
                     .map(|f| {
                         let dist = hamming_distance(query_fp, f.simhash);
-                        let fm   = self.feedback.learned_value(&f.fragment_id);
-                        let rel  = self.context_scorer.score(
+                        let fm = self.feedback.learned_value(&f.fragment_id);
+                        let rel = self.context_scorer.score(
                             dist,
                             f.recency_score,
                             f.entropy_score,
@@ -2693,11 +3195,12 @@ impl EntrolyEngine {
                     .collect()
             } else {
                 // Cold-start fallback: O(N) brute force
-                self.fragments.values()
+                self.fragments
+                    .values()
                     .map(|f| {
                         let dist = hamming_distance(query_fp, f.simhash);
-                        let fm   = self.feedback.learned_value(&f.fragment_id);
-                        let rel  = self.context_scorer.score(
+                        let fm = self.feedback.learned_value(&f.fragment_id);
+                        let rel = self.context_scorer.score(
                             dist,
                             f.recency_score,
                             f.entropy_score,
@@ -2738,13 +3241,18 @@ impl EntrolyEngine {
             let avg_entropy = if self.fragments.is_empty() {
                 0.0
             } else {
-                self.fragments.values().map(|f| f.entropy_score).sum::<f64>()
+                self.fragments
+                    .values()
+                    .map(|f| f.entropy_score)
+                    .sum::<f64>()
                     / self.fragments.len() as f64
             };
             let pinned = self.fragments.values().filter(|f| f.is_pinned).count();
             let feedback_observations = self.feedback.total_observations();
             let adaptive_exploration_rate = self.feedback.adaptive_exploration_rate(2.0);
-            let total_exploitations = self.total_optimizations.saturating_sub(self.total_explorations);
+            let total_exploitations = self
+                .total_optimizations
+                .saturating_sub(self.total_explorations);
 
             let result = PyDict::new(py);
 
@@ -2761,8 +3269,9 @@ impl EntrolyEngine {
             savings.set_item("total_duplicates_caught", self.total_duplicates_caught)?;
             savings.set_item("total_optimizations", self.total_optimizations)?;
             savings.set_item("total_fragments_ingested", self.total_fragments_ingested)?;
-            savings.set_item("estimated_cost_saved_usd",
-                (self.total_tokens_saved as f64 * 0.000003 * 10000.0).round() / 10000.0
+            savings.set_item(
+                "estimated_cost_saved_usd",
+                (self.total_tokens_saved as f64 * 0.000003 * 10000.0).round() / 10000.0,
             )?;
             result.set_item("savings", savings)?;
 
@@ -2772,15 +3281,23 @@ impl EntrolyEngine {
             result.set_item("dedup", dedup)?;
 
             let policy = PyDict::new(py);
-            policy.set_item("configured_exploration_rate", (self.exploration_rate * 10000.0).round() / 10000.0)?;
-            policy.set_item("adaptive_exploration_rate", (adaptive_exploration_rate * 10000.0).round() / 10000.0)?;
+            policy.set_item(
+                "configured_exploration_rate",
+                (self.exploration_rate * 10000.0).round() / 10000.0,
+            )?;
+            policy.set_item(
+                "adaptive_exploration_rate",
+                (adaptive_exploration_rate * 10000.0).round() / 10000.0,
+            )?;
             policy.set_item("feedback_observations", feedback_observations)?;
             policy.set_item("total_explorations", self.total_explorations)?;
             policy.set_item("total_exploitations", total_exploitations)?;
             policy.set_item(
                 "explore_ratio",
                 if self.total_optimizations > 0 {
-                    (self.total_explorations as f64 / self.total_optimizations as f64 * 10000.0).round() / 10000.0
+                    (self.total_explorations as f64 / self.total_optimizations as f64 * 10000.0)
+                        .round()
+                        / 10000.0
                 } else {
                     0.0
                 },
@@ -2788,7 +3305,8 @@ impl EntrolyEngine {
             policy.set_item(
                 "exploit_ratio",
                 if self.total_optimizations > 0 {
-                    (total_exploitations as f64 / self.total_optimizations as f64 * 10000.0).round() / 10000.0
+                    (total_exploitations as f64 / self.total_optimizations as f64 * 10000.0).round()
+                        / 10000.0
                 } else {
                     0.0
                 },
@@ -2800,13 +3318,28 @@ impl EntrolyEngine {
             // Without this, there's no way to verify weights are actually changing.
             let prism = PyDict::new(py);
             prism.set_item("w_recency", (self.w_recency * 10000.0).round() / 10000.0)?;
-            prism.set_item("w_frequency", (self.w_frequency * 10000.0).round() / 10000.0)?;
+            prism.set_item(
+                "w_frequency",
+                (self.w_frequency * 10000.0).round() / 10000.0,
+            )?;
             prism.set_item("w_semantic", (self.w_semantic * 10000.0).round() / 10000.0)?;
             prism.set_item("w_entropy", (self.w_entropy * 10000.0).round() / 10000.0)?;
-            prism.set_item("gradient_temperature", (self.gradient_temperature * 10000.0).round() / 10000.0)?;
-            prism.set_item("reward_baseline_ema", (self.reward_baseline_ema * 10000.0).round() / 10000.0)?;
-            prism.set_item("gradient_norm_ema", (self.gradient_norm_ema * 10000.0).round() / 10000.0)?;
-            prism.set_item("condition_number", (self.prism_optimizer.condition_number() * 100.0).round() / 100.0)?;
+            prism.set_item(
+                "gradient_temperature",
+                (self.gradient_temperature * 10000.0).round() / 10000.0,
+            )?;
+            prism.set_item(
+                "reward_baseline_ema",
+                (self.reward_baseline_ema * 10000.0).round() / 10000.0,
+            )?;
+            prism.set_item(
+                "gradient_norm_ema",
+                (self.gradient_norm_ema * 10000.0).round() / 10000.0,
+            )?;
+            prism.set_item(
+                "condition_number",
+                (self.prism_optimizer.condition_number() * 100.0).round() / 100.0,
+            )?;
             result.set_item("prism", prism)?;
 
             // EGSC Cache stats — exposed to Python for monitoring and debugging
@@ -2823,30 +3356,73 @@ impl EntrolyEngine {
             cache_dict.set_item("rejections", cs.total_rejections)?;
             cache_dict.set_item("evictions", cs.total_evictions)?;
             cache_dict.set_item("invalidations", cs.total_invalidations)?;
-            cache_dict.set_item("admission_rate", (cs.admission_rate * 10000.0).round() / 10000.0)?;
-            cache_dict.set_item("entropy_threshold", (cs.entropy_threshold * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item(
+                "admission_rate",
+                (cs.admission_rate * 10000.0).round() / 10000.0,
+            )?;
+            cache_dict.set_item(
+                "entropy_threshold",
+                (cs.entropy_threshold * 10000.0).round() / 10000.0,
+            )?;
             cache_dict.set_item("shifts_detected", cs.shifts_detected)?;
             // Extended observability: Thompson gate, frequency sketch, cost tail, invalidation depth
             cache_dict.set_item("avg_quality", (cs.avg_quality * 10000.0).round() / 10000.0)?;
-            cache_dict.set_item("adaptive_alpha", (cs.adaptive_alpha * 10000.0).round() / 10000.0)?;
-            cache_dict.set_item("thompson_alpha", (cs.thompson_alpha * 100.0).round() / 100.0)?;
+            cache_dict.set_item(
+                "adaptive_alpha",
+                (cs.adaptive_alpha * 10000.0).round() / 10000.0,
+            )?;
+            cache_dict.set_item(
+                "thompson_alpha",
+                (cs.thompson_alpha * 100.0).round() / 100.0,
+            )?;
             cache_dict.set_item("thompson_beta", (cs.thompson_beta * 100.0).round() / 100.0)?;
             cache_dict.set_item("freq_admissions", cs.freq_admissions)?;
             cache_dict.set_item("freq_rejections", cs.freq_rejections)?;
-            cache_dict.set_item("p50_cost_saved", (cs.p50_cost_saved * 10000.0).round() / 10000.0)?;
-            cache_dict.set_item("p95_cost_saved", (cs.p95_cost_saved * 10000.0).round() / 10000.0)?;
-            cache_dict.set_item("p99_cost_saved", (cs.p99_cost_saved * 10000.0).round() / 10000.0)?;
+            cache_dict.set_item(
+                "p50_cost_saved",
+                (cs.p50_cost_saved * 10000.0).round() / 10000.0,
+            )?;
+            cache_dict.set_item(
+                "p95_cost_saved",
+                (cs.p95_cost_saved * 10000.0).round() / 10000.0,
+            )?;
+            cache_dict.set_item(
+                "p99_cost_saved",
+                (cs.p99_cost_saved * 10000.0).round() / 10000.0,
+            )?;
             cache_dict.set_item("hard_invalidations", cs.hard_invalidations)?;
             cache_dict.set_item("soft_invalidations", cs.soft_invalidations)?;
-            cache_dict.set_item("invalidation_depth_counts", (cs.invalidation_depth_counts[0], cs.invalidation_depth_counts[1], cs.invalidation_depth_counts[2], cs.invalidation_depth_counts[3]))?;
+            cache_dict.set_item(
+                "invalidation_depth_counts",
+                (
+                    cs.invalidation_depth_counts[0],
+                    cs.invalidation_depth_counts[1],
+                    cs.invalidation_depth_counts[2],
+                    cs.invalidation_depth_counts[3],
+                ),
+            )?;
             cache_dict.set_item("total_resets", cs.total_resets)?;
-            cache_dict.set_item("hit_rate_ema", (cs.hit_rate_ema * 10000.0).round() / 10000.0)?;
-            cache_dict.set_item("predictor_weights", (cs.predictor_weights[0], cs.predictor_weights[1], cs.predictor_weights[2], cs.predictor_weights[3], cs.predictor_weights[4]))?;
+            cache_dict.set_item(
+                "hit_rate_ema",
+                (cs.hit_rate_ema * 10000.0).round() / 10000.0,
+            )?;
+            cache_dict.set_item(
+                "predictor_weights",
+                (
+                    cs.predictor_weights[0],
+                    cs.predictor_weights[1],
+                    cs.predictor_weights[2],
+                    cs.predictor_weights[3],
+                    cs.predictor_weights[4],
+                ),
+            )?;
             result.set_item("cache", cache_dict)?;
 
             // Last selected fragment IDs — needed by context_bridge.record_outcome()
             if let Some(ref snapshot) = self.last_optimization {
-                let last_ids: Vec<&str> = snapshot.fragment_scores.iter()
+                let last_ids: Vec<&str> = snapshot
+                    .fragment_scores
+                    .iter()
                     .filter(|fs| fs.selected)
                     .map(|fs| fs.fragment_id.as_str())
                     .collect();
@@ -2873,15 +3449,33 @@ impl EntrolyEngine {
             if self.enable_resonance {
                 let res_dict = PyDict::new(py);
                 res_dict.set_item("tracked_pairs", self.resonance_matrix.len())?;
-                res_dict.set_item("mean_strength", (self.resonance_matrix.mean_strength() * 10000.0).round() / 10000.0)?;
-                res_dict.set_item("w_resonance", (self.w_resonance * 10000.0).round() / 10000.0)?;
+                res_dict.set_item(
+                    "mean_strength",
+                    (self.resonance_matrix.mean_strength() * 10000.0).round() / 10000.0,
+                )?;
+                res_dict.set_item(
+                    "w_resonance",
+                    (self.w_resonance * 10000.0).round() / 10000.0,
+                )?;
                 // 5D PRISM diagnostics
                 let diag = self.prism_optimizer_5d.resonance_diagnostics();
-                res_dict.set_item("resonance_energy_fraction", (diag.resonance_energy_fraction * 10000.0).round() / 10000.0)?;
-                res_dict.set_item("resonance_eigenvalue", (diag.resonance_eigenvalue * 10000.0).round() / 10000.0)?;
-                res_dict.set_item("resonance_alignment", (diag.resonance_alignment * 10000.0).round() / 10000.0)?;
+                res_dict.set_item(
+                    "resonance_energy_fraction",
+                    (diag.resonance_energy_fraction * 10000.0).round() / 10000.0,
+                )?;
+                res_dict.set_item(
+                    "resonance_eigenvalue",
+                    (diag.resonance_eigenvalue * 10000.0).round() / 10000.0,
+                )?;
+                res_dict.set_item(
+                    "resonance_alignment",
+                    (diag.resonance_alignment * 10000.0).round() / 10000.0,
+                )?;
                 res_dict.set_item("is_calibrated", diag.is_calibrated)?;
-                res_dict.set_item("condition_number_5d", (self.prism_optimizer_5d.condition_number() * 100.0).round() / 100.0)?;
+                res_dict.set_item(
+                    "condition_number_5d",
+                    (self.prism_optimizer_5d.condition_number() * 100.0).round() / 100.0,
+                )?;
                 // Top resonance pairs (for dashboard)
                 let top = self.resonance_matrix.top_pairs(5);
                 let top_list = pyo3::types::PyList::empty(py);
@@ -2913,9 +3507,15 @@ impl EntrolyEngine {
                 causal_dict.set_item("interventional_fragments", cs.interventional_fragments)?;
                 causal_dict.set_item("temporal_links", cs.temporal_links)?;
                 causal_dict.set_item("gravity_sources", cs.gravity_sources)?;
-                causal_dict.set_item("mean_causal_mass", (cs.mean_causal_mass * 10000.0).round() / 10000.0)?;
+                causal_dict.set_item(
+                    "mean_causal_mass",
+                    (cs.mean_causal_mass * 10000.0).round() / 10000.0,
+                )?;
                 causal_dict.set_item("base_rate", (cs.base_rate * 10000.0).round() / 10000.0)?;
-                causal_dict.set_item("total_interventional_updates", cs.total_interventional_updates)?;
+                causal_dict.set_item(
+                    "total_interventional_updates",
+                    cs.total_interventional_updates,
+                )?;
                 causal_dict.set_item("total_temporal_updates", cs.total_temporal_updates)?;
                 // Top causal fragments (for dashboard)
                 let top_causal = self.causal_graph.top_causal_fragments(5);
@@ -2980,7 +3580,10 @@ impl EntrolyEngine {
                 ad.set_item("observations", a.observations)?;
                 ad.set_item("stick_weight", a.stick_weight)?;
                 ad.set_item("effective_support", a.effective_support)?;
-                ad.set_item("weights", (a.weights[0], a.weights[1], a.weights[2], a.weights[3]))?;
+                ad.set_item(
+                    "weights",
+                    (a.weights[0], a.weights[1], a.weights[2], a.weights[3]),
+                )?;
                 ad.set_item("successes", a.successes)?;
                 ad.set_item("total_uses", a.total_uses)?;
                 ad.set_item("success_rate", (a.success_rate * 10000.0).round() / 10000.0)?;
@@ -3017,7 +3620,13 @@ impl EntrolyEngine {
     ///
     /// If PRISM has received zero feedback, we also update the live
     /// weights directly (cold-start initialization from autotune).
-    pub fn set_weights(&mut self, w_recency: f64, w_frequency: f64, w_semantic: f64, w_entropy: f64) {
+    pub fn set_weights(
+        &mut self,
+        w_recency: f64,
+        w_frequency: f64,
+        w_semantic: f64,
+        w_entropy: f64,
+    ) {
         // Normalize incoming prior to sum=1.0
         let mut pr = w_recency.clamp(0.05, 0.80);
         let mut pf = w_frequency.clamp(0.05, 0.80);
@@ -3025,7 +3634,10 @@ impl EntrolyEngine {
         let mut pe = w_entropy.clamp(0.05, 0.80);
         let sum = pr + pf + ps + pe;
         if sum > 0.0 {
-            pr /= sum; pf /= sum; ps /= sum; pe /= sum;
+            pr /= sum;
+            pf /= sum;
+            ps /= sum;
+            pe /= sum;
         }
 
         // Update the prior anchor (autotune's best offline estimate)
@@ -3094,8 +3706,8 @@ impl EntrolyEngine {
         // it (latent bug — load_index handles both formats for backward
         // compat). Compression typically shrinks the index 5-10× for repos
         // with repetitive code structure.
-        use flate2::Compression;
         use flate2::write::GzEncoder;
+        use flate2::Compression;
         let tmp = format!("{}.tmp", path);
         let f = std::fs::File::create(&tmp)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
@@ -3137,22 +3749,23 @@ impl EntrolyEngine {
             #[serde(default)]
             gradient_norm_ema: f64,
         }
-        fn default_gradient_temperature() -> f64 { 2.0 }
-        let raw = std::fs::read(path)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        fn default_gradient_temperature() -> f64 {
+            2.0
+        }
+        let raw =
+            std::fs::read(path).map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
         // Format detection by magic bytes: 0x1f 0x8b is gzip; '{' (0x7b) is
         // a legacy plain-JSON index from before persist_index was fixed.
         // Supporting both lets existing users' warm-start caches keep
-        // loading after the v0.18.0 upgrade.
+        // loading after the v0.19.1 upgrade.
         let decoded: Vec<u8> = if raw.len() >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
-            use std::io::Read;
             use flate2::read::GzDecoder;
+            use std::io::Read;
             let mut gz = GzDecoder::new(&raw[..]);
             let mut out = Vec::with_capacity(raw.len() * 4);
-            gz.read_to_end(&mut out)
-                .map_err(|e| pyo3::exceptions::PyIOError::new_err(
-                    format!("gzip decompression failed: {}", e)
-                ))?;
+            gz.read_to_end(&mut out).map_err(|e| {
+                pyo3::exceptions::PyIOError::new_err(format!("gzip decompression failed: {}", e))
+            })?;
             out
         } else {
             raw
@@ -3199,7 +3812,9 @@ impl EntrolyEngine {
             );
         }
         let raw_reward = if self.enable_channel_coding {
-            let suff = self.last_optimization.as_ref()
+            let suff = self
+                .last_optimization
+                .as_ref()
                 .map(|s| s.sufficiency)
                 .unwrap_or(0.7);
             channel::modulated_reward(true, suff)
@@ -3212,7 +3827,8 @@ impl EntrolyEngine {
         self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * raw_reward;
         // Context Resonance: learn pairwise interaction strengths
         if self.enable_resonance {
-            self.resonance_matrix.record_outcome(&fragment_ids, advantage, self.current_turn);
+            self.resonance_matrix
+                .record_outcome(&fragment_ids, advantage, self.current_turn);
         }
         // Causal Context Graph: record trace with interventional data
         if self.enable_causal {
@@ -3246,7 +3862,9 @@ impl EntrolyEngine {
             );
         }
         let raw_reward = if self.enable_channel_coding {
-            let suff = self.last_optimization.as_ref()
+            let suff = self
+                .last_optimization
+                .as_ref()
                 .map(|s| s.sufficiency)
                 .unwrap_or(0.7);
             channel::modulated_reward(false, suff)
@@ -3259,7 +3877,8 @@ impl EntrolyEngine {
         self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * raw_reward;
         // Context Resonance: learn pairwise interaction strengths (negative signal)
         if self.enable_resonance {
-            self.resonance_matrix.record_outcome(&fragment_ids, advantage, self.current_turn);
+            self.resonance_matrix
+                .record_outcome(&fragment_ids, advantage, self.current_turn);
         }
         // Causal Context Graph: record trace with interventional data
         if self.enable_causal {
@@ -3319,7 +3938,8 @@ impl EntrolyEngine {
         self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * r;
         // Context Resonance: continuous reward signal for pairwise learning
         if self.enable_resonance {
-            self.resonance_matrix.record_outcome(&fragment_ids, advantage, self.current_turn);
+            self.resonance_matrix
+                .record_outcome(&fragment_ids, advantage, self.current_turn);
         }
         // Causal Context Graph: continuous reward signal for interventional learning
         if self.enable_causal {
@@ -3367,22 +3987,34 @@ impl EntrolyEngine {
     }
 
     /// Get current belief utilization EMA (for diagnostics/logging).
-    pub fn get_belief_util_ema(&self) -> f64 { self.belief_util_ema }
+    pub fn get_belief_util_ema(&self) -> f64 {
+        self.belief_util_ema
+    }
     /// Get current full fragment utilization EMA (for diagnostics/logging).
-    pub fn get_full_util_ema(&self) -> f64 { self.full_util_ema }
+    pub fn get_full_util_ema(&self) -> f64 {
+        self.full_util_ema
+    }
     /// Get the current query-adaptive belief info factor (for diagnostics/logging).
-    pub fn get_belief_info_factor(&self) -> f64 { self.ios_belief_info_factor }
+    pub fn get_belief_info_factor(&self) -> f64 {
+        self.ios_belief_info_factor
+    }
 
     // ── EGSC Cache Management API ──
 
     /// Clear the EGSC cache (useful after major project changes).
-    pub fn cache_clear(&mut self) { self.egsc_cache.clear(); }
+    pub fn cache_clear(&mut self) {
+        self.egsc_cache.clear();
+    }
 
     /// Get current cache entry count.
-    pub fn cache_len(&self) -> usize { self.egsc_cache.len() }
+    pub fn cache_len(&self) -> usize {
+        self.egsc_cache.len()
+    }
 
     /// Check if cache is empty.
-    pub fn cache_is_empty(&self) -> bool { self.egsc_cache.is_empty() }
+    pub fn cache_is_empty(&self) -> bool {
+        self.egsc_cache.is_empty()
+    }
 
     /// Get the current cache hit rate (from shift detector EMA).
     pub fn cache_hit_rate(&mut self) -> f64 {
@@ -3398,7 +4030,8 @@ impl EntrolyEngine {
     /// Example: `engine.set_model("gpt-4o-mini")` → $0.60/M tokens
     pub fn set_model(&mut self, model_name: &str) {
         let cost_model = cache::CostModel::for_model(model_name);
-        self.egsc_cache.set_cost_per_token(cost_model.cost_per_token);
+        self.egsc_cache
+            .set_cost_per_token(cost_model.cost_per_token);
     }
 
     /// Set cost-per-token directly (power users only).
@@ -3420,7 +4053,12 @@ impl EntrolyEngine {
     ///
     /// Call this after ingest (from Python) for each fragment that has a
     /// corresponding belief file in the vault.
-    pub fn set_belief(&mut self, fragment_id: &str, belief_content: String, belief_token_count: u32) -> bool {
+    pub fn set_belief(
+        &mut self,
+        fragment_id: &str,
+        belief_content: String,
+        belief_token_count: u32,
+    ) -> bool {
         if let Some(frag) = self.fragments.get_mut(fragment_id) {
             frag.belief_content = Some(belief_content);
             frag.belief_token_count = Some(belief_token_count);
@@ -3442,14 +4080,18 @@ impl EntrolyEngine {
     /// Returns the number of beliefs successfully attached.
     pub fn load_vault_beliefs(&mut self, vault_dir: &str) -> usize {
         let dir = std::path::Path::new(vault_dir);
-        if !dir.is_dir() { return 0; }
+        if !dir.is_dir() {
+            return 0;
+        }
 
         // Collect all belief files: (basename_prefix, full_content, token_count)
         let mut beliefs: Vec<(String, String, u32)> = Vec::new();
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("md") { continue; }
+                if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                    continue;
+                }
                 let fname = match path.file_stem().and_then(|s| s.to_str()) {
                     Some(s) => s.to_string(),
                     None => continue,
@@ -3457,10 +4099,12 @@ impl EntrolyEngine {
                 // Extract the module name prefix before the hash suffix
                 // e.g. "knapsack_sds_18a33f4c" → "knapsack_sds"
                 // Skip architecture beliefs (arch_*) — they're cross-cutting
-                if fname.starts_with("arch_") || fname.starts_with("doc_") { continue; }
+                if fname.starts_with("arch_") || fname.starts_with("doc_") {
+                    continue;
+                }
                 let prefix = if let Some(pos) = fname.rfind('_') {
                     // Check if suffix looks like a hex hash (8+ hex chars)
-                    let suffix = &fname[pos+1..];
+                    let suffix = &fname[pos + 1..];
                     if suffix.len() >= 8 && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
                         fname[..pos].to_string()
                     } else {
@@ -3481,7 +4125,9 @@ impl EntrolyEngine {
                     } else {
                         content.clone()
                     };
-                    if body.is_empty() { continue; }
+                    if body.is_empty() {
+                        continue;
+                    }
                     // Estimate tokens: ~4 chars per token for markdown
                     let tc = (body.len() as u32 / 4).max(1);
                     beliefs.push((prefix, body, tc));
@@ -3489,21 +4135,25 @@ impl EntrolyEngine {
             }
         }
 
-        if beliefs.is_empty() { return 0; }
+        if beliefs.is_empty() {
+            return 0;
+        }
 
         // Match beliefs to fragments by source path basename
         let mut attached = 0usize;
-        let frag_ids: Vec<(String, String)> = self.fragments.iter()
+        let frag_ids: Vec<(String, String)> = self
+            .fragments
+            .iter()
             .map(|(id, f)| (id.clone(), f.source.clone()))
             .collect();
 
         for (fid, source) in &frag_ids {
             // Extract basename from source path (e.g. "entroly-core/src/knapsack_sds.rs" → "knapsack_sds")
             let src_path = std::path::Path::new(source);
-            let basename = src_path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            if basename.is_empty() { continue; }
+            let basename = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if basename.is_empty() {
+                continue;
+            }
 
             // Find matching belief
             for (prefix, body, tc) in &beliefs {
@@ -3589,7 +4239,8 @@ impl EntrolyEngine {
 
             // Find query-relevant fragments (by SimHash similarity)
             let query_hash = dedup::simhash(&query);
-            let mut scored: Vec<(usize, f64)> = frags.iter()
+            let mut scored: Vec<(usize, f64)> = frags
+                .iter()
                 .enumerate()
                 .map(|(i, f)| {
                     let dist = dedup::hamming_distance(query_hash, f.simhash);
@@ -3600,15 +4251,16 @@ impl EntrolyEngine {
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             // Top-K most relevant fragment IDs (seed for cluster expansion)
-            let top_k = scored.iter()
+            let top_k = scored
+                .iter()
                 .take(10)
                 .filter(|(_, sim)| *sim > 0.1)
                 .map(|(i, _)| frags[*i].fragment_id.clone())
                 .collect::<Vec<_>>();
 
             // Mean entropy for budget allocation
-            let mean_entropy = frags.iter().map(|f| f.entropy_score).sum::<f64>()
-                / frags.len() as f64;
+            let mean_entropy =
+                frags.iter().map(|f| f.entropy_score).sum::<f64>() / frags.len() as f64;
 
             // Run hierarchical compression
             let hcc = hierarchical::hierarchical_compress(
@@ -3638,10 +4290,13 @@ impl EntrolyEngine {
 
             // Total budget utilization
             let total_used = hcc.budget_used.0 + hcc.budget_used.1 + hcc.budget_used.2;
-            result.set_item("budget_utilization",
+            result.set_item(
+                "budget_utilization",
                 if token_budget > 0 {
                     (total_used as f64 / token_budget as f64 * 10000.0).round() / 10000.0
-                } else { 0.0 }
+                } else {
+                    0.0
+                },
             )?;
 
             // Selected L3 fragment details
@@ -3690,22 +4345,31 @@ impl EntrolyEngine {
             };
 
             let result = PyDict::new(py);
-            result.set_item("sufficiency", (snapshot.sufficiency * 10000.0).round() / 10000.0)?;
+            result.set_item(
+                "sufficiency",
+                (snapshot.sufficiency * 10000.0).round() / 10000.0,
+            )?;
 
             let included = pyo3::types::PyList::empty(py);
             let excluded = pyo3::types::PyList::empty(py);
 
             for fs in &snapshot.fragment_scores {
                 let d = PyDict::new(py);
-                d.set_item("id", &fs.fragment_id)?;       // Bug fix: was "fragment_id", inconsistent with optimize's "id" key
+                d.set_item("id", &fs.fragment_id)?; // Bug fix: was "fragment_id", inconsistent with optimize's "id" key
                 d.set_item("source", &fs.source)?;
-                d.set_item("decision", if fs.selected { "included" } else { "excluded" })?;
+                d.set_item(
+                    "decision",
+                    if fs.selected { "included" } else { "excluded" },
+                )?;
                 let scores = PyDict::new(py);
                 scores.set_item("recency", (fs.recency * 10000.0).round() / 10000.0)?;
                 scores.set_item("frequency", (fs.frequency * 10000.0).round() / 10000.0)?;
                 scores.set_item("semantic", (fs.semantic * 10000.0).round() / 10000.0)?;
                 scores.set_item("entropy", (fs.entropy * 10000.0).round() / 10000.0)?;
-                scores.set_item("feedback_mult", (fs.feedback_mult * 10000.0).round() / 10000.0)?;
+                scores.set_item(
+                    "feedback_mult",
+                    (fs.feedback_mult * 10000.0).round() / 10000.0,
+                )?;
                 scores.set_item("dep_boost", (fs.dep_boost * 10000.0).round() / 10000.0)?;
                 scores.set_item("criticality", &fs.criticality)?;
                 scores.set_item("composite", (fs.composite * 10000.0).round() / 10000.0)?;
@@ -3818,10 +4482,13 @@ impl EntrolyEngine {
         self.total_fragments_ingested = state.total_fragments_ingested;
         self.total_duplicates_caught = state.total_duplicates_caught;
         self.total_explorations = state.total_explorations;
-        if state.rng_state != 0 { self.rng_state = state.rng_state; }
+        if state.rng_state != 0 {
+            self.rng_state = state.rng_state;
+        }
         self.gradient_temperature = state.gradient_temperature;
         self.gradient_norm_ema = state.gradient_norm_ema;
-        let mut fragment_entries: Vec<(&String, &ContextFragment)> = self.fragments.iter().collect();
+        let mut fragment_entries: Vec<(&String, &ContextFragment)> =
+            self.fragments.iter().collect();
         fragment_entries.sort_by(|a, b| a.0.cmp(b.0));
         for (fid, frag) in fragment_entries {
             self.dedup_index.insert(fid, &frag.content);
@@ -3877,9 +4544,8 @@ impl EntrolyEngine {
             pyo3::exceptions::PyKeyError::new_err(format!("Fragment '{}' not found", fragment_id))
         })?;
         let report = sast::scan_content(&frag.content, &frag.source);
-        serde_json::to_string(&report).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })
+        serde_json::to_string(&report)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Scan all ingested fragments and return an aggregated security report.
@@ -3896,7 +4562,8 @@ impl EntrolyEngine {
         let mut pattern_only_total = 0usize;
         let mut max_risk: f64 = 0.0;
         let mut most_vulnerable = String::new();
-        let mut by_category: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut by_category: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for (fid, frag) in &self.fragments {
             let report = sast::scan_content(&frag.content, &frag.source);
@@ -3904,10 +4571,14 @@ impl EntrolyEngine {
                 continue;
             }
             critical_total += report.critical_count;
-            high_total     += report.high_count;
+            high_total += report.high_count;
             for f in &report.findings {
                 *by_category.entry(f.category.clone()).or_insert(0) += 1;
-                if f.taint_flow { taint_flow_total += 1; } else { pattern_only_total += 1; }
+                if f.taint_flow {
+                    taint_flow_total += 1;
+                } else {
+                    pattern_only_total += 1;
+                }
             }
             if report.risk_score > max_risk {
                 max_risk = report.risk_score;
@@ -3944,9 +4615,8 @@ impl EntrolyEngine {
             "vulnerable_fragments": all_findings,
         });
 
-        serde_json::to_string(&result).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })
+        serde_json::to_string(&result)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Analyze codebase health across all ingested fragments.
@@ -3962,9 +4632,8 @@ impl EntrolyEngine {
     pub fn analyze_health(&self) -> PyResult<String> {
         let frags: Vec<&ContextFragment> = self.fragments.values().collect();
         let report = health::analyze_health(&frags, &self.dep_graph);
-        serde_json::to_string(&report).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })
+        serde_json::to_string(&report)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Scan for entropy anomalies — code that is statistically surprising
@@ -3974,9 +4643,8 @@ impl EntrolyEngine {
     pub fn entropy_anomalies(&self) -> PyResult<String> {
         let frags: Vec<&ContextFragment> = self.fragments.values().collect();
         let report = anomaly::scan_anomalies(&frags);
-        serde_json::to_string(&report).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })
+        serde_json::to_string(&report)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Score how much of the injected context the LLM actually used.
@@ -3988,9 +4656,8 @@ impl EntrolyEngine {
         // Collect fragments that were most recently selected (used in last optimize())
         let frags: Vec<&ContextFragment> = self.fragments.values().collect();
         let report = utilization::score_utilization(&frags, response);
-        serde_json::to_string(&report).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })
+        serde_json::to_string(&report)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Run semantic deduplication on all fragments and report which ones
@@ -4009,9 +4676,8 @@ impl EntrolyEngine {
             "removed": result.removed_count,
             "tokens_saved": result.tokens_saved,
         });
-        serde_json::to_string(&report).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })
+        serde_json::to_string(&report)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Export fragments for checkpoint (returns list of dicts).
@@ -4099,7 +4765,9 @@ impl EntrolyEngine {
     /// softcap is monotone, so pre-softcap optima = post-softcap optima, and the
     /// linear gradient landscape is better conditioned for optimization.
     fn apply_prism_rl_update(&mut self, fragment_ids: &[String], reward: f64) {
-        if self.fragments.is_empty() { return; }
+        if self.fragments.is_empty() {
+            return;
+        }
 
         let tau = self.gradient_temperature.max(0.01);
         let selected: HashSet<&str> = fragment_ids.iter().map(|s| s.as_str()).collect();
@@ -4117,7 +4785,8 @@ impl EntrolyEngine {
         //
         // High-entropy fragments bear more responsibility for outcomes because
         // they contributed more information to the LLM's reasoning.
-        let selected_entropy_sum: f64 = fragment_ids.iter()
+        let selected_entropy_sum: f64 = fragment_ids
+            .iter()
             .filter_map(|id| self.fragments.get(id))
             .map(|f| f.entropy_score.max(0.01))
             .sum();
@@ -4137,11 +4806,11 @@ impl EntrolyEngine {
 
         // Compute REINFORCE-with-baseline policy gradient
         let mut g = [0.0_f64; 4]; // [∂/∂w_r, ∂/∂w_f, ∂/∂w_s, ∂/∂w_e]
-        // 5D gradient includes resonance dimension
+                                  // 5D gradient includes resonance dimension
         let mut g5 = [0.0_f64; 5]; // [∂/∂w_r, ∂/∂w_f, ∂/∂w_s, ∂/∂w_e, ∂/∂w_res]
-        // λ* from the last forward bisection — use the SAME probability as the forward pass.
-        // p_i = σ((s_i − λ*·tokens_i)/τ) is the exact KKT soft selection probability.
-        // Reusing it here ensures advantage = (action − p_exact) × R is an unbiased estimator.
+                                   // λ* from the last forward bisection — use the SAME probability as the forward pass.
+                                   // p_i = σ((s_i − λ*·tokens_i)/τ) is the exact KKT soft selection probability.
+                                   // Reusing it here ensures advantage = (action − p_exact) × R is an unbiased estimator.
         let lambda = self.last_lambda_star;
 
         // Pre-compute resonance features for the 5th gradient dimension.
@@ -4152,10 +4821,10 @@ impl EntrolyEngine {
 
         for frag in self.fragments.values_mut() {
             // Linear score (pre-softcap — same landscape as forward pass)
-            let score = self.w_recency   * frag.recency_score
-                      + self.w_frequency * frag.frequency_score
-                      + self.w_semantic  * frag.semantic_score
-                      + self.w_entropy   * frag.entropy_score;
+            let score = self.w_recency * frag.recency_score
+                + self.w_frequency * frag.frequency_score
+                + self.w_semantic * frag.semantic_score
+                + self.w_entropy * frag.entropy_score;
 
             // Exact KKT probability: p_i = σ((s_i − λ*·tokens_i) / τ)
             // Matches the forward bisection probability — no forward/backward mismatch.
@@ -4163,7 +4832,11 @@ impl EntrolyEngine {
             let p = Self::sigmoid((score - lambda * tc) / tau);
             let dp = p * (1.0 - p) / tau; // σ'(·/τ) — focuses gradient on marginal fragments
 
-            let action = if selected.contains(frag.fragment_id.as_str()) { 1.0 } else { 0.0 };
+            let action = if selected.contains(frag.fragment_id.as_str()) {
+                1.0
+            } else {
+                0.0
+            };
 
             // ── Counterfactual credit: φᵢ modulates advantage ──
             // Selected fragments: credit weighted by information share
@@ -4183,24 +4856,23 @@ impl EntrolyEngine {
             let advantage = phi * frag.eligibility_trace * reward;
 
             // Accumulate: advantage_i × feature_{i,k}
-            g[prism::dim::RECENCY]   += advantage * frag.recency_score;
+            g[prism::dim::RECENCY] += advantage * frag.recency_score;
             g[prism::dim::FREQUENCY] += advantage * frag.frequency_score;
-            g[prism::dim::SEMANTIC]  += advantage * frag.semantic_score;
-            g[prism::dim::ENTROPY]   += advantage * frag.entropy_score;
+            g[prism::dim::SEMANTIC] += advantage * frag.semantic_score;
+            g[prism::dim::ENTROPY] += advantage * frag.entropy_score;
 
             // 5D gradient: resonance feature = mean pairwise resonance with co-selected set
             if self.enable_resonance {
-                let res_feature = self.resonance_matrix.resonance_bonus(
-                    frag.fragment_id.as_str(), &selected_ids_vec
-                );
-                g5[prism::dim::RECENCY]   += advantage * frag.recency_score;
+                let res_feature = self
+                    .resonance_matrix
+                    .resonance_bonus(frag.fragment_id.as_str(), &selected_ids_vec);
+                g5[prism::dim::RECENCY] += advantage * frag.recency_score;
                 g5[prism::dim::FREQUENCY] += advantage * frag.frequency_score;
-                g5[prism::dim::SEMANTIC]  += advantage * frag.semantic_score;
-                g5[prism::dim::ENTROPY]   += advantage * frag.entropy_score;
+                g5[prism::dim::SEMANTIC] += advantage * frag.semantic_score;
+                g5[prism::dim::ENTROPY] += advantage * frag.entropy_score;
                 g5[prism::dim::RESONANCE] += advantage * res_feature;
             }
         }
-
 
         // ── Adaptive Dual Gap Temperature (ADGT) × PRISM Condition-Number Temperature (PCNT) ──
         //
@@ -4232,7 +4904,7 @@ impl EntrolyEngine {
             // PCNT: condition number amplifies τ when weights are uncertain
             let kappa = self.prism_optimizer.condition_number();
             let kappa_norm = (kappa / 2.0).clamp(0.5, 4.0); // normalize: κ=4 → 2×, κ=1 → 0.5×
-            // Natural temperature: high gap + high κ → high τ; low gap + low κ → low τ
+                                                            // Natural temperature: high gap + high κ → high τ; low gap + low κ → low τ
             let natural_tau = (gap_per_frag * kappa_norm).clamp(0.1, 2.0);
             // Slow EMA blend toward natural_tau (avoids oscillation)
             self.gradient_temperature = 0.90 * self.gradient_temperature + 0.10 * natural_tau;
@@ -4264,19 +4936,19 @@ impl EntrolyEngine {
         let n_0 = 50.0;
         let lambda_reg = lambda_0 / (1.0 + self.n_feedback_events as f64 / n_0);
 
-        g[prism::dim::RECENCY]   -= lambda_reg * (self.w_recency   - self.w_prior_recency);
+        g[prism::dim::RECENCY] -= lambda_reg * (self.w_recency - self.w_prior_recency);
         g[prism::dim::FREQUENCY] -= lambda_reg * (self.w_frequency - self.w_prior_frequency);
-        g[prism::dim::SEMANTIC]  -= lambda_reg * (self.w_semantic  - self.w_prior_semantic);
-        g[prism::dim::ENTROPY]   -= lambda_reg * (self.w_entropy   - self.w_prior_entropy);
+        g[prism::dim::SEMANTIC] -= lambda_reg * (self.w_semantic - self.w_prior_semantic);
+        g[prism::dim::ENTROPY] -= lambda_reg * (self.w_entropy - self.w_prior_entropy);
 
         // Let PRISM compute the anisotropically-damped update: Q Λ^{-1/2} Q^T g
         let update = self.prism_optimizer.compute_update(&g);
 
         // Apply updates to weights
-        self.w_recency   += update[prism::dim::RECENCY];
+        self.w_recency += update[prism::dim::RECENCY];
         self.w_frequency += update[prism::dim::FREQUENCY];
-        self.w_semantic  += update[prism::dim::SEMANTIC];
-        self.w_entropy   += update[prism::dim::ENTROPY];
+        self.w_semantic += update[prism::dim::SEMANTIC];
+        self.w_entropy += update[prism::dim::ENTROPY];
 
         // ── 5D PRISM: learn w_resonance via spectral shaping ──
         // The resonance dimension has inherently higher gradient variance
@@ -4291,25 +4963,25 @@ impl EntrolyEngine {
         }
 
         // Prevent collapse: clamp weights to positive bounds [0.05, 0.8]
-        self.w_recency   = self.w_recency.clamp(0.05, 0.8);
+        self.w_recency = self.w_recency.clamp(0.05, 0.8);
         self.w_frequency = self.w_frequency.clamp(0.05, 0.8);
-        self.w_semantic  = self.w_semantic.clamp(0.05, 0.8);
-        self.w_entropy   = self.w_entropy.clamp(0.05, 0.8);
+        self.w_semantic = self.w_semantic.clamp(0.05, 0.8);
+        self.w_entropy = self.w_entropy.clamp(0.05, 0.8);
 
         // Normalize base weights so they sum to 1.0 to preserve scoring scale.
         // w_resonance is NOT included in the normalization — it's a separate
         // additive dimension that modulates selection independently.
         let sum = self.w_recency + self.w_frequency + self.w_semantic + self.w_entropy;
-        self.w_recency   /= sum;
+        self.w_recency /= sum;
         self.w_frequency /= sum;
-        self.w_semantic  /= sum;
-        self.w_entropy   /= sum;
+        self.w_semantic /= sum;
+        self.w_entropy /= sum;
 
         // Update the context scorer with the newly learned decoupled weights
         self.context_scorer.w_similarity = self.w_semantic;
-        self.context_scorer.w_recency    = self.w_recency;
-        self.context_scorer.w_entropy    = self.w_entropy;
-        self.context_scorer.w_frequency  = self.w_frequency;
+        self.context_scorer.w_recency = self.w_recency;
+        self.context_scorer.w_entropy = self.w_entropy;
+        self.context_scorer.w_frequency = self.w_frequency;
 
         // Route gradient to per-archetype PRISM (if query persona is active)
         if self.enable_query_personas {
@@ -4323,12 +4995,16 @@ impl EntrolyEngine {
     /// Compute context sufficiency: fraction of referenced symbols
     /// that have definitions in the selected context.
     fn compute_sufficiency(&self, frags: &[ContextFragment], selected_indices: &[usize]) -> f64 {
-        let selected_ids: HashSet<&str> = selected_indices.iter()
+        let selected_ids: HashSet<&str> = selected_indices
+            .iter()
             .map(|&i| frags[i].fragment_id.as_str())
             .collect();
 
         // Collect all symbols defined by selected fragments
-        let defined_symbols: HashSet<String> = self.dep_graph.symbol_definitions().iter()
+        let defined_symbols: HashSet<String> = self
+            .dep_graph
+            .symbol_definitions()
+            .iter()
             .filter(|(_, fid)| selected_ids.contains(fid.as_str()))
             .map(|(symbol, _)| symbol.clone())
             .collect();
@@ -4350,7 +5026,8 @@ impl EntrolyEngine {
             return 1.0; // Nothing to reference = fully sufficient
         }
 
-        let satisfied = referenced_symbols.iter()
+        let satisfied = referenced_symbols
+            .iter()
             .filter(|s| defined_symbols.contains(*s))
             .count();
 
@@ -4411,7 +5088,7 @@ struct OwnedEngineState {
     dedup_index: DedupIndex,
     dep_graph: DepGraph,
     feedback: FeedbackTracker,
-    prism_optimizer: Option<PrismOptimizer>,  // Optional for backward-compat with old checkpoints
+    prism_optimizer: Option<PrismOptimizer>, // Optional for backward-compat with old checkpoints
     #[serde(default = "default_w_recency")]
     w_recency: f64,
     #[serde(default = "default_w_frequency")]
@@ -4467,13 +5144,27 @@ struct OwnedEngineState {
     causal_graph: Option<CausalContextGraph>,
 }
 
-fn default_max_fragments() -> usize { 10_000 }
-fn default_w_recency() -> f64 { 0.30 }
-fn default_w_frequency() -> f64 { 0.25 }
-fn default_w_semantic() -> f64 { 0.25 }
-fn default_w_entropy() -> f64 { 0.20 }
-fn default_gradient_temperature() -> f64 { 2.0 }
-fn default_rng_state() -> u64 { 1 }
+fn default_max_fragments() -> usize {
+    10_000
+}
+fn default_w_recency() -> f64 {
+    0.30
+}
+fn default_w_frequency() -> f64 {
+    0.25
+}
+fn default_w_semantic() -> f64 {
+    0.25
+}
+fn default_w_entropy() -> f64 {
+    0.20
+}
+fn default_gradient_temperature() -> f64 {
+    2.0
+}
+fn default_rng_state() -> u64 {
+    1
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Standalone PyO3 functions (for direct access to math engines)
@@ -4578,35 +5269,62 @@ fn py_prune_conversation(
 ) -> PyResult<String> {
     use conversation_pruner::*;
 
-    let conv_blocks: Vec<ConvBlock> = blocks.iter().enumerate().map(|(i, d)| {
-        let index = d.get_item("index").ok().flatten()
-            .and_then(|v| v.extract::<usize>().ok()).unwrap_or(i);
-        let role: String = d.get_item("role").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or_default();
-        let content: String = d.get_item("content").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or_default();
-        let token_count: u32 = d.get_item("token_count").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or(0);
-        let tool_name: Option<String> = d.get_item("tool_name").ok().flatten()
-            .and_then(|v| v.extract().ok());
-        let timestamp: f64 = d.get_item("timestamp").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or(index as f64);
+    let conv_blocks: Vec<ConvBlock> = blocks
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let index = d
+                .get_item("index")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract::<usize>().ok())
+                .unwrap_or(i);
+            let role: String = d
+                .get_item("role")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_default();
+            let content: String = d
+                .get_item("content")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_default();
+            let token_count: u32 = d
+                .get_item("token_count")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0);
+            let tool_name: Option<String> = d
+                .get_item("tool_name")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok());
+            let timestamp: f64 = d
+                .get_item("timestamp")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(index as f64);
 
-        let kind = classify_block(&role, &content, tool_name.as_deref());
-        let sh = dedup::simhash(&content);
+            let kind = classify_block(&role, &content, tool_name.as_deref());
+            let sh = dedup::simhash(&content);
 
-        ConvBlock {
-            index,
-            kind,
-            token_count,
-            simhash: sh,
-            content,
-            role,
-            tool_name,
-            depends_on: vec![],
-            timestamp,
-        }
-    }).collect();
+            ConvBlock {
+                index,
+                kind,
+                token_count,
+                simhash: sh,
+                content,
+                role,
+                tool_name,
+                depends_on: vec![],
+                timestamp,
+            }
+        })
+        .collect();
 
     let result = prune_conversation(&conv_blocks, token_budget, decay_lambda, protect_last);
     serde_json::to_string(&result)
@@ -4623,43 +5341,73 @@ fn py_progressive_thresholds(
 ) -> PyResult<String> {
     use conversation_pruner::*;
 
-    let conv_blocks: Vec<ConvBlock> = blocks.iter().enumerate().map(|(i, d)| {
-        let index = d.get_item("index").ok().flatten()
-            .and_then(|v| v.extract::<usize>().ok()).unwrap_or(i);
-        let role: String = d.get_item("role").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or_default();
-        let content: String = d.get_item("content").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or_default();
-        let token_count: u32 = d.get_item("token_count").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or(0);
-        let tool_name: Option<String> = d.get_item("tool_name").ok().flatten()
-            .and_then(|v| v.extract().ok());
-        let timestamp: f64 = d.get_item("timestamp").ok().flatten()
-            .and_then(|v| v.extract().ok()).unwrap_or(index as f64);
+    let conv_blocks: Vec<ConvBlock> = blocks
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let index = d
+                .get_item("index")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract::<usize>().ok())
+                .unwrap_or(i);
+            let role: String = d
+                .get_item("role")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_default();
+            let content: String = d
+                .get_item("content")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_default();
+            let token_count: u32 = d
+                .get_item("token_count")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0);
+            let tool_name: Option<String> = d
+                .get_item("tool_name")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok());
+            let timestamp: f64 = d
+                .get_item("timestamp")
+                .ok()
+                .flatten()
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(index as f64);
 
-        let kind = classify_block(&role, &content, tool_name.as_deref());
-        let sh = dedup::simhash(&content);
+            let kind = classify_block(&role, &content, tool_name.as_deref());
+            let sh = dedup::simhash(&content);
 
-        ConvBlock {
-            index,
-            kind,
-            token_count,
-            simhash: sh,
-            content,
-            role,
-            tool_name,
-            depends_on: vec![],
-            timestamp,
-        }
-    }).collect();
+            ConvBlock {
+                index,
+                kind,
+                token_count,
+                simhash: sh,
+                content,
+                role,
+                tool_name,
+                depends_on: vec![],
+                timestamp,
+            }
+        })
+        .collect();
 
     let assignments = progressive_thresholds(&conv_blocks, utilization, recency_cutoff);
-    let result: Vec<HashMap<String, String>> = assignments.iter().map(|(idx, res)| {
-        let mut m = HashMap::new();
-        m.insert("index".into(), idx.to_string());
-        m.insert("resolution".into(), res.as_str().to_string());
-        m
-    }).collect();
+    let result: Vec<HashMap<String, String>> = assignments
+        .iter()
+        .map(|(idx, res)| {
+            let mut m = HashMap::new();
+            m.insert("index".into(), idx.to_string());
+            m.insert("resolution".into(), res.as_str().to_string());
+            m
+        })
+        .collect();
 
     serde_json::to_string(&result)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("JSON error: {}", e)))
@@ -4694,10 +5442,10 @@ fn py_compress_block(
     };
 
     let res = match resolution {
-        "skeleton"    => Resolution::Skeleton,
-        "digest"      => Resolution::Digest,
+        "skeleton" => Resolution::Skeleton,
+        "digest" => Resolution::Digest,
         "fingerprint" => Resolution::Fingerprint,
-        _             => Resolution::Verbatim,
+        _ => Resolution::Verbatim,
     };
 
     compress_block(&block, res)
@@ -4709,7 +5457,9 @@ fn py_compress_block(
 #[pyo3(signature = (role, content, tool_name=None))]
 fn py_classify_block(role: &str, content: &str, tool_name: Option<String>) -> String {
     use conversation_pruner::classify_block;
-    classify_block(role, content, tool_name.as_deref()).label().to_string()
+    classify_block(role, content, tool_name.as_deref())
+        .label()
+        .to_string()
 }
 
 // ─── Extra standalone wrappers for direct test/utility access ────────────────
@@ -4746,7 +5496,9 @@ fn py_knapsack_optimize(
     let weights = knapsack::ScoringWeights::default();
     let feedback = HashMap::new();
     let result = knapsack_optimize(&fragments, token_budget, &weights, &feedback, 0.0); // hard path for py_knapsack_optimize compatibility
-    let selected: Vec<ContextFragment> = result.selected_indices.iter()
+    let selected: Vec<ContextFragment> = result
+        .selected_indices
+        .iter()
         .map(|&i| fragments[i].clone())
         .collect();
     let mut stats = HashMap::new();
@@ -4775,17 +5527,30 @@ impl EntrolyEngine {
                     Some(id) => id,
                     None => continue,
                 };
-                let variant = entry.get("variant").and_then(|v| v.as_str()).unwrap_or("full");
+                let variant = entry
+                    .get("variant")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("full");
 
                 if let Some(f) = self.fragments.get(frag_id) {
                     let d = PyDict::new(py);
                     d.set_item("id", &f.fragment_id)?;
                     d.set_item("source", &f.source)?;
                     d.set_item("variant", variant)?;
-                    d.set_item("entropy_score", (f.entropy_score * 10000.0).round() / 10000.0)?;
+                    d.set_item(
+                        "entropy_score",
+                        (f.entropy_score * 10000.0).round() / 10000.0,
+                    )?;
 
                     let fm = self.feedback.learned_value(&f.fragment_id);
-                    let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+                    let rel = compute_relevance(
+                        f,
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm,
+                    );
                     d.set_item("relevance", (rel * 10000.0).round() / 10000.0)?;
 
                     match variant {
@@ -4802,7 +5567,9 @@ impl EntrolyEngine {
                             let content = f.belief_content.as_deref().unwrap_or(&f.content);
                             let preview = if content.len() > 100 {
                                 let mut end = 100;
-                                while end < content.len() && !content.is_char_boundary(end) { end += 1; }
+                                while end < content.len() && !content.is_char_boundary(end) {
+                                    end += 1;
+                                }
                                 format!("{}...", &content[..end])
                             } else {
                                 content.to_string()
@@ -4816,7 +5583,9 @@ impl EntrolyEngine {
                             let content = f.skeleton_content.as_deref().unwrap_or(&f.content);
                             let preview = if content.len() > 100 {
                                 let mut end = 100;
-                                while end < content.len() && !content.is_char_boundary(end) { end += 1; }
+                                while end < content.len() && !content.is_char_boundary(end) {
+                                    end += 1;
+                                }
                                 format!("{}...", &content[..end])
                             } else {
                                 content.to_string()
@@ -4829,7 +5598,9 @@ impl EntrolyEngine {
                             d.set_item("token_count", f.token_count)?;
                             let preview = if f.content.len() > 100 {
                                 let mut end = 100;
-                                while end < f.content.len() && !f.content.is_char_boundary(end) { end += 1; }
+                                while end < f.content.len() && !f.content.is_char_boundary(end) {
+                                    end += 1;
+                                }
                                 format!("{}...", &f.content[..end])
                             } else {
                                 f.content.clone()
@@ -4856,7 +5627,9 @@ struct PyDedupIndex {
 impl PyDedupIndex {
     #[new]
     fn new(hamming_threshold: u32) -> Self {
-        PyDedupIndex { inner: dedup::DedupIndex::new(hamming_threshold) }
+        PyDedupIndex {
+            inner: dedup::DedupIndex::new(hamming_threshold),
+        }
     }
 
     /// Insert a fragment. Returns the ID of the duplicate if one was found, else None.
@@ -4924,7 +5697,11 @@ mod tests {
         // Now /64 means hamming dist 48 → (1.0 - 48/64) = 0.25
         let dist: u32 = 48;
         let score = (1.0 - dist as f64 / 64.0_f64).max(0.0);
-        assert!(score > 0.0, "Hamming dist 48 should give positive score, got {}", score);
+        assert!(
+            score > 0.0,
+            "Hamming dist 48 should give positive score, got {}",
+            score
+        );
         assert!((score - 0.25).abs() < 0.001);
 
         // Old code would give: (1.0 - 48/32) = -0.5 → clamped to 0.0
@@ -4948,12 +5725,22 @@ mod tests {
     fn test_export_import_roundtrip() {
         // Test serialization directly via serde (bypassing PyO3 wrappers)
         let mut fragments = HashMap::new();
-        let mut frag = ContextFragment::new("f1".into(), "def foo(): return 42".into(), 10, "foo.py".into());
+        let mut frag = ContextFragment::new(
+            "f1".into(),
+            "def foo(): return 42".into(),
+            10,
+            "foo.py".into(),
+        );
         frag.recency_score = 0.9;
         frag.entropy_score = 0.7;
         fragments.insert("f1".into(), frag);
 
-        let mut frag2 = ContextFragment::new("f2".into(), "def bar(): return foo()".into(), 12, "bar.py".into());
+        let mut frag2 = ContextFragment::new(
+            "f2".into(),
+            "def bar(): return foo()".into(),
+            12,
+            "bar.py".into(),
+        );
         frag2.recency_score = 0.8;
         frag2.entropy_score = 0.6;
         fragments.insert("f2".into(), frag2);
@@ -5000,11 +5787,13 @@ mod tests {
             causal_graph: &CausalContextGraph::new(),
         };
 
-        let json = serde_json::to_string(&state).expect("failed to serialize OwnedEngineState to JSON");
+        let json =
+            serde_json::to_string(&state).expect("failed to serialize OwnedEngineState to JSON");
         assert!(!json.is_empty());
 
         // Deserialize
-        let restored: OwnedEngineState = serde_json::from_str(&json).expect("failed to deserialize OwnedEngineState from JSON");
+        let restored: OwnedEngineState =
+            serde_json::from_str(&json).expect("failed to deserialize OwnedEngineState from JSON");
         assert_eq!(restored.fragments.len(), 2);
         assert_eq!(restored.current_turn, 5);
         assert_eq!(restored.id_counter, 2);
@@ -5013,19 +5802,32 @@ mod tests {
 
     #[test]
     fn test_sufficiency_full() {
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15, 0.10);
+        let mut engine = EntrolyEngine::new(
+            0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
+        );
 
         // Register a symbol in the dep graph
         engine.dep_graph.register_symbol("calculate_tax", "f1");
 
         // Fragment that defines calculate_tax
-        let mut frag1 = ContextFragment::new("f1".into(), "def calculate_tax(income): return income * 0.3".into(), 20, "tax.py".into());
+        let mut frag1 = ContextFragment::new(
+            "f1".into(),
+            "def calculate_tax(income): return income * 0.3".into(),
+            20,
+            "tax.py".into(),
+        );
         frag1.recency_score = 1.0;
         frag1.entropy_score = 0.8;
         engine.fragments.insert("f1".into(), frag1.clone());
 
         // Fragment that references calculate_tax
-        let mut frag2 = ContextFragment::new("f2".into(), "total = calculate_tax(50000)".into(), 10, "main.py".into());
+        let mut frag2 = ContextFragment::new(
+            "f2".into(),
+            "total = calculate_tax(50000)".into(),
+            10,
+            "main.py".into(),
+        );
         frag2.recency_score = 1.0;
         frag2.entropy_score = 0.7;
         engine.fragments.insert("f2".into(), frag2.clone());
@@ -5034,17 +5836,28 @@ mod tests {
         let selected = vec![0, 1]; // Both selected
 
         let suff = engine.compute_sufficiency(&frags, &selected);
-        assert!((suff - 1.0).abs() < 0.01, "Both present = 100% sufficiency, got {}", suff);
+        assert!(
+            (suff - 1.0).abs() < 0.01,
+            "Both present = 100% sufficiency, got {}",
+            suff
+        );
 
         // Now only select the caller, not the definition
         let selected_partial = vec![1]; // Only f2 (calls calculate_tax but doesn't define it)
         let suff_partial = engine.compute_sufficiency(&frags, &selected_partial);
-        assert!(suff_partial < 1.0, "Missing definition = partial sufficiency, got {}", suff_partial);
+        assert!(
+            suff_partial < 1.0,
+            "Missing definition = partial sufficiency, got {}",
+            suff_partial
+        );
     }
 
     #[test]
     fn test_exploration_rate_bounds() {
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15, 0.10);
+        let mut engine = EntrolyEngine::new(
+            0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
+        );
         engine.set_exploration_rate(1.5);
         assert!((engine.exploration_rate - 1.0).abs() < 0.001);
         engine.set_exploration_rate(-0.5);
@@ -5071,7 +5884,10 @@ mod tests {
     #[test]
     fn test_recall_returns_correct_fragment_not_random() {
         use crate::dedup::simhash;
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15, 0.10);
+        let mut engine = EntrolyEngine::new(
+            0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
+        );
 
         // Target: database code
         let target = "fn connect_to_database(host: &str, port: u16) -> Connection { ... }";
@@ -5087,7 +5903,10 @@ mod tests {
         // Ingest noise FIRST so they get lower IDs (tests that ordering is by score, not insertion)
         for (i, n) in noise.iter().enumerate() {
             let mut frag = ContextFragment::new(
-                format!("noise{}", i), n.to_string(), 20, format!("noise{}.rs", i)
+                format!("noise{}", i),
+                n.to_string(),
+                20,
+                format!("noise{}.rs", i),
             );
             frag.simhash = simhash(n);
             frag.recency_score = 0.9;
@@ -5100,12 +5919,17 @@ mod tests {
 
         // Ingest the target LAST
         let mut frag_target = ContextFragment::new(
-            "target".to_string(), target.to_string(), 20, "db.rs".to_string()
+            "target".to_string(),
+            target.to_string(),
+            20,
+            "db.rs".to_string(),
         );
         frag_target.simhash = simhash(target);
         frag_target.recency_score = 0.9;
         frag_target.entropy_score = 0.8;
-        engine.fragments.insert("target".to_string(), frag_target.clone());
+        engine
+            .fragments
+            .insert("target".to_string(), frag_target.clone());
         let slot = engine.fragment_slot_ids.len();
         engine.fragment_slot_ids.push("target".to_string());
         engine.lsh_index.insert(frag_target.simhash, slot);
@@ -5115,11 +5939,16 @@ mod tests {
         let candidates = engine.lsh_index.query(query_fp);
 
         // The target slot must be in LSH candidates
-        let target_slot = engine.fragment_slot_ids.iter().position(|id| id == "target").expect("target fragment not found in slot IDs — test setup error");
+        let target_slot = engine
+            .fragment_slot_ids
+            .iter()
+            .position(|id| id == "target")
+            .expect("target fragment not found in slot IDs — test setup error");
         assert!(
             candidates.contains(&target_slot),
             "LSH must return the exact-match fragment. Candidates: {:?}, target slot: {}",
-            candidates, target_slot
+            candidates,
+            target_slot
         );
     }
 
@@ -5130,21 +5959,23 @@ mod tests {
         use crate::dedup::simhash;
         let query = "async fn process_payment(amount: f64, currency: &str) -> Result<Receipt>";
 
-        let mut engine = EntrolyEngine::new(0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15, 0.10);
+        let mut engine = EntrolyEngine::new(
+            0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
+        );
         let query_fp = simhash(query);
 
         // Varying content: exact match, near match, unrelated
         let contents = [
-            query.to_string(),   // identical → highest score
+            query.to_string(), // identical → highest score
             "async fn process_payment(amount: f64) -> Result<()> {}".to_string(), // very similar
             "fn validate_user_token(token: &str) -> bool { false }".to_string(), // unrelated
             "const TAX_RATE: f64 = 0.15;".to_string(), // completely unrelated
         ];
 
         for (i, content) in contents.iter().enumerate() {
-            let mut frag = ContextFragment::new(
-                format!("f{}", i), content.clone(), 20, format!("f{}.rs", i)
-            );
+            let mut frag =
+                ContextFragment::new(format!("f{}", i), content.clone(), 20, format!("f{}.rs", i));
             frag.simhash = simhash(content);
             frag.recency_score = 0.9;
             frag.entropy_score = 0.7;
@@ -5156,12 +5987,19 @@ mod tests {
 
         // Score all candidates
         let candidates = engine.lsh_index.query(query_fp);
-        let mut scored: Vec<(String, f64)> = candidates.iter()
+        let mut scored: Vec<(String, f64)> = candidates
+            .iter()
             .filter_map(|&slot| {
                 let id = engine.fragment_slot_ids.get(slot)?;
                 let f = engine.fragments.get(id)?;
                 let dist = crate::dedup::hamming_distance(query_fp, f.simhash);
-                let rel = engine.context_scorer.score(dist, f.recency_score, f.entropy_score, f.frequency_score, 1.0);
+                let rel = engine.context_scorer.score(
+                    dist,
+                    f.recency_score,
+                    f.entropy_score,
+                    f.frequency_score,
+                    1.0,
+                );
                 Some((id.clone(), rel))
             })
             .collect();
@@ -5173,7 +6011,10 @@ mod tests {
             assert!(
                 window[0].1 >= window[1].1,
                 "Recall ranking broken: {} (score={:.4}) ranked below {} (score={:.4})",
-                window[0].0, window[0].1, window[1].0, window[1].1
+                window[0].0,
+                window[0].1,
+                window[1].0,
+                window[1].1
             );
         }
 
@@ -5193,14 +6034,15 @@ mod tests {
         let entropy = 0.7;
         let freq = 0.5;
 
-        let scores: Vec<f64> = (0u32..=8).map(|hamming| {
-            scorer.score(hamming * 8, recency, entropy, freq, 1.0)
-        }).collect();
+        let scores: Vec<f64> = (0u32..=8)
+            .map(|hamming| scorer.score(hamming * 8, recency, entropy, freq, 1.0))
+            .collect();
 
         for window in scores.windows(2) {
             assert!(
                 window[0] >= window[1],
-                "Scorer not monotone: hamming increase should decrease score. Scores: {:?}", scores
+                "Scorer not monotone: hamming increase should decrease score. Scores: {:?}",
+                scores
             );
         }
     }
@@ -5224,7 +6066,8 @@ mod tests {
         let candidates = idx.query(target_fp);
         assert!(
             candidates.contains(&target_slot),
-            "LSH dropped the exact-match at scale=1000. candidates={:?}", candidates
+            "LSH dropped the exact-match at scale=1000. candidates={:?}",
+            candidates
         );
     }
 
@@ -5238,10 +6081,8 @@ mod tests {
 
     fn bayesian_test_engine() -> EntrolyEngine {
         EntrolyEngine::new(
-            0.25, 0.25, 0.25, 0.25,
-            15, 0.05, 3, 0.1, 10_000,
-            true, true, true,
-            0.70, 0.50, 0.15, 0.10,
+            0.25, 0.25, 0.25, 0.25, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
         )
     }
 
@@ -5256,15 +6097,23 @@ mod tests {
 
         let s = 0.40 + 0.30 + 0.20 + 0.10;
         for (got_live, got_prior, expected) in [
-            (engine.w_recency,   engine.w_prior_recency,   0.40 / s),
+            (engine.w_recency, engine.w_prior_recency, 0.40 / s),
             (engine.w_frequency, engine.w_prior_frequency, 0.30 / s),
-            (engine.w_semantic,  engine.w_prior_semantic,  0.20 / s),
-            (engine.w_entropy,   engine.w_prior_entropy,   0.10 / s),
+            (engine.w_semantic, engine.w_prior_semantic, 0.20 / s),
+            (engine.w_entropy, engine.w_prior_entropy, 0.10 / s),
         ] {
-            assert!((got_live  - expected).abs() < 1e-9,
-                "cold-start should seed live weight; got {}, expected {}", got_live, expected);
-            assert!((got_prior - expected).abs() < 1e-9,
-                "cold-start should set prior; got {}, expected {}", got_prior, expected);
+            assert!(
+                (got_live - expected).abs() < 1e-9,
+                "cold-start should seed live weight; got {}, expected {}",
+                got_live,
+                expected
+            );
+            assert!(
+                (got_prior - expected).abs() < 1e-9,
+                "cold-start should set prior; got {}, expected {}",
+                got_prior,
+                expected
+            );
         }
     }
 
@@ -5287,17 +6136,29 @@ mod tests {
         // Autotune ships a very different prior
         engine.set_weights(0.05, 0.05, 0.45, 0.45);
 
-        assert_eq!(engine.w_recency,   live_before.0, "live w_recency must be preserved");
-        assert_eq!(engine.w_frequency, live_before.1, "live w_frequency must be preserved");
-        assert_eq!(engine.w_semantic,  live_before.2, "live w_semantic must be preserved");
-        assert_eq!(engine.w_entropy,   live_before.3, "live w_entropy must be preserved");
+        assert_eq!(
+            engine.w_recency, live_before.0,
+            "live w_recency must be preserved"
+        );
+        assert_eq!(
+            engine.w_frequency, live_before.1,
+            "live w_frequency must be preserved"
+        );
+        assert_eq!(
+            engine.w_semantic, live_before.2,
+            "live w_semantic must be preserved"
+        );
+        assert_eq!(
+            engine.w_entropy, live_before.3,
+            "live w_entropy must be preserved"
+        );
 
         // Prior updated (normalized)
         let s = 0.05 + 0.05 + 0.45 + 0.45;
-        assert!((engine.w_prior_recency   - 0.05 / s).abs() < 1e-9);
+        assert!((engine.w_prior_recency - 0.05 / s).abs() < 1e-9);
         assert!((engine.w_prior_frequency - 0.05 / s).abs() < 1e-9);
-        assert!((engine.w_prior_semantic  - 0.45 / s).abs() < 1e-9);
-        assert!((engine.w_prior_entropy   - 0.45 / s).abs() < 1e-9);
+        assert!((engine.w_prior_semantic - 0.45 / s).abs() < 1e-9);
+        assert!((engine.w_prior_entropy - 0.45 / s).abs() < 1e-9);
     }
 
     #[test]
@@ -5315,8 +6176,8 @@ mod tests {
         let n_0 = 50.0_f64;
         let at = |n: f64| lambda_0 / (1.0 + n / n_0);
 
-        assert!((at(0.0)   - 0.10).abs()        < 1e-12);
-        assert!((at(50.0)  - 0.05).abs()        < 1e-12);
+        assert!((at(0.0) - 0.10).abs() < 1e-12);
+        assert!((at(50.0) - 0.05).abs() < 1e-12);
         assert!((at(500.0) - 0.10 / 11.0).abs() < 1e-12);
 
         // Monotone non-increasing in n — a schedule that ever grows
@@ -5325,14 +6186,20 @@ mod tests {
         let mut prev = at(0.0);
         for n in 1..=10_000 {
             let cur = at(n as f64);
-            assert!(cur <= prev, "λ_reg must be non-increasing: n={} cur={} prev={}", n, cur, prev);
+            assert!(
+                cur <= prev,
+                "λ_reg must be non-increasing: n={} cur={} prev={}",
+                n,
+                cur,
+                prev
+            );
             prev = cur;
         }
 
         // Bounded: 0 < λ_reg ≤ λ₀
         for n in [0.0, 1.0, 50.0, 500.0, 50_000.0] {
             let v = at(n);
-            assert!(v > 0.0,    "λ_reg must stay positive at n={}", n);
+            assert!(v > 0.0, "λ_reg must stay positive at n={}", n);
             assert!(v <= lambda_0 + 1e-12, "λ_reg must be ≤ λ₀ at n={}", n);
         }
 
@@ -5347,20 +6214,22 @@ mod tests {
         // and force autotune to rebuild its estimate from scratch.
         let mut engine = bayesian_test_engine();
         engine.n_feedback_events = 42;
-        engine.w_prior_recency   = 0.40;
+        engine.w_prior_recency = 0.40;
         engine.w_prior_frequency = 0.10;
-        engine.w_prior_semantic  = 0.25;
-        engine.w_prior_entropy   = 0.25;
+        engine.w_prior_semantic = 0.25;
+        engine.w_prior_entropy = 0.25;
 
         let exported = engine.export_state().expect("export_state should succeed");
 
         let mut restored = bayesian_test_engine();
-        restored.import_state(&exported).expect("import_state should succeed");
+        restored
+            .import_state(&exported)
+            .expect("import_state should succeed");
 
         assert_eq!(restored.n_feedback_events, 42);
-        assert!((restored.w_prior_recency   - 0.40).abs() < 1e-9);
+        assert!((restored.w_prior_recency - 0.40).abs() < 1e-9);
         assert!((restored.w_prior_frequency - 0.10).abs() < 1e-9);
-        assert!((restored.w_prior_semantic  - 0.25).abs() < 1e-9);
-        assert!((restored.w_prior_entropy   - 0.25).abs() < 1e-9);
+        assert!((restored.w_prior_semantic - 0.25).abs() < 1e-9);
+        assert!((restored.w_prior_entropy - 0.25).abs() < 1e-9);
     }
 }

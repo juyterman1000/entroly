@@ -4,7 +4,7 @@
 
 ## Status
 
-Placeholder. Nix flake is on the v0.18.x roadmap. Until then, Nix users
+Placeholder. Nix flake is on the v0.19.x roadmap. Until then, Nix users
 should install via `pip install entroly` inside a Python virtualenv,
 or use the Docker image at `ghcr.io/juyterman1000/entroly:latest`.
 

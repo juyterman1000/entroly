@@ -35,8 +35,8 @@
 //! Exact 0/1 DP with budget quantization: O(N × Q), Q = 1000.
 //! Used when weights have converged (τ is at floor) for maximum precision.
 //!
-use std::collections::HashMap;
 use crate::fragment::{compute_relevance, ContextFragment};
+use std::collections::HashMap;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -104,10 +104,11 @@ fn sigmoid(x: f64) -> f64 {
 /// making them smooth inputs to the soft bisection.
 #[inline]
 fn linear_score(frag: &ContextFragment, w: &ScoringWeights, fm: f64) -> f64 {
-    (w.recency   * frag.recency_score
-   + w.frequency * frag.frequency_score
-   + w.semantic  * frag.semantic_score
-   + w.entropy   * frag.entropy_score) * fm.max(0.01)
+    (w.recency * frag.recency_score
+        + w.frequency * frag.frequency_score
+        + w.semantic * frag.semantic_score
+        + w.entropy * frag.entropy_score)
+        * fm.max(0.01)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -172,14 +173,19 @@ pub fn knapsack_optimize(
     let scored: Vec<(usize, f64)> = candidate_indices
         .iter()
         .filter_map(|&i| {
-            let fm = feedback_mults.get(&fragments[i].fragment_id).copied().unwrap_or(1.0);
+            let fm = feedback_mults
+                .get(&fragments[i].fragment_id)
+                .copied()
+                .unwrap_or(1.0);
             let score = if use_soft {
                 linear_score(&fragments[i], weights, fm)
             } else {
                 compute_relevance(
                     &fragments[i],
-                    weights.recency, weights.frequency,
-                    weights.semantic, weights.entropy,
+                    weights.recency,
+                    weights.frequency,
+                    weights.semantic,
+                    weights.entropy,
                     fm,
                 )
             };
@@ -193,12 +199,23 @@ pub fn knapsack_optimize(
 
     // ── Selection ────────────────────────────────────────────────────────────
     let (_method, mut selected, lambda_star, dual_gap) = if use_soft {
-        let (sel, lam, gap) = soft_bisection_select(&scored, fragments, remaining_budget, temperature);
+        let (sel, lam, gap) =
+            soft_bisection_select(&scored, fragments, remaining_budget, temperature);
         ("soft_bisection", sel, lam, gap)
     } else if scored.len() <= 2000 {
-        ("exact_dp", knapsack_dp(&scored, fragments, remaining_budget), 0.0, 0.0)
+        (
+            "exact_dp",
+            knapsack_dp(&scored, fragments, remaining_budget),
+            0.0,
+            0.0,
+        )
     } else {
-        ("greedy_approx", knapsack_greedy(&scored, fragments, remaining_budget), 0.0, 0.0)
+        (
+            "greedy_approx",
+            knapsack_greedy(&scored, fragments, remaining_budget),
+            0.0,
+            0.0,
+        )
     };
 
     // Merge pinned + selected
@@ -207,13 +224,29 @@ pub fn knapsack_optimize(
     let total_relevance: f64 = selected
         .iter()
         .map(|&i| {
-            let fm = feedback_mults.get(&fragments[i].fragment_id).copied().unwrap_or(1.0);
-            compute_relevance(&fragments[i], weights.recency, weights.frequency,
-                              weights.semantic, weights.entropy, fm)
+            let fm = feedback_mults
+                .get(&fragments[i].fragment_id)
+                .copied()
+                .unwrap_or(1.0);
+            compute_relevance(
+                &fragments[i],
+                weights.recency,
+                weights.frequency,
+                weights.semantic,
+                weights.entropy,
+                fm,
+            )
         })
         .sum();
 
-    KnapsackResult { selected_indices: selected, total_tokens, total_relevance, _method, lambda_star, dual_gap }
+    KnapsackResult {
+        selected_indices: selected,
+        total_tokens,
+        total_relevance,
+        _method,
+        lambda_star,
+        dual_gap,
+    }
 }
 
 // ── Public bisection helper ───────────────────────────────────────────────────
@@ -251,10 +284,13 @@ pub fn compute_lambda_star(
     let budget_f = budget_target as f64;
 
     let expected_tokens = |lambda: f64| -> f64 {
-        scored.iter().map(|&(idx, score)| {
-            let tc = fragments[idx].token_count as f64;
-            sigmoid((score - lambda * tc) / tau) * tc
-        }).sum()
+        scored
+            .iter()
+            .map(|&(idx, score)| {
+                let tc = fragments[idx].token_count as f64;
+                sigmoid((score - lambda * tc) / tau) * tc
+            })
+            .sum()
     };
 
     // Fast path: all items fit at λ=0.
@@ -262,24 +298,36 @@ pub fn compute_lambda_star(
         return 0.0;
     }
 
-    let max_score = scored.iter().map(|&(_, s)| s).fold(f64::NEG_INFINITY, f64::max);
-    let min_tokens = scored.iter()
+    let max_score = scored
+        .iter()
+        .map(|&(_, s)| s)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_tokens = scored
+        .iter()
         .map(|&(idx, _)| fragments[idx].token_count as f64)
         .fold(f64::INFINITY, f64::min)
         .max(1.0);
     let mut hi = (max_score + 5.0 * tau) / (min_tokens * tau).max(1e-10);
     let mut iters = 0;
-    while expected_tokens(hi) >= budget_f && iters < 60 { hi *= 2.0; iters += 1; }
-    if expected_tokens(hi) >= budget_f { return 0.0; }
+    while expected_tokens(hi) >= budget_f && iters < 60 {
+        hi *= 2.0;
+        iters += 1;
+    }
+    if expected_tokens(hi) >= budget_f {
+        return 0.0;
+    }
 
     let mut lo = 0.0_f64;
     for _ in 0..30 {
         let mid = (lo + hi) * 0.5;
-        if expected_tokens(mid) > budget_f { lo = mid; } else { hi = mid; }
+        if expected_tokens(mid) > budget_f {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
     }
     (lo + hi) * 0.5
 }
-
 
 /// Differentiable forward selector using exact Lagrange dual bisection.
 ///
@@ -318,10 +366,13 @@ fn soft_bisection_select(
 
     // g(λ) = Σ σ((sᵢ − λ·tokensᵢ)/τ)·tokensᵢ − B  (strictly decreasing in λ)
     let expected_tokens = |lambda: f64| -> f64 {
-        scored.iter().map(|&(idx, score)| {
-            let tc = fragments[idx].token_count as f64;
-            sigmoid((score - lambda * tc) / tau) * tc
-        }).sum()
+        scored
+            .iter()
+            .map(|&(idx, score)| {
+                let tc = fragments[idx].token_count as f64;
+                sigmoid((score - lambda * tc) / tau) * tc
+            })
+            .sum()
     };
 
     // Fast path: λ=0 → p_i = σ(s_i/τ) ≈ 1 for all. If total E[tokens] ≤ B, include all.
@@ -330,14 +381,21 @@ fn soft_bisection_select(
     }
 
     // Find λ_hi s.t. g(λ_hi) < 0 (expected tokens < budget).
-    let max_score = scored.iter().map(|&(_, s)| s).fold(f64::NEG_INFINITY, f64::max);
-    let min_tokens = scored.iter()
+    let max_score = scored
+        .iter()
+        .map(|&(_, s)| s)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_tokens = scored
+        .iter()
         .map(|&(idx, _)| fragments[idx].token_count as f64)
         .fold(f64::INFINITY, f64::min)
         .max(1.0);
     let mut hi = (max_score + 5.0 * tau) / (min_tokens * tau).max(1e-10);
     let mut iters = 0;
-    while expected_tokens(hi) >= budget_f && iters < 60 { hi *= 2.0; iters += 1; }
+    while expected_tokens(hi) >= budget_f && iters < 60 {
+        hi *= 2.0;
+        iters += 1;
+    }
     if expected_tokens(hi) >= budget_f {
         return (knapsack_greedy(scored, fragments, budget), 0.0, 0.0);
     }
@@ -346,21 +404,26 @@ fn soft_bisection_select(
     let mut lo = 0.0_f64;
     for _ in 0..30 {
         let mid = (lo + hi) * 0.5;
-        if expected_tokens(mid) > budget_f { lo = mid; } else { hi = mid; }
+        if expected_tokens(mid) > budget_f {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
     }
     let lambda_star = (lo + hi) * 0.5;
 
     // Compute exact KKT probabilities at λ*.
     // Sorting by p_i ≡ sorting by reduced cost (s_i − λ*·tokens_i) — LP duality ordering.
-    let mut with_probs: Vec<(usize, f64)> = scored.iter().map(|&(idx, score)| {
-        let tc = fragments[idx].token_count as f64;
-        let p = sigmoid((score - lambda_star * tc) / tau);
-        (idx, p)
-    }).collect();
+    let mut with_probs: Vec<(usize, f64)> = scored
+        .iter()
+        .map(|&(idx, score)| {
+            let tc = fragments[idx].token_count as f64;
+            let p = sigmoid((score - lambda_star * tc) / tau);
+            (idx, p)
+        })
+        .collect();
 
-    with_probs.sort_unstable_by(|a, b| {
-        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    with_probs.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Hard budget enforcement via greedy fill.
     let mut selected = Vec::with_capacity(with_probs.len());
@@ -373,11 +436,25 @@ fn soft_bisection_select(
             remaining -= tc;
             // Primal contribution: p_i · s_i (soft selection value)
             let tc_f = tc as f64;
-            let p_final = sigmoid((scored.iter().find(|&&(i,_)| i==idx).map(|&(_,s)|s).unwrap_or(0.0)
-                - lambda_star * tc_f) / tau);
-            primal_value += p_final * scored.iter().find(|&&(i,_)| i==idx).map(|&(_,s)|s).unwrap_or(0.0);
+            let p_final = sigmoid(
+                (scored
+                    .iter()
+                    .find(|&&(i, _)| i == idx)
+                    .map(|&(_, s)| s)
+                    .unwrap_or(0.0)
+                    - lambda_star * tc_f)
+                    / tau,
+            );
+            primal_value += p_final
+                * scored
+                    .iter()
+                    .find(|&&(i, _)| i == idx)
+                    .map(|&(_, s)| s)
+                    .unwrap_or(0.0);
         }
-        if remaining == 0 { break; }
+        if remaining == 0 {
+            break;
+        }
     }
 
     // ── Adaptive Dual Gap Temperature (ADGT) signal ──────────────────────────
@@ -386,12 +463,20 @@ fn soft_bisection_select(
     // dual_gap = D(λ*) − primal ∈ [0, τ·N·log(2)]
     //   → gap ≈ 0: weights converged, can lower temperature
     //   → gap ≈ τ·N·log(2): all p_i ≈ 0.5, fully uncertain, keep temperature high
-    let dual_value: f64 = scored.iter().map(|&(idx, score)| {
-        let tc = fragments[idx].token_count as f64;
-        let z = (score - lambda_star * tc) / tau;
-        // Numerically stable log(1 + exp(z)) = log1p(exp(z))
-        tau * if z > 20.0 { z } else { (1.0_f64 + z.exp()).ln() }
-    }).sum::<f64>() + lambda_star * budget_f;
+    let dual_value: f64 = scored
+        .iter()
+        .map(|&(idx, score)| {
+            let tc = fragments[idx].token_count as f64;
+            let z = (score - lambda_star * tc) / tau;
+            // Numerically stable log(1 + exp(z)) = log1p(exp(z))
+            tau * if z > 20.0 {
+                z
+            } else {
+                (1.0_f64 + z.exp()).ln()
+            }
+        })
+        .sum::<f64>()
+        + lambda_star * budget_f;
 
     let dual_gap = (dual_value - primal_value).max(0.0);
 
@@ -408,11 +493,7 @@ fn soft_bisection_select(
 /// Small fragments (token_count < granularity) are "free" items:
 /// always included, real cost subtracted from budget. This prevents
 /// the 12.8× cost-inflation artifact of ceiling-division quantization.
-fn knapsack_dp(
-    scored: &[(usize, f64)],
-    fragments: &[ContextFragment],
-    budget: u32,
-) -> Vec<usize> {
+fn knapsack_dp(scored: &[(usize, f64)], fragments: &[ContextFragment], budget: u32) -> Vec<usize> {
     const Q: u32 = 1000;
     let g = (budget / Q).max(1);
 
@@ -488,7 +569,9 @@ fn knapsack_greedy(
             selected.push(idx);
             remaining -= fragments[idx].token_count;
         }
-        if remaining == 0 { break; }
+        if remaining == 0 {
+            break;
+        }
     }
     selected
 }
@@ -500,11 +583,23 @@ fn pinned_relevance(
     weights: &ScoringWeights,
     feedback_mults: &HashMap<String, f64>,
 ) -> f64 {
-    pinned.iter().map(|&i| {
-        let fm = feedback_mults.get(&fragments[i].fragment_id).copied().unwrap_or(1.0);
-        compute_relevance(&fragments[i], weights.recency, weights.frequency,
-                          weights.semantic, weights.entropy, fm)
-    }).sum()
+    pinned
+        .iter()
+        .map(|&i| {
+            let fm = feedback_mults
+                .get(&fragments[i].fragment_id)
+                .copied()
+                .unwrap_or(1.0);
+            compute_relevance(
+                &fragments[i],
+                weights.recency,
+                weights.frequency,
+                weights.semantic,
+                weights.entropy,
+                fm,
+            )
+        })
+        .sum()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -514,21 +609,45 @@ mod tests {
     use super::*;
     use crate::fragment::ContextFragment;
 
-    fn no_feedback() -> HashMap<String, f64> { HashMap::new() }
+    fn no_feedback() -> HashMap<String, f64> {
+        HashMap::new()
+    }
 
     #[test]
     fn test_knapsack_selects_optimal() {
         let fragments = vec![
-            { let mut f = ContextFragment::new("a".into(), "hi val small".into(), 100, "".into());
-              f.recency_score = 1.0; f.entropy_score = 0.9; f },
-            { let mut f = ContextFragment::new("b".into(), "lo val large".into(), 900, "".into());
-              f.recency_score = 0.1; f.entropy_score = 0.1; f },
-            { let mut f = ContextFragment::new("c".into(), "med val med".into(), 400, "".into());
-              f.recency_score = 0.7; f.entropy_score = 0.6; f },
+            {
+                let mut f = ContextFragment::new("a".into(), "hi val small".into(), 100, "".into());
+                f.recency_score = 1.0;
+                f.entropy_score = 0.9;
+                f
+            },
+            {
+                let mut f = ContextFragment::new("b".into(), "lo val large".into(), 900, "".into());
+                f.recency_score = 0.1;
+                f.entropy_score = 0.1;
+                f
+            },
+            {
+                let mut f = ContextFragment::new("c".into(), "med val med".into(), 400, "".into());
+                f.recency_score = 0.7;
+                f.entropy_score = 0.6;
+                f
+            },
         ];
         // Hard path (τ=0): exact DP
-        let result = knapsack_optimize(&fragments, 500, &ScoringWeights::default(), &no_feedback(), 0.0);
-        let ids: Vec<&str> = result.selected_indices.iter().map(|&i| fragments[i].fragment_id.as_str()).collect();
+        let result = knapsack_optimize(
+            &fragments,
+            500,
+            &ScoringWeights::default(),
+            &no_feedback(),
+            0.0,
+        );
+        let ids: Vec<&str> = result
+            .selected_indices
+            .iter()
+            .map(|&i| fragments[i].fragment_id.as_str())
+            .collect();
         assert!(ids.contains(&"a"), "Should select high-value 'a'");
         assert!(!ids.contains(&"b"), "Should not select low-value 'b'");
         assert!(result.total_tokens <= 500);
@@ -537,18 +656,46 @@ mod tests {
     #[test]
     fn test_soft_bisection_selects_optimal() {
         let fragments = vec![
-            { let mut f = ContextFragment::new("a".into(), "hi val small".into(), 100, "".into());
-              f.recency_score = 1.0; f.entropy_score = 0.9; f },
-            { let mut f = ContextFragment::new("b".into(), "lo val large".into(), 900, "".into());
-              f.recency_score = 0.1; f.entropy_score = 0.1; f },
-            { let mut f = ContextFragment::new("c".into(), "med val med".into(), 400, "".into());
-              f.recency_score = 0.7; f.entropy_score = 0.6; f },
+            {
+                let mut f = ContextFragment::new("a".into(), "hi val small".into(), 100, "".into());
+                f.recency_score = 1.0;
+                f.entropy_score = 0.9;
+                f
+            },
+            {
+                let mut f = ContextFragment::new("b".into(), "lo val large".into(), 900, "".into());
+                f.recency_score = 0.1;
+                f.entropy_score = 0.1;
+                f
+            },
+            {
+                let mut f = ContextFragment::new("c".into(), "med val med".into(), 400, "".into());
+                f.recency_score = 0.7;
+                f.entropy_score = 0.6;
+                f
+            },
         ];
         // Soft path (τ=0.1): bisection — should still prefer 'a' and 'c' over 'b'
-        let result = knapsack_optimize(&fragments, 500, &ScoringWeights::default(), &no_feedback(), 0.1);
-        let ids: Vec<&str> = result.selected_indices.iter().map(|&i| fragments[i].fragment_id.as_str()).collect();
-        assert!(ids.contains(&"a"), "Soft bisection should select high-value 'a'");
-        assert!(!ids.contains(&"b"), "Soft bisection should exclude low-value 'b'");
+        let result = knapsack_optimize(
+            &fragments,
+            500,
+            &ScoringWeights::default(),
+            &no_feedback(),
+            0.1,
+        );
+        let ids: Vec<&str> = result
+            .selected_indices
+            .iter()
+            .map(|&i| fragments[i].fragment_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"a"),
+            "Soft bisection should select high-value 'a'"
+        );
+        assert!(
+            !ids.contains(&"b"),
+            "Soft bisection should exclude low-value 'b'"
+        );
         assert!(result.total_tokens <= 500);
         assert_eq!(result._method, "soft_bisection");
     }
@@ -556,39 +703,86 @@ mod tests {
     #[test]
     fn test_small_fragments_not_penalized() {
         let fragments = vec![
-            { let mut f = ContextFragment::new("small".into(), "tiny".into(), 10, "".into());
-              f.recency_score = 1.0; f.entropy_score = 0.9; f },
-            { let mut f = ContextFragment::new("big".into(), "large content here".into(), 500, "".into());
-              f.recency_score = 0.8; f.entropy_score = 0.7; f },
+            {
+                let mut f = ContextFragment::new("small".into(), "tiny".into(), 10, "".into());
+                f.recency_score = 1.0;
+                f.entropy_score = 0.9;
+                f
+            },
+            {
+                let mut f =
+                    ContextFragment::new("big".into(), "large content here".into(), 500, "".into());
+                f.recency_score = 0.8;
+                f.entropy_score = 0.7;
+                f
+            },
         ];
-        let result = knapsack_optimize(&fragments, 600, &ScoringWeights::default(), &no_feedback(), 0.0);
-        let ids: Vec<&str> = result.selected_indices.iter().map(|&i| fragments[i].fragment_id.as_str()).collect();
-        assert!(ids.contains(&"small"), "Small fragment should be included as free item");
+        let result = knapsack_optimize(
+            &fragments,
+            600,
+            &ScoringWeights::default(),
+            &no_feedback(),
+            0.0,
+        );
+        let ids: Vec<&str> = result
+            .selected_indices
+            .iter()
+            .map(|&i| fragments[i].fragment_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"small"),
+            "Small fragment should be included as free item"
+        );
         assert!(ids.contains(&"big"));
     }
 
     #[test]
     fn test_feedback_affects_selection() {
         let fragments = vec![
-            { let mut f = ContextFragment::new("good".into(), "useful code".into(), 200, "".into());
-              f.recency_score = 0.5; f.entropy_score = 0.5; f },
-            { let mut f = ContextFragment::new("bad".into(), "unhelpful code".into(), 200, "".into());
-              f.recency_score = 0.5; f.entropy_score = 0.5; f },
+            {
+                let mut f =
+                    ContextFragment::new("good".into(), "useful code".into(), 200, "".into());
+                f.recency_score = 0.5;
+                f.entropy_score = 0.5;
+                f
+            },
+            {
+                let mut f =
+                    ContextFragment::new("bad".into(), "unhelpful code".into(), 200, "".into());
+                f.recency_score = 0.5;
+                f.entropy_score = 0.5;
+                f
+            },
         ];
         let mut feedback = HashMap::new();
         feedback.insert("good".to_string(), 1.8);
-        feedback.insert("bad".to_string(),  0.5);
+        feedback.insert("bad".to_string(), 0.5);
 
         // Test both paths: hard DP
         let result = knapsack_optimize(&fragments, 250, &ScoringWeights::default(), &feedback, 0.0);
-        let ids: Vec<&str> = result.selected_indices.iter().map(|&i| fragments[i].fragment_id.as_str()).collect();
-        assert!(ids.contains(&"good"), "DP: feedback-boosted fragment should win");
+        let ids: Vec<&str> = result
+            .selected_indices
+            .iter()
+            .map(|&i| fragments[i].fragment_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"good"),
+            "DP: feedback-boosted fragment should win"
+        );
         assert!(!ids.contains(&"bad"));
 
         // Soft bisection
-        let result2 = knapsack_optimize(&fragments, 250, &ScoringWeights::default(), &feedback, 0.5);
-        let ids2: Vec<&str> = result2.selected_indices.iter().map(|&i| fragments[i].fragment_id.as_str()).collect();
-        assert!(ids2.contains(&"good"), "Soft: feedback-boosted fragment should win");
+        let result2 =
+            knapsack_optimize(&fragments, 250, &ScoringWeights::default(), &feedback, 0.5);
+        let ids2: Vec<&str> = result2
+            .selected_indices
+            .iter()
+            .map(|&i| fragments[i].fragment_id.as_str())
+            .collect();
+        assert!(
+            ids2.contains(&"good"),
+            "Soft: feedback-boosted fragment should win"
+        );
         assert!(!ids2.contains(&"bad"));
     }
 
@@ -598,29 +792,64 @@ mod tests {
         let mut fragments = Vec::new();
         for i in 0..50 {
             let mut f = ContextFragment::new(
-                format!("f{}", i), format!("content {}", i), 100 + i as u32 * 7, "".into()
+                format!("f{}", i),
+                format!("content {}", i),
+                100 + i as u32 * 7,
+                "".into(),
             );
             f.recency_score = (i as f64) / 50.0;
             f.entropy_score = 0.5;
             fragments.push(f);
         }
         let budget = 1500u32;
-        let result = knapsack_optimize(&fragments, budget, &ScoringWeights::default(), &no_feedback(), 1.0);
-        assert!(result.total_tokens <= budget, "Soft bisection exceeded budget: {} > {}", result.total_tokens, budget);
+        let result = knapsack_optimize(
+            &fragments,
+            budget,
+            &ScoringWeights::default(),
+            &no_feedback(),
+            1.0,
+        );
+        assert!(
+            result.total_tokens <= budget,
+            "Soft bisection exceeded budget: {} > {}",
+            result.total_tokens,
+            budget
+        );
     }
 
     #[test]
     fn test_temperature_transition() {
         // At very low temperature, soft bisection should approximate hard greedy.
         let fragments = vec![
-            { let mut f = ContextFragment::new("best".into(), "best".into(), 100, "".into());
-              f.recency_score = 1.0; f.entropy_score = 1.0; f },
-            { let mut f = ContextFragment::new("worst".into(), "worst".into(), 100, "".into());
-              f.recency_score = 0.01; f.entropy_score = 0.01; f },
+            {
+                let mut f = ContextFragment::new("best".into(), "best".into(), 100, "".into());
+                f.recency_score = 1.0;
+                f.entropy_score = 1.0;
+                f
+            },
+            {
+                let mut f = ContextFragment::new("worst".into(), "worst".into(), 100, "".into());
+                f.recency_score = 0.01;
+                f.entropy_score = 0.01;
+                f
+            },
         ];
         // Budget only fits one. At low τ, soft bisection → hard threshold.
-        let result = knapsack_optimize(&fragments, 150, &ScoringWeights::default(), &no_feedback(), 0.05);
-        let ids: Vec<&str> = result.selected_indices.iter().map(|&i| fragments[i].fragment_id.as_str()).collect();
-        assert!(ids.contains(&"best"), "Low-τ soft bisection should pick the best fragment");
+        let result = knapsack_optimize(
+            &fragments,
+            150,
+            &ScoringWeights::default(),
+            &no_feedback(),
+            0.05,
+        );
+        let ids: Vec<&str> = result
+            .selected_indices
+            .iter()
+            .map(|&i| fragments[i].fragment_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"best"),
+            "Low-τ soft bisection should pick the best fragment"
+        );
     }
 }

@@ -1,18 +1,18 @@
 {
   "name": "entroly-wasm",
-  "version": "0.19.0",
-  "description": "npm launcher and WebAssembly bindings for the Rust Entroly context engine.",
+  "version": "0.19.1",
+  "description": "Information-theoretic context optimization for AI coding agents. Zero-friction, pure WebAssembly - no Python dependency.",
   "main": "index.js",
   "types": "pkg/entroly_wasm.d.ts",
   "bin": {
-    "entroly-wasm": "./js/cli.js"
+    "entroly-wasm": "./bin/entroly-wasm.js"
   },
   "files": [
     "index.js",
-    "bin/",
     "pkg/entroly_wasm_bg.wasm",
     "pkg/entroly_wasm.js",
     "pkg/entroly_wasm.d.ts",
+    "bin/entroly-wasm.js",
     "js/cli.js",
     "js/server.js",
     "js/config.js",
@@ -34,7 +34,10 @@
     "js/evolution_daemon.js"
   ],
   "scripts": {
-    "serve": "node js/cli.js serve",
+    "build": "wasm-pack build --target nodejs --out-dir pkg",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "serve": "node js/server.js",
     "optimize": "node js/cli.js optimize",
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
@@ -42,26 +45,11 @@
     "test": "node test_wasm_e2e.js"
   },
   "keywords": [
-    "entroly",
-    "context-optimization",
-    "mcp",
-    "mcp-server",
-    "ai",
-    "agents",
-    "wasm",
-    "webassembly",
-    "information-theory",
-    "knapsack",
-    "entropy",
-    "autotune"
+    "entroly", "context-optimization", "mcp", "mcp-server", "ai", "agents",
+    "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/juyterman1000/entroly"
-  },
+  "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },
   "author": "entroly",
   "license": "Apache-2.0",
-  "engines": {
-    "node": ">=16.0.0"
-  }
+  "engines": { "node": ">=16.0.0" }
 }

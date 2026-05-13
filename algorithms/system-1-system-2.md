@@ -2,11 +2,11 @@
 
 **Implementation:** [`entroly/coupling.py`](../entroly/coupling.py)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
-**Commit history:** `4eaa0a5` (v0.18.0 introduction)
+**Commit history:** `4eaa0a5` (v0.19.1 introduction)
 
 ## One-paragraph spec
 
-Entroly has two cognitions on the same substrate that, before v0.18.0,
+Entroly has two cognitions on the same substrate that, before v0.19.1,
 did not exchange information:
 
 - **System 1** (fast, automatic): Rust engine in the proxy. Knapsack +
@@ -45,7 +45,7 @@ Slow*, 2011.)
 ## Feature gate
 
 `ENTROLY_VAULT_COUPLING=1` enables coupling in production. Default off
-pending field tests; the architectural seam is in place since v0.18.0.
+pending field tests; the architectural seam is in place since v0.19.1.
 
 ## References
 

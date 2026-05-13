@@ -42,9 +42,17 @@ fn detect_lang(source: &str) -> Lang {
         Lang::Python
     } else if lower.ends_with(".rs") {
         Lang::Rust
-    } else if lower.ends_with(".js") || lower.ends_with(".jsx") || lower.ends_with(".mjs") || lower.ends_with(".cjs") {
+    } else if lower.ends_with(".js")
+        || lower.ends_with(".jsx")
+        || lower.ends_with(".mjs")
+        || lower.ends_with(".cjs")
+    {
         Lang::JavaScript
-    } else if lower.ends_with(".ts") || lower.ends_with(".tsx") || lower.ends_with(".mts") || lower.ends_with(".cts") {
+    } else if lower.ends_with(".ts")
+        || lower.ends_with(".tsx")
+        || lower.ends_with(".mts")
+        || lower.ends_with(".cts")
+    {
         Lang::TypeScript
     } else if lower.ends_with(".go") {
         Lang::Go
@@ -54,8 +62,13 @@ fn detect_lang(source: &str) -> Lang {
         Lang::CSharp
     } else if lower.ends_with(".swift") {
         Lang::Swift
-    } else if lower.ends_with(".c") || lower.ends_with(".cpp") || lower.ends_with(".cc")
-        || lower.ends_with(".h") || lower.ends_with(".hpp") || lower.ends_with(".hxx") {
+    } else if lower.ends_with(".c")
+        || lower.ends_with(".cpp")
+        || lower.ends_with(".cc")
+        || lower.ends_with(".h")
+        || lower.ends_with(".hpp")
+        || lower.ends_with(".hxx")
+    {
         Lang::Cpp
     } else if lower.ends_with(".sh") || lower.ends_with(".bash") || lower.ends_with(".zsh") {
         Lang::Shell
@@ -335,7 +348,8 @@ fn extract_rust_skeleton(content: &str) -> String {
         }
 
         // use/mod/extern statements
-        if trimmed.starts_with("use ") || trimmed.starts_with("mod ")
+        if trimmed.starts_with("use ")
+            || trimmed.starts_with("mod ")
             || trimmed.starts_with("extern ")
         {
             out.push(line.to_string());
@@ -355,9 +369,12 @@ fn extract_rust_skeleton(content: &str) -> String {
         }
 
         // const/static/type aliases
-        if trimmed.starts_with("const ") || trimmed.starts_with("static ")
-            || trimmed.starts_with("pub const ") || trimmed.starts_with("pub static ")
-            || trimmed.starts_with("type ") || trimmed.starts_with("pub type ")
+        if trimmed.starts_with("const ")
+            || trimmed.starts_with("static ")
+            || trimmed.starts_with("pub const ")
+            || trimmed.starts_with("pub static ")
+            || trimmed.starts_with("type ")
+            || trimmed.starts_with("pub type ")
         {
             out.push(line.to_string());
             i += 1;
@@ -368,7 +385,8 @@ fn extract_rust_skeleton(content: &str) -> String {
         if is_rust_type_def(trimmed) {
             out.push(line.to_string());
             if trimmed.contains('{') {
-                let mut brace_depth = count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
+                let mut brace_depth =
+                    count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
                 if brace_depth > 0 {
                     // Keep struct/enum fields (they're part of the type signature)
                     i += 1;
@@ -415,8 +433,10 @@ fn extract_rust_skeleton(content: &str) -> String {
                 brace_depth += count_char(t, '{') as i32 - count_char(t, '}') as i32;
 
                 // fn signature inside impl
-                if t.starts_with("pub fn ") || t.starts_with("fn ")
-                    || t.starts_with("pub async fn ") || t.starts_with("async fn ")
+                if t.starts_with("pub fn ")
+                    || t.starts_with("fn ")
+                    || t.starts_with("pub async fn ")
+                    || t.starts_with("async fn ")
                     || t.starts_with("pub(crate) fn ")
                 {
                     // Output the signature
@@ -428,7 +448,8 @@ fn extract_rust_skeleton(content: &str) -> String {
                             out.push(format!("{}    ...", &l[..leading_spaces(l)]));
                             i += 1;
                             while i < lines.len() && fn_depth > 0 {
-                                fn_depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                                fn_depth += count_char(lines[i], '{') as i32
+                                    - count_char(lines[i], '}') as i32;
                                 if fn_depth <= 0 {
                                     out.push(format!("{}}}", &" ".repeat(leading_spaces(l))));
                                 }
@@ -451,19 +472,23 @@ fn extract_rust_skeleton(content: &str) -> String {
         }
 
         // Free-standing fn definitions
-        if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ")
-            || trimmed.starts_with("pub async fn ") || trimmed.starts_with("async fn ")
+        if trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub async fn ")
+            || trimmed.starts_with("async fn ")
             || trimmed.starts_with("pub(crate) fn ")
         {
             out.push(line.to_string());
             if trimmed.contains('{') {
-                let mut fn_depth = count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
+                let mut fn_depth =
+                    count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
                 if fn_depth > 0 {
                     let indent_str = " ".repeat(leading_spaces(line));
                     out.push(format!("{}    ...", indent_str));
                     i += 1;
                     while i < lines.len() && fn_depth > 0 {
-                        fn_depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                        fn_depth +=
+                            count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                         i += 1;
                     }
                     out.push(format!("{}}}", indent_str));
@@ -536,18 +561,23 @@ fn extract_js_skeleton(content: &str) -> String {
         }
 
         // Top-level function declarations
-        if indent == 0 && (trimmed.starts_with("function ") || trimmed.starts_with("async function ")
-            || trimmed.starts_with("export function ") || trimmed.starts_with("export async function ")
-            || trimmed.starts_with("export default function "))
+        if indent == 0
+            && (trimmed.starts_with("function ")
+                || trimmed.starts_with("async function ")
+                || trimmed.starts_with("export function ")
+                || trimmed.starts_with("export async function ")
+                || trimmed.starts_with("export default function "))
         {
             out.push(line.to_string());
             if trimmed.contains('{') {
-                let mut fn_depth = count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
+                let mut fn_depth =
+                    count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
                 if fn_depth > 0 {
                     out.push("    ...".to_string());
                     i += 1;
                     while i < lines.len() && fn_depth > 0 {
-                        fn_depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                        fn_depth +=
+                            count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                         i += 1;
                     }
                     out.push("}".to_string());
@@ -559,8 +589,10 @@ fn extract_js_skeleton(content: &str) -> String {
         }
 
         // Top-level class declarations
-        if indent == 0 && (trimmed.starts_with("class ") || trimmed.starts_with("export class ")
-            || trimmed.starts_with("export default class "))
+        if indent == 0
+            && (trimmed.starts_with("class ")
+                || trimmed.starts_with("export class ")
+                || trimmed.starts_with("export default class "))
         {
             out.push(line.to_string());
             i += 1;
@@ -601,8 +633,8 @@ fn extract_js_skeleton(content: &str) -> String {
                         out.push(format!("{}    ...", indent_str));
                         i += 1;
                         while i < lines.len() && method_depth > 0 {
-                            let body_delta = count_char(lines[i], '{') as i32
-                                - count_char(lines[i], '}') as i32;
+                            let body_delta =
+                                count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                             method_depth += body_delta;
                             // These lines are also class-body lines — keep brace_depth in sync
                             brace_depth += body_delta;
@@ -619,9 +651,12 @@ fn extract_js_skeleton(content: &str) -> String {
         }
 
         // Top-level const/let/var (type definitions, config, etc.)
-        if indent == 0 && (trimmed.starts_with("const ") || trimmed.starts_with("let ")
-            || trimmed.starts_with("var ") || trimmed.starts_with("export const ")
-            || trimmed.starts_with("export let "))
+        if indent == 0
+            && (trimmed.starts_with("const ")
+                || trimmed.starts_with("let ")
+                || trimmed.starts_with("var ")
+                || trimmed.starts_with("export const ")
+                || trimmed.starts_with("export let "))
         {
             // Keep just the declaration line (not multi-line object literals)
             out.push(line.to_string());
@@ -641,8 +676,11 @@ fn extract_js_skeleton(content: &str) -> String {
         }
 
         // Interface/type declarations (TypeScript)
-        if indent == 0 && (trimmed.starts_with("interface ") || trimmed.starts_with("export interface ")
-            || trimmed.starts_with("type ") || trimmed.starts_with("export type "))
+        if indent == 0
+            && (trimmed.starts_with("interface ")
+                || trimmed.starts_with("export interface ")
+                || trimmed.starts_with("type ")
+                || trimmed.starts_with("export type "))
         {
             out.push(line.to_string());
             if trimmed.contains('{') && !trimmed.contains('}') {
@@ -780,7 +818,8 @@ fn extract_go_skeleton(content: &str) -> String {
                     out.push("\t// ...".to_string());
                     i += 1;
                     while i < lines.len() && depth > 0 {
-                        depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                        depth +=
+                            count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                         i += 1;
                     }
                     out.push("}".to_string());
@@ -827,7 +866,9 @@ fn extract_java_skeleton(content: &str) -> String {
                 i += 1;
                 while i < lines.len() {
                     out.push(lines[i].to_string());
-                    if lines[i].contains("*/") { break; }
+                    if lines[i].contains("*/") {
+                        break;
+                    }
                     i += 1;
                 }
             }
@@ -862,7 +903,8 @@ fn extract_java_skeleton(content: &str) -> String {
             i += 1;
             // Enter class body — keep method signatures, skip bodies
             if trimmed.contains('{') {
-                let mut class_depth = count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
+                let mut class_depth =
+                    count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
                 while i < lines.len() && class_depth > 0 {
                     let l = lines[i];
                     let t = l.trim();
@@ -898,7 +940,8 @@ fn extract_java_skeleton(content: &str) -> String {
                             i += 1;
                             let mut method_depth = delta;
                             while i < lines.len() && method_depth > 0 {
-                                let md = count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                                let md = count_char(lines[i], '{') as i32
+                                    - count_char(lines[i], '}') as i32;
                                 method_depth += md;
                                 class_depth += md;
                                 i += 1;
@@ -962,7 +1005,9 @@ fn extract_cpp_skeleton(content: &str) -> String {
                 i += 1;
                 while i < lines.len() {
                     out.push(lines[i].to_string());
-                    if lines[i].contains("*/") { break; }
+                    if lines[i].contains("*/") {
+                        break;
+                    }
                     i += 1;
                 }
             }
@@ -992,7 +1037,8 @@ fn extract_cpp_skeleton(content: &str) -> String {
         }
 
         // class / struct definition — keep members, skip method bodies
-        if (trimmed.starts_with("class ") || trimmed.starts_with("struct ")
+        if (trimmed.starts_with("class ")
+            || trimmed.starts_with("struct ")
             || trimmed.starts_with("template"))
             && (trimmed.contains('{') || !trimmed.ends_with(';'))
         {
@@ -1020,7 +1066,8 @@ fn extract_cpp_skeleton(content: &str) -> String {
                         i += 1;
                         let mut fn_depth = delta;
                         while i < lines.len() && fn_depth > 0 {
-                            let fd = count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                            let fd =
+                                count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                             fn_depth += fd;
                             depth += fd;
                             i += 1;
@@ -1051,7 +1098,8 @@ fn extract_cpp_skeleton(content: &str) -> String {
                     out.push(format!("{}    // ...", indent));
                     i += 1;
                     while i < lines.len() && depth > 0 {
-                        depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                        depth +=
+                            count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                         i += 1;
                     }
                     out.push(format!("{}}}", indent));
@@ -1103,7 +1151,9 @@ fn extract_swift_skeleton(content: &str) -> String {
 
         // Blank lines
         if trimmed.is_empty() {
-            if !out.is_empty() { out.push(String::new()); }
+            if !out.is_empty() {
+                out.push(String::new());
+            }
             i += 1;
             continue;
         }
@@ -1120,7 +1170,9 @@ fn extract_swift_skeleton(content: &str) -> String {
                 i += 1;
                 while i < lines.len() {
                     out.push(lines[i].to_string());
-                    if lines[i].contains("*/") { break; }
+                    if lines[i].contains("*/") {
+                        break;
+                    }
                     i += 1;
                 }
             }
@@ -1161,9 +1213,12 @@ fn extract_swift_skeleton(content: &str) -> String {
                     }
 
                     // func signature — keep sig, skip body
-                    if t.starts_with("func ") || t.starts_with("static func ")
-                        || t.starts_with("class func ") || t.starts_with("override func ")
-                        || t.starts_with("private func ") || t.starts_with("public func ")
+                    if t.starts_with("func ")
+                        || t.starts_with("static func ")
+                        || t.starts_with("class func ")
+                        || t.starts_with("override func ")
+                        || t.starts_with("private func ")
+                        || t.starts_with("public func ")
                     {
                         out.push(l.to_string());
                         if t.contains('{') && delta > 0 {
@@ -1172,7 +1227,8 @@ fn extract_swift_skeleton(content: &str) -> String {
                             i += 1;
                             let mut fn_d = delta;
                             while i < lines.len() && fn_d > 0 {
-                                let fd = count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                                let fd = count_char(lines[i], '{') as i32
+                                    - count_char(lines[i], '}') as i32;
                                 fn_d += fd;
                                 depth += fd;
                                 i += 1;
@@ -1185,8 +1241,10 @@ fn extract_swift_skeleton(content: &str) -> String {
                     }
 
                     // Property declarations (var/let)
-                    if (t.starts_with("var ") || t.starts_with("let ")
-                        || t.starts_with("private ") || t.starts_with("public "))
+                    if (t.starts_with("var ")
+                        || t.starts_with("let ")
+                        || t.starts_with("private ")
+                        || t.starts_with("public "))
                         && !t.contains('{')
                     {
                         out.push(l.to_string());
@@ -1201,8 +1259,10 @@ fn extract_swift_skeleton(content: &str) -> String {
         }
 
         // Top-level func
-        if indent == 0 && (trimmed.starts_with("func ") || trimmed.starts_with("public func ")
-            || trimmed.starts_with("private func "))
+        if indent == 0
+            && (trimmed.starts_with("func ")
+                || trimmed.starts_with("public func ")
+                || trimmed.starts_with("private func "))
         {
             out.push(line.to_string());
             if trimmed.contains('{') {
@@ -1211,7 +1271,8 @@ fn extract_swift_skeleton(content: &str) -> String {
                     out.push("    // ...".to_string());
                     i += 1;
                     while i < lines.len() && depth > 0 {
-                        depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                        depth +=
+                            count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                         i += 1;
                     }
                     out.push("}".to_string());
@@ -1225,7 +1286,9 @@ fn extract_swift_skeleton(content: &str) -> String {
         i += 1;
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1242,7 +1305,9 @@ fn extract_shell_skeleton(content: &str) -> String {
 
         // Blank lines
         if trimmed.is_empty() {
-            if !out.is_empty() { out.push(String::new()); }
+            if !out.is_empty() {
+                out.push(String::new());
+            }
             i += 1;
             continue;
         }
@@ -1276,8 +1341,8 @@ fn extract_shell_skeleton(content: &str) -> String {
         }
 
         // Function definitions: function_name() { or function function_name {
-        let is_func = (trimmed.contains("()") && trimmed.contains('{'))
-            || trimmed.starts_with("function ");
+        let is_func =
+            (trimmed.contains("()") && trimmed.contains('{')) || trimmed.starts_with("function ");
         if is_func && trimmed.contains('{') {
             out.push(line.to_string());
             let mut depth = count_char(trimmed, '{') as i32 - count_char(trimmed, '}') as i32;
@@ -1296,8 +1361,11 @@ fn extract_shell_skeleton(content: &str) -> String {
         }
 
         // Top-level variable assignments (no indentation)
-        if leading_spaces(line) == 0 && trimmed.contains('=') && !trimmed.starts_with("if ")
-            && !trimmed.starts_with("while ") && !trimmed.starts_with("for ")
+        if leading_spaces(line) == 0
+            && trimmed.contains('=')
+            && !trimmed.starts_with("if ")
+            && !trimmed.starts_with("while ")
+            && !trimmed.starts_with("for ")
         {
             out.push(line.to_string());
             i += 1;
@@ -1307,7 +1375,9 @@ fn extract_shell_skeleton(content: &str) -> String {
         i += 1;
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1316,10 +1386,14 @@ fn extract_shell_skeleton(content: &str) -> String {
 // ═══════════════════════════════════════════════════════════════════
 
 fn is_rust_type_def(trimmed: &str) -> bool {
-    trimmed.starts_with("pub struct ") || trimmed.starts_with("struct ")
-        || trimmed.starts_with("pub enum ") || trimmed.starts_with("enum ")
-        || trimmed.starts_with("pub trait ") || trimmed.starts_with("trait ")
-        || trimmed.starts_with("pub(crate) struct ") || trimmed.starts_with("pub(crate) enum ")
+    trimmed.starts_with("pub struct ")
+        || trimmed.starts_with("struct ")
+        || trimmed.starts_with("pub enum ")
+        || trimmed.starts_with("enum ")
+        || trimmed.starts_with("pub trait ")
+        || trimmed.starts_with("trait ")
+        || trimmed.starts_with("pub(crate) struct ")
+        || trimmed.starts_with("pub(crate) enum ")
 }
 
 fn is_js_method_sig(trimmed: &str) -> bool {
@@ -1328,7 +1402,8 @@ fn is_js_method_sig(trimmed: &str) -> bool {
         return true;
     }
     // Static/get/set prefixes
-    let t = if trimmed.starts_with("static ") || trimmed.starts_with("get ")
+    let t = if trimmed.starts_with("static ")
+        || trimmed.starts_with("get ")
         || trimmed.starts_with("set ")
     {
         trimmed.split_once(' ').map_or("", |(_, rest)| rest)
@@ -1347,15 +1422,28 @@ fn is_js_method_sig(trimmed: &str) -> bool {
 
 fn is_java_type_def(trimmed: &str) -> bool {
     let keywords = ["class ", "interface ", "enum "];
-    let modifiers = ["public ", "private ", "protected ", "abstract ", "final ",
-                     "static ", "sealed ", "open ", "data class "];
+    let modifiers = [
+        "public ",
+        "private ",
+        "protected ",
+        "abstract ",
+        "final ",
+        "static ",
+        "sealed ",
+        "open ",
+        "data class ",
+    ];
     for kw in &keywords {
-        if trimmed.starts_with(kw) { return true; }
+        if trimmed.starts_with(kw) {
+            return true;
+        }
     }
     for m in &modifiers {
         if trimmed.starts_with(m) {
             for kw in &keywords {
-                if trimmed.contains(kw) { return true; }
+                if trimmed.contains(kw) {
+                    return true;
+                }
             }
         }
     }
@@ -1363,19 +1451,36 @@ fn is_java_type_def(trimmed: &str) -> bool {
 }
 
 fn is_java_method_line(trimmed: &str) -> bool {
-    let modifiers = ["public ", "private ", "protected ", "static ", "final ",
-                     "abstract ", "synchronized ", "native ", "override ",
-                     "suspend ", "default "];
+    let modifiers = [
+        "public ",
+        "private ",
+        "protected ",
+        "static ",
+        "final ",
+        "abstract ",
+        "synchronized ",
+        "native ",
+        "override ",
+        "suspend ",
+        "default ",
+    ];
     modifiers.iter().any(|m| trimmed.starts_with(m))
 }
 
 fn is_cpp_function_def(trimmed: &str) -> bool {
     // C++ free function: return_type name(args) { or return_type name(args) const {
     // Must have '(' and '{' or just '(' at end, not be a control statement
-    if !trimmed.contains('(') { return false; }
-    if trimmed.starts_with("if ") || trimmed.starts_with("for ")
-        || trimmed.starts_with("while ") || trimmed.starts_with("switch ")
-        || trimmed.starts_with("return ") { return false; }
+    if !trimmed.contains('(') {
+        return false;
+    }
+    if trimmed.starts_with("if ")
+        || trimmed.starts_with("for ")
+        || trimmed.starts_with("while ")
+        || trimmed.starts_with("switch ")
+        || trimmed.starts_with("return ")
+    {
+        return false;
+    }
     // Has a return type and function name before (
     let before_paren = trimmed.split('(').next().unwrap_or("");
     let words: Vec<&str> = before_paren.split_whitespace().collect();
@@ -1384,15 +1489,26 @@ fn is_cpp_function_def(trimmed: &str) -> bool {
 }
 
 fn is_swift_type_def(trimmed: &str) -> bool {
-    let keywords = ["class ", "struct ", "enum ", "protocol ", "extension ", "actor "];
+    let keywords = [
+        "class ",
+        "struct ",
+        "enum ",
+        "protocol ",
+        "extension ",
+        "actor ",
+    ];
     let modifiers = ["public ", "private ", "internal ", "open ", "final "];
     for kw in &keywords {
-        if trimmed.starts_with(kw) { return true; }
+        if trimmed.starts_with(kw) {
+            return true;
+        }
     }
     for m in &modifiers {
         if trimmed.starts_with(m) {
             for kw in &keywords {
-                if trimmed.contains(kw) { return true; }
+                if trimmed.contains(kw) {
+                    return true;
+                }
             }
         }
     }
@@ -1412,7 +1528,9 @@ fn extract_ruby_skeleton(content: &str) -> String {
 
         // Blank lines
         if trimmed.is_empty() {
-            if !out.is_empty() { out.push(String::new()); }
+            if !out.is_empty() {
+                out.push(String::new());
+            }
             i += 1;
             continue;
         }
@@ -1425,8 +1543,10 @@ fn extract_ruby_skeleton(content: &str) -> String {
         }
 
         // require / require_relative / include / extend
-        if trimmed.starts_with("require ") || trimmed.starts_with("require_relative ")
-            || trimmed.starts_with("include ") || trimmed.starts_with("extend ")
+        if trimmed.starts_with("require ")
+            || trimmed.starts_with("require_relative ")
+            || trimmed.starts_with("include ")
+            || trimmed.starts_with("extend ")
             || trimmed.starts_with("gem ")
         {
             out.push(line.to_string());
@@ -1461,16 +1581,22 @@ fn extract_ruby_skeleton(content: &str) -> String {
                 let t = lines[i].trim();
                 if t == "end" || (t.starts_with("end ") && leading_spaces(lines[i]) <= indent) {
                     depth -= 1;
-                } else if t.starts_with("def ") || t.starts_with("class ")
-                    || t.starts_with("module ") || t.starts_with("do")
-                    || t.ends_with(" do") || t.ends_with(" do |")
+                } else if t.starts_with("def ")
+                    || t.starts_with("class ")
+                    || t.starts_with("module ")
+                    || t.starts_with("do")
+                    || t.ends_with(" do")
+                    || t.ends_with(" do |")
                     || (t.starts_with("if ") && !t.contains("then"))
-                    || t.starts_with("unless ") || t.starts_with("while ")
+                    || t.starts_with("unless ")
+                    || t.starts_with("while ")
                     || t.starts_with("begin")
                 {
                     depth += 1;
                 }
-                if depth <= 0 { break; }
+                if depth <= 0 {
+                    break;
+                }
                 i += 1;
             }
             out.push(format!("{}end", ind));
@@ -1495,7 +1621,9 @@ fn extract_ruby_skeleton(content: &str) -> String {
         i += 1;
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1512,7 +1640,9 @@ fn extract_php_skeleton(content: &str) -> String {
 
         // Blank lines
         if trimmed.is_empty() {
-            if !out.is_empty() { out.push(String::new()); }
+            if !out.is_empty() {
+                out.push(String::new());
+            }
             i += 1;
             continue;
         }
@@ -1536,7 +1666,9 @@ fn extract_php_skeleton(content: &str) -> String {
                 i += 1;
                 while i < lines.len() {
                     out.push(lines[i].to_string());
-                    if lines[i].contains("*/") { break; }
+                    if lines[i].contains("*/") {
+                        break;
+                    }
                     i += 1;
                 }
             }
@@ -1578,7 +1710,8 @@ fn extract_php_skeleton(content: &str) -> String {
                             i += 1;
                             let mut fn_d = delta;
                             while i < lines.len() && fn_d > 0 {
-                                let fd = count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                                let fd = count_char(lines[i], '{') as i32
+                                    - count_char(lines[i], '}') as i32;
                                 fn_d += fd;
                                 depth += fd;
                                 i += 1;
@@ -1591,8 +1724,10 @@ fn extract_php_skeleton(content: &str) -> String {
                     }
 
                     // Property declarations, constants
-                    if (t.starts_with("public ") || t.starts_with("private ")
-                        || t.starts_with("protected ") || t.starts_with("const "))
+                    if (t.starts_with("public ")
+                        || t.starts_with("private ")
+                        || t.starts_with("protected ")
+                        || t.starts_with("const "))
                         && (t.contains('$') || t.contains(" const "))
                         && !t.contains('{')
                     {
@@ -1616,7 +1751,8 @@ fn extract_php_skeleton(content: &str) -> String {
                     out.push("    // ...".to_string());
                     i += 1;
                     while i < lines.len() && depth > 0 {
-                        depth += count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
+                        depth +=
+                            count_char(lines[i], '{') as i32 - count_char(lines[i], '}') as i32;
                         i += 1;
                     }
                     out.push("}".to_string());
@@ -1630,7 +1766,9 @@ fn extract_php_skeleton(content: &str) -> String {
         i += 1;
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1638,12 +1776,16 @@ fn is_php_type_def(trimmed: &str) -> bool {
     let keywords = ["class ", "interface ", "trait ", "enum "];
     let modifiers = ["abstract ", "final ", "readonly "];
     for kw in &keywords {
-        if trimmed.starts_with(kw) { return true; }
+        if trimmed.starts_with(kw) {
+            return true;
+        }
     }
     for m in &modifiers {
         if trimmed.starts_with(m) {
             for kw in &keywords {
-                if trimmed.contains(kw) { return true; }
+                if trimmed.contains(kw) {
+                    return true;
+                }
             }
         }
     }
@@ -1651,10 +1793,20 @@ fn is_php_type_def(trimmed: &str) -> bool {
 }
 
 fn is_php_function_line(trimmed: &str) -> bool {
-    let modifiers = ["public ", "private ", "protected ", "static ",
-                     "abstract ", "final "];
-    if trimmed.starts_with("function ") { return true; }
-    modifiers.iter().any(|m| trimmed.starts_with(m) && trimmed.contains("function "))
+    let modifiers = [
+        "public ",
+        "private ",
+        "protected ",
+        "static ",
+        "abstract ",
+        "final ",
+    ];
+    if trimmed.starts_with("function ") {
+        return true;
+    }
+    modifiers
+        .iter()
+        .any(|m| trimmed.starts_with(m) && trimmed.contains("function "))
 }
 
 /// Vue/Svelte Single File Component skeleton.
@@ -1672,7 +1824,12 @@ fn extract_sfc_skeleton(content: &str) -> String {
     let mut i = 0;
 
     #[derive(PartialEq)]
-    enum Block { None, Template, Script, Style }
+    enum Block {
+        None,
+        Template,
+        Script,
+        Style,
+    }
     let mut block = Block::None;
     let mut script_lines = Vec::new();
     let mut style_lines = Vec::new();
@@ -1741,11 +1898,16 @@ fn extract_sfc_skeleton(content: &str) -> String {
             Block::Template => {
                 // Keep structural HTML: elements with tags, strip text-only lines
                 if trimmed.is_empty() {
-                    if !out.is_empty() { out.push(String::new()); }
+                    if !out.is_empty() {
+                        out.push(String::new());
+                    }
                 } else if trimmed.starts_with("<!--") {
                     // Keep comments (may contain directives like eslint-disable)
                     out.push(lines[i].to_string());
-                } else if trimmed.starts_with('<') || trimmed.starts_with("{{") || trimmed.ends_with('>') {
+                } else if trimmed.starts_with('<')
+                    || trimmed.starts_with("{{")
+                    || trimmed.ends_with('>')
+                {
                     // Keep lines with HTML tags or template interpolation
                     out.push(lines[i].to_string());
                 }
@@ -1760,7 +1922,9 @@ fn extract_sfc_skeleton(content: &str) -> String {
         i += 1;
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1781,7 +1945,9 @@ fn extract_html_skeleton(content: &str) -> String {
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
-            if !out.is_empty() { out.push(String::new()); }
+            if !out.is_empty() {
+                out.push(String::new());
+            }
             continue;
         }
 
@@ -1840,7 +2006,9 @@ fn extract_html_skeleton(content: &str) -> String {
         }
 
         // Keep structural lines (tags, comments, doctype)
-        if trimmed.starts_with("<!") || trimmed.starts_with('<') || trimmed.ends_with('>')
+        if trimmed.starts_with("<!")
+            || trimmed.starts_with('<')
+            || trimmed.ends_with('>')
             || trimmed.starts_with("<!--")
         {
             out.push(line.to_string());
@@ -1848,7 +2016,9 @@ fn extract_html_skeleton(content: &str) -> String {
         // Strip pure text lines (between tags)
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1867,7 +2037,9 @@ fn extract_css_skeleton(content: &str) -> String {
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
-            if !out.is_empty() { out.push(String::new()); }
+            if !out.is_empty() {
+                out.push(String::new());
+            }
             continue;
         }
 
@@ -1916,7 +2088,9 @@ fn extract_css_skeleton(content: &str) -> String {
         // Strip regular property: value; declarations
     }
 
-    while out.last().is_some_and(|l: &String| l.trim().is_empty()) { out.pop(); }
+    while out.last().is_some_and(|l: &String| l.trim().is_empty()) {
+        out.pop();
+    }
     out.join("\n")
 }
 
@@ -1956,20 +2130,41 @@ class Engine:
         return response.content
 
 MAX_RETRIES = 3
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "engine.py").unwrap();
         assert!(skel.contains("import os"), "Should keep imports");
-        assert!(skel.contains("from pathlib import Path"), "Should keep from imports");
+        assert!(
+            skel.contains("from pathlib import Path"),
+            "Should keep from imports"
+        );
         assert!(skel.contains("class Engine:"), "Should keep class def");
-        assert!(skel.contains("def __init__(self, config):"), "Should keep method signatures");
-        assert!(skel.contains("def process(self, input_data: str) -> dict:"), "Should keep typed signatures");
-        assert!(skel.contains("async def fetch(self, url: str) -> bytes:"), "Should keep async def");
-        assert!(skel.contains("MAX_RETRIES = 3"), "Should keep top-level constants");
+        assert!(
+            skel.contains("def __init__(self, config):"),
+            "Should keep method signatures"
+        );
+        assert!(
+            skel.contains("def process(self, input_data: str) -> dict:"),
+            "Should keep typed signatures"
+        );
+        assert!(
+            skel.contains("async def fetch(self, url: str) -> bytes:"),
+            "Should keep async def"
+        );
+        assert!(
+            skel.contains("MAX_RETRIES = 3"),
+            "Should keep top-level constants"
+        );
         assert!(!skel.contains("self._setup()"), "Should strip method body");
         assert!(!skel.contains("for item in"), "Should strip loop body");
         assert!(skel.contains("..."), "Should have placeholder");
-        assert!(skel.len() < code.len(), "Skeleton should be shorter: {} vs {}", skel.len(), code.len());
+        assert!(
+            skel.len() < code.len(),
+            "Skeleton should be shorter: {} vs {}",
+            skel.len(),
+            code.len()
+        );
     }
 
     #[test]
@@ -2002,16 +2197,29 @@ impl Fragment {
 fn helper(x: u32) -> u32 {
     x * 2 + 1
 }
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "fragment.rs").unwrap();
-        assert!(skel.contains("use std::collections::HashMap;"), "Should keep use");
+        assert!(
+            skel.contains("use std::collections::HashMap;"),
+            "Should keep use"
+        );
         assert!(skel.contains("pub struct Fragment"), "Should keep struct");
         assert!(skel.contains("pub id: String"), "Should keep struct fields");
         assert!(skel.contains("impl Fragment"), "Should keep impl");
-        assert!(skel.contains("pub fn new(id: String) -> Self"), "Should keep fn signatures");
-        assert!(skel.contains("pub fn score(&self) -> f64"), "Should keep fn signatures");
-        assert!(skel.contains("fn helper(x: u32) -> u32"), "Should keep free fn");
+        assert!(
+            skel.contains("pub fn new(id: String) -> Self"),
+            "Should keep fn signatures"
+        );
+        assert!(
+            skel.contains("pub fn score(&self) -> f64"),
+            "Should keep fn signatures"
+        );
+        assert!(
+            skel.contains("fn helper(x: u32) -> u32"),
+            "Should keep free fn"
+        );
         assert!(!skel.contains("x * 2 + 1"), "Should strip fn body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
@@ -2040,15 +2248,34 @@ export function formatDate(date) {
 }
 
 const API_URL = 'https://api.example.com';
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "service.js").unwrap();
-        assert!(skel.contains("import { useState } from 'react';"), "Should keep imports");
-        assert!(skel.contains("export class UserService"), "Should keep class");
-        assert!(skel.contains("constructor(baseUrl)"), "Should keep constructor sig");
-        assert!(skel.contains("async fetchUser(id)"), "Should keep method sig");
-        assert!(skel.contains("export function formatDate(date)"), "Should keep function sig");
-        assert!(skel.contains("const API_URL"), "Should keep top-level const");
+        assert!(
+            skel.contains("import { useState } from 'react';"),
+            "Should keep imports"
+        );
+        assert!(
+            skel.contains("export class UserService"),
+            "Should keep class"
+        );
+        assert!(
+            skel.contains("constructor(baseUrl)"),
+            "Should keep constructor sig"
+        );
+        assert!(
+            skel.contains("async fetchUser(id)"),
+            "Should keep method sig"
+        );
+        assert!(
+            skel.contains("export function formatDate(date)"),
+            "Should keep function sig"
+        );
+        assert!(
+            skel.contains("const API_URL"),
+            "Should keep top-level const"
+        );
         assert!(!skel.contains("new Map()"), "Should strip constructor body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
@@ -2086,22 +2313,48 @@ export function validate(config: Config): Result<Config> {
     }
     return { ok: true, data: config };
 }
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "types.ts").unwrap();
-        assert!(skel.contains("export interface Config"), "Should keep interface");
-        assert!(skel.contains("debug: boolean"), "Should keep interface fields");
-        assert!(skel.contains("export type Result<T>"), "Should keep type alias");
-        assert!(skel.contains("export function process(config: Config): Result<string>"), "Should keep fn sig");
-        assert!(skel.contains("export function validate(config: Config): Result<Config>"), "Should keep second fn sig");
+        assert!(
+            skel.contains("export interface Config"),
+            "Should keep interface"
+        );
+        assert!(
+            skel.contains("debug: boolean"),
+            "Should keep interface fields"
+        );
+        assert!(
+            skel.contains("export type Result<T>"),
+            "Should keep type alias"
+        );
+        assert!(
+            skel.contains("export function process(config: Config): Result<string>"),
+            "Should keep fn sig"
+        );
+        assert!(
+            skel.contains("export function validate(config: Config): Result<Config>"),
+            "Should keep second fn sig"
+        );
         assert!(!skel.contains("trimmed.length"), "Should strip fn body");
-        assert!(!skel.contains("maxRetries must be"), "Should strip fn body strings");
-        assert!(skel.len() < code.len(), "Skeleton should be shorter than original");
+        assert!(
+            !skel.contains("maxRetries must be"),
+            "Should strip fn body strings"
+        );
+        assert!(
+            skel.len() < code.len(),
+            "Skeleton should be shorter than original"
+        );
     }
 
     #[test]
     fn test_unknown_lang_returns_none() {
-        assert!(extract_skeleton("some content here\nwith multiple\nlines of text\nfor testing\npurposes", "readme.md").is_none());
+        assert!(extract_skeleton(
+            "some content here\nwith multiple\nlines of text\nfor testing\npurposes",
+            "readme.md"
+        )
+        .is_none());
         assert!(extract_skeleton("key: value", "config.yaml").is_none());
     }
 
@@ -2152,7 +2405,8 @@ func (s *Server) Start() error {
     }
     return s.serve(listener)
 }
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "handler.go").unwrap();
         assert!(skel.contains("package handlers"), "Should keep package");
@@ -2160,7 +2414,10 @@ func (s *Server) Start() error {
         assert!(skel.contains("type Config struct"), "Should keep type def");
         assert!(skel.contains("Port    int"), "Should keep struct fields");
         assert!(skel.contains("func HandleRequest("), "Should keep func sig");
-        assert!(skel.contains("func (s *Server) Start()"), "Should keep method sig");
+        assert!(
+            skel.contains("func (s *Server) Start()"),
+            "Should keep method sig"
+        );
         assert!(!skel.contains("readBody(r)"), "Should strip func body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
@@ -2217,15 +2474,31 @@ public class UserService {
         return user;
     }
 }
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "UserService.java").unwrap();
-        assert!(skel.contains("package com.example.service;"), "Should keep package");
-        assert!(skel.contains("import java.util.List;"), "Should keep imports");
+        assert!(
+            skel.contains("package com.example.service;"),
+            "Should keep package"
+        );
+        assert!(
+            skel.contains("import java.util.List;"),
+            "Should keep imports"
+        );
         assert!(skel.contains("@Service"), "Should keep annotations");
-        assert!(skel.contains("public class UserService"), "Should keep class");
-        assert!(skel.contains("private final UserRepository repo;"), "Should keep fields");
-        assert!(skel.contains("public Optional<User> findById(Long id)"), "Should keep method sig");
+        assert!(
+            skel.contains("public class UserService"),
+            "Should keep class"
+        );
+        assert!(
+            skel.contains("private final UserRepository repo;"),
+            "Should keep fields"
+        );
+        assert!(
+            skel.contains("public Optional<User> findById(Long id)"),
+            "Should keep method sig"
+        );
         assert!(!skel.contains("Cache hit"), "Should strip method body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
@@ -2265,13 +2538,17 @@ int main(int argc, char* argv[]) {
 }
 
 } // namespace app
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "calc.cpp").unwrap();
         assert!(skel.contains("#include <iostream>"), "Should keep includes");
         assert!(skel.contains("namespace app"), "Should keep namespace");
         assert!(skel.contains("class Calculator"), "Should keep class");
-        assert!(skel.contains("int add(int a, int b)"), "Should keep method sig");
+        assert!(
+            skel.contains("int add(int a, int b)"),
+            "Should keep method sig"
+        );
         assert!(skel.contains("private:"), "Should keep access specifiers");
         assert!(!skel.contains("a + b"), "Should strip method body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
@@ -2317,21 +2594,34 @@ module PaymentGateway
     end
   end
 end
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "processor.rb").unwrap();
         assert!(skel.contains("require 'json'"), "Should keep require");
-        assert!(skel.contains("require_relative 'helpers'"), "Should keep require_relative");
+        assert!(
+            skel.contains("require_relative 'helpers'"),
+            "Should keep require_relative"
+        );
         assert!(skel.contains("module PaymentGateway"), "Should keep module");
         assert!(skel.contains("class Processor"), "Should keep class");
         assert!(skel.contains("attr_accessor"), "Should keep attr_accessor");
         assert!(skel.contains("MAX_RETRIES = 3"), "Should keep constants");
-        assert!(skel.contains("def initialize"), "Should keep def signatures");
-        assert!(skel.contains("def process_payment"), "Should keep def signatures");
+        assert!(
+            skel.contains("def initialize"),
+            "Should keep def signatures"
+        );
+        assert!(
+            skel.contains("def process_payment"),
+            "Should keep def signatures"
+        );
         // The skeleton keeps "def validate_amount" as a signature, but should NOT
         // contain the CALL to validate_amount inside process_payment's body.
         // Check that body-only content like log_success and HTTP.post are stripped.
-        assert!(!skel.contains("log_success"), "Should strip method body calls");
+        assert!(
+            !skel.contains("log_success"),
+            "Should strip method body calls"
+        );
         assert!(!skel.contains("HTTP.post"), "Should strip method body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
@@ -2371,16 +2661,29 @@ class AuthService {
         return hash_hmac('sha256', $user->id . time(), $this->secretKey);
     }
 }
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "auth.php").unwrap();
         assert!(skel.contains("<?php"), "Should keep PHP tag");
-        assert!(skel.contains("namespace App\\Services"), "Should keep namespace");
+        assert!(
+            skel.contains("namespace App\\Services"),
+            "Should keep namespace"
+        );
         assert!(skel.contains("use App\\Models\\User"), "Should keep use");
         assert!(skel.contains("class AuthService"), "Should keep class");
-        assert!(skel.contains("private string $secretKey"), "Should keep properties");
-        assert!(skel.contains("public function __construct"), "Should keep method sigs");
-        assert!(skel.contains("public function authenticate"), "Should keep method sigs");
+        assert!(
+            skel.contains("private string $secretKey"),
+            "Should keep properties"
+        );
+        assert!(
+            skel.contains("public function __construct"),
+            "Should keep method sigs"
+        );
+        assert!(
+            skel.contains("public function authenticate"),
+            "Should keep method sigs"
+        );
         assert!(!skel.contains("findByEmail"), "Should strip method body");
         assert!(!skel.contains("hash_hmac"), "Should strip method body");
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
@@ -2458,18 +2761,28 @@ h1 {
   transition: transform 0.2s ease;
 }
 </style>
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "Dashboard.vue").unwrap();
         assert!(skel.contains("<template>"), "Should keep template tag");
         assert!(skel.contains("</template>"), "Should keep closing template");
-        assert!(skel.contains("<div class=\"app\">"), "Should keep structural elements");
-        assert!(skel.contains("UserCard"), "Should keep component references");
+        assert!(
+            skel.contains("<div class=\"app\">"),
+            "Should keep structural elements"
+        );
+        assert!(
+            skel.contains("UserCard"),
+            "Should keep component references"
+        );
         assert!(skel.contains("<script"), "Should keep script tag");
         assert!(skel.contains("import"), "Should keep imports in script");
         assert!(skel.contains("<style"), "Should keep style tag");
         assert!(skel.contains(".app {"), "Should keep CSS selectors");
-        assert!(!skel.contains("collectFormData"), "Should strip JS function body");
+        assert!(
+            !skel.contains("collectFormData"),
+            "Should strip JS function body"
+        );
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
 
@@ -2505,16 +2818,26 @@ h1 {
   </script>
 </body>
 </html>
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "index.html").unwrap();
         assert!(skel.contains("<!DOCTYPE html>"), "Should keep doctype");
         assert!(skel.contains("<html"), "Should keep html tag");
         assert!(skel.contains("<head>"), "Should keep head");
-        assert!(skel.contains("<script src=\"app.js\">"), "Should keep script tags");
+        assert!(
+            skel.contains("<script src=\"app.js\">"),
+            "Should keep script tags"
+        );
         assert!(skel.contains("<link"), "Should keep link tags");
-        assert!(skel.contains("<nav class=\"main-nav\">"), "Should keep structural elements");
-        assert!(!skel.contains("Welcome to the application"), "Should strip text content");
+        assert!(
+            skel.contains("<nav class=\"main-nav\">"),
+            "Should keep structural elements"
+        );
+        assert!(
+            !skel.contains("Welcome to the application"),
+            "Should strip text content"
+        );
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
 
@@ -2556,18 +2879,28 @@ h1 {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-"#.trim();
+"#
+        .trim();
 
         let skel = extract_skeleton(code, "styles.css").unwrap();
         assert!(skel.contains("/* Base styles */"), "Should keep comments");
         assert!(skel.contains("@import"), "Should keep @import");
         assert!(skel.contains(":root {"), "Should keep selectors");
-        assert!(skel.contains("--primary-color"), "Should keep custom properties");
+        assert!(
+            skel.contains("--primary-color"),
+            "Should keep custom properties"
+        );
         assert!(skel.contains("@media"), "Should keep media queries");
         assert!(skel.contains(".header {"), "Should keep class selectors");
         assert!(skel.contains("@keyframes"), "Should keep keyframes");
-        assert!(!skel.contains("text-decoration"), "Should strip property declarations");
-        assert!(!skel.contains("font-weight"), "Should strip property declarations");
+        assert!(
+            !skel.contains("text-decoration"),
+            "Should strip property declarations"
+        );
+        assert!(
+            !skel.contains("font-weight"),
+            "Should strip property declarations"
+        );
         assert!(skel.len() < code.len(), "Skeleton should be shorter");
     }
 }

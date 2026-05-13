@@ -1,8 +1,8 @@
 [package]
 name = "entroly-wasm"
-version = "0.19.0"
+version = "0.19.1"
 edition = "2021"
-description = "WebAssembly build of Entroly — information-theoretic context optimization for JavaScript/TypeScript"
+description = "WebAssembly build of Entroly - information-theoretic context optimization for JavaScript/TypeScript"
 
 [lib]
 name = "entroly_wasm"

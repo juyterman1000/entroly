@@ -25,11 +25,11 @@
 //!   Layer 1: Exact Hash  (O(1), ~1μs)   — FNV-1a(query + frag_ids) → HashMap
 //!   Layer 2: SimHash LSH (O(L×k), ~10μs) — LshIndex multi-probe → Hamming ≤ adaptive τ
 //!
-use std::collections::{BinaryHeap, HashMap, HashSet};
-use std::cmp::Ordering;
-use serde::{Serialize, Deserialize};
+use crate::dedup::{hamming_distance, simhash};
 use crate::lsh::LshIndex;
-use crate::dedup::{simhash, hamming_distance};
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 // ═══════════════════════════════════════════════════════════════════════
 // Data Structures
@@ -63,8 +63,12 @@ pub struct CacheEntry {
 impl CacheEntry {
     #[cfg(test)]
     fn new(
-        exact_hash: u64, query_simhash: u64, fragment_ids: HashSet<String>,
-        response: String, response_tokens: u32, context_entropy: f64,
+        exact_hash: u64,
+        query_simhash: u64,
+        fragment_ids: HashSet<String>,
+        response: String,
+        response_tokens: u32,
+        context_entropy: f64,
         current_turn: u32,
     ) -> Self {
         Self::new_with_budget(
@@ -81,25 +85,41 @@ impl CacheEntry {
 
     #[allow(clippy::too_many_arguments)]
     fn new_with_budget(
-        exact_hash: u64, query_simhash: u64, fragment_ids: HashSet<String>,
-        effective_budget: u32, response: String, response_tokens: u32, context_entropy: f64,
+        exact_hash: u64,
+        query_simhash: u64,
+        fragment_ids: HashSet<String>,
+        effective_budget: u32,
+        response: String,
+        response_tokens: u32,
+        context_entropy: f64,
         current_turn: u32,
     ) -> Self {
         CacheEntry {
-            exact_hash, query_simhash, fragment_ids, effective_budget, response, response_tokens,
+            exact_hash,
+            query_simhash,
+            fragment_ids,
+            effective_budget,
+            response,
+            response_tokens,
             context_entropy,
             quality_score: 0.5,
-            hit_count: 0, created_at: current_turn, last_hit_at: current_turn,
+            hit_count: 0,
+            created_at: current_turn,
+            last_hit_at: current_turn,
             tokens_saved: 0,
             recompute_cost: response_tokens as f64 * 0.01, // default: $0.01/token
-            cascade_count: 0, successes: 0, failures: 0,
+            cascade_count: 0,
+            successes: 0,
+            failures: 0,
         }
     }
 
     /// Wilson score lower bound (95% CI).
     fn wilson_score(&self) -> f64 {
         let n = (self.successes + self.failures) as f64;
-        if n == 0.0 { return 0.5; }
+        if n == 0.0 {
+            return 0.5;
+        }
         let z = 1.96_f64;
         let p = self.successes as f64 / n;
         let denom = 1.0 + z * z / n;
@@ -109,7 +129,11 @@ impl CacheEntry {
     }
 
     fn record_feedback(&mut self, success: bool) {
-        if success { self.successes += 1; } else { self.failures += 1; }
+        if success {
+            self.successes += 1;
+        } else {
+            self.failures += 1;
+        }
         self.quality_score = self.wilson_score();
     }
 }
@@ -139,7 +163,11 @@ impl Default for CostModel {
     fn default() -> Self {
         // GPT-4o output pricing ($0.000015/token) — realistic industry median.
         // Developers never need to configure this; it just works.
-        CostModel { cost_per_token: 0.000015, latency_saved_ms: 2000.0, memory_cost_per_entry: 0.001 }
+        CostModel {
+            cost_per_token: 0.000015,
+            latency_saved_ms: 2000.0,
+            memory_cost_per_entry: 0.001,
+        }
     }
 }
 
@@ -153,51 +181,55 @@ impl CostModel {
     pub fn for_model(model_name: &str) -> Self {
         let name = model_name.to_lowercase();
         let cost_per_token = if name.contains("gpt-4o-mini") {
-            0.0000006  // $0.60/M output
+            0.0000006 // $0.60/M output
         } else if name.contains("gpt-4o") {
-            0.000015   // $15/M output
+            0.000015 // $15/M output
         } else if name.contains("gpt-4-turbo") || name.contains("gpt-4-1") {
-            0.00003    // $30/M output
+            0.00003 // $30/M output
         } else if name.contains("gpt-4") {
-            0.00006    // $60/M output (original GPT-4)
+            0.00006 // $60/M output (original GPT-4)
         } else if name.contains("gpt-3.5") {
-            0.0000015  // $1.50/M output
+            0.0000015 // $1.50/M output
         } else if name.contains("o1-mini") || name.contains("o3-mini") {
-            0.000012   // $12/M output
+            0.000012 // $12/M output
         } else if name.contains("o1") || name.contains("o3") {
-            0.00006    // $60/M output
+            0.00006 // $60/M output
         } else if name.contains("claude-3-5-sonnet") || name.contains("claude-3.5-sonnet") {
-            0.000015   // $15/M output
+            0.000015 // $15/M output
         } else if name.contains("claude-3-opus") || name.contains("claude-3.5-opus") {
-            0.000075   // $75/M output
+            0.000075 // $75/M output
         } else if name.contains("claude-3-haiku") || name.contains("claude-3.5-haiku") {
-            0.000005   // $5/M output
+            0.000005 // $5/M output
         } else if name.contains("claude") {
-            0.000015   // default Claude
+            0.000015 // default Claude
         } else if name.contains("gemini-1.5-pro") || name.contains("gemini-2") {
-            0.00001    // $10/M output
+            0.00001 // $10/M output
         } else if name.contains("gemini-1.5-flash") || name.contains("gemini-flash") {
-            0.0000003  // $0.30/M output
+            0.0000003 // $0.30/M output
         } else if name.contains("gemini") {
-            0.000005   // default Gemini
+            0.000005 // default Gemini
         } else if name.contains("deepseek") {
-            0.0000028  // $2.80/M output (DeepSeek-V3)
+            0.0000028 // $2.80/M output (DeepSeek-V3)
         } else if name.contains("llama") || name.contains("codellama") {
-            0.000001   // ~$1/M self-hosted estimate
+            0.000001 // ~$1/M self-hosted estimate
         } else if name.contains("mistral-large") {
-            0.000012   // $12/M output
+            0.000012 // $12/M output
         } else if name.contains("mistral") || name.contains("mixtral") {
-            0.000002   // $2/M output
+            0.000002 // $2/M output
         } else {
-            0.000015   // safe default: GPT-4o tier
+            0.000015 // safe default: GPT-4o tier
         };
-        CostModel { cost_per_token, ..Default::default() }
+        CostModel {
+            cost_per_token,
+            ..Default::default()
+        }
     }
 
     /// Compute the expected utility of caching an entry.
     #[inline]
     pub fn utility(&self, p_hit: f64, response_tokens: u32, _entry_size_bytes: usize) -> f64 {
-        let recompute_value = response_tokens as f64 * self.cost_per_token + self.latency_saved_ms * 0.001;
+        let recompute_value =
+            response_tokens as f64 * self.cost_per_token + self.latency_saved_ms * 0.001;
         p_hit * recompute_value - self.memory_cost_per_entry
     }
 }
@@ -222,7 +254,11 @@ pub struct EntropySketch {
 
 impl EntropySketch {
     pub fn new() -> Self {
-        EntropySketch { sum: 0.0, sum_sq: 0.0, count: 0 }
+        EntropySketch {
+            sum: 0.0,
+            sum_sq: 0.0,
+            count: 0,
+        }
     }
 
     /// Add a score to the sketch.
@@ -259,7 +295,9 @@ impl EntropySketch {
 }
 
 impl Default for EntropySketch {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -313,7 +351,11 @@ impl<'de> Deserialize<'de> for FrequencySketch {
             let len = row.len().min(256);
             counters[i][..len].copy_from_slice(&row[..len]);
         }
-        Ok(FrequencySketch { counters, total: h.total, halve_threshold: h.halve_threshold })
+        Ok(FrequencySketch {
+            counters,
+            total: h.total,
+            halve_threshold: h.halve_threshold,
+        })
     }
 }
 
@@ -375,14 +417,18 @@ impl FrequencySketch {
     /// Force a full reset (used on severe distribution shift).
     pub fn reset(&mut self) {
         for row in &mut self.counters {
-            for c in row.iter_mut() { *c = 0; }
+            for c in row.iter_mut() {
+                *c = 0;
+            }
         }
         self.total = 0;
     }
 }
 
 impl Default for FrequencySketch {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -472,11 +518,15 @@ impl ShiftDetector {
         }
     }
 
-    pub fn current_hit_rate(&self) -> f64 { self.hit_ema }
+    pub fn current_hit_rate(&self) -> f64 {
+        self.hit_ema
+    }
 }
 
 impl Default for ShiftDetector {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -491,7 +541,9 @@ pub struct TailStats {
 }
 
 impl TailStats {
-    pub fn new() -> Self { TailStats { costs: Vec::new() } }
+    pub fn new() -> Self {
+        TailStats { costs: Vec::new() }
+    }
 
     pub fn record(&mut self, cost_saved: f64) {
         self.costs.push(cost_saved);
@@ -499,16 +551,20 @@ impl TailStats {
 
     /// Compute percentile (0-100). Sorts lazily.
     pub fn percentile(&mut self, p: f64) -> f64 {
-        if self.costs.is_empty() { return 0.0; }
-        self.costs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        if self.costs.is_empty() {
+            return 0.0;
+        }
+        self.costs
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let idx = ((p / 100.0) * (self.costs.len() - 1) as f64).round() as usize;
         self.costs[idx.min(self.costs.len() - 1)]
     }
-
 }
 
 impl Default for TailStats {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Adaptive Rényi order selector.
@@ -539,9 +595,13 @@ pub struct AdaptiveAlpha {
 impl AdaptiveAlpha {
     pub fn new() -> Self {
         AdaptiveAlpha {
-            alpha: 2.0, lr: 0.05, hit_ema: 0.0,
-            prev_alpha: 2.0, prev_hit_ema: 0.0,
-            steps: 0, update_interval: 50,
+            alpha: 2.0,
+            lr: 0.05,
+            hit_ema: 0.0,
+            prev_alpha: 2.0,
+            prev_hit_ema: 0.0,
+            steps: 0,
+            update_interval: 50,
         }
     }
 
@@ -565,7 +625,12 @@ impl AdaptiveAlpha {
                 // No gradient info yet — perturb α slightly to gather info
                 self.prev_alpha = self.alpha;
                 self.prev_hit_ema = self.hit_ema;
-                self.alpha += 0.1 * (if self.steps.is_multiple_of(2) { 1.0 } else { -1.0 });
+                self.alpha += 0.1
+                    * (if self.steps.is_multiple_of(2) {
+                        1.0
+                    } else {
+                        -1.0
+                    });
             }
             // Clamp α ∈ [0.5, 8.0] — below 0.5 is numerically unstable,
             // above 8.0 converges to min-entropy (too aggressive)
@@ -576,7 +641,9 @@ impl AdaptiveAlpha {
 }
 
 impl Default for AdaptiveAlpha {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Thompson Sampling Admission Gate.
@@ -607,12 +674,13 @@ pub struct ThompsonGate {
 impl ThompsonGate {
     pub fn new() -> Self {
         ThompsonGate {
-            alpha_succ: 2.0,  // Weak informative prior (slightly optimistic)
+            alpha_succ: 2.0, // Weak informative prior (slightly optimistic)
             beta_fail: 2.0,
             adaptive_alpha: AdaptiveAlpha::new(),
             sketch: EntropySketch::new(),
             cost_model: CostModel::default(),
-            total_decisions: 0, total_admitted: 0,
+            total_decisions: 0,
+            total_admitted: 0,
         }
     }
 
@@ -630,8 +698,11 @@ impl ThompsonGate {
 
     /// Exact context entropy for small contexts (< 20 fragments).
     pub fn context_entropy_exact(fragment_entropies: &[(f64, u32)], alpha: f64) -> f64 {
-        if fragment_entropies.is_empty() { return 0.0; }
-        let scores: Vec<f64> = fragment_entropies.iter()
+        if fragment_entropies.is_empty() {
+            return 0.0;
+        }
+        let scores: Vec<f64> = fragment_entropies
+            .iter()
             .map(|&(e, t)| e * t as f64)
             .filter(|&s| s > 0.0)
             .collect();
@@ -642,7 +713,9 @@ impl ThompsonGate {
     ///
     /// Returns (admit: bool, context_entropy: f64).
     pub fn should_admit(
-        &mut self, fragment_entropies: &[(f64, u32)], response_tokens: u32,
+        &mut self,
+        fragment_entropies: &[(f64, u32)],
+        response_tokens: u32,
     ) -> (bool, f64) {
         self.total_decisions += 1;
 
@@ -665,18 +738,25 @@ impl ThompsonGate {
         // Normalize by renyi_max(n) = log₂(n) for scale-invariant admission.
         // 3-fragment and 300-fragment contexts are on the same [0,1] scale.
         let h_max = crate::entropy::renyi_max(fragment_entropies.len());
-        let entropy_signal = if h_max > 0.0 { (h / h_max).clamp(0.0, 2.0) } else { 0.0 };
+        let entropy_signal = if h_max > 0.0 {
+            (h / h_max).clamp(0.0, 2.0)
+        } else {
+            0.0
+        };
         let p_admit = (mean + variance.sqrt() * entropy_signal).clamp(0.0, 1.0);
 
         // Cost-aware: high-cost entries should be admitted more readily
-        let cost_bonus = self.cost_model.utility(
-            mean, response_tokens, 0,
-        ).clamp(0.0, 1.0);
+        let cost_bonus = self
+            .cost_model
+            .utility(mean, response_tokens, 0)
+            .clamp(0.0, 1.0);
 
         let admission_score = 0.6 * p_admit + 0.4 * cost_bonus;
         let admit = admission_score > 0.35;
 
-        if admit { self.total_admitted += 1; }
+        if admit {
+            self.total_admitted += 1;
+        }
         (admit, h)
     }
 
@@ -698,13 +778,18 @@ impl ThompsonGate {
     }
 
     pub fn admission_rate(&self) -> f64 {
-        if self.total_decisions == 0 { 0.0 }
-        else { self.total_admitted as f64 / self.total_decisions as f64 }
+        if self.total_decisions == 0 {
+            0.0
+        } else {
+            self.total_admitted as f64 / self.total_decisions as f64
+        }
     }
 }
 
 impl Default for ThompsonGate {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -720,18 +805,25 @@ struct LazyHeapEntry {
 }
 
 impl PartialEq for LazyHeapEntry {
-    fn eq(&self, other: &Self) -> bool { self.hash == other.hash }
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
 }
 impl Eq for LazyHeapEntry {}
 
 // Min-heap by marginal (we want to evict the MINIMUM marginal entry)
 impl PartialOrd for LazyHeapEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 impl Ord for LazyHeapEntry {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse ordering: smallest marginal at top of BinaryHeap
-        other.marginal.partial_cmp(&self.marginal).unwrap_or(Ordering::Equal)
+        other
+            .marginal
+            .partial_cmp(&self.marginal)
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -766,28 +858,31 @@ impl SubmodularEvictor {
     ///
     /// The entry with the LOWEST value gets evicted.
     fn entry_value(
-        entry: &CacheEntry, others: &[&CacheEntry],
-        cost_model: &CostModel, current_turn: u32, decay_gamma: f64,
+        entry: &CacheEntry,
+        others: &[&CacheEntry],
+        cost_model: &CostModel,
+        current_turn: u32,
+        decay_gamma: f64,
     ) -> f64 {
         // Linear frequency — hot items are dramatically more valuable
         let freq_value = entry.hit_count as f64 + 1.0;
 
         // Steeper recency decay — older items lose value faster
         // Uses created_at as the baseline, last_hit_at as the refresh point
-        let effective_age = current_turn.saturating_sub(
-            entry.last_hit_at.max(entry.created_at)
-        ) as f64;
+        let effective_age =
+            current_turn.saturating_sub(entry.last_hit_at.max(entry.created_at)) as f64;
         let recency = (-decay_gamma * effective_age).exp();
 
         // Cost signal — expensive-to-recompute items are valuable
         // Uses both the cost model estimate and the stored recompute_cost
-        let model_cost = cost_model.utility(
-            entry.quality_score, entry.response_tokens, 0,
-        ).max(0.0);
+        let model_cost = cost_model
+            .utility(entry.quality_score, entry.response_tokens, 0)
+            .max(0.0);
         let cost_value = model_cost.max(entry.recompute_cost);
 
         // Diversity bonus — unique entries get a small boost
-        let max_sim = others.iter()
+        let max_sim = others
+            .iter()
             .filter(|o| o.exact_hash != entry.exact_hash)
             .map(|o| Self::simhash_similarity(entry.query_simhash, o.query_simhash))
             .fold(0.0_f64, f64::max);
@@ -802,7 +897,10 @@ impl SubmodularEvictor {
         };
 
         // Combined value
-        (freq_value + cost_value + diversity_bonus) * recency * entry.quality_score.max(0.01) * dag_factor
+        (freq_value + cost_value + diversity_bonus)
+            * recency
+            * entry.quality_score.max(0.01)
+            * dag_factor
     }
 
     /// Lazy greedy victim selection (lazy greedy).
@@ -813,7 +911,9 @@ impl SubmodularEvictor {
         cost_model: &CostModel,
         current_turn: u32,
     ) -> Option<u64> {
-        if entries.is_empty() { return None; }
+        if entries.is_empty() {
+            return None;
+        }
 
         let entry_vec: Vec<&CacheEntry> = entries.values().collect();
         let mut heap: BinaryHeap<LazyHeapEntry> = BinaryHeap::new();
@@ -821,11 +921,11 @@ impl SubmodularEvictor {
 
         // Initialize heap with entry values (min-heap: lowest value at top)
         for entry in &entry_vec {
-            let value = Self::entry_value(
-                entry, &entry_vec, cost_model, current_turn, decay_gamma,
-            );
+            let value = Self::entry_value(entry, &entry_vec, cost_model, current_turn, decay_gamma);
             heap.push(LazyHeapEntry {
-                hash: entry.exact_hash, marginal: value, _last_computed_at: 0,
+                hash: entry.exact_hash,
+                marginal: value,
+                _last_computed_at: 0,
             });
         }
 
@@ -835,19 +935,25 @@ impl SubmodularEvictor {
 
     /// Simple O(n²) victim selection (fallback for small caches).
     /// Returns index of the entry with LOWEST value.
-    pub fn select_victim(entries: &[&CacheEntry], cost_model: &CostModel, current_turn: u32) -> Option<usize> {
-        if entries.is_empty() { return None; }
+    pub fn select_victim(
+        entries: &[&CacheEntry],
+        cost_model: &CostModel,
+        current_turn: u32,
+    ) -> Option<usize> {
+        if entries.is_empty() {
+            return None;
+        }
         let n = entries.len();
         let mut values = Vec::with_capacity(n);
 
         for i in 0..n {
-            let value = Self::entry_value(
-                entries[i], entries, cost_model, current_turn, 0.02,
-            );
+            let value = Self::entry_value(entries[i], entries, cost_model, current_turn, 0.02);
             values.push(value);
         }
 
-        values.iter().enumerate()
+        values
+            .iter()
+            .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
             .map(|(idx, _)| idx)
     }
@@ -878,7 +984,9 @@ impl CausalInvalidator {
         stale_fragments: &HashSet<String>,
         depth_weights: &HashMap<String, u32>,
     ) -> f64 {
-        if entry_fragments.is_empty() { return 1.0; }
+        if entry_fragments.is_empty() {
+            return 1.0;
+        }
 
         let mut weighted_overlap = 0.0_f64;
         let mut overlap_count = 0u32;
@@ -891,7 +999,9 @@ impl CausalInvalidator {
             }
         }
 
-        if overlap_count == 0 { return 1.0; }
+        if overlap_count == 0 {
+            return 1.0;
+        }
 
         let effective_ratio = weighted_overlap / entry_fragments.len() as f64;
         (-Self::DECAY_LAMBDA * effective_ratio).exp()
@@ -910,9 +1020,8 @@ impl CausalInvalidator {
     ) -> u32 {
         let mut affected = 0u32;
         for entry in entries.values_mut() {
-            let mult = Self::decay_multiplier_weighted(
-                &entry.fragment_ids, stale_ids, depth_weights,
-            );
+            let mult =
+                Self::decay_multiplier_weighted(&entry.fragment_ids, stale_ids, depth_weights);
             if mult < 1.0 {
                 entry.quality_score *= mult;
                 entry.cascade_count += 1;
@@ -965,18 +1074,23 @@ impl HitPredictor {
             + self.weights[2] * features[2]
             + self.weights[3] * features[3]
             + self.weights[4]; // bias
-        // Sigmoid
+                               // Sigmoid
         let p = 1.0 / (1.0 + (-logit).exp());
         p.clamp(0.01, 0.99)
     }
 
     /// Extract features from a cache context.
-    pub fn features(context_entropy: f64, n_fragments: usize, query_len: usize, response_tokens: u32) -> [f64; 4] {
+    pub fn features(
+        context_entropy: f64,
+        n_fragments: usize,
+        query_len: usize,
+        response_tokens: u32,
+    ) -> [f64; 4] {
         [
             context_entropy / 6.0,                    // normalized entropy
             (n_fragments as f64).ln().max(0.0) / 5.0, // log fragment count
-            (query_len as f64) / 500.0,                // normalized query length
-            (response_tokens as f64) / 2000.0,         // normalized response cost
+            (query_len as f64) / 500.0,               // normalized query length
+            (response_tokens as f64) / 2000.0,        // normalized response cost
         ]
     }
 
@@ -998,7 +1112,9 @@ impl HitPredictor {
 }
 
 impl Default for HitPredictor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1008,8 +1124,16 @@ impl Default for HitPredictor {
 /// Cache lookup result with provenance.
 #[derive(Debug)]
 pub enum CacheLookup {
-    ExactHit { response: String, tokens_saved: u32 },
-    SemanticHit { response: String, tokens_saved: u32, hamming_distance: u32, jaccard_similarity: f64 },
+    ExactHit {
+        response: String,
+        tokens_saved: u32,
+    },
+    SemanticHit {
+        response: String,
+        tokens_saved: u32,
+        hamming_distance: u32,
+        jaccard_similarity: f64,
+    },
     Miss,
 }
 
@@ -1025,8 +1149,11 @@ pub struct EgscConfig {
 impl Default for EgscConfig {
     fn default() -> Self {
         EgscConfig {
-            max_entries: 1024, initial_hamming_threshold: 8, min_jaccard: 0.7,
-            enable_entropy_gate: true, enable_submodular_eviction: true,
+            max_entries: 1024,
+            initial_hamming_threshold: 8,
+            min_jaccard: 0.7,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: true,
         }
     }
 }
@@ -1159,12 +1286,20 @@ impl EgscCache {
             config,
             adaptive_thresholds: HashMap::new(),
             current_turn: 0,
-            total_lookups: 0, exact_hits: 0, semantic_hits: 0, misses: 0,
-            total_tokens_saved: 0, total_admissions: 0, total_rejections: 0,
-            total_evictions: 0, total_invalidations: 0,
-            freq_admissions: 0, freq_rejections: 0,
+            total_lookups: 0,
+            exact_hits: 0,
+            semantic_hits: 0,
+            misses: 0,
+            total_tokens_saved: 0,
+            total_admissions: 0,
+            total_rejections: 0,
+            total_evictions: 0,
+            total_invalidations: 0,
+            freq_admissions: 0,
+            freq_rejections: 0,
             invalidation_depth_counts: [0; 4],
-            hard_invalidations: 0, soft_invalidations: 0,
+            hard_invalidations: 0,
+            soft_invalidations: 0,
         }
     }
 
@@ -1173,7 +1308,11 @@ impl EgscCache {
         Self::exact_hash_with_budget(query, fragment_ids, 0)
     }
 
-    fn exact_hash_with_budget(query: &str, fragment_ids: &HashSet<String>, effective_budget: u32) -> u64 {
+    fn exact_hash_with_budget(
+        query: &str,
+        fragment_ids: &HashSet<String>,
+        effective_budget: u32,
+    ) -> u64 {
         let mut sorted: Vec<&String> = fragment_ids.iter().collect();
         sorted.sort();
         let mut h: u64 = 0xcbf29ce484222325;
@@ -1181,38 +1320,58 @@ impl EgscCache {
             h ^= *b as u64;
             h = h.wrapping_mul(0x100000001b3);
         }
-        h ^= 0xFF; h = h.wrapping_mul(0x100000001b3);
+        h ^= 0xFF;
+        h = h.wrapping_mul(0x100000001b3);
         for b in effective_budget.to_le_bytes() {
             h ^= b as u64;
             h = h.wrapping_mul(0x100000001b3);
         }
-        h ^= 0xFD; h = h.wrapping_mul(0x100000001b3);
+        h ^= 0xFD;
+        h = h.wrapping_mul(0x100000001b3);
         for id in sorted {
-            for b in id.as_bytes() { h ^= *b as u64; h = h.wrapping_mul(0x100000001b3); }
-            h ^= 0xFE; h = h.wrapping_mul(0x100000001b3);
+            for b in id.as_bytes() {
+                h ^= *b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            h ^= 0xFE;
+            h = h.wrapping_mul(0x100000001b3);
         }
         h
     }
 
     #[inline]
     fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
-        if a.is_empty() && b.is_empty() { return 1.0; }
+        if a.is_empty() && b.is_empty() {
+            return 1.0;
+        }
         let isect = a.intersection(b).count();
         let union = a.union(b).count();
-        if union == 0 { 0.0 } else { isect as f64 / union as f64 }
+        if union == 0 {
+            0.0
+        } else {
+            isect as f64 / union as f64
+        }
     }
 
     fn get_threshold(&self, query_simhash: u64) -> u32 {
         let cluster = (query_simhash >> 48) as u16;
-        *self.adaptive_thresholds.get(&cluster).unwrap_or(&self.config.initial_hamming_threshold)
+        *self
+            .adaptive_thresholds
+            .get(&cluster)
+            .unwrap_or(&self.config.initial_hamming_threshold)
     }
 
     fn adapt_threshold(&mut self, query_simhash: u64, was_good_match: bool) {
         let cluster = (query_simhash >> 48) as u16;
-        let threshold = self.adaptive_thresholds.entry(cluster)
+        let threshold = self
+            .adaptive_thresholds
+            .entry(cluster)
             .or_insert(self.config.initial_hamming_threshold);
-        if was_good_match && *threshold < 12 { *threshold += 1; }
-        else if !was_good_match && *threshold > 2 { *threshold -= 1; }
+        if was_good_match && *threshold < 12 {
+            *threshold += 1;
+        } else if !was_good_match && *threshold > 2 {
+            *threshold -= 1;
+        }
     }
 
     /// Dual-layer lookup: exact hash → SimHash LSH.
@@ -1222,7 +1381,12 @@ impl EgscCache {
     }
 
     /// Budget-aware lookup used by the engine so cached selections do not leak across budgets.
-    pub fn lookup_with_budget(&mut self, query: &str, fragment_ids: &HashSet<String>, effective_budget: u32) -> CacheLookup {
+    pub fn lookup_with_budget(
+        &mut self,
+        query: &str,
+        fragment_ids: &HashSet<String>,
+        effective_budget: u32,
+    ) -> CacheLookup {
         self.total_lookups += 1;
         self.current_turn += 1;
 
@@ -1239,13 +1403,22 @@ impl EgscCache {
             self.exact_hits += 1;
             self.total_tokens_saved += entry.response_tokens as u64;
             // Record tail cost savings: tokens × cost_per_token from the cost model
-            let cost_saved = entry.response_tokens as f64 * self.thompson_gate.cost_model.cost_per_token;
+            let cost_saved =
+                entry.response_tokens as f64 * self.thompson_gate.cost_model.cost_per_token;
             self.tail_stats.record(cost_saved);
             self.thompson_gate.observe_outcome(true);
             self.shift_detector.observe(true);
-            let feats = HitPredictor::features(entry.context_entropy, fragment_ids.len(), query.len(), entry.response_tokens);
+            let feats = HitPredictor::features(
+                entry.context_entropy,
+                fragment_ids.len(),
+                query.len(),
+                entry.response_tokens,
+            );
             self.hit_predictor.update(&feats, true);
-            return CacheLookup::ExactHit { response: entry.response.clone(), tokens_saved: entry.response_tokens };
+            return CacheLookup::ExactHit {
+                response: entry.response.clone(),
+                tokens_saved: entry.response_tokens,
+            };
         }
 
         // Layer 2: Semantic SimHash
@@ -1254,15 +1427,25 @@ impl EgscCache {
         let candidates = self.semantic_index.query(query_fp);
 
         for slot_idx in candidates {
-            if slot_idx >= self.slot_to_hash.len() { continue; }
+            if slot_idx >= self.slot_to_hash.len() {
+                continue;
+            }
             let candidate_hash = self.slot_to_hash[slot_idx];
             if let Some(entry) = self.entries.get_mut(&candidate_hash) {
                 let ham = hamming_distance(query_fp, entry.query_simhash);
-                if ham > threshold { continue; }
-                if entry.effective_budget != effective_budget { continue; }
+                if ham > threshold {
+                    continue;
+                }
+                if entry.effective_budget != effective_budget {
+                    continue;
+                }
                 let jac = Self::jaccard(fragment_ids, &entry.fragment_ids);
-                if jac < self.config.min_jaccard { continue; }
-                if entry.quality_score < 0.15 { continue; }
+                if jac < self.config.min_jaccard {
+                    continue;
+                }
+                if entry.quality_score < 0.15 {
+                    continue;
+                }
 
                 entry.hit_count += 1;
                 entry.last_hit_at = self.current_turn;
@@ -1270,15 +1453,23 @@ impl EgscCache {
                 self.semantic_hits += 1;
                 self.total_tokens_saved += entry.response_tokens as u64;
                 // Record tail cost savings for semantic hit
-                let cost_saved = entry.response_tokens as f64 * self.thompson_gate.cost_model.cost_per_token;
+                let cost_saved =
+                    entry.response_tokens as f64 * self.thompson_gate.cost_model.cost_per_token;
                 self.tail_stats.record(cost_saved);
                 self.thompson_gate.observe_outcome(true);
                 self.shift_detector.observe(true);
-                let feats = HitPredictor::features(entry.context_entropy, fragment_ids.len(), query.len(), entry.response_tokens);
+                let feats = HitPredictor::features(
+                    entry.context_entropy,
+                    fragment_ids.len(),
+                    query.len(),
+                    entry.response_tokens,
+                );
                 self.hit_predictor.update(&feats, true);
                 return CacheLookup::SemanticHit {
-                    response: entry.response.clone(), tokens_saved: entry.response_tokens,
-                    hamming_distance: ham, jaccard_similarity: jac,
+                    response: entry.response.clone(),
+                    tokens_saved: entry.response_tokens,
+                    hamming_distance: ham,
+                    jaccard_similarity: jac,
                 };
             }
         }
@@ -1306,25 +1497,44 @@ impl EgscCache {
     /// Store with TinyLFU frequency-gated admission + Thompson sampling.
     #[cfg(test)]
     pub fn store(
-        &mut self, query: &str, fragment_ids: HashSet<String>,
-        fragment_entropies: &[(f64, u32)], response: String,
-        response_tokens: u32, current_turn: u32,
+        &mut self,
+        query: &str,
+        fragment_ids: HashSet<String>,
+        fragment_entropies: &[(f64, u32)],
+        response: String,
+        response_tokens: u32,
+        current_turn: u32,
     ) -> bool {
-        self.store_with_budget(query, fragment_ids, fragment_entropies, response, response_tokens, current_turn, 0)
+        self.store_with_budget(
+            query,
+            fragment_ids,
+            fragment_entropies,
+            response,
+            response_tokens,
+            current_turn,
+            0,
+        )
     }
 
     /// Budget-aware store used by the engine so exact hits respect the budget that produced them.
     #[allow(clippy::too_many_arguments)]
     pub fn store_with_budget(
-        &mut self, query: &str, fragment_ids: HashSet<String>,
-        fragment_entropies: &[(f64, u32)], response: String,
-        response_tokens: u32, current_turn: u32, effective_budget: u32,
+        &mut self,
+        query: &str,
+        fragment_ids: HashSet<String>,
+        fragment_entropies: &[(f64, u32)],
+        response: String,
+        response_tokens: u32,
+        current_turn: u32,
+        effective_budget: u32,
     ) -> bool {
         self.current_turn = current_turn;
 
         let eh = Self::exact_hash_with_budget(query, &fragment_ids, effective_budget);
         let query_fp = simhash(query);
-        if self.entries.contains_key(&eh) { return true; }
+        if self.entries.contains_key(&eh) {
+            return true;
+        }
 
         // Increment frequency sketch for this item
         self.freq_sketch.increment(eh);
@@ -1332,7 +1542,9 @@ impl EgscCache {
 
         // Thompson sampling admission (entropy gate)
         if self.config.enable_entropy_gate {
-            let (admit, _entropy) = self.thompson_gate.should_admit(fragment_entropies, response_tokens);
+            let (admit, _entropy) = self
+                .thompson_gate
+                .should_admit(fragment_entropies, response_tokens);
             if !admit {
                 self.total_rejections += 1;
                 return false;
@@ -1363,9 +1575,13 @@ impl EgscCache {
         }
 
         let ctx_entropy = if fragment_entropies.len() > 20 {
-            self.thompson_gate.context_entropy_sketch(fragment_entropies)
+            self.thompson_gate
+                .context_entropy_sketch(fragment_entropies)
         } else {
-            ThompsonGate::context_entropy_exact(fragment_entropies, self.thompson_gate.adaptive_alpha.alpha)
+            ThompsonGate::context_entropy_exact(
+                fragment_entropies,
+                self.thompson_gate.adaptive_alpha.alpha,
+            )
         };
 
         let entry = CacheEntry::new_with_budget(
@@ -1389,20 +1605,31 @@ impl EgscCache {
 
     /// Find victim for eviction (lowest-value entry).
     fn find_victim(&self) -> Option<u64> {
-        if self.entries.is_empty() { return None; }
+        if self.entries.is_empty() {
+            return None;
+        }
         if self.config.enable_submodular_eviction {
             if self.entries.len() > 64 {
                 SubmodularEvictor::select_victim_lazy(
-                    &self.entries, &self.thompson_gate.cost_model, self.current_turn,
+                    &self.entries,
+                    &self.thompson_gate.cost_model,
+                    self.current_turn,
                 )
             } else {
                 let refs: Vec<&CacheEntry> = self.entries.values().collect();
                 let hashes: Vec<u64> = self.entries.keys().copied().collect();
-                SubmodularEvictor::select_victim(&refs, &self.thompson_gate.cost_model, self.current_turn)
-                    .and_then(|i| hashes.get(i).copied())
+                SubmodularEvictor::select_victim(
+                    &refs,
+                    &self.thompson_gate.cost_model,
+                    self.current_turn,
+                )
+                .and_then(|i| hashes.get(i).copied())
             }
         } else {
-            self.entries.iter().min_by_key(|(_, e)| e.last_hit_at).map(|(&h, _)| h)
+            self.entries
+                .iter()
+                .min_by_key(|(_, e)| e.last_hit_at)
+                .map(|(&h, _)| h)
         }
     }
 
@@ -1419,7 +1646,13 @@ impl EgscCache {
         self.record_feedback_with_budget(query, fragment_ids, 0, success);
     }
 
-    pub fn record_feedback_with_budget(&mut self, query: &str, fragment_ids: &HashSet<String>, effective_budget: u32, success: bool) {
+    pub fn record_feedback_with_budget(
+        &mut self,
+        query: &str,
+        fragment_ids: &HashSet<String>,
+        effective_budget: u32,
+        success: bool,
+    ) {
         let eh = Self::exact_hash_with_budget(query, fragment_ids, effective_budget);
         let query_fp = simhash(query);
         if let Some(entry) = self.entries.get_mut(&eh) {
@@ -1429,7 +1662,6 @@ impl EgscCache {
         }
     }
 
-
     /// Depth-weighted invalidation via DAG traversal.
     ///
     /// **Semantics**: Score downgrade, NOT silent stale reuse.
@@ -1437,8 +1669,13 @@ impl EgscCache {
     /// Entries degraded below 0.15 quality are GC'd on next `advance_turn()`.
     /// Direct fragments (depth 0) get HARD invalidation (full λ decay).
     /// Transitive dependents (depth 1–3) get progressively softer decay.
-    pub fn invalidate_weighted(&mut self, stale_closure: &HashSet<String>, depth_weights: &HashMap<String, u32>) -> u32 {
-        let count = CausalInvalidator::invalidate_weighted(&mut self.entries, stale_closure, depth_weights);
+    pub fn invalidate_weighted(
+        &mut self,
+        stale_closure: &HashSet<String>,
+        depth_weights: &HashMap<String, u32>,
+    ) -> u32 {
+        let count =
+            CausalInvalidator::invalidate_weighted(&mut self.entries, stale_closure, depth_weights);
         self.total_invalidations += count as u64;
         // Track per-depth invalidation stats for observability
         for &depth in depth_weights.values() {
@@ -1455,9 +1692,12 @@ impl EgscCache {
 
     pub fn gc(&mut self, min_quality: f64) -> u32 {
         let before = self.entries.len();
-        let to_remove: Vec<u64> = self.entries.iter()
+        let to_remove: Vec<u64> = self
+            .entries
+            .iter()
             .filter(|(_, e)| e.quality_score < min_quality)
-            .map(|(&h, _)| h).collect();
+            .map(|(&h, _)| h)
+            .collect();
         for hash in &to_remove {
             self.entries.remove(hash);
             self.exact_index.remove(hash);
@@ -1482,7 +1722,9 @@ impl EgscCache {
             misses: self.misses,
             hit_rate: if self.total_lookups > 0 {
                 (self.exact_hits + self.semantic_hits) as f64 / self.total_lookups as f64
-            } else { 0.0 },
+            } else {
+                0.0
+            },
             total_tokens_saved: self.total_tokens_saved,
             total_admissions: self.total_admissions,
             total_rejections: self.total_rejections,
@@ -1490,8 +1732,12 @@ impl EgscCache {
             total_invalidations: self.total_invalidations,
             admission_rate: self.thompson_gate.admission_rate(),
             entropy_threshold: self.thompson_gate.adaptive_alpha.alpha,
-            avg_quality: if self.entries.is_empty() { 0.0 }
-                else { self.entries.values().map(|e| e.quality_score).sum::<f64>() / self.entries.len() as f64 },
+            avg_quality: if self.entries.is_empty() {
+                0.0
+            } else {
+                self.entries.values().map(|e| e.quality_score).sum::<f64>()
+                    / self.entries.len() as f64
+            },
             adaptive_alpha: self.thompson_gate.adaptive_alpha.alpha,
             thompson_alpha: self.thompson_gate.alpha_succ,
             thompson_beta: self.thompson_gate.beta_fail,
@@ -1512,8 +1758,12 @@ impl EgscCache {
         }
     }
 
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     /// Set the cost-per-token for accurate TailStats cost reporting.
     pub fn set_cost_per_token(&mut self, cost: f64) {
@@ -1532,9 +1782,8 @@ impl EgscCache {
     pub fn export_cache(&self) -> Result<String, String> {
         let snapshot = CacheSnapshot {
             entries: {
-                let mut sorted: Vec<(u64, CacheEntry)> = self.entries.iter()
-                    .map(|(&h, e)| (h, e.clone()))
-                    .collect();
+                let mut sorted: Vec<(u64, CacheEntry)> =
+                    self.entries.iter().map(|(&h, e)| (h, e.clone())).collect();
                 // Predictive warming order: most valuable entries first
                 sorted.sort_by(|a, b| {
                     let va = a.1.hit_count as f64 * a.1.quality_score;
@@ -1566,8 +1815,7 @@ impl EgscCache {
             hard_invalidations: self.hard_invalidations,
             soft_invalidations: self.soft_invalidations,
         };
-        serde_json::to_string(&snapshot)
-            .map_err(|e| format!("Cache serialization failed: {}", e))
+        serde_json::to_string(&snapshot).map_err(|e| format!("Cache serialization failed: {}", e))
     }
 
     /// Import cache state from a JSON snapshot string.
@@ -1630,7 +1878,9 @@ impl EgscCache {
 }
 
 impl Default for EgscCache {
-    fn default() -> Self { Self::new(EgscConfig::default()) }
+    fn default() -> Self {
+        Self::new(EgscConfig::default())
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1641,7 +1891,9 @@ impl Default for EgscCache {
 mod tests {
     use super::*;
 
-    fn fids(ids: &[&str]) -> HashSet<String> { ids.iter().map(|s| s.to_string()).collect() }
+    fn fids(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
 
     /// Helper: create flat depth weights (all depth 0) for testing.
     fn flat_depths(ids: &HashSet<String>) -> HashMap<String, u32> {
@@ -1666,20 +1918,31 @@ mod tests {
         let mut gate = ThompsonGate::new();
         let initial_alpha = gate.alpha_succ;
         gate.observe_outcome(true);
-        assert!(gate.alpha_succ > initial_alpha, "Success should increase alpha");
+        assert!(
+            gate.alpha_succ > initial_alpha,
+            "Success should increase alpha"
+        );
         let initial_beta = gate.beta_fail;
         gate.observe_outcome(false);
-        assert!(gate.beta_fail > initial_beta, "Failure should increase beta");
+        assert!(
+            gate.beta_fail > initial_beta,
+            "Failure should increase beta"
+        );
     }
 
     #[test]
     fn test_thompson_posterior_decay() {
         let mut gate = ThompsonGate::new();
         // Pump up the posterior past the 500 decay threshold
-        for _ in 0..600 { gate.observe_outcome(true); }
+        for _ in 0..600 {
+            gate.observe_outcome(true);
+        }
         let total = gate.alpha_succ + gate.beta_fail;
         // Should have decayed (600 + 4 initial = 604, but decay at 500 multiplies by 0.95)
-        assert!(total < 600.0 + 4.0, "Posterior should decay for non-stationarity: {total}");
+        assert!(
+            total < 600.0 + 4.0,
+            "Posterior should decay for non-stationarity: {total}"
+        );
     }
 
     // ── Adaptive Alpha ──
@@ -1694,9 +1957,19 @@ mod tests {
     fn test_adaptive_alpha_adapts() {
         let mut aa = AdaptiveAlpha::new();
         // Simulate 200 observations with all hits — alpha should shift
-        for _ in 0..200 { aa.observe(true); }
-        assert!(aa.alpha != 2.0, "Alpha should have adapted from initial: {}", aa.alpha);
-        assert!(aa.alpha >= 0.5 && aa.alpha <= 8.0, "Alpha should stay in bounds: {}", aa.alpha);
+        for _ in 0..200 {
+            aa.observe(true);
+        }
+        assert!(
+            aa.alpha != 2.0,
+            "Alpha should have adapted from initial: {}",
+            aa.alpha
+        );
+        assert!(
+            aa.alpha >= 0.5 && aa.alpha <= 8.0,
+            "Alpha should stay in bounds: {}",
+            aa.alpha
+        );
     }
 
     // ── Streaming Entropy Sketch ──
@@ -1718,25 +1991,38 @@ mod tests {
     fn test_sketch_uniform_vs_skewed() {
         // Uniform: 4 equal scores → H₂ = log₂(4) = 2.0
         let mut uniform = EntropySketch::new();
-        for _ in 0..4 { uniform.add(1.0); }
+        for _ in 0..4 {
+            uniform.add(1.0);
+        }
         let h_uniform = uniform.approx_h2();
 
         // Skewed: one dominant score
         let mut skewed = EntropySketch::new();
-        skewed.add(100.0); skewed.add(1.0); skewed.add(1.0); skewed.add(1.0);
+        skewed.add(100.0);
+        skewed.add(1.0);
+        skewed.add(1.0);
+        skewed.add(1.0);
         let h_skewed = skewed.approx_h2();
 
-        assert!(h_uniform > h_skewed, "Uniform H₂ ({h_uniform:.3}) > skewed H₂ ({h_skewed:.3})");
+        assert!(
+            h_uniform > h_skewed,
+            "Uniform H₂ ({h_uniform:.3}) > skewed H₂ ({h_skewed:.3})"
+        );
     }
 
     #[test]
     fn test_sketch_matches_exact() {
         // For small uniform distributions, sketch should be close to exact
         let mut sketch = EntropySketch::new();
-        for _ in 0..8 { sketch.add(1.0); }
+        for _ in 0..8 {
+            sketch.add(1.0);
+        }
         let approx = sketch.approx_h2();
         let exact = 3.0_f64; // log₂(8) = 3.0
-        assert!((approx - exact).abs() < 0.1, "Sketch ({approx:.3}) should ≈ exact ({exact:.3})");
+        assert!(
+            (approx - exact).abs() < 0.1,
+            "Sketch ({approx:.3}) should ≈ exact ({exact:.3})"
+        );
     }
 
     // ── Cost Model ──
@@ -1746,7 +2032,10 @@ mod tests {
         let cm = CostModel::default();
         let cheap = cm.utility(0.5, 10, 0);
         let expensive = cm.utility(0.5, 1000, 0);
-        assert!(expensive > cheap, "Expensive entries should have higher utility");
+        assert!(
+            expensive > cheap,
+            "Expensive entries should have higher utility"
+        );
     }
 
     #[test]
@@ -1763,7 +2052,7 @@ mod tests {
     fn test_predictor_learns() {
         let mut pred = HitPredictor::new();
         let good_feats = [0.8, 0.5, 0.3, 0.7]; // high entropy, many frags, medium query, expensive
-        let bad_feats = [0.1, 0.1, 0.1, 0.05];  // low everything
+        let bad_feats = [0.1, 0.1, 0.1, 0.05]; // low everything
 
         for _ in 0..100 {
             pred.update(&good_feats, true);
@@ -1772,16 +2061,43 @@ mod tests {
 
         let p_good = pred.predict(&good_feats);
         let p_bad = pred.predict(&bad_feats);
-        assert!(p_good > p_bad, "Predictor should learn: good={p_good:.3} > bad={p_bad:.3}");
+        assert!(
+            p_good > p_bad,
+            "Predictor should learn: good={p_good:.3} > bad={p_bad:.3}"
+        );
     }
 
     // ── Submodular Eviction ──
 
     #[test]
     fn test_submodular_evicts_redundant() {
-        let a = CacheEntry::new(1, 0xAAAAAAAA_AAAAAAAA, fids(&["f1"]), "a".into(), 100, 4.0, 0);
-        let b = CacheEntry::new(2, 0x55555555_55555555, fids(&["f2"]), "b".into(), 100, 4.5, 0);
-        let mut c = CacheEntry::new(3, 0xAAAAAAAA_AAAAAAA8, fids(&["f1"]), "c".into(), 50, 2.0, 0);
+        let a = CacheEntry::new(
+            1,
+            0xAAAAAAAA_AAAAAAAA,
+            fids(&["f1"]),
+            "a".into(),
+            100,
+            4.0,
+            0,
+        );
+        let b = CacheEntry::new(
+            2,
+            0x55555555_55555555,
+            fids(&["f2"]),
+            "b".into(),
+            100,
+            4.5,
+            0,
+        );
+        let mut c = CacheEntry::new(
+            3,
+            0xAAAAAAAA_AAAAAAA8,
+            fids(&["f1"]),
+            "c".into(),
+            50,
+            2.0,
+            0,
+        );
         c.quality_score = 0.1;
 
         let entries = vec![&a, &b, &c];
@@ -1793,8 +2109,15 @@ mod tests {
     fn test_submodular_lazy_finds_victim() {
         let mut entries = HashMap::new();
         for i in 0..10u64 {
-            let e = CacheEntry::new(i, i * 0x1111111111111111, fids(&[&format!("f{i}")]),
-                format!("r{i}"), 100, 4.0, 0);
+            let e = CacheEntry::new(
+                i,
+                i * 0x1111111111111111,
+                fids(&[&format!("f{i}")]),
+                format!("r{i}"),
+                100,
+                4.0,
+                0,
+            );
             entries.insert(i, e);
         }
         let cm = CostModel::default();
@@ -1810,7 +2133,10 @@ mod tests {
         let stale = fids(&["f1", "f2"]);
         let depths = flat_depths(&stale);
         let mult = CausalInvalidator::decay_multiplier_weighted(&frags, &stale, &depths);
-        assert!((mult - 0.5).abs() < 0.01, "Full overlap → 50% decay: {mult}");
+        assert!(
+            (mult - 0.5).abs() < 0.01,
+            "Full overlap → 50% decay: {mult}"
+        );
     }
 
     #[test]
@@ -1826,7 +2152,10 @@ mod tests {
     fn test_causal_decay_no_overlap() {
         let frags = fids(&["f1", "f2"]);
         let stale = fids(&["f3", "f4"]);
-        assert_eq!(CausalInvalidator::decay_multiplier_weighted(&frags, &stale, &flat_depths(&stale)), 1.0);
+        assert_eq!(
+            CausalInvalidator::decay_multiplier_weighted(&frags, &stale, &flat_depths(&stale)),
+            1.0
+        );
     }
 
     #[test]
@@ -1839,9 +2168,13 @@ mod tests {
         depths.insert("f2".to_string(), 3);
 
         let weighted = CausalInvalidator::decay_multiplier_weighted(&frags, &stale, &depths);
-        let flat = CausalInvalidator::decay_multiplier_weighted(&frags, &stale, &flat_depths(&stale));
+        let flat =
+            CausalInvalidator::decay_multiplier_weighted(&frags, &stale, &flat_depths(&stale));
         // Depth-weighted should decay LESS than flat (deep deps are softer)
-        assert!(weighted > flat, "Depth-weighted ({weighted:.4}) > flat ({flat:.4})");
+        assert!(
+            weighted > flat,
+            "Depth-weighted ({weighted:.4}) > flat ({flat:.4})"
+        );
     }
 
     #[test]
@@ -1858,16 +2191,30 @@ mod tests {
         }
         let e = entries.get(&1).unwrap();
         assert_eq!(e.cascade_count, 4);
-        assert!(e.quality_score < 0.1, "4 cascades should severely degrade quality: {}", e.quality_score);
+        assert!(
+            e.quality_score < 0.1,
+            "4 cascades should severely degrade quality: {}",
+            e.quality_score
+        );
     }
 
     // ── Integration: Full Cache Lifecycle ──
 
     #[test]
     fn test_exact_hit() {
-        let mut cache = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
+        let mut cache = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
         let frags = fids(&["f1", "f2"]);
-        cache.store("what does this function do?", frags.clone(), &[(4.0, 100)], "It processes payments.".into(), 50, 1);
+        cache.store(
+            "what does this function do?",
+            frags.clone(),
+            &[(4.0, 100)],
+            "It processes payments.".into(),
+            50,
+            1,
+        );
         match cache.lookup("what does this function do?", &frags) {
             CacheLookup::ExactHit { tokens_saved, .. } => assert_eq!(tokens_saved, 50),
             _ => panic!("Expected exact hit"),
@@ -1878,84 +2225,159 @@ mod tests {
     #[test]
     fn test_semantic_hit() {
         let mut cache = EgscCache::new(EgscConfig {
-            enable_entropy_gate: false, initial_hamming_threshold: 10, min_jaccard: 0.5,
+            enable_entropy_gate: false,
+            initial_hamming_threshold: 10,
+            min_jaccard: 0.5,
             ..Default::default()
         });
         let frags = fids(&["f1", "f2"]);
-        cache.store("what does this function do?", frags.clone(), &[(4.0, 100)], "payments".into(), 50, 1);
+        cache.store(
+            "what does this function do?",
+            frags.clone(),
+            &[(4.0, 100)],
+            "payments".into(),
+            50,
+            1,
+        );
         // Same query, same frags — should at least get exact hit
         match cache.lookup("what does this function do?", &frags) {
-            CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => { /* ok */ },
-            CacheLookup::Miss => { /* SimHash variance, acceptable */ },
+            CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => { /* ok */ }
+            CacheLookup::Miss => { /* SimHash variance, acceptable */ }
         }
     }
 
     #[test]
     fn test_thompson_rejects_trivial() {
-        let mut cache = EgscCache::new(EgscConfig { enable_entropy_gate: true, ..Default::default() });
+        let mut cache = EgscCache::new(EgscConfig {
+            enable_entropy_gate: true,
+            ..Default::default()
+        });
         // Pump beta_fail to make the gate very conservative
-        for _ in 0..50 { cache.thompson_gate.observe_outcome(false); }
+        for _ in 0..50 {
+            cache.thompson_gate.observe_outcome(false);
+        }
         let frags = fids(&["f1"]);
-        let _admitted = cache.store("what is x?", frags, &[(0.1, 5)], "x is a variable".into(), 5, 1);
+        let _admitted = cache.store(
+            "what is x?",
+            frags,
+            &[(0.1, 5)],
+            "x is a variable".into(),
+            5,
+            1,
+        );
         // With a very conservative gate and tiny entropy, should likely reject
         // (Thompson sampling is stochastic, so we check stats pattern)
         let stats = cache.stats();
-        assert!(stats.total_admissions + stats.total_rejections > 0, "Should have made a decision");
+        assert!(
+            stats.total_admissions + stats.total_rejections > 0,
+            "Should have made a decision"
+        );
     }
 
     #[test]
     fn test_eviction_on_full_cache() {
         let mut cache = EgscCache::new(EgscConfig {
-            max_entries: 3, enable_entropy_gate: false, enable_submodular_eviction: true,
+            max_entries: 3,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
             ..Default::default()
         });
         for i in 0..3 {
-            cache.store(&format!("query {i}"), fids(&[&format!("f{i}")]), &[(4.0, 100)], format!("resp {i}"), 50, i as u32);
+            cache.store(
+                &format!("query {i}"),
+                fids(&[&format!("f{i}")]),
+                &[(4.0, 100)],
+                format!("resp {i}"),
+                50,
+                i as u32,
+            );
         }
         assert_eq!(cache.len(), 3);
-        cache.store("query new", fids(&["f_new"]), &[(4.0, 100)], "resp new".into(), 50, 4);
+        cache.store(
+            "query new",
+            fids(&["f_new"]),
+            &[(4.0, 100)],
+            "resp new".into(),
+            50,
+            4,
+        );
         assert_eq!(cache.len(), 3, "Should stay at max after eviction");
         assert_eq!(cache.stats().total_evictions, 1);
     }
 
     #[test]
     fn test_invalidation_integration() {
-        let mut cache = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
-        cache.store("how does payment work?", fids(&["f1", "f2", "f3"]),
-            &[(4.0, 100)], "Payment flow is...".into(), 200, 1);
+        let mut cache = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
+        cache.store(
+            "how does payment work?",
+            fids(&["f1", "f2", "f3"]),
+            &[(4.0, 100)],
+            "Payment flow is...".into(),
+            200,
+            1,
+        );
         let stale = fids(&["f1"]);
         let affected = cache.invalidate_weighted(&stale, &flat_depths(&stale));
         assert_eq!(affected, 1);
         let entry = cache.entries.values().next().unwrap();
-        assert!(entry.quality_score < 0.5, "Quality should decay: {}", entry.quality_score);
+        assert!(
+            entry.quality_score < 0.5,
+            "Quality should decay: {}",
+            entry.quality_score
+        );
     }
 
     #[test]
     fn test_wilson_score_converges() {
         let mut entry = CacheEntry::new(1, 0, HashSet::new(), "r".into(), 10, 4.0, 0);
-        for _ in 0..8 { entry.record_feedback(true); }
-        for _ in 0..2 { entry.record_feedback(false); }
+        for _ in 0..8 {
+            entry.record_feedback(true);
+        }
+        for _ in 0..2 {
+            entry.record_feedback(false);
+        }
         let score = entry.wilson_score();
         // Wilson lower bound with 10 samples and 80% success is ~0.49
-        assert!(score > 0.4 && score < 0.9, "Wilson score should be moderate with 10 samples: {score}");
+        assert!(
+            score > 0.4 && score < 0.9,
+            "Wilson score should be moderate with 10 samples: {score}"
+        );
     }
 
     #[test]
     fn test_gc_removes_low_quality() {
-        let mut cache = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
+        let mut cache = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
         cache.store("q1", fids(&["f1"]), &[(4.0, 100)], "r1".into(), 50, 1);
         cache.store("q2", fids(&["f2"]), &[(4.0, 100)], "r2".into(), 50, 1);
-        if let Some(entry) = cache.entries.values_mut().next() { entry.quality_score = 0.05; }
+        if let Some(entry) = cache.entries.values_mut().next() {
+            entry.quality_score = 0.05;
+        }
         assert_eq!(cache.gc(0.1), 1);
     }
 
     #[test]
     fn test_cache_persistence_roundtrip() {
-        let mut cache = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
+        let mut cache = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
         let q1_frags = fids(&["f1", "f2"]);
         let q2_frags = fids(&["f3"]);
 
-        cache.store("q1", q1_frags.clone(), &[(4.2, 80), (3.8, 40)], "r1".into(), 64, 3);
+        cache.store(
+            "q1",
+            q1_frags.clone(),
+            &[(4.2, 80), (3.8, 40)],
+            "r1".into(),
+            64,
+            3,
+        );
         cache.store("q2", q2_frags.clone(), &[(4.6, 100)], "r2".into(), 96, 4);
         cache.record_feedback("q1", &q1_frags, true);
         cache.record_feedback("q1", &q1_frags, true);
@@ -1964,8 +2386,13 @@ mod tests {
         let q1_hash = EgscCache::exact_hash("q1", &q1_frags);
         let exported = cache.export_cache().expect("cache export should succeed");
 
-        let mut restored = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
-        let restored_entries = restored.import_cache(&exported).expect("cache import should succeed");
+        let mut restored = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
+        let restored_entries = restored
+            .import_cache(&exported)
+            .expect("cache import should succeed");
 
         assert_eq!(restored_entries, 2);
         assert_eq!(restored.entries.len(), cache.entries.len());
@@ -1973,7 +2400,10 @@ mod tests {
         assert!((restored.thompson_gate.beta_fail - cache.thompson_gate.beta_fail).abs() < 1e-9);
 
         let original_q1 = cache.entries.get(&q1_hash).expect("q1 entry should exist");
-        let restored_q1 = restored.entries.get(&q1_hash).expect("restored q1 entry should exist");
+        let restored_q1 = restored
+            .entries
+            .get(&q1_hash)
+            .expect("restored q1 entry should exist");
         assert!((restored_q1.quality_score - original_q1.quality_score).abs() < 1e-9);
         assert_eq!(restored_q1.successes, original_q1.successes);
         assert_eq!(restored_q1.failures, original_q1.failures);
@@ -1981,14 +2411,29 @@ mod tests {
 
     #[test]
     fn test_warm_start_hit_rate() {
-        let mut cache = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
+        let mut cache = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
         let frags = fids(&["auth.rs", "cache.rs"]);
 
-        cache.store("auth cache", frags.clone(), &[(4.4, 120), (3.9, 60)], "warm response".into(), 80, 5);
+        cache.store(
+            "auth cache",
+            frags.clone(),
+            &[(4.4, 120), (3.9, 60)],
+            "warm response".into(),
+            80,
+            5,
+        );
         let snapshot = cache.export_cache().expect("cache export should succeed");
 
-        let mut restored = EgscCache::new(EgscConfig { enable_entropy_gate: false, ..Default::default() });
-        restored.import_cache(&snapshot).expect("cache import should succeed");
+        let mut restored = EgscCache::new(EgscConfig {
+            enable_entropy_gate: false,
+            ..Default::default()
+        });
+        restored
+            .import_cache(&snapshot)
+            .expect("cache import should succeed");
 
         match restored.lookup("auth cache", &frags) {
             CacheLookup::ExactHit { .. } => {}
@@ -1997,7 +2442,10 @@ mod tests {
 
         let stats = restored.stats();
         assert_eq!(stats.exact_hits, 1);
-        assert!(stats.hit_rate > 0.0, "warm start should eliminate cold miss");
+        assert!(
+            stats.hit_rate > 0.0,
+            "warm start should eliminate cold miss"
+        );
     }
 
     #[test]
@@ -2037,7 +2485,10 @@ mod tests {
         let scores = vec![1.0; 16];
         let h2 = crate::entropy::renyi_entropy_alpha(&scores, 2.0);
         let expected = 4.0; // log₂(16) = 4
-        assert!((h2 - expected).abs() < 1e-10, "Uniform H₂ ({h2:.6}) should = log₂(16) = {expected}");
+        assert!(
+            (h2 - expected).abs() < 1e-10,
+            "Uniform H₂ ({h2:.6}) should = log₂(16) = {expected}"
+        );
     }
 
     #[test]
@@ -2045,9 +2496,33 @@ mod tests {
         // Verify diminishing returns: marginal gain of adding c to {a,b}
         // is ≤ marginal gain of adding c to {a} alone.
         // This is the defining property of submodularity.
-        let a = CacheEntry::new(1, 0x0000000000000000, fids(&["f1"]), "a".into(), 100, 4.0, 0);
-        let b = CacheEntry::new(2, 0xFFFFFFFFFFFFFFFF, fids(&["f2"]), "b".into(), 100, 4.0, 0);
-        let c = CacheEntry::new(3, 0x7F7F7F7F7F7F7F7F, fids(&["f3"]), "c".into(), 100, 4.0, 0);
+        let a = CacheEntry::new(
+            1,
+            0x0000000000000000,
+            fids(&["f1"]),
+            "a".into(),
+            100,
+            4.0,
+            0,
+        );
+        let b = CacheEntry::new(
+            2,
+            0xFFFFFFFFFFFFFFFF,
+            fids(&["f2"]),
+            "b".into(),
+            100,
+            4.0,
+            0,
+        );
+        let c = CacheEntry::new(
+            3,
+            0x7F7F7F7F7F7F7F7F,
+            fids(&["f3"]),
+            "c".into(),
+            100,
+            4.0,
+            0,
+        );
 
         // Marginal contribution of c given just {a}
         let sim_ca = SubmodularEvictor::simhash_similarity(c.query_simhash, a.query_simhash);
@@ -2067,13 +2542,16 @@ mod tests {
     fn test_causal_decay_monotone_in_overlap() {
         // More overlap → more decay (lower multiplier)
         let frags = fids(&["f1", "f2", "f3", "f4"]);
-        let stale_1 = fids(&["f1"]);           // 25%
-        let stale_2 = fids(&["f1", "f2"]);     // 50%
+        let stale_1 = fids(&["f1"]); // 25%
+        let stale_2 = fids(&["f1", "f2"]); // 50%
         let stale_4 = fids(&["f1", "f2", "f3", "f4"]); // 100%
 
-        let m1 = CausalInvalidator::decay_multiplier_weighted(&frags, &stale_1, &flat_depths(&stale_1));
-        let m2 = CausalInvalidator::decay_multiplier_weighted(&frags, &stale_2, &flat_depths(&stale_2));
-        let m4 = CausalInvalidator::decay_multiplier_weighted(&frags, &stale_4, &flat_depths(&stale_4));
+        let m1 =
+            CausalInvalidator::decay_multiplier_weighted(&frags, &stale_1, &flat_depths(&stale_1));
+        let m2 =
+            CausalInvalidator::decay_multiplier_weighted(&frags, &stale_2, &flat_depths(&stale_2));
+        let m4 =
+            CausalInvalidator::decay_multiplier_weighted(&frags, &stale_4, &flat_depths(&stale_4));
 
         assert!(m1 > m2, "25% overlap ({m1:.4}) > 50% ({m2:.4})");
         assert!(m2 > m4, "50% overlap ({m2:.4}) > 100% ({m4:.4})");
@@ -2088,14 +2566,24 @@ mod tests {
     fn zipf_sequence(n: usize, n_unique: usize, alpha: f64, seed: u64) -> Vec<usize> {
         let mut seq = Vec::with_capacity(n);
         // Precompute CDF
-        let weights: Vec<f64> = (0..n_unique).map(|i| 1.0 / (i as f64 + 1.0).powf(alpha)).collect();
+        let weights: Vec<f64> = (0..n_unique)
+            .map(|i| 1.0 / (i as f64 + 1.0).powf(alpha))
+            .collect();
         let total: f64 = weights.iter().sum();
-        let cdf: Vec<f64> = weights.iter().scan(0.0, |acc, &w| { *acc += w / total; Some(*acc) }).collect();
+        let cdf: Vec<f64> = weights
+            .iter()
+            .scan(0.0, |acc, &w| {
+                *acc += w / total;
+                Some(*acc)
+            })
+            .collect();
 
         // LCG pseudo-random
         let mut state = seed;
         for _ in 0..n {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let r = (state >> 33) as f64 / (1u64 << 31) as f64;
             let q = cdf.iter().position(|&c| r < c).unwrap_or(n_unique - 1);
             seq.push(q);
@@ -2106,8 +2594,10 @@ mod tests {
     /// Run a workload through EGSC, returns (hits, total).
     fn run_egsc_workload(queries: &[usize], cache_size: usize) -> (u64, u64) {
         let mut cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: false,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut hits = 0u64;
         for (t, &q) in queries.iter().enumerate() {
@@ -2115,10 +2605,15 @@ mod tests {
             match cache.lookup(&format!("q{q}"), &frags) {
                 CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => hits += 1,
                 CacheLookup::Miss => {
-                    cache.store(&format!("q{q}"), frags,
+                    cache.store(
+                        &format!("q{q}"),
+                        frags,
                         &[(3.0 + q as f64 * 0.05, 100)],
-                        format!("r{q}"), 50 + q as u32, t as u32);
-                },
+                        format!("r{q}"),
+                        50 + q as u32,
+                        t as u32,
+                    );
+                }
             }
         }
         (hits, queries.len() as u64)
@@ -2130,9 +2625,13 @@ mod tests {
         let mut hits = 0u64;
         for &q in queries {
             if let Some(pos) = cache.iter().position(|&x| x == q) {
-                hits += 1; cache.remove(pos); cache.push(q);
+                hits += 1;
+                cache.remove(pos);
+                cache.push(q);
             } else {
-                if cache.len() >= cache_size { cache.remove(0); }
+                if cache.len() >= cache_size {
+                    cache.remove(0);
+                }
                 cache.push(q);
             }
         }
@@ -2168,7 +2667,9 @@ mod tests {
 
         eprintln!("\n╔════════════════════════════════════════════════════════════════╗");
         eprintln!("║  BENCHMARK 1: Multi-Workload Hit-Rate Supremacy              ║");
-        eprintln!("║  {n} queries, {cache_size} cache slots, {n_unique} unique queries            ║");
+        eprintln!(
+            "║  {n} queries, {cache_size} cache slots, {n_unique} unique queries            ║"
+        );
         eprintln!("╠══════════════╦═══════════╦═══════════╦═══════════╦════════════╣");
         eprintln!("║   Workload   ║   EGSC    ║    LRU    ║    LFU    ║  EGSC win  ║");
         eprintln!("╠══════════════╬═══════════╬═══════════╬═══════════╬════════════╣");
@@ -2176,8 +2677,11 @@ mod tests {
         let mut egsc_total_hits = 0u64;
         let mut lru_total_hits = 0u64;
 
-        for (name, alpha, seed) in [("Zipf α=0.6", 0.6, 42u64), ("Zipf α=0.9", 0.9, 123),
-                                     ("Zipf α=1.2", 1.2, 456)] {
+        for (name, alpha, seed) in [
+            ("Zipf α=0.6", 0.6, 42u64),
+            ("Zipf α=0.9", 0.9, 123),
+            ("Zipf α=1.2", 1.2, 456),
+        ] {
             let queries = zipf_sequence(n, n_unique, alpha, seed);
             let (eh, _) = run_egsc_workload(&queries, cache_size);
             let (lh, _) = run_lru_workload(&queries, cache_size);
@@ -2186,7 +2690,11 @@ mod tests {
             let lr = lh as f64 / n as f64;
             let fr = fh as f64 / n as f64;
             let best_base = lr.max(fr);
-            let win = if best_base > 0.0 { (er - best_base) / best_base * 100.0 } else { 0.0 };
+            let win = if best_base > 0.0 {
+                (er - best_base) / best_base * 100.0
+            } else {
+                0.0
+            };
             eprintln!("║ {name:12} ║  {er:.4}   ║  {lr:.4}   ║  {fr:.4}   ║ {win:+7.1}%   ║");
             egsc_total_hits += eh;
             lru_total_hits += lh;
@@ -2196,7 +2704,9 @@ mod tests {
         let mut queries = zipf_sequence(n / 2, n_unique, 1.2, 789);
         // Shift: reverse the popularity (former hot items become cold)
         let shift: Vec<usize> = zipf_sequence(n / 2, n_unique, 0.8, 101)
-            .iter().map(|&q| n_unique - 1 - q).collect();
+            .iter()
+            .map(|&q| n_unique - 1 - q)
+            .collect();
         queries.extend(shift);
         let (eh, _) = run_egsc_workload(&queries, cache_size);
         let (lh, _) = run_lru_workload(&queries, cache_size);
@@ -2204,7 +2714,11 @@ mod tests {
         let er = eh as f64 / queries.len() as f64;
         let lr = lh as f64 / queries.len() as f64;
         let fr = fh as f64 / queries.len() as f64;
-        let win = if lr.max(fr) > 0.0 { (er - lr.max(fr)) / lr.max(fr) * 100.0 } else { 0.0 };
+        let win = if lr.max(fr) > 0.0 {
+            (er - lr.max(fr)) / lr.max(fr) * 100.0
+        } else {
+            0.0
+        };
         eprintln!("║ Non-station  ║  {er:.4}   ║  {lr:.4}   ║  {fr:.4}   ║ {win:+7.1}%   ║");
         egsc_total_hits += eh;
         lru_total_hits += lh;
@@ -2212,8 +2726,10 @@ mod tests {
         eprintln!("╚══════════════╩═══════════╩═══════════╩═══════════╩════════════╝");
 
         // Assert EGSC is at least competitive overall
-        assert!(egsc_total_hits as f64 >= lru_total_hits as f64 * 0.70,
-            "EGSC total hits ({egsc_total_hits}) should be ≥70% of LRU ({lru_total_hits})");
+        assert!(
+            egsc_total_hits as f64 >= lru_total_hits as f64 * 0.70,
+            "EGSC total hits ({egsc_total_hits}) should be ≥70% of LRU ({lru_total_hits})"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2257,32 +2773,47 @@ mod tests {
         // Models real LLM workloads: most queries are cheap (GPT-3.5),
         // but some require GPT-4o with massive context windows.
         let queries = zipf_sequence(n, n_unique, 0.8, 777);
-        let costs: Vec<u32> = (0..n_unique).map(|i| {
-            if i % 20 == 0 { 5000 }    // 5% at $50 recompute cost
-            else { 50 }                  // 95% at $0.50
-        }).collect();
+        let costs: Vec<u32> = (0..n_unique)
+            .map(|i| {
+                if i % 20 == 0 {
+                    5000
+                }
+                // 5% at $50 recompute cost
+                else {
+                    50
+                } // 95% at $0.50
+            })
+            .collect();
 
         // EGSC with cost model
         let mut cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: false,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut egsc_cost_saved = 0.0_f64;
         let mut egsc_tail = TailStats::new();
         for (t, &q) in queries.iter().enumerate() {
             let frags = fids(&[&format!("f{q}")]);
             match cache.lookup(&format!("q{q}"), &frags) {
-                CacheLookup::ExactHit { tokens_saved, .. } |
-                CacheLookup::SemanticHit { tokens_saved, .. } => {
+                CacheLookup::ExactHit { tokens_saved, .. }
+                | CacheLookup::SemanticHit { tokens_saved, .. } => {
                     let saved = tokens_saved as f64 * 0.01;
                     egsc_cost_saved += saved;
                     egsc_tail.record(saved);
-                },
+                }
                 CacheLookup::Miss => {
                     egsc_tail.record(0.0);
-                    cache.store(&format!("q{q}"), frags,
-                        &[(4.0, costs[q])], format!("r{q}"), costs[q], t as u32);
-                },
+                    cache.store(
+                        &format!("q{q}"),
+                        frags,
+                        &[(4.0, costs[q])],
+                        format!("r{q}"),
+                        costs[q],
+                        t as u32,
+                    );
+                }
             }
         }
 
@@ -2299,7 +2830,9 @@ mod tests {
                 lru.push(item);
             } else {
                 lru_tail.record(0.0);
-                if lru.len() >= cache_size { lru.remove(0); }
+                if lru.len() >= cache_size {
+                    lru.remove(0);
+                }
                 lru.push((q, costs[q]));
             }
         }
@@ -2307,8 +2840,16 @@ mod tests {
         // TinyLFU cost saved
         let tlfu_cost = run_tinylfu_cost(&queries, &costs, cache_size);
 
-        let adv_lru = if lru_cost_saved > 0.0 { (egsc_cost_saved - lru_cost_saved) / lru_cost_saved * 100.0 } else { 0.0 };
-        let adv_tlfu = if tlfu_cost > 0.0 { (egsc_cost_saved - tlfu_cost) / tlfu_cost * 100.0 } else { 0.0 };
+        let adv_lru = if lru_cost_saved > 0.0 {
+            (egsc_cost_saved - lru_cost_saved) / lru_cost_saved * 100.0
+        } else {
+            0.0
+        };
+        let adv_tlfu = if tlfu_cost > 0.0 {
+            (egsc_cost_saved - tlfu_cost) / tlfu_cost * 100.0
+        } else {
+            0.0
+        };
 
         eprintln!("\n╔═══════════════════════════════════════════════════════════╗");
         eprintln!("║  BENCHMARK 2: Cost-Aware Utility (Extreme Cost Skew)     ║");
@@ -2319,12 +2860,22 @@ mod tests {
         eprintln!("║  TinyLFU cost saved: ${tlfu_cost:.2}");
         eprintln!("║  EGSC vs LRU:        {adv_lru:+.1}%");
         eprintln!("║  EGSC vs TinyLFU:    {adv_tlfu:+.1}%");
-        eprintln!("║  p90 (EGSC/LRU):     {:.2}/{:.2}", egsc_tail.percentile(90.0), lru_tail.percentile(90.0));
-        eprintln!("║  p99 (EGSC/LRU):     {:.2}/{:.2}", egsc_tail.percentile(99.0), lru_tail.percentile(99.0));
+        eprintln!(
+            "║  p90 (EGSC/LRU):     {:.2}/{:.2}",
+            egsc_tail.percentile(90.0),
+            lru_tail.percentile(90.0)
+        );
+        eprintln!(
+            "║  p99 (EGSC/LRU):     {:.2}/{:.2}",
+            egsc_tail.percentile(99.0),
+            lru_tail.percentile(99.0)
+        );
         eprintln!("╚═══════════════════════════════════════════════════════════╝");
 
-        assert!(egsc_cost_saved >= lru_cost_saved,
-            "EGSC cost (${egsc_cost_saved:.2}) should beat LRU (${lru_cost_saved:.2})");
+        assert!(
+            egsc_cost_saved >= lru_cost_saved,
+            "EGSC cost (${egsc_cost_saved:.2}) should beat LRU (${lru_cost_saved:.2})"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2353,7 +2904,9 @@ mod tests {
             if round > 100 {
                 let pred = predictor.predict(&features);
                 let predicted_hit = pred > 0.5;
-                if predicted_hit == actually_hit { correct += 1; }
+                if predicted_hit == actually_hit {
+                    correct += 1;
+                }
                 total += 1;
             }
             predictor.update(&features, actually_hit);
@@ -2367,7 +2920,10 @@ mod tests {
         eprintln!("║  Weights:  {:?}", predictor.weights);
         eprintln!("╚═══════════════════════════════════════════╝");
 
-        assert!(accuracy > 0.55, "Bandit accuracy ({accuracy:.3}) should exceed 0.55");
+        assert!(
+            accuracy > 0.55,
+            "Bandit accuracy ({accuracy:.3}) should exceed 0.55"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2391,8 +2947,10 @@ mod tests {
 
         // EGSC with DAG invalidation
         let mut egsc = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: false,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut egsc_hits = 0u64;
         for (t, &q) in queries.iter().enumerate() {
@@ -2410,9 +2968,15 @@ mod tests {
             match egsc.lookup(&format!("q{q}"), &frags) {
                 CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => egsc_hits += 1,
                 CacheLookup::Miss => {
-                    egsc.store(&format!("q{q}"), frags,
-                        &[(4.0, 100)], format!("r{q}"), 100, t as u32);
-                },
+                    egsc.store(
+                        &format!("q{q}"),
+                        frags,
+                        &[(4.0, 100)],
+                        format!("r{q}"),
+                        100,
+                        t as u32,
+                    );
+                }
             }
         }
 
@@ -2422,9 +2986,12 @@ mod tests {
         for &q in &queries {
             if let Some(pos) = lru.iter().position(|&x| x == q) {
                 lru_hits += 1;
-                lru.remove(pos); lru.push(q);
+                lru.remove(pos);
+                lru.push(q);
             } else {
-                if lru.len() >= cache_size { lru.remove(0); }
+                if lru.len() >= cache_size {
+                    lru.remove(0);
+                }
                 lru.push(q);
             }
         }
@@ -2444,8 +3011,10 @@ mod tests {
         eprintln!("╚═══════════════════════════════════════════════════════════╝");
 
         // EGSC should be competitive even with periodic invalidation
-        assert!(egsc_hits as f64 >= lru_hits as f64 * 0.5,
-            "EGSC ({egsc_hits}) should maintain ≥50% of LRU ({lru_hits}) under mutations");
+        assert!(
+            egsc_hits as f64 >= lru_hits as f64 * 0.5,
+            "EGSC ({egsc_hits}) should maintain ≥50% of LRU ({lru_hits}) under mutations"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2461,14 +3030,18 @@ mod tests {
         let phase1 = zipf_sequence(phase_len, n_unique, 1.5, 42);
         let phase2 = zipf_sequence(phase_len, n_unique, 0.01, 999);
         let phase3: Vec<usize> = zipf_sequence(phase_len, n_unique, 1.5, 321)
-            .iter().map(|&q| (q + n_unique / 2) % n_unique).collect();
+            .iter()
+            .map(|&q| (q + n_unique / 2) % n_unique)
+            .collect();
 
         let all_queries: Vec<usize> = [phase1, phase2, phase3].concat();
 
         // Run EGSC
         let mut cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: true,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut phase_hits = [0u64; 3];
         for (t, &q) in all_queries.iter().enumerate() {
@@ -2477,12 +3050,17 @@ mod tests {
             match cache.lookup(&format!("q{q}"), &frags) {
                 CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => {
                     phase_hits[phase] += 1;
-                },
+                }
                 CacheLookup::Miss => {
-                    cache.store(&format!("q{q}"), frags,
+                    cache.store(
+                        &format!("q{q}"),
+                        frags,
                         &[(3.5 + q as f64 * 0.02, 100)],
-                        format!("r{q}"), 80, t as u32);
-                },
+                        format!("r{q}"),
+                        80,
+                        t as u32,
+                    );
+                }
             }
         }
 
@@ -2493,9 +3071,12 @@ mod tests {
             let phase = t / phase_len;
             if let Some(pos) = lru.iter().position(|&x| x == q) {
                 lru_phase_hits[phase] += 1;
-                lru.remove(pos); lru.push(q);
+                lru.remove(pos);
+                lru.push(q);
             } else {
-                if lru.len() >= cache_size { lru.remove(0); }
+                if lru.len() >= cache_size {
+                    lru.remove(0);
+                }
                 lru.push(q);
             }
         }
@@ -2506,18 +3087,35 @@ mod tests {
         eprintln!("║  BENCHMARK 5: Stability & Adaptivity Under Shift        ║");
         eprintln!("╠══════════════════════════════════════════════════════════╣");
         eprintln!("║                    EGSC     LRU                         ║");
-        eprintln!("║  Phase 1 (skew):   {:.4}    {:.4}     (Zipf α=1.5)", phase_hits[0] as f64 / phase_len as f64, lru_phase_hits[0] as f64 / phase_len as f64);
-        eprintln!("║  Phase 2 (shift):  {:.4}    {:.4}     (Uniform)",     phase_hits[1] as f64 / phase_len as f64, lru_phase_hits[1] as f64 / phase_len as f64);
-        eprintln!("║  Phase 3 (recov):  {:.4}    {:.4}     (Shifted skew)", phase_hits[2] as f64 / phase_len as f64, lru_phase_hits[2] as f64 / phase_len as f64);
+        eprintln!(
+            "║  Phase 1 (skew):   {:.4}    {:.4}     (Zipf α=1.5)",
+            phase_hits[0] as f64 / phase_len as f64,
+            lru_phase_hits[0] as f64 / phase_len as f64
+        );
+        eprintln!(
+            "║  Phase 2 (shift):  {:.4}    {:.4}     (Uniform)",
+            phase_hits[1] as f64 / phase_len as f64,
+            lru_phase_hits[1] as f64 / phase_len as f64
+        );
+        eprintln!(
+            "║  Phase 3 (recov):  {:.4}    {:.4}     (Shifted skew)",
+            phase_hits[2] as f64 / phase_len as f64,
+            lru_phase_hits[2] as f64 / phase_len as f64
+        );
         eprintln!("║  Final α (Rényi):  {:.4}", stats.adaptive_alpha);
         eprintln!("║  Shifts detected:  {}", stats.shifts_detected);
-        eprintln!("║  Thompson α/β:     {:.1}/{:.1}", stats.thompson_alpha, stats.thompson_beta);
+        eprintln!(
+            "║  Thompson α/β:     {:.1}/{:.1}",
+            stats.thompson_alpha, stats.thompson_beta
+        );
         eprintln!("╚══════════════════════════════════════════════════════════╝");
 
         let egsc_p3_rate = phase_hits[2] as f64 / phase_len as f64;
         let lru_p3_rate = lru_phase_hits[2] as f64 / phase_len as f64;
-        assert!(egsc_p3_rate >= lru_p3_rate * 0.6,
-            "EGSC recovery ({egsc_p3_rate:.3}) should be ≥60% of LRU ({lru_p3_rate:.3})");
+        assert!(
+            egsc_p3_rate >= lru_p3_rate * 0.6,
+            "EGSC recovery ({egsc_p3_rate:.3}) should be ≥60% of LRU ({lru_p3_rate:.3})"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2533,17 +3131,25 @@ mod tests {
 
         let start = std::time::Instant::now();
         let mut cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: false,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         for (t, &q) in queries.iter().enumerate() {
             let frags = fids(&[&format!("f{q}")]);
             match cache.lookup(&format!("q{q}"), &frags) {
-                CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => {},
+                CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => {}
                 CacheLookup::Miss => {
-                    cache.store(&format!("q{q}"), frags,
-                        &[(4.0, 100)], format!("r{q}"), 100, t as u32);
-                },
+                    cache.store(
+                        &format!("q{q}"),
+                        frags,
+                        &[(4.0, 100)],
+                        format!("r{q}"),
+                        100,
+                        t as u32,
+                    );
+                }
             }
         }
         let elapsed = start.elapsed();
@@ -2555,7 +3161,10 @@ mod tests {
         eprintln!("║  BENCHMARK 6: Throughput                                 ║");
         eprintln!("║  {n} queries, {cache_size} cache slots, {n_unique} unique              ║");
         eprintln!("╠═══════════════════════════════════════════════════════════╣");
-        eprintln!("║  Total time:       {:.2}ms", elapsed.as_secs_f64() * 1000.0);
+        eprintln!(
+            "║  Total time:       {:.2}ms",
+            elapsed.as_secs_f64() * 1000.0
+        );
         eprintln!("║  ns/operation:     {ns_per_op:.0}");
         eprintln!("║  ops/sec:          {ops_per_sec:.0}");
         eprintln!("║  Hit rate:         {:.4}", stats.hit_rate);
@@ -2564,8 +3173,10 @@ mod tests {
         eprintln!("╚═══════════════════════════════════════════════════════════╝");
 
         // Sanity: should complete in reasonable time
-        assert!(ns_per_op < 500_000.0,
-            "EGSC should be < 500μs/op, got {ns_per_op:.0}ns/op");
+        assert!(
+            ns_per_op < 500_000.0,
+            "EGSC should be < 500μs/op, got {ns_per_op:.0}ns/op"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2581,14 +3192,18 @@ mod tests {
 
         eprintln!("\n╔═══════════════════════════════════════════════════════════════════╗");
         eprintln!("║  BENCHMARK 7: Baseline Gauntlet                                 ║");
-        eprintln!("║  {n} queries, {cache_size} slots, {n_unique} unique — EGSC vs LRU vs LFU        ║");
+        eprintln!(
+            "║  {n} queries, {cache_size} slots, {n_unique} unique — EGSC vs LRU vs LFU        ║"
+        );
         eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
 
         // --- EGSC with full features ---
         let queries = zipf_sequence(n, n_unique, 1.0, 77777);
         let mut egsc = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: true,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut egsc_hits = 0u64;
         let mut stale_returns = 0u64;
@@ -2601,18 +3216,28 @@ mod tests {
                 CacheLookup::ExactHit { response, .. } => {
                     egsc_hits += 1;
                     // Correctness: verify response matches expected
-                    if response != format!("r{q}") { stale_returns += 1; }
-                },
+                    if response != format!("r{q}") {
+                        stale_returns += 1;
+                    }
+                }
                 CacheLookup::SemanticHit { response, .. } => {
                     egsc_hits += 1;
-                    if !response.starts_with("r") { stale_returns += 1; }
-                },
+                    if !response.starts_with("r") {
+                        stale_returns += 1;
+                    }
+                }
                 CacheLookup::Miss => {
                     let entropy = 3.0 + (q as f64 * 0.03).sin().abs() * 2.0;
                     let tokens = 50 + (q as u32 % 200); // variable cost
-                    egsc.store(&format!("q{q}"), frags,
-                        &[(entropy, tokens)], format!("r{q}"), tokens, t as u32);
-                },
+                    egsc.store(
+                        &format!("q{q}"),
+                        frags,
+                        &[(entropy, tokens)],
+                        format!("r{q}"),
+                        tokens,
+                        t as u32,
+                    );
+                }
             }
         }
 
@@ -2636,8 +3261,10 @@ mod tests {
 
         // Assertions
         assert_eq!(stale_returns, 0, "EGSC must never return stale data");
-        assert!(egsc_rate >= lru_rate * 0.70,
-            "EGSC ({egsc_rate:.4}) should be competitive with LRU ({lru_rate:.4})");
+        assert!(
+            egsc_rate >= lru_rate * 0.70,
+            "EGSC ({egsc_rate:.4}) should be competitive with LRU ({lru_rate:.4})"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2662,16 +3289,20 @@ mod tests {
 
         // --- Depth-weighted DAG invalidation ---
         let mut dag_cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: true,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut dag_hits = 0u64;
         let mut dag_invalidations = 0u64;
 
         // --- Flat invalidation (baseline) ---
         let mut flat_cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: true,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut flat_hits = 0u64;
         let mut flat_invalidations = 0u64;
@@ -2683,18 +3314,30 @@ mod tests {
             match dag_cache.lookup(&format!("q{q}"), &frags) {
                 CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => dag_hits += 1,
                 CacheLookup::Miss => {
-                    dag_cache.store(&format!("q{q}"), frags.clone(),
-                        &[(4.0, 100)], format!("r{q}"), 100, t as u32);
-                },
+                    dag_cache.store(
+                        &format!("q{q}"),
+                        frags.clone(),
+                        &[(4.0, 100)],
+                        format!("r{q}"),
+                        100,
+                        t as u32,
+                    );
+                }
             }
 
             // Flat cache
             match flat_cache.lookup(&format!("q{q}"), &frags) {
                 CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => flat_hits += 1,
                 CacheLookup::Miss => {
-                    flat_cache.store(&format!("q{q}"), frags,
-                        &[(4.0, 100)], format!("r{q}"), 100, t as u32);
-                },
+                    flat_cache.store(
+                        &format!("q{q}"),
+                        frags,
+                        &[(4.0, 100)],
+                        format!("r{q}"),
+                        100,
+                        t as u32,
+                    );
+                }
             }
 
             // Simulate mutation of a "core" node every mutation_interval queries
@@ -2702,7 +3345,8 @@ mod tests {
                 let core_node = t % 10; // rotate through 10 core nodes
 
                 // DAG: depth-weighted invalidation (direct + 2 transitive)
-                let stale: HashSet<String> = (0..3).map(|d| format!("f{}", core_node + d * 20)).collect();
+                let stale: HashSet<String> =
+                    (0..3).map(|d| format!("f{}", core_node + d * 20)).collect();
                 let mut depths: HashMap<String, u32> = HashMap::new();
                 depths.insert(format!("f{core_node}"), 0); // direct: hard
                 depths.insert(format!("f{}", core_node + 20), 1); // depth 1: medium
@@ -2710,7 +3354,8 @@ mod tests {
                 dag_invalidations += dag_cache.invalidate_weighted(&stale, &depths) as u64;
 
                 // Flat: invalidate all 3 equally (all depth 0, no depth awareness)
-                let flat_d: HashMap<String, u32> = stale.iter().map(|id| (id.clone(), 0u32)).collect();
+                let flat_d: HashMap<String, u32> =
+                    stale.iter().map(|id| (id.clone(), 0u32)).collect();
                 flat_invalidations += flat_cache.invalidate_weighted(&stale, &flat_d) as u64;
             }
         }
@@ -2723,17 +3368,32 @@ mod tests {
         eprintln!("║  Flat invalidation rate:  {flat_rate:.4}");
         eprintln!("║  DAG invalidations:       {dag_invalidations}");
         eprintln!("║  Flat invalidations:      {flat_invalidations}");
-        eprintln!("║  Hard invalidations:      {}", dag_stats.hard_invalidations);
-        eprintln!("║  Soft invalidations:      {}", dag_stats.soft_invalidations);
-        eprintln!("║  Depth breakdown:         {:?}", dag_stats.invalidation_depth_counts);
-        let advantage = if flat_rate > 0.0 { (dag_rate - flat_rate) / flat_rate * 100.0 } else { 0.0 };
+        eprintln!(
+            "║  Hard invalidations:      {}",
+            dag_stats.hard_invalidations
+        );
+        eprintln!(
+            "║  Soft invalidations:      {}",
+            dag_stats.soft_invalidations
+        );
+        eprintln!(
+            "║  Depth breakdown:         {:?}",
+            dag_stats.invalidation_depth_counts
+        );
+        let advantage = if flat_rate > 0.0 {
+            (dag_rate - flat_rate) / flat_rate * 100.0
+        } else {
+            0.0
+        };
         eprintln!("║  DAG advantage:           {advantage:+.1}%");
         eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
 
         // Depth-weighted should preserve more entries (higher or equal hit rate)
         // because soft invalidation degrades quality less aggressively
-        assert!(dag_rate >= flat_rate * 0.95,
-            "DAG ({dag_rate:.4}) should not be worse than flat ({flat_rate:.4})");
+        assert!(
+            dag_rate >= flat_rate * 0.95,
+            "DAG ({dag_rate:.4}) should not be worse than flat ({flat_rate:.4})"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2756,13 +3416,17 @@ mod tests {
         let phase_a = zipf_sequence(phase_len, 100, 1.2, 11111);
         // Phase B: "Rust" workload — items 100..200, Zipf α=0.8 (different distribution)
         let phase_b: Vec<usize> = zipf_sequence(phase_len, 100, 0.8, 22222)
-            .iter().map(|&q| q + 100).collect();
+            .iter()
+            .map(|&q| q + 100)
+            .collect();
         // Phase A': return to "Python" — items 0..100 again, new seed
         let phase_a_prime = zipf_sequence(phase_len, 100, 1.2, 33333);
 
         let mut cache = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: true,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
 
         let mut phase_hits = [0u64; 3];
@@ -2780,11 +3444,17 @@ mod tests {
                             recovery_query = t;
                             found_first_hit = true;
                         }
-                    },
+                    }
                     CacheLookup::Miss => {
-                        cache.store(&format!("q{q}"), frags,
-                            &[(3.5, 80)], format!("r{q}"), 80, global_t as u32);
-                    },
+                        cache.store(
+                            &format!("q{q}"),
+                            frags,
+                            &[(3.5, 80)],
+                            format!("r{q}"),
+                            80,
+                            global_t as u32,
+                        );
+                    }
                 }
             }
         }
@@ -2800,7 +3470,10 @@ mod tests {
         eprintln!("║  Recovery query in A':        {recovery_query}");
         eprintln!("║  Shifts detected:             {}", stats.shifts_detected);
         eprintln!("║  Full resets:                 {}", stats.total_resets);
-        eprintln!("║  Total tokens saved:          {}", stats.total_tokens_saved);
+        eprintln!(
+            "║  Total tokens saved:          {}",
+            stats.total_tokens_saved
+        );
         eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
 
         // Phase B start should have lower hit rate (new distribution)
@@ -2833,8 +3506,10 @@ mod tests {
 
         // Ablation 1: No entropy gate (Thompson always admits)
         let mut no_gate = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: false,
-            enable_submodular_eviction: true, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
         });
         let mut no_gate_hits = 0u64;
         for (t, &q) in queries.iter().enumerate() {
@@ -2842,29 +3517,43 @@ mod tests {
             match no_gate.lookup(&format!("q{q}"), &frags) {
                 CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => no_gate_hits += 1,
                 CacheLookup::Miss => {
-                    no_gate.store(&format!("q{q}"), frags,
+                    no_gate.store(
+                        &format!("q{q}"),
+                        frags,
                         &[(3.0 + q as f64 * 0.05, 100)],
-                        format!("r{q}"), 50 + q as u32, t as u32);
-                },
+                        format!("r{q}"),
+                        50 + q as u32,
+                        t as u32,
+                    );
+                }
             }
         }
         let no_gate_rate = no_gate_hits as f64 / n as f64;
 
         // Ablation 2: No submodular eviction (random eviction)
         let mut no_evict = EgscCache::new(EgscConfig {
-            max_entries: cache_size, enable_entropy_gate: true,
-            enable_submodular_eviction: false, ..Default::default()
+            max_entries: cache_size,
+            enable_entropy_gate: true,
+            enable_submodular_eviction: false,
+            ..Default::default()
         });
         let mut no_evict_hits = 0u64;
         for (t, &q) in queries.iter().enumerate() {
             let frags = fids(&[&format!("f{q}")]);
             match no_evict.lookup(&format!("q{q}"), &frags) {
-                CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => no_evict_hits += 1,
+                CacheLookup::ExactHit { .. } | CacheLookup::SemanticHit { .. } => {
+                    no_evict_hits += 1
+                }
                 CacheLookup::Miss => {
-                    no_evict.store(&format!("q{q}"), frags,
+                    no_evict.store(
+                        &format!("q{q}"),
+                        frags,
                         &[(3.0 + q as f64 * 0.05, 100)],
-                        format!("r{q}"), 50 + q as u32, t as u32);
-                },
+                        format!("r{q}"),
+                        50 + q as u32,
+                        t as u32,
+                    );
+                }
             }
         }
         let no_evict_rate = no_evict_hits as f64 / n as f64;
@@ -2877,10 +3566,26 @@ mod tests {
         let (lfu_hits, _) = run_lfu_workload(&queries, cache_size);
         let lfu_rate = lfu_hits as f64 / n as f64;
 
-        let delta_gate = if full_rate > 0.0 { (full_rate - no_gate_rate) / full_rate * 100.0 } else { 0.0 };
-        let delta_evict = if full_rate > 0.0 { (full_rate - no_evict_rate) / full_rate * 100.0 } else { 0.0 };
-        let delta_lru = if full_rate > 0.0 { (full_rate - lru_rate) / full_rate * 100.0 } else { 0.0 };
-        let delta_lfu = if full_rate > 0.0 { (full_rate - lfu_rate) / full_rate * 100.0 } else { 0.0 };
+        let delta_gate = if full_rate > 0.0 {
+            (full_rate - no_gate_rate) / full_rate * 100.0
+        } else {
+            0.0
+        };
+        let delta_evict = if full_rate > 0.0 {
+            (full_rate - no_evict_rate) / full_rate * 100.0
+        } else {
+            0.0
+        };
+        let delta_lru = if full_rate > 0.0 {
+            (full_rate - lru_rate) / full_rate * 100.0
+        } else {
+            0.0
+        };
+        let delta_lfu = if full_rate > 0.0 {
+            (full_rate - lfu_rate) / full_rate * 100.0
+        } else {
+            0.0
+        };
 
         eprintln!("║  Full EGSC:              {full_rate:.4} (baseline)");
         eprintln!("║  − entropy gate:         {no_gate_rate:.4}  ({delta_gate:+.1}% change)");
@@ -2925,7 +3630,9 @@ mod tests {
                     })
                     .collect();
                 let (admitted, _) = gate.should_admit(&entropies, 100 * n_frags as u32);
-                if admitted { admits += 1; }
+                if admitted {
+                    admits += 1;
+                }
                 // Small posterior updateRewar
                 gate.observe_outcome(admitted);
             }
@@ -2933,7 +3640,9 @@ mod tests {
             let admit_rate = admits as f64 / trials as f64;
             admission_rates.push((n_frags, admit_rate));
 
-            eprintln!("║  {n_frags:>3} fragments:  admission rate = {admit_rate:.4} ({admits}/{trials})");
+            eprintln!(
+                "║  {n_frags:>3} fragments:  admission rate = {admit_rate:.4} ({admits}/{trials})"
+            );
         }
 
         eprintln!("╠═══════════════════════════════════════════════════════════════════╣");
@@ -2942,19 +3651,32 @@ mod tests {
         // Perfect normalization → all rates are similar.
         let rates: Vec<f64> = admission_rates.iter().map(|(_, r)| *r).collect();
         let mean_rate = rates.iter().sum::<f64>() / rates.len() as f64;
-        let variance = rates.iter().map(|r| (r - mean_rate).powi(2)).sum::<f64>() / rates.len() as f64;
+        let variance =
+            rates.iter().map(|r| (r - mean_rate).powi(2)).sum::<f64>() / rates.len() as f64;
         let std_dev = variance.sqrt();
-        let cv = if mean_rate > 0.0 { std_dev / mean_rate } else { 0.0 }; // coefficient of variation
+        let cv = if mean_rate > 0.0 {
+            std_dev / mean_rate
+        } else {
+            0.0
+        }; // coefficient of variation
 
         eprintln!("║  Mean admission rate:     {mean_rate:.4}");
         eprintln!("║  Std deviation:           {std_dev:.4}");
         eprintln!("║  Coefficient of variation: {cv:.4}");
-        eprintln!("║  Verdict: {}", if cv < 0.25 { "✓ SCALE INVARIANT" } else { "✗ SIZE-DEPENDENT" });
+        eprintln!(
+            "║  Verdict: {}",
+            if cv < 0.25 {
+                "✓ SCALE INVARIANT"
+            } else {
+                "✗ SIZE-DEPENDENT"
+            }
+        );
         eprintln!("╚═══════════════════════════════════════════════════════════════════╝");
 
         // CV < 0.25 means admission decisions don't heavily depend on context size
-        assert!(cv < 0.50,
-            "Admission rate CV ({cv:.4}) should be < 0.50 for scale invariance");
+        assert!(
+            cv < 0.50,
+            "Admission rate CV ({cv:.4}) should be < 0.50 for scale invariance"
+        );
     }
 }
-

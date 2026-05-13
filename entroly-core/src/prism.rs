@@ -17,8 +17,8 @@
 //! (Jacobi method) rather than the approximate polar decomposition needed for
 //! 100M+ parameter neural networks.
 
+use serde::{Deserialize, Serialize};
 use std::f64;
-use serde::{Serialize, Deserialize};
 
 // ════════════════════════════════════════════════════════════════════
 //  SYMMETRIC MATRIX — NxN with const generic dimension
@@ -37,12 +37,16 @@ pub struct SymMatrixN<const N: usize> {
 
 impl<const N: usize> SymMatrixN<N> {
     pub fn new() -> Self {
-        SymMatrixN { data: vec![0.0; N * N] }
+        SymMatrixN {
+            data: vec![0.0; N * N],
+        }
     }
 
     pub fn identity() -> Self {
         let mut m = Self::new();
-        for i in 0..N { m.set(i, i, 1.0); }
+        for i in 0..N {
+            m.set(i, i, 1.0);
+        }
         m
     }
 
@@ -210,7 +214,9 @@ impl<const N: usize> PrismOptimizerN<N> {
     pub fn new(learning_rate: f64) -> Self {
         let mut cov = SymMatrixN::<N>::identity();
         // Initialize with small epsilon identity to prevent division by zero
-        for i in 0..N { cov.set(i, i, 1e-4); }
+        for i in 0..N {
+            cov.set(i, i, 1e-4);
+        }
         PrismOptimizerN {
             covariance: cov,
             beta: 0.95,
@@ -231,7 +237,11 @@ impl<const N: usize> PrismOptimizerN<N> {
     /// This is the core value of PRISM over isotropic Adam: it doesn't need a
     /// hand-tuned learning rate for resonance vs. individual scores.
     pub fn compute_update(&mut self, g: &[f64]) -> Vec<f64> {
-        debug_assert!(g.len() >= N, "gradient must have at least {N} dimensions, got {}", g.len());
+        debug_assert!(
+            g.len() >= N,
+            "gradient must have at least {N} dimensions, got {}",
+            g.len()
+        );
 
         // 1. Update running covariance
         self.covariance.update_ema(g, self.beta);
@@ -241,7 +251,8 @@ impl<const N: usize> PrismOptimizerN<N> {
 
         // 3. Spectral Shaping: Λ^{-1/2}
         // Dampens high-variance (noisy) directions, boosts clean signals.
-        let lambda_inv_sqrt: Vec<f64> = eigenvalues.iter()
+        let lambda_inv_sqrt: Vec<f64> = eigenvalues
+            .iter()
             .map(|&ev| 1.0 / (ev.abs() + self.epsilon).sqrt())
             .collect();
 
@@ -279,8 +290,16 @@ impl<const N: usize> PrismOptimizerN<N> {
     /// resonance weights before exploiting them.
     pub fn condition_number(&self) -> f64 {
         let (_, eigenvalues) = self.covariance.jacobi_eigendecomposition();
-        let max_eig = eigenvalues.iter().cloned().fold(f64::NEG_INFINITY, f64::max).max(1e-10);
-        let min_eig = eigenvalues.iter().cloned().fold(f64::INFINITY, f64::min).max(1e-10);
+        let max_eig = eigenvalues
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(1e-10);
+        let min_eig = eigenvalues
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min)
+            .max(1e-10);
         (max_eig / min_eig).sqrt()
     }
 
@@ -422,7 +441,10 @@ impl PrismOptimizer5D {
         };
 
         // Cross-correlations: C[res][0..res] normalized by sqrt(C[res][res] * C[k][k])
-        let c44 = self.covariance.get(dim::RESONANCE, dim::RESONANCE).max(1e-15);
+        let c44 = self
+            .covariance
+            .get(dim::RESONANCE, dim::RESONANCE)
+            .max(1e-15);
         let mut cross = [0.0f64; 4];
         for (k, c) in cross.iter_mut().enumerate() {
             let ckk = self.covariance.get(k, k).max(1e-15);
@@ -497,8 +519,10 @@ mod tests {
                     dot += q.get(k, i) * q.get(k, j);
                 }
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((dot - expected).abs() < 1e-6,
-                    "Q^T Q [{i}][{j}] = {dot}, expected {expected}");
+                assert!(
+                    (dot - expected).abs() < 1e-6,
+                    "Q^T Q [{i}][{j}] = {dot}, expected {expected}"
+                );
             }
         }
     }
@@ -517,8 +541,10 @@ mod tests {
         let step = optim.compute_update(&[1.0, 1.0, 1.0, 1.0]);
 
         // Dimension 0 should be heavily damped compared to 1, 2, 3
-        assert!(step[0].abs() < step[1].abs() * 0.1,
-            "PRISM failed to anisotropically damp the noisy dimension: step={step:?}");
+        assert!(
+            step[0].abs() < step[1].abs() * 0.1,
+            "PRISM failed to anisotropically damp the noisy dimension: step={step:?}"
+        );
     }
 
     #[test]
@@ -533,9 +559,12 @@ mod tests {
         let result_fixed = optim2.compute_update_4d(&g);
 
         for i in 0..4 {
-            assert!((result_generic[i] - result_fixed[i]).abs() < 1e-12,
+            assert!(
+                (result_generic[i] - result_fixed[i]).abs() < 1e-12,
                 "Generic vs fixed API mismatch at dim {i}: {} vs {}",
-                result_generic[i], result_fixed[i]);
+                result_generic[i],
+                result_fixed[i]
+            );
         }
     }
 
@@ -569,8 +598,10 @@ mod tests {
                     dot += q.get(k, i) * q.get(k, j);
                 }
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((dot - expected).abs() < 1e-6,
-                    "Q^T Q [{i}][{j}] = {dot}, expected {expected}");
+                assert!(
+                    (dot - expected).abs() < 1e-6,
+                    "Q^T Q [{i}][{j}] = {dot}, expected {expected}"
+                );
             }
         }
     }
@@ -584,7 +615,7 @@ mod tests {
 
         // Simulate: dims 0–3 have consistent gradients, dim 4 oscillates wildly
         for _ in 0..100 {
-            optim.compute_update(&[0.1, 0.1, 0.1, 0.1,  5.0]);
+            optim.compute_update(&[0.1, 0.1, 0.1, 0.1, 5.0]);
             optim.compute_update(&[0.1, 0.1, 0.1, 0.1, -5.0]);
         }
 
@@ -593,9 +624,12 @@ mod tests {
 
         // Dimension 4 (resonance) should be damped relative to dims 0–3
         let avg_step_0_3 = (step[0].abs() + step[1].abs() + step[2].abs() + step[3].abs()) / 4.0;
-        assert!(step[4].abs() < avg_step_0_3 * 0.3,
+        assert!(
+            step[4].abs() < avg_step_0_3 * 0.3,
             "PRISM should damp noisy resonance dim: resonance_step={:.4}, avg_other={:.4}",
-            step[4].abs(), avg_step_0_3);
+            step[4].abs(),
+            avg_step_0_3
+        );
     }
 
     #[test]
@@ -613,20 +647,30 @@ mod tests {
         // Verify the 4x4 block is preserved
         for i in 0..4 {
             for j in 0..4 {
-                assert!((opt5.covariance.get(i, j) - opt4.covariance.get(i, j)).abs() < 1e-12,
-                    "4x4 block mismatch at [{i}][{j}]");
+                assert!(
+                    (opt5.covariance.get(i, j) - opt4.covariance.get(i, j)).abs() < 1e-12,
+                    "4x4 block mismatch at [{i}][{j}]"
+                );
             }
         }
 
         // Verify resonance row/column is cold-start
         for k in 0..4 {
-            assert_eq!(opt5.covariance.get(4, k), 0.0,
-                "Resonance cross-covariance should start at 0");
-            assert_eq!(opt5.covariance.get(k, 4), 0.0,
-                "Resonance cross-covariance should start at 0");
+            assert_eq!(
+                opt5.covariance.get(4, k),
+                0.0,
+                "Resonance cross-covariance should start at 0"
+            );
+            assert_eq!(
+                opt5.covariance.get(k, 4),
+                0.0,
+                "Resonance cross-covariance should start at 0"
+            );
         }
-        assert!((opt5.covariance.get(4, 4) - 1e-4).abs() < 1e-10,
-            "Resonance variance should be epsilon-initialized");
+        assert!(
+            (opt5.covariance.get(4, 4) - 1e-4).abs() < 1e-10,
+            "Resonance variance should be epsilon-initialized"
+        );
     }
 
     #[test]
@@ -645,13 +689,17 @@ mod tests {
         let diag = optim.resonance_diagnostics();
 
         // Cross-correlation with entropy (dim 3) should be positive
-        assert!(diag.cross_correlations[3] > 0.3,
+        assert!(
+            diag.cross_correlations[3] > 0.3,
             "Should discover entropy-resonance correlation: r={:.3}",
-            diag.cross_correlations[3]);
+            diag.cross_correlations[3]
+        );
 
         // Should be calibrated after 100 updates
-        assert!(diag.is_calibrated,
-            "Should be calibrated after 100 gradient updates");
+        assert!(
+            diag.is_calibrated,
+            "Should be calibrated after 100 gradient updates"
+        );
     }
 
     #[test]
@@ -698,8 +746,10 @@ mod tests {
         let energy = optim.spectral_energy();
         assert_eq!(energy.len(), 5);
         let total: f64 = energy.iter().sum();
-        assert!((total - 1.0).abs() < 1e-6,
-            "Spectral energy should sum to 1.0, got {total}");
+        assert!(
+            (total - 1.0).abs() < 1e-6,
+            "Spectral energy should sum to 1.0, got {total}"
+        );
     }
 
     // ── SymMatrix4 backward compat ───────────────────────────────────
@@ -726,8 +776,16 @@ mod tests {
         // Test with off-diagonal elements to verify rotation correctness
         let mut mat = SymMatrix5::new();
         // Create a symmetric matrix with known structure
-        mat.set(0, 0, 3.0); mat.set(0, 1, 1.0); mat.set(0, 2, 0.0); mat.set(0, 3, 0.0); mat.set(0, 4, 0.0);
-        mat.set(1, 0, 1.0); mat.set(1, 1, 3.0); mat.set(1, 2, 0.0); mat.set(1, 3, 0.0); mat.set(1, 4, 0.0);
+        mat.set(0, 0, 3.0);
+        mat.set(0, 1, 1.0);
+        mat.set(0, 2, 0.0);
+        mat.set(0, 3, 0.0);
+        mat.set(0, 4, 0.0);
+        mat.set(1, 0, 1.0);
+        mat.set(1, 1, 3.0);
+        mat.set(1, 2, 0.0);
+        mat.set(1, 3, 0.0);
+        mat.set(1, 4, 0.0);
         mat.set(2, 2, 2.0);
         mat.set(3, 3, 1.0);
         mat.set(4, 4, 0.5);
@@ -737,21 +795,45 @@ mod tests {
         // Known eigenvalues: 4.0, 2.0, 2.0, 1.0, 0.5
         let mut sorted = eigs.clone();
         sorted.sort_by(|a, b| b.total_cmp(a));
-        assert!((sorted[0] - 4.0).abs() < 1e-6, "Expected 4.0, got {}", sorted[0]);
-        assert!((sorted[1] - 2.0).abs() < 1e-6, "Expected 2.0, got {}", sorted[1]);
-        assert!((sorted[2] - 2.0).abs() < 1e-6, "Expected 2.0, got {}", sorted[2]);
-        assert!((sorted[3] - 1.0).abs() < 1e-6, "Expected 1.0, got {}", sorted[3]);
-        assert!((sorted[4] - 0.5).abs() < 1e-6, "Expected 0.5, got {}", sorted[4]);
+        assert!(
+            (sorted[0] - 4.0).abs() < 1e-6,
+            "Expected 4.0, got {}",
+            sorted[0]
+        );
+        assert!(
+            (sorted[1] - 2.0).abs() < 1e-6,
+            "Expected 2.0, got {}",
+            sorted[1]
+        );
+        assert!(
+            (sorted[2] - 2.0).abs() < 1e-6,
+            "Expected 2.0, got {}",
+            sorted[2]
+        );
+        assert!(
+            (sorted[3] - 1.0).abs() < 1e-6,
+            "Expected 1.0, got {}",
+            sorted[3]
+        );
+        assert!(
+            (sorted[4] - 0.5).abs() < 1e-6,
+            "Expected 0.5, got {}",
+            sorted[4]
+        );
 
         // Verify reconstruction: Q Λ Q^T ≈ A
         for i in 0..5 {
             for j in 0..5 {
-                let reconstructed: f64 = eigs.iter().enumerate()
+                let reconstructed: f64 = eigs
+                    .iter()
+                    .enumerate()
                     .map(|(k, &ek)| q.get(i, k) * ek * q.get(j, k))
                     .sum();
                 let original = mat.get(i, j);
-                assert!((reconstructed - original).abs() < 1e-6,
-                    "Reconstruction failed at [{i}][{j}]: {reconstructed:.6} vs {original:.6}");
+                assert!(
+                    (reconstructed - original).abs() < 1e-6,
+                    "Reconstruction failed at [{i}][{j}]: {reconstructed:.6} vs {original:.6}"
+                );
             }
         }
     }

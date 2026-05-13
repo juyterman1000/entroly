@@ -43,6 +43,9 @@ def main(argv: list[str]) -> int:
     new = argv[1]
     for rel, pattern, template in TARGETS:
         path = ROOT / rel
+        if not path.exists():
+            print(f"  {rel} missing; skipping generated artifact")
+            continue
         text = path.read_text(encoding="utf-8")
         updated, n = re.subn(pattern, template.format(v=new), text, flags=re.MULTILINE)
         if n == 0:

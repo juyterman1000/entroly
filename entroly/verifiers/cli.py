@@ -49,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
     if args is None:
         return 2
+    if args.get("help"):
+        return 0
 
     # Read source
     source = _read_source(args["path"])
@@ -114,13 +116,15 @@ def _parse_args(argv: list[str]) -> dict[str, Any] | None:
         "json": False,
         "rebuild": False,
         "max_items": 30,
+        "help": False,
     }
     i = 0
     while i < len(argv):
         a = argv[i]
         if a in ("-h", "--help"):
             _print_help()
-            return None
+            args["help"] = True
+            return args
         elif a == "--repo":
             i += 1
             args["repo"] = argv[i]

@@ -69,8 +69,8 @@
 //! - Temporal links: O(MAX_TEMPORAL_LINKS) with staleness eviction
 //! - Gravity field: O(N) recomputed incrementally on each trace
 
-use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Maximum traces stored (circular buffer).
 const MAX_TRACES: usize = 200;
@@ -236,18 +236,21 @@ impl CausalContextGraph {
 
         // ── 1. Update interventional/observational estimates ──
         for fid in selected_ids {
-            let entry = self.interventions.entry(fid.clone()).or_insert(InterventionEstimate {
-                obs_outcome_sum: 0.0,
-                obs_count: 0,
-                int_outcome_sum: 0.0,
-                int_count: 0,
-                total_outcome_sum: 0.0,
-                total_count: 0,
-                causal_effect: 0.0,
-                confounding_bias: 0.0,
-                confidence: 0.0,
-                last_updated: turn,
-            });
+            let entry = self
+                .interventions
+                .entry(fid.clone())
+                .or_insert(InterventionEstimate {
+                    obs_outcome_sum: 0.0,
+                    obs_count: 0,
+                    int_outcome_sum: 0.0,
+                    int_count: 0,
+                    total_outcome_sum: 0.0,
+                    total_count: 0,
+                    causal_effect: 0.0,
+                    confounding_bias: 0.0,
+                    confidence: 0.0,
+                    last_updated: turn,
+                });
 
             entry.total_outcome_sum += outcome;
             entry.total_count += 1;
@@ -283,9 +286,7 @@ impl CausalContextGraph {
                         continue;
                     }
 
-                    let source_map = self.temporal_links
-                        .entry(source_id.clone())
-                        .or_default();
+                    let source_map = self.temporal_links.entry(source_id.clone()).or_default();
 
                     let link = source_map.entry(target_id.clone()).or_insert_with(|| {
                         self.total_temporal_links += 1;
@@ -438,7 +439,8 @@ impl CausalContextGraph {
 
     /// Number of fragments with interventional data (from exploration).
     pub fn interventional_fragments(&self) -> usize {
-        self.interventions.values()
+        self.interventions
+            .values()
             .filter(|e| e.int_count >= MIN_INTERVENTION_TRIALS)
             .count()
     }
@@ -465,16 +467,25 @@ impl CausalContextGraph {
     ///
     /// Returns: (fragment_id, causal_effect, confounding_bias, confidence).
     pub fn top_causal_fragments(&self, n: usize) -> Vec<(String, f64, f64, f64)> {
-        let mut items: Vec<_> = self.interventions.iter()
+        let mut items: Vec<_> = self
+            .interventions
+            .iter()
             .filter(|(_, est)| est.confidence > 0.1)
             .map(|(id, est)| {
-                (id.clone(), est.causal_effect, est.confounding_bias, est.confidence)
+                (
+                    id.clone(),
+                    est.causal_effect,
+                    est.confounding_bias,
+                    est.confidence,
+                )
             })
             .collect();
 
         items.sort_by(|a, b| {
             // Sort by absolute causal effect (most impactful first)
-            b.1.abs().partial_cmp(&a.1.abs()).unwrap_or(std::cmp::Ordering::Equal)
+            b.1.abs()
+                .partial_cmp(&a.1.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         items.truncate(n);
         items
@@ -484,17 +495,26 @@ impl CausalContextGraph {
     ///
     /// Returns: (source_id, target_id, temporal_effect, confidence).
     pub fn top_temporal_chains(&self, n: usize) -> Vec<(String, String, f64, f64)> {
-        let mut chains: Vec<_> = self.temporal_links.iter()
+        let mut chains: Vec<_> = self
+            .temporal_links
+            .iter()
             .flat_map(|(source, targets)| {
                 targets.iter().map(move |(target, link)| {
-                    (source.clone(), target.clone(), link.temporal_effect, link.confidence)
+                    (
+                        source.clone(),
+                        target.clone(),
+                        link.temporal_effect,
+                        link.confidence,
+                    )
                 })
             })
             .filter(|(_, _, effect, conf)| *conf > 0.15 && effect.abs() > 0.005)
             .collect();
 
         chains.sort_by(|a, b| {
-            b.2.abs().partial_cmp(&a.2.abs()).unwrap_or(std::cmp::Ordering::Equal)
+            b.2.abs()
+                .partial_cmp(&a.2.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         chains.truncate(n);
         chains
@@ -573,7 +593,9 @@ impl CausalContextGraph {
     ///   marginal = (total_Y_B − conditional_Y_AB) / (total_N_B − co_occurrences_AB)
     fn recompute_temporal_effects(&mut self) {
         // Collect the data we need from interventions first (avoid borrow conflict)
-        let intervention_data: HashMap<String, (f64, u32)> = self.interventions.iter()
+        let intervention_data: HashMap<String, (f64, u32)> = self
+            .interventions
+            .iter()
             .map(|(id, est)| (id.clone(), (est.total_outcome_sum, est.total_count)))
             .collect();
 
@@ -589,7 +611,9 @@ impl CausalContextGraph {
                 let mean_conditional = link.conditional_outcome_sum / link.co_occurrences as f64;
 
                 // Marginal mean: E[Y | target@T] (all selections of target)
-                let mean_marginal = if let Some(&(total_sum, total_count)) = intervention_data.get(target_id.as_str()) {
+                let mean_marginal = if let Some(&(total_sum, total_count)) =
+                    intervention_data.get(target_id.as_str())
+                {
                     if total_count > link.co_occurrences {
                         let marginal_sum = total_sum - link.conditional_outcome_sum;
                         let marginal_count = total_count - link.co_occurrences;
@@ -648,9 +672,8 @@ impl CausalContextGraph {
         all_links.sort_by_key(|&(_, _, staleness)| std::cmp::Reverse(staleness));
 
         // Remove the stalest links (10% buffer to avoid evicting every turn)
-        let to_remove = self.total_temporal_links
-            .saturating_sub(MAX_TEMPORAL_LINKS)
-            + MAX_TEMPORAL_LINKS / 10;
+        let to_remove =
+            self.total_temporal_links.saturating_sub(MAX_TEMPORAL_LINKS) + MAX_TEMPORAL_LINKS / 10;
 
         for (source, target, _) in all_links.iter().take(to_remove) {
             if let Some(targets) = self.temporal_links.get_mut(source) {
@@ -662,9 +685,7 @@ impl CausalContextGraph {
         }
 
         // Recount (cheaper than tracking incremental removes)
-        self.total_temporal_links = self.temporal_links.values()
-            .map(|m| m.len())
-            .sum();
+        self.total_temporal_links = self.temporal_links.values().map(|m| m.len()).sum();
     }
 }
 
@@ -760,10 +781,17 @@ mod tests {
         let int_rate = est.int_outcome_sum / est.int_count.max(1) as f64;
 
         // Confounding bias should be positive: observation overestimates
-        assert!(est.confounding_bias > 0.0,
-            "confounding bias should be positive, got {}", est.confounding_bias);
-        assert!(obs_rate > int_rate,
-            "obs_rate ({}) should exceed int_rate ({})", obs_rate, int_rate);
+        assert!(
+            est.confounding_bias > 0.0,
+            "confounding bias should be positive, got {}",
+            est.confounding_bias
+        );
+        assert!(
+            obs_rate > int_rate,
+            "obs_rate ({}) should exceed int_rate ({})",
+            obs_rate,
+            int_rate
+        );
     }
 
     #[test]
@@ -807,8 +835,11 @@ mod tests {
         // The primer→target temporal link should have positive effect
         if let Some(targets) = g.temporal_links.get("primer") {
             if let Some(link) = targets.get("target") {
-                assert!(link.temporal_effect > 0.0,
-                    "temporal_effect should be positive, got {}", link.temporal_effect);
+                assert!(
+                    link.temporal_effect > 0.0,
+                    "temporal_effect should be positive, got {}",
+                    link.temporal_effect
+                );
             }
         }
     }
@@ -826,8 +857,10 @@ mod tests {
 
         let bonuses = g.gravity_bonuses(&["hero", "support", "unknown"]);
         // Hero should have gravity bonus (strong positive causal effect + high confidence)
-        assert!(bonuses.contains_key("hero"),
-            "hero should have gravity bonus");
+        assert!(
+            bonuses.contains_key("hero"),
+            "hero should have gravity bonus"
+        );
         assert!(*bonuses.get("hero").unwrap_or(&0.0) > 0.0);
 
         // Unknown fragment: no data, no bonus
@@ -847,8 +880,10 @@ mod tests {
 
         let bonuses = g.gravity_bonuses(&["harmful"]);
         // Harmful fragments should NOT have gravity bonus
-        assert!(!bonuses.contains_key("harmful") || *bonuses.get("harmful").unwrap_or(&0.0) < 0.01,
-            "harmful fragment should not have gravity bonus");
+        assert!(
+            !bonuses.contains_key("harmful") || *bonuses.get("harmful").unwrap_or(&0.0) < 0.01,
+            "harmful fragment should not have gravity bonus"
+        );
     }
 
     #[test]
@@ -861,10 +896,7 @@ mod tests {
             g.record_trace(2, 0x22, &make_ids(&["payload", "y"]), &[], 0.9);
         }
 
-        let bonuses = g.temporal_bonuses(
-            &["payload", "other"],
-            &["setup"],
-        );
+        let bonuses = g.temporal_bonuses(&["payload", "other"], &["setup"]);
 
         // payload should get a temporal bonus when setup was in previous selection
         if let Some(&bonus) = bonuses.get("payload") {
@@ -887,8 +919,11 @@ mod tests {
         g.decay_tick(2 + STALE_TURN_THRESHOLD + 10);
 
         // All links should be evicted (they're all stale)
-        assert_eq!(g.temporal_link_count(), 0,
-            "stale temporal links should be evicted");
+        assert_eq!(
+            g.temporal_link_count(),
+            0,
+            "stale temporal links should be evicted"
+        );
     }
 
     #[test]
@@ -899,15 +934,21 @@ mod tests {
         for turn in 1..=50 {
             g.record_trace(turn, 0x11, &make_ids(&["a"]), &[], 1.0);
         }
-        assert!(g.base_rate > 0.5,
-            "base_rate should be positive after positive outcomes, got {}", g.base_rate);
+        assert!(
+            g.base_rate > 0.5,
+            "base_rate should be positive after positive outcomes, got {}",
+            g.base_rate
+        );
 
         // Negative outcomes → base rate should decrease
         for turn in 51..=100 {
             g.record_trace(turn, 0x22, &make_ids(&["a"]), &[], -1.0);
         }
-        assert!(g.base_rate < 0.5,
-            "base_rate should decrease after negative outcomes, got {}", g.base_rate);
+        assert!(
+            g.base_rate < 0.5,
+            "base_rate should decrease after negative outcomes, got {}",
+            g.base_rate
+        );
     }
 
     #[test]
@@ -939,8 +980,12 @@ mod tests {
         }
         let conf_11 = g.interventions["f"].confidence;
 
-        assert!(conf_11 > conf_1,
-            "confidence should increase with more trials: {} vs {}", conf_11, conf_1);
+        assert!(
+            conf_11 > conf_1,
+            "confidence should increase with more trials: {} vs {}",
+            conf_11,
+            conf_1
+        );
     }
 
     #[test]
@@ -950,17 +995,23 @@ mod tests {
         // Two fragments with different causal effects
         for turn in 1..=20 {
             // "strong" has positive interventional effect
-            g.record_trace(turn, 0x11,
+            g.record_trace(
+                turn,
+                0x11,
                 &make_ids(&["strong", "x"]),
                 &make_ids(&["strong"]),
-                0.8);
+                0.8,
+            );
         }
         for turn in 21..=40 {
             // "weak" has smaller positive interventional effect
-            g.record_trace(turn, 0x22,
+            g.record_trace(
+                turn,
+                0x22,
                 &make_ids(&["weak", "y"]),
                 &make_ids(&["weak"]),
-                0.2);
+                0.2,
+            );
         }
 
         let top = g.top_causal_fragments(5);
@@ -970,8 +1021,10 @@ mod tests {
             let strong_pos = top.iter().position(|(id, _, _, _)| id == "strong");
             let weak_pos = top.iter().position(|(id, _, _, _)| id == "weak");
             if let (Some(s), Some(w)) = (strong_pos, weak_pos) {
-                assert!(s < w || top[s].1.abs() >= top[w].1.abs(),
-                    "strong should rank at or above weak");
+                assert!(
+                    s < w || top[s].1.abs() >= top[w].1.abs(),
+                    "strong should rank at or above weak"
+                );
             }
         }
     }
@@ -981,10 +1034,7 @@ mod tests {
         let mut g = CausalContextGraph::new();
 
         for turn in 1..=10 {
-            g.record_trace(turn, 0x11,
-                &make_ids(&["a", "b"]),
-                &make_ids(&["b"]),
-                0.5);
+            g.record_trace(turn, 0x11, &make_ids(&["a", "b"]), &make_ids(&["b"]), 0.5);
         }
 
         let s = g.stats();
@@ -1029,10 +1079,7 @@ mod tests {
         let mut g = CausalContextGraph::new();
 
         for turn in 1..=5 {
-            g.record_trace(turn, 0x11,
-                &make_ids(&["a", "b"]),
-                &make_ids(&["b"]),
-                0.5);
+            g.record_trace(turn, 0x11, &make_ids(&["a", "b"]), &make_ids(&["b"]), 0.5);
         }
 
         let json = serde_json::to_string(&g).expect("serialize");
@@ -1051,15 +1098,15 @@ mod tests {
         // Create many unique temporal links to exceed capacity
         // Each pair of consecutive traces with different fragments creates links
         for turn in 1..=300 {
-            let ids = make_ids(&[
-                &format!("f{}", turn),
-                &format!("g{}", turn),
-            ]);
+            let ids = make_ids(&[&format!("f{}", turn), &format!("g{}", turn)]);
             g.record_trace(turn as u32, turn as u64, &ids, &[], 0.1);
         }
 
         // Should stay at or below MAX_TEMPORAL_LINKS
-        assert!(g.temporal_link_count() <= MAX_TEMPORAL_LINKS + MAX_TEMPORAL_LINKS / 10,
-            "temporal links should be bounded, got {}", g.temporal_link_count());
+        assert!(
+            g.temporal_link_count() <= MAX_TEMPORAL_LINKS + MAX_TEMPORAL_LINKS / 10,
+            "temporal links should be bounded, got {}",
+            g.temporal_link_count()
+        );
     }
 }

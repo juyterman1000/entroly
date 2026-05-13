@@ -10,7 +10,24 @@
 // Or as MCP server:
 //   npx entroly-wasm serve
 
-const { WasmEntrolyEngine } = require('./pkg/entroly_wasm');
+let WasmEntrolyEngine;
+try {
+  ({ WasmEntrolyEngine } = require('./pkg/entroly_wasm'));
+} catch (err) {
+  if (err && err.code === 'MODULE_NOT_FOUND') {
+    // Source checkouts do not commit wasm-pack output. Build it lazily so
+    // `node -e "require('./entroly-wasm')"` and local smoke tests exercise the
+    // same module shape that the published npm tarball contains.
+    const { execFileSync } = require('child_process');
+    execFileSync('wasm-pack', ['build', '--target', 'nodejs', '--out-dir', 'pkg'], {
+      cwd: __dirname,
+      stdio: 'inherit',
+    });
+    ({ WasmEntrolyEngine } = require('./pkg/entroly_wasm'));
+  } else {
+    throw err;
+  }
+}
 const { EntrolyConfig } = require('./js/config');
 const { autoIndex, startIncrementalWatcher, estimateTokens } = require('./js/auto_index');
 const { CheckpointManager, persistIndex, loadIndex } = require('./js/checkpoint');

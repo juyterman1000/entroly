@@ -20,8 +20,8 @@
 //!   Graph-constrained knapsack (NP-hard in general, but tractable
 //!   for typical code dependency graphs with ~500 nodes)
 //!
-use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// A directed dependency between two fragments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +78,8 @@ impl DepGraph {
 
     /// Register a symbol definition (e.g., function, class, type).
     pub fn register_symbol(&mut self, symbol: &str, fragment_id: &str) {
-        self.symbol_table.insert(symbol.to_string(), fragment_id.to_string());
+        self.symbol_table
+            .insert(symbol.to_string(), fragment_id.to_string());
     }
 
     /// Add a dependency edge.
@@ -151,7 +152,7 @@ impl DepGraph {
                         source_id: fragment_id.to_string(),
                         target_id: export_frag.clone(),
                         dep_type: DepType::CrossLanguageFFI,
-                        strength: 0.95,  // Very strong: cross-lang deps are critical context
+                        strength: 0.95, // Very strong: cross-lang deps are critical context
                     });
                 }
             }
@@ -194,7 +195,7 @@ impl DepGraph {
                 if let Some(brace_start) = path.find('{') {
                     if let Some(brace_end) = path.find('}') {
                         if brace_start + 1 < brace_end {
-                            let inner = &path[brace_start+1..brace_end];
+                            let inner = &path[brace_start + 1..brace_end];
                             for name in inner.split(',') {
                                 let clean = name.trim().split(" as ").next().unwrap_or("").trim();
                                 if !clean.is_empty() {
@@ -216,7 +217,7 @@ impl DepGraph {
             else if trimmed.starts_with("import ") {
                 if let Some(brace_start) = trimmed.find('{') {
                     if let Some(brace_end) = trimmed.find('}') {
-                        let inner = &trimmed[brace_start+1..brace_end];
+                        let inner = &trimmed[brace_start + 1..brace_end];
                         for name in inner.split(',') {
                             let clean = name.trim().split(" as ").next().unwrap_or("").trim();
                             if !clean.is_empty() {
@@ -265,8 +266,12 @@ impl DepGraph {
                 }
             }
             // Java/Kotlin: import com.example.ClassName;
-            else if trimmed.starts_with("import ") && trimmed.contains('.') && trimmed.ends_with(';') {
-                let path = trimmed.trim_start_matches("import ")
+            else if trimmed.starts_with("import ")
+                && trimmed.contains('.')
+                && trimmed.ends_with(';')
+            {
+                let path = trimmed
+                    .trim_start_matches("import ")
                     .trim_start_matches("static ")
                     .trim_end_matches(';')
                     .trim();
@@ -309,11 +314,13 @@ impl DepGraph {
             }
             // C#: using Namespace.Class;
             else if trimmed.starts_with("using ") && trimmed.ends_with(';') {
-                let path = trimmed.trim_start_matches("using ")
+                let path = trimmed
+                    .trim_start_matches("using ")
                     .trim_start_matches("static ")
                     .trim_end_matches(';')
                     .trim();
-                if !path.contains(' ') {  // skip "using var x = ..."
+                if !path.contains(' ') {
+                    // skip "using var x = ..."
                     let last = path.rsplit('.').next().unwrap_or(path);
                     if !last.is_empty() {
                         targets.insert(last.to_string());
@@ -321,13 +328,17 @@ impl DepGraph {
                 }
             }
             // Swift: import Module
-            else if trimmed.starts_with("import ") && !trimmed.contains('{')
-                && !trimmed.contains('"') && !trimmed.contains('\'')
+            else if trimmed.starts_with("import ")
+                && !trimmed.contains('{')
+                && !trimmed.contains('"')
+                && !trimmed.contains('\'')
             {
                 let module = trimmed.trim_start_matches("import ").trim();
                 // "import Foundation" → "Foundation"
                 // "import class UIKit.UIView" → "UIView"
-                let last = module.rsplit('.').next()
+                let last = module
+                    .rsplit('.')
+                    .next()
                     .unwrap_or(module)
                     .rsplit_once(' ')
                     .map(|(_, r)| r)
@@ -337,8 +348,12 @@ impl DepGraph {
                 }
             }
             // PHP: use App\Models\User;
-            else if trimmed.starts_with("use ") && trimmed.contains('\\') && trimmed.ends_with(';') {
-                let path = trimmed.trim_start_matches("use ")
+            else if trimmed.starts_with("use ")
+                && trimmed.contains('\\')
+                && trimmed.ends_with(';')
+            {
+                let path = trimmed
+                    .trim_start_matches("use ")
                     .trim_end_matches(';')
                     .trim();
                 // Handle aliased: use App\Models\User as AppUser;
@@ -379,10 +394,16 @@ impl DepGraph {
                         let after = &trimmed[start + attr.len()..];
                         // Extract path from quotes
                         if let Some(q1) = after.find('\'').or_else(|| after.find('"')) {
-                            let rest = &after[q1+1..];
+                            let rest = &after[q1 + 1..];
                             if let Some(q2) = rest.find('\'').or_else(|| rest.find('"')) {
                                 let path = &rest[..q2];
-                                let name = path.rsplit('/').next().unwrap_or(path).split('.').next().unwrap_or("");
+                                let name = path
+                                    .rsplit('/')
+                                    .next()
+                                    .unwrap_or(path)
+                                    .split('.')
+                                    .next()
+                                    .unwrap_or("");
                                 if !name.is_empty() {
                                     targets.insert(name.to_string());
                                 }
@@ -394,13 +415,16 @@ impl DepGraph {
 
             // ── Cross-language FFI boundary detection ──────────────
             // PyO3: Rust → Python bridge
-            if trimmed.contains("#[pyfunction]") || trimmed.contains("#[pyclass]")
-                || trimmed.contains("#[pymethods]") || trimmed.contains("pyo3::prelude")
+            if trimmed.contains("#[pyfunction]")
+                || trimmed.contains("#[pyclass]")
+                || trimmed.contains("#[pymethods]")
+                || trimmed.contains("pyo3::prelude")
             {
                 targets.insert("__pyo3_bridge__".to_string());
             }
             // JNI: Java → C/C++ bridge
-            if trimmed.starts_with("native ") || trimmed.contains(" native ")
+            if trimmed.starts_with("native ")
+                || trimmed.contains(" native ")
                 || trimmed.contains("System.loadLibrary")
                 || trimmed.contains("System.load(")
             {
@@ -414,8 +438,10 @@ impl DepGraph {
             if trimmed.contains("extern \"C\"") || trimmed.contains("extern \"c\"") {
                 targets.insert("__c_ffi__".to_string());
             }
-            if trimmed.contains("ctypes.") || trimmed.contains("from ctypes")
-                || trimmed.contains("cffi") || trimmed.contains("dlopen")
+            if trimmed.contains("ctypes.")
+                || trimmed.contains("from ctypes")
+                || trimmed.contains("cffi")
+                || trimmed.contains("dlopen")
             {
                 targets.insert("__c_ffi__".to_string());
             }
@@ -428,7 +454,8 @@ impl DepGraph {
                 targets.insert("__wasm_bridge__".to_string());
             }
             // Node.js N-API / neon
-            if trimmed.contains("napi::") || trimmed.contains("#[napi]")
+            if trimmed.contains("napi::")
+                || trimmed.contains("#[napi]")
                 || trimmed.contains("neon::prelude")
             {
                 targets.insert("__node_native__".to_string());
@@ -489,9 +516,14 @@ impl DepGraph {
                         let mut depth = 0i32;
                         while j < lines.len() {
                             let lt = lines[j].trim();
-                            depth += lt.matches('{').count() as i32 - lt.matches('}').count() as i32;
-                            if depth < 0 { break; }
-                            if (lt.starts_with("fn ") || lt.starts_with("pub fn ")) && lt.contains('(') {
+                            depth +=
+                                lt.matches('{').count() as i32 - lt.matches('}').count() as i32;
+                            if depth < 0 {
+                                break;
+                            }
+                            if (lt.starts_with("fn ") || lt.starts_with("pub fn "))
+                                && lt.contains('(')
+                            {
                                 if let Some(name) = extract_fn_name_from_line(lt) {
                                     exports.push((name, "pyo3".to_string()));
                                 }
@@ -507,7 +539,8 @@ impl DepGraph {
                 // Extract: Java_com_example_ClassName_methodName
                 if let Some(java_pos) = trimmed.find("Java_") {
                     let rest = &trimmed[java_pos..];
-                    let jni_name: String = rest.chars()
+                    let jni_name: String = rest
+                        .chars()
                         .take_while(|c| c.is_alphanumeric() || *c == '_')
                         .collect();
                     // Last component after final underscore is the method name
@@ -563,14 +596,16 @@ impl DepGraph {
             }
 
             // ── C FFI: extern "C" fn name( ────────────────────────────
-            if trimmed.contains("extern \"C\"") && trimmed.contains("fn ") && trimmed.contains('(') {
+            if trimmed.contains("extern \"C\"") && trimmed.contains("fn ") && trimmed.contains('(')
+            {
                 if let Some(name) = extract_fn_name_from_line(trimmed) {
                     exports.push((name, "c_ffi".to_string()));
                 }
             }
             // C header-style: void __attribute__((visibility("default"))) func_name(
             // or simply exported C functions
-            if trimmed.contains("__attribute__") && trimmed.contains("visibility")
+            if trimmed.contains("__attribute__")
+                && trimmed.contains("visibility")
                 && trimmed.contains('(')
             {
                 let before_paren = trimmed.split('(').next().unwrap_or("");
@@ -648,10 +683,7 @@ impl DepGraph {
     /// This solves the "context is not additive" problem:
     /// instead of value(A+B) = value(A) + value(B),
     /// we get value(A+B) = value(A) + value(B) + dep_bonus(A,B).
-    pub fn compute_dep_boosts(
-        &self,
-        selected_ids: &HashSet<String>,
-    ) -> HashMap<String, f64> {
+    pub fn compute_dep_boosts(&self, selected_ids: &HashSet<String>) -> HashMap<String, f64> {
         let mut boosts: HashMap<String, f64> = HashMap::new();
 
         for selected_id in selected_ids {
@@ -701,7 +733,6 @@ impl DepGraph {
         }
         nodes.len()
     }
-
 }
 
 #[cfg(test)]
@@ -727,7 +758,9 @@ impl DepGraph {
                 // Check outgoing
                 if let Some(deps) = self.outgoing.get(&current) {
                     for dep in deps {
-                        if id_set.contains(dep.target_id.as_str()) && !visited.contains(&dep.target_id) {
+                        if id_set.contains(dep.target_id.as_str())
+                            && !visited.contains(&dep.target_id)
+                        {
                             visited.insert(dep.target_id.clone());
                             queue.push_back(dep.target_id.clone());
                         }
@@ -737,7 +770,9 @@ impl DepGraph {
                 // Check incoming (undirected connectivity)
                 if let Some(deps) = self.incoming.get(&current) {
                     for dep in deps {
-                        if id_set.contains(dep.source_id.as_str()) && !visited.contains(&dep.source_id) {
+                        if id_set.contains(dep.source_id.as_str())
+                            && !visited.contains(&dep.source_id)
+                        {
                             visited.insert(dep.source_id.clone());
                             queue.push_back(dep.source_id.clone());
                         }
@@ -762,7 +797,7 @@ pub fn extract_identifiers(content: &str) -> Vec<String> {
     let mut current = String::new();
 
     while let Some(&ch) = chars.peek() {
-        if ch.is_alphanumeric() || ch == '_' { 
+        if ch.is_alphanumeric() || ch == '_' {
             current.push(ch);
             chars.next();
         } else {
@@ -814,7 +849,7 @@ fn extract_definitions(content: &str) -> Vec<String> {
         {
             let words: Vec<&str> = trimmed.split_whitespace().collect();
             // Skip visibility modifier
-        let name_idx = if words.first() == Some(&"pub") { 2 } else { 1 };
+            let name_idx = if words.first() == Some(&"pub") { 2 } else { 1 };
             if let Some(name) = words.get(name_idx) {
                 let clean = name.split('(').next().unwrap_or(name);
                 let clean = clean.trim_end_matches(['{', '<', ':']);
@@ -824,7 +859,8 @@ fn extract_definitions(content: &str) -> Vec<String> {
             }
         }
         // JS/TS: function foo(, export function foo(
-        else if trimmed.starts_with("function ") || trimmed.starts_with("export function ")
+        else if trimmed.starts_with("function ")
+            || trimmed.starts_with("export function ")
             || trimmed.starts_with("export default function ")
             || trimmed.starts_with("async function ")
             || trimmed.starts_with("export async function ")
@@ -843,11 +879,15 @@ fn extract_definitions(content: &str) -> Vec<String> {
         }
         // JS/TS: const App = () => {, const handler = async () => {, export const foo = (
         // Also catches: const schema = z.object({, const router = express.Router()
-        else if (trimmed.starts_with("const ") || trimmed.starts_with("let ")
-            || trimmed.starts_with("export const ") || trimmed.starts_with("export let ")
+        else if (trimmed.starts_with("const ")
+            || trimmed.starts_with("let ")
+            || trimmed.starts_with("export const ")
+            || trimmed.starts_with("export let ")
             || trimmed.starts_with("export default "))
-            && (trimmed.contains("=>") || trimmed.contains("= function")
-                || trimmed.contains("= async function") || trimmed.contains("= ("))
+            && (trimmed.contains("=>")
+                || trimmed.contains("= function")
+                || trimmed.contains("= async function")
+                || trimmed.contains("= ("))
         {
             // Extract: const NAME = ...
             let after_kw = trimmed
@@ -857,7 +897,12 @@ fn extract_definitions(content: &str) -> Vec<String> {
                 .trim_start_matches("let ");
             if let Some(name) = after_kw.split([' ', ':', '=']).next() {
                 let clean = name.trim();
-                if !clean.is_empty() && clean.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_') {
+                if !clean.is_empty()
+                    && clean
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphabetic() || c == '_')
+                {
                     defs.push(clean.to_string());
                 }
             }
@@ -889,8 +934,10 @@ fn extract_definitions(content: &str) -> Vec<String> {
             }
         }
         // TS/JS: enum Status {, export enum Status {
-        else if trimmed.starts_with("enum ") || trimmed.starts_with("export enum ")
-            || trimmed.starts_with("const enum ") || trimmed.starts_with("export const enum ")
+        else if trimmed.starts_with("enum ")
+            || trimmed.starts_with("export enum ")
+            || trimmed.starts_with("const enum ")
+            || trimmed.starts_with("export const enum ")
         {
             let after_kw = trimmed
                 .trim_start_matches("export ")
@@ -940,17 +987,25 @@ fn extract_definitions(content: &str) -> Vec<String> {
         }
         // Java/Kotlin: public class Foo {, abstract class Bar, interface Baz
         else if (trimmed.contains("class ") || trimmed.contains("interface "))
-            && (trimmed.starts_with("public ") || trimmed.starts_with("private ")
-                || trimmed.starts_with("protected ") || trimmed.starts_with("abstract ")
-                || trimmed.starts_with("final ") || trimmed.starts_with("class ")
-                || trimmed.starts_with("interface ") || trimmed.starts_with("data class ")
-                || trimmed.starts_with("sealed ") || trimmed.starts_with("open "))
+            && (trimmed.starts_with("public ")
+                || trimmed.starts_with("private ")
+                || trimmed.starts_with("protected ")
+                || trimmed.starts_with("abstract ")
+                || trimmed.starts_with("final ")
+                || trimmed.starts_with("class ")
+                || trimmed.starts_with("interface ")
+                || trimmed.starts_with("data class ")
+                || trimmed.starts_with("sealed ")
+                || trimmed.starts_with("open "))
         {
             // Find "class Name" or "interface Name"
             let words: Vec<&str> = trimmed.split_whitespace().collect();
             for (i, &w) in words.iter().enumerate() {
                 if (w == "class" || w == "interface") && i + 1 < words.len() {
-                    let name = words[i + 1].split(['{', '<', '(', ':']).next().unwrap_or("");
+                    let name = words[i + 1]
+                        .split(['{', '<', '(', ':'])
+                        .next()
+                        .unwrap_or("");
                     if !name.is_empty() {
                         defs.push(name.to_string());
                     }
@@ -959,10 +1014,15 @@ fn extract_definitions(content: &str) -> Vec<String> {
             }
         }
         // Java/Kotlin: public void handleRequest(, public static String process(
-        else if (trimmed.starts_with("public ") || trimmed.starts_with("private ")
-            || trimmed.starts_with("protected ") || trimmed.starts_with("static ")
-            || trimmed.starts_with("override ") || trimmed.starts_with("suspend "))
-            && trimmed.contains('(') && !trimmed.contains("class ") && !trimmed.contains("interface ")
+        else if (trimmed.starts_with("public ")
+            || trimmed.starts_with("private ")
+            || trimmed.starts_with("protected ")
+            || trimmed.starts_with("static ")
+            || trimmed.starts_with("override ")
+            || trimmed.starts_with("suspend "))
+            && trimmed.contains('(')
+            && !trimmed.contains("class ")
+            && !trimmed.contains("interface ")
         {
             let before_paren = trimmed.split('(').next().unwrap_or("");
             let words: Vec<&str> = before_paren.split_whitespace().collect();
@@ -1023,7 +1083,8 @@ fn extract_require_lhs(line: &str) -> Option<String> {
                             }
                         }
                     } else {
-                        let clean = before_eq.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+                        let clean =
+                            before_eq.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
                         if !clean.is_empty() {
                             return Some(clean.to_string());
                         }
@@ -1040,10 +1101,15 @@ fn extract_fn_name_from_line(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let fn_pos = trimmed.find("fn ")?;
     let after_fn = &trimmed[fn_pos + 3..];
-    let name: String = after_fn.chars()
+    let name: String = after_fn
+        .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Extract struct/class name from a line like "struct Engine" or "pub struct Engine {".
@@ -1052,10 +1118,13 @@ fn extract_struct_name_from_line(line: &str) -> Option<String> {
     for kw in &["struct ", "class ", "enum "] {
         if let Some(pos) = trimmed.find(kw) {
             let after = &trimmed[pos + kw.len()..];
-            let name: String = after.chars()
+            let name: String = after
+                .chars()
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
-            if !name.is_empty() { return Some(name); }
+            if !name.is_empty() {
+                return Some(name);
+            }
         }
     }
     None
@@ -1063,7 +1132,8 @@ fn extract_struct_name_from_line(line: &str) -> Option<String> {
 
 /// Check if an identifier is a language keyword (ignore these).
 fn is_keyword(word: &str) -> bool {
-    matches!(word,
+    matches!(
+        word,
         // Python
         "def" | "class" | "import" | "from" | "return" | "if" | "else" | "elif"
         | "for" | "while" | "try" | "except" | "finally" | "with" | "as" | "and"
@@ -1148,8 +1218,10 @@ mod tests {
         selected.insert("frag_payments".to_string());
 
         let boosts = graph.compute_dep_boosts(&selected);
-        assert!(boosts.get("frag_rates").unwrap_or(&0.0) > &0.0,
-            "frag_rates should get boost when frag_payments is selected");
+        assert!(
+            boosts.get("frag_rates").unwrap_or(&0.0) > &0.0,
+            "frag_rates should get boost when frag_payments is selected"
+        );
     }
 
     #[test]
@@ -1163,9 +1235,7 @@ mod tests {
         });
         // "c" is isolated
 
-        let components = graph.connected_components(&[
-            "a".into(), "b".into(), "c".into(),
-        ]);
+        let components = graph.connected_components(&["a".into(), "b".into(), "c".into()]);
 
         // Should be 2 components: {a, b} and {c}
         assert_eq!(components.len(), 2);
@@ -1175,12 +1245,16 @@ mod tests {
     fn test_transitive_deps() {
         let mut graph = DepGraph::new();
         graph.add_dependency(Dependency {
-            source_id: "a".into(), target_id: "b".into(),
-            dep_type: DepType::FunctionCall, strength: 1.0,
+            source_id: "a".into(),
+            target_id: "b".into(),
+            dep_type: DepType::FunctionCall,
+            strength: 1.0,
         });
         graph.add_dependency(Dependency {
-            source_id: "b".into(), target_id: "c".into(),
-            dep_type: DepType::Import, strength: 1.0,
+            source_id: "b".into(),
+            target_id: "c".into(),
+            dep_type: DepType::Import,
+            strength: 1.0,
         });
 
         let deps = graph.transitive_deps("a", 3);
@@ -1195,12 +1269,20 @@ mod tests {
         // (from <App />) didn't match and App was flagged as dead code.
         let code = "function App() {\n  return <div>Hello</div>;\n}\n\nexport function handleClick(event) {\n  console.log(event);\n}";
         let defs = extract_definitions(code);
-        assert!(defs.contains(&"App".to_string()),
-            "function App() should extract 'App', got: {:?}", defs);
-        assert!(!defs.iter().any(|d| d.contains('(')),
-            "No definition should contain parentheses, got: {:?}", defs);
-        assert!(defs.contains(&"handleClick".to_string()),
-            "export function handleClick() should extract 'handleClick'");
+        assert!(
+            defs.contains(&"App".to_string()),
+            "function App() should extract 'App', got: {:?}",
+            defs
+        );
+        assert!(
+            !defs.iter().any(|d| d.contains('(')),
+            "No definition should contain parentheses, got: {:?}",
+            defs
+        );
+        assert!(
+            defs.contains(&"handleClick".to_string()),
+            "export function handleClick() should extract 'handleClick'"
+        );
     }
 
     #[test]
@@ -1208,7 +1290,11 @@ mod tests {
         let code = "const App = () => {\n  return <div/>;\n}\n\nexport const handler = async () => {\n  await fetch();\n}";
         let defs = extract_definitions(code);
         assert!(defs.contains(&"App".to_string()), "arrow fn: {:?}", defs);
-        assert!(defs.contains(&"handler".to_string()), "export arrow fn: {:?}", defs);
+        assert!(
+            defs.contains(&"handler".to_string()),
+            "export arrow fn: {:?}",
+            defs
+        );
     }
 
     #[test]
@@ -1216,7 +1302,11 @@ mod tests {
         let code = "interface User {\n  name: string;\n}\n\nexport type Status = 'active' | 'inactive';\n\nenum Color {\n  Red,\n  Blue,\n}";
         let defs = extract_definitions(code);
         assert!(defs.contains(&"User".to_string()), "interface: {:?}", defs);
-        assert!(defs.contains(&"Status".to_string()), "type alias: {:?}", defs);
+        assert!(
+            defs.contains(&"Status".to_string()),
+            "type alias: {:?}",
+            defs
+        );
         assert!(defs.contains(&"Color".to_string()), "enum: {:?}", defs);
     }
 
@@ -1267,15 +1357,27 @@ engine = Engine()
         graph.auto_link("frag_python_app", python_code);
 
         // Verify cross-language edges were created
-        let deps = graph.outgoing.get("frag_python_app").expect("Should have deps");
-        let cross_lang_deps: Vec<_> = deps.iter()
+        let deps = graph
+            .outgoing
+            .get("frag_python_app")
+            .expect("Should have deps");
+        let cross_lang_deps: Vec<_> = deps
+            .iter()
             .filter(|d| d.dep_type == DepType::CrossLanguageFFI)
             .collect();
-        assert!(!cross_lang_deps.is_empty(),
+        assert!(
+            !cross_lang_deps.is_empty(),
             "Python→Rust cross-language edge should exist, deps: {:?}",
-            deps.iter().map(|d| (&d.target_id, &d.dep_type)).collect::<Vec<_>>());
-        assert!(cross_lang_deps.iter().any(|d| d.target_id == "frag_rust_lib"),
-            "Should link to the Rust fragment");
+            deps.iter()
+                .map(|d| (&d.target_id, &d.dep_type))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            cross_lang_deps
+                .iter()
+                .any(|d| d.target_id == "frag_rust_lib"),
+            "Should link to the Rust fragment"
+        );
     }
 
     #[test]
@@ -1301,9 +1403,11 @@ public class App {
         graph.auto_link("frag_java_app", java_code);
 
         // Both sides should export "processData" via JNI
-        assert!(graph.cross_lang_exports.contains_key("processData"),
+        assert!(
+            graph.cross_lang_exports.contains_key("processData"),
             "processData should be in cross_lang_exports: {:?}",
-            graph.cross_lang_exports.keys().collect::<Vec<_>>());
+            graph.cross_lang_exports.keys().collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1322,9 +1426,11 @@ func ProcessData(input *C.char) *C.char {
 "#;
         graph.auto_link("frag_go_lib", go_code);
 
-        assert!(graph.cross_lang_exports.contains_key("ProcessData"),
+        assert!(
+            graph.cross_lang_exports.contains_key("ProcessData"),
             "CGo export should register: {:?}",
-            graph.cross_lang_exports.keys().collect::<Vec<_>>());
+            graph.cross_lang_exports.keys().collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1345,11 +1451,15 @@ pub fn greet(name: &str) -> String {
         let js_code = "import { greet } from './pkg/my_wasm';\nconst msg = greet('world');";
         graph.auto_link("frag_js_app", js_code);
 
-        assert!(graph.cross_lang_exports.contains_key("greet"),
-            "wasm_bindgen export should register");
+        assert!(
+            graph.cross_lang_exports.contains_key("greet"),
+            "wasm_bindgen export should register"
+        );
         let deps = graph.outgoing.get("frag_js_app").expect("Should have deps");
-        assert!(deps.iter().any(|d| d.dep_type == DepType::CrossLanguageFFI),
-            "JS→WASM cross-language edge should exist");
+        assert!(
+            deps.iter().any(|d| d.dep_type == DepType::CrossLanguageFFI),
+            "JS→WASM cross-language edge should exist"
+        );
     }
 
     #[test]
@@ -1359,8 +1469,10 @@ pub fn greet(name: &str) -> String {
         let rust_code = "#[napi]\nfn compute(a: i32, b: i32) -> i32 { a + b }";
         graph.auto_link("frag_napi_lib", rust_code);
 
-        assert!(graph.cross_lang_exports.contains_key("compute"),
-            "N-API export should register");
+        assert!(
+            graph.cross_lang_exports.contains_key("compute"),
+            "N-API export should register"
+        );
     }
 
     #[test]
@@ -1376,12 +1488,15 @@ pub extern "C" fn init_engine(config: *const c_char) -> *mut Engine {
         graph.auto_link("frag_rust_ffi", rust_code);
 
         // Python ctypes consumer
-        let python_code = "import ctypes\nlib = ctypes.CDLL('./libengine.so')\nresult = lib.init_engine(config)";
+        let python_code =
+            "import ctypes\nlib = ctypes.CDLL('./libengine.so')\nresult = lib.init_engine(config)";
         graph.auto_link("frag_python_ctypes", python_code);
 
-        assert!(graph.cross_lang_exports.contains_key("init_engine"),
+        assert!(
+            graph.cross_lang_exports.contains_key("init_engine"),
             "extern C export should register: {:?}",
-            graph.cross_lang_exports.keys().collect::<Vec<_>>());
+            graph.cross_lang_exports.keys().collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1389,7 +1504,8 @@ pub extern "C" fn init_engine(config: *const c_char) -> *mut Engine {
         // Cross-language deps should participate in dependency boost
         let mut graph = DepGraph::new();
 
-        let rust_code = "#[pyfunction]\nfn analyze(data: &str) -> PyResult<String> { Ok(data.to_string()) }";
+        let rust_code =
+            "#[pyfunction]\nfn analyze(data: &str) -> PyResult<String> { Ok(data.to_string()) }";
         graph.auto_link("frag_rust", rust_code);
 
         let python_code = "from mymod import analyze\nresult = analyze(raw_data)";
@@ -1399,8 +1515,10 @@ pub extern "C" fn init_engine(config: *const c_char) -> *mut Engine {
         selected.insert("frag_python".to_string());
 
         let boosts = graph.compute_dep_boosts(&selected);
-        assert!(boosts.get("frag_rust").unwrap_or(&0.0) > &0.0,
-            "Rust fragment should get boost when Python consumer is selected");
+        assert!(
+            boosts.get("frag_rust").unwrap_or(&0.0) > &0.0,
+            "Rust fragment should get boost when Python consumer is selected"
+        );
     }
 
     #[test]
@@ -1420,10 +1538,14 @@ impl Engine {
 "#;
         graph.auto_link("frag_engine", rust_code);
 
-        assert!(graph.cross_lang_exports.contains_key("run"),
+        assert!(
+            graph.cross_lang_exports.contains_key("run"),
             "#[pymethods] should export method 'run': {:?}",
-            graph.cross_lang_exports.keys().collect::<Vec<_>>());
-        assert!(graph.cross_lang_exports.contains_key("stop"),
-            "#[pymethods] should export method 'stop'");
+            graph.cross_lang_exports.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            graph.cross_lang_exports.contains_key("stop"),
+            "#[pymethods] should export method 'stop'"
+        );
     }
 }

@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "0.19.0"
+version = "0.19.1"
 
-description = "Thin Python wrapper for the Rust Entroly context engine."
+description = "The token saving proxy and context compression engine for AI coding agents. Reduce LLM API costs by 80% while providing full codebase context to Cursor, Claude Code, and Copilot."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -29,30 +29,24 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Programming Language :: Rust",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "mcp>=1.6.0,<2",
 ]
 
 [project.optional-dependencies]
-legacy = [
-    "mcp>=1.6.0,<2",
-    "httpx>=0.27",
-    "starlette>=0.37",
-    "uvicorn>=0.30",
-]
 proxy = [
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=0.19.0,<1",
+    "entroly-core>=0.2.0,<1",
 ]
 full = [
-    "entroly-core>=0.19.0,<1",
+    "entroly-core>=0.2.0,<1",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",
@@ -71,7 +65,6 @@ entroly-docker = "entroly._docker_launcher:launch"
 
 [tool.hatch.build.targets.wheel]
 packages = ["entroly"]
-artifacts = ["entroly/bin/*"]
 
 [tool.ruff]
 target-version = "py310"

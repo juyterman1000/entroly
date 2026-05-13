@@ -21,9 +21,9 @@
 //!   - RepoFormer (ICML 2024 Oral) — selective retrieval improves over always-retrieve
 //!   - FILM-7B (NeurIPS 2024) — structure-first layout avoids lost-in-the-middle
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use crate::fragment::ContextFragment;
 use crate::depgraph::DepGraph;
+use crate::fragment::ContextFragment;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Result of hierarchical compression.
 pub struct HccResult {
@@ -116,15 +116,23 @@ fn extract_oneliner_from_skeleton(skeleton: &str) -> String {
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             let idx = if parts.first() == Some(&"pub") { 2 } else { 1 };
             if let Some(name) = parts.get(idx) {
-                let clean = name.split('(').next().unwrap_or(name)
-                    .split('<').next().unwrap_or(name);
+                let clean = name
+                    .split('(')
+                    .next()
+                    .unwrap_or(name)
+                    .split('<')
+                    .next()
+                    .unwrap_or(name);
                 if !clean.is_empty() {
                     symbols.push(clean);
                 }
             }
-        } else if trimmed.starts_with("struct ") || trimmed.starts_with("pub struct ")
-            || trimmed.starts_with("enum ") || trimmed.starts_with("pub enum ")
-            || trimmed.starts_with("trait ") || trimmed.starts_with("pub trait ")
+        } else if trimmed.starts_with("struct ")
+            || trimmed.starts_with("pub struct ")
+            || trimmed.starts_with("enum ")
+            || trimmed.starts_with("pub enum ")
+            || trimmed.starts_with("trait ")
+            || trimmed.starts_with("pub trait ")
         {
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             let idx = if parts.first() == Some(&"pub") { 2 } else { 1 };
@@ -274,14 +282,14 @@ pub(crate) fn compute_pagerank(
     let base = (1.0 - d) / n as f64;
 
     // Initialize uniform scores
-    let mut scores: HashMap<String, f64> = fragment_ids.iter()
+    let mut scores: HashMap<String, f64> = fragment_ids
+        .iter()
         .map(|id| (id.clone(), 1.0 / n as f64))
         .collect();
 
     for _ in 0..iterations {
-        let mut new_scores: HashMap<String, f64> = fragment_ids.iter()
-            .map(|id| (id.clone(), base))
-            .collect();
+        let mut new_scores: HashMap<String, f64> =
+            fragment_ids.iter().map(|id| (id.clone(), base)).collect();
 
         for fid in fragment_ids {
             let score = scores.get(fid).copied().unwrap_or(0.0);
@@ -323,11 +331,7 @@ pub(crate) fn compute_pagerank(
 ///
 /// If mean entropy is high (complex codebase), L3 gets more.
 /// If mean entropy is low (simple codebase), L1+L2 keep more.
-pub fn allocate_budget(
-    total_budget: u32,
-    n_files: usize,
-    mean_entropy: f64,
-) -> (u32, u32, u32) {
+pub fn allocate_budget(total_budget: u32, n_files: usize, mean_entropy: f64) -> (u32, u32, u32) {
     if total_budget == 0 || n_files == 0 {
         return (0, 0, 0);
     }
@@ -376,7 +380,8 @@ pub fn submodular_marginal_gain(
 ) -> f64 {
     // Count how many selected fragments share the same module/directory
     let candidate_module = extract_module(candidate_source);
-    let same_module_count = selected_sources.iter()
+    let same_module_count = selected_sources
+        .iter()
         .filter(|s| extract_module(s) == candidate_module)
         .count();
 
@@ -474,7 +479,8 @@ pub fn hierarchical_compress(
     let effective_l3_budget = b3 + b1.saturating_sub(l1_used) + b2.saturating_sub(l2_used);
 
     // Build fragment index for lookup
-    let frag_index: HashMap<&str, usize> = fragments.iter()
+    let frag_index: HashMap<&str, usize> = fragments
+        .iter()
         .enumerate()
         .map(|(i, f)| (f.fragment_id.as_str(), i))
         .collect();
@@ -495,7 +501,8 @@ pub fn hierarchical_compress(
     }
 
     // Second: cluster fragments not already in candidates
-    let candidate_ids: HashSet<&str> = candidates.iter()
+    let candidate_ids: HashSet<&str> = candidates
+        .iter()
         .map(|(i, _)| fragments[*i].fragment_id.as_str())
         .collect();
     for id in &cluster_ids {
@@ -509,11 +516,7 @@ pub fn hierarchical_compress(
     // Greedy selection with submodular diversity
     for (idx, base_rel) in &candidates {
         let frag = &fragments[*idx];
-        let marginal = submodular_marginal_gain(
-            &frag.source,
-            *base_rel,
-            &selected_sources,
-        );
+        let marginal = submodular_marginal_gain(&frag.source, *base_rel, &selected_sources);
 
         // Only include if marginal gain is worth the tokens
         // (this is the RepoFormer insight: retrieval can hurt)
@@ -546,7 +549,7 @@ pub fn hierarchical_compress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::depgraph::{Dependency, DepType};
+    use crate::depgraph::{DepType, Dependency};
 
     fn make_frag(id: &str, source: &str, tokens: u32, skeleton: Option<&str>) -> ContextFragment {
         let mut f = ContextFragment::new(
@@ -634,17 +637,16 @@ mod tests {
         ];
 
         // Third auth file should get penalized (diminishing returns)
-        let gain_auth = submodular_marginal_gain(
-            "file:src/auth/verify.py", 0.8, &selected,
-        );
+        let gain_auth = submodular_marginal_gain("file:src/auth/verify.py", 0.8, &selected);
         // Different module should not be penalized
-        let gain_db = submodular_marginal_gain(
-            "file:src/db/connect.py", 0.8, &selected,
-        );
+        let gain_db = submodular_marginal_gain("file:src/db/connect.py", 0.8, &selected);
 
-        assert!(gain_db > gain_auth,
+        assert!(
+            gain_db > gain_auth,
             "Different module should have higher marginal gain: db={} vs auth={}",
-            gain_db, gain_auth);
+            gain_db,
+            gain_auth
+        );
     }
 
     #[test]
@@ -660,7 +662,8 @@ mod tests {
             });
         }
 
-        let ids: Vec<String> = (1..=5).map(|i| format!("f{}", i))
+        let ids: Vec<String> = (1..=5)
+            .map(|i| format!("f{}", i))
             .chain(std::iter::once("f_hub".to_string()))
             .collect();
 
@@ -670,9 +673,13 @@ mod tests {
         // Hub should have the highest score
         for (id, score) in &scores {
             if id != "f_hub" {
-                assert!(hub_score >= *score,
+                assert!(
+                    hub_score >= *score,
                     "Hub score ({}) should be >= {} ({})",
-                    hub_score, score, id);
+                    hub_score,
+                    score,
+                    id
+                );
             }
         }
     }
@@ -680,14 +687,30 @@ mod tests {
     #[test]
     fn test_hierarchical_compress_end_to_end() {
         let frags = vec![
-            make_frag("f1", "file:src/auth/login.py", 100,
-                Some("class LoginHandler:\n    ...\ndef login(user):\n    ...")),
-            make_frag("f2", "file:src/db/user.py", 80,
-                Some("class UserDB:\n    ...\ndef get_user(id):\n    ...")),
-            make_frag("f3", "file:src/config.py", 30,
-                Some("DB_URL = ...\nSECRET_KEY = ...")),
-            make_frag("f4", "file:src/utils/logger.py", 40,
-                Some("def log(msg):\n    ...")),
+            make_frag(
+                "f1",
+                "file:src/auth/login.py",
+                100,
+                Some("class LoginHandler:\n    ...\ndef login(user):\n    ..."),
+            ),
+            make_frag(
+                "f2",
+                "file:src/db/user.py",
+                80,
+                Some("class UserDB:\n    ...\ndef get_user(id):\n    ..."),
+            ),
+            make_frag(
+                "f3",
+                "file:src/config.py",
+                30,
+                Some("DB_URL = ...\nSECRET_KEY = ..."),
+            ),
+            make_frag(
+                "f4",
+                "file:src/utils/logger.py",
+                40,
+                Some("def log(msg):\n    ..."),
+            ),
         ];
 
         let mut graph = DepGraph::new();
@@ -736,13 +759,7 @@ mod tests {
 
     #[test]
     fn test_empty_fragments() {
-        let result = hierarchical_compress(
-            &[],
-            &DepGraph::new(),
-            &[],
-            5000,
-            0.5,
-        );
+        let result = hierarchical_compress(&[], &DepGraph::new(), &[], 5000, 0.5);
         assert!(result.level1_map.is_empty());
         assert!(result.level3_indices.is_empty());
     }

@@ -83,9 +83,9 @@
 //!   - Rényi (1961) — collision entropy
 //!   - Ebbinghaus (1885) — forgetting curve
 
+use crate::entropy::{renyi_entropy_2, shannon_entropy};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use serde::{Serialize, Deserialize};
-use crate::entropy::{shannon_entropy, renyi_entropy_2};
 
 // ══════════════════════════════════════════════════════════════════════
 // Types
@@ -108,23 +108,23 @@ impl BlockKind {
     /// User and system messages are nearly untouchable.
     pub fn protection_weight(&self) -> f64 {
         match self {
-            BlockKind::SystemMessage    => 1.00,
-            BlockKind::UserMessage      => 0.95,
+            BlockKind::SystemMessage => 1.00,
+            BlockKind::UserMessage => 0.95,
             BlockKind::AssistantMessage => 0.60,
-            BlockKind::ToolCall         => 0.25,
-            BlockKind::ToolResult       => 0.15,
-            BlockKind::ThinkingBlock    => 0.10,
+            BlockKind::ToolCall => 0.25,
+            BlockKind::ToolResult => 0.15,
+            BlockKind::ThinkingBlock => 0.10,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
-            BlockKind::UserMessage      => "user",
+            BlockKind::UserMessage => "user",
             BlockKind::AssistantMessage => "assistant",
-            BlockKind::ToolCall         => "tool_call",
-            BlockKind::ToolResult       => "tool_result",
-            BlockKind::ThinkingBlock    => "thinking",
-            BlockKind::SystemMessage    => "system",
+            BlockKind::ToolCall => "tool_call",
+            BlockKind::ToolResult => "tool_result",
+            BlockKind::ThinkingBlock => "thinking",
+            BlockKind::SystemMessage => "system",
         }
     }
 }
@@ -133,11 +133,11 @@ impl BlockKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Resolution {
     /// L0: Full verbatim text — no compression
-    Verbatim    = 0,
+    Verbatim = 0,
     /// L1: Structural skeleton (signatures, key values, first/last lines)
-    Skeleton    = 1,
+    Skeleton = 1,
     /// L2: One-line semantic digest
-    Digest      = 2,
+    Digest = 2,
     /// L3: 64-bit SimHash fingerprint only (retrievable if needed)
     Fingerprint = 3,
 }
@@ -146,9 +146,9 @@ impl Resolution {
     /// Token cost as fraction of original (lower = more savings).
     pub fn token_fraction(&self) -> f64 {
         match self {
-            Resolution::Verbatim    => 1.00,
-            Resolution::Skeleton    => 0.30,
-            Resolution::Digest      => 0.08,
+            Resolution::Verbatim => 1.00,
+            Resolution::Skeleton => 0.30,
+            Resolution::Digest => 0.08,
             Resolution::Fingerprint => 0.01,
         }
     }
@@ -156,9 +156,9 @@ impl Resolution {
     /// Information retained as fraction of original.
     pub fn info_retained(&self) -> f64 {
         match self {
-            Resolution::Verbatim    => 1.00,
-            Resolution::Skeleton    => 0.85,
-            Resolution::Digest      => 0.35,
+            Resolution::Verbatim => 1.00,
+            Resolution::Skeleton => 0.85,
+            Resolution::Digest => 0.35,
             Resolution::Fingerprint => 0.05,
         }
     }
@@ -170,16 +170,21 @@ impl Resolution {
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Resolution::Verbatim    => "verbatim",
-            Resolution::Skeleton    => "skeleton",
-            Resolution::Digest      => "digest",
+            Resolution::Verbatim => "verbatim",
+            Resolution::Skeleton => "skeleton",
+            Resolution::Digest => "digest",
             Resolution::Fingerprint => "fingerprint",
         }
     }
 
     /// All levels in order of increasing compression.
     pub fn all() -> &'static [Resolution] {
-        &[Resolution::Verbatim, Resolution::Skeleton, Resolution::Digest, Resolution::Fingerprint]
+        &[
+            Resolution::Verbatim,
+            Resolution::Skeleton,
+            Resolution::Digest,
+            Resolution::Fingerprint,
+        ]
     }
 }
 
@@ -232,7 +237,7 @@ pub struct PruneResult {
 pub fn classify_block(role: &str, content: &str, tool_name: Option<&str>) -> BlockKind {
     match role {
         "system" => BlockKind::SystemMessage,
-        "user"   => BlockKind::UserMessage,
+        "user" => BlockKind::UserMessage,
         "assistant" => {
             let trimmed = content.trim();
             if trimmed.starts_with("<thinking>") || trimmed.starts_with("<reasoning>") {
@@ -374,16 +379,17 @@ fn score_block(
         let h1 = shannon_entropy(&block.content);
         let h2 = renyi_entropy_2(&block.content);
         let div = (h1 - h2).max(0.0);
-        if div > 1.5 { (div - 1.5).min(1.0) * 0.15 } else { 0.0 }
+        if div > 1.5 {
+            (div - 1.5).min(1.0) * 0.15
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
 
-    let raw = 0.25 * forward_value
-            + 0.20 * ref_density
-            + 0.25 * recency
-            + 0.25 * kind_shield
-            - noise_penalty;
+    let raw = 0.25 * forward_value + 0.20 * ref_density + 0.25 * recency + 0.25 * kind_shield
+        - noise_penalty;
 
     raw.clamp(0.0, 1.0)
 }
@@ -403,7 +409,8 @@ fn compute_all_forward_overlaps(blocks: &[ConvBlock]) -> Vec<f64> {
     }
 
     // Pre-split all blocks into words once (avoids redundant splits)
-    let all_words: Vec<Vec<&str>> = blocks.iter()
+    let all_words: Vec<Vec<&str>> = blocks
+        .iter()
         .map(|b| b.content.split_whitespace().collect())
         .collect();
 
@@ -417,14 +424,13 @@ fn compute_all_forward_overlaps(blocks: &[ConvBlock]) -> Vec<f64> {
         if words.len() < 2 {
             values[i] = if future_bigrams.is_empty() { 0.5 } else { 0.0 };
         } else {
-            let block_bigrams: Vec<(&str, &str)> = words.windows(2)
-                .map(|w| (w[0], w[1]))
-                .collect();
+            let block_bigrams: Vec<(&str, &str)> = words.windows(2).map(|w| (w[0], w[1])).collect();
 
             if future_bigrams.is_empty() {
-                values[i] = 0.5;  // most recent block → moderate default
+                values[i] = 0.5; // most recent block → moderate default
             } else {
-                let found = block_bigrams.iter()
+                let found = block_bigrams
+                    .iter()
                     .filter(|bg| future_bigrams.contains(*bg))
                     .count();
                 values[i] = (found as f64 / block_bigrams.len() as f64).min(1.0);
@@ -447,9 +453,9 @@ fn compute_all_forward_overlaps(blocks: &[ConvBlock]) -> Vec<f64> {
 /// Multi-choice knapsack item: one block with 4 resolution options.
 struct McItem {
     _index: usize,
-    value: f64,        // information value (higher = more costly to prune)
-    tokens: u32,       // original token count
-    protected: bool,   // user/system messages — always Verbatim
+    value: f64,      // information value (higher = more costly to prune)
+    tokens: u32,     // original token count
+    protected: bool, // user/system messages — always Verbatim
 }
 
 /// Solve the multi-choice knapsack via KKT dual bisection.
@@ -463,17 +469,17 @@ struct McItem {
 /// most aggressive level whose efficiency ≤ λ*.  Converges in 30 steps.
 ///
 /// Complexity: O(30 × N × 4) = O(120N).
-fn kkt_multichoice_bisect(
-    items: &[McItem],
-    token_budget: u32,
-) -> Vec<Resolution> {
+fn kkt_multichoice_bisect(items: &[McItem], token_budget: u32) -> Vec<Resolution> {
     let n = items.len();
     if n == 0 {
         return vec![];
     }
 
     // Total tokens at Verbatim (saturating to prevent u32 overflow on malformed data)
-    let total_verbatim: u32 = items.iter().map(|it| it.tokens).fold(0u32, u32::saturating_add);
+    let total_verbatim: u32 = items
+        .iter()
+        .map(|it| it.tokens)
+        .fold(0u32, u32::saturating_add);
 
     // Fast path: everything fits
     if total_verbatim <= token_budget {
@@ -484,7 +490,8 @@ fn kkt_multichoice_bisect(
     let target_freed = total_verbatim.saturating_sub(token_budget) as f64;
 
     // Maximum freeable (ignoring protected items)
-    let max_freeable: f64 = items.iter()
+    let max_freeable: f64 = items
+        .iter()
         .filter(|it| !it.protected)
         .map(|it| it.tokens as f64 * (1.0 - Resolution::Fingerprint.token_fraction()))
         .sum();
@@ -551,9 +558,9 @@ fn kkt_multichoice_bisect(
 
         if total_freed >= target_freed {
             best_assignments = assignments;
-            hi = lambda;  // try less aggressive (lower λ → fewer compressions)
+            hi = lambda; // try less aggressive (lower λ → fewer compressions)
         } else {
-            lo = lambda;  // try more aggressive (higher λ → more compressions)
+            lo = lambda; // try more aggressive (higher λ → more compressions)
         }
     }
 
@@ -572,10 +579,7 @@ fn kkt_multichoice_bisect(
 ///
 /// Propagation: walk chronologically.  If parent is at level L,
 /// all children must be at ≥ L.
-fn enforce_dag_coherence(
-    deps: &[Vec<usize>],
-    assignments: &mut [Resolution],
-) {
+fn enforce_dag_coherence(deps: &[Vec<usize>], assignments: &mut [Resolution]) {
     // Build children map: parent → list of children
     let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
     for (child_idx, dep_list) in deps.iter().enumerate() {
@@ -597,17 +601,11 @@ fn enforce_dag_coherence(
 }
 
 /// Protect recent blocks: last N non-user blocks stay at Skeleton or better.
-fn protect_recent(
-    blocks: &[ConvBlock],
-    assignments: &mut [Resolution],
-    protect_last_n: usize,
-) {
+fn protect_recent(blocks: &[ConvBlock], assignments: &mut [Resolution], protect_last_n: usize) {
     let n = blocks.len();
     let cutoff = n.saturating_sub(protect_last_n);
     for i in cutoff..n {
-        if blocks[i].kind != BlockKind::ThinkingBlock
-            && assignments[i] > Resolution::Skeleton
-        {
+        if blocks[i].kind != BlockKind::ThinkingBlock && assignments[i] > Resolution::Skeleton {
             assignments[i] = Resolution::Skeleton;
         }
     }
@@ -627,57 +625,73 @@ pub fn compress_block(block: &ConvBlock, resolution: Resolution) -> String {
     match resolution {
         Resolution::Verbatim => block.content.clone(),
 
-        Resolution::Skeleton => {
-            match block.kind {
-                BlockKind::ToolCall => {
-                    let name = block.tool_name.as_deref().unwrap_or("unknown_tool");
-                    format!("[Tool call: {}]", name)
-                }
-                BlockKind::ToolResult => {
-                    let lines: Vec<&str> = block.content.lines().collect();
-                    if lines.len() <= 3 {
-                        return block.content.clone();
-                    }
-                    let first = lines[0];
-                    let second = lines.get(1).unwrap_or(&"");
-                    let last = lines[lines.len() - 1];
-                    let omitted = lines.len().saturating_sub(3);
-                    format!("{}\n{}\n  ... [{} lines omitted]\n{}", first, second, omitted, last)
-                }
-                BlockKind::ThinkingBlock => {
-                    let lines: Vec<&str> = block.content.lines().collect();
-                    let first = lines.first().unwrap_or(&"");
-                    let last = lines.last().unwrap_or(&"");
-                    if lines.len() <= 2 {
-                        block.content.clone()
-                    } else {
-                        format!("{}\n  [... {} lines of reasoning]\n{}", first, lines.len() - 2, last)
-                    }
-                }
-                BlockKind::AssistantMessage => {
-                    let sentences: Vec<&str> = block.content
-                        .split(['.', '\n'])
-                        .filter(|s| s.trim().len() > 5)
-                        .collect();
-                    if sentences.len() <= 3 {
-                        block.content.chars().take(300).collect()
-                    } else {
-                        let head: String = sentences[..2].iter()
-                            .map(|s| s.trim()).collect::<Vec<_>>().join(". ");
-                        let tail = sentences.last().unwrap().trim();
-                        format!("{}. [...] {}", head, tail)
-                    }
-                }
-                _ => block.content.clone(),
+        Resolution::Skeleton => match block.kind {
+            BlockKind::ToolCall => {
+                let name = block.tool_name.as_deref().unwrap_or("unknown_tool");
+                format!("[Tool call: {}]", name)
             }
-        }
+            BlockKind::ToolResult => {
+                let lines: Vec<&str> = block.content.lines().collect();
+                if lines.len() <= 3 {
+                    return block.content.clone();
+                }
+                let first = lines[0];
+                let second = lines.get(1).unwrap_or(&"");
+                let last = lines[lines.len() - 1];
+                let omitted = lines.len().saturating_sub(3);
+                format!(
+                    "{}\n{}\n  ... [{} lines omitted]\n{}",
+                    first, second, omitted, last
+                )
+            }
+            BlockKind::ThinkingBlock => {
+                let lines: Vec<&str> = block.content.lines().collect();
+                let first = lines.first().unwrap_or(&"");
+                let last = lines.last().unwrap_or(&"");
+                if lines.len() <= 2 {
+                    block.content.clone()
+                } else {
+                    format!(
+                        "{}\n  [... {} lines of reasoning]\n{}",
+                        first,
+                        lines.len() - 2,
+                        last
+                    )
+                }
+            }
+            BlockKind::AssistantMessage => {
+                let sentences: Vec<&str> = block
+                    .content
+                    .split(['.', '\n'])
+                    .filter(|s| s.trim().len() > 5)
+                    .collect();
+                if sentences.len() <= 3 {
+                    block.content.chars().take(300).collect()
+                } else {
+                    let head: String = sentences[..2]
+                        .iter()
+                        .map(|s| s.trim())
+                        .collect::<Vec<_>>()
+                        .join(". ");
+                    let tail = sentences.last().unwrap().trim();
+                    format!("{}. [...] {}", head, tail)
+                }
+            }
+            _ => block.content.clone(),
+        },
 
         Resolution::Digest => {
             let kind_label = block.kind.label();
             let word_count = block.content.split_whitespace().count();
             let line_count = block.content.lines().count();
-            let preview: String = block.content.lines().next().unwrap_or("")
-                .chars().take(60).collect();
+            let preview: String = block
+                .content
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(60)
+                .collect();
             match block.kind {
                 BlockKind::ToolCall => {
                     let name = block.tool_name.as_deref().unwrap_or("tool");
@@ -685,7 +699,10 @@ pub fn compress_block(block: &ConvBlock, resolution: Resolution) -> String {
                 }
                 BlockKind::ToolResult => {
                     let name = block.tool_name.as_deref().unwrap_or("tool");
-                    format!("[{} result: {} lines, {} words]", name, line_count, word_count)
+                    format!(
+                        "[{} result: {} lines, {} words]",
+                        name, line_count, word_count
+                    )
                 }
                 BlockKind::ThinkingBlock => {
                     format!("[Reasoning: {} words]", word_count)
@@ -732,12 +749,18 @@ pub fn prune_conversation(
         };
     }
 
-    let total_before: u32 = blocks.iter().map(|b| b.token_count).fold(0u32, u32::saturating_add);
+    let total_before: u32 = blocks
+        .iter()
+        .map(|b| b.token_count)
+        .fold(0u32, u32::saturating_add);
 
     // Fast path: everything fits
     if total_before <= token_budget {
         return PruneResult {
-            assignments: blocks.iter().map(|b| (b.index, Resolution::Verbatim)).collect(),
+            assignments: blocks
+                .iter()
+                .map(|b| (b.index, Resolution::Verbatim))
+                .collect(),
             total_tokens_after: total_before,
             total_tokens_before: total_before,
             blocks_compressed: 0,
@@ -757,11 +780,28 @@ pub fn prune_conversation(
     // Pre-compute forward overlaps in O(N·W) — replaces O(N²·W) per-block
     let forward_values = compute_all_forward_overlaps(blocks);
 
-    let items: Vec<McItem> = blocks.iter().enumerate().map(|(pos, b)| {
-        let value = score_block(b, pos, forward_values[pos], blocks.len(), &forward_refs, now, decay_lambda);
-        let protected = matches!(b.kind, BlockKind::UserMessage | BlockKind::SystemMessage);
-        McItem { _index: pos, value, tokens: b.token_count, protected }
-    }).collect();
+    let items: Vec<McItem> = blocks
+        .iter()
+        .enumerate()
+        .map(|(pos, b)| {
+            let value = score_block(
+                b,
+                pos,
+                forward_values[pos],
+                blocks.len(),
+                &forward_refs,
+                now,
+                decay_lambda,
+            );
+            let protected = matches!(b.kind, BlockKind::UserMessage | BlockKind::SystemMessage);
+            McItem {
+                _index: pos,
+                value,
+                tokens: b.token_count,
+                protected,
+            }
+        })
+        .collect();
 
     // 4. Solve multi-choice knapsack via KKT dual bisection
     let mut assignments = kkt_multichoice_bisect(&items, token_budget);
@@ -773,16 +813,25 @@ pub fn prune_conversation(
     protect_recent(blocks, &mut assignments, protect_last);
 
     // 7. Compute stats
-    let total_after: u32 = blocks.iter().enumerate()
+    let total_after: u32 = blocks
+        .iter()
+        .enumerate()
         .map(|(i, b)| (b.token_count as f64 * assignments[i].token_fraction()).round() as u32)
         .fold(0u32, u32::saturating_add);
-    let blocks_compressed = assignments.iter().filter(|&&r| r != Resolution::Verbatim).count();
-    let info_loss: f64 = items.iter().enumerate()
+    let blocks_compressed = assignments
+        .iter()
+        .filter(|&&r| r != Resolution::Verbatim)
+        .count();
+    let info_loss: f64 = items
+        .iter()
+        .enumerate()
         .map(|(pos, it)| it.value * assignments[pos].info_loss())
         .sum();
 
     PruneResult {
-        assignments: blocks.iter().enumerate()
+        assignments: blocks
+            .iter()
+            .enumerate()
             .map(|(i, b)| (b.index, assignments[i]))
             .collect(),
         total_tokens_after: total_after,
@@ -813,7 +862,9 @@ pub fn progressive_thresholds(
     let mut assignments = vec![Resolution::Verbatim; blocks.len()];
 
     if utilization < 0.70 {
-        return blocks.iter().enumerate()
+        return blocks
+            .iter()
+            .enumerate()
             .map(|(i, b)| (b.index, assignments[i]))
             .collect();
     }
@@ -854,7 +905,9 @@ pub fn progressive_thresholds(
         }
     }
 
-    blocks.iter().enumerate()
+    blocks
+        .iter()
+        .enumerate()
         .map(|(i, b)| (b.index, assignments[i]))
         .collect()
 }
@@ -882,7 +935,13 @@ mod tests {
         }
     }
 
-    fn make_tool_block(index: usize, role: &str, content: &str, tokens: u32, tool: &str) -> ConvBlock {
+    fn make_tool_block(
+        index: usize,
+        role: &str,
+        content: &str,
+        tokens: u32,
+        tool: &str,
+    ) -> ConvBlock {
         ConvBlock {
             index,
             kind: classify_block(role, content, Some(tool)),
@@ -900,12 +959,30 @@ mod tests {
 
     #[test]
     fn test_classify_block_types() {
-        assert_eq!(classify_block("user", "hello", None), BlockKind::UserMessage);
-        assert_eq!(classify_block("system", "you are helpful", None), BlockKind::SystemMessage);
-        assert_eq!(classify_block("assistant", "sure thing", None), BlockKind::AssistantMessage);
-        assert_eq!(classify_block("assistant", "<thinking>let me think</thinking>", None), BlockKind::ThinkingBlock);
-        assert_eq!(classify_block("assistant", "calling tool", Some("read_file")), BlockKind::ToolCall);
-        assert_eq!(classify_block("tool", "file contents here", None), BlockKind::ToolResult);
+        assert_eq!(
+            classify_block("user", "hello", None),
+            BlockKind::UserMessage
+        );
+        assert_eq!(
+            classify_block("system", "you are helpful", None),
+            BlockKind::SystemMessage
+        );
+        assert_eq!(
+            classify_block("assistant", "sure thing", None),
+            BlockKind::AssistantMessage
+        );
+        assert_eq!(
+            classify_block("assistant", "<thinking>let me think</thinking>", None),
+            BlockKind::ThinkingBlock
+        );
+        assert_eq!(
+            classify_block("assistant", "calling tool", Some("read_file")),
+            BlockKind::ToolCall
+        );
+        assert_eq!(
+            classify_block("tool", "file contents here", None),
+            BlockKind::ToolResult
+        );
     }
 
     // ── Edge cases ──
@@ -925,7 +1002,10 @@ mod tests {
             make_block(1, "assistant", "hi there", 15),
         ];
         let result = prune_conversation(&blocks, 1000, 0.1, 6);
-        assert!(result.assignments.iter().all(|(_, r)| *r == Resolution::Verbatim));
+        assert!(result
+            .assignments
+            .iter()
+            .all(|(_, r)| *r == Resolution::Verbatim));
         assert_eq!(result.blocks_compressed, 0);
         assert_eq!(result.method, "fits");
     }
@@ -942,7 +1022,12 @@ mod tests {
         let result = prune_conversation(&blocks, 500, 0.1, 6);
         for &(idx, ref res) in &result.assignments {
             if blocks[idx].kind == BlockKind::UserMessage {
-                assert_eq!(*res, Resolution::Verbatim, "User message at idx {} must stay Verbatim", idx);
+                assert_eq!(
+                    *res,
+                    Resolution::Verbatim,
+                    "User message at idx {} must stay Verbatim",
+                    idx
+                );
             }
         }
     }
@@ -968,29 +1053,45 @@ mod tests {
         ];
         let result = prune_conversation(&blocks, 200, 0.1, 4);
 
-        let tool_res = result.assignments.iter()
+        let tool_res = result
+            .assignments
+            .iter()
             .find(|(idx, _)| blocks[*idx].kind == BlockKind::ToolResult)
-            .map(|(_, r)| *r).unwrap();
-        assert!(tool_res > Resolution::Verbatim,
-            "Tool result should be compressed, got {:?}", tool_res);
+            .map(|(_, r)| *r)
+            .unwrap();
+        assert!(
+            tool_res > Resolution::Verbatim,
+            "Tool result should be compressed, got {:?}",
+            tool_res
+        );
     }
 
     #[test]
     fn test_thinking_blocks_most_aggressively_pruned() {
         let blocks = vec![
             make_block(0, "user", "explain this code", 20),
-            make_block(1, "assistant", "<thinking>Let me analyze step by step. First... Then... Finally...</thinking>", 500),
+            make_block(
+                1,
+                "assistant",
+                "<thinking>Let me analyze step by step. First... Then... Finally...</thinking>",
+                500,
+            ),
             make_block(2, "assistant", "The code does X because Y", 50),
         ];
         let result = prune_conversation(&blocks, 100, 0.1, 2);
 
         // Thinking should be at Digest or Fingerprint (most prunable type)
-        let thinking_res = result.assignments.iter()
+        let thinking_res = result
+            .assignments
+            .iter()
             .find(|(idx, _)| blocks[*idx].kind == BlockKind::ThinkingBlock)
             .map(|(_, r)| *r);
         if let Some(res) = thinking_res {
-            assert!(res >= Resolution::Digest,
-                "Thinking block should be heavily compressed: {:?}", res);
+            assert!(
+                res >= Resolution::Digest,
+                "Thinking block should be heavily compressed: {:?}",
+                res
+            );
         }
     }
 
@@ -999,32 +1100,50 @@ mod tests {
     #[test]
     fn test_dag_coherence_propagates() {
         let deps = vec![
-            vec![],    // block 0: no deps
-            vec![0],   // block 1: depends on 0
-            vec![1],   // block 2: depends on 1
+            vec![],  // block 0: no deps
+            vec![0], // block 1: depends on 0
+            vec![1], // block 2: depends on 1
         ];
-        let mut assignments = vec![Resolution::Digest, Resolution::Verbatim, Resolution::Verbatim];
+        let mut assignments = vec![
+            Resolution::Digest,
+            Resolution::Verbatim,
+            Resolution::Verbatim,
+        ];
 
         enforce_dag_coherence(&deps, &mut assignments);
 
         // Block 1 depends on block 0 which is at Digest → block 1 must be ≥ Digest
-        assert!(assignments[1] >= Resolution::Digest, "Child must be ≥ parent's level");
-        assert!(assignments[2] >= Resolution::Digest, "Grandchild must be ≥ grandparent's level");
+        assert!(
+            assignments[1] >= Resolution::Digest,
+            "Child must be ≥ parent's level"
+        );
+        assert!(
+            assignments[2] >= Resolution::Digest,
+            "Grandchild must be ≥ grandparent's level"
+        );
     }
 
     #[test]
     fn test_dag_coherence_no_upward_propagation() {
         let deps = vec![
-            vec![],    // block 0: no deps
-            vec![0],   // block 1: depends on 0
+            vec![],  // block 0: no deps
+            vec![0], // block 1: depends on 0
         ];
         let mut assignments = vec![Resolution::Verbatim, Resolution::Fingerprint];
 
         enforce_dag_coherence(&deps, &mut assignments);
 
         // Parent should NOT be affected by child's compression
-        assert_eq!(assignments[0], Resolution::Verbatim, "Parent must not change");
-        assert_eq!(assignments[1], Resolution::Fingerprint, "Child stays at Fingerprint");
+        assert_eq!(
+            assignments[0],
+            Resolution::Verbatim,
+            "Parent must not change"
+        );
+        assert_eq!(
+            assignments[1],
+            Resolution::Fingerprint,
+            "Child stays at Fingerprint"
+        );
     }
 
     // ── Dependency inference ──
@@ -1049,15 +1168,26 @@ mod tests {
             make_block(3, "assistant", "Based on the file, I see...", 50),
         ];
         let deps = infer_dependencies(&blocks);
-        assert!(deps[3].contains(&2), "Assistant should depend on ToolResult");
-        assert!(deps[3].contains(&0), "Assistant should depend on UserMessage");
+        assert!(
+            deps[3].contains(&2),
+            "Assistant should depend on ToolResult"
+        );
+        assert!(
+            deps[3].contains(&0),
+            "Assistant should depend on UserMessage"
+        );
     }
 
     // ── Compression ──
 
     #[test]
     fn test_compress_skeleton_tool_result() {
-        let block = make_block(0, "tool", "line 1\nline 2\nline 3\nline 4\nline 5\nlast line", 50);
+        let block = make_block(
+            0,
+            "tool",
+            "line 1\nline 2\nline 3\nline 4\nline 5\nlast line",
+            50,
+        );
         let compressed = compress_block(&block, Resolution::Skeleton);
         assert!(compressed.contains("line 1"), "Skeleton keeps first line");
         assert!(compressed.contains("last line"), "Skeleton keeps last line");
@@ -1069,14 +1199,22 @@ mod tests {
         let block = make_tool_block(0, "tool", &"output ".repeat(100), 500, "search");
         let compressed = compress_block(&block, Resolution::Digest);
         assert!(compressed.contains("search"), "Digest shows tool name");
-        assert!(compressed.len() < 80, "Digest is short: {} chars", compressed.len());
+        assert!(
+            compressed.len() < 80,
+            "Digest is short: {} chars",
+            compressed.len()
+        );
     }
 
     #[test]
     fn test_compress_fingerprint() {
         let block = make_block(0, "tool", "some content for fingerprinting", 50);
         let compressed = compress_block(&block, Resolution::Fingerprint);
-        assert!(compressed.starts_with("[tool_result:"), "Fingerprint format: {}", compressed);
+        assert!(
+            compressed.starts_with("[tool_result:"),
+            "Fingerprint format: {}",
+            compressed
+        );
         assert!(compressed.len() < 40);
     }
 
@@ -1100,9 +1238,21 @@ mod tests {
             make_block(2, "assistant", "answer based on output", 200),
         ];
         let assignments = progressive_thresholds(&blocks, 0.75, 2);
-        assert_eq!(assignments[0].1, Resolution::Verbatim, "User stays verbatim");
-        assert_eq!(assignments[1].1, Resolution::Skeleton, "Tool result → skeleton at 75%");
-        assert_eq!(assignments[2].1, Resolution::Verbatim, "Assistant stays verbatim at 75%");
+        assert_eq!(
+            assignments[0].1,
+            Resolution::Verbatim,
+            "User stays verbatim"
+        );
+        assert_eq!(
+            assignments[1].1,
+            Resolution::Skeleton,
+            "Tool result → skeleton at 75%"
+        );
+        assert_eq!(
+            assignments[2].1,
+            Resolution::Verbatim,
+            "Assistant stays verbatim at 75%"
+        );
     }
 
     #[test]
@@ -1110,12 +1260,25 @@ mod tests {
         let blocks = vec![
             make_block(0, "user", "query", 100),
             make_block(1, "tool", "old output", 500),
-            make_block(2, "assistant", "<thinking>long reasoning block</thinking>", 800),
+            make_block(
+                2,
+                "assistant",
+                "<thinking>long reasoning block</thinking>",
+                800,
+            ),
             make_block(3, "assistant", "answer", 200),
         ];
         let assignments = progressive_thresholds(&blocks, 0.92, 3);
-        assert_eq!(assignments[0].1, Resolution::Verbatim, "User stays verbatim");
-        assert_eq!(assignments[1].1, Resolution::Fingerprint, "Old tool result → fingerprint");
+        assert_eq!(
+            assignments[0].1,
+            Resolution::Verbatim,
+            "User stays verbatim"
+        );
+        assert_eq!(
+            assignments[1].1,
+            Resolution::Fingerprint,
+            "Old tool result → fingerprint"
+        );
         assert_eq!(assignments[2].1, Resolution::Digest, "Thinking → digest");
     }
 
@@ -1132,45 +1295,74 @@ mod tests {
 
     #[test]
     fn test_200_blocks_under_100ms() {
-        let blocks: Vec<ConvBlock> = (0..200).map(|i| {
-            let (role, content) = match i % 5 {
-                0 => ("user", format!("question {} about the codebase", i)),
-                1 => ("assistant", format!("calling tool to investigate block {}", i)),
-                2 => ("tool", format!("output of tool {} with data {}", i, "x".repeat(50))),
-                3 => ("assistant", format!("<thinking>analyzing block {} step by step</thinking>", i)),
-                _ => ("assistant", format!("here is my answer for block {}", i)),
-            };
-            let mut b = make_block(i, role, &content, 100 + (i as u32 * 5));
-            if i % 5 == 1 { b.tool_name = Some("read_file".into()); b.kind = BlockKind::ToolCall; }
-            b
-        }).collect();
+        let blocks: Vec<ConvBlock> = (0..200)
+            .map(|i| {
+                let (role, content) = match i % 5 {
+                    0 => ("user", format!("question {} about the codebase", i)),
+                    1 => (
+                        "assistant",
+                        format!("calling tool to investigate block {}", i),
+                    ),
+                    2 => (
+                        "tool",
+                        format!("output of tool {} with data {}", i, "x".repeat(50)),
+                    ),
+                    3 => (
+                        "assistant",
+                        format!("<thinking>analyzing block {} step by step</thinking>", i),
+                    ),
+                    _ => ("assistant", format!("here is my answer for block {}", i)),
+                };
+                let mut b = make_block(i, role, &content, 100 + (i as u32 * 5));
+                if i % 5 == 1 {
+                    b.tool_name = Some("read_file".into());
+                    b.kind = BlockKind::ToolCall;
+                }
+                b
+            })
+            .collect();
 
         let start = std::time::Instant::now();
         let result = prune_conversation(&blocks, 5000, 0.1, 6);
         let elapsed = start.elapsed();
 
-        assert!(elapsed.as_millis() < 500,
-            "200-block pruning took {}ms — should be <500ms", elapsed.as_millis());
-        assert!(result.blocks_compressed > 0,
-            "Should compress at least some blocks");
-        assert!(result.total_tokens_after < result.total_tokens_before,
-            "Should reduce total tokens: {} >= {}", result.total_tokens_after, result.total_tokens_before);
+        assert!(
+            elapsed.as_millis() < 500,
+            "200-block pruning took {}ms — should be <500ms",
+            elapsed.as_millis()
+        );
+        assert!(
+            result.blocks_compressed > 0,
+            "Should compress at least some blocks"
+        );
+        assert!(
+            result.total_tokens_after < result.total_tokens_before,
+            "Should reduce total tokens: {} >= {}",
+            result.total_tokens_after,
+            result.total_tokens_before
+        );
     }
 
     #[test]
     fn test_forward_overlap_recent_block_gets_default() {
         // Most recent block has no subsequent blocks → gets default 0.5
-        let blocks = vec![
-            make_block(0, "user", "hello world", 10),
-        ];
+        let blocks = vec![make_block(0, "user", "hello world", 10)];
         let overlaps = compute_all_forward_overlaps(&blocks);
-        assert!((overlaps[0] - 0.5).abs() < 0.01, "Most recent block should get 0.5 default");
+        assert!(
+            (overlaps[0] - 0.5).abs() < 0.01,
+            "Most recent block should get 0.5 default"
+        );
     }
 
     #[test]
     fn test_noise_penalty_reduces_value_of_noisy_blocks() {
         // A block with high Shannon-Rényi divergence (noise) should have lower value
-        let noisy = make_block(0, "tool", &"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=".repeat(10), 500);
+        let noisy = make_block(
+            0,
+            "tool",
+            &"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=".repeat(10),
+            500,
+        );
         let clean = make_block(1, "tool", &"def authenticate(user, password):\n    h = hashlib.sha256(password.encode())\n    return db.verify(user, h.hexdigest())\n".repeat(5), 500);
 
         let forward_refs = HashMap::new();
@@ -1178,9 +1370,12 @@ mod tests {
         let val_clean = score_block(&clean, 0, 0.5, 1, &forward_refs, 1.0, 0.1);
 
         // Clean code should have at least as high a value as noisy base64-like content
-        assert!(val_clean >= val_noisy * 0.9,
+        assert!(
+            val_clean >= val_noisy * 0.9,
             "Clean code should score well relative to noise: clean={:.3} noisy={:.3}",
-            val_clean, val_noisy);
+            val_clean,
+            val_noisy
+        );
     }
 
     // ── Edge case tests for fixed bugs ──
@@ -1224,7 +1419,10 @@ mod tests {
             make_block(1, "tool", "result", 200),
         ];
         let result = prune_conversation(&blocks, u32::MAX, 0.1, 6);
-        assert!(result.assignments.iter().all(|(_, r)| *r == Resolution::Verbatim));
+        assert!(result
+            .assignments
+            .iter()
+            .all(|(_, r)| *r == Resolution::Verbatim));
         assert_eq!(result.method, "fits");
     }
 
@@ -1233,10 +1431,18 @@ mod tests {
         // Bug #11: compress_block on empty content should not produce ""
         let block = make_block(0, "tool", "", 0);
         let compressed = compress_block(&block, Resolution::Skeleton);
-        assert!(compressed.contains("empty"), "Empty content should produce placeholder: {}", compressed);
+        assert!(
+            compressed.contains("empty"),
+            "Empty content should produce placeholder: {}",
+            compressed
+        );
 
         let digest = compress_block(&block, Resolution::Digest);
-        assert!(digest.contains("empty"), "Empty digest should produce placeholder: {}", digest);
+        assert!(
+            digest.contains("empty"),
+            "Empty digest should produce placeholder: {}",
+            digest
+        );
 
         // Verbatim of empty should still be empty
         let verbatim = compress_block(&block, Resolution::Verbatim);
@@ -1262,14 +1468,25 @@ mod tests {
         let blocks = vec![
             make_block(0, "user", "fix the authentication bug in login", 20),
             make_block(1, "tool", "def authenticate user password check", 100),
-            make_block(2, "assistant", "the authentication bug is in login validation", 50),
+            make_block(
+                2,
+                "assistant",
+                "the authentication bug is in login validation",
+                50,
+            ),
         ];
         let overlaps = compute_all_forward_overlaps(&blocks);
         assert_eq!(overlaps.len(), 3);
         // Block 0 shares "authentication" bigrams with block 2
-        assert!(overlaps[0] > 0.0, "Block 0 should have some forward overlap");
+        assert!(
+            overlaps[0] > 0.0,
+            "Block 0 should have some forward overlap"
+        );
         // Block 2 is last → gets default 0.5
-        assert!((overlaps[2] - 0.5).abs() < 0.01, "Last block should get 0.5 default");
+        assert!(
+            (overlaps[2] - 0.5).abs() < 0.01,
+            "Last block should get 0.5 default"
+        );
     }
 
     #[test]
@@ -1299,32 +1516,68 @@ mod tests {
         // 20 iterations with wildly non-sequential indices.
         for seed in 0..20 {
             let indices: Vec<usize> = (0..10).map(|i| i * 1000 + seed * 37).collect();
-            let blocks: Vec<ConvBlock> = indices.iter().enumerate().map(|(i, &idx)| {
-                let role = if i % 3 == 0 { "user" } else if i % 3 == 1 { "tool" } else { "assistant" };
-                make_block(idx, role, &format!("content for block {i} with various words here"), 100 + (i as u32) * 50)
-            }).collect();
+            let blocks: Vec<ConvBlock> = indices
+                .iter()
+                .enumerate()
+                .map(|(i, &idx)| {
+                    let role = if i % 3 == 0 {
+                        "user"
+                    } else if i % 3 == 1 {
+                        "tool"
+                    } else {
+                        "assistant"
+                    };
+                    make_block(
+                        idx,
+                        role,
+                        &format!("content for block {i} with various words here"),
+                        100 + (i as u32) * 50,
+                    )
+                })
+                .collect();
 
             let result = prune_conversation(&blocks, 300, 0.1, 3);
             assert_eq!(result.assignments.len(), blocks.len(), "seed={seed}");
             for (j, (out_idx, _)) in result.assignments.iter().enumerate() {
-                assert_eq!(*out_idx, indices[j], "Output index mismatch at pos {j}, seed={seed}");
+                assert_eq!(
+                    *out_idx, indices[j],
+                    "Output index mismatch at pos {j}, seed={seed}"
+                );
             }
         }
     }
 
     #[test]
     fn stress_budget_boundaries() {
-        let blocks: Vec<ConvBlock> = (0..5).map(|i| {
-            let role = if i == 0 { "user" } else { "tool" };
-            make_block(i, role, &format!("block {i} content data output"), 200)
-        }).collect();
+        let blocks: Vec<ConvBlock> = (0..5)
+            .map(|i| {
+                let role = if i == 0 { "user" } else { "tool" };
+                make_block(i, role, &format!("block {i} content data output"), 200)
+            })
+            .collect();
 
-        for budget in [0, 1, 100, 199, 200, 201, 999, 1000, 1001, u32::MAX / 2, u32::MAX] {
+        for budget in [
+            0,
+            1,
+            100,
+            199,
+            200,
+            201,
+            999,
+            1000,
+            1001,
+            u32::MAX / 2,
+            u32::MAX,
+        ] {
             let result = prune_conversation(&blocks, budget, 0.1, 2);
             assert!(!result.info_loss.is_nan(), "NaN at budget={budget}");
             assert!(!result.info_loss.is_infinite(), "Inf at budget={budget}");
-            assert!(result.total_tokens_after <= result.total_tokens_before || result.method == "fits",
-                "After > Before at budget={budget}: {} > {}", result.total_tokens_after, result.total_tokens_before);
+            assert!(
+                result.total_tokens_after <= result.total_tokens_before || result.method == "fits",
+                "After > Before at budget={budget}: {} > {}",
+                result.total_tokens_after,
+                result.total_tokens_before
+            );
         }
     }
 
@@ -1341,8 +1594,12 @@ mod tests {
         let result = prune_conversation(&blocks, 200, 0.1, 0);
         for (idx, res) in &result.assignments {
             match *idx {
-                0 | 1 | 4 => assert_eq!(*res, Resolution::Verbatim,
-                    "Protected block idx={idx} was compressed to {:?}", res),
+                0 | 1 | 4 => assert_eq!(
+                    *res,
+                    Resolution::Verbatim,
+                    "Protected block idx={idx} was compressed to {:?}",
+                    res
+                ),
                 _ => {}
             }
         }
@@ -1359,7 +1616,14 @@ mod tests {
             "line1\nline2\nline3\nline4\nline5".into(),
             "...---===###".into(),
         ];
-        let roles = ["user", "assistant", "tool", "tool_call", "thinking", "system"];
+        let roles = [
+            "user",
+            "assistant",
+            "tool",
+            "tool_call",
+            "thinking",
+            "system",
+        ];
         let resolutions = Resolution::all();
 
         for content in &contents {
@@ -1371,9 +1635,12 @@ mod tests {
                         assert_eq!(compressed, block.content);
                     }
                     if !block.content.is_empty() && res != Resolution::Verbatim {
-                        assert!(compressed.len() <= block.content.len() + 50,
+                        assert!(
+                            compressed.len() <= block.content.len() + 50,
                             "Compressed larger for {role}/{res:?}: {} > {}",
-                            compressed.len(), block.content.len());
+                            compressed.len(),
+                            block.content.len()
+                        );
                     }
                 }
             }
@@ -1390,51 +1657,88 @@ mod tests {
         ];
 
         let result = prune_conversation(&blocks, 200, 0.1, 1);
-        let assignment_map: HashMap<usize, Resolution> = result.assignments.iter().cloned().collect();
+        let assignment_map: HashMap<usize, Resolution> =
+            result.assignments.iter().cloned().collect();
 
         let tc_res = assignment_map[&1];
         let tr_res = assignment_map[&2];
-        assert!(tc_res as u8 <= tr_res as u8 || tc_res == Resolution::Verbatim,
-            "DAG violated: tool_call={tc_res:?} but tool_result={tr_res:?}");
+        assert!(
+            tc_res as u8 <= tr_res as u8 || tc_res == Resolution::Verbatim,
+            "DAG violated: tool_call={tc_res:?} but tool_result={tr_res:?}"
+        );
     }
 
     #[test]
     fn stress_500_blocks_under_200ms() {
         // Validates the O(N²) → O(N) fix in compute_all_forward_overlaps
-        let blocks: Vec<ConvBlock> = (0..500).map(|i| {
-            let role = match i % 4 { 0 => "user", 1 => "tool_call", 2 => "tool", _ => "assistant" };
-            make_block(i, role, &format!("block {i} content words here for overlap testing"), 50 + (i as u32) % 200)
-        }).collect();
+        let blocks: Vec<ConvBlock> = (0..500)
+            .map(|i| {
+                let role = match i % 4 {
+                    0 => "user",
+                    1 => "tool_call",
+                    2 => "tool",
+                    _ => "assistant",
+                };
+                make_block(
+                    i,
+                    role,
+                    &format!("block {i} content words here for overlap testing"),
+                    50 + (i as u32) % 200,
+                )
+            })
+            .collect();
 
         let start = std::time::Instant::now();
         let result = prune_conversation(&blocks, 5000, 0.1, 10);
         let elapsed = start.elapsed();
 
-        assert!(elapsed.as_millis() < 200,
-            "500 blocks took {}ms (budget: 200ms)", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 200,
+            "500 blocks took {}ms (budget: 200ms)",
+            elapsed.as_millis()
+        );
         assert_eq!(result.assignments.len(), 500);
     }
 
     #[test]
     fn stress_progressive_thresholds_all_utilizations() {
-        let blocks: Vec<ConvBlock> = (0..10).map(|i| {
-            let role = match i % 4 { 0 => "user", 1 => "tool_call", 2 => "tool", _ => "assistant" };
-            make_block(i * 100, role, &format!("content for block {i}"), 100)
-        }).collect();
+        let blocks: Vec<ConvBlock> = (0..10)
+            .map(|i| {
+                let role = match i % 4 {
+                    0 => "user",
+                    1 => "tool_call",
+                    2 => "tool",
+                    _ => "assistant",
+                };
+                make_block(i * 100, role, &format!("content for block {i}"), 100)
+            })
+            .collect();
 
-        for util_pct in [0.0, 0.50, 0.69, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.99, 1.0] {
+        for util_pct in [
+            0.0, 0.50, 0.69, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.99, 1.0,
+        ] {
             let assignments = progressive_thresholds(&blocks, util_pct, 3);
             assert_eq!(assignments.len(), blocks.len(), "util={util_pct}");
 
             for (j, (out_idx, _)) in assignments.iter().enumerate() {
-                assert_eq!(*out_idx, j * 100, "Index mismatch at pos {j}, util={util_pct}");
+                assert_eq!(
+                    *out_idx,
+                    j * 100,
+                    "Index mismatch at pos {j}, util={util_pct}"
+                );
             }
 
             for (idx, res) in &assignments {
                 let block = blocks.iter().find(|b| b.index == *idx).unwrap();
-                if matches!(block.kind, BlockKind::UserMessage | BlockKind::SystemMessage) {
-                    assert_eq!(*res, Resolution::Verbatim,
-                        "Protected block idx={idx} compressed at util={util_pct}");
+                if matches!(
+                    block.kind,
+                    BlockKind::UserMessage | BlockKind::SystemMessage
+                ) {
+                    assert_eq!(
+                        *res,
+                        Resolution::Verbatim,
+                        "Protected block idx={idx} compressed at util={util_pct}"
+                    );
                 }
             }
         }
@@ -1444,9 +1748,24 @@ mod tests {
     fn stress_forward_overlap_correctness() {
         let blocks = vec![
             make_block(0, "user", "fix the authentication bug", 20),
-            make_block(1, "tool", "def authenticate user password validate check", 100),
-            make_block(2, "tool", "def authorize role permission access control", 100),
-            make_block(3, "assistant", "the authentication bug is in the validate check function", 50),
+            make_block(
+                1,
+                "tool",
+                "def authenticate user password validate check",
+                100,
+            ),
+            make_block(
+                2,
+                "tool",
+                "def authorize role permission access control",
+                100,
+            ),
+            make_block(
+                3,
+                "assistant",
+                "the authentication bug is in the validate check function",
+                50,
+            ),
         ];
 
         let overlaps = compute_all_forward_overlaps(&blocks);
@@ -1460,7 +1779,11 @@ mod tests {
         assert!((overlaps[3] - 0.5).abs() < 0.01);
 
         // Block 1 shares "validate check" bigrams with block 3, block 2 doesn't
-        assert!(overlaps[1] > overlaps[2],
-            "Block 1 should share more with block 3: {} vs {}", overlaps[1], overlaps[2]);
+        assert!(
+            overlaps[1] > overlaps[2],
+            "Block 1 should share more with block 3: {} vs {}",
+            overlaps[1],
+            overlaps[2]
+        );
     }
 }

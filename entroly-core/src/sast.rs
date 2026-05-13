@@ -25,8 +25,8 @@
 //! Performance: O(N × R) where N = line count, R = rule count (151).
 //! For typical file sizes (<500 lines) this is ~75,500 operations, microseconds.
 
-use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -45,10 +45,10 @@ impl Severity {
     /// CVSS base score contribution [0.0, 4.0] (used in aggregate scoring)
     pub fn cvss_weight(self) -> f64 {
         match self {
-            Severity::Info     => 0.5,
-            Severity::Low      => 1.5,
-            Severity::Medium   => 3.0,
-            Severity::High     => 6.5,
+            Severity::Info => 0.5,
+            Severity::Low => 1.5,
+            Severity::Medium => 3.0,
+            Severity::High => 6.5,
             Severity::Critical => 9.5,
         }
     }
@@ -57,20 +57,20 @@ impl Severity {
 /// A single SAST rule.
 #[derive(Debug, Clone)]
 pub struct SastRule {
-    pub id:          &'static str,
-    pub cwe:         u32,
-    pub severity:    Severity,
-    pub category:    &'static str,
+    pub id: &'static str,
+    pub cwe: u32,
+    pub severity: Severity,
+    pub category: &'static str,
     /// Pattern to look for (case-insensitive substring match)
-    pub pattern:     &'static str,
+    pub pattern: &'static str,
     /// Optional: if set, the line must also contain this to fire
-    pub requires:    Option<&'static str>,
+    pub requires: Option<&'static str>,
     /// If set, the rule does NOT fire if this is also present (negation)
     pub suppressed_by: Option<&'static str>,
     pub description: &'static str,
-    pub fix:         &'static str,
+    pub fix: &'static str,
     /// Which languages this rule applies to (empty = all)
-    pub languages:   &'static [&'static str],
+    pub languages: &'static [&'static str],
     /// Is this rule taint-aware (needs TaintContext to fire)?
     pub taint_aware: bool,
 }
@@ -78,35 +78,35 @@ pub struct SastRule {
 /// A single SAST finding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SastFinding {
-    pub rule_id:     String,
-    pub cwe:         u32,
-    pub severity:    Severity,
-    pub category:    String,
+    pub rule_id: String,
+    pub cwe: u32,
+    pub severity: Severity,
+    pub category: String,
     pub line_number: usize,
     pub line_content: String,
     /// Confidence [0.0, 1.0] — lower for test files, inline suppressions, etc.
-    pub confidence:  f64,
+    pub confidence: f64,
     pub description: String,
-    pub fix:         String,
+    pub fix: String,
     /// If this finding is taint-flow sourced (higher confidence than pattern-only)
-    pub taint_flow:  bool,
+    pub taint_flow: bool,
 }
 
 /// The full result of scanning a fragment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SastReport {
-    pub source:        String,
-    pub findings:      Vec<SastFinding>,
+    pub source: String,
+    pub findings: Vec<SastFinding>,
     /// CVSS-inspired aggregate risk score [0.0, 10.0]
-    pub risk_score:    f64,
+    pub risk_score: f64,
     /// Breakdown by severity
     pub critical_count: usize,
-    pub high_count:    usize,
-    pub medium_count:  usize,
-    pub low_count:     usize,
-    pub info_count:    usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    pub info_count: usize,
     /// Top recommended action
-    pub top_fix:       Option<String>,
+    pub top_fix: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1864,26 +1864,59 @@ static RULES: &[SastRule] = &[
 fn detect_lang(source: &str) -> Option<&'static str> {
     let lower = source.to_lowercase();
     let basename = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
-    if lower.ends_with(".py") || lower.ends_with(".pyw") { Some("py") }
-    else if lower.ends_with(".rs") { Some("rs") }
-    else if lower.ends_with(".js") || lower.ends_with(".jsx") || lower.ends_with(".mjs") || lower.ends_with(".cjs") { Some("js") }
-    else if lower.ends_with(".ts") || lower.ends_with(".tsx") || lower.ends_with(".mts") || lower.ends_with(".cts") { Some("ts") }
-    else if lower.ends_with(".go") { Some("go") }
-    else if lower.ends_with(".java") || lower.ends_with(".kt") { Some("java") }
-    else if lower.ends_with(".cs") || lower.ends_with(".csx") { Some("cs") }
-    else if lower.ends_with(".swift") { Some("swift") }
-    else if lower.ends_with(".c") || lower.ends_with(".h") { Some("c") }
-    else if lower.ends_with(".cpp") || lower.ends_with(".cc") || lower.ends_with(".hpp") || lower.ends_with(".hxx") { Some("cpp") }
-    else if lower.ends_with(".php") { Some("php") }
-    else if lower.ends_with(".rb") { Some("rb") }
-    else if lower.ends_with(".sh") || lower.ends_with(".bash") || lower.ends_with(".zsh") { Some("sh") }
-    else if basename.starts_with("dockerfile") { Some("dockerfile") }
-    else if lower.ends_with(".tf") || lower.ends_with(".hcl") { Some("tf") }
-    else if lower.ends_with(".vue") { Some("vue") }
-    else if lower.ends_with(".svelte") { Some("svelte") }
-    else if lower.ends_with(".html") || lower.ends_with(".htm") { Some("html") }
-    else if lower.ends_with(".css") || lower.ends_with(".scss") || lower.ends_with(".less") { Some("css") }
-    else { None }
+    if lower.ends_with(".py") || lower.ends_with(".pyw") {
+        Some("py")
+    } else if lower.ends_with(".rs") {
+        Some("rs")
+    } else if lower.ends_with(".js")
+        || lower.ends_with(".jsx")
+        || lower.ends_with(".mjs")
+        || lower.ends_with(".cjs")
+    {
+        Some("js")
+    } else if lower.ends_with(".ts")
+        || lower.ends_with(".tsx")
+        || lower.ends_with(".mts")
+        || lower.ends_with(".cts")
+    {
+        Some("ts")
+    } else if lower.ends_with(".go") {
+        Some("go")
+    } else if lower.ends_with(".java") || lower.ends_with(".kt") {
+        Some("java")
+    } else if lower.ends_with(".cs") || lower.ends_with(".csx") {
+        Some("cs")
+    } else if lower.ends_with(".swift") {
+        Some("swift")
+    } else if lower.ends_with(".c") || lower.ends_with(".h") {
+        Some("c")
+    } else if lower.ends_with(".cpp")
+        || lower.ends_with(".cc")
+        || lower.ends_with(".hpp")
+        || lower.ends_with(".hxx")
+    {
+        Some("cpp")
+    } else if lower.ends_with(".php") {
+        Some("php")
+    } else if lower.ends_with(".rb") {
+        Some("rb")
+    } else if lower.ends_with(".sh") || lower.ends_with(".bash") || lower.ends_with(".zsh") {
+        Some("sh")
+    } else if basename.starts_with("dockerfile") {
+        Some("dockerfile")
+    } else if lower.ends_with(".tf") || lower.ends_with(".hcl") {
+        Some("tf")
+    } else if lower.ends_with(".vue") {
+        Some("vue")
+    } else if lower.ends_with(".svelte") {
+        Some("svelte")
+    } else if lower.ends_with(".html") || lower.ends_with(".htm") {
+        Some("html")
+    } else if lower.ends_with(".css") || lower.ends_with(".scss") || lower.ends_with(".less") {
+        Some("css")
+    } else {
+        None
+    }
 }
 
 fn rule_applies(rule: &SastRule, lang: Option<&str>) -> bool {
@@ -1892,15 +1925,27 @@ fn rule_applies(rule: &SastRule, lang: Option<&str>) -> bool {
     }
     match lang {
         Some(l) => {
-            if rule.languages.contains(&l) { return true; }
+            if rule.languages.contains(&l) {
+                return true;
+            }
             // C# is structurally similar to Java — Java rules also apply
-            if l == "cs" && rule.languages.contains(&"java") { return true; }
+            if l == "cs" && rule.languages.contains(&"java") {
+                return true;
+            }
             // C files match C++ rules (C++ is a superset of C for security purposes)
-            if l == "c" && rule.languages.contains(&"cpp") { return true; }
+            if l == "c" && rule.languages.contains(&"cpp") {
+                return true;
+            }
             // Bash is a superset of sh
-            if l == "bash" && rule.languages.contains(&"sh") { return true; }
+            if l == "bash" && rule.languages.contains(&"sh") {
+                return true;
+            }
             // Vue/Svelte SFCs embed JavaScript — JS/TS rules apply
-            if (l == "vue" || l == "svelte") && (rule.languages.contains(&"js") || rule.languages.contains(&"ts")) { return true; }
+            if (l == "vue" || l == "svelte")
+                && (rule.languages.contains(&"js") || rule.languages.contains(&"ts"))
+            {
+                return true;
+            }
             false
         }
         None => false,
@@ -1914,12 +1959,18 @@ fn rule_applies(rule: &SastRule, lang: Option<&str>) -> bool {
 fn is_non_code_file(source: &str) -> bool {
     let lower = source.to_lowercase();
     // Note: .html, .css are NOT non-code — they have dedicated SAST rules
-    lower.ends_with(".md") || lower.ends_with(".txt") || lower.ends_with(".rst")
+    lower.ends_with(".md")
+        || lower.ends_with(".txt")
+        || lower.ends_with(".rst")
         || lower.ends_with(".svg")
-        || lower.ends_with(".xml") || lower.ends_with(".json")
-        || lower.ends_with(".yaml") || lower.ends_with(".yml")
-        || lower.ends_with(".toml") || lower.ends_with(".cfg")
-        || lower.ends_with(".ini") || lower.ends_with(".csv")
+        || lower.ends_with(".xml")
+        || lower.ends_with(".json")
+        || lower.ends_with(".yaml")
+        || lower.ends_with(".yml")
+        || lower.ends_with(".toml")
+        || lower.ends_with(".cfg")
+        || lower.ends_with(".ini")
+        || lower.ends_with(".csv")
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1932,40 +1983,92 @@ fn is_non_code_file(source: &str) -> bool {
 ///        appears on the same line as the dangerous pattern.
 // ═══════════════════════════════════════════════════════════════════
 static TAINT_SOURCES: &[&str] = &[
-    "request.", "req.", "form.", "args.", "kwargs.",
-    "query.", "params.", "body.", "data[",
-    "input(", "sys.argv", "os.environ",
-    "environ.get(", "getenv(",
-    "document.", "location.", "window.location",
-    "event.target.value", "e.target.value",
+    "request.",
+    "req.",
+    "form.",
+    "args.",
+    "kwargs.",
+    "query.",
+    "params.",
+    "body.",
+    "data[",
+    "input(",
+    "sys.argv",
+    "os.environ",
+    "environ.get(",
+    "getenv(",
+    "document.",
+    "location.",
+    "window.location",
+    "event.target.value",
+    "e.target.value",
     // Node.js / Express / Koa / Fastify
-    "req.body", "req.query", "req.params", "req.headers",
-    "ctx.request", "ctx.params", "ctx.query",
+    "req.body",
+    "req.query",
+    "req.params",
+    "req.headers",
+    "ctx.request",
+    "ctx.params",
+    "ctx.query",
     "process.argv",
     // C/C++ — command-line and environment input
-    "argv[", "argv)", "argc", "getenv(", "fgets(",
-    "fread(", "recv(", "recvfrom(", "read(",
-    "scanf(", "gets(", "getline(",
+    "argv[",
+    "argv)",
+    "argc",
+    "getenv(",
+    "fgets(",
+    "fread(",
+    "recv(",
+    "recvfrom(",
+    "read(",
+    "scanf(",
+    "gets(",
+    "getline(",
     // PHP superglobals — all user-controlled
-    "$_get", "$_post", "$_request", "$_cookie", "$_server",
-    "$_files", "$_env", "$_session",
+    "$_get",
+    "$_post",
+    "$_request",
+    "$_cookie",
+    "$_server",
+    "$_files",
+    "$_env",
+    "$_session",
     // C# / .NET — request input
-    "request.query", "request.form", "request.body",
-    "request.headers", "httpcontext",
+    "request.query",
+    "request.form",
+    "request.body",
+    "request.headers",
+    "httpcontext",
     // Java — servlet request
-    "getparameter(", "getquerystring(", "getheader(",
-    "getinputstream(", "getreader(",
+    "getparameter(",
+    "getquerystring(",
+    "getheader(",
+    "getinputstream(",
+    "getreader(",
     // Swift/iOS — URL and user input
-    "urlcomponents", "url(string", "uipasteboard",
-    "uitextfield", "uidocumentpicker",
+    "urlcomponents",
+    "url(string",
+    "uipasteboard",
+    "uitextfield",
+    "uidocumentpicker",
     // Go — request input
-    "r.formvalue(", "r.url.query(", "r.body",
-    "r.header.get(", "r.postform",
+    "r.formvalue(",
+    "r.url.query(",
+    "r.body",
+    "r.header.get(",
+    "r.postform",
 ];
 
 static TAINT_PROPAGATORS: &[&str] = &[
-    " = ", ".get(", ".pop(", ".strip(", ".lower(", ".upper(",
-    ".split(", ".replace(", ".decode(",
+    " = ",
+    ".get(",
+    ".pop(",
+    ".strip(",
+    ".lower(",
+    ".upper(",
+    ".split(",
+    ".replace(",
+    ".decode(",
 ];
 
 /// Collect variable names that hold tainted (user-controlled) values.
@@ -1999,8 +2102,8 @@ fn extract_assignment_lhs(line: &str) -> Option<String> {
     for (i, &b) in bytes.iter().enumerate() {
         if b == b'=' {
             // Check it's not ==, !=, <=, >=
-            let prev = if i > 0 { bytes[i-1] } else { 0 };
-            let next = if i < bytes.len()-1 { bytes[i+1] } else { 0 };
+            let prev = if i > 0 { bytes[i - 1] } else { 0 };
+            let next = if i < bytes.len() - 1 { bytes[i + 1] } else { 0 };
             if next == b'=' || prev == b'!' || prev == b'<' || prev == b'>' || prev == b'=' {
                 continue;
             }
@@ -2034,7 +2137,10 @@ fn extract_assignment_lhs(line: &str) -> Option<String> {
 ///
 /// Algorithm: single-pass forward propagation.
 /// Complexity: O(N × V) where V = number of tainted variables (typically < 20).
-fn propagate_taint(lines: &[&str], direct_sources: &HashMap<usize, Vec<String>>) -> HashSet<String> {
+fn propagate_taint(
+    lines: &[&str],
+    direct_sources: &HashMap<usize, Vec<String>>,
+) -> HashSet<String> {
     let mut tainted: HashSet<String> = HashSet::new();
 
     // Seed with directly-sourced variables
@@ -2065,7 +2171,12 @@ fn propagate_taint(lines: &[&str], direct_sources: &HashMap<usize, Vec<String>>)
 }
 
 /// Check if a line refers to any tainted variable.
-fn line_is_tainted(line_lower: &str, tainted_vars: &HashSet<String>, direct_sources: &HashMap<usize, Vec<String>>, line_idx: usize) -> bool {
+fn line_is_tainted(
+    line_lower: &str,
+    tainted_vars: &HashSet<String>,
+    direct_sources: &HashMap<usize, Vec<String>>,
+    line_idx: usize,
+) -> bool {
     // Direct source on this exact line
     if let Some(vars) = direct_sources.get(&line_idx) {
         if vars.iter().any(|v| v == "<line>") {
@@ -2073,7 +2184,9 @@ fn line_is_tainted(line_lower: &str, tainted_vars: &HashSet<String>, direct_sour
         }
     }
     // Tainted variable appears in this line
-    tainted_vars.iter().any(|var| line_lower.contains(var.as_str()))
+    tainted_vars
+        .iter()
+        .any(|var| line_lower.contains(var.as_str()))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2086,14 +2199,19 @@ struct CommentTracker {
 }
 
 impl CommentTracker {
-    fn new() -> Self { CommentTracker { in_block_comment: false } }
+    fn new() -> Self {
+        CommentTracker {
+            in_block_comment: false,
+        }
+    }
 
     fn update_and_check(&mut self, line: &str) -> bool {
         let trimmed = line.trim();
 
         // Block comment start/end
         if self.in_block_comment {
-            if trimmed.contains("*/") || trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
+            if trimmed.contains("*/") || trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''")
+            {
                 self.in_block_comment = false;
             }
             return true; // Inside block comment
@@ -2130,14 +2248,17 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
     let mut conf = 1.0_f64;
 
     // Test files: lower confidence (findings likely intentional/synthetic)
-    if source_lower.contains("test_") || source_lower.contains("_test.")
-        || source_lower.contains("spec.") || source_lower.contains("mock")
+    if source_lower.contains("test_")
+        || source_lower.contains("_test.")
+        || source_lower.contains("spec.")
+        || source_lower.contains("mock")
     {
         conf *= 0.4;
     }
 
     // Inline suppression comment
-    if line_lower.contains("nosec") || line_lower.contains("noqa")
+    if line_lower.contains("nosec")
+        || line_lower.contains("noqa")
         || line_lower.contains("sast-ignore")
     {
         conf *= 0.1;
@@ -2173,10 +2294,13 @@ fn compute_risk_score(findings: &[SastFinding]) -> f64 {
         return 0.0;
     }
 
-    let raw: f64 = findings.iter().map(|f| {
-        let taint_boost = if f.taint_flow { 1.3 } else { 1.0 };
-        f.severity.cvss_weight() * f.confidence * taint_boost
-    }).sum();
+    let raw: f64 = findings
+        .iter()
+        .map(|f| {
+            let taint_boost = if f.taint_flow { 1.3 } else { 1.0 };
+            f.severity.cvss_weight() * f.confidence * taint_boost
+        })
+        .sum();
 
     // Logarithmic compression to match CVSS's non-linear scale
     // At raw=4 (one Critical + confidence 1.0) → score ~7.0
@@ -2241,11 +2365,13 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
             if let Some(supp) = rule.suppressed_by {
                 let supp_lower = supp.to_lowercase();
                 let on_this_line = line_lower.contains(&supp_lower[..]);
-                let on_prev_line = idx.checked_sub(1)
+                let on_prev_line = idx
+                    .checked_sub(1)
                     .and_then(|pi| lines.get(pi))
                     .map(|pl| pl.to_lowercase().contains(&supp_lower[..]))
                     .unwrap_or(false);
-                let on_next_line = lines.get(idx + 1)
+                let on_next_line = lines
+                    .get(idx + 1)
                     .map(|nl| nl.to_lowercase().contains(&supp_lower[..]))
                     .unwrap_or(false);
                 if on_this_line || on_prev_line || on_next_line {
@@ -2286,8 +2412,10 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                     format!("{}= [REDACTED]", &trimmed[..eq_pos])
                 } else if trimmed.len() > 30 {
                     // Find nearest valid UTF-8 boundary at or before byte 20
-                    let safe = (0..=20.min(trimmed.len())).rev()
-                        .find(|&i| trimmed.is_char_boundary(i)).unwrap_or(0);
+                    let safe = (0..=20.min(trimmed.len()))
+                        .rev()
+                        .find(|&i| trimmed.is_char_boundary(i))
+                        .unwrap_or(0);
                     format!("{}...[REDACTED]", &trimmed[..safe])
                 } else {
                     "[REDACTED — secret detected]".to_string()
@@ -2297,37 +2425,53 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
             };
 
             findings.push(SastFinding {
-                rule_id:     rule.id.to_string(),
-                cwe:         rule.cwe,
-                severity:    rule.severity,
-                category:    rule.category.to_string(),
+                rule_id: rule.id.to_string(),
+                cwe: rule.cwe,
+                severity: rule.severity,
+                category: rule.category.to_string(),
                 line_number,
                 line_content: safe_content,
                 confidence,
                 description: rule.description.to_string(),
-                fix:         rule.fix.to_string(),
-                taint_flow:  taint_hit,
+                fix: rule.fix.to_string(),
+                taint_flow: taint_hit,
             });
         }
     }
 
     // Sort by severity descending, then line number
     findings.sort_unstable_by(|a, b| {
-        b.severity.cmp(&a.severity)
+        b.severity
+            .cmp(&a.severity)
             .then(a.line_number.cmp(&b.line_number))
     });
 
     let risk_score = compute_risk_score(&findings);
 
-    let critical_count = findings.iter().filter(|f| f.severity == Severity::Critical).count();
-    let high_count     = findings.iter().filter(|f| f.severity == Severity::High).count();
-    let medium_count   = findings.iter().filter(|f| f.severity == Severity::Medium).count();
-    let low_count      = findings.iter().filter(|f| f.severity == Severity::Low).count();
-    let info_count     = findings.iter().filter(|f| f.severity == Severity::Info).count();
+    let critical_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Critical)
+        .count();
+    let high_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::High)
+        .count();
+    let medium_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Medium)
+        .count();
+    let low_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Low)
+        .count();
+    let info_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Info)
+        .count();
 
-    let top_fix = findings.first().map(|f| {
-        format!("[{}] {} — {}", f.rule_id, f.description, f.fix)
-    });
+    let top_fix = findings
+        .first()
+        .map(|f| format!("[{}] {} — {}", f.rule_id, f.description, f.fix));
 
     SastReport {
         source: source.to_string(),
@@ -2358,7 +2502,10 @@ mod tests {
     fn test_hardcoded_password_critical() {
         let code = "password = \"hunter2\"";
         let report = scan(code, "auth.py");
-        assert!(!report.findings.is_empty(), "Should flag hardcoded password");
+        assert!(
+            !report.findings.is_empty(),
+            "Should flag hardcoded password"
+        );
         assert_eq!(report.findings[0].severity, Severity::Critical);
         assert_eq!(report.findings[0].rule_id, "SEC-001");
     }
@@ -2369,16 +2516,22 @@ mod tests {
         let code = "password = \"hunter2\"";
         let report = scan(code, "auth.py");
         let finding = &report.findings[0];
-        assert!(finding.line_content.contains("[REDACTED]"),
+        assert!(
+            finding.line_content.contains("[REDACTED]"),
             "Secret-category finding must redact line_content, got: {}",
-            finding.line_content);
-        assert!(!finding.line_content.contains("hunter2"),
+            finding.line_content
+        );
+        assert!(
+            !finding.line_content.contains("hunter2"),
             "Actual secret value must not appear in line_content: {}",
-            finding.line_content);
+            finding.line_content
+        );
         // Should still show the key name for debugging
-        assert!(finding.line_content.contains("password"),
+        assert!(
+            finding.line_content.contains("password"),
             "Key name should be preserved for context: {}",
-            finding.line_content);
+            finding.line_content
+        );
     }
 
     #[test]
@@ -2390,12 +2543,16 @@ mod tests {
         let finding = sec003.unwrap();
         assert_eq!(finding.severity, Severity::Critical);
         // Verify actual key is NOT in the finding
-        assert!(!finding.line_content.contains("sk-proj-abc123xyz"),
+        assert!(
+            !finding.line_content.contains("sk-proj-abc123xyz"),
             "API key must not appear in SAST finding: {}",
-            finding.line_content);
-        assert!(finding.line_content.contains("[REDACTED]"),
+            finding.line_content
+        );
+        assert!(
+            finding.line_content.contains("[REDACTED]"),
             "Finding must contain [REDACTED]: {}",
-            finding.line_content);
+            finding.line_content
+        );
     }
 
     #[test]
@@ -2403,11 +2560,16 @@ mod tests {
         // SQL injection findings should NOT redact — they're not secrets
         let code = r#"cursor.execute("SELECT * FROM users WHERE id=" + user_id)"#;
         let report = scan(code, "db.py");
-        let sqli = report.findings.iter().find(|f| f.category == "SQL Injection");
+        let sqli = report
+            .findings
+            .iter()
+            .find(|f| f.category == "SQL Injection");
         if let Some(finding) = sqli {
-            assert!(!finding.line_content.contains("[REDACTED]"),
+            assert!(
+                !finding.line_content.contains("[REDACTED]"),
                 "Non-secret findings should preserve full line content: {}",
-                finding.line_content);
+                finding.line_content
+            );
         }
     }
 
@@ -2445,7 +2607,10 @@ cursor.execute(query, ())
         let code = "data = yaml.load(stream, Loader=yaml.SafeLoader)";
         let report = scan(code, "config.py");
         let deser = report.findings.iter().find(|f| f.rule_id == "DESER-003");
-        assert!(deser.is_none(), "yaml.load with Loader= should be suppressed");
+        assert!(
+            deser.is_none(),
+            "yaml.load with Loader= should be suppressed"
+        );
     }
 
     #[test]
@@ -2493,7 +2658,12 @@ obj = pickle.loads(data)
         let report = scan(code, "api.py");
         assert!(report.findings.iter().any(|f| f.rule_id == "DESER-001"));
         assert_eq!(
-            report.findings.iter().find(|f| f.rule_id == "DESER-001").unwrap().severity,
+            report
+                .findings
+                .iter()
+                .find(|f| f.rule_id == "DESER-001")
+                .unwrap()
+                .severity,
             Severity::Critical
         );
     }
@@ -2516,7 +2686,10 @@ obj = pickle.loads(data)
         let report = scan(code, "app.py");
         // The nosec comment should massively reduce confidence, potentially to near-zero
         for f in &report.findings {
-            assert!(f.confidence < 0.15, "nosec should suppress confidence to near-zero");
+            assert!(
+                f.confidence < 0.15,
+                "nosec should suppress confidence to near-zero"
+            );
         }
     }
 
@@ -2543,8 +2716,10 @@ fn read_aligned(ptr: *const u8) -> u8 {
 "#;
         let report = scan(code, "memory.rs");
         // MEM-001 should not fire because "// safety:" is present
-        assert!(!report.findings.iter().any(|f| f.rule_id == "MEM-001"),
-            "Unsafe with SAFETY: comment should not be flagged");
+        assert!(
+            !report.findings.iter().any(|f| f.rule_id == "MEM-001"),
+            "Unsafe with SAFETY: comment should not be flagged"
+        );
     }
 
     #[test]
@@ -2560,7 +2735,12 @@ fn read_aligned(ptr: *const u8) -> u8 {
         let report = scan(code, "auth.py");
         assert!(report.findings.iter().any(|f| f.rule_id == "AUTH-007"));
         assert_eq!(
-            report.findings.iter().find(|f| f.rule_id == "AUTH-007").unwrap().severity,
+            report
+                .findings
+                .iter()
+                .find(|f| f.rule_id == "AUTH-007")
+                .unwrap()
+                .severity,
             Severity::Critical
         );
     }
@@ -2589,12 +2769,16 @@ result = os.system(sanitized)
         // Markdown relative links are NOT security vulnerabilities
         let code = "See the [setup guide](../docs/getting-started.md) for details.";
         let report = scan(code, "README.md");
-        let path_findings: Vec<_> = report.findings.iter()
+        let path_findings: Vec<_> = report
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "PATH-002")
             .collect();
-        assert!(path_findings.is_empty(),
+        assert!(
+            path_findings.is_empty(),
             "PATH-002 should not fire on markdown files (found {} findings)",
-            path_findings.len());
+            path_findings.len()
+        );
     }
 
     #[test]
@@ -2602,8 +2786,10 @@ result = os.system(sanitized)
         // Python code with ../ IS suspicious
         let code = r#"path = os.path.join(base, "../../../etc/passwd")"#;
         let report = scan(code, "handler.py");
-        assert!(report.findings.iter().any(|f| f.rule_id == "PATH-002"),
-            "PATH-002 should still fire on Python files");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "PATH-002"),
+            "PATH-002 should still fire on Python files"
+        );
     }
 
     #[test]
@@ -2611,8 +2797,10 @@ result = os.system(sanitized)
         // Secrets in docs ARE real findings — someone pasted credentials
         let code = "Example: password = \"hunter2\"";
         let report = scan(code, "setup.md");
-        assert!(report.findings.iter().any(|f| f.cwe == 798),
-            "Hardcoded secrets should still be flagged in markdown files");
+        assert!(
+            report.findings.iter().any(|f| f.cwe == 798),
+            "Hardcoded secrets should still be flagged in markdown files"
+        );
     }
 
     // ── P0: C/C++ SAST ──────────────────────────────────────────────
@@ -2621,26 +2809,37 @@ result = os.system(sanitized)
     fn test_cpp_buffer_overflow_strcpy() {
         let code = r#"void copy_name(char *dst, const char *src) { strcpy(dst, src); }"#;
         let report = scan(code, "util.c");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CPP-001"),
-            "Should detect strcpy buffer overflow");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CPP-001"),
+            "Should detect strcpy buffer overflow"
+        );
     }
 
     #[test]
     fn test_cpp_gets() {
         let code = r#"void read_input() { char buf[64]; gets(buf); }"#;
         let report = scan(code, "input.c");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CPP-002"),
-            "Should detect gets()");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CPP-002"),
+            "Should detect gets()"
+        );
     }
 
     #[test]
     fn test_cpp_system_injection() {
         // Multi-line with taint source: argv flows into system()
-        let code = "int main(int argc, char* argv[]) {\n    char* cmd = argv[1];\n    system(cmd);\n}";
+        let code =
+            "int main(int argc, char* argv[]) {\n    char* cmd = argv[1];\n    system(cmd);\n}";
         let report = scan(code, "exec.cpp");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CPP-008"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CPP-008"),
             "Should detect system() command injection, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -2648,9 +2847,15 @@ result = os.system(sanitized)
         // printf with argv on the same line — direct taint source + sink
         let code = "int main(int argc, char* argv[]) {\n    printf(argv[1]);\n}";
         let report = scan(code, "fmt.c");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CPP-006"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CPP-006"),
             "Should detect printf format string with argv, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -2658,8 +2863,10 @@ result = os.system(sanitized)
         // .c files should match CPP-* rules via rule_applies inheritance
         let code = r#"void copy(char *d) { strcpy(d, "hello"); }"#;
         let report = scan(code, "copy.c");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CPP-001"),
-            ".c files should match CPP rules");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CPP-001"),
+            ".c files should match CPP rules"
+        );
     }
 
     // ── P0: Swift SAST ──────────────────────────────────────────────
@@ -2668,16 +2875,20 @@ result = os.system(sanitized)
     fn test_swift_userdefaults_password() {
         let code = r#"UserDefaults.standard.set(password, forKey: "password")"#;
         let report = scan(code, "auth.swift");
-        assert!(report.findings.iter().any(|f| f.rule_id == "SWIFT-003"),
-            "Should detect password storage in UserDefaults");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "SWIFT-003"),
+            "Should detect password storage in UserDefaults"
+        );
     }
 
     #[test]
     fn test_swift_nscoding_deserialization() {
         let code = r#"let obj = NSKeyedUnarchiver.unarchiveObject(with: data)"#;
         let report = scan(code, "decode.swift");
-        assert!(report.findings.iter().any(|f| f.rule_id == "SWIFT-005"),
-            "Should detect NSKeyedUnarchiver");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "SWIFT-005"),
+            "Should detect NSKeyedUnarchiver"
+        );
     }
 
     // ── P1: C# SAST ────────────────────────────────────────────────
@@ -2686,18 +2897,27 @@ result = os.system(sanitized)
     fn test_cs_binaryformatter() {
         let code = r#"var obj = new BinaryFormatter().Deserialize(stream);"#;
         let report = scan(code, "loader.cs");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CS-002"),
-            "Should detect BinaryFormatter deserialization");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CS-002"),
+            "Should detect BinaryFormatter deserialization"
+        );
     }
 
     #[test]
     fn test_cs_process_start() {
         // Taint: Request.Query flows into Process.Start
-        let code = "var userInput = Request.Query[\"cmd\"];\nProcess.Start(\"cmd.exe\", userInput);";
+        let code =
+            "var userInput = Request.Query[\"cmd\"];\nProcess.Start(\"cmd.exe\", userInput);";
         let report = scan(code, "run.cs");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CS-003"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CS-003"),
             "Should detect Process.Start injection, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -2705,9 +2925,15 @@ result = os.system(sanitized)
         // Taint: Request.Form flows into SqlCommand
         let code = "var userId = Request.Form[\"id\"];\nvar cmd = new SqlCommand(\"SELECT * FROM users WHERE id=\" + userId);";
         let report = scan(code, "data.cs");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CS-004"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CS-004"),
             "Should detect SqlCommand SQL injection, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     // ── P2: PHP SAST ────────────────────────────────────────────────
@@ -2716,8 +2942,10 @@ result = os.system(sanitized)
     fn test_php_eval() {
         let code = r#"eval($code);"#;
         let report = scan(code, "handler.php");
-        assert!(report.findings.iter().any(|f| f.rule_id == "PHP-005"),
-            "Should detect PHP eval()");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "PHP-005"),
+            "Should detect PHP eval()"
+        );
     }
 
     #[test]
@@ -2725,9 +2953,15 @@ result = os.system(sanitized)
         // Taint: $_GET superglobal is a direct taint source
         let code = "$id = $_GET['id'];\n$result = mysql_query(\"SELECT * FROM users WHERE id=\" . $_GET['id']);";
         let report = scan(code, "query.php");
-        assert!(report.findings.iter().any(|f| f.rule_id == "PHP-001"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "PHP-001"),
             "Should detect mysql_query SQL injection, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -2735,17 +2969,25 @@ result = os.system(sanitized)
         // Taint: $_GET is a direct taint source on the echo line
         let code = "$name = $_GET['name'];\necho $_GET['name'];";
         let report = scan(code, "view.php");
-        assert!(report.findings.iter().any(|f| f.rule_id == "PHP-008"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "PHP-008"),
             "Should detect reflected XSS via echo, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn test_php_unserialize() {
         let code = r#"$obj = unserialize($data);"#;
         let report = scan(code, "cache.php");
-        assert!(report.findings.iter().any(|f| f.rule_id == "PHP-009"),
-            "Should detect insecure unserialize");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "PHP-009"),
+            "Should detect insecure unserialize"
+        );
     }
 
     // ── Frontend Framework SAST ─────────────────────────────────────
@@ -2754,89 +2996,116 @@ result = os.system(sanitized)
     fn test_vue_v_html() {
         let code = r#"<div v-html="userContent"></div>"#;
         let report = scan(code, "component.vue");
-        assert!(report.findings.iter().any(|f| f.rule_id == "VUE-001"),
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "VUE-001"),
             "Should detect v-html XSS, findings: {:?}",
-            report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn test_angular_bypass_security() {
         let code = r#"this.sanitizer.bypassSecurityTrustHtml(userInput);"#;
         let report = scan(code, "component.ts");
-        assert!(report.findings.iter().any(|f| f.rule_id == "NG-001"),
-            "Should detect Angular DomSanitizer bypass");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "NG-001"),
+            "Should detect Angular DomSanitizer bypass"
+        );
     }
 
     #[test]
     fn test_angular_innerhtml_binding() {
         let code = r#"<div [innerHTML]="rawHtml"></div>"#;
         let report = scan(code, "template.html");
-        assert!(report.findings.iter().any(|f| f.rule_id == "NG-002"),
-            "Should detect Angular [innerHTML] binding");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "NG-002"),
+            "Should detect Angular [innerHTML] binding"
+        );
     }
 
     #[test]
     fn test_svelte_html_tag() {
         let code = r#"{@html content}"#;
         let report = scan(code, "page.svelte");
-        assert!(report.findings.iter().any(|f| f.rule_id == "SVELTE-001"),
-            "Should detect Svelte {{@html}} XSS");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "SVELTE-001"),
+            "Should detect Svelte {{@html}} XSS"
+        );
     }
 
     #[test]
     fn test_html_javascript_uri() {
         let code = r#"<a href="javascript:alert(1)">click</a>"#;
         let report = scan(code, "page.html");
-        assert!(report.findings.iter().any(|f| f.rule_id == "HTML-003"),
-            "Should detect javascript: URI");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "HTML-003"),
+            "Should detect javascript: URI"
+        );
     }
 
     #[test]
     fn test_css_expression() {
         let code = r#"div { width: expression(document.body.clientWidth); }"#;
         let report = scan(code, "styles.css");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CSS-001"),
-            "Should detect CSS expression()");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CSS-001"),
+            "Should detect CSS expression()"
+        );
     }
 
     #[test]
     fn test_css_javascript_url() {
         let code = r#"div { background: url(javascript:alert(1)); }"#;
         let report = scan(code, "styles.css");
-        assert!(report.findings.iter().any(|f| f.rule_id == "CSS-002"),
-            "Should detect CSS url(javascript:)");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "CSS-002"),
+            "Should detect CSS url(javascript:)"
+        );
     }
 
     #[test]
     fn test_localstorage_token() {
         let code = r#"localStorage.setItem('token', authResponse.token);"#;
         let report = scan(code, "auth.ts");
-        assert!(report.findings.iter().any(|f| f.rule_id == "FE-002"),
-            "Should detect token in localStorage");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "FE-002"),
+            "Should detect token in localStorage"
+        );
     }
 
     #[test]
     fn test_postmessage_star_origin() {
         let code = r#"window.postMessage(sensitiveData, '*');"#;
         let report = scan(code, "iframe.ts");
-        assert!(report.findings.iter().any(|f| f.rule_id == "FE-004"),
-            "Should detect postMessage with * origin");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "FE-004"),
+            "Should detect postMessage with * origin"
+        );
     }
 
     #[test]
     fn test_target_blank_without_noopener() {
         let code = r#"<a href="https://evil.com" target="_blank">Link</a>"#;
         let report = scan(code, "nav.html");
-        assert!(report.findings.iter().any(|f| f.rule_id == "HTML-004"),
-            "Should detect target=_blank without noopener");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "HTML-004"),
+            "Should detect target=_blank without noopener"
+        );
     }
 
     #[test]
     fn test_target_blank_with_noopener_suppressed() {
-        let code = r#"<a href="https://safe.com" target="_blank" rel="noopener noreferrer">Link</a>"#;
+        let code =
+            r#"<a href="https://safe.com" target="_blank" rel="noopener noreferrer">Link</a>"#;
         let report = scan(code, "nav.html");
-        assert!(!report.findings.iter().any(|f| f.rule_id == "HTML-004"),
-            "Should NOT flag target=_blank when noopener is present");
+        assert!(
+            !report.findings.iter().any(|f| f.rule_id == "HTML-004"),
+            "Should NOT flag target=_blank when noopener is present"
+        );
     }
 
     #[test]
@@ -2844,15 +3113,19 @@ result = os.system(sanitized)
         // Vue files should also match JS/TS rules via inheritance
         let code = r#"document.getElementById("app").innerHTML = data"#;
         let report = scan(code, "handler.vue");
-        assert!(report.findings.iter().any(|f| f.rule_id == "XSS-001"),
-            "Vue files should inherit JS XSS rules");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "XSS-001"),
+            "Vue files should inherit JS XSS rules"
+        );
     }
 
     #[test]
     fn test_html_onerror_xss() {
         let code = r#"<img src="x" onerror="alert(1)">"#;
         let report = scan(code, "page.html");
-        assert!(report.findings.iter().any(|f| f.rule_id == "HTML-001"),
-            "Should detect inline onerror handler");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "HTML-001"),
+            "Should detect inline onerror handler"
+        );
     }
 }

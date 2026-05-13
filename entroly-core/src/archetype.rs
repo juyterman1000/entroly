@@ -28,10 +28,10 @@
 //!   let archetype_id = engine.classify(&fp);
 //!   let weights = engine.get_weights(archetype_id);
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Dimensionality of the fingerprint vector.
 pub const FINGERPRINT_DIM: usize = 16;
@@ -78,7 +78,9 @@ pub struct Fingerprint {
 
 impl Fingerprint {
     pub fn zero() -> Self {
-        Fingerprint { dims: [0.0; FINGERPRINT_DIM] }
+        Fingerprint {
+            dims: [0.0; FINGERPRINT_DIM],
+        }
     }
 
     /// L2 (Euclidean) distance to another fingerprint.
@@ -104,7 +106,11 @@ impl Fingerprint {
             norm_b += other.dims[i] * other.dims[i];
         }
         let denom = norm_a.sqrt() * norm_b.sqrt();
-        if denom < 1e-12 { 0.0 } else { dot / denom }
+        if denom < 1e-12 {
+            0.0
+        } else {
+            dot / denom
+        }
     }
 }
 
@@ -173,8 +179,11 @@ pub struct Archetype {
 impl Archetype {
     /// Intra-cluster variance.
     pub fn variance(&self) -> f64 {
-        if self.sample_count < 2 { 0.0 }
-        else { self.variance_sum / self.sample_count as f64 }
+        if self.sample_count < 2 {
+            0.0
+        } else {
+            self.variance_sum / self.sample_count as f64
+        }
     }
 }
 
@@ -209,36 +218,82 @@ impl ArchetypeEngine {
         // Seed archetype 0: Python Backend (Django/FastAPI/Flask)
         engine.add_seed(
             "python_backend",
-            [0.70, 0.00, 0.05, 0.25, 0.45, 0.60, 0.35, 0.55, 0.25, 0.15, 0.35, 0.40, 0.25, 0.50, 0.15, 0.05],
-            WeightProfile { w_recency: 0.35, w_frequency: 0.25, w_semantic: 0.20, w_entropy: 0.20, ..Default::default() },
+            [
+                0.70, 0.00, 0.05, 0.25, 0.45, 0.60, 0.35, 0.55, 0.25, 0.15, 0.35, 0.40, 0.25, 0.50,
+                0.15, 0.05,
+            ],
+            WeightProfile {
+                w_recency: 0.35,
+                w_frequency: 0.25,
+                w_semantic: 0.20,
+                w_entropy: 0.20,
+                ..Default::default()
+            },
         );
 
         // Seed archetype 1: Rust Systems Library
         engine.add_seed(
             "rust_systems",
-            [0.00, 0.80, 0.05, 0.15, 0.55, 0.70, 0.20, 0.45, 0.20, 0.25, 0.50, 0.30, 0.35, 0.65, 0.20, 0.15],
-            WeightProfile { w_recency: 0.20, w_frequency: 0.20, w_semantic: 0.30, w_entropy: 0.30, ..Default::default() },
+            [
+                0.00, 0.80, 0.05, 0.15, 0.55, 0.70, 0.20, 0.45, 0.20, 0.25, 0.50, 0.30, 0.35, 0.65,
+                0.20, 0.15,
+            ],
+            WeightProfile {
+                w_recency: 0.20,
+                w_frequency: 0.20,
+                w_semantic: 0.30,
+                w_entropy: 0.30,
+                ..Default::default()
+            },
         );
 
         // Seed archetype 2: JS/TS Frontend (React/Vue/Angular)
         engine.add_seed(
             "js_frontend",
-            [0.00, 0.00, 0.80, 0.20, 0.35, 0.45, 0.40, 0.65, 0.15, 0.10, 0.25, 0.50, 0.20, 0.40, 0.25, 0.05],
-            WeightProfile { w_recency: 0.40, w_frequency: 0.20, w_semantic: 0.25, w_entropy: 0.15, ..Default::default() },
+            [
+                0.00, 0.00, 0.80, 0.20, 0.35, 0.45, 0.40, 0.65, 0.15, 0.10, 0.25, 0.50, 0.20, 0.40,
+                0.25, 0.05,
+            ],
+            WeightProfile {
+                w_recency: 0.40,
+                w_frequency: 0.20,
+                w_semantic: 0.25,
+                w_entropy: 0.15,
+                ..Default::default()
+            },
         );
 
         // Seed archetype 3: Full-Stack Monorepo
         engine.add_seed(
             "fullstack_monorepo",
-            [0.30, 0.05, 0.40, 0.25, 0.40, 0.50, 0.30, 0.55, 0.20, 0.20, 0.45, 0.65, 0.30, 0.50, 0.30, 0.10],
-            WeightProfile { w_recency: 0.30, w_frequency: 0.25, w_semantic: 0.25, w_entropy: 0.20, decay_half_life: 20.0, ..Default::default() },
+            [
+                0.30, 0.05, 0.40, 0.25, 0.40, 0.50, 0.30, 0.55, 0.20, 0.20, 0.45, 0.65, 0.30, 0.50,
+                0.30, 0.10,
+            ],
+            WeightProfile {
+                w_recency: 0.30,
+                w_frequency: 0.25,
+                w_semantic: 0.25,
+                w_entropy: 0.20,
+                decay_half_life: 20.0,
+                ..Default::default()
+            },
         );
 
         // Seed archetype 4: Data Science / ML
         engine.add_seed(
             "data_science",
-            [0.75, 0.00, 0.05, 0.20, 0.50, 0.40, 0.15, 0.60, 0.10, 0.08, 0.20, 0.25, 0.15, 0.55, 0.35, 0.05],
-            WeightProfile { w_recency: 0.25, w_frequency: 0.30, w_semantic: 0.25, w_entropy: 0.20, ..Default::default() },
+            [
+                0.75, 0.00, 0.05, 0.20, 0.50, 0.40, 0.15, 0.60, 0.10, 0.08, 0.20, 0.25, 0.15, 0.55,
+                0.35, 0.05,
+            ],
+            WeightProfile {
+                w_recency: 0.25,
+                w_frequency: 0.30,
+                w_semantic: 0.25,
+                w_entropy: 0.20,
+                ..Default::default()
+            },
         );
 
         engine
@@ -280,7 +335,9 @@ impl ArchetypeEngine {
         );
         let class_ratio = if stats.total_classes + stats.total_functions > 0 {
             stats.total_classes as f64 / (stats.total_classes + stats.total_functions) as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let import_density = log_norm(stats.total_imports as f64 / total, 30.0);
         let test_ratio = stats.test_files as f64 / total;
 
@@ -289,7 +346,9 @@ impl ArchetypeEngine {
         let max_possible_edges = nodes * (nodes - 1.0);
         let graph_density = if max_possible_edges > 0.0 {
             (stats.graph_edges as f64 / max_possible_edges).min(1.0)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let max_depth = log_norm(stats.max_dep_depth as f64, 15.0);
         let module_count = log_norm(stats.module_count as f64, 50.0);
         let coupling = log_norm(stats.graph_edges as f64 / nodes, 10.0);
@@ -300,19 +359,34 @@ impl ArchetypeEngine {
         } else {
             let n = stats.entropy_values.len() as f64;
             let mean = stats.entropy_values.iter().sum::<f64>() / n;
-            let var = stats.entropy_values.iter()
+            let var = stats
+                .entropy_values
+                .iter()
                 .map(|e| (e - mean) * (e - mean))
-                .sum::<f64>() / n;
+                .sum::<f64>()
+                / n;
             (mean.clamp(0.0, 1.0), var.clamp(0.0, 1.0))
         };
         let ffi_ratio = stats.ffi_files as f64 / total;
 
         Fingerprint {
             dims: [
-                lang_py, lang_rs, lang_js, lang_other,
-                avg_file_size, func_density, class_ratio, import_density, test_ratio,
-                graph_density, max_depth, module_count, coupling,
-                entropy_mean, entropy_var, ffi_ratio,
+                lang_py,
+                lang_rs,
+                lang_js,
+                lang_other,
+                avg_file_size,
+                func_density,
+                class_ratio,
+                import_density,
+                test_ratio,
+                graph_density,
+                max_depth,
+                module_count,
+                coupling,
+                entropy_mean,
+                entropy_var,
+                ffi_ratio,
             ],
         }
     }
@@ -395,8 +469,7 @@ impl ArchetypeEngine {
 
         let mut to_split = Vec::new();
         for arch in &self.archetypes {
-            if arch.sample_count >= MIN_SPLIT_SAMPLES
-                && arch.variance() > SPLIT_VARIANCE_THRESHOLD
+            if arch.sample_count >= MIN_SPLIT_SAMPLES && arch.variance() > SPLIT_VARIANCE_THRESHOLD
             {
                 to_split.push(arch.id);
             }
@@ -446,13 +519,17 @@ impl ArchetypeEngine {
     /// Merge clusters whose centroids are too close.
     fn maybe_merge(&mut self) {
         let n = self.archetypes.len();
-        if n < 3 { return; } // keep at least 2
+        if n < 3 {
+            return;
+        } // keep at least 2
 
         let mut to_merge: Vec<(usize, usize)> = Vec::new();
 
         for i in 0..n {
             for j in (i + 1)..n {
-                let dist = self.archetypes[i].centroid.distance(&self.archetypes[j].centroid);
+                let dist = self.archetypes[i]
+                    .centroid
+                    .distance(&self.archetypes[j].centroid);
                 if dist < MERGE_DISTANCE_THRESHOLD {
                     to_merge.push((i, j));
                 }
@@ -467,8 +544,7 @@ impl ArchetypeEngine {
 
             // Weighted centroid merge
             for d in 0..FINGERPRINT_DIM {
-                self.archetypes[i].centroid.dims[d] =
-                    wi * self.archetypes[i].centroid.dims[d]
+                self.archetypes[i].centroid.dims[d] = wi * self.archetypes[i].centroid.dims[d]
                     + wj * self.archetypes[j].centroid.dims[d];
             }
 
@@ -491,7 +567,8 @@ impl ArchetypeEngine {
 
             self.archetypes[i].sample_count = total;
             self.archetypes[i].variance_sum += self.archetypes[j].variance_sum;
-            self.archetypes[i].confidence = (self.archetypes[i].confidence + self.archetypes[j].confidence) / 2.0;
+            self.archetypes[i].confidence =
+                (self.archetypes[i].confidence + self.archetypes[j].confidence) / 2.0;
 
             self.archetypes.remove(j);
         }
@@ -499,7 +576,8 @@ impl ArchetypeEngine {
 
     /// Get the optimized weight profile for an archetype.
     pub fn get_weights(&self, archetype_id: u32) -> WeightProfile {
-        self.archetypes.iter()
+        self.archetypes
+            .iter()
             .find(|a| a.id == archetype_id)
             .map(|a| a.weights.clone())
             .unwrap_or_default()
@@ -521,11 +599,19 @@ impl ArchetypeEngine {
     pub fn stats(&self) -> HashMap<String, f64> {
         let mut m = HashMap::new();
         m.insert("archetype_count".into(), self.archetypes.len() as f64);
-        m.insert("total_samples".into(),
-            self.archetypes.iter().map(|a| a.sample_count as f64).sum());
-        m.insert("avg_confidence".into(),
-            if self.archetypes.is_empty() { 0.0 }
-            else { self.archetypes.iter().map(|a| a.confidence).sum::<f64>() / self.archetypes.len() as f64 });
+        m.insert(
+            "total_samples".into(),
+            self.archetypes.iter().map(|a| a.sample_count as f64).sum(),
+        );
+        m.insert(
+            "avg_confidence".into(),
+            if self.archetypes.is_empty() {
+                0.0
+            } else {
+                self.archetypes.iter().map(|a| a.confidence).sum::<f64>()
+                    / self.archetypes.len() as f64
+            },
+        );
         m
     }
 }
@@ -555,32 +641,84 @@ impl ArchetypeEngine {
     ///
     /// Returns:
     ///   dict with archetype_id, label, confidence, weights
-    pub fn classify_codebase(&self, py: Python<'_>, stats: &Bound<'_, PyDict>) -> PyResult<PyObject> {
+    pub fn classify_codebase(
+        &self,
+        py: Python<'_>,
+        stats: &Bound<'_, PyDict>,
+    ) -> PyResult<PyObject> {
         let cs = CodebaseStats {
-            total_files: stats.get_item("total_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            python_files: stats.get_item("python_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            rust_files: stats.get_item("rust_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            js_ts_files: stats.get_item("js_ts_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            other_files: stats.get_item("other_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            total_lines: stats.get_item("total_lines")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            total_functions: stats.get_item("total_functions")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            total_classes: stats.get_item("total_classes")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            total_imports: stats.get_item("total_imports")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            test_files: stats.get_item("test_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            graph_nodes: stats.get_item("graph_nodes")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            graph_edges: stats.get_item("graph_edges")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            max_dep_depth: stats.get_item("max_dep_depth")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            module_count: stats.get_item("module_count")?.and_then(|v| v.extract().ok()).unwrap_or(0),
-            entropy_values: stats.get_item("entropy_values")?
+            total_files: stats
+                .get_item("total_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            python_files: stats
+                .get_item("python_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            rust_files: stats
+                .get_item("rust_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            js_ts_files: stats
+                .get_item("js_ts_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            other_files: stats
+                .get_item("other_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            total_lines: stats
+                .get_item("total_lines")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            total_functions: stats
+                .get_item("total_functions")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            total_classes: stats
+                .get_item("total_classes")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            total_imports: stats
+                .get_item("total_imports")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            test_files: stats
+                .get_item("test_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            graph_nodes: stats
+                .get_item("graph_nodes")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            graph_edges: stats
+                .get_item("graph_edges")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            max_dep_depth: stats
+                .get_item("max_dep_depth")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            module_count: stats
+                .get_item("module_count")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
+            entropy_values: stats
+                .get_item("entropy_values")?
                 .and_then(|v| v.extract::<Vec<f64>>().ok())
                 .unwrap_or_default(),
-            ffi_files: stats.get_item("ffi_files")?.and_then(|v| v.extract().ok()).unwrap_or(0),
+            ffi_files: stats
+                .get_item("ffi_files")?
+                .and_then(|v| v.extract().ok())
+                .unwrap_or(0),
         };
 
         let fp = self.fingerprint(&cs);
         let (arch_id, dist, confidence) = self.classify(&fp);
         let weights = self.get_weights(arch_id);
-        let label = self.archetypes().iter()
+        let label = self
+            .archetypes()
+            .iter()
             .find(|a| a.id == arch_id)
             .map(|a| a.label.clone())
             .unwrap_or_else(|| "unknown".to_string());
@@ -607,8 +745,13 @@ impl ArchetypeEngine {
         for (k, v) in &m {
             result.set_item(k, v)?;
         }
-        result.set_item("archetype_labels",
-            self.archetypes().iter().map(|a| a.label.clone()).collect::<Vec<_>>())?;
+        result.set_item(
+            "archetype_labels",
+            self.archetypes()
+                .iter()
+                .map(|a| a.label.clone())
+                .collect::<Vec<_>>(),
+        )?;
         Ok(result.into())
     }
 }
@@ -643,8 +786,12 @@ mod tests {
 
     #[test]
     fn test_fingerprint_distance() {
-        let a = Fingerprint { dims: [0.0; FINGERPRINT_DIM] };
-        let b = Fingerprint { dims: [1.0; FINGERPRINT_DIM] };
+        let a = Fingerprint {
+            dims: [0.0; FINGERPRINT_DIM],
+        };
+        let b = Fingerprint {
+            dims: [1.0; FINGERPRINT_DIM],
+        };
         let dist = a.distance(&b);
         assert!((dist - 4.0).abs() < 0.001); // sqrt(16) = 4.0
     }
@@ -719,10 +866,16 @@ mod tests {
 
     #[test]
     fn test_cosine_similarity() {
-        let a = Fingerprint { dims: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] };
-        let b = Fingerprint { dims: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] };
+        let a = Fingerprint {
+            dims: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        };
+        let b = Fingerprint {
+            dims: [
+                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        };
         assert!((a.cosine_similarity(&b)).abs() < 0.001); // orthogonal
         assert!((a.cosine_similarity(&a) - 1.0).abs() < 0.001); // identical
     }

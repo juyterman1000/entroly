@@ -29,9 +29,9 @@
 //!   - Kellerer, Pferschy, Pisinger (2004) — MCKP
 //!   - Charikar (2002) — SimHash for similarity estimation
 
-use std::collections::HashMap;
 use crate::dedup::hamming_distance;
-use crate::fragment::{ContextFragment, compute_relevance};
+use crate::fragment::{compute_relevance, ContextFragment};
+use std::collections::HashMap;
 
 /// Resolution level for a selected fragment.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,13 +48,16 @@ pub enum Resolution {
 /// These control the value/cost trade-off in multi-resolution knapsack.
 /// Tunable via tuning_config.json → autotune daemon.
 pub struct InfoFactors {
-    pub skeleton: f64,   // default 0.70
-    pub reference: f64,  // default 0.15
+    pub skeleton: f64,  // default 0.70
+    pub reference: f64, // default 0.15
 }
 
 impl Default for InfoFactors {
     fn default() -> Self {
-        InfoFactors { skeleton: 0.70, reference: 0.15 }
+        InfoFactors {
+            skeleton: 0.70,
+            reference: 0.15,
+        }
     }
 }
 
@@ -80,11 +83,11 @@ impl Resolution {
 /// A candidate item for the SDS+MRK optimizer.
 /// Each fragment generates 1-3 candidates (one per resolution).
 struct Candidate {
-    frag_idx: usize,       // Index into the fragments array
+    frag_idx: usize, // Index into the fragments array
     resolution: Resolution,
-    token_cost: u32,       // Tokens for this resolution
-    base_value: f64,       // relevance × info_factor (before diversity penalty)
-    simhash: u64,          // For diversity computation
+    token_cost: u32, // Tokens for this resolution
+    base_value: f64, // relevance × info_factor (before diversity penalty)
+    simhash: u64,    // For diversity computation
 }
 
 /// Result of the IOS selection.
@@ -93,7 +96,7 @@ pub struct SdsResult {
     pub selections: Vec<(usize, Resolution)>,
     pub total_tokens: u32,
     pub(crate) _total_value: f64,
-    pub diversity_score: f64,  // Average pairwise diversity of selected set
+    pub diversity_score: f64, // Average pairwise diversity of selected set
 }
 
 /// Compute the diversity factor for a candidate given the current selected set.
@@ -114,7 +117,8 @@ fn diversity_factor(candidate_hash: u64, selected_hashes: &[u64]) -> f64 {
         return 1.0;
     }
 
-    let max_sim = selected_hashes.iter()
+    let max_sim = selected_hashes
+        .iter()
         .map(|&h| {
             let dist = hamming_distance(candidate_hash, h);
             // Similarity: 0 distance = identical = similarity 1.0
@@ -215,7 +219,10 @@ pub fn ios_select(
             continue;
         }
 
-        let fm = feedback_mults.get(&frag.fragment_id).copied().unwrap_or(1.0);
+        let fm = feedback_mults
+            .get(&frag.fragment_id)
+            .copied()
+            .unwrap_or(1.0);
         let relevance = compute_relevance(frag, w_recency, w_frequency, w_semantic, w_entropy, fm);
 
         if relevance <= 0.0 || frag.token_count == 0 {
@@ -263,10 +270,21 @@ pub fn ios_select(
     }
 
     if candidates.is_empty() || remaining_budget == 0 {
-        let _total_value: f64 = pinned.iter()
+        let _total_value: f64 = pinned
+            .iter()
             .map(|&(i, _)| {
-                let fm = feedback_mults.get(&fragments[i].fragment_id).copied().unwrap_or(1.0);
-                compute_relevance(&fragments[i], w_recency, w_frequency, w_semantic, w_entropy, fm)
+                let fm = feedback_mults
+                    .get(&fragments[i].fragment_id)
+                    .copied()
+                    .unwrap_or(1.0);
+                compute_relevance(
+                    &fragments[i],
+                    w_recency,
+                    w_frequency,
+                    w_semantic,
+                    w_entropy,
+                    fm,
+                )
             })
             .sum();
         return SdsResult {
@@ -295,10 +313,21 @@ pub fn ios_select(
         if full_total <= remaining_budget && full_total > 0 {
             let mut selections = pinned.clone();
             let mut fast_tokens = pinned_tokens;
-            let mut fast_value: f64 = selections.iter()
+            let mut fast_value: f64 = selections
+                .iter()
                 .map(|&(i, _)| {
-                    let fm = feedback_mults.get(&fragments[i].fragment_id).copied().unwrap_or(1.0);
-                    compute_relevance(&fragments[i], w_recency, w_frequency, w_semantic, w_entropy, fm)
+                    let fm = feedback_mults
+                        .get(&fragments[i].fragment_id)
+                        .copied()
+                        .unwrap_or(1.0);
+                    compute_relevance(
+                        &fragments[i],
+                        w_recency,
+                        w_frequency,
+                        w_semantic,
+                        w_entropy,
+                        fm,
+                    )
                 })
                 .sum();
             let mut fast_hashes: Vec<u64> = pinned_hashes.clone();
@@ -326,10 +355,21 @@ pub fn ios_select(
     let mut selected_hashes: Vec<u64> = pinned_hashes;
     let mut selected_frags: Vec<bool> = vec![false; fragments.len()]; // Track which fragment_idx is selected
     let mut budget_used = pinned_tokens;
-    let mut _total_value: f64 = selected.iter()
+    let mut _total_value: f64 = selected
+        .iter()
         .map(|&(i, _)| {
-            let fm = feedback_mults.get(&fragments[i].fragment_id).copied().unwrap_or(1.0);
-            compute_relevance(&fragments[i], w_recency, w_frequency, w_semantic, w_entropy, fm)
+            let fm = feedback_mults
+                .get(&fragments[i].fragment_id)
+                .copied()
+                .unwrap_or(1.0);
+            compute_relevance(
+                &fragments[i],
+                w_recency,
+                w_frequency,
+                w_semantic,
+                w_entropy,
+                fm,
+            )
         })
         .sum();
 
@@ -425,8 +465,8 @@ pub fn ios_select(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fragment::ContextFragment;
     use crate::dedup::simhash;
+    use crate::fragment::ContextFragment;
 
     fn empty_feedback() -> HashMap<String, f64> {
         HashMap::new()
@@ -449,7 +489,20 @@ mod tests {
 
     #[test]
     fn test_empty_fragments() {
-        let result = ios_select(&[], 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(
+            &[],
+            1000,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            true,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
         assert!(result.selections.is_empty());
         assert_eq!(result.total_tokens, 0);
     }
@@ -457,7 +510,20 @@ mod tests {
     #[test]
     fn test_single_fragment_selected() {
         let frags = vec![make_frag("a", "def foo(): return 42", 50, "foo.py")];
-        let result = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(
+            &frags,
+            1000,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
         assert_eq!(result.selections.len(), 1);
         assert_eq!(result.selections[0], (0, Resolution::Full));
     }
@@ -471,31 +537,90 @@ mod tests {
         frags[0].is_pinned = true;
         frags[0].recency_score = 0.1; // Low recency shouldn't matter for pinned
 
-        let result = ios_select(&frags, 600, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(
+            &frags,
+            600,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
-        assert!(selected_indices.contains(&0), "Pinned fragment must be included");
+        assert!(
+            selected_indices.contains(&0),
+            "Pinned fragment must be included"
+        );
     }
 
     #[test]
     fn test_diversity_penalizes_duplicates() {
         // Three fragments: two nearly identical, one different
         let frags = vec![
-            make_frag("a", "def calculate_tax(income, rate): return income * rate", 100, "tax1.py"),
-            make_frag("b", "def calculate_tax(income, rate): return income * rate * 1.0", 100, "tax2.py"),
-            make_frag("c", "async fn connect_database(host: str, port: int): pass", 100, "db.py"),
+            make_frag(
+                "a",
+                "def calculate_tax(income, rate): return income * rate",
+                100,
+                "tax1.py",
+            ),
+            make_frag(
+                "b",
+                "def calculate_tax(income, rate): return income * rate * 1.0",
+                100,
+                "tax2.py",
+            ),
+            make_frag(
+                "c",
+                "async fn connect_database(host: str, port: int): pass",
+                100,
+                "db.py",
+            ),
         ];
 
         // With diversity: should prefer a + c (diverse) over a + b (redundant)
-        let result_div = ios_select(&frags, 200, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result_div = ios_select(
+            &frags,
+            200,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
         let _div_indices: Vec<usize> = result_div.selections.iter().map(|s| s.0).collect();
 
         // Without diversity: might select a + b (both have high relevance)
-        let result_no_div = ios_select(&frags, 200, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), false, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result_no_div = ios_select(
+            &frags,
+            200,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            false,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
 
         // With diversity enabled, we should have higher diversity score
-        assert!(result_div.diversity_score >= result_no_div.diversity_score,
+        assert!(
+            result_div.diversity_score >= result_no_div.diversity_score,
             "Diversity-enabled selection should have higher diversity: {} vs {}",
-            result_div.diversity_score, result_no_div.diversity_score
+            result_div.diversity_score,
+            result_no_div.diversity_score
         );
     }
 
@@ -514,15 +639,54 @@ mod tests {
         frags[2].skeleton_token_count = Some(30);
 
         // Budget: 500 tokens — can fit big(400) + one skeleton but not big + two full
-        let result_mr = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
-        let result_no_mr = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result_mr = ios_select(
+            &frags,
+            500,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            true,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        let result_no_mr = ios_select(
+            &frags,
+            500,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
 
         // Multi-resolution should cover more fragments
-        let mr_frag_count = result_mr.selections.iter().map(|s| s.0).collect::<std::collections::HashSet<_>>().len();
-        let no_mr_frag_count = result_no_mr.selections.iter().map(|s| s.0).collect::<std::collections::HashSet<_>>().len();
+        let mr_frag_count = result_mr
+            .selections
+            .iter()
+            .map(|s| s.0)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        let no_mr_frag_count = result_no_mr
+            .selections
+            .iter()
+            .map(|s| s.0)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
 
-        assert!(mr_frag_count >= no_mr_frag_count,
-            "Multi-resolution should cover >= fragments: {} vs {}", mr_frag_count, no_mr_frag_count
+        assert!(
+            mr_frag_count >= no_mr_frag_count,
+            "Multi-resolution should cover >= fragments: {} vs {}",
+            mr_frag_count,
+            no_mr_frag_count
         );
     }
 
@@ -534,16 +698,36 @@ mod tests {
             make_frag("c", "content c", 300, "c.py"),
         ];
 
-        let result = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
-        assert!(result.total_tokens <= 500,
-            "Budget must be respected: {} > 500", result.total_tokens
+        let result = ios_select(
+            &frags,
+            500,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        assert!(
+            result.total_tokens <= 500,
+            "Budget must be respected: {} > 500",
+            result.total_tokens
         );
     }
 
     #[test]
     fn test_feedback_multiplier_affects_selection() {
         let frags = vec![
-            make_frag("good", "useful code fragment for processing", 200, "good.py"),
+            make_frag(
+                "good",
+                "useful code fragment for processing",
+                200,
+                "good.py",
+            ),
             make_frag("bad", "unhelpful boilerplate noise padding", 200, "bad.py"),
         ];
 
@@ -552,24 +736,58 @@ mod tests {
         feedback.insert("bad".to_string(), 0.3);
 
         // Budget for only one
-        let result = ios_select(&frags, 250, 0.3, 0.25, 0.25, 0.2, &feedback, true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(
+            &frags,
+            250,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &feedback,
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
 
-        assert!(selected_indices.contains(&0), "Feedback-boosted fragment should be preferred");
+        assert!(
+            selected_indices.contains(&0),
+            "Feedback-boosted fragment should be preferred"
+        );
     }
 
     #[test]
     fn test_reference_resolution_very_cheap() {
-        let mut frags = vec![
-            make_frag("a", "def big_function():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z", 500, "big.py"),
-        ];
+        let mut frags = vec![make_frag(
+            "a",
+            "def big_function():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z",
+            500,
+            "big.py",
+        )];
         frags[0].skeleton_content = Some("def big_function(): ...".into());
         frags[0].skeleton_token_count = Some(50);
 
         // Budget so small only reference fits
-        let result = ios_select(&frags, 15, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(
+            &frags,
+            15,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            true,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
         if !result.selections.is_empty() {
-            assert_eq!(result.selections[0].1, Resolution::Reference,
+            assert_eq!(
+                result.selections[0].1,
+                Resolution::Reference,
                 "With tiny budget, reference resolution should be chosen"
             );
         }
@@ -580,12 +798,32 @@ mod tests {
         let frags = vec![
             make_frag("a", "machine learning neural network training", 100, "a.py"),
             make_frag("b", "kubernetes docker container deployment", 100, "b.py"),
-            make_frag("c", "react component jsx virtual dom rendering", 100, "c.py"),
+            make_frag(
+                "c",
+                "react component jsx virtual dom rendering",
+                100,
+                "c.py",
+            ),
         ];
 
-        let result = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
-        assert!(result.diversity_score >= 0.0 && result.diversity_score <= 1.0,
-            "Diversity score must be in [0, 1], got {}", result.diversity_score
+        let result = ios_select(
+            &frags,
+            1000,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        assert!(
+            result.diversity_score >= 0.0 && result.diversity_score <= 1.0,
+            "Diversity score must be in [0, 1], got {}",
+            result.diversity_score
         );
     }
 
@@ -593,8 +831,18 @@ mod tests {
     fn test_resolution_preference_by_budget() {
         // When budget is generous, prefer full; when tight, prefer skeleton
         let mut frags = vec![
-            make_frag("a", "def foo():\n    return 1 + 2 + 3 + 4 + 5\n", 200, "a.py"),
-            make_frag("b", "def bar():\n    return 6 + 7 + 8 + 9 + 10\n", 200, "b.py"),
+            make_frag(
+                "a",
+                "def foo():\n    return 1 + 2 + 3 + 4 + 5\n",
+                200,
+                "a.py",
+            ),
+            make_frag(
+                "b",
+                "def bar():\n    return 6 + 7 + 8 + 9 + 10\n",
+                200,
+                "b.py",
+            ),
         ];
         frags[0].skeleton_content = Some("def foo(): ...".into());
         frags[0].skeleton_token_count = Some(30);
@@ -602,14 +850,49 @@ mod tests {
         frags[1].skeleton_token_count = Some(30);
 
         // Generous budget: both full
-        let result_big = ios_select(&frags, 1000, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
-        let full_count_big = result_big.selections.iter().filter(|s| s.1 == Resolution::Full).count();
+        let result_big = ios_select(
+            &frags,
+            1000,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            true,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        let full_count_big = result_big
+            .selections
+            .iter()
+            .filter(|s| s.1 == Resolution::Full)
+            .count();
 
         // Tight budget: mix of full + skeleton/reference
-        let result_tight = ios_select(&frags, 250, 0.3, 0.25, 0.25, 0.2, &empty_feedback(), true, true, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
-        let full_count_tight = result_tight.selections.iter().filter(|s| s.1 == Resolution::Full).count();
+        let result_tight = ios_select(
+            &frags,
+            250,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            true,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        let full_count_tight = result_tight
+            .selections
+            .iter()
+            .filter(|s| s.1 == Resolution::Full)
+            .count();
 
-        assert!(full_count_big >= full_count_tight,
+        assert!(
+            full_count_big >= full_count_tight,
             "Generous budget should select more full-resolution fragments"
         );
     }
@@ -624,12 +907,26 @@ mod tests {
             make_frag("c", "def gamma(): return 3", 50, "c.py"),
         ];
 
-        let result = ios_select(&frags, 500, 0.3, 0.25, 0.25, 0.2,
-            &empty_feedback(), true, false, &default_factors(), DEFAULT_DIV_FLOOR, DEFAULT_MIN_CANDIDATE_VALUE);
+        let result = ios_select(
+            &frags,
+            500,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
 
         assert_eq!(result.selections.len(), 3, "Fast path should select all 3");
-        assert!(result.selections.iter().all(|s| s.1 == Resolution::Full),
-            "Fast path should use full resolution for all");
+        assert!(
+            result.selections.iter().all(|s| s.1 == Resolution::Full),
+            "Fast path should use full resolution for all"
+        );
         assert_eq!(result.total_tokens, 150);
     }
 }

@@ -24,10 +24,10 @@
 //! Nobody does this. Static analyzers use rules. Linters use patterns.
 //! This uses information theory against the codebase itself.
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use crate::fragment::ContextFragment;
 use crate::entropy::boilerplate_ratio;
+use crate::fragment::ContextFragment;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Minimum fragments in a directory group to detect anomalies.
 /// Below this, we don't have enough statistical mass.
@@ -50,8 +50,7 @@ pub enum AnomalyType {
     Drop,
 }
 
-impl AnomalyType {
-}
+impl AnomalyType {}
 
 /// A single entropy anomaly detected in the codebase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +84,9 @@ pub struct AnomalyReport {
 /// Compute the median of a sorted slice.
 fn median(sorted: &[f64]) -> f64 {
     let n = sorted.len();
-    if n == 0 { return 0.0; }
+    if n == 0 {
+        return 0.0;
+    }
     if n.is_multiple_of(2) {
         (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
     } else {
@@ -136,7 +137,8 @@ pub fn scan_anomalies(fragments: &[&ContextFragment]) -> AnomalyReport {
         groups_analyzed += 1;
 
         // Collect entropy scores for this group
-        let mut entropies: Vec<f64> = indices.iter()
+        let mut entropies: Vec<f64> = indices
+            .iter()
             .map(|&i| fragments[i].entropy_score)
             .collect();
         entropies.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -144,9 +146,7 @@ pub fn scan_anomalies(fragments: &[&ContextFragment]) -> AnomalyReport {
         let med = median(&entropies);
 
         // Compute MAD = median(|eᵢ - M|)
-        let mut abs_devs: Vec<f64> = entropies.iter()
-            .map(|&e| (e - med).abs())
-            .collect();
+        let mut abs_devs: Vec<f64> = entropies.iter().map(|&e| (e - med).abs()).collect();
         abs_devs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mad = median(&abs_devs);
 
@@ -165,7 +165,11 @@ pub fn scan_anomalies(fragments: &[&ContextFragment]) -> AnomalyReport {
                 continue;
             }
 
-            let anomaly_type = if z > 0.0 { AnomalyType::Spike } else { AnomalyType::Drop };
+            let anomaly_type = if z > 0.0 {
+                AnomalyType::Spike
+            } else {
+                AnomalyType::Drop
+            };
             let bp = boilerplate_ratio(&frag.content);
 
             // Confidence: scales with |z| and group size
@@ -227,24 +231,34 @@ pub fn scan_anomalies(fragments: &[&ContextFragment]) -> AnomalyReport {
 
     // Sort by |z_score| descending — most anomalous first
     anomalies.sort_unstable_by(|a, b| {
-        b.z_score.abs().partial_cmp(&a.z_score.abs())
+        b.z_score
+            .abs()
+            .partial_cmp(&a.z_score.abs())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let spikes = anomalies.iter().filter(|a| a.anomaly_type == AnomalyType::Spike).count();
-    let drops = anomalies.iter().filter(|a| a.anomaly_type == AnomalyType::Drop).count();
+    let spikes = anomalies
+        .iter()
+        .filter(|a| a.anomaly_type == AnomalyType::Spike)
+        .count();
+    let drops = anomalies
+        .iter()
+        .filter(|a| a.anomaly_type == AnomalyType::Drop)
+        .count();
 
-    let summary = if anomalies.is_empty() {
-        format!(
-            "No entropy anomalies detected across {} fragments in {} directory groups.",
-            fragments.len(), groups_analyzed,
-        )
-    } else {
-        format!(
+    let summary =
+        if anomalies.is_empty() {
+            format!(
+                "No entropy anomalies detected across {} fragments in {} directory groups.",
+                fragments.len(),
+                groups_analyzed,
+            )
+        } else {
+            format!(
             "{} entropy anomalies found ({} spikes, {} drops) across {} fragments in {} groups.",
             anomalies.len(), spikes, drops, fragments.len(), groups_analyzed,
         )
-    };
+        };
 
     AnomalyReport {
         fragments_scanned: fragments.len(),
@@ -255,7 +269,8 @@ pub fn scan_anomalies(fragments: &[&ContextFragment]) -> AnomalyReport {
 }
 
 fn basename(path: &str) -> &str {
-    path.rsplit('/').next()
+    path.rsplit('/')
+        .next()
         .and_then(|s| if s.is_empty() { None } else { Some(s) })
         .unwrap_or(path)
 }
@@ -275,42 +290,106 @@ mod tests {
     fn test_spike_detection() {
         // 6 fragments in same directory: 5 normal + 1 outlier high
         let frags = [
-            make_frag("a", "src/handlers/auth.rs", 0.50, "fn auth() { validate(); }"),
-            make_frag("b", "src/handlers/user.rs", 0.48, "fn get_user() { query(); }"),
-            make_frag("c", "src/handlers/item.rs", 0.52, "fn list_items() { fetch(); }"),
-            make_frag("d", "src/handlers/cart.rs", 0.49, "fn add_cart() { insert(); }"),
-            make_frag("e", "src/handlers/order.rs", 0.51, "fn place_order() { save(); }"),
+            make_frag(
+                "a",
+                "src/handlers/auth.rs",
+                0.50,
+                "fn auth() { validate(); }",
+            ),
+            make_frag(
+                "b",
+                "src/handlers/user.rs",
+                0.48,
+                "fn get_user() { query(); }",
+            ),
+            make_frag(
+                "c",
+                "src/handlers/item.rs",
+                0.52,
+                "fn list_items() { fetch(); }",
+            ),
+            make_frag(
+                "d",
+                "src/handlers/cart.rs",
+                0.49,
+                "fn add_cart() { insert(); }",
+            ),
+            make_frag(
+                "e",
+                "src/handlers/order.rs",
+                0.51,
+                "fn place_order() { save(); }",
+            ),
             // Outlier: entropy 0.95 vs group median ~0.50
-            make_frag("f", "src/handlers/hack.rs", 0.95, "fn x(){let a=b^c;d(e(f(g(h))));}"),
+            make_frag(
+                "f",
+                "src/handlers/hack.rs",
+                0.95,
+                "fn x(){let a=b^c;d(e(f(g(h))));}",
+            ),
         ];
         let refs: Vec<&ContextFragment> = frags.iter().collect();
         let report = scan_anomalies(&refs);
 
-        assert!(!report.anomalies.is_empty(), "Should detect at least one anomaly");
-        assert!(report.anomalies.iter().any(|a| a.fragment_id == "f"),
-            "Fragment 'f' should be flagged as anomaly");
-        assert!(report.anomalies.iter().any(|a| a.anomaly_type == AnomalyType::Spike),
-            "Anomaly should be a spike");
+        assert!(
+            !report.anomalies.is_empty(),
+            "Should detect at least one anomaly"
+        );
+        assert!(
+            report.anomalies.iter().any(|a| a.fragment_id == "f"),
+            "Fragment 'f' should be flagged as anomaly"
+        );
+        assert!(
+            report
+                .anomalies
+                .iter()
+                .any(|a| a.anomaly_type == AnomalyType::Spike),
+            "Anomaly should be a spike"
+        );
     }
 
     #[test]
     fn test_drop_detection() {
         // 6 fragments: 5 high entropy + 1 outlier low
         let frags = [
-            make_frag("a", "lib/core/engine.rs", 0.80, "complex algorithmic code here"),
-            make_frag("b", "lib/core/parser.rs", 0.78, "complex parsing logic there"),
-            make_frag("c", "lib/core/scorer.rs", 0.82, "scoring with many branches"),
+            make_frag(
+                "a",
+                "lib/core/engine.rs",
+                0.80,
+                "complex algorithmic code here",
+            ),
+            make_frag(
+                "b",
+                "lib/core/parser.rs",
+                0.78,
+                "complex parsing logic there",
+            ),
+            make_frag(
+                "c",
+                "lib/core/scorer.rs",
+                0.82,
+                "scoring with many branches",
+            ),
             make_frag("d", "lib/core/graph.rs", 0.79, "graph traversal algorithms"),
-            make_frag("e", "lib/core/index.rs", 0.81, "indexing and retrieval code"),
+            make_frag(
+                "e",
+                "lib/core/index.rs",
+                0.81,
+                "indexing and retrieval code",
+            ),
             // Outlier: entropy 0.10 vs group median ~0.80
             make_frag("f", "lib/core/stub.rs", 0.10, "pass"),
         ];
         let refs: Vec<&ContextFragment> = frags.iter().collect();
         let report = scan_anomalies(&refs);
 
-        assert!(report.anomalies.iter().any(|a|
-            a.fragment_id == "f" && a.anomaly_type == AnomalyType::Drop
-        ), "Fragment 'f' should be flagged as entropy drop");
+        assert!(
+            report
+                .anomalies
+                .iter()
+                .any(|a| a.fragment_id == "f" && a.anomaly_type == AnomalyType::Drop),
+            "Fragment 'f' should be flagged as entropy drop"
+        );
     }
 
     #[test]
@@ -324,8 +403,11 @@ mod tests {
         let refs: Vec<&ContextFragment> = frags.iter().collect();
         let report = scan_anomalies(&refs);
 
-        assert!(report.anomalies.is_empty(),
-            "Groups smaller than {} should not produce anomalies", MIN_GROUP_SIZE);
+        assert!(
+            report.anomalies.is_empty(),
+            "Groups smaller than {} should not produce anomalies",
+            MIN_GROUP_SIZE
+        );
         assert_eq!(report.groups_analyzed, 0);
     }
 
@@ -333,18 +415,22 @@ mod tests {
     fn test_uniform_group_no_anomalies() {
         // All fragments have identical entropy — MAD = 0, no anomalies
         let frags: Vec<ContextFragment> = (0..6)
-            .map(|i| make_frag(
-                &format!("f{}", i),
-                &format!("src/uniform/{}.rs", i),
-                0.60,
-                "all same entropy",
-            ))
+            .map(|i| {
+                make_frag(
+                    &format!("f{}", i),
+                    &format!("src/uniform/{}.rs", i),
+                    0.60,
+                    "all same entropy",
+                )
+            })
             .collect();
         let refs: Vec<&ContextFragment> = frags.iter().collect();
         let report = scan_anomalies(&refs);
 
-        assert!(report.anomalies.is_empty(),
-            "Uniform entropy group should produce no anomalies");
+        assert!(
+            report.anomalies.is_empty(),
+            "Uniform entropy group should produce no anomalies"
+        );
     }
 
     #[test]
@@ -353,19 +439,27 @@ mod tests {
         let mut frags = Vec::new();
         for i in 0..5 {
             frags.push(make_frag(
-                &format!("a{}", i), &format!("high/h{}.rs", i), 0.85, "high entropy code",
+                &format!("a{}", i),
+                &format!("high/h{}.rs", i),
+                0.85,
+                "high entropy code",
             ));
         }
         for i in 0..5 {
             frags.push(make_frag(
-                &format!("b{}", i), &format!("low/l{}.rs", i), 0.30, "low entropy code",
+                &format!("b{}", i),
+                &format!("low/l{}.rs", i),
+                0.30,
+                "low entropy code",
             ));
         }
         let refs: Vec<&ContextFragment> = frags.iter().collect();
         let report = scan_anomalies(&refs);
 
         // No anomalies — each directory is internally consistent
-        assert!(report.anomalies.is_empty(),
-            "Internally consistent directories should not produce cross-contamination anomalies");
+        assert!(
+            report.anomalies.is_empty(),
+            "Internally consistent directories should not produce cross-contamination anomalies"
+        );
     }
 }

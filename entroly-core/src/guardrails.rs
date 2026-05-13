@@ -16,8 +16,8 @@
 //!   but HIGH importance. Pure entropy scoring deletes them.
 //!   We need a separate importance dimension.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Criticality level — overrides entropy and relevance scoring.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -49,17 +49,18 @@ fn path_depth(path: &str) -> usize {
 /// Important (score-boosted but budget-constrained).
 pub fn file_criticality(path: &str) -> Criticality {
     let lower = path.to_lowercase();
-    let basename = lower.rsplit('/').next()
+    let basename = lower
+        .rsplit('/')
+        .next()
         .and_then(|b| b.rsplit('\\').next())
         .unwrap_or(&lower);
     let depth = path_depth(&lower);
     let is_root = depth <= 1; // root or one level deep (file:package.json)
 
     // SAFETY: License and security files — never drop (any depth)
-    if matches!(basename,
-        "license" | "license.md" | "license.txt"
-        | "security.md" | "security.txt"
-        | "codeowners"
+    if matches!(
+        basename,
+        "license" | "license.md" | "license.txt" | "security.md" | "security.txt" | "codeowners"
     ) {
         return Criticality::Safety;
     }
@@ -72,7 +73,8 @@ pub fn file_criticality(path: &str) -> Criticality {
     // ── Root-only Critical configs ──
     // These are Critical ONLY at the project root. Nested copies in monorepo
     // sub-packages are Important (score-boosted, not force-pinned).
-    let is_root_config = matches!(basename,
+    let is_root_config = matches!(
+        basename,
         "package.json" | "package-lock.json"
         | "requirements.txt" | "pyproject.toml" | "setup.py" | "setup.cfg"
         | "cargo.toml" | "cargo.lock"
@@ -94,31 +96,65 @@ pub fn file_criticality(path: &str) -> Criticality {
         | "package.swift" | "podfile" | "cartfile"
     );
     if is_root_config {
-        return if is_root { Criticality::Critical } else { Criticality::Important };
+        return if is_root {
+            Criticality::Critical
+        } else {
+            Criticality::Important
+        };
     }
 
     // ── Build tool configs: Critical at root, Important nested ──
-    let is_build_config = matches!(basename,
-        "webpack.config.js" | "webpack.config.ts"
-        | "vite.config.ts" | "vite.config.js" | "vite.config.mts"
-        | "next.config.js" | "next.config.mjs" | "next.config.ts" | "next.config.mts"
-        | "angular.json" | "nuxt.config.ts" | "nuxt.config.js" | "nuxt.config.mjs"
-        | "remix.config.js" | "remix.config.ts"
-        | "svelte.config.js" | "svelte.config.ts" | "astro.config.mjs"
-        | "tailwind.config.js" | "tailwind.config.ts" | "tailwind.config.mjs"
-        | "app.vue"
-        | "gatsby-config.js" | "gatsby-config.ts"
-        | "postcss.config.js" | "postcss.config.mjs"
-        | "jest.config.js" | "jest.config.ts"
-        | "vitest.config.ts" | "vitest.config.js"
-        | "babel.config.js" | "babel.config.json" | ".babelrc"
-        | ".eslintrc.js" | ".eslintrc.json" | ".eslintrc.cjs"
-        | "eslint.config.js" | "eslint.config.mjs"
-        | "prettier.config.js" | ".prettierrc" | ".prettierrc.json"
-        | "dockerfile"
+    let is_build_config = matches!(
+        basename,
+        "webpack.config.js"
+            | "webpack.config.ts"
+            | "vite.config.ts"
+            | "vite.config.js"
+            | "vite.config.mts"
+            | "next.config.js"
+            | "next.config.mjs"
+            | "next.config.ts"
+            | "next.config.mts"
+            | "angular.json"
+            | "nuxt.config.ts"
+            | "nuxt.config.js"
+            | "nuxt.config.mjs"
+            | "remix.config.js"
+            | "remix.config.ts"
+            | "svelte.config.js"
+            | "svelte.config.ts"
+            | "astro.config.mjs"
+            | "tailwind.config.js"
+            | "tailwind.config.ts"
+            | "tailwind.config.mjs"
+            | "app.vue"
+            | "gatsby-config.js"
+            | "gatsby-config.ts"
+            | "postcss.config.js"
+            | "postcss.config.mjs"
+            | "jest.config.js"
+            | "jest.config.ts"
+            | "vitest.config.ts"
+            | "vitest.config.js"
+            | "babel.config.js"
+            | "babel.config.json"
+            | ".babelrc"
+            | ".eslintrc.js"
+            | ".eslintrc.json"
+            | ".eslintrc.cjs"
+            | "eslint.config.js"
+            | "eslint.config.mjs"
+            | "prettier.config.js"
+            | ".prettierrc"
+            | ".prettierrc.json"
+            | "dockerfile"
     );
     if is_build_config {
-        return if is_root { Criticality::Critical } else { Criticality::Important };
+        return if is_root {
+            Criticality::Critical
+        } else {
+            Criticality::Important
+        };
     }
 
     // ── Schema/type files: ALWAYS Important (never Critical) ──
@@ -141,7 +177,11 @@ pub fn file_criticality(path: &str) -> Criticality {
 
     // Terraform / HCL files (not root-level ones already handled above)
     if basename.ends_with(".tf") || basename.ends_with(".hcl") {
-        return if is_root { Criticality::Critical } else { Criticality::Important };
+        return if is_root {
+            Criticality::Critical
+        } else {
+            Criticality::Important
+        };
     }
 
     // IMPORTANT: Test files — high value for understanding
@@ -162,10 +202,7 @@ pub fn file_criticality(path: &str) -> Criticality {
     }
 
     // IMPORTANT: API contracts and interfaces
-    if basename.contains("interface")
-        || basename.contains("contract")
-        || basename.contains("api")
-    {
+    if basename.contains("interface") || basename.contains("contract") || basename.contains("api") {
         return Criticality::Important;
     }
 
@@ -244,14 +281,22 @@ impl TaskType {
     pub fn classify(query: &str) -> TaskType {
         let lower = query.to_lowercase();
 
-        if lower.contains("bug") || lower.contains("error") || lower.contains("fail")
-            || lower.contains("crash") || lower.contains("fix") || lower.contains("debug")
-            || lower.contains("trace") || lower.contains("broken")
+        if lower.contains("bug")
+            || lower.contains("error")
+            || lower.contains("fail")
+            || lower.contains("crash")
+            || lower.contains("fix")
+            || lower.contains("debug")
+            || lower.contains("trace")
+            || lower.contains("broken")
         {
             return TaskType::BugTracing;
         }
-        if lower.contains("refactor") || lower.contains("rename") || lower.contains("move")
-            || lower.contains("extract") || lower.contains("restructure")
+        if lower.contains("refactor")
+            || lower.contains("rename")
+            || lower.contains("move")
+            || lower.contains("extract")
+            || lower.contains("restructure")
         {
             return TaskType::Refactoring;
         }
@@ -261,16 +306,23 @@ impl TaskType {
         if lower.contains("review") || lower.contains("audit") || lower.contains("check") {
             return TaskType::CodeReview;
         }
-        if lower.contains("create") || lower.contains("implement") || lower.contains("build")
-            || lower.contains("add") || lower.contains("write") || lower.contains("generate")
+        if lower.contains("create")
+            || lower.contains("implement")
+            || lower.contains("build")
+            || lower.contains("add")
+            || lower.contains("write")
+            || lower.contains("generate")
         {
             return TaskType::CodeGeneration;
         }
         if lower.contains("doc") || lower.contains("readme") || lower.contains("comment") {
             return TaskType::Documentation;
         }
-        if lower.contains("explore") || lower.contains("understand") || lower.contains("what")
-            || lower.contains("how") || lower.contains("why")
+        if lower.contains("explore")
+            || lower.contains("understand")
+            || lower.contains("what")
+            || lower.contains("how")
+            || lower.contains("why")
         {
             return TaskType::Exploration;
         }
@@ -280,8 +332,8 @@ impl TaskType {
     /// Get the recommended budget multiplier for this task type.
     pub fn budget_multiplier(&self) -> f64 {
         match self {
-            TaskType::BugTracing => 1.5,     // Need more context
-            TaskType::Exploration => 1.3,    // Cast wide net
+            TaskType::BugTracing => 1.5,  // Need more context
+            TaskType::Exploration => 1.3, // Cast wide net
             TaskType::Refactoring => 1.0,
             TaskType::CodeReview => 1.0,
             TaskType::Testing => 0.8,
@@ -395,7 +447,9 @@ impl FeedbackTracker {
     /// Sample variance (Welford's M₂/(n-1)). Returns 1.0 for unseen fragments.
     pub fn variance(&self, fragment_id: &str) -> f64 {
         let n = *self.visit_counts.get(fragment_id).unwrap_or(&0);
-        if n < 2 { return 1.0; }
+        if n < 2 {
+            return 1.0;
+        }
         let m2 = *self.welford_m2s.get(fragment_id).unwrap_or(&0.0);
         (m2 / (n as f64 - 1.0)).clamp(0.001, 1.0)
     }
@@ -487,16 +541,29 @@ mod tests {
         assert!(!has_safety_signal("MIT License\nCopyright 2024"));
         // Normal code — never pinned
         assert!(!has_safety_signal("def hello(): return 'world'"));
-        assert!(!has_safety_signal("fn dangerous() { unsafe { do_work(); } }"));
+        assert!(!has_safety_signal(
+            "fn dangerous() { unsafe { do_work(); } }"
+        ));
         // Comment mentioning api_key — not a real assignment
-        assert!(!has_safety_signal("This vulnerability scanner checks api_key patterns."));
+        assert!(!has_safety_signal(
+            "This vulnerability scanner checks api_key patterns."
+        ));
     }
 
     #[test]
     fn test_task_classification() {
-        assert!(matches!(TaskType::classify("fix the payment bug"), TaskType::BugTracing));
-        assert!(matches!(TaskType::classify("refactor auth module"), TaskType::Refactoring));
-        assert!(matches!(TaskType::classify("create a new API endpoint"), TaskType::CodeGeneration));
+        assert!(matches!(
+            TaskType::classify("fix the payment bug"),
+            TaskType::BugTracing
+        ));
+        assert!(matches!(
+            TaskType::classify("refactor auth module"),
+            TaskType::Refactoring
+        ));
+        assert!(matches!(
+            TaskType::classify("create a new API endpoint"),
+            TaskType::CodeGeneration
+        ));
     }
 
     #[test]
@@ -523,7 +590,10 @@ mod tests {
         let val_b = tracker.learned_value("b");
 
         assert!(val_a > val_b, "Successful fragment should be valued higher");
-        assert!(val_a > 1.0, "Mostly-successful fragment should boost above 1.0");
+        assert!(
+            val_a > 1.0,
+            "Mostly-successful fragment should boost above 1.0"
+        );
     }
 
     #[test]

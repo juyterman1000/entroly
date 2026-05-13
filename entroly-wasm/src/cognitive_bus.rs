@@ -32,19 +32,19 @@
 //!   - Jaques et al., "Social Influence as Intrinsic Motivation", ICML 2019
 //!   - McClelland et al., "Complementary Learning Systems", Psych Review 1995
 
-use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 
-use crate::dedup::{simhash, hamming_distance};
+use crate::dedup::{hamming_distance, simhash};
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const POISSON_ALPHA: f64 = 0.1;         // EMA smoothing for rate estimation
-const RECENCY_DECAY: f64 = 0.001;       // Exponential decay rate for recency
-const NOVELTY_CAP: f64 = 0.8;           // Soft cap for novelty score
-const SPIKE_K: f64 = 3.0;               // Welford spike threshold (k·σ)
-const DEFAULT_LAMBDA: f64 = 1.0;        // Default expected Poisson rate
-const MIN_LAMBDA: f64 = 0.001;          // Floor to prevent log(0)
+const POISSON_ALPHA: f64 = 0.1; // EMA smoothing for rate estimation
+const RECENCY_DECAY: f64 = 0.001; // Exponential decay rate for recency
+const NOVELTY_CAP: f64 = 0.8; // Soft cap for novelty score
+const SPIKE_K: f64 = 3.0; // Welford spike threshold (k·σ)
+const DEFAULT_LAMBDA: f64 = 1.0; // Default expected Poisson rate
+const MIN_LAMBDA: f64 = 0.001; // Floor to prevent log(0)
 const MAX_QUEUE_PER_AGENT: usize = 256; // Per-agent queue cap
 const EMOTIONAL_CRITICAL_BOOST: f64 = 3.0;
 const EMOTIONAL_IMPORTANT_BOOST: f64 = 1.5;
@@ -132,11 +132,11 @@ pub struct BusEvent {
     pub source_agent: String,
     pub event_type: EventType,
     pub content: String,
-    pub timestamp: f64,           // Monotonic tick counter
-    pub simhash: u64,             // Precomputed fingerprint
-    pub emotional_tag: u8,        // 0=neutral, 1=positive, 2=negative, 3=critical
-    pub salience: f64,            // For hippocampus bridge
-    pub is_spike: bool,           // Welford-detected anomaly
+    pub timestamp: f64,    // Monotonic tick counter
+    pub simhash: u64,      // Precomputed fingerprint
+    pub emotional_tag: u8, // 0=neutral, 1=positive, 2=negative, 3=critical
+    pub salience: f64,     // For hippocampus bridge
+    pub is_spike: bool,    // Welford-detected anomaly
 }
 
 /// Prioritized event wrapper for the per-agent queue.
@@ -162,7 +162,8 @@ impl PartialOrd for PrioritizedEvent {
 impl Ord for PrioritizedEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         // Higher priority first (max-heap)
-        self.priority.partial_cmp(&other.priority)
+        self.priority
+            .partial_cmp(&other.priority)
             .unwrap_or(Ordering::Equal)
     }
 }
@@ -175,12 +176,16 @@ impl Ord for PrioritizedEvent {
 struct WelfordAccumulator {
     count: u64,
     mean: f64,
-    m2: f64,      // Sum of squared deviations
+    m2: f64, // Sum of squared deviations
 }
 
 impl WelfordAccumulator {
     fn new() -> Self {
-        WelfordAccumulator { count: 0, mean: 0.0, m2: 0.0 }
+        WelfordAccumulator {
+            count: 0,
+            mean: 0.0,
+            m2: 0.0,
+        }
     }
 
     /// Update with a new observation. Returns (new_mean, new_stddev).
@@ -192,14 +197,20 @@ impl WelfordAccumulator {
         let delta2 = x - self.mean;
         self.m2 += delta * delta2;
 
-        let variance = if self.count > 1 { self.m2 / (self.count - 1) as f64 } else { 0.0 };
+        let variance = if self.count > 1 {
+            self.m2 / (self.count - 1) as f64
+        } else {
+            0.0
+        };
         (self.mean, variance.sqrt())
     }
 
     /// Check if value is a spike (> k standard deviations from mean).
     #[inline]
     fn is_spike(&self, x: f64, k: f64) -> bool {
-        if self.count < 3 { return false; }  // Need minimum samples
+        if self.count < 3 {
+            return false;
+        } // Need minimum samples
         let variance = self.m2 / (self.count - 1) as f64;
         let sigma = variance.sqrt();
         sigma > 0.0 && (x - self.mean).abs() > k * sigma
@@ -212,9 +223,9 @@ impl WelfordAccumulator {
 /// EMA-smoothed: λ̂(n+1) = α · observed_rate + (1−α) · λ̂(n)
 #[derive(Clone, Debug)]
 struct PoissonRate {
-    lambda_expected: f64,     // Expected rate (EMA-smoothed)
-    last_count: u64,          // Event count at last update
-    last_time: f64,           // Timestamp of last update
+    lambda_expected: f64, // Expected rate (EMA-smoothed)
+    last_count: u64,      // Event count at last update
+    last_time: f64,       // Timestamp of last update
 }
 
 impl PoissonRate {
@@ -232,8 +243,8 @@ impl PoissonRate {
         let dc = (current_count - self.last_count) as f64;
         let observed_rate = dc / dt;
 
-        self.lambda_expected = POISSON_ALPHA * observed_rate
-            + (1.0 - POISSON_ALPHA) * self.lambda_expected;
+        self.lambda_expected =
+            POISSON_ALPHA * observed_rate + (1.0 - POISSON_ALPHA) * self.lambda_expected;
         self.lambda_expected = self.lambda_expected.max(MIN_LAMBDA);
 
         self.last_count = current_count;
@@ -247,7 +258,7 @@ impl PoissonRate {
         let lambda_obs = observed_rate.max(MIN_LAMBDA);
         let lambda_exp = self.lambda_expected.max(MIN_LAMBDA);
         let kl = lambda_exp - lambda_obs + lambda_obs * (lambda_obs / lambda_exp).ln();
-        kl.max(0.0)  // KL is non-negative
+        kl.max(0.0) // KL is non-negative
     }
 }
 
@@ -294,10 +305,12 @@ impl Subscriber {
     /// softcapped: CAP · tanh(novelty / CAP)
     fn compute_novelty(&self, event_hash: u64) -> f64 {
         if self.hash_history.is_empty() {
-            return NOVELTY_CAP;  // First event is maximally novel
+            return NOVELTY_CAP; // First event is maximally novel
         }
 
-        let max_similarity = self.hash_history.iter()
+        let max_similarity = self
+            .hash_history
+            .iter()
             .map(|&h| 1.0 - hamming_distance(event_hash, h) as f64 / 64.0)
             .fold(0.0_f64, |a, b| a.max(b));
 
@@ -311,7 +324,7 @@ impl Subscriber {
     /// I(event; task) ≈ similarity(event_hash, task_hash)
     fn compute_mutual_info(&self, event_hash: u64) -> f64 {
         if self.task_context_hash == 0 {
-            return 1.0;  // No task context → neutral (don't penalize)
+            return 1.0; // No task context → neutral (don't penalize)
         }
         let dist = hamming_distance(event_hash, self.task_context_hash) as f64;
         let similarity = 1.0 - dist / 64.0;
@@ -327,7 +340,9 @@ impl Subscriber {
         // 1. KL surprise — compute from rate model, then release borrow
         let count = self.event_counts.get(&type_key).copied().unwrap_or(0);
         let (kl, last_time) = {
-            let rate_model = self.rate_models.entry(type_key.clone())
+            let rate_model = self
+                .rate_models
+                .entry(type_key.clone())
                 .or_insert_with(PoissonRate::new);
             let dt = (current_time - rate_model.last_time).max(0.001);
             let observed_rate = (count as f64 + 1.0) / dt;
@@ -336,7 +351,7 @@ impl Subscriber {
             (kl, lt)
         };
         // Deferred Poisson update (after immutable borrows complete)
-        let _ = last_time;  // used above, kept for clarity
+        let _ = last_time; // used above, kept for clarity
 
         // 2. Recency
         let age = (current_time - event.timestamp).max(0.0);
@@ -387,7 +402,11 @@ impl Subscriber {
             // BinaryHeap is max-heap, so we need to remove the minimum.
             // Convert to vec, sort, truncate, rebuild.
             let mut events: Vec<_> = std::mem::take(&mut self.queue).into_vec();
-            events.sort_by(|a, b| b.priority.partial_cmp(&a.priority).unwrap_or(Ordering::Equal));
+            events.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(Ordering::Equal)
+            });
             events.truncate(MAX_QUEUE_PER_AGENT - 1);
             self.queue = BinaryHeap::from(events);
         }
@@ -450,7 +469,6 @@ pub struct CognitiveBus {
     total_memory_bridged: u64,
 }
 
-
 impl CognitiveBus {
     pub fn new(memory_salience_threshold: f64) -> Self {
         CognitiveBus {
@@ -476,9 +494,7 @@ impl CognitiveBus {
     ///                Empty list = subscribe to all events.
     pub fn subscribe(&mut self, agent_id: &str, event_types: Vec<String>) {
         let mut sub = Subscriber::new(agent_id);
-        sub.subscribed_types = event_types.iter()
-            .map(|s| EventType::from_str(s))
-            .collect();
+        sub.subscribed_types = event_types.iter().map(|s| EventType::from_str(s)).collect();
         self.subscribers.insert(agent_id.to_string(), sub);
     }
 
@@ -537,7 +553,9 @@ impl CognitiveBus {
         let hash = simhash(content);
 
         // Global dedup: check if near-duplicate was published recently
-        let is_dup = self.recent_hashes.iter()
+        let is_dup = self
+            .recent_hashes
+            .iter()
             .any(|&h| hamming_distance(hash, h) <= 3);
 
         if is_dup {
@@ -670,7 +688,8 @@ impl CognitiveBus {
 
     /// Get queue depth for a subscriber.
     pub fn queue_depth(&self, agent_id: &str) -> usize {
-        self.subscribers.get(agent_id)
+        self.subscribers
+            .get(agent_id)
             .map(|s| s.queue.len())
             .unwrap_or(0)
     }
@@ -789,8 +808,17 @@ mod tests {
         bus.subscribe("agent_a", vec![]);
         bus.subscribe("agent_b", vec![]);
 
-        let routed = bus.publish("agent_a", "observation", "Found 3 CVEs in auth module", 3, 80.0);
-        assert_eq!(routed, 1, "should route to agent_b only (not back to agent_a)");
+        let routed = bus.publish(
+            "agent_a",
+            "observation",
+            "Found 3 CVEs in auth module",
+            3,
+            80.0,
+        );
+        assert_eq!(
+            routed, 1,
+            "should route to agent_b only (not back to agent_a)"
+        );
 
         let events = bus.drain_raw("agent_b", 10);
         assert_eq!(events.len(), 1);
@@ -818,12 +846,28 @@ mod tests {
         bus.subscribe("agent_b", vec![]);
 
         // High salience → should be bridged to hippocampus
-        bus.publish("agent_a", "observation", "Critical security finding", 3, 80.0);
+        bus.publish(
+            "agent_a",
+            "observation",
+            "Critical security finding",
+            3,
+            80.0,
+        );
         // Low salience → should NOT be bridged
-        bus.publish("agent_a", "observation", "Minor style issue in code formatting", 0, 5.0);
+        bus.publish(
+            "agent_a",
+            "observation",
+            "Minor style issue in code formatting",
+            0,
+            5.0,
+        );
 
         let bridge_events = bus.drain_memory_bridge_raw();
-        assert_eq!(bridge_events.len(), 1, "only high-salience event should be bridged");
+        assert_eq!(
+            bridge_events.len(),
+            1,
+            "only high-salience event should be bridged"
+        );
         assert!((bridge_events[0].salience - 80.0).abs() < 0.01);
     }
 
@@ -832,7 +876,13 @@ mod tests {
         let mut bus = CognitiveBus::new(50.0);
         bus.subscribe("agent_b", vec!["observation".to_string()]);
 
-        let r1 = bus.publish("agent_a", "observation", "Found something interesting", 0, 0.0);
+        let r1 = bus.publish(
+            "agent_a",
+            "observation",
+            "Found something interesting",
+            0,
+            0.0,
+        );
         let r2 = bus.publish("agent_a", "belief", "I think the code is secure", 0, 0.0);
 
         assert_eq!(r1, 1, "observation should route to agent_b");
@@ -855,10 +905,19 @@ mod tests {
         bus.subscribe("style_agent", vec![]);
 
         // Set task context for security agent
-        bus.set_task_context("security_agent", "find authentication vulnerabilities XSS CSRF");
+        bus.set_task_context(
+            "security_agent",
+            "find authentication vulnerabilities XSS CSRF",
+        );
 
         // Publish security-related event
-        bus.publish("scanner", "observation", "Found XSS vulnerability in login form authentication bypass", 2, 30.0);
+        bus.publish(
+            "scanner",
+            "observation",
+            "Found XSS vulnerability in login form authentication bypass",
+            2,
+            30.0,
+        );
 
         // Both agents should get the event
         let sec_events = bus.drain_raw("security_agent", 1);
@@ -873,7 +932,13 @@ mod tests {
         bus.subscribe("agent_a", vec![]);
         bus.subscribe("agent_b", vec![]);
         bus.publish("agent_a", "observation", "Test event one", 0, 0.0);
-        bus.publish("agent_b", "belief", "Test event two different content here", 0, 0.0);
+        bus.publish(
+            "agent_b",
+            "belief",
+            "Test event two different content here",
+            0,
+            0.0,
+        );
 
         assert_eq!(bus.total_published, 2);
         assert_eq!(bus.subscribers.len(), 2);

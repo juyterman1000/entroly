@@ -27,6 +27,7 @@ Run:
 from __future__ import annotations
 
 import gc
+import gzip
 import json
 import logging
 import os
@@ -531,16 +532,27 @@ class EntrolyEngine:
                 if loaded:
                     n = self._rust.fragment_count()
                     logger.info(f"Loaded persistent index: {n} fragments from {self._index_path}")
+                    self._ensure_gzip_index(self._index_path)
                 else:
                     logger.info("No persistent index found, starting fresh session")
             except AttributeError:
-                # PyO3 EntrolyEngine may not expose load_index in this build
-                logger.debug("Rust engine does not support load_index -- skipping persistent index")
+                loaded = self._load_index_compat(self._index_path)
+                if loaded:
+                    logger.info(f"Loaded persistent index: {loaded} fragments from {self._index_path}")
+                else:
+                    logger.debug("Rust engine does not support load_index -- skipping persistent index")
             except OSError:
                 # Index file doesn't exist yet — normal on first run
                 logger.info("No persistent index found, starting fresh session")
             except Exception as e:
-                logger.warning(f"Failed to load persistent index: {e}")
+                try:
+                    loaded = self._load_index_compat(self._index_path)
+                    if loaded:
+                        logger.info(f"Loaded persistent index: {loaded} fragments from {self._index_path}")
+                    else:
+                        logger.warning(f"Failed to load persistent index: {e}")
+                except Exception:
+                    logger.warning(f"Failed to load persistent index: {e}")
         elif self._use_rust:
             logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
 
@@ -1260,7 +1272,10 @@ class EntrolyEngine:
 
     def checkpoint(self, metadata: dict[str, Any] | None = None) -> str:
         """Manually create a checkpoint."""
-        return self._auto_checkpoint(metadata)
+        checkpoint_path = self._auto_checkpoint(metadata)
+        if self._use_rust and self.config.use_persistent_index:
+            self._ensure_gzip_index(self._index_path)
+        return checkpoint_path
 
     def resume(self) -> dict[str, Any]:
         """Resume from the latest checkpoint."""
@@ -1350,10 +1365,10 @@ class EntrolyEngine:
             # they'd overwrite another caller's index with their tiny state.
             if self.config.use_persistent_index:
                 try:
-                    self._rust.persist_index(self._index_path)
+                    self._write_gzip_index(self._index_path, engine_state)
                 except Exception as e:
                     logger.debug(f"Failed to persist index: {e}")
-            return self._checkpoint_mgr.save(
+            checkpoint_path = self._checkpoint_mgr.save(
                 fragments=[],
                 dedup_fingerprints={},
                 co_access_data=co_access,
@@ -1361,6 +1376,9 @@ class EntrolyEngine:
                 metadata={**(metadata or {}), "engine_state": engine_state},
                 stats=self.get_stats(),
             )
+            if self.config.use_persistent_index:
+                self._ensure_gzip_index(self._index_path)
+            return checkpoint_path
         else:
             co_access = {
                 k: dict(v)
@@ -1392,7 +1410,75 @@ class EntrolyEngine:
                 f"to point to a writable location."
             ) from e
 
+    @staticmethod
+    def _ensure_gzip_index(path: str) -> None:
+        """Normalize legacy native index writes to gzip.
+
+        Some older ``entroly-core`` wheels wrote plain JSON to
+        ``index.json.gz``. The Rust source now writes gzip, but Python users can
+        still have an older native wheel installed. Normalizing here keeps the
+        public Python contract true: files ending in ``.json.gz`` are readable
+        by gzip tools and by the isolation tests.
+        """
+        p = Path(path)
+        try:
+            raw = p.read_bytes()
+        except OSError:
+            return
+        if not raw or (len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B):
+            return
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        with gzip.open(tmp, "wb") as f:
+            f.write(raw)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, p)
+
+    @staticmethod
+    def _write_gzip_index(path: str, state: str | dict[str, Any]) -> None:
+        """Persist an exported engine state as real gzip JSON.
+
+        The Python API documents ``index.json.gz`` as gzip-compressed JSON.
+        Some published native wheels still write plain JSON from
+        ``persist_index``; writing the exported state here makes the disk
+        contract independent of the installed native wheel version.
+        """
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(state, str):
+            data = state
+        else:
+            data = json.dumps(state, separators=(",", ":"))
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            f.write(data)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, p)
+
     # ── Python fallback implementations ──────────────────────────────
+
+    def _load_index_compat(self, path: str) -> int:
+        """Load a persisted index without relying on native gzip support."""
+        if not self._use_rust:
+            return 0
+        p = Path(path)
+        if not p.exists():
+            return 0
+        raw = p.read_bytes()
+        if not raw:
+            return 0
+        if len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B:
+            state = gzip.decompress(raw).decode("utf-8")
+        else:
+            state = raw.decode("utf-8")
+        self._rust.import_state(state)
+        self._write_gzip_index(path, state)
+        return int(self._rust.fragment_count())
 
     def _ingest_python(self, content, source, token_count, is_pinned):
         """Python fallback for ingest (when Rust not available)."""
@@ -1555,10 +1641,12 @@ class EntrolyEngine:
                         ), 4
                     ),
                     "content_preview": f.content[:100] + "..." if len(f.content) > 100 else f.content,
+                    "content": f.content,
                 }
                 for f in selected
             ],
             "optimization_stats": stats,
+            "total_tokens": stats["total_tokens"],
             "tokens_saved_this_call": max(0, tokens_saved),
             "total_tokens_saved_session": self._total_tokens_saved,
         }
@@ -3834,7 +3922,7 @@ def main():
         from importlib.metadata import version as _pkg_version
         _version = _pkg_version("entroly")
     except Exception:
-        _version = "0.19.0"
+        _version = "0.19.1"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

@@ -11,9 +11,9 @@
 //!   - Charikar (2002) — SimHash
 //!   - Proximity (arXiv 2026) — LSH-bucketed semantic caching
 
-use std::collections::{HashMap, HashSet};
-use md5::{Md5, Digest};
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 /// Hash a token to a 64-bit integer using MD5.
 #[inline]
@@ -45,7 +45,8 @@ pub fn simhash(text: &str) -> u64 {
         return 0;
     }
 
-    let words: Vec<&str> = text.split_whitespace()
+    let words: Vec<&str> = text
+        .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '_'))
         .filter(|w| !w.is_empty())
         .collect();
@@ -62,14 +63,22 @@ pub fn simhash(text: &str) -> u64 {
             let feature = format!("{} {} {}", window[0], window[1], window[2]);
             let h = hash_token(&feature.to_lowercase());
             for (i, slot) in bit_sums.iter_mut().enumerate() {
-                if h & (1u64 << i) != 0 { *slot += 1; } else { *slot -= 1; }
+                if h & (1u64 << i) != 0 {
+                    *slot += 1;
+                } else {
+                    *slot -= 1;
+                }
             }
         }
     } else {
         for word in &words {
             let h = hash_token(&word.to_lowercase());
             for (i, slot) in bit_sums.iter_mut().enumerate() {
-                if h & (1u64 << i) != 0 { *slot += 1; } else { *slot -= 1; }
+                if h & (1u64 << i) != 0 {
+                    *slot += 1;
+                } else {
+                    *slot -= 1;
+                }
             }
         }
     }
@@ -177,7 +186,8 @@ impl DedupIndex {
 
         // No duplicate — insert
         self.fingerprints.insert(fragment_id.to_string(), fp);
-        self.content_hashes.insert(fragment_id.to_string(), content_hash);
+        self.content_hashes
+            .insert(fragment_id.to_string(), content_hash);
         for (b, &band_hash) in bands.iter().enumerate() {
             self.buckets[b]
                 .entry(band_hash)
@@ -207,10 +217,7 @@ impl DedupIndex {
     pub fn size(&self) -> usize {
         self.fingerprints.len()
     }
-
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -235,6 +242,8 @@ mod tests {
     fn test_dedup_allows_different() {
         let mut idx = DedupIndex::new(3);
         idx.insert("a", "machine learning neural network gradient descent");
-        assert!(idx.insert("b", "kubernetes docker container orchestration").is_none());
+        assert!(idx
+            .insert("b", "kubernetes docker container orchestration")
+            .is_none());
     }
 }

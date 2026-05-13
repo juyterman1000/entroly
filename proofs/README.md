@@ -52,4 +52,4 @@ containing `lakefile.lean`, the proof, and a README.
 
 ---
 
-*Last updated: v0.19.0.*
+*Last updated: v0.19.1.*

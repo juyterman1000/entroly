@@ -1,15 +1,11 @@
 {
   "name": "entroly-mcp",
-  "version": "0.19.0",
-  "description": "Thin npm launcher for the Rust Entroly context engine.",
+  "version": "0.19.1",
+  "description": "Information-theoretic context optimization MCP server for AI coding agents.",
   "main": "index.js",
   "bin": {
-    "entroly-mcp": "./index.js"
+    "entroly-mcp": "./bin/entroly-mcp.js"
   },
-  "files": [
-    "index.js",
-    "bin/"
-  ],
   "scripts": {
     "test": "echo \"No JS tests yet\""
   },

@@ -3,17 +3,17 @@ const { WasmEntrolyEngine } = require('./pkg/entroly_wasm');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
-  try { fn(); pass++; console.log(`  ✓ ${name}`); }
-  catch (e) { fail++; console.log(`  ✗ ${name}: ${e.message}`); }
+  try { fn(); pass++; console.log(`  PASS ${name}`); }
+  catch (e) { fail++; console.log(`  FAIL ${name}: ${e.message}`); }
 }
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
 
-console.log('Entroly Wasm — Full E2E Test (37 methods)\n');
+console.log('Entroly Wasm - Full E2E Test\n');
 
 const engine = new WasmEntrolyEngine();
 
-// 1. new() — constructor
+// 1. new() - constructor
 test('new()', () => { assert(engine !== null); });
 
 // 2. fragment_count()
@@ -248,4 +248,4 @@ test('clear()', () => {
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${pass} passed, ${fail} failed out of ${pass + fail} tests`);
 if (fail > 0) process.exit(1);
-else console.log('All tests passed! ✓');
+else console.log('All tests passed!');

@@ -1,3 +1,4 @@
+use serde::Serialize;
 /// Query Analysis Engine
 ///
 /// Provides two capabilities previously implemented in Python (query_refiner.py):
@@ -13,7 +14,6 @@
 ///   - LLM I/O (OpenAI, Anthropic) — external HTTP, must stay Python
 ///   - `QueryRefiner` class — thin dispatch deciding Rust vs LLM path
 use std::collections::HashMap;
-use serde::Serialize;
 
 // ═══════════════════════════════════════════════════════════════════
 // Constants
@@ -22,32 +22,88 @@ use serde::Serialize;
 /// Common English stop words — filtered out before TF-IDF scoring.
 /// IMPORTANT: must be sorted alphabetically for binary_search to work!
 static STOP_WORDS: &[&str] = &[
-    "a", "about", "after", "all", "also", "an", "and", "any", "are", "as",
-    "at", "be", "before", "but", "by", "can", "could", "did", "do", "does",
-    "for", "from", "had", "has", "have", "he", "her", "him", "how", "i",
-    "if", "in", "into", "is", "it", "its", "just", "may", "me", "might",
-    "more", "my", "no", "not", "of", "on", "or", "our", "out", "she",
-    "should", "so", "some", "that", "the", "them", "then", "there", "they",
-    "this", "to", "up", "us", "was", "we", "were", "what", "when", "where",
-    "which", "who", "why", "will", "with", "would", "you", "your",
+    "a", "about", "after", "all", "also", "an", "and", "any", "are", "as", "at", "be", "before",
+    "but", "by", "can", "could", "did", "do", "does", "for", "from", "had", "has", "have", "he",
+    "her", "him", "how", "i", "if", "in", "into", "is", "it", "its", "just", "may", "me", "might",
+    "more", "my", "no", "not", "of", "on", "or", "our", "out", "she", "should", "so", "some",
+    "that", "the", "them", "then", "there", "they", "this", "to", "up", "us", "was", "we", "were",
+    "what", "when", "where", "which", "who", "why", "will", "with", "would", "you", "your",
 ];
 
 /// Generic programming verbs that indicate a vague query.
 static GENERIC_VERBS: &[&str] = &[
-    "fix", "debug", "add", "help", "check", "look", "find", "show", "get",
-    "make", "do", "run", "try", "use", "change", "update", "improve",
-    "understand", "explain", "review", "refactor", "write", "work",
-    "broken", "issue", "problem", "error", "wrong",
+    "fix",
+    "debug",
+    "add",
+    "help",
+    "check",
+    "look",
+    "find",
+    "show",
+    "get",
+    "make",
+    "do",
+    "run",
+    "try",
+    "use",
+    "change",
+    "update",
+    "improve",
+    "understand",
+    "explain",
+    "review",
+    "refactor",
+    "write",
+    "work",
+    "broken",
+    "issue",
+    "problem",
+    "error",
+    "wrong",
 ];
 
 /// Technical terms that strongly indicate a specific, well-formed query.
 static SPECIFICITY_SIGNALS: &[&str] = &[
-    "cwe", "sql", "injection", "xss", "token", "auth", "oauth", "jwt",
-    "endpoint", "api", "schema", "migration", "trait", "impl", "struct",
-    "async", "await", "cache", "redis", "postgres", "kafka", "docker",
-    "hypothesis", "bisect", "panic", "unwrap", "lifetime", "borrow",
-    "memory", "unsafe", "overflow", "deadlock", "race", "lock", "mutex",
-    "latency", "throughput", "benchmark", "profil", "optim",
+    "cwe",
+    "sql",
+    "injection",
+    "xss",
+    "token",
+    "auth",
+    "oauth",
+    "jwt",
+    "endpoint",
+    "api",
+    "schema",
+    "migration",
+    "trait",
+    "impl",
+    "struct",
+    "async",
+    "await",
+    "cache",
+    "redis",
+    "postgres",
+    "kafka",
+    "docker",
+    "hypothesis",
+    "bisect",
+    "panic",
+    "unwrap",
+    "lifetime",
+    "borrow",
+    "memory",
+    "unsafe",
+    "overflow",
+    "deadlock",
+    "race",
+    "lock",
+    "mutex",
+    "latency",
+    "throughput",
+    "benchmark",
+    "profil",
+    "optim",
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -89,9 +145,7 @@ fn tf(tokens: &[String]) -> HashMap<String, f64> {
     for t in tokens {
         *counts.entry(t.clone()).or_insert(0) += 1;
     }
-    counts.into_iter()
-        .map(|(k, c)| (k, c as f64 / n))
-        .collect()
+    counts.into_iter().map(|(k, c)| (k, c as f64 / n)).collect()
 }
 
 /// Compute IDF (inverse document frequency) given a corpus of token lists.
@@ -115,11 +169,7 @@ fn idf(corpus: &[Vec<String>]) -> HashMap<String, f64> {
 /// If `fragment_summaries` is empty, falls back to TF-only ranking.
 ///
 /// Returns sorted (descending score) vector of term strings.
-pub fn extract_key_terms(
-    query: &str,
-    fragment_summaries: &[String],
-    top_n: usize,
-) -> Vec<String> {
+pub fn extract_key_terms(query: &str, fragment_summaries: &[String], top_n: usize) -> Vec<String> {
     let query_tokens = tokenize(query);
     if query_tokens.is_empty() {
         return vec![];
@@ -135,7 +185,8 @@ pub fn extract_key_terms(
 
     let scored: Vec<(String, f64)> = if corpus.len() > 1 {
         let idf_map = idf(&corpus);
-        query_tf.iter()
+        query_tf
+            .iter()
             .map(|(term, &tf_score)| {
                 let idf_score = idf_map.get(term).copied().unwrap_or(1.0);
                 (term.clone(), tf_score * idf_score)
@@ -143,7 +194,8 @@ pub fn extract_key_terms(
             .collect()
     } else {
         // No context: use TF + length bonus (longer words = more specific)
-        query_tf.iter()
+        query_tf
+            .iter()
             .map(|(term, &tf_score)| {
                 let len_bonus = (term.len() as f64 / 10.0).min(0.5);
                 (term.clone(), tf_score + len_bonus)
@@ -176,32 +228,45 @@ pub fn compute_vagueness(query: &str) -> (f64, String) {
     }
 
     // Generic verb fraction
-    let generic_count = tokens.iter()
+    let generic_count = tokens
+        .iter()
         .filter(|t| GENERIC_VERBS.iter().any(|&v| t.contains(v)))
         .count();
     let generic_ratio = generic_count as f64 / n as f64;
 
     // Short query penalty (stronger — short vague queries need refinement)
-    let short_penalty = if n < 3 { 0.7 } else if n < 5 { 0.4 } else if n < 7 { 0.15 } else { 0.0 };
+    let short_penalty = if n < 3 {
+        0.7
+    } else if n < 5 {
+        0.4
+    } else if n < 7 {
+        0.15
+    } else {
+        0.0
+    };
 
     // Specificity signals
-    let specific_count = tokens.iter()
+    let specific_count = tokens
+        .iter()
         .filter(|t| SPECIFICITY_SIGNALS.iter().any(|&s| t.contains(s)))
         .count();
 
     // Also check camelCase/PascalCase identifiers — those are specific
-    let has_identifiers = query.split_whitespace()
-        .any(|w| w.len() > 4 && w.chars().any(|c| c.is_uppercase()) && !w.chars().all(|c| c.is_uppercase()));
-    let specificity_bonus = (specific_count as f64 * 0.15 + if has_identifiers { 0.2 } else { 0.0 }).min(0.4);
+    let has_identifiers = query.split_whitespace().any(|w| {
+        w.len() > 4 && w.chars().any(|c| c.is_uppercase()) && !w.chars().all(|c| c.is_uppercase())
+    });
+    let specificity_bonus =
+        (specific_count as f64 * 0.15 + if has_identifiers { 0.2 } else { 0.0 }).min(0.4);
 
-    let raw = (generic_ratio * 0.5 + short_penalty * 0.3 - specificity_bonus * 0.7)
-        .clamp(0.0, 1.0);
+    let raw = (generic_ratio * 0.5 + short_penalty * 0.3 - specificity_bonus * 0.7).clamp(0.0, 1.0);
 
     let reason = if raw >= 0.6 {
         format!(
             "Query is vague: {} of {} tokens are generic verbs ({:.0}%%). \
              Add specific symbol names, error messages, or CWE ids.",
-            generic_count, n, generic_ratio * 100.0
+            generic_count,
+            n,
+            generic_ratio * 100.0
         )
     } else if raw >= 0.35 {
         format!(
@@ -255,9 +320,12 @@ pub fn refine_heuristic(query: &str, fragment_summaries: &[String]) -> String {
     let query_terms: std::collections::HashSet<String> = tokenize(query).into_iter().collect();
 
     // Score each fragment by overlap with query terms
-    let mut scored: Vec<(usize, usize)> = fragment_summaries.iter().enumerate()
+    let mut scored: Vec<(usize, usize)> = fragment_summaries
+        .iter()
+        .enumerate()
         .map(|(i, summary)| {
-            let frag_tokens: std::collections::HashSet<String> = tokenize(summary).into_iter().collect();
+            let frag_tokens: std::collections::HashSet<String> =
+                tokenize(summary).into_iter().collect();
             let overlap = query_terms.intersection(&frag_tokens).count();
             (i, overlap)
         })
@@ -291,11 +359,7 @@ pub fn refine_heuristic(query: &str, fragment_summaries: &[String]) -> String {
     }
 
     // Reconstruct: original query + grounding context
-    format!(
-        "{} [context: {}]",
-        query,
-        enrichment_terms.join(", ")
-    )
+    format!("{} [context: {}]", query, enrichment_terms.join(", "))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -340,13 +404,22 @@ mod tests {
     #[test]
     fn test_vague_query_high_score() {
         let (score, _) = compute_vagueness("fix the bug");
-        assert!(score >= 0.35, "Short generic query should be vague, got {}", score);
+        assert!(
+            score >= 0.35,
+            "Short generic query should be vague, got {}",
+            score
+        );
     }
 
     #[test]
     fn test_specific_query_low_score() {
-        let (score, _) = compute_vagueness("SQL injection in cursor.execute via request.args CWE-89");
-        assert!(score < 0.4, "Specific query with CWE and SQL should be low vagueness, got {}", score);
+        let (score, _) =
+            compute_vagueness("SQL injection in cursor.execute via request.args CWE-89");
+        assert!(
+            score < 0.4,
+            "Specific query with CWE and SQL should be low vagueness, got {}",
+            score
+        );
     }
 
     #[test]
@@ -360,7 +433,9 @@ mod tests {
     #[test]
     fn test_key_terms_prefers_specific_tokens() {
         let terms = extract_key_terms("fix the sql injection in cursor.execute", &[], 10);
-        assert!(terms.iter().any(|t| t.contains("sql") || t.contains("cursor") || t.contains("injection")));
+        assert!(terms
+            .iter()
+            .any(|t| t.contains("sql") || t.contains("cursor") || t.contains("injection")));
     }
 
     #[test]
@@ -383,10 +458,7 @@ mod tests {
 
     #[test]
     fn test_analyze_query_full() {
-        let analysis = analyze_query(
-            "XSS via dangerouslySetInnerHTML in UserCard component",
-            &[],
-        );
+        let analysis = analyze_query("XSS via dangerouslySetInnerHTML in UserCard component", &[]);
         assert!(analysis.vagueness_score < 0.5);
         assert!(!analysis.needs_refinement);
         assert!(!analysis.key_terms.is_empty());

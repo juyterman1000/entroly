@@ -26,10 +26,10 @@
 //!   - Liu et al., "Lost in the Middle" (2023) — U-shaped attention profile
 //!   - Nemhauser et al., "Submodular Maximization" (1978) — greedy ≥ (1−1/e)·OPT
 
-use std::collections::{HashMap, HashSet};
-use crate::fragment::ContextFragment;
 use crate::depgraph::DepGraph;
+use crate::fragment::ContextFragment;
 use crate::guardrails::{file_criticality, Criticality};
+use std::collections::{HashMap, HashSet};
 
 // ═══════════════════════════════════════════════════════════════════
 //  1. MARGINAL INFORMATION GAIN TRAILING PASS
@@ -45,8 +45,7 @@ fn trigram_hashes(text: &str) -> Vec<u64> {
     }
     let mut out = Vec::with_capacity(bytes.len() - 2);
     for w in bytes.windows(3) {
-        let h = (w[0] as u64)
-            .wrapping_mul(0x100000001b3)
+        let h = (w[0] as u64).wrapping_mul(0x100000001b3)
             ^ (w[1] as u64).wrapping_mul(0x01000193)
             ^ (w[2] as u64);
         out.push(h);
@@ -82,7 +81,10 @@ fn marginal_gain(
     if grams.is_empty() {
         return candidate.entropy_score * dep_bonus;
     }
-    let covered = grams.iter().filter(|h| selected_trigrams.contains(h)).count();
+    let covered = grams
+        .iter()
+        .filter(|h| selected_trigrams.contains(h))
+        .count();
     let novelty = 1.0 - (covered as f64 / grams.len() as f64);
     candidate.entropy_score * novelty * dep_bonus
 }
@@ -127,14 +129,14 @@ pub fn channel_trailing_pass(
     let mut candidates: Vec<(usize, f64)> = frags
         .iter()
         .enumerate()
-        .filter(|(i, f)| !selected_set.contains(i) && f.token_count <= token_gap && f.token_count > 0)
+        .filter(|(i, f)| {
+            !selected_set.contains(i) && f.token_count <= token_gap && f.token_count > 0
+        })
         .map(|(i, f)| {
             // Bonus if this fragment defines a symbol needed by selected but not yet defined
             let dep_bonus = sym_defs
                 .iter()
-                .any(|(sym, fid)| {
-                    fid == &f.fragment_id && !defined_syms.contains(sym.as_str())
-                });
+                .any(|(sym, fid)| fid == &f.fragment_id && !defined_syms.contains(sym.as_str()));
             let bonus = if dep_bonus { 1.5 } else { 1.0 };
             let gain = marginal_gain(f, &selected_trigrams, bonus);
             let density = gain / f.token_count as f64;
@@ -142,9 +144,7 @@ pub fn channel_trailing_pass(
         })
         .collect();
 
-    candidates.sort_unstable_by(|a, b| {
-        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    candidates.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Greedy fill with incremental trigram update
     let mut remaining = token_gap;
@@ -263,7 +263,11 @@ pub fn semantic_interleave(
     let mut scored: Vec<(usize, f64, usize)> = (0..n)
         .map(|pos| {
             let idx = selected_indices[pos];
-            let rel = if pos < relevances.len() { relevances[pos] } else { 0.5 };
+            let rel = if pos < relevances.len() {
+                relevances[pos]
+            } else {
+                0.5
+            };
             let crit = file_criticality(&frags[idx].source);
             let crit_boost = match crit {
                 Criticality::Safety => 3.0,
@@ -412,20 +416,24 @@ pub fn contradiction_guard(
     frags: &[ContextFragment],
     selected_indices: &[usize],
     relevances: &[f64],
-    sdr_threshold: f64,       // Default: 0.25
+    sdr_threshold: f64,        // Default: 0.25
     structural_threshold: f64, // Default: 0.60 — source path similarity
 ) -> (Vec<usize>, ContradictionReport) {
     let n = selected_indices.len();
     if n <= 1 {
         return (
             selected_indices.to_vec(),
-            ContradictionReport { evicted_count: 0, pairs_found: 0 },
+            ContradictionReport {
+                evicted_count: 0,
+                pairs_found: 0,
+            },
         );
     }
 
     // Pre-compute source fingerprints (hash of the source path/file)
     // We use FNV-1a on the source string for structural comparison
-    let source_fps: Vec<u64> = selected_indices.iter()
+    let source_fps: Vec<u64> = selected_indices
+        .iter()
         .map(|&i| {
             let src = &frags[i].source;
             let mut h: u64 = 0xcbf29ce484222325;
@@ -471,8 +479,16 @@ pub fn contradiction_guard(
                 pairs_found += 1;
 
                 // Evict the fragment with lower relevance
-                let rel_i = if i < relevances.len() { relevances[i] } else { 0.0 };
-                let rel_j = if j < relevances.len() { relevances[j] } else { 0.0 };
+                let rel_i = if i < relevances.len() {
+                    relevances[i]
+                } else {
+                    0.0
+                };
+                let rel_j = if j < relevances.len() {
+                    relevances[j]
+                } else {
+                    0.0
+                };
 
                 if rel_i >= rel_j {
                     evicted_set.insert(j);
@@ -549,7 +565,8 @@ pub fn bookend_calibrate(
     }
 
     // Re-derive causal levels for the ordered sequence
-    let fid_to_pos: HashMap<&str, usize> = ordered_indices.iter()
+    let fid_to_pos: HashMap<&str, usize> = ordered_indices
+        .iter()
         .enumerate()
         .map(|(pos, &idx)| (frags[idx].fragment_id.as_str(), pos))
         .collect();
@@ -615,7 +632,8 @@ pub fn bookend_calibrate(
         }
 
         // Sort group members by importance (descending)
-        let mut by_importance: Vec<(usize, f64)> = group.iter()
+        let mut by_importance: Vec<(usize, f64)> = group
+            .iter()
             .map(|&pos| {
                 let idx = ordered_indices[pos];
                 let rel = relevances_map.get(&idx).copied().unwrap_or(0.5);
@@ -655,8 +673,8 @@ pub fn bookend_calibrate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fragment::ContextFragment;
     use crate::depgraph::DepGraph;
+    use crate::fragment::ContextFragment;
 
     fn frag(id: &str, content: &str, tokens: u32, source: &str) -> ContextFragment {
         let mut f = ContextFragment::new(id.into(), content.into(), tokens, source.into());
@@ -670,9 +688,24 @@ mod tests {
     #[test]
     fn test_trailing_pass_fills_gap() {
         let frags = vec![
-            frag("f0", "fn main() { let x = 42; println!(\"{}\", x); }", 20, "main.rs"),
-            frag("f1", "fn helper() { return compute_value(); }", 15, "helper.rs"),
-            frag("f2", "const CONFIG: u32 = 100; const TIMEOUT: u32 = 30;", 10, "config.rs"),
+            frag(
+                "f0",
+                "fn main() { let x = 42; println!(\"{}\", x); }",
+                20,
+                "main.rs",
+            ),
+            frag(
+                "f1",
+                "fn helper() { return compute_value(); }",
+                15,
+                "helper.rs",
+            ),
+            frag(
+                "f2",
+                "const CONFIG: u32 = 100; const TIMEOUT: u32 = 30;",
+                10,
+                "config.rs",
+            ),
         ];
         let selected = vec![0]; // Only f0 selected, 30 token gap
         let dep = DepGraph::new();
@@ -707,9 +740,16 @@ mod tests {
 
         let added = channel_trailing_pass(&frags, &selected, 25, &dep);
         // f3 is too big (100 > 25), should not be included
-        assert!(!added.contains(&3), "Should not add fragments exceeding gap");
+        assert!(
+            !added.contains(&3),
+            "Should not add fragments exceeding gap"
+        );
         let added_tokens: u32 = added.iter().map(|&i| frags[i].token_count).sum();
-        assert!(added_tokens <= 25, "Total added tokens {} exceeds gap 25", added_tokens);
+        assert!(
+            added_tokens <= 25,
+            "Total added tokens {} exceeds gap 25",
+            added_tokens
+        );
     }
 
     #[test]
@@ -742,7 +782,12 @@ mod tests {
         let mid = attention_weight(l / 2, l);
         let end = attention_weight(l - 1, l);
 
-        assert!(start > mid, "Primacy: start ({:.3}) > mid ({:.3})", start, mid);
+        assert!(
+            start > mid,
+            "Primacy: start ({:.3}) > mid ({:.3})",
+            start,
+            mid
+        );
         assert!(end > mid, "Recency: end ({:.3}) > mid ({:.3})", end, mid);
     }
 
@@ -774,7 +819,12 @@ mod tests {
     #[test]
     fn test_interleave_respects_causal_order() {
         let frags = vec![
-            frag("def", "fn calculate_tax(income: f64) -> f64 { income * 0.3 }", 20, "tax.rs"),
+            frag(
+                "def",
+                "fn calculate_tax(income: f64) -> f64 { income * 0.3 }",
+                20,
+                "tax.rs",
+            ),
             frag("use", "let result = calculate_tax(50000.0);", 10, "main.rs"),
         ];
         let selected = vec![0, 1];
@@ -838,12 +888,22 @@ mod tests {
         // Success + high sufficiency > success + low sufficiency
         let r_good = modulated_reward(true, 0.95);
         let r_lucky = modulated_reward(true, 0.2);
-        assert!(r_good > r_lucky, "High-suff success ({:.2}) > low-suff success ({:.2})", r_good, r_lucky);
+        assert!(
+            r_good > r_lucky,
+            "High-suff success ({:.2}) > low-suff success ({:.2})",
+            r_good,
+            r_lucky
+        );
 
         // Failure + low sufficiency stronger penalty than failure + high sufficiency
         let r_bad_ctx = modulated_reward(false, 0.1);
         let r_bad_other = modulated_reward(false, 0.9);
-        assert!(r_bad_ctx < r_bad_other, "Low-suff failure ({:.2}) < high-suff failure ({:.2})", r_bad_ctx, r_bad_other);
+        assert!(
+            r_bad_ctx < r_bad_other,
+            "Low-suff failure ({:.2}) < high-suff failure ({:.2})",
+            r_bad_ctx,
+            r_bad_other
+        );
     }
 
     // ── Performance ──
@@ -902,11 +962,19 @@ mod tests {
         let frags = vec![
             frag("f0", "selected", 5, "a.rs"),
             frag("f1", "candidate way too big for the gap", 200, "b.rs"),
-            frag("f2", "another huge candidate with lots of tokens", 300, "c.rs"),
+            frag(
+                "f2",
+                "another huge candidate with lots of tokens",
+                300,
+                "c.rs",
+            ),
         ];
         let selected = vec![0];
         let added = channel_trailing_pass(&frags, &selected, 10, &DepGraph::new());
-        assert!(added.is_empty(), "All candidates exceed gap → nothing added");
+        assert!(
+            added.is_empty(),
+            "All candidates exceed gap → nothing added"
+        );
     }
 
     #[test]
@@ -951,18 +1019,33 @@ mod tests {
     #[test]
     fn test_trailing_pass_no_duplicate_indices() {
         let frags: Vec<ContextFragment> = (0..20)
-            .map(|i| frag(&format!("f{}", i), &format!("unique content number {}", i), 5, &format!("{}.rs", i)))
+            .map(|i| {
+                frag(
+                    &format!("f{}", i),
+                    &format!("unique content number {}", i),
+                    5,
+                    &format!("{}.rs", i),
+                )
+            })
             .collect();
         let selected = vec![0, 1, 2];
         let added = channel_trailing_pass(&frags, &selected, 100, &DepGraph::new());
 
         // No duplicates in returned indices
         let unique: HashSet<usize> = added.iter().copied().collect();
-        assert_eq!(unique.len(), added.len(), "Duplicate indices in trailing pass output");
+        assert_eq!(
+            unique.len(),
+            added.len(),
+            "Duplicate indices in trailing pass output"
+        );
 
         // No overlap with already-selected
         for &idx in &added {
-            assert!(!selected.contains(&idx), "Trailing pass returned already-selected index {}", idx);
+            assert!(
+                !selected.contains(&idx),
+                "Trailing pass returned already-selected index {}",
+                idx
+            );
         }
     }
 
@@ -995,7 +1078,7 @@ mod tests {
         let frags = vec![
             frag("f0", "selected content with trigrams available", 10, "a.rs"),
             frag("f1", "ab", 5, "b.rs"), // 2 chars, no trigrams
-            frag("f2", "", 3, "c.rs"),    // empty, no trigrams
+            frag("f2", "", 3, "c.rs"),   // empty, no trigrams
         ];
         let selected = vec![0];
         // Should not panic, should handle gracefully
@@ -1061,7 +1144,8 @@ mod tests {
         dep.auto_link("d", &frags[1].content); // d uses c
         dep.auto_link("e", &frags[0].content); // e uses d
 
-        let result = semantic_interleave(&frags, &[0, 1, 2, 3, 4], &[0.1, 0.2, 0.3, 0.4, 0.9], &dep);
+        let result =
+            semantic_interleave(&frags, &[0, 1, 2, 3, 4], &[0.1, 0.2, 0.3, 0.4, 0.9], &dep);
         assert_eq!(result.len(), 5);
 
         // a must come before b, b before c, c before d, d before e
@@ -1099,7 +1183,9 @@ mod tests {
             assert!(
                 core_pos < other_pos,
                 "Core (pos {}) must precede {} (pos {})",
-                core_pos, other, other_pos
+                core_pos,
+                other,
+                other_pos
             );
         }
     }
@@ -1129,9 +1215,27 @@ mod tests {
         for total in [100, 1000, 10_000, 100_000] {
             for pos in [0, total / 4, total / 2, 3 * total / 4, total - 1] {
                 let w = attention_weight(pos, total);
-                assert!(w.is_finite(), "NaN/Inf at pos={} total={}: {}", pos, total, w);
-                assert!(w >= 0.2, "Weight below baseline at pos={} total={}: {}", pos, total, w);
-                assert!(w <= 1.0, "Weight above 1.0 at pos={} total={}: {}", pos, total, w);
+                assert!(
+                    w.is_finite(),
+                    "NaN/Inf at pos={} total={}: {}",
+                    pos,
+                    total,
+                    w
+                );
+                assert!(
+                    w >= 0.2,
+                    "Weight below baseline at pos={} total={}: {}",
+                    pos,
+                    total,
+                    w
+                );
+                assert!(
+                    w <= 1.0,
+                    "Weight above 1.0 at pos={} total={}: {}",
+                    pos,
+                    total,
+                    w
+                );
             }
         }
     }
@@ -1152,7 +1256,8 @@ mod tests {
         assert!(
             (first - last).abs() < 0.01,
             "U-shape should be symmetric: first={:.4} last={:.4}",
-            first, last
+            first,
+            last
         );
     }
 
@@ -1176,7 +1281,11 @@ mod tests {
         // All fragments have zero entropy → weight_total could be very small
         let utils = vec![(1.0, 0.0, 0), (1.0, 0.0, 1)];
         let r = information_reward(&utils, 2, 0.5);
-        assert!(r.is_finite(), "Should not produce NaN with zero entropy: {}", r);
+        assert!(
+            r.is_finite(),
+            "Should not produce NaN with zero entropy: {}",
+            r
+        );
         // entropy.max(0.01) prevents division by zero
     }
 
@@ -1194,11 +1303,30 @@ mod tests {
 
     #[test]
     fn test_modulated_reward_is_always_finite() {
-        for &s in &[f64::NEG_INFINITY, -1.0, 0.0, 0.5, 1.0, 2.0, f64::INFINITY, f64::NAN] {
+        for &s in &[
+            f64::NEG_INFINITY,
+            -1.0,
+            0.0,
+            0.5,
+            1.0,
+            2.0,
+            f64::INFINITY,
+            f64::NAN,
+        ] {
             let rs = modulated_reward(true, s);
             let rf = modulated_reward(false, s);
-            assert!(rs.is_finite(), "Success reward not finite for sufficiency={}: {}", s, rs);
-            assert!(rf.is_finite(), "Failure reward not finite for sufficiency={}: {}", s, rf);
+            assert!(
+                rs.is_finite(),
+                "Success reward not finite for sufficiency={}: {}",
+                s,
+                rs
+            );
+            assert!(
+                rf.is_finite(),
+                "Failure reward not finite for sufficiency={}: {}",
+                s,
+                rf
+            );
         }
     }
 
@@ -1222,17 +1350,30 @@ mod tests {
         all_selected.extend_from_slice(&trailing);
 
         // Interleave
-        let rels: Vec<f64> = all_selected.iter().enumerate().map(|(i, _)| 1.0 - i as f64 * 0.05).collect();
+        let rels: Vec<f64> = all_selected
+            .iter()
+            .enumerate()
+            .map(|(i, _)| 1.0 - i as f64 * 0.05)
+            .collect();
         let ordered = semantic_interleave(&frags, &all_selected, &rels, &dep);
 
         // Verify: same elements, no duplicates
         assert_eq!(ordered.len(), all_selected.len());
         let unique: HashSet<usize> = ordered.iter().copied().collect();
-        assert_eq!(unique.len(), ordered.len(), "Duplicates in interleaved output");
+        assert_eq!(
+            unique.len(),
+            ordered.len(),
+            "Duplicates in interleaved output"
+        );
 
         // All indices valid
         for &idx in &ordered {
-            assert!(idx < frags.len(), "Out-of-bounds index {} (len {})", idx, frags.len());
+            assert!(
+                idx < frags.len(),
+                "Out-of-bounds index {} (len {})",
+                idx,
+                frags.len()
+            );
         }
     }
 
@@ -1291,7 +1432,11 @@ mod tests {
         f1.simhash = 0xFFFF_FFFF_FFFF_FFFF;
         let frags = vec![f0, f1];
         let (filtered, report) = contradiction_guard(&frags, &[0, 1], &[0.8, 0.3], 0.25, 0.60);
-        assert_eq!(filtered.len(), 2, "Different sources → no contradiction check");
+        assert_eq!(
+            filtered.len(),
+            2,
+            "Different sources → no contradiction check"
+        );
         assert_eq!(report.pairs_found, 0);
     }
 
@@ -1300,7 +1445,14 @@ mod tests {
     #[test]
     fn test_bookend_preserves_all_indices() {
         let frags: Vec<ContextFragment> = (0..5)
-            .map(|i| frag(&format!("f{}", i), &format!("content {}", i), 10, &format!("f{}.py", i)))
+            .map(|i| {
+                frag(
+                    &format!("f{}", i),
+                    &format!("content {}", i),
+                    10,
+                    &format!("f{}.py", i),
+                )
+            })
             .collect();
         let indices = vec![0, 1, 2, 3, 4];
         let mut rel_map = HashMap::new();

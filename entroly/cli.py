@@ -41,7 +41,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "0.19.0"
+    __version__ = "0.19.1"
 
 # ── Force UTF-8 output on Windows ──
 # Windows terminals default to cp1252 which can't encode ✓/✗/─/⚡.
@@ -822,7 +822,10 @@ def cmd_benchmark(args):
     # (7M+ tokens) is marketing, not measurement.
     baseline = min(total, 32_000)
     budget = getattr(args, "budget", 4096)
+    compare_baseline = getattr(args, "compare_baseline", False)
     print(f"  Codebase: {total:,} total tokens  |  Naive baseline: {baseline:,} tokens (32K dump or repo total)\n")
+    if compare_baseline:
+        print(f"  {C.GRAY}Comparing current selector output against the deterministic 32K baseline.{C.RESET}\n")
     print(f"  {'Query':<45} {'Baseline':>9} {'Entroly':>8} {'Saved':>6}")
     print(f"  {'-'*45} {'-'*9} {'-'*8} {'-'*6}")
 
@@ -1710,6 +1713,16 @@ def cmd_wrap(args):
 
     Run `entroly wrap` with no agent to see the full list.
     """
+    if not getattr(args, "agent", None):
+        by_kind: dict = {"cli": [], "mcp": [], "print": []}
+        for k, s in _WRAP_AGENTS.items():
+            by_kind.setdefault(s.get("kind", "print"), []).append(k)
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Wrap — supported tools{C.RESET}\n")
+        print(f"  {C.GRAY}CLI (env-wrap):{C.RESET}  {', '.join(sorted(by_kind['cli']))}")
+        print(f"  {C.GRAY}MCP (auto):{C.RESET}      {', '.join(sorted(by_kind['mcp']))}")
+        print(f"  {C.GRAY}Other:{C.RESET}           {', '.join(sorted(by_kind['print']))}\n")
+        return
+
     agent = args.agent.lower()
     if agent not in _WRAP_AGENTS:
         print(f"\n  {C.RED}Unknown agent: {agent}{C.RESET}")
@@ -2905,32 +2918,44 @@ def cmd_optimize(args):
     # head-to-head in quality_eval on code-retrieval tasks); fall back to
     # knapsack when there's no query to condition on.
     if selector == "auto":
-        selector = "qccr" if task else "knapsack"
+        # QCCR and DOPT need the Rust fragment export API. The default CLI
+        # install intentionally works without entroly-core, so the Python
+        # fallback must choose the selector that has a native Python path.
+        selector = "qccr" if task and getattr(engine, "_use_rust", False) else "knapsack"
     if selector in ("dopt", "qccr"):
-        # Query-aware re-selection over the full fragment store, bypassing
-        # recall() (which caps at ~25 items and biases toward stale stubs).
-        #   dopt — file-level BM25 with log-det diversity (experimental)
-        #   qccr — sentence-level query-conditioned extractive summarization
-        #          with MMR diversity; emits synthetic per-file excerpts.
-        candidates = [dict(f) for f in engine._rust.export_fragments()]
-        exclude_patterns = getattr(args, "exclude", []) or []
-        if exclude_patterns:
-            candidates = [
-                c for c in candidates
-                if not any(p in (c.get("source") or "") for p in exclude_patterns)
-            ]
-        if selector == "qccr":
-            from entroly.qccr import select as qccr_select
-            selected = qccr_select(candidates, token_budget=budget, query=task)
+        if not getattr(engine, "_use_rust", False):
+            print(
+                f"  {C.YELLOW}Selector {selector!r} requires the native entroly-core engine; "
+                f"falling back to knapsack.{C.RESET}",
+                file=sys.stderr,
+            )
+            opt = engine.optimize_context(token_budget=budget, query=task)
+            selected = opt.get("selected_fragments", []) or opt.get("selected", [])
         else:
-            from entroly.dopt_selector import select as dopt_select
-            selected = dopt_select(candidates, token_budget=budget, query=task)
-        opt = {
-            "selected_fragments": selected,
-            "total_tokens": sum(f.get("token_count") or (len(f.get("content", "")) // 4) for f in selected),
-            "recommended_budget": budget,
-            "task_type": "",
-        }
+            # Query-aware re-selection over the full fragment store, bypassing
+            # recall() (which caps at ~25 items and biases toward stale stubs).
+            #   dopt — file-level BM25 with log-det diversity (experimental)
+            #   qccr — sentence-level query-conditioned extractive summarization
+            #          with MMR diversity; emits synthetic per-file excerpts.
+            candidates = [dict(f) for f in engine._rust.export_fragments()]
+            exclude_patterns = getattr(args, "exclude", []) or []
+            if exclude_patterns:
+                candidates = [
+                    c for c in candidates
+                    if not any(p in (c.get("source") or "") for p in exclude_patterns)
+                ]
+            if selector == "qccr":
+                from entroly.qccr import select as qccr_select
+                selected = qccr_select(candidates, token_budget=budget, query=task)
+            else:
+                from entroly.dopt_selector import select as dopt_select
+                selected = dopt_select(candidates, token_budget=budget, query=task)
+            opt = {
+                "selected_fragments": selected,
+                "total_tokens": sum(f.get("token_count") or (len(f.get("content", "")) // 4) for f in selected),
+                "recommended_budget": budget,
+                "task_type": "",
+            }
     else:
         opt = engine.optimize_context(token_budget=budget, query=task)
         selected = opt.get("selected_fragments", []) or opt.get("selected", [])
@@ -3715,6 +3740,10 @@ def main():
         "--budget", type=int, default=4096,
         help="Token budget per query (default: 4096)",
     )
+    benchmark_parser.add_argument(
+        "--compare-baseline", dest="compare_baseline", action="store_true",
+        help="Print the explicit baseline comparison used for the benchmark table",
+    )
 
     # entroly status
     status_parser = subparsers.add_parser(
@@ -3830,7 +3859,7 @@ def main():
         help="Start proxy + launch coding agent in one command (claude, codex, aider, cursor)",
     )
     wrap_parser.add_argument(
-        "agent", type=str,
+        "agent", type=str, nargs="?",
         help="Agent to wrap: claude, codex, aider, cursor",
     )
     wrap_parser.add_argument(

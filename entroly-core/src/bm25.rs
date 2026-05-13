@@ -22,8 +22,8 @@
 use std::collections::HashMap;
 
 /// BM25 parameters (well-studied defaults)
-const K1: f64 = 1.2;    // Term frequency saturation. Higher = more weight to repeated terms.
-const B: f64 = 0.75;     // Length normalization. 0 = no normalization, 1 = full normalization.
+const K1: f64 = 1.2; // Term frequency saturation. Higher = more weight to repeated terms.
+const B: f64 = 0.75; // Length normalization. 0 = no normalization, 1 = full normalization.
 
 /// Bonus multipliers for structural signals
 /// BM25F principle (Robertson, SIGIR): the "title" field (path/filename)
@@ -37,9 +37,9 @@ const B: f64 = 0.75;     // Length normalization. 0 = no normalization, 1 = full
 ///
 /// New values implement the 5-10x title-over-body weight ratios from
 /// Elasticsearch's combined_fields BM25F scoring.
-const PATH_MATCH_BOOST: f64 = 8.0;       // Query term found in file path
-const IDENTIFIER_MATCH_BOOST: f64 = 3.0;  // Query term matches a code identifier
-const EXACT_FILENAME_BOOST: f64 = 12.0;   // Query term IS the filename (minus extension)
+const PATH_MATCH_BOOST: f64 = 8.0; // Query term found in file path
+const IDENTIFIER_MATCH_BOOST: f64 = 3.0; // Query term matches a code identifier
+const EXACT_FILENAME_BOOST: f64 = 12.0; // Query term IS the filename (minus extension)
 
 /// Pre-computed corpus statistics for BM25 IDF calculation.
 pub struct BM25Index {
@@ -94,7 +94,11 @@ impl BM25Index {
             1.0
         };
 
-        BM25Index { num_docs, avg_dl, df }
+        BM25Index {
+            num_docs,
+            avg_dl,
+            df,
+        }
     }
 
     /// Compute IDF for a single term:
@@ -153,7 +157,8 @@ impl BM25Index {
         let total_query_terms = query_terms.len().max(1);
 
         // Pre-compute query term parts for coverage checking
-        let qt_parts_cache: HashMap<String, Vec<String>> = query_terms.iter()
+        let qt_parts_cache: HashMap<String, Vec<String>> = query_terms
+            .iter()
             .map(|qt| (qt.to_lowercase(), split_identifier(qt)))
             .collect();
 
@@ -166,8 +171,8 @@ impl BM25Index {
 
             // BM25 TF component: tf × (k1 + 1) / (tf + k1 × (1 - b + b × dl/avgdl))
             let tf_component = if raw_tf > 0.0 {
-                (raw_tf * (K1 + 1.0)) /
-                (raw_tf + K1 * (1.0 - B + B * doc_len / self.avg_dl.max(1.0)))
+                (raw_tf * (K1 + 1.0))
+                    / (raw_tf + K1 * (1.0 - B + B * doc_len / self.avg_dl.max(1.0)))
             } else {
                 0.0
             };
@@ -176,9 +181,10 @@ impl BM25Index {
             // (in content, path, or identifiers)
             let in_content = raw_tf > 0.0;
             let in_path = path_lower.contains(&qt_lower) || path_tokens.contains(&qt_lower);
-            let in_ids = qt_parts_cache.get(&qt_lower).map(|parts| {
-                parts.iter().any(|p| id_set.contains(p))
-            }).unwrap_or(false);
+            let in_ids = qt_parts_cache
+                .get(&qt_lower)
+                .map(|parts| parts.iter().any(|p| id_set.contains(p)))
+                .unwrap_or(false);
             if in_content || in_path || in_ids {
                 terms_matched += 1;
             }
@@ -293,9 +299,24 @@ pub fn tokenize_path(path: &str) -> Vec<String> {
     path.split(&['/', '\\', '.', '-', '_'][..])
         .filter(|s| s.len() >= 2)
         .map(|s| s.to_lowercase())
-        .filter(|s| !matches!(s.as_str(), "py" | "rs" | "ts" | "js" | "md" | "txt" |
-                                           "json" | "yaml" | "yml" | "toml" | "cfg" |
-                                           "src" | "lib" | "file"))
+        .filter(|s| {
+            !matches!(
+                s.as_str(),
+                "py" | "rs"
+                    | "ts"
+                    | "js"
+                    | "md"
+                    | "txt"
+                    | "json"
+                    | "yaml"
+                    | "yml"
+                    | "toml"
+                    | "cfg"
+                    | "src"
+                    | "lib"
+                    | "file"
+            )
+        })
         .collect()
 }
 
@@ -343,7 +364,8 @@ pub fn split_identifier(id: &str) -> Vec<String> {
 
 /// Common programming keywords that don't help with retrieval.
 fn is_code_stopword(word: &str) -> bool {
-    matches!(word,
+    matches!(
+        word,
         // Python
         "def" | "class" | "import" | "from" | "return" | "self" | "none" | "true" | "false" |
         "if" | "else" | "elif" | "for" | "while" | "try" | "except" | "with" | "as" |
@@ -383,7 +405,8 @@ pub fn normalize_scores(scores: &[f64]) -> Vec<f64> {
         return vec![0.5; scores.len()];
     }
 
-    scores.iter()
+    scores
+        .iter()
         .map(|&s| ((s - min) / range * 0.95 + 0.05).clamp(0.05, 1.0))
         .collect()
 }
@@ -399,7 +422,10 @@ mod tests {
 
     #[test]
     fn test_split_identifier_snake() {
-        assert_eq!(split_identifier("add_conditional_edges"), vec!["add", "conditional", "edges"]);
+        assert_eq!(
+            split_identifier("add_conditional_edges"),
+            vec!["add", "conditional", "edges"]
+        );
     }
 
     #[test]
@@ -426,15 +452,40 @@ mod tests {
         ];
 
         let index = BM25Index::build(&docs);
-        let query_terms: Vec<String> = vec!["state".into(), "graph".into(), "add_node".into(), "add_edge".into()];
+        let query_terms: Vec<String> = vec![
+            "state".into(),
+            "graph".into(),
+            "add_node".into(),
+            "add_edge".into(),
+        ];
 
-        let s1 = index.score(&query_terms, &docs[0].1, &docs[0].2, &["StateGraph".into(), "add_node".into(), "add_edge".into()]);
+        let s1 = index.score(
+            &query_terms,
+            &docs[0].1,
+            &docs[0].2,
+            &["StateGraph".into(), "add_node".into(), "add_edge".into()],
+        );
         let s2 = index.score(&query_terms, &docs[1].1, &docs[1].2, &[]);
-        let s3 = index.score(&query_terms, &docs[2].1, &docs[2].2, &["MemoryStore".into()]);
+        let s3 = index.score(
+            &query_terms,
+            &docs[2].1,
+            &docs[2].2,
+            &["MemoryStore".into()],
+        );
 
         // state.py MUST score higher than config.py for a "StateGraph" query
-        assert!(s1.combined > s2.combined, "state.py ({}) should rank above config.py ({})", s1.combined, s2.combined);
-        assert!(s1.combined > s3.combined, "state.py ({}) should rank above memory.py ({})", s1.combined, s3.combined);
+        assert!(
+            s1.combined > s2.combined,
+            "state.py ({}) should rank above config.py ({})",
+            s1.combined,
+            s2.combined
+        );
+        assert!(
+            s1.combined > s3.combined,
+            "state.py ({}) should rank above memory.py ({})",
+            s1.combined,
+            s3.combined
+        );
 
         // Score decomposition invariant (coverage-augmented BM25):
         //   combined = bm25_base + path_boost + identifier_boost + coverage^1.5 * 0.5 * bm25_base
@@ -447,7 +498,12 @@ mod tests {
             assert!(
                 (s.combined - expected).abs() < 1e-9,
                 "decomposition broken: combined={} vs sum={} (base={}, path={}, id={}, cov={})",
-                s.combined, expected, s.bm25_base, s.path_boost, s.identifier_boost, s.query_coverage,
+                s.combined,
+                expected,
+                s.bm25_base,
+                s.path_boost,
+                s.identifier_boost,
+                s.query_coverage,
             );
             assert!((0.0..=1.0).contains(&s.query_coverage));
         }
@@ -457,8 +513,8 @@ mod tests {
     fn test_normalize_scores() {
         let scores = vec![0.0, 5.0, 10.0];
         let norm = normalize_scores(&scores);
-        assert!(norm[0] < 0.1);  // min → ~0.05
-        assert!(norm[2] > 0.9);  // max → ~1.0
+        assert!(norm[0] < 0.1); // min → ~0.05
+        assert!(norm[2] > 0.9); // max → ~1.0
         assert!(norm[1] > norm[0] && norm[1] < norm[2]); // monotone
     }
 }

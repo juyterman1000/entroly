@@ -52,8 +52,8 @@
 //! the Ebbinghaus decay but slower (pairwise patterns are more stable
 //! than individual recency).
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 /// A symmetric pair key — order-independent.
 /// Always stores (min, max) to ensure R[a][b] == R[b][a].
@@ -84,12 +84,17 @@ impl PairKey {
 /// Custom serde for HashMap<PairKey, V> — JSON requires string keys.
 mod pair_key_map_serde {
     use super::*;
-    use serde::ser::SerializeMap;
     use serde::de::{self, MapAccess, Visitor};
+    use serde::ser::SerializeMap;
     use std::fmt;
 
-    pub fn serialize<S>(map: &HashMap<PairKey, super::ResonanceEntry>, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    pub fn serialize<S>(
+        map: &HashMap<PairKey, super::ResonanceEntry>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
         let mut ser_map = serializer.serialize_map(Some(map.len()))?;
         for (k, v) in map {
             ser_map.serialize_entry(&k.to_key_string(), v)?;
@@ -97,8 +102,12 @@ mod pair_key_map_serde {
         ser_map.end()
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<PairKey, super::ResonanceEntry>, D::Error>
-    where D: serde::Deserializer<'de> {
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<HashMap<PairKey, super::ResonanceEntry>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
         struct PairKeyMapVisitor;
         impl<'de> Visitor<'de> for PairKeyMapVisitor {
             type Value = HashMap<PairKey, super::ResonanceEntry>;
@@ -107,7 +116,9 @@ mod pair_key_map_serde {
             }
             fn visit_map<M: MapAccess<'de>>(self, mut access: M) -> Result<Self::Value, M::Error> {
                 let mut map = HashMap::with_capacity(access.size_hint().unwrap_or(0));
-                while let Some((key_str, value)) = access.next_entry::<String, super::ResonanceEntry>()? {
+                while let Some((key_str, value)) =
+                    access.next_entry::<String, super::ResonanceEntry>()?
+                {
                     let key = PairKey::from_key_string(&key_str)
                         .ok_or_else(|| de::Error::custom(format!("invalid pair key: {key_str}")))?;
                     map.insert(key, value);
@@ -166,7 +177,9 @@ impl ResonanceMatrix {
     /// With typical N ≈ 10-20, this is 45-190 updates — negligible.
     pub fn record_outcome(&mut self, fragment_ids: &[String], reward: f64, current_turn: u32) {
         let n = fragment_ids.len();
-        if n < 2 { return; }
+        if n < 2 {
+            return;
+        }
 
         // Update all co-selected pairs
         for i in 0..n {
@@ -209,7 +222,9 @@ impl ResonanceMatrix {
     /// where w(s) = 1 − 1/(1 + co_selections) is the Wilson-inspired
     /// confidence weight (ranges from 0 → 1 as observations grow).
     pub fn resonance_bonus(&self, candidate_id: &str, selected_ids: &[&str]) -> f64 {
-        if selected_ids.is_empty() { return 0.0; }
+        if selected_ids.is_empty() {
+            return 0.0;
+        }
 
         let mut weighted_sum = 0.0;
         let mut weight_total = 0.0;
@@ -225,7 +240,9 @@ impl ResonanceMatrix {
             }
         }
 
-        if weight_total < 1e-10 { return 0.0; }
+        if weight_total < 1e-10 {
+            return 0.0;
+        }
         weighted_sum / weight_total
     }
 
@@ -238,7 +255,8 @@ impl ResonanceMatrix {
         candidate_ids: &[&str],
         selected_ids: &[&str],
     ) -> HashMap<String, f64> {
-        candidate_ids.iter()
+        candidate_ids
+            .iter()
             .map(|&cid| (cid.to_string(), self.resonance_bonus(cid, selected_ids)))
             .collect()
     }
@@ -265,7 +283,9 @@ impl ResonanceMatrix {
     /// Get the strongest resonance pairs (for diagnostics).
     /// Returns up to `top_k` pairs sorted by |strength| descending.
     pub fn top_pairs(&self, top_k: usize) -> Vec<(String, String, f64, u32)> {
-        let mut pairs: Vec<_> = self.pairs.iter()
+        let mut pairs: Vec<_> = self
+            .pairs
+            .iter()
             .map(|(k, v)| (k.0.clone(), k.1.clone(), v.strength, v.co_selections))
             .collect();
         pairs.sort_by(|a, b| b.2.abs().total_cmp(&a.2.abs()));
@@ -277,12 +297,13 @@ impl ResonanceMatrix {
     /// Low (< 0.01) = cold start, no patterns learned yet.
     /// High (> 0.5) = strong interaction patterns detected.
     pub fn mean_strength(&self) -> f64 {
-        if self.pairs.is_empty() { return 0.0; }
+        if self.pairs.is_empty() {
+            return 0.0;
+        }
         let sum: f64 = self.pairs.values().map(|e| e.strength.abs()).sum();
         sum / self.pairs.len() as f64
     }
 }
-
 
 // ═══════════════════════════════════════════════════════════════════
 //  FRAGMENT CONSOLIDATION — Maxwell's Demon for Information Entropy
@@ -329,17 +350,23 @@ pub fn find_consolidation_groups(
     hamming_threshold: u32,
 ) -> Vec<ConsolidationResult> {
     let n = fragments.len();
-    if n < 2 { return Vec::new(); }
+    if n < 2 {
+        return Vec::new();
+    }
 
     let mut used = vec![false; n];
     let mut results = Vec::new();
 
     for i in 0..n {
-        if used[i] || fragments[i].3 { continue; } // skip if used or pinned
+        if used[i] || fragments[i].3 {
+            continue;
+        } // skip if used or pinned
 
         let mut group = vec![i];
         for j in (i + 1)..n {
-            if used[j] || fragments[j].3 { continue; }
+            if used[j] || fragments[j].3 {
+                continue;
+            }
 
             let dist = (fragments[i].1 ^ fragments[j].1).count_ones();
             if dist <= hamming_threshold {
@@ -347,23 +374,30 @@ pub fn find_consolidation_groups(
             }
         }
 
-        if group.len() < 2 { continue; }
+        if group.len() < 2 {
+            continue;
+        }
 
         // Pick winner: highest feedback_mult, breaking ties by lower token_count
         // (prefer the more concise version at equal quality)
-        let winner_idx = *group.iter()
+        let winner_idx = *group
+            .iter()
             .max_by(|&&a, &&b| {
-                fragments[a].2.total_cmp(&fragments[b].2)
+                fragments[a]
+                    .2
+                    .total_cmp(&fragments[b].2)
                     .then(fragments[b].4.cmp(&fragments[a].4)) // lower tokens wins ties
             })
             .unwrap();
 
-        let tokens_saved: u32 = group.iter()
+        let tokens_saved: u32 = group
+            .iter()
             .filter(|&&idx| idx != winner_idx)
             .map(|&idx| fragments[idx].4)
             .sum();
 
-        let consolidated_ids: Vec<String> = group.iter()
+        let consolidated_ids: Vec<String> = group
+            .iter()
             .filter(|&&idx| idx != winner_idx)
             .map(|&idx| fragments[idx].0.clone())
             .collect();
@@ -381,7 +415,6 @@ pub fn find_consolidation_groups(
 
     results
 }
-
 
 // ═══════════════════════════════════════════════════════════════════
 //  COVERAGE SUFFICIENCY ESTIMATOR — The Unknown Unknowns Engine
@@ -457,9 +490,9 @@ pub struct CoverageEstimate {
 /// Higher m (more overlap) → lower CV → higher confidence.
 pub fn estimate_coverage(
     selected_count: usize,
-    semantic_candidates: usize,   // N₁: fragments found by SimHash similarity
+    semantic_candidates: usize, // N₁: fragments found by SimHash similarity
     structural_candidates: usize, // N₂: fragments found by dep graph traversal
-    overlap: usize,               // m: fragments found by BOTH methods
+    overlap: usize,             // m: fragments found by BOTH methods
 ) -> CoverageEstimate {
     // Edge cases
     if selected_count == 0 {
@@ -522,7 +555,6 @@ pub fn estimate_coverage(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,8 +570,10 @@ mod tests {
         // R[a][b] == R[b][a] due to symmetric PairKey
         let bonus_ab = rm.resonance_bonus("a", &["b"]);
         let bonus_ba = rm.resonance_bonus("b", &["a"]);
-        assert!((bonus_ab - bonus_ba).abs() < 1e-10,
-            "Resonance must be symmetric: {bonus_ab} vs {bonus_ba}");
+        assert!(
+            (bonus_ab - bonus_ba).abs() < 1e-10,
+            "Resonance must be symmetric: {bonus_ab} vs {bonus_ba}"
+        );
     }
 
     #[test]
@@ -553,7 +587,10 @@ mod tests {
         }
 
         let bonus = rm.resonance_bonus("a", &["b"]);
-        assert!(bonus > 0.5, "10 positive outcomes should create strong resonance: {bonus}");
+        assert!(
+            bonus > 0.5,
+            "10 positive outcomes should create strong resonance: {bonus}"
+        );
     }
 
     #[test]
@@ -567,14 +604,20 @@ mod tests {
         }
 
         let bonus = rm.resonance_bonus("a", &["b"]);
-        assert!(bonus < -0.5, "10 negative outcomes should create anti-resonance: {bonus}");
+        assert!(
+            bonus < -0.5,
+            "10 negative outcomes should create anti-resonance: {bonus}"
+        );
     }
 
     #[test]
     fn test_resonance_cold_start_zero() {
         let rm = ResonanceMatrix::new();
         let bonus = rm.resonance_bonus("x", &["y", "z"]);
-        assert!((bonus).abs() < 1e-10, "Unknown pairs should have zero resonance");
+        assert!(
+            (bonus).abs() < 1e-10,
+            "Unknown pairs should have zero resonance"
+        );
     }
 
     #[test]
@@ -591,8 +634,10 @@ mod tests {
         }
 
         let after = rm.resonance_bonus("a", &["b"]);
-        assert!(after < before * 0.5,
-            "Decay should reduce resonance: before={before}, after={after}");
+        assert!(
+            after < before * 0.5,
+            "Decay should reduce resonance: before={before}, after={after}"
+        );
     }
 
     #[test]
@@ -609,11 +654,15 @@ mod tests {
         let bonus_with_c = rm.resonance_bonus("a", &["c"]);
         let bonus_with_both = rm.resonance_bonus("a", &["b", "c"]);
 
-        assert!(bonus_with_b > bonus_with_c,
-            "Should resonate more with b than c: {bonus_with_b} vs {bonus_with_c}");
+        assert!(
+            bonus_with_b > bonus_with_c,
+            "Should resonate more with b than c: {bonus_with_b} vs {bonus_with_c}"
+        );
         // Mixed resonance: b pulls up, c pulls down
-        assert!(bonus_with_both < bonus_with_b && bonus_with_both > bonus_with_c,
-            "Mixed resonance should be between pure b and pure c: {bonus_with_both}");
+        assert!(
+            bonus_with_both < bonus_with_b && bonus_with_both > bonus_with_c,
+            "Mixed resonance should be between pure b and pure c: {bonus_with_both}"
+        );
     }
 
     // ── Consolidation Tests ──
@@ -642,7 +691,10 @@ mod tests {
         ];
 
         let groups = find_consolidation_groups(&frags, 6);
-        assert!(groups.is_empty(), "Pinned fragments should not be consolidated");
+        assert!(
+            groups.is_empty(),
+            "Pinned fragments should not be consolidated"
+        );
     }
 
     // ── Coverage Estimator Tests ──
@@ -653,13 +705,21 @@ mod tests {
         // When overlap is high relative to both N₁ and N₂, Chapman estimates
         // a small population, giving high coverage and confidence.
         let est = estimate_coverage(
-            20,  // selected (most of the estimated population)
-            20,  // semantic candidates
-            20,  // structural candidates
-            19,  // overlap (19 of 20 found by both methods)
+            20, // selected (most of the estimated population)
+            20, // semantic candidates
+            20, // structural candidates
+            19, // overlap (19 of 20 found by both methods)
         );
-        assert!(est.coverage > 0.7, "High overlap should give high coverage: {}", est.coverage);
-        assert!(est.confidence > 0.6, "High overlap should give good confidence: {}", est.confidence);
+        assert!(
+            est.coverage > 0.7,
+            "High overlap should give high coverage: {}",
+            est.coverage
+        );
+        assert!(
+            est.confidence > 0.6,
+            "High overlap should give good confidence: {}",
+            est.confidence
+        );
         assert_eq!(est.risk_level, "low");
     }
 
@@ -667,12 +727,16 @@ mod tests {
     fn test_coverage_low_overlap() {
         // Methods find different fragments → low coverage (unknown unknowns)
         let est = estimate_coverage(
-            10,  // selected
-            20,  // semantic candidates
-            15,  // structural candidates
-            2,   // overlap (very low!)
+            10, // selected
+            20, // semantic candidates
+            15, // structural candidates
+            2,  // overlap (very low!)
         );
-        assert!(est.coverage < 0.5, "Low overlap should give low coverage: {}", est.coverage);
+        assert!(
+            est.coverage < 0.5,
+            "Low overlap should give low coverage: {}",
+            est.coverage
+        );
         assert_eq!(est.risk_level, "high");
     }
 
@@ -688,8 +752,12 @@ mod tests {
         // More overlap → higher coverage estimate
         let est_low = estimate_coverage(10, 20, 15, 2);
         let est_high = estimate_coverage(10, 20, 15, 10);
-        assert!(est_high.coverage > est_low.coverage,
-            "More overlap should increase coverage: {} vs {}", est_high.coverage, est_low.coverage);
+        assert!(
+            est_high.coverage > est_low.coverage,
+            "More overlap should increase coverage: {} vs {}",
+            est_high.coverage,
+            est_low.coverage
+        );
     }
 
     #[test]
@@ -698,15 +766,21 @@ mod tests {
         // Semantic finds 40, structural finds 30, overlap = 12
         // Chapman estimate: (41)(31)/(13) - 1 = 96.77 ≈ 100 ✓
         let est = estimate_coverage(
-            25,  // we selected 25
-            40,  // semantic found 40
-            30,  // structural found 30
-            12,  // overlap 12
+            25, // we selected 25
+            40, // semantic found 40
+            30, // structural found 30
+            12, // overlap 12
         );
         // True population ≈ 97, coverage ≈ 25/97 ≈ 0.26
-        assert!((est.coverage - 0.26).abs() < 0.1,
-            "Chapman should estimate ~26% coverage, got {:.2}", est.coverage);
-        assert!(est.estimated_gap > 60.0,
-            "Should estimate ~72 missing fragments, got {:.0}", est.estimated_gap);
+        assert!(
+            (est.coverage - 0.26).abs() < 0.1,
+            "Chapman should estimate ~26% coverage, got {:.2}",
+            est.coverage
+        );
+        assert!(
+            est.estimated_gap > 60.0,
+            "Should estimate ~72 missing fragments, got {:.0}",
+            est.estimated_gap
+        );
     }
 }

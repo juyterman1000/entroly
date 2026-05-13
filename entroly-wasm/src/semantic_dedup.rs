@@ -26,9 +26,9 @@
 //! based semantic overlap across structurally different but
 //! informationally redundant fragments is new.
 
-use std::collections::HashSet;
-use crate::fragment::ContextFragment;
 use crate::depgraph::extract_identifiers;
+use crate::fragment::ContextFragment;
+use std::collections::HashSet;
 
 /// Default redundancy threshold. Fragments with marginal info gain
 /// below this are considered semantically redundant and dropped.
@@ -65,7 +65,11 @@ fn trigram_jaccard(a: &str, b: &str) -> f64 {
     let intersection = set_a.intersection(&set_b).count();
     let union = set_a.len() + set_b.len() - intersection;
 
-    if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f64 / union as f64
+    }
 }
 
 /// Symmetric identifier Jaccard similarity.
@@ -80,7 +84,11 @@ fn identifier_jaccard(a: &str, b: &str) -> f64 {
     let intersection = idents_a.intersection(&idents_b).count();
     let union = idents_a.len() + idents_b.len() - intersection;
 
-    if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f64 / union as f64
+    }
 }
 
 /// Semantic deduplication via greedy marginal information gain.
@@ -114,7 +122,8 @@ pub fn semantic_deduplicate(
         let candidate = &fragments[idx].content;
 
         // Compute max overlap with any already-selected fragment
-        let max_overlap = selected.iter()
+        let max_overlap = selected
+            .iter()
             .map(|&sel_idx| content_overlap(candidate, &fragments[sel_idx].content))
             .fold(0.0_f64, f64::max);
 
@@ -148,7 +157,8 @@ pub fn semantic_deduplicate_with_stats(
     let kept_set: HashSet<usize> = kept.iter().copied().collect();
 
     let removed_count = sorted_indices.len() - kept.len();
-    let tokens_saved: u32 = sorted_indices.iter()
+    let tokens_saved: u32 = sorted_indices
+        .iter()
         .filter(|idx| !kept_set.contains(idx))
         .map(|&idx| fragments[idx].token_count)
         .sum();
@@ -173,15 +183,26 @@ mod tests {
     fn test_redundant_fragments_deduplicated() {
         // Two fragments with nearly identical content
         let frags = vec![
-            make_frag("a", "def calculate_tax(income, rate):\n    return income * rate", 50),
-            make_frag("b", "def calculate_tax(income, rate):\n    return income * rate * 1.0", 55),
+            make_frag(
+                "a",
+                "def calculate_tax(income, rate):\n    return income * rate",
+                50,
+            ),
+            make_frag(
+                "b",
+                "def calculate_tax(income, rate):\n    return income * rate * 1.0",
+                55,
+            ),
         ];
 
         let sorted = vec![0, 1]; // both equally relevant
         let kept = semantic_deduplicate(&frags, &sorted, Some(0.3));
 
-        assert_eq!(kept.len(), 1,
-            "Semantically redundant fragments should be deduplicated to 1");
+        assert_eq!(
+            kept.len(),
+            1,
+            "Semantically redundant fragments should be deduplicated to 1"
+        );
         assert_eq!(kept[0], 0, "Highest-relevance fragment should be kept");
     }
 
@@ -189,8 +210,16 @@ mod tests {
     fn test_unique_fragments_kept() {
         // Two completely different fragments
         let frags = vec![
-            make_frag("a", "def calculate_tax(income, rate):\n    return income * rate", 50),
-            make_frag("b", "async fn connect_database(host, port):\n    conn = await pg.connect(host, port)", 60),
+            make_frag(
+                "a",
+                "def calculate_tax(income, rate):\n    return income * rate",
+                50,
+            ),
+            make_frag(
+                "b",
+                "async fn connect_database(host, port):\n    conn = await pg.connect(host, port)",
+                60,
+            ),
         ];
 
         let sorted = vec![0, 1];
@@ -229,10 +258,15 @@ mod tests {
         let sorted = vec![0, 1, 2];
         let result = semantic_deduplicate_with_stats(&frags, &sorted, Some(0.3));
 
-        assert!(result.removed_count > 0,
-            "Should remove at least one redundant fragment");
-        assert!(result.tokens_saved > 0,
-            "Should save tokens from removed fragments: {}", result.tokens_saved);
+        assert!(
+            result.removed_count > 0,
+            "Should remove at least one redundant fragment"
+        );
+        assert!(
+            result.tokens_saved > 0,
+            "Should save tokens from removed fragments: {}",
+            result.tokens_saved
+        );
     }
 
     #[test]
@@ -247,8 +281,16 @@ mod tests {
         // At low threshold (0.1), more fragments survive
         // At high threshold (0.8), only very unique fragments survive
         let frags = vec![
-            make_frag("a", "def calculate_tax(income, rate): return income * rate", 50),
-            make_frag("b", "def compute_tax(salary, tax_rate): return salary * tax_rate", 55),
+            make_frag(
+                "a",
+                "def calculate_tax(income, rate): return income * rate",
+                50,
+            ),
+            make_frag(
+                "b",
+                "def compute_tax(salary, tax_rate): return salary * tax_rate",
+                55,
+            ),
             make_frag("c", "def send_email(to, body): smtp.send(to, body)", 45),
         ];
 
@@ -256,8 +298,11 @@ mod tests {
         let kept_low = semantic_deduplicate(&frags, &sorted, Some(0.1));
         let kept_high = semantic_deduplicate(&frags, &sorted, Some(0.8));
 
-        assert!(kept_low.len() >= kept_high.len(),
+        assert!(
+            kept_low.len() >= kept_high.len(),
             "Lower threshold should keep more fragments: {} vs {}",
-            kept_low.len(), kept_high.len());
+            kept_low.len(),
+            kept_high.len()
+        );
     }
 }

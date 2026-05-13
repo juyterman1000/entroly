@@ -5,11 +5,11 @@ Flow Orchestrator
 Chains the 5 canonical flows end-to-end. Each flow is a deterministic
 sequence of steps that the orchestrator executes.
 
-  â‘  Fast Answer:         Belief â†’ Action
-  â‘¡ Verify Before Answer: Belief â†’ Verification â†’ Action
-  â‘¢ Compile On Demand:   Truth â†’ Belief â†’ Verification â†’ Action
-  â‘£ Change-Driven:       Event â†’ Truth â†’ Belief â†’ Verification â†’ Action
-  â‘¤ Self-Improvement:    Misses â†’ Verification â†’ Evolution â†’ Belief
+  ① Fast Answer:         Belief → Action
+  ② Verify Before Answer: Belief → Verification → Action
+  ③ Compile On Demand:   Truth → Belief → Verification → Action
+  ④ Change-Driven:       Event → Truth → Belief → Verification → Action
+  ⑤ Self-Improvement:    Misses → Verification → Evolution → Belief
 """
 
 from __future__ import annotations
@@ -136,10 +136,10 @@ class FlowOrchestrator:
         )
         return result
 
-    # â”€â”€ Flow Implementations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Flow Implementations ─────────────────────────────────────────
 
     def _fast_answer(self, query: str, decision: RoutingDecision, diff: str) -> FlowResult:
-        """â‘  Fast Answer: Belief â†’ Action"""
+        """① Fast Answer: Belief → Action"""
         result = FlowResult(flow="fast_answer", status="completed")
 
         # Step 1: Look up relevant beliefs
@@ -177,7 +177,7 @@ class FlowOrchestrator:
         return result
 
     def _verify_then_answer(self, query: str, decision: RoutingDecision, diff: str) -> FlowResult:
-        """â‘¡ Verify Before Answer: Belief â†’ Verification â†’ Action"""
+        """② Verify Before Answer: Belief → Verification → Action"""
         result = FlowResult(flow="verify_before_answer", status="completed")
 
         # Step 1: Look up beliefs
@@ -262,7 +262,7 @@ class FlowOrchestrator:
         return result
 
     def _compile_on_demand(self, query: str, decision: RoutingDecision, diff: str) -> FlowResult:
-        """â‘¢ Compile On Demand: Truth â†’ Belief â†’ Verification â†’ Action"""
+        """③ Compile On Demand: Truth → Belief → Verification → Action"""
         result = FlowResult(flow="compile_on_demand", status="completed")
 
         # Step 1: Compile beliefs from source
@@ -318,7 +318,7 @@ class FlowOrchestrator:
         return result
 
     def _change_driven(self, query: str, decision: RoutingDecision, diff: str) -> FlowResult:
-        """â‘£ Change-Driven: Event â†’ Truth â†’ Belief â†’ Verification â†’ Action"""
+        """④ Change-Driven: Event → Truth → Belief → Verification → Action"""
         result = FlowResult(flow="change_driven", status="completed")
 
         if not diff:
@@ -391,7 +391,7 @@ class FlowOrchestrator:
         return result
 
     def _self_improvement(self, query: str, decision: RoutingDecision, diff: str) -> FlowResult:
-        """â‘¤ Self-Improvement: Misses â†’ Verification â†’ Evolution â†’ Belief"""
+        """⑤ Self-Improvement: Misses → Verification → Evolution → Belief"""
         result = FlowResult(flow="self_improvement", status="completed")
 
         # Step 1: Record the miss (with source files for structural synthesis)
@@ -472,7 +472,7 @@ class FlowOrchestrator:
         result.metadata["verification"] = report.to_dict()
         return result
 
-    # â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Helpers ──────────────────────────────────────────────────────
 
     def _find_relevant_beliefs(self, query: str) -> list[dict[str, Any]]:
         """Find beliefs relevant to a query by keyword matching."""

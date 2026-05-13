@@ -10,7 +10,14 @@
 //!   5. SkillEngine:         Skill synthesis, benchmarking, promotion
 //!   6. EpistemicRouter:     Intent classification, routing matrix
 
-#![allow(dead_code, unused_assignments, unused_variables, clippy::manual_strip, clippy::needless_range_loop, clippy::too_many_arguments)]
+#![allow(
+    dead_code,
+    unused_assignments,
+    unused_variables,
+    clippy::manual_strip,
+    clippy::needless_range_loop,
+    clippy::too_many_arguments
+)]
 
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -91,7 +98,11 @@ pub enum RiskLevel {
 
 impl RiskLevel {
     fn as_str(&self) -> &'static str {
-        match self { Self::Low => "low", Self::Medium => "medium", Self::High => "high" }
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
     }
 }
 
@@ -169,18 +180,137 @@ pub struct ReviewFinding {
 
 /// Keyword groups for intent classification, ordered by priority.
 static INTENT_PATTERNS: &[(&[&str], EpistemicIntent)] = &[
-    (&["security", "vulnerability", "cve", "pii", "compliance", "audit", "gdpr", "hipaa", "sox", "penetration"], EpistemicIntent::Audit),
-    (&["incident", "outage", "downtime", "crash", "spike", "latency", "alert", "pager"], EpistemicIntent::Incident),
-    (&["fix", "repair", "broken", "failing", "error", "bug", "root cause", "regression", "debug"], EpistemicIntent::Repair),
-    (&["test", "coverage", "uncovered", "missing test", "test gap", "untested"], EpistemicIntent::TestGap),
-    (&["release", "deploy", "rollout", "ready to ship", "changelog", "version"], EpistemicIntent::Release),
-    (&["pr", "pull request", "diff", "review", "merge", "commit"], EpistemicIntent::PrBrief),
-    (&["generate", "write code", "implement", "scaffold", "create function", "migration"], EpistemicIntent::CodeGeneration),
-    (&["report", "slide", "presentation", "diagram", "chart", "visuali"], EpistemicIntent::Report),
-    (&["research", "benchmark", "compare", "evaluate", "study", "analyze options"], EpistemicIntent::Research),
-    (&["architecture", "design", "how does", "system", "module", "component", "dependency", "flow", "pipeline"], EpistemicIntent::Architecture),
-    (&["reuse", "existing", "already have", "duplicate", "shared", "utility", "helper"], EpistemicIntent::Reuse),
-    (&["onboard", "explain", "new engineer", "getting started", "walkthrough", "tutorial"], EpistemicIntent::Onboarding),
+    (
+        &[
+            "security",
+            "vulnerability",
+            "cve",
+            "pii",
+            "compliance",
+            "audit",
+            "gdpr",
+            "hipaa",
+            "sox",
+            "penetration",
+        ],
+        EpistemicIntent::Audit,
+    ),
+    (
+        &[
+            "incident", "outage", "downtime", "crash", "spike", "latency", "alert", "pager",
+        ],
+        EpistemicIntent::Incident,
+    ),
+    (
+        &[
+            "fix",
+            "repair",
+            "broken",
+            "failing",
+            "error",
+            "bug",
+            "root cause",
+            "regression",
+            "debug",
+        ],
+        EpistemicIntent::Repair,
+    ),
+    (
+        &[
+            "test",
+            "coverage",
+            "uncovered",
+            "missing test",
+            "test gap",
+            "untested",
+        ],
+        EpistemicIntent::TestGap,
+    ),
+    (
+        &[
+            "release",
+            "deploy",
+            "rollout",
+            "ready to ship",
+            "changelog",
+            "version",
+        ],
+        EpistemicIntent::Release,
+    ),
+    (
+        &["pr", "pull request", "diff", "review", "merge", "commit"],
+        EpistemicIntent::PrBrief,
+    ),
+    (
+        &[
+            "generate",
+            "write code",
+            "implement",
+            "scaffold",
+            "create function",
+            "migration",
+        ],
+        EpistemicIntent::CodeGeneration,
+    ),
+    (
+        &[
+            "report",
+            "slide",
+            "presentation",
+            "diagram",
+            "chart",
+            "visuali",
+        ],
+        EpistemicIntent::Report,
+    ),
+    (
+        &[
+            "research",
+            "benchmark",
+            "compare",
+            "evaluate",
+            "study",
+            "analyze options",
+        ],
+        EpistemicIntent::Research,
+    ),
+    (
+        &[
+            "architecture",
+            "design",
+            "how does",
+            "system",
+            "module",
+            "component",
+            "dependency",
+            "flow",
+            "pipeline",
+        ],
+        EpistemicIntent::Architecture,
+    ),
+    (
+        &[
+            "reuse",
+            "existing",
+            "already have",
+            "duplicate",
+            "shared",
+            "utility",
+            "helper",
+        ],
+        EpistemicIntent::Reuse,
+    ),
+    (
+        &[
+            "onboard",
+            "explain",
+            "new engineer",
+            "getting started",
+            "walkthrough",
+            "tutorial",
+        ],
+        EpistemicIntent::Onboarding,
+    ),
 ];
 
 pub fn classify_intent(query: &str) -> EpistemicIntent {
@@ -198,15 +328,38 @@ pub fn classify_intent(query: &str) -> EpistemicIntent {
 /// Assess risk level from query content.
 pub fn assess_risk(query: &str) -> RiskLevel {
     let lower = query.to_lowercase();
-    let high_risk = ["security", "vulnerability", "pii", "compliance", "audit",
-                     "gdpr", "hipaa", "credential", "secret", "encrypt", "auth"];
-    let medium_risk = ["deploy", "migration", "database", "schema", "release",
-                       "production", "breaking", "api change"];
+    let high_risk = [
+        "security",
+        "vulnerability",
+        "pii",
+        "compliance",
+        "audit",
+        "gdpr",
+        "hipaa",
+        "credential",
+        "secret",
+        "encrypt",
+        "auth",
+    ];
+    let medium_risk = [
+        "deploy",
+        "migration",
+        "database",
+        "schema",
+        "release",
+        "production",
+        "breaking",
+        "api change",
+    ];
     for kw in &high_risk {
-        if lower.contains(kw) { return RiskLevel::High; }
+        if lower.contains(kw) {
+            return RiskLevel::High;
+        }
     }
     for kw in &medium_risk {
-        if lower.contains(kw) { return RiskLevel::Medium; }
+        if lower.contains(kw) {
+            return RiskLevel::Medium;
+        }
     }
     RiskLevel::Low
 }
@@ -233,20 +386,30 @@ fn extract_python_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
         let trimmed = line.trim();
         // Classes
         if trimmed.starts_with("class ") && trimmed.contains(':') {
-            let name = trimmed.strip_prefix("class ").unwrap_or("")
-                .split(&['(', ':'][..]).next().unwrap_or("").trim();
+            let name = trimmed
+                .strip_prefix("class ")
+                .unwrap_or("")
+                .split(&['(', ':'][..])
+                .next()
+                .unwrap_or("")
+                .trim();
             if !name.is_empty() {
                 let doc = get_next_docstring(&lines, i + 1);
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "class".into(),
-                    file_path: file_path.into(), line: i + 1,
-                    docstring: doc, signature: trimmed.to_string(),
+                    name: name.to_string(),
+                    kind: "class".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
+                    docstring: doc,
+                    signature: trimmed.to_string(),
                     dependencies: Vec::new(),
                 });
             }
         }
         // Functions
-        if (trimmed.starts_with("def ") || trimmed.starts_with("async def ")) && trimmed.contains(':') {
+        if (trimmed.starts_with("def ") || trimmed.starts_with("async def "))
+            && trimmed.contains(':')
+        {
             let after = if trimmed.starts_with("async def ") {
                 &trimmed[10..]
             } else {
@@ -256,9 +419,12 @@ fn extract_python_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
             if !name.is_empty() && !name.starts_with('_') || name == "__init__" {
                 let doc = get_next_docstring(&lines, i + 1);
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "function".into(),
-                    file_path: file_path.into(), line: i + 1,
-                    docstring: doc, signature: trimmed.trim_end_matches(':').to_string(),
+                    name: name.to_string(),
+                    kind: "function".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
+                    docstring: doc,
+                    signature: trimmed.trim_end_matches(':').to_string(),
                     dependencies: Vec::new(),
                 });
             }
@@ -276,27 +442,44 @@ fn extract_rust_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
         // Structs
         if trimmed.starts_with("pub struct ") || trimmed.starts_with("struct ") {
             let after = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
-            let name = after.strip_prefix("struct ").unwrap_or("")
-                .split(&[' ', '<', '{', '(', ';'][..]).next().unwrap_or("").trim();
+            let name = after
+                .strip_prefix("struct ")
+                .unwrap_or("")
+                .split(&[' ', '<', '{', '(', ';'][..])
+                .next()
+                .unwrap_or("")
+                .trim();
             if !name.is_empty() {
                 let doc = get_rust_doc(&lines, i);
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "struct".into(),
-                    file_path: file_path.into(), line: i + 1,
-                    docstring: doc, signature: format!("pub struct {}", name),
+                    name: name.to_string(),
+                    kind: "struct".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
+                    docstring: doc,
+                    signature: format!("pub struct {}", name),
                     dependencies: Vec::new(),
                 });
             }
         }
         // Enums
-        if trimmed.starts_with("pub enum ") || (trimmed.starts_with("enum ") && !trimmed.contains("enumeration")) {
+        if trimmed.starts_with("pub enum ")
+            || (trimmed.starts_with("enum ") && !trimmed.contains("enumeration"))
+        {
             let after = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
-            let name = after.strip_prefix("enum ").unwrap_or("")
-                .split(&[' ', '<', '{'][..]).next().unwrap_or("").trim();
+            let name = after
+                .strip_prefix("enum ")
+                .unwrap_or("")
+                .split(&[' ', '<', '{'][..])
+                .next()
+                .unwrap_or("")
+                .trim();
             if !name.is_empty() {
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "enum".into(),
-                    file_path: file_path.into(), line: i + 1,
+                    name: name.to_string(),
+                    kind: "enum".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
                     docstring: get_rust_doc(&lines, i),
                     signature: format!("pub enum {}", name),
                     dependencies: Vec::new(),
@@ -306,12 +489,19 @@ fn extract_rust_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
         // Traits
         if trimmed.starts_with("pub trait ") || trimmed.starts_with("trait ") {
             let after = trimmed.strip_prefix("pub ").unwrap_or(trimmed);
-            let name = after.strip_prefix("trait ").unwrap_or("")
-                .split(&[' ', '<', '{', ':'][..]).next().unwrap_or("").trim();
+            let name = after
+                .strip_prefix("trait ")
+                .unwrap_or("")
+                .split(&[' ', '<', '{', ':'][..])
+                .next()
+                .unwrap_or("")
+                .trim();
             if !name.is_empty() {
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "trait".into(),
-                    file_path: file_path.into(), line: i + 1,
+                    name: name.to_string(),
+                    kind: "trait".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
                     docstring: get_rust_doc(&lines, i),
                     signature: format!("pub trait {}", name),
                     dependencies: Vec::new(),
@@ -319,18 +509,26 @@ fn extract_rust_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
             }
         }
         // Functions
-        if (trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ")
-            || trimmed.starts_with("pub async fn ") || trimmed.starts_with("async fn ")
+        if (trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub async fn ")
+            || trimmed.starts_with("async fn ")
             || trimmed.starts_with("pub(crate) fn "))
             && trimmed.contains('(')
         {
             let fn_start = trimmed.find("fn ").unwrap_or(0) + 3;
-            let name = trimmed[fn_start..].split(&['(', '<'][..]).next().unwrap_or("").trim();
+            let name = trimmed[fn_start..]
+                .split(&['(', '<'][..])
+                .next()
+                .unwrap_or("")
+                .trim();
             if !name.is_empty() && !name.starts_with('_') {
                 let sig_end = trimmed.find('{').unwrap_or(trimmed.len());
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "function".into(),
-                    file_path: file_path.into(), line: i + 1,
+                    name: name.to_string(),
+                    kind: "function".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
                     docstring: get_rust_doc(&lines, i),
                     signature: trimmed[..sig_end].trim().to_string(),
                     dependencies: Vec::new(),
@@ -346,31 +544,49 @@ fn extract_js_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
     let lines: Vec<&str> = content.lines().collect();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.contains("class ") && (trimmed.starts_with("class ") || trimmed.starts_with("export class ")) {
-            let after = if let Some(a) = trimmed.strip_prefix("export ") { a } else { trimmed };
-            let name = after.strip_prefix("class ").unwrap_or("")
-                .split(&[' ', '{', '<'][..]).next().unwrap_or("").trim();
+        if trimmed.contains("class ")
+            && (trimmed.starts_with("class ") || trimmed.starts_with("export class "))
+        {
+            let after = if let Some(a) = trimmed.strip_prefix("export ") {
+                a
+            } else {
+                trimmed
+            };
+            let name = after
+                .strip_prefix("class ")
+                .unwrap_or("")
+                .split(&[' ', '{', '<'][..])
+                .next()
+                .unwrap_or("")
+                .trim();
             if !name.is_empty() {
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "class".into(),
-                    file_path: file_path.into(), line: i + 1,
-                    docstring: String::new(), signature: trimmed.to_string(),
+                    name: name.to_string(),
+                    kind: "class".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
+                    docstring: String::new(),
+                    signature: trimmed.to_string(),
                     dependencies: Vec::new(),
                 });
             }
         }
-        if trimmed.contains("function ") && (trimmed.starts_with("function ")
-            || trimmed.starts_with("export function ")
-            || trimmed.starts_with("async function ")
-            || trimmed.starts_with("export async function "))
+        if trimmed.contains("function ")
+            && (trimmed.starts_with("function ")
+                || trimmed.starts_with("export function ")
+                || trimmed.starts_with("async function ")
+                || trimmed.starts_with("export async function "))
         {
             let fn_pos = trimmed.find("function ").unwrap_or(0) + 9;
             let name = trimmed[fn_pos..].split('(').next().unwrap_or("").trim();
             if !name.is_empty() {
                 entities.push(CodeEntity {
-                    name: name.to_string(), kind: "function".into(),
-                    file_path: file_path.into(), line: i + 1,
-                    docstring: String::new(), signature: trimmed.to_string(),
+                    name: name.to_string(),
+                    kind: "function".into(),
+                    file_path: file_path.into(),
+                    line: i + 1,
+                    docstring: String::new(),
+                    signature: trimmed.to_string(),
                     dependencies: Vec::new(),
                 });
             }
@@ -380,16 +596,20 @@ fn extract_js_entities(content: &str, file_path: &str) -> Vec<CodeEntity> {
 }
 
 fn get_next_docstring(lines: &[&str], after: usize) -> String {
-    if after >= lines.len() { return String::new(); }
+    if after >= lines.len() {
+        return String::new();
+    }
     let trimmed = lines[after].trim();
     if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
         let quote = &trimmed[..3];
         if trimmed.len() > 6 && trimmed[3..].contains(quote) {
-            return trimmed[3..trimmed.len()-3].trim().to_string();
+            return trimmed[3..trimmed.len() - 3].trim().to_string();
         }
         let mut doc = trimmed[3..].to_string();
-        for j in (after+1)..lines.len().min(after+10) {
-            if lines[j].contains(quote) { break; }
+        for j in (after + 1)..lines.len().min(after + 10) {
+            if lines[j].contains(quote) {
+                break;
+            }
             doc.push(' ');
             doc.push_str(lines[j].trim());
         }
@@ -420,17 +640,28 @@ fn get_rust_doc(lines: &[&str], before: usize) -> String {
 // ═══════════════════════════════════════════════════════════════════
 
 fn ensure_vault(vault_path: &Path) {
-    for dir in &["beliefs", "verification", "actions", "evolution/skills", "media"] {
+    for dir in &[
+        "beliefs",
+        "verification",
+        "actions",
+        "evolution/skills",
+        "media",
+    ] {
         let _ = fs::create_dir_all(vault_path.join(dir));
     }
     let registry = vault_path.join("evolution/registry.md");
     if !registry.exists() {
-        let _ = fs::write(&registry, "# Skill Registry\n\n| ID | Status | Created | Description |\n|---|---|---|---|\n");
+        let _ = fs::write(
+            &registry,
+            "# Skill Registry\n\n| ID | Status | Created | Description |\n|---|---|---|---|\n",
+        );
     }
 }
 
 fn generate_claim_id() -> String {
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("{:016x}{:08x}", ts.as_nanos(), ts.subsec_nanos())
 }
 
@@ -438,13 +669,25 @@ fn write_belief_artifact(vault_path: &Path, artifact: &BeliefArtifact) -> Result
     ensure_vault(vault_path);
     let now = chrono_iso();
     let safe_entity = artifact.entity.replace("::", "_").replace('/', "_");
-    let filename = format!("{}_{}.md", safe_entity, &artifact.claim_id[..8.min(artifact.claim_id.len())]);
+    let filename = format!(
+        "{}_{}.md",
+        safe_entity,
+        &artifact.claim_id[..8.min(artifact.claim_id.len())]
+    );
     let path = vault_path.join("beliefs").join(&filename);
 
-    let sources_yaml: String = artifact.sources.iter()
-        .map(|s| format!("  - {}", s)).collect::<Vec<_>>().join("\n");
-    let derived_yaml: String = artifact.derived_from.iter()
-        .map(|s| format!("  - {}", s)).collect::<Vec<_>>().join("\n");
+    let sources_yaml: String = artifact
+        .sources
+        .iter()
+        .map(|s| format!("  - {}", s))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let derived_yaml: String = artifact
+        .derived_from
+        .iter()
+        .map(|s| format!("  - {}", s))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let content = format!(
         "---\nclaim_id: {}\nentity: {}\nstatus: {}\nconfidence: {:.2}\nsources:\n{}\nlast_checked: {}\nderived_from:\n{}\n---\n\n# {}\n\n{}",
@@ -472,7 +715,9 @@ fn read_all_beliefs(vault_path: &Path) -> Vec<BeliefArtifact> {
 
 fn parse_belief_frontmatter(content: &str) -> Option<BeliefArtifact> {
     let parts: Vec<&str> = content.splitn(3, "---").collect();
-    if parts.len() < 3 { return None; }
+    if parts.len() < 3 {
+        return None;
+    }
     let fm = parts[1];
     let body = parts[2].trim().to_string();
     let mut claim_id = String::new();
@@ -486,25 +731,60 @@ fn parse_belief_frontmatter(content: &str) -> Option<BeliefArtifact> {
 
     for line in fm.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("claim_id:") { claim_id = trimmed[9..].trim().to_string(); in_sources = false; in_derived = false; }
-        else if trimmed.starts_with("entity:") { entity = trimmed[7..].trim().to_string(); in_sources = false; in_derived = false; }
-        else if trimmed.starts_with("status:") { status = trimmed[7..].trim().to_string(); in_sources = false; in_derived = false; }
-        else if trimmed.starts_with("confidence:") { confidence = trimmed[11..].trim().parse().unwrap_or(0.5); in_sources = false; in_derived = false; }
-        else if trimmed.starts_with("sources:") { in_sources = true; in_derived = false; }
-        else if trimmed.starts_with("derived_from:") { in_derived = true; in_sources = false; }
-        else if trimmed.starts_with("- ") {
+        if trimmed.starts_with("claim_id:") {
+            claim_id = trimmed[9..].trim().to_string();
+            in_sources = false;
+            in_derived = false;
+        } else if trimmed.starts_with("entity:") {
+            entity = trimmed[7..].trim().to_string();
+            in_sources = false;
+            in_derived = false;
+        } else if trimmed.starts_with("status:") {
+            status = trimmed[7..].trim().to_string();
+            in_sources = false;
+            in_derived = false;
+        } else if trimmed.starts_with("confidence:") {
+            confidence = trimmed[11..].trim().parse().unwrap_or(0.5);
+            in_sources = false;
+            in_derived = false;
+        } else if trimmed.starts_with("sources:") {
+            in_sources = true;
+            in_derived = false;
+        } else if trimmed.starts_with("derived_from:") {
+            in_derived = true;
+            in_sources = false;
+        } else if trimmed.starts_with("- ") {
             let val = trimmed[2..].trim().to_string();
-            if in_sources { sources.push(val); }
-            else if in_derived { derived_from.push(val); }
+            if in_sources {
+                sources.push(val);
+            } else if in_derived {
+                derived_from.push(val);
+            }
+        } else if !trimmed.is_empty() && !trimmed.starts_with("last_checked:") {
+            in_sources = false;
+            in_derived = false;
         }
-        else if !trimmed.is_empty() && !trimmed.starts_with("last_checked:") { in_sources = false; in_derived = false; }
     }
 
-    if claim_id.is_empty() { return None; }
-    let title = body.lines().find(|l| l.starts_with("# "))
-        .map(|l| l[2..].trim().to_string()).unwrap_or_default();
+    if claim_id.is_empty() {
+        return None;
+    }
+    let title = body
+        .lines()
+        .find(|l| l.starts_with("# "))
+        .map(|l| l[2..].trim().to_string())
+        .unwrap_or_default();
 
-    Some(BeliefArtifact { claim_id, entity, title, status, confidence, sources, derived_from, body })
+    Some(BeliefArtifact {
+        claim_id,
+        entity,
+        title,
+        status,
+        confidence,
+        sources,
+        derived_from,
+        body,
+    })
 }
 
 fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -606,9 +886,16 @@ fn mark_beliefs_stale(vault_path: &Path, changed_files: &[String]) -> Vec<String
     collect_markdown_files(&beliefs_dir, &mut belief_files);
 
     for path in belief_files {
-        let Ok(content) = fs::read_to_string(&path) else { continue; };
-        let Some(artifact) = parse_belief_frontmatter(&content) else { continue; };
-        if !changed_files.iter().any(|cf| belief_matches_changed_file(&artifact, cf)) {
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(artifact) = parse_belief_frontmatter(&content) else {
+            continue;
+        };
+        if !changed_files
+            .iter()
+            .any(|cf| belief_matches_changed_file(&artifact, cf))
+        {
             continue;
         }
 
@@ -627,19 +914,21 @@ fn mark_beliefs_stale(vault_path: &Path, changed_files: &[String]) -> Vec<String
     refreshed
 }
 
-fn build_belief_artifact(root: &Path, fpath: &Path, content: &str) -> Option<(BeliefArtifact, usize)> {
-    let rel = normalize_rel_path(
-        &fpath
-            .strip_prefix(root)
-            .unwrap_or(fpath)
-            .to_string_lossy(),
-    );
+fn build_belief_artifact(
+    root: &Path,
+    fpath: &Path,
+    content: &str,
+) -> Option<(BeliefArtifact, usize)> {
+    let rel = normalize_rel_path(&fpath.strip_prefix(root).unwrap_or(fpath).to_string_lossy());
     let entities = extract_entities(content, &rel);
     if entities.is_empty() {
         return None;
     }
 
-    let module_name = fpath.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+    let module_name = fpath
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
     let lang = fpath.extension().and_then(|e| e.to_str()).unwrap_or("");
     let loc = content.lines().count();
     let mut body = format!("**Language:** {}\n**Lines of code:** {}\n\n", lang, loc);
@@ -714,14 +1003,12 @@ fn compile_source_paths(
         files_processed += 1;
         match fs::read_to_string(fpath) {
             Ok(content) => {
-                if let Some((artifact, entity_count)) = build_belief_artifact(root, fpath, &content) {
+                if let Some((artifact, entity_count)) = build_belief_artifact(root, fpath, &content)
+                {
                     entities_extracted += entity_count as u32;
                     if let Err(err) = write_belief_artifact(vault_path, &artifact) {
                         let rel = normalize_rel_path(
-                            &fpath
-                                .strip_prefix(root)
-                                .unwrap_or(fpath)
-                                .to_string_lossy(),
+                            &fpath.strip_prefix(root).unwrap_or(fpath).to_string_lossy(),
                         );
                         errors.push(format!("{}: {}", rel, err));
                     } else {
@@ -731,10 +1018,7 @@ fn compile_source_paths(
             }
             Err(err) => {
                 let rel = normalize_rel_path(
-                    &fpath
-                        .strip_prefix(root)
-                        .unwrap_or(fpath)
-                        .to_string_lossy(),
+                    &fpath.strip_prefix(root).unwrap_or(fpath).to_string_lossy(),
                 );
                 errors.push(format!("{}: {}", rel, err));
             }
@@ -755,12 +1039,16 @@ pub fn detect_contradictions(beliefs: &[BeliefArtifact]) -> Vec<Contradiction> {
         by_entity.entry(b.entity.as_str()).or_default().push(b);
     }
     for (entity, group) in &by_entity {
-        if group.len() < 2 { continue; }
+        if group.len() < 2 {
+            continue;
+        }
         for i in 0..group.len() {
-            for j in (i+1)..group.len() {
-                let a = group[i]; let b = group[j];
-                if (a.status == "verified" && b.status == "stale") ||
-                   (a.status == "stale" && b.status == "verified") {
+            for j in (i + 1)..group.len() {
+                let a = group[i];
+                let b = group[j];
+                if (a.status == "verified" && b.status == "stale")
+                    || (a.status == "stale" && b.status == "verified")
+                {
                     contras.push(Contradiction {
                         entity: entity.to_string(),
                         conflict_type: "stale_vs_fresh".into(),
@@ -772,7 +1060,10 @@ pub fn detect_contradictions(beliefs: &[BeliefArtifact]) -> Vec<Contradiction> {
                     contras.push(Contradiction {
                         entity: entity.to_string(),
                         conflict_type: "confidence_divergence".into(),
-                        description: format!("Confidence diverges: {:.2} vs {:.2}", a.confidence, b.confidence),
+                        description: format!(
+                            "Confidence diverges: {:.2} vs {:.2}",
+                            a.confidence, b.confidence
+                        ),
                         severity: "low".into(),
                     });
                 }
@@ -782,23 +1073,41 @@ pub fn detect_contradictions(beliefs: &[BeliefArtifact]) -> Vec<Contradiction> {
     contras
 }
 
-pub fn compute_blast_radius(beliefs: &[BeliefArtifact], changed_files: &[&str]) -> (Vec<String>, Vec<String>, &'static str) {
+pub fn compute_blast_radius(
+    beliefs: &[BeliefArtifact],
+    changed_files: &[&str],
+) -> (Vec<String>, Vec<String>, &'static str) {
     let mut affected_beliefs = Vec::new();
     let mut affected_entities = Vec::new();
     for b in beliefs {
         for cf in changed_files {
-            let stem = Path::new(cf).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let stem = Path::new(cf)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_lowercase();
             let entity_lower = b.entity.to_lowercase();
             let source_match = b.sources.iter().any(|s| s.to_lowercase().contains(&stem));
-            if source_match || entity_lower.contains(&stem) || b.body.to_lowercase().contains(&stem) {
-                if !affected_beliefs.contains(&b.claim_id) { affected_beliefs.push(b.claim_id.clone()); }
-                if !affected_entities.contains(&b.entity) { affected_entities.push(b.entity.clone()); }
+            if source_match || entity_lower.contains(&stem) || b.body.to_lowercase().contains(&stem)
+            {
+                if !affected_beliefs.contains(&b.claim_id) {
+                    affected_beliefs.push(b.claim_id.clone());
+                }
+                if !affected_entities.contains(&b.entity) {
+                    affected_entities.push(b.entity.clone());
+                }
                 break;
             }
         }
     }
     let n = affected_beliefs.len();
-    let risk = if n <= 2 { "low" } else if n <= 5 { "medium" } else { "high" };
+    let risk = if n <= 2 {
+        "low"
+    } else if n <= 5 {
+        "medium"
+    } else {
+        "high"
+    };
     (affected_beliefs, affected_entities, risk)
 }
 
@@ -808,8 +1117,13 @@ pub fn compute_blast_radius(beliefs: &[BeliefArtifact], changed_files: &[&str]) 
 
 pub fn parse_diff(diff_text: &str, commit_msg: &str) -> ChangeSet {
     let mut cs = ChangeSet {
-        files_added: Vec::new(), files_modified: Vec::new(), files_deleted: Vec::new(),
-        lines_added: 0, lines_removed: 0, intent: String::new(), functions_changed: Vec::new(),
+        files_added: Vec::new(),
+        files_modified: Vec::new(),
+        files_deleted: Vec::new(),
+        lines_added: 0,
+        lines_removed: 0,
+        intent: String::new(),
+        functions_changed: Vec::new(),
     };
     for line in diff_text.lines() {
         if let Some(f) = line.strip_prefix("+++ b/") {
@@ -826,10 +1140,23 @@ pub fn parse_diff(diff_text: &str, commit_msg: &str) -> ChangeSet {
             cs.lines_removed += 1;
         } else if line.starts_with("@@") {
             // Extract function names from hunk headers
-            if let Some(fn_start) = line.find("fn ").or(line.find("def ")).or(line.find("function ")) {
+            if let Some(fn_start) = line
+                .find("fn ")
+                .or(line.find("def "))
+                .or(line.find("function "))
+            {
                 let rest = &line[fn_start..];
-                let kw_len = if rest.starts_with("function ") { 9 } else if rest.starts_with("def ") { 4 } else { 3 };
-                let name: String = rest[kw_len..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                let kw_len = if rest.starts_with("function ") {
+                    9
+                } else if rest.starts_with("def ") {
+                    4
+                } else {
+                    3
+                };
+                let name: String = rest[kw_len..]
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
                 if !name.is_empty() && !cs.functions_changed.contains(&name) {
                     cs.functions_changed.push(name);
                 }
@@ -838,13 +1165,21 @@ pub fn parse_diff(diff_text: &str, commit_msg: &str) -> ChangeSet {
     }
     // Classify intent
     let text = format!("{} {}", commit_msg, &diff_text[..diff_text.len().min(2000)]).to_lowercase();
-    cs.intent = if text.contains("fix") || text.contains("bug") || text.contains("patch") { "bugfix".into() }
-        else if text.contains("security") || text.contains("cve") { "security".into() }
-        else if text.contains("test") || text.contains("spec") { "test".into() }
-        else if text.contains("refactor") || text.contains("clean") { "refactor".into() }
-        else if text.contains("perf") || text.contains("optim") { "performance".into() }
-        else if text.contains("doc") || text.contains("readme") { "docs".into() }
-        else { "feature".into() };
+    cs.intent = if text.contains("fix") || text.contains("bug") || text.contains("patch") {
+        "bugfix".into()
+    } else if text.contains("security") || text.contains("cve") {
+        "security".into()
+    } else if text.contains("test") || text.contains("spec") {
+        "test".into()
+    } else if text.contains("refactor") || text.contains("clean") {
+        "refactor".into()
+    } else if text.contains("perf") || text.contains("optim") {
+        "performance".into()
+    } else if text.contains("doc") || text.contains("readme") {
+        "docs".into()
+    } else {
+        "feature".into()
+    };
     cs
 }
 
@@ -861,8 +1196,18 @@ pub fn review_diff(diff_text: &str) -> Vec<ReviewFinding> {
         ("FIXME", "warning", "maintenance", "Contains FIXME marker"),
         ("HACK", "warning", "maintenance", "Contains HACK marker"),
         (".unwrap()", "warning", "safety", "Rust .unwrap() may panic"),
-        ("except Exception", "warning", "safety", "Broad exception catch"),
-        ("except:", "warning", "safety", "Bare except — swallows all errors"),
+        (
+            "except Exception",
+            "warning",
+            "safety",
+            "Broad exception catch",
+        ),
+        (
+            "except:",
+            "warning",
+            "safety",
+            "Bare except — swallows all errors",
+        ),
     ];
 
     for line in diff_text.lines() {
@@ -870,7 +1215,10 @@ pub fn review_diff(diff_text: &str) -> Vec<ReviewFinding> {
             current_file = line[6..].to_string();
         } else if line.starts_with("@@") {
             if let Some(pos) = line.find('+') {
-                let num: String = line[pos+1..].chars().take_while(|c| c.is_ascii_digit()).collect();
+                let num: String = line[pos + 1..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
                 current_line = num.parse().unwrap_or(0);
             }
         } else if line.starts_with('+') && !line.starts_with("+++") {
@@ -879,9 +1227,12 @@ pub fn review_diff(diff_text: &str) -> Vec<ReviewFinding> {
             for (pattern, severity, category, message) in patterns {
                 if content.to_lowercase().contains(&pattern.to_lowercase()) {
                     findings.push(ReviewFinding {
-                        severity: severity.to_string(), category: category.to_string(),
-                        file: current_file.clone(), line: current_line,
-                        message: message.to_string(), suggestion: String::new(),
+                        severity: severity.to_string(),
+                        category: category.to_string(),
+                        file: current_file.clone(),
+                        line: current_line,
+                        message: message.to_string(),
+                        suggestion: String::new(),
                     });
                 }
             }
@@ -905,27 +1256,54 @@ pub fn select_flow(
     miss_threshold: u32,
 ) -> (EpistemicFlow, String) {
     if is_event {
-        return (EpistemicFlow::ChangeDriven, "Event trigger → Change-Driven pipeline".into());
+        return (
+            EpistemicFlow::ChangeDriven,
+            "Event trigger → Change-Driven pipeline".into(),
+        );
     }
     if miss_count >= miss_threshold {
-        return (EpistemicFlow::SelfImprovement, format!("Repeated miss ({}/{}) → Self-Improvement", miss_count, miss_threshold));
+        return (
+            EpistemicFlow::SelfImprovement,
+            format!(
+                "Repeated miss ({}/{}) → Self-Improvement",
+                miss_count, miss_threshold
+            ),
+        );
     }
     if !belief_exists {
-        return (EpistemicFlow::CompileOnDemand, "No beliefs exist → Compile On Demand".into());
+        return (
+            EpistemicFlow::CompileOnDemand,
+            "No beliefs exist → Compile On Demand".into(),
+        );
     }
     if !belief_fresh {
-        return (EpistemicFlow::VerifyBefore, "Beliefs exist but stale → Verify Before Answer".into());
+        return (
+            EpistemicFlow::VerifyBefore,
+            "Beliefs exist but stale → Verify Before Answer".into(),
+        );
     }
     if !belief_verified {
-        return (EpistemicFlow::VerifyBefore, "Beliefs exist but unverified → Verify Before Answer".into());
+        return (
+            EpistemicFlow::VerifyBefore,
+            "Beliefs exist but unverified → Verify Before Answer".into(),
+        );
     }
     if risk == RiskLevel::High {
-        return (EpistemicFlow::VerifyBefore, "High-risk domain → Verify Before Answer".into());
+        return (
+            EpistemicFlow::VerifyBefore,
+            "High-risk domain → Verify Before Answer".into(),
+        );
     }
     if intent == EpistemicIntent::CodeGeneration {
-        return (EpistemicFlow::VerifyBefore, "Code generation → Verify Before Answer".into());
+        return (
+            EpistemicFlow::VerifyBefore,
+            "Code generation → Verify Before Answer".into(),
+        );
     }
-    (EpistemicFlow::FastAnswer, "Fresh + verified + low-risk → Fast Answer".into())
+    (
+        EpistemicFlow::FastAnswer,
+        "Fresh + verified + low-risk → Fast Answer".into(),
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -946,7 +1324,12 @@ pub struct CogOpsEngine {
 impl CogOpsEngine {
     #[new]
     #[pyo3(signature = (vault_path, miss_threshold=3, freshness_hours=24.0, min_confidence=0.5))]
-    pub fn new(vault_path: String, miss_threshold: u32, freshness_hours: f64, min_confidence: f64) -> Self {
+    pub fn new(
+        vault_path: String,
+        miss_threshold: u32,
+        freshness_hours: f64,
+        min_confidence: f64,
+    ) -> Self {
         let vp = PathBuf::from(&vault_path);
         ensure_vault(&vp);
         CogOpsEngine {
@@ -974,24 +1357,37 @@ impl CogOpsEngine {
             // Check belief coverage
             let beliefs = read_all_beliefs(&self.vault_path);
             let entity_lower = entity_key.to_lowercase();
-            let matching: Vec<&BeliefArtifact> = beliefs.iter()
+            let matching: Vec<&BeliefArtifact> = beliefs
+                .iter()
                 .filter(|b| b.entity.to_lowercase().contains(&entity_lower))
                 .collect();
 
             let belief_exists = !matching.is_empty();
             let belief_fresh = matching.iter().any(|b| b.status != "stale");
             let belief_verified = matching.iter().any(|b| b.status == "verified");
-            let confidence = matching.iter().map(|b| b.confidence).fold(0.0_f64, f64::max);
+            let confidence = matching
+                .iter()
+                .map(|b| b.confidence)
+                .fold(0.0_f64, f64::max);
 
             let miss_count = self.miss_counts.get(&entity_key).copied().unwrap_or(0);
 
             let (flow, reasoning) = select_flow(
-                intent, risk, belief_exists, belief_fresh, belief_verified,
-                is_event || !event_type.is_empty(), miss_count, self.miss_threshold,
+                intent,
+                risk,
+                belief_exists,
+                belief_fresh,
+                belief_verified,
+                is_event || !event_type.is_empty(),
+                miss_count,
+                self.miss_threshold,
             );
 
             // Track routing stats
-            *self.routing_stats.entry(flow.as_str().to_string()).or_insert(0) += 1;
+            *self
+                .routing_stats
+                .entry(flow.as_str().to_string())
+                .or_insert(0) += 1;
 
             // If compile_on_demand or self_improvement, record miss
             if flow == EpistemicFlow::CompileOnDemand || flow == EpistemicFlow::SelfImprovement {
@@ -1036,10 +1432,25 @@ impl CogOpsEngine {
     pub fn compile_beliefs(&mut self, directory: &str, max_files: usize) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let root = Path::new(directory);
-            let skip: HashSet<&str> = ["__pycache__", "node_modules", ".git", "target", "dist",
-                "build", ".tox", ".pytest_cache", "venv", ".venv"]
-                .iter().copied().collect();
-            let exts: HashSet<&str> = ["py", "rs", "ts", "tsx", "js", "jsx"].iter().copied().collect();
+            let skip: HashSet<&str> = [
+                "__pycache__",
+                "node_modules",
+                ".git",
+                "target",
+                "dist",
+                "build",
+                ".tox",
+                ".pytest_cache",
+                "venv",
+                ".venv",
+            ]
+            .iter()
+            .copied()
+            .collect();
+            let exts: HashSet<&str> = ["py", "rs", "ts", "tsx", "js", "jsx"]
+                .iter()
+                .copied()
+                .collect();
 
             let mut files_processed = 0u32;
             let mut beliefs_written = 0u32;
@@ -1052,36 +1463,62 @@ impl CogOpsEngine {
             for fpath in &source_files {
                 match fs::read_to_string(fpath) {
                     Ok(content) => {
-                        let rel = fpath.strip_prefix(root).unwrap_or(fpath).to_string_lossy().to_string();
+                        let rel = fpath
+                            .strip_prefix(root)
+                            .unwrap_or(fpath)
+                            .to_string_lossy()
+                            .to_string();
                         let entities = extract_entities(&content, &rel);
                         entities_extracted += entities.len() as u32;
 
                         if !entities.is_empty() {
-                            let module_name = fpath.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                            let module_name = fpath
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("unknown");
                             let lang = fpath.extension().and_then(|e| e.to_str()).unwrap_or("");
                             let loc = content.lines().count();
 
                             // Build body
-                            let mut body = format!("**Language:** {}\n**Lines of code:** {}\n\n", lang, loc);
-                            let classes: Vec<&CodeEntity> = entities.iter().filter(|e| matches!(e.kind.as_str(), "class" | "struct" | "enum" | "trait")).collect();
-                            let funcs: Vec<&CodeEntity> = entities.iter().filter(|e| e.kind == "function").collect();
+                            let mut body =
+                                format!("**Language:** {}\n**Lines of code:** {}\n\n", lang, loc);
+                            let classes: Vec<&CodeEntity> = entities
+                                .iter()
+                                .filter(|e| {
+                                    matches!(e.kind.as_str(), "class" | "struct" | "enum" | "trait")
+                                })
+                                .collect();
+                            let funcs: Vec<&CodeEntity> =
+                                entities.iter().filter(|e| e.kind == "function").collect();
 
                             if !classes.is_empty() {
                                 body.push_str("## Types\n");
                                 for c in &classes {
-                                    let doc = if c.docstring.is_empty() { String::new() } else { format!(" — {}", c.docstring) };
+                                    let doc = if c.docstring.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" — {}", c.docstring)
+                                    };
                                     body.push_str(&format!("- `{}`{}\n", c.signature, doc));
                                 }
                             }
                             if !funcs.is_empty() {
                                 body.push_str("\n## Functions\n");
                                 for f in &funcs {
-                                    let doc = if f.docstring.is_empty() { String::new() } else { format!(" — {}", f.docstring) };
+                                    let doc = if f.docstring.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" — {}", f.docstring)
+                                    };
                                     body.push_str(&format!("- `{}`{}\n", f.signature, doc));
                                 }
                             }
 
-                            let sources: Vec<String> = entities.iter().take(10).map(|e| format!("{}:{}", rel, e.line)).collect();
+                            let sources: Vec<String> = entities
+                                .iter()
+                                .take(10)
+                                .map(|e| format!("{}:{}", rel, e.line))
+                                .collect();
                             let artifact = BeliefArtifact {
                                 claim_id: generate_claim_id(),
                                 entity: module_name.to_string(),
@@ -1122,7 +1559,11 @@ impl CogOpsEngine {
             let verified = beliefs.iter().filter(|b| b.status == "verified").count();
             let stale = beliefs.iter().filter(|b| b.status == "stale").count();
             let confs: Vec<f64> = beliefs.iter().map(|b| b.confidence).collect();
-            let mean_conf = if confs.is_empty() { 0.0 } else { confs.iter().sum::<f64>() / confs.len() as f64 };
+            let mean_conf = if confs.is_empty() {
+                0.0
+            } else {
+                confs.iter().sum::<f64>() / confs.len() as f64
+            };
             let low_conf = confs.iter().filter(|&&c| c < self.min_confidence).count();
 
             let result = PyDict::new(py);
@@ -1162,19 +1603,40 @@ impl CogOpsEngine {
     }
 
     /// Parse and analyze a diff.
-    pub fn process_change(&self, diff_text: &str, commit_msg: &str, pr_title: &str) -> PyResult<PyObject> {
+    pub fn process_change(
+        &self,
+        diff_text: &str,
+        commit_msg: &str,
+        pr_title: &str,
+    ) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let cs = parse_diff(diff_text, commit_msg);
             let findings = review_diff(diff_text);
 
             // Compute belief impact
             let beliefs = read_all_beliefs(&self.vault_path);
-            let all_changed: Vec<&str> = cs.files_modified.iter().chain(cs.files_added.iter()).map(|s| s.as_str()).collect();
+            let all_changed: Vec<&str> = cs
+                .files_modified
+                .iter()
+                .chain(cs.files_added.iter())
+                .map(|s| s.as_str())
+                .collect();
             let (ab, ae, risk) = compute_blast_radius(&beliefs, &all_changed);
 
             let result = PyDict::new(py);
-            let default_title = format!("{}: {}", cs.intent, cs.files_modified.first().map(|s| s.as_str()).unwrap_or("changes"));
-            let title_str = if pr_title.is_empty() { default_title.as_str() } else { pr_title };
+            let default_title = format!(
+                "{}: {}",
+                cs.intent,
+                cs.files_modified
+                    .first()
+                    .map(|s| s.as_str())
+                    .unwrap_or("changes")
+            );
+            let title_str = if pr_title.is_empty() {
+                default_title.as_str()
+            } else {
+                pr_title
+            };
             result.set_item("title", title_str)?;
             result.set_item("intent", &cs.intent)?;
             result.set_item("files_added", &cs.files_added)?;
@@ -1203,14 +1665,24 @@ impl CogOpsEngine {
     }
 
     /// Write a belief artifact to the vault.
-    pub fn write_belief(&self, entity: &str, title: &str, body: &str,
-                        confidence: f64, status: &str, sources: Vec<String>) -> PyResult<PyObject> {
+    pub fn write_belief(
+        &self,
+        entity: &str,
+        title: &str,
+        body: &str,
+        confidence: f64,
+        status: &str,
+        sources: Vec<String>,
+    ) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let artifact = BeliefArtifact {
                 claim_id: generate_claim_id(),
-                entity: entity.to_string(), title: title.to_string(),
-                status: status.to_string(), confidence,
-                sources, derived_from: vec!["manual".into()],
+                entity: entity.to_string(),
+                title: title.to_string(),
+                status: status.to_string(),
+                confidence,
+                sources,
+                derived_from: vec!["manual".into()],
                 body: body.to_string(),
             };
             match write_belief_artifact(&self.vault_path, &artifact) {
@@ -1237,11 +1709,24 @@ impl CogOpsEngine {
             let beliefs = read_all_beliefs(&self.vault_path);
             let result = PyDict::new(py);
             result.set_item("total_beliefs", beliefs.len())?;
-            result.set_item("verified", beliefs.iter().filter(|b| b.status == "verified").count())?;
-            result.set_item("inferred", beliefs.iter().filter(|b| b.status == "inferred").count())?;
-            result.set_item("stale", beliefs.iter().filter(|b| b.status == "stale").count())?;
+            result.set_item(
+                "verified",
+                beliefs.iter().filter(|b| b.status == "verified").count(),
+            )?;
+            result.set_item(
+                "inferred",
+                beliefs.iter().filter(|b| b.status == "inferred").count(),
+            )?;
+            result.set_item(
+                "stale",
+                beliefs.iter().filter(|b| b.status == "stale").count(),
+            )?;
             let confs: Vec<f64> = beliefs.iter().map(|b| b.confidence).collect();
-            let mean = if confs.is_empty() { 0.0 } else { confs.iter().sum::<f64>() / confs.len() as f64 };
+            let mean = if confs.is_empty() {
+                0.0
+            } else {
+                confs.iter().sum::<f64>() / confs.len() as f64
+            };
             result.set_item("mean_confidence", (mean * 1000.0).round() / 1000.0)?;
             // Entity list
             let entities: Vec<&str> = beliefs.iter().map(|b| b.entity.as_str()).collect();
@@ -1257,9 +1742,19 @@ impl CogOpsEngine {
     }
 
     /// Create a new skill from a gap report.
-    pub fn create_skill(&self, entity_key: &str, failing_queries: Vec<String>) -> PyResult<PyObject> {
+    pub fn create_skill(
+        &self,
+        entity_key: &str,
+        failing_queries: Vec<String>,
+    ) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let skill_id = format!("{:012x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64);
+            let skill_id = format!(
+                "{:012x}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64
+            );
             let skill_dir = self.vault_path.join("evolution/skills").join(&skill_id);
             let _ = fs::create_dir_all(skill_dir.join("tests"));
 
@@ -1279,19 +1774,30 @@ impl CogOpsEngine {
             let _ = fs::write(skill_dir.join("tool.py"), &tool_py);
 
             // metrics.json
-            let _ = fs::write(skill_dir.join("metrics.json"), "{\"fitness_score\":0.0,\"runs\":0}");
+            let _ = fs::write(
+                skill_dir.join("metrics.json"),
+                "{\"fitness_score\":0.0,\"runs\":0}",
+            );
 
             // tests
-            let tests: Vec<serde_json::Value> = failing_queries.iter()
+            let tests: Vec<serde_json::Value> = failing_queries
+                .iter()
                 .map(|q| serde_json::json!({"input": q, "expected": "should_not_fail"}))
                 .collect();
-            let _ = fs::write(skill_dir.join("tests/test_cases.json"),
-                serde_json::to_string_pretty(&tests).unwrap_or_default());
+            let _ = fs::write(
+                skill_dir.join("tests/test_cases.json"),
+                serde_json::to_string_pretty(&tests).unwrap_or_default(),
+            );
 
             // Update registry
             let registry_path = self.vault_path.join("evolution/registry.md");
             if let Ok(mut content) = fs::read_to_string(&registry_path) {
-                content.push_str(&format!("| {} | created | {} | {} |\n", skill_id, &now[..10], entity_key));
+                content.push_str(&format!(
+                    "| {} | created | {} | {} |\n",
+                    skill_id,
+                    &now[..10],
+                    entity_key
+                ));
                 let _ = fs::write(&registry_path, content);
             }
 
@@ -1325,8 +1831,16 @@ impl CogOpsEngine {
                         }
                         if let Ok(metrics) = fs::read_to_string(entry.path().join("metrics.json")) {
                             if let Ok(m) = serde_json::from_str::<serde_json::Value>(&metrics) {
-                                d.set_item("fitness", m.get("fitness_score").and_then(|v| v.as_f64()).unwrap_or(0.0))?;
-                                d.set_item("runs", m.get("runs").and_then(|v| v.as_u64()).unwrap_or(0))?;
+                                d.set_item(
+                                    "fitness",
+                                    m.get("fitness_score")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.0),
+                                )?;
+                                d.set_item(
+                                    "runs",
+                                    m.get("runs").and_then(|v| v.as_u64()).unwrap_or(0),
+                                )?;
                             }
                         }
                         list.append(d)?;
@@ -1342,18 +1856,38 @@ impl CogOpsEngine {
         Python::with_gil(|py| {
             let root = Path::new(directory);
             let beliefs = read_all_beliefs(&self.vault_path);
-            let skip: HashSet<&str> = ["__pycache__", "node_modules", ".git", "target", "dist",
-                "build", ".tox", ".pytest_cache", "venv", ".venv"]
-                .iter().copied().collect();
-            let exts: HashSet<&str> = ["py", "rs", "ts", "tsx", "js", "jsx"].iter().copied().collect();
-            let skip_stems: HashSet<&str> = ["__init__", "mod", "lib", "main", "index"].iter().copied().collect();
+            let skip: HashSet<&str> = [
+                "__pycache__",
+                "node_modules",
+                ".git",
+                "target",
+                "dist",
+                "build",
+                ".tox",
+                ".pytest_cache",
+                "venv",
+                ".venv",
+            ]
+            .iter()
+            .copied()
+            .collect();
+            let exts: HashSet<&str> = ["py", "rs", "ts", "tsx", "js", "jsx"]
+                .iter()
+                .copied()
+                .collect();
+            let skip_stems: HashSet<&str> = ["__init__", "mod", "lib", "main", "index"]
+                .iter()
+                .copied()
+                .collect();
 
             // Build set of known entities (lowercased)
             let mut known: HashSet<String> = HashSet::new();
             for b in &beliefs {
                 known.insert(b.entity.to_lowercase());
                 for src in &b.sources {
-                    if let Some(stem) = src.split(':').next()
+                    if let Some(stem) = src
+                        .split(':')
+                        .next()
                         .and_then(|p| Path::new(p).file_stem())
                         .and_then(|s| s.to_str())
                     {
@@ -1369,11 +1903,16 @@ impl CogOpsEngine {
             for fpath in &source_files {
                 if let Some(stem) = fpath.file_stem().and_then(|s| s.to_str()) {
                     let stem_lower = stem.to_lowercase();
-                    if skip_stems.contains(stem_lower.as_str()) { continue; }
+                    if skip_stems.contains(stem_lower.as_str()) {
+                        continue;
+                    }
                     if !known.contains(&stem_lower) {
                         let d = PyDict::new(py);
-                        let rel = fpath.strip_prefix(root).unwrap_or(fpath)
-                            .to_string_lossy().to_string();
+                        let rel = fpath
+                            .strip_prefix(root)
+                            .unwrap_or(fpath)
+                            .to_string_lossy()
+                            .to_string();
                         d.set_item("file", &rel)?;
                         d.set_item("reason", "no_belief_artifact")?;
                         d.set_item("suggested_entity", &stem_lower)?;
@@ -1397,19 +1936,34 @@ impl CogOpsEngine {
             let mut refreshed: Vec<String> = Vec::new();
 
             for cf in &changed_files {
-                let stem = Path::new(cf).file_stem()
-                    .and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-                if stem.is_empty() { continue; }
+                let stem = Path::new(cf)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if stem.is_empty() {
+                    continue;
+                }
 
                 if let Ok(entries) = fs::read_dir(&beliefs_dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("md") { continue; }
-                        let fname = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-                        if !fname.contains(&stem) { continue; }
+                        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                            continue;
+                        }
+                        let fname = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if !fname.contains(&stem) {
+                            continue;
+                        }
 
                         if let Ok(content) = fs::read_to_string(&path) {
-                            if content.contains("status: verified") || content.contains("status: inferred") {
+                            if content.contains("status: verified")
+                                || content.contains("status: inferred")
+                            {
                                 let updated = content
                                     .replace("status: verified", "status: stale")
                                     .replace("status: inferred", "status: stale");
@@ -1468,7 +2022,14 @@ impl CogOpsEngine {
                                 Ok(o) if o.status.success() => passed += 1,
                                 Ok(o) => {
                                     failed += 1;
-                                    errors.push(format!("{}: {}", query, String::from_utf8_lossy(&o.stderr).chars().take(200).collect::<String>()));
+                                    errors.push(format!(
+                                        "{}: {}",
+                                        query,
+                                        String::from_utf8_lossy(&o.stderr)
+                                            .chars()
+                                            .take(200)
+                                            .collect::<String>()
+                                    ));
                                 }
                                 Err(e) => {
                                     failed += 1;
@@ -1481,21 +2042,42 @@ impl CogOpsEngine {
             }
 
             let total = passed + failed;
-            let fitness = if total > 0 { passed as f64 / total as f64 } else { 0.0 };
+            let fitness = if total > 0 {
+                passed as f64 / total as f64
+            } else {
+                0.0
+            };
 
             // Update metrics.json
             let metrics_path = skill_dir.join("metrics.json");
             let mut metrics: serde_json::Value = fs::read_to_string(&metrics_path)
-                .ok().and_then(|s| serde_json::from_str(&s).ok())
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or(serde_json::json!({}));
             if let Some(obj) = metrics.as_object_mut() {
                 obj.insert("fitness_score".into(), serde_json::json!(fitness));
-                obj.insert("runs".into(), serde_json::json!(obj.get("runs").and_then(|v| v.as_u64()).unwrap_or(0) + 1));
-                obj.insert("successes".into(), serde_json::json!(obj.get("successes").and_then(|v| v.as_u64()).unwrap_or(0) + passed as u64));
-                obj.insert("failures".into(), serde_json::json!(obj.get("failures").and_then(|v| v.as_u64()).unwrap_or(0) + failed as u64));
+                obj.insert(
+                    "runs".into(),
+                    serde_json::json!(obj.get("runs").and_then(|v| v.as_u64()).unwrap_or(0) + 1),
+                );
+                obj.insert(
+                    "successes".into(),
+                    serde_json::json!(
+                        obj.get("successes").and_then(|v| v.as_u64()).unwrap_or(0) + passed as u64
+                    ),
+                );
+                obj.insert(
+                    "failures".into(),
+                    serde_json::json!(
+                        obj.get("failures").and_then(|v| v.as_u64()).unwrap_or(0) + failed as u64
+                    ),
+                );
                 obj.insert("last_benchmark".into(), serde_json::json!(chrono_iso()));
             }
-            let _ = fs::write(&metrics_path, serde_json::to_string_pretty(&metrics).unwrap_or_default());
+            let _ = fs::write(
+                &metrics_path,
+                serde_json::to_string_pretty(&metrics).unwrap_or_default(),
+            );
 
             let result = PyDict::new(py);
             result.set_item("status", "benchmarked")?;
@@ -1521,7 +2103,8 @@ impl CogOpsEngine {
             // Read fitness from metrics
             let metrics_path = skill_dir.join("metrics.json");
             let fitness: f64 = fs::read_to_string(&metrics_path)
-                .ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
                 .and_then(|m| m.get("fitness_score").and_then(|v| v.as_f64()))
                 .unwrap_or(0.0);
 
@@ -1537,7 +2120,10 @@ impl CogOpsEngine {
             let skill_md_path = skill_dir.join("SKILL.md");
             if let Ok(content) = fs::read_to_string(&skill_md_path) {
                 let updated = content.replace(
-                    &format!("status: {}", extract_fm_value(&content, "status").unwrap_or_default()),
+                    &format!(
+                        "status: {}",
+                        extract_fm_value(&content, "status").unwrap_or_default()
+                    ),
                     &format!("status: {}", new_status),
                 );
                 let _ = fs::write(&skill_md_path, updated);
@@ -1550,13 +2136,25 @@ impl CogOpsEngine {
                 let mut found = false;
                 for line in &mut lines {
                     if line.contains(skill_id) {
-                        *line = format!("| {} | {} | {} | {} |", skill_id, action, chrono_iso().get(..10).unwrap_or(""), skill_id);
+                        *line = format!(
+                            "| {} | {} | {} | {} |",
+                            skill_id,
+                            action,
+                            chrono_iso().get(..10).unwrap_or(""),
+                            skill_id
+                        );
                         found = true;
                         break;
                     }
                 }
                 if !found {
-                    lines.push(format!("| {} | {} | {} | {} |", skill_id, action, chrono_iso().get(..10).unwrap_or(""), skill_id));
+                    lines.push(format!(
+                        "| {} | {} | {} | {} |",
+                        skill_id,
+                        action,
+                        chrono_iso().get(..10).unwrap_or(""),
+                        skill_id
+                    ));
                 }
                 let _ = fs::write(&registry_path, lines.join("\n"));
             }
@@ -1571,7 +2169,13 @@ impl CogOpsEngine {
     }
 
     /// Execute a full canonical epistemic flow end-to-end.
-    pub fn execute_flow(&mut self, query: &str, diff_text: &str, is_event: bool, event_type: &str) -> PyResult<PyObject> {
+    pub fn execute_flow(
+        &mut self,
+        query: &str,
+        diff_text: &str,
+        is_event: bool,
+        event_type: &str,
+    ) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             // Step 1: Route
             let intent = classify_intent(query);
@@ -1579,7 +2183,8 @@ impl CogOpsEngine {
             let entity_key = extract_entity_key(query);
             let beliefs = read_all_beliefs(&self.vault_path);
             let entity_lower = entity_key.to_lowercase();
-            let matching: Vec<&BeliefArtifact> = beliefs.iter()
+            let matching: Vec<&BeliefArtifact> = beliefs
+                .iter()
                 .filter(|b| b.entity.to_lowercase().contains(&entity_lower))
                 .collect();
             let belief_exists = !matching.is_empty();
@@ -1588,11 +2193,20 @@ impl CogOpsEngine {
             let miss_count = self.miss_counts.get(&entity_key).copied().unwrap_or(0);
 
             let (flow, reasoning) = select_flow(
-                intent, risk, belief_exists, belief_fresh, belief_verified,
-                is_event || !event_type.is_empty(), miss_count, self.miss_threshold,
+                intent,
+                risk,
+                belief_exists,
+                belief_fresh,
+                belief_verified,
+                is_event || !event_type.is_empty(),
+                miss_count,
+                self.miss_threshold,
             );
 
-            *self.routing_stats.entry(flow.as_str().to_string()).or_insert(0) += 1;
+            *self
+                .routing_stats
+                .entry(flow.as_str().to_string())
+                .or_insert(0) += 1;
             if flow == EpistemicFlow::CompileOnDemand || flow == EpistemicFlow::SelfImprovement {
                 *self.miss_counts.entry(entity_key.clone()).or_insert(0) += 1;
             }
@@ -1611,8 +2225,12 @@ impl CogOpsEngine {
                     if !diff_text.is_empty() {
                         let cs = parse_diff(diff_text, query);
                         let findings = review_diff(diff_text);
-                        let all_changed: Vec<&str> = cs.files_modified.iter()
-                            .chain(cs.files_added.iter()).map(|s| s.as_str()).collect();
+                        let all_changed: Vec<&str> = cs
+                            .files_modified
+                            .iter()
+                            .chain(cs.files_added.iter())
+                            .map(|s| s.as_str())
+                            .collect();
                         let (ab, _ae, br_risk) = compute_blast_radius(&beliefs, &all_changed);
                         let step = PyDict::new(py);
                         step.set_item("step", "change_pipeline")?;
@@ -1620,17 +2238,38 @@ impl CogOpsEngine {
                         step.set_item("blast_radius", br_risk)?;
                         step.set_item("affected_beliefs", ab.len())?;
                         steps.append(step)?;
-                        answer = format!("{}: +{}/-{}, {} findings, {} beliefs affected ({})",
-                            cs.intent, cs.lines_added, cs.lines_removed, findings.len(), ab.len(), br_risk);
+                        answer = format!(
+                            "{}: +{}/-{}, {} findings, {} beliefs affected ({})",
+                            cs.intent,
+                            cs.lines_added,
+                            cs.lines_removed,
+                            findings.len(),
+                            ab.len(),
+                            br_risk
+                        );
                     } else {
                         answer = "No diff provided for change-driven pipeline".into();
                     }
                 }
                 EpistemicFlow::CompileOnDemand => {
                     // Compile beliefs from source
-                    let skip: HashSet<&str> = ["__pycache__", "node_modules", ".git", "target",
-                        "dist", "build", "venv", ".venv"].iter().copied().collect();
-                    let exts: HashSet<&str> = ["py", "rs", "ts", "tsx", "js", "jsx"].iter().copied().collect();
+                    let skip: HashSet<&str> = [
+                        "__pycache__",
+                        "node_modules",
+                        ".git",
+                        "target",
+                        "dist",
+                        "build",
+                        "venv",
+                        ".venv",
+                    ]
+                    .iter()
+                    .copied()
+                    .collect();
+                    let exts: HashSet<&str> = ["py", "rs", "ts", "tsx", "js", "jsx"]
+                        .iter()
+                        .copied()
+                        .collect();
                     let source_dir = std::env::var("ENTROLY_SOURCE").unwrap_or_else(|_| ".".into());
                     let root = Path::new(&source_dir);
                     let mut files = Vec::new();
@@ -1638,23 +2277,40 @@ impl CogOpsEngine {
                     let mut bw = 0u32;
                     for fpath in &files {
                         if let Ok(content) = fs::read_to_string(fpath) {
-                            let rel = fpath.strip_prefix(root).unwrap_or(fpath).to_string_lossy().to_string();
+                            let rel = fpath
+                                .strip_prefix(root)
+                                .unwrap_or(fpath)
+                                .to_string_lossy()
+                                .to_string();
                             let entities = extract_entities(&content, &rel);
                             if !entities.is_empty() {
-                                let module_name = fpath.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                                let module_name = fpath
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown");
                                 let loc = content.lines().count();
                                 let mut body = format!("**LOC:** {}\n\n## Entities\n", loc);
                                 for e in &entities {
                                     body.push_str(&format!("- `{}` ({})\n", e.signature, e.kind));
                                 }
-                                let sources: Vec<String> = entities.iter().take(5).map(|e| format!("{}:{}", rel, e.line)).collect();
+                                let sources: Vec<String> = entities
+                                    .iter()
+                                    .take(5)
+                                    .map(|e| format!("{}:{}", rel, e.line))
+                                    .collect();
                                 let artifact = BeliefArtifact {
-                                    claim_id: generate_claim_id(), entity: module_name.to_string(),
-                                    title: format!("Module: {}", module_name), status: "inferred".into(),
-                                    confidence: 0.75, sources, derived_from: vec!["cogops_compiler".into()],
+                                    claim_id: generate_claim_id(),
+                                    entity: module_name.to_string(),
+                                    title: format!("Module: {}", module_name),
+                                    status: "inferred".into(),
+                                    confidence: 0.75,
+                                    sources,
+                                    derived_from: vec!["cogops_compiler".into()],
                                     body,
                                 };
-                                if write_belief_artifact(&self.vault_path, &artifact).is_ok() { bw += 1; }
+                                if write_belief_artifact(&self.vault_path, &artifact).is_ok() {
+                                    bw += 1;
+                                }
                             }
                         }
                     }
@@ -1667,7 +2323,12 @@ impl CogOpsEngine {
                     step.set_item("total_beliefs", fresh_beliefs.len())?;
                     step.set_item("contradictions", contras.len())?;
                     steps.append(step)?;
-                    answer = format!("Compiled {} beliefs, verified {} total, {} contradictions", bw, fresh_beliefs.len(), contras.len());
+                    answer = format!(
+                        "Compiled {} beliefs, verified {} total, {} contradictions",
+                        bw,
+                        fresh_beliefs.len(),
+                        contras.len()
+                    );
                 }
                 EpistemicFlow::VerifyBefore => {
                     let contras = detect_contradictions(&beliefs);
@@ -1685,13 +2346,22 @@ impl CogOpsEngine {
                     if !matching.is_empty() {
                         let mut parts = Vec::new();
                         for b in &matching {
-                            parts.push(format!("### {} (confidence: {:.2}, status: {})\n{}",
-                                b.entity, b.confidence, b.status,
-                                b.body.chars().take(500).collect::<String>()));
+                            parts.push(format!(
+                                "### {} (confidence: {:.2}, status: {})\n{}",
+                                b.entity,
+                                b.confidence,
+                                b.status,
+                                b.body.chars().take(500).collect::<String>()
+                            ));
                         }
                         answer = parts.join("\n\n");
                     } else {
-                        answer = format!("Verified {} beliefs ({} contradictions, {} stale)", beliefs.len(), contras.len(), stale_n);
+                        answer = format!(
+                            "Verified {} beliefs ({} contradictions, {} stale)",
+                            beliefs.len(),
+                            contras.len(),
+                            stale_n
+                        );
                     }
                 }
                 EpistemicFlow::SelfImprovement => {
@@ -1700,19 +2370,32 @@ impl CogOpsEngine {
                     step.set_item("miss_count", miss_count + 1)?;
                     step.set_item("entity", &entity_key)?;
                     steps.append(step)?;
-                    answer = format!("Miss recorded for '{}' (count: {}). Skill gap threshold: {}",
-                        entity_key, miss_count + 1, self.miss_threshold);
+                    answer = format!(
+                        "Miss recorded for '{}' (count: {}). Skill gap threshold: {}",
+                        entity_key,
+                        miss_count + 1,
+                        self.miss_threshold
+                    );
 
                     if miss_count + 1 >= self.miss_threshold {
                         // Auto-create skill
-                        let skill_id = format!("{:012x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64);
+                        let skill_id = format!(
+                            "{:012x}",
+                            SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_nanos() as u64
+                        );
                         let skill_dir = self.vault_path.join("evolution/skills").join(&skill_id);
                         let _ = fs::create_dir_all(skill_dir.join("tests"));
                         let now = chrono_iso();
                         let _ = fs::write(skill_dir.join("SKILL.md"), format!(
                             "---\nskill_id: {}\nname: {}\nentity: {}\nstatus: draft\ncreated_at: {}\n---\n\n# {}\nAuto-created from repeated failures.\n",
                             skill_id, entity_key, entity_key, now, entity_key));
-                        let _ = fs::write(skill_dir.join("metrics.json"), "{\"fitness_score\":0.0,\"runs\":0}");
+                        let _ = fs::write(
+                            skill_dir.join("metrics.json"),
+                            "{\"fitness_score\":0.0,\"runs\":0}",
+                        );
                         let _ = fs::write(skill_dir.join("tool.py"), format!(
                             "def matches(q): return '{}' in q.lower()\ndef execute(q, ctx): return {{'skill': '{}'}}\n",
                             entity_key, entity_key));
@@ -1727,13 +2410,19 @@ impl CogOpsEngine {
                     if !matching.is_empty() {
                         let mut parts = Vec::new();
                         for b in &matching {
-                            parts.push(format!("### {} (confidence: {:.2})\n{}",
-                                b.entity, b.confidence,
-                                b.body.chars().take(500).collect::<String>()));
+                            parts.push(format!(
+                                "### {} (confidence: {:.2})\n{}",
+                                b.entity,
+                                b.confidence,
+                                b.body.chars().take(500).collect::<String>()
+                            ));
                         }
                         answer = parts.join("\n\n");
                     } else {
-                        answer = format!("No beliefs found for '{}'. Run compile_beliefs first.", entity_key);
+                        answer = format!(
+                            "No beliefs found for '{}'. Run compile_beliefs first.",
+                            entity_key
+                        );
                     }
                     let step = PyDict::new(py);
                     step.set_item("step", "belief_lookup")?;
@@ -1858,14 +2547,34 @@ impl CogOpsEngine {
         Python::with_gil(|py| {
             let root = Path::new(directory);
             let doc_patterns = [
-                "README", "ARCHITECTURE", "CONTRIBUTING", "CHANGELOG",
-                "DESIGN", "API", "OVERVIEW", "GUIDE", "SETUP", "DEPLOY",
+                "README",
+                "ARCHITECTURE",
+                "CONTRIBUTING",
+                "CHANGELOG",
+                "DESIGN",
+                "API",
+                "OVERVIEW",
+                "GUIDE",
+                "SETUP",
+                "DEPLOY",
             ];
-            let doc_dirs: HashSet<&str> = ["docs", "doc", "documentation", "wiki"].iter().copied().collect();
+            let doc_dirs: HashSet<&str> = ["docs", "doc", "documentation", "wiki"]
+                .iter()
+                .copied()
+                .collect();
             let skip: HashSet<&str> = [
-                "node_modules", ".git", "target", "dist", "build",
-                "__pycache__", ".venv", "venv",
-            ].iter().copied().collect();
+                "node_modules",
+                ".git",
+                "target",
+                "dist",
+                "build",
+                "__pycache__",
+                ".venv",
+                "venv",
+            ]
+            .iter()
+            .copied()
+            .collect();
 
             let mut md_files: Vec<PathBuf> = Vec::new();
 
@@ -1903,13 +2612,17 @@ impl CogOpsEngine {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
-                if content.trim().is_empty() { continue; }
+                if content.trim().is_empty() {
+                    continue;
+                }
 
-                let rel = md_path.strip_prefix(root)
+                let rel = md_path
+                    .strip_prefix(root)
                     .map(|r| r.to_string_lossy().to_string())
                     .unwrap_or_else(|_| md_path.to_string_lossy().to_string());
 
-                let stem = md_path.file_stem()
+                let stem = md_path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown")
                     .to_lowercase();
@@ -1917,13 +2630,15 @@ impl CogOpsEngine {
                 let entity = format!("doc/{}", stem);
 
                 // Extract title from first # heading
-                let title = content.lines()
+                let title = content
+                    .lines()
                     .find(|l| l.starts_with("# "))
                     .map(|l| l[2..].trim().to_string())
                     .unwrap_or_else(|| stem.clone());
 
                 // Extract section structure
-                let sections: Vec<String> = content.lines()
+                let sections: Vec<String> = content
+                    .lines()
                     .filter(|l| l.starts_with("## ") || l.starts_with("### "))
                     .map(|l| l.trim().to_string())
                     .collect();
@@ -1933,7 +2648,11 @@ impl CogOpsEngine {
                 let section_list = if sections.is_empty() {
                     String::from("(no sections)")
                 } else {
-                    sections.iter().map(|s| format!("- {}", s)).collect::<Vec<_>>().join("\n")
+                    sections
+                        .iter()
+                        .map(|s| format!("- {}", s))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 };
 
                 let body = format!(
@@ -1957,7 +2676,10 @@ impl CogOpsEngine {
                 );
 
                 let safe_name = entity.replace(['/', ' '], "_").to_lowercase();
-                let out_path = self.vault_path.join("beliefs").join(format!("{}.md", safe_name));
+                let out_path = self
+                    .vault_path
+                    .join("beliefs")
+                    .join(format!("{}.md", safe_name));
                 if fs::write(&out_path, belief_md).is_ok() {
                     docs_compiled += 1;
                     entities.push(entity);
@@ -2034,17 +2756,21 @@ impl CogOpsEngine {
 
 fn extract_entity_key(query: &str) -> String {
     let lower = query.to_lowercase();
-    let stop = ["how", "does", "the", "what", "is", "explain", "show", "me",
-                 "can", "you", "please", "work", "works", "about", "for", "and",
-                 "this", "that", "with", "from", "have", "are"];
-    let words: Vec<&str> = lower.split_whitespace()
+    let stop = [
+        "how", "does", "the", "what", "is", "explain", "show", "me", "can", "you", "please",
+        "work", "works", "about", "for", "and", "this", "that", "with", "from", "have", "are",
+    ];
+    let words: Vec<&str> = lower
+        .split_whitespace()
         .filter(|w| w.len() > 2 && !stop.contains(w))
         .collect();
     words.first().copied().unwrap_or("unknown").to_string()
 }
 
 fn chrono_iso() -> String {
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = ts.as_secs();
     // Simple UTC ISO-8601 without chrono crate
     let days = secs / 86400;
@@ -2061,27 +2787,51 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     let mut y = 1970;
     loop {
         let ydays = if is_leap(y) { 366 } else { 365 };
-        if days < ydays { break; }
+        if days < ydays {
+            break;
+        }
         days -= ydays;
         y += 1;
     }
     let leap = is_leap(y);
-    let mdays = [31, if leap {29} else {28}, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mdays = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut mo = 0;
     for (i, &md) in mdays.iter().enumerate() {
-        if days < md { mo = i as u64 + 1; break; }
+        if days < md {
+            mo = i as u64 + 1;
+            break;
+        }
         days -= md;
     }
-    if mo == 0 { mo = 12; }
+    if mo == 0 {
+        mo = 12;
+    }
     (y, mo, days + 1)
 }
 
-fn is_leap(y: u64) -> bool { y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) }
+fn is_leap(y: u64) -> bool {
+    y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400))
+}
 
 /// Extract a value from YAML-like frontmatter.
 fn extract_fm_value(content: &str, key: &str) -> Option<String> {
     let parts: Vec<&str> = content.splitn(3, "---").collect();
-    if parts.len() < 3 { return None; }
+    if parts.len() < 3 {
+        return None;
+    }
     let prefix = format!("{}:", key);
     for line in parts[1].lines() {
         let trimmed = line.trim();
@@ -2092,8 +2842,16 @@ fn extract_fm_value(content: &str, key: &str) -> Option<String> {
     None
 }
 
-fn collect_source_files(dir: &Path, skip: &HashSet<&str>, exts: &HashSet<&str>, out: &mut Vec<PathBuf>, max: usize) {
-    if out.len() >= max { return; }
+fn collect_source_files(
+    dir: &Path,
+    skip: &HashSet<&str>,
+    exts: &HashSet<&str>,
+    out: &mut Vec<PathBuf>,
+    max: usize,
+) {
+    if out.len() >= max {
+        return;
+    }
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -2105,7 +2863,9 @@ fn collect_source_files(dir: &Path, skip: &HashSet<&str>, exts: &HashSet<&str>, 
             } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 if exts.contains(ext) {
                     out.push(path);
-                    if out.len() >= max { return; }
+                    if out.len() >= max {
+                        return;
+                    }
                 }
             }
         }
@@ -2117,13 +2877,11 @@ fn collect_source_files(dir: &Path, skip: &HashSet<&str>, exts: &HashSet<&str>, 
 // ═══════════════════════════════════════════════════════════════════
 
 const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "to", "of", "in", "for",
-    "on", "with", "at", "by", "from", "as", "into", "through", "and",
-    "but", "or", "not", "no", "if", "then", "than", "that", "this",
-    "it", "its", "we", "you", "he", "she", "they", "my", "your", "how",
-    "what", "which", "where", "when", "who", "does", "about",
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can", "to",
+    "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "and", "but",
+    "or", "not", "no", "if", "then", "than", "that", "this", "it", "its", "we", "you", "he", "she",
+    "they", "my", "your", "how", "what", "which", "where", "when", "who", "does", "about",
 ];
 
 fn tokenize_search(text: &str) -> Vec<String> {
@@ -2132,7 +2890,9 @@ fn tokenize_search(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
 
     for word in lower.split(|c: char| !c.is_alphanumeric() && c != '_') {
-        if word.len() <= 1 { continue; }
+        if word.len() <= 1 {
+            continue;
+        }
         // Split snake_case
         for part in word.split('_') {
             if part.len() > 1 && !stop.contains(part) {
@@ -2145,14 +2905,19 @@ fn tokenize_search(text: &str) -> Vec<String> {
 
 fn extract_excerpt(body: &str, query_tokens: &[String]) -> String {
     let lines: Vec<&str> = body.lines().collect();
-    if lines.is_empty() { return String::new(); }
+    if lines.is_empty() {
+        return String::new();
+    }
 
     // Score each line by query token hits
     let mut best_idx = 0usize;
     let mut best_hits = 0usize;
     for (i, line) in lines.iter().enumerate() {
         let lower = line.to_lowercase();
-        let hits = query_tokens.iter().filter(|t| lower.contains(t.as_str())).count();
+        let hits = query_tokens
+            .iter()
+            .filter(|t| lower.contains(t.as_str()))
+            .count();
         if hits > best_hits {
             best_hits = hits;
             best_idx = i;
@@ -2161,7 +2926,8 @@ fn extract_excerpt(body: &str, query_tokens: &[String]) -> String {
 
     let start = best_idx.saturating_sub(1);
     let end = (best_idx + 3).min(lines.len());
-    lines[start..end].iter()
+    lines[start..end]
+        .iter()
         .filter(|l| !l.trim().is_empty())
         .copied()
         .collect::<Vec<_>>()
@@ -2173,7 +2939,9 @@ fn extract_excerpt(body: &str, query_tokens: &[String]) -> String {
 // ═══════════════════════════════════════════════════════════════════
 
 fn collect_doc_md_files(dir: &Path, skip: &HashSet<&str>, out: &mut Vec<PathBuf>, max: usize) {
-    if out.len() >= max { return; }
+    if out.len() >= max {
+        return;
+    }
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -2182,9 +2950,16 @@ fn collect_doc_md_files(dir: &Path, skip: &HashSet<&str>, out: &mut Vec<PathBuf>
                 if !skip.contains(name) {
                     collect_doc_md_files(&path, skip, out, max);
                 }
-            } else if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("md")).unwrap_or(false) {
+            } else if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("md"))
+                .unwrap_or(false)
+            {
                 out.push(path);
-                if out.len() >= max { return; }
+                if out.len() >= max {
+                    return;
+                }
             }
         }
     }
@@ -2211,9 +2986,14 @@ fn generate_training_questions(entity: &str, title: &str, body: &str) -> Vec<Str
     // If body mentions specific types/functions, add questions
     for line in body.lines() {
         if line.starts_with("- `class ") || line.starts_with("- `struct ") {
-            let name = line.trim_start_matches("- `")
-                .split('`').next().unwrap_or("")
-                .split('(').next().unwrap_or("")
+            let name = line
+                .trim_start_matches("- `")
+                .split('`')
+                .next()
+                .unwrap_or("")
+                .split('(')
+                .next()
+                .unwrap_or("")
                 .trim();
             if name.len() > 3 {
                 questions.push(format!("What does {} in {} do?", name, clean));

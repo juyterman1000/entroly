@@ -51,7 +51,9 @@ impl LshTable {
             let mut pos = raw % 64;
             // Linear probe within 64 bits to avoid collision within same table
             for _ in 0..64 {
-                if !seen[pos] { break; }
+                if !seen[pos] {
+                    break;
+                }
                 pos = (pos + 1) % 64;
             }
             seen[pos] = true;
@@ -187,9 +189,9 @@ impl Default for ContextScorer {
     fn default() -> Self {
         ContextScorer {
             w_similarity: 0.45,
-            w_recency:    0.25,
-            w_entropy:    0.20,
-            w_frequency:  0.10,
+            w_recency: 0.25,
+            w_entropy: 0.20,
+            w_frequency: 0.10,
         }
     }
 }
@@ -212,10 +214,10 @@ impl ContextScorer {
         feedback_mult: f64,
     ) -> f64 {
         let similarity = 1.0 - (hamming as f64 / 64.0);
-        let raw = self.w_similarity  * similarity
-                + self.w_recency    * recency_score
-                + self.w_entropy    * entropy_score
-                + self.w_frequency  * frequency_score;
+        let raw = self.w_similarity * similarity
+            + self.w_recency * recency_score
+            + self.w_entropy * entropy_score
+            + self.w_frequency * frequency_score;
         (raw * feedback_mult).min(1.0)
     }
 }
@@ -237,7 +239,7 @@ mod tests {
     fn test_similar_fingerprints_found() {
         let mut idx = LshIndex::new();
         let fp1: u64 = 0xAAAAAAAAAAAAAAAA;
-        let fp2: u64 = fp1 ^ 0x7;  // 3 bits different — very similar
+        let fp2: u64 = fp1 ^ 0x7; // 3 bits different — very similar
         idx.insert(fp1, 0);
         idx.insert(fp2, 1);
         let candidates = idx.query(fp1);
@@ -276,7 +278,11 @@ mod tests {
         let query: u64 = 42u64.wrapping_mul(0x9E3779B97F4A7C15);
         let candidates = idx.query(query);
         // Should return far fewer than 1000 candidates
-        assert!(candidates.len() < 200, "LSH should prune well below N. Got {}", candidates.len());
+        assert!(
+            candidates.len() < 200,
+            "LSH should prune well below N. Got {}",
+            candidates.len()
+        );
         assert!(candidates.contains(&42));
     }
 
@@ -287,10 +293,15 @@ mod tests {
         // Perfect match, recent, high entropy, frequent
         let high = scorer.score(0, 1.0, 1.0, 1.0, 1.0);
         // Distant, old, low entropy, rare
-        let low  = scorer.score(60, 0.01, 0.01, 0.01, 1.0);
+        let low = scorer.score(60, 0.01, 0.01, 0.01, 1.0);
 
-        assert!(high > low, "High-context score ({}) should beat low-context ({})", high, low);
+        assert!(
+            high > low,
+            "High-context score ({}) should beat low-context ({})",
+            high,
+            low
+        );
         assert!(high > 0.8, "Perfect match should score > 0.8, got {}", high);
-        assert!(low  < 0.2, "Poor match should score < 0.2, got {}", low);
+        assert!(low < 0.2, "Poor match should score < 0.2, got {}", low);
     }
 }

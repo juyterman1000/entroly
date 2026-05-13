@@ -230,7 +230,7 @@ Kahneman's dual-process framework, applied to AI coding context:
 - **System 1** (fast, automatic): Rust engine in the proxy — knapsack + entropy + dedup + guardrails + channel + resonance + causal. Runs every request.
 - **System 2** (slow, deliberate): Python flow_orchestrator + verifier stack + vault. Compiles beliefs, runs BIPT / FORGE / TRIAD / PROVE / CAVE, writes vault artifacts.
 
-Until v0.18.0, these two cognitions did not exchange information. Now:
+Until v0.19.1, these two cognitions did not exchange information. Now:
 
 - **S2 → S1:** verified vault beliefs project into the engine as ranked fragments on every request. Coupled selection:
 

@@ -25,7 +25,6 @@
 
 use std::collections::HashMap;
 
-
 /// Per-agent state for budget allocation.
 #[derive(Clone, Debug)]
 pub struct AgentBudgetState {
@@ -61,7 +60,6 @@ pub struct NkbeAllocator {
     last_dual_gap: f64,
 }
 
-
 impl NkbeAllocator {
     pub fn new(
         global_budget: u32,
@@ -86,12 +84,7 @@ impl NkbeAllocator {
     }
 
     /// Register an agent for budget allocation.
-    pub fn register_agent(
-        &mut self,
-        name: &str,
-        weight: f64,
-        min_budget: u32,
-    ) {
+    pub fn register_agent(&mut self, name: &str, weight: f64, min_budget: u32) {
         self.agents.push(AgentBudgetState {
             name: name.to_string(),
             min_budget,
@@ -165,13 +158,21 @@ impl NkbeAllocator {
         let mut hi = 10.0_f64;
         while self.total_demand(hi) > 0.01 * available as f64 {
             hi *= 2.0;
-            if hi > 1e10 { break; }
+            if hi > 1e10 {
+                break;
+            }
         }
         for _ in 0..self.max_iter {
             let mid = (lo + hi) / 2.0;
             let demand = self.total_demand(mid);
-            if demand > available as f64 { lo = mid; } else { hi = mid; }
-            if (hi - lo) < self.epsilon { break; }
+            if demand > available as f64 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            if (hi - lo) < self.epsilon {
+                break;
+            }
         }
 
         let lambda_star = (lo + hi) / 2.0;
@@ -199,7 +200,8 @@ impl NkbeAllocator {
             let mean_grad: f64 = log_nash_grads.iter().sum::<f64>() / n as f64;
             for i in 0..n {
                 let delta = (0.1 * (log_nash_grads[i] - mean_grad) * available as f64) as i64;
-                let new_budget = (budgets[i] as i64 + delta).max(self.agents[i].min_budget as i64) as u32;
+                let new_budget =
+                    (budgets[i] as i64 + delta).max(self.agents[i].min_budget as i64) as u32;
                 budgets[i] = new_budget;
             }
         }
@@ -212,7 +214,9 @@ impl NkbeAllocator {
             }
         }
 
-        let primal: f64 = utilities.iter().zip(budgets.iter())
+        let primal: f64 = utilities
+            .iter()
+            .zip(budgets.iter())
             .map(|(u, b)| u * (*b as f64).ln().max(0.01))
             .sum();
         self.last_dual_gap = self.compute_dual(lambda_star) - primal;
@@ -268,7 +272,6 @@ impl NkbeAllocator {
         })
     }
 }
-
 
 impl NkbeAllocator {
     /// Agent utility at price λ: U_i(λ) = Σⱼ σ((sⱼ - λ·cⱼ)/τ) · sⱼ · wᵢ
@@ -333,14 +336,17 @@ impl NkbeAllocator {
 /// REINFORCE policy gradient for NKBE budget allocation.
 /// Used by the DreamingLoop for offline weight updates.
 pub fn reinforce_gradient(
-    features: &[[f64; 4]],    // Per-fragment feature vectors
-    selections: &[bool],       // Whether each fragment was selected
-    reward: f64,               // Outcome quality
-    probabilities: &[f64],     // Selection probabilities p*ᵢ
-    tau: f64,                  // Temperature
+    features: &[[f64; 4]], // Per-fragment feature vectors
+    selections: &[bool],   // Whether each fragment was selected
+    reward: f64,           // Outcome quality
+    probabilities: &[f64], // Selection probabilities p*ᵢ
+    tau: f64,              // Temperature
 ) -> [f64; 4] {
     let mut grad = [0.0_f64; 4];
-    let n = features.len().min(selections.len()).min(probabilities.len());
+    let n = features
+        .len()
+        .min(selections.len())
+        .min(probabilities.len());
 
     for i in 0..n {
         let p = probabilities[i].clamp(1e-8, 1.0 - 1e-8);
@@ -430,10 +436,7 @@ mod tests {
 
     #[test]
     fn test_reinforce_gradient_basic() {
-        let features = vec![
-            [1.0, 0.0, 0.5, 0.3],
-            [0.0, 1.0, 0.2, 0.8],
-        ];
+        let features = vec![[1.0, 0.0, 0.5, 0.3], [0.0, 1.0, 0.2, 0.8]];
         let selections = vec![true, false];
         let probabilities = vec![0.7, 0.3];
         let reward = 1.0;
@@ -475,6 +478,9 @@ mod tests {
         // Test that higher utility agent gets more demand
         let demand_a = alloc.agent_demand(0, 0.01);
         let demand_b = alloc.agent_demand(1, 0.01);
-        assert!(demand_a > demand_b, "higher utility agent should have more demand");
+        assert!(
+            demand_a > demand_b,
+            "higher utility agent should have more demand"
+        );
     }
 }

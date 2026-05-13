@@ -38,7 +38,7 @@ def run_mcp_server() -> None:
     """
     from entroly.server import create_mcp_server
 
-    mcp = create_mcp_server()
+    mcp, _engine = create_mcp_server()
     logger.info("Starting entroly MCP server (stdio transport)")
     mcp.run()
 

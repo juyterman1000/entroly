@@ -1,7 +1,7 @@
 """
 Regression tests for engine isolation and auto_index API contract.
 
-These tests lock in two architectural fixes that landed in v0.18.0:
+These tests lock in two architectural fixes that landed in v0.19.1:
 
   1. `EntrolyEngine(EntrolyConfig(use_persistent_index=False))` must be
      fully ephemeral — no load from, no write to, the shared warm-start
@@ -234,7 +234,7 @@ def test_auto_index_fresh_path_returns_required_keys(tmp_path: Path):
 def test_auto_index_skip_path_returns_required_keys(tmp_path: Path):
     """Skip path (engine already populated) must return the SAME key set.
 
-    This is the regression that broke `verify_claims.py` for v0.18.0 —
+    This is the regression that broke `verify_claims.py` for v0.19.1 —
     callers were reading `files_indexed` directly and got KeyError on the
     skip path. The fix unified the schema.
     """

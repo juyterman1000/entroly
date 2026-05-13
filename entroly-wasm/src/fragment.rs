@@ -158,7 +158,10 @@ mod tests {
     #[test]
     fn test_ebbinghaus_half_life() {
         let mut frags = vec![ContextFragment::new(
-            "x".into(), "test".into(), 10, "".into(),
+            "x".into(),
+            "test".into(),
+            10,
+            "".into(),
         )];
         frags[0].turn_last_accessed = 0;
 
@@ -195,7 +198,10 @@ mod tests {
 
         // Property 2: f'(0) ≈ 1 (linear for small inputs)
         let small = softcap(0.01, 0.85);
-        assert!((small - 0.01).abs() < 0.001, "Near-zero should be linear: {small}");
+        assert!(
+            (small - 0.01).abs() < 0.001,
+            "Near-zero should be linear: {small}"
+        );
 
         // Property 3: f(x) ≤ cap (tanh saturates to exactly 1.0 for large x)
         assert!(softcap(100.0, 0.85) <= 0.85);
@@ -208,7 +214,10 @@ mod tests {
 
         // Property 5: compression — boosted score (2.0) is near cap
         let capped = softcap(2.0, 0.85);
-        assert!(capped > 0.80 && capped < 0.85, "2.0 should be near cap: {capped}");
+        assert!(
+            capped > 0.80 && capped < 0.85,
+            "2.0 should be near cap: {capped}"
+        );
 
         // Property 6: disabled when cap=0
         assert_eq!(softcap(0.5, 0.0), 0.5);

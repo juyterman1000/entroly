@@ -18,10 +18,10 @@
 //! The utilization score feeds back into weight learning: fragments
 //! that consistently get ignored get deprioritized in future selection.
 
-use std::collections::HashSet;
-use serde::{Deserialize, Serialize};
-use crate::fragment::ContextFragment;
 use crate::depgraph::extract_identifiers;
+use crate::fragment::ContextFragment;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Utilization score for a single injected fragment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,10 +53,13 @@ pub struct UtilizationReport {
 
 /// Extract word trigrams from text as a HashSet.
 fn trigrams(text: &str) -> HashSet<Vec<String>> {
-    let words: Vec<String> = text.split_whitespace()
-        .map(|w| w.to_lowercase()
-            .trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
-            .to_string())
+    let words: Vec<String> = text
+        .split_whitespace()
+        .map(|w| {
+            w.to_lowercase()
+                .trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
+                .to_string()
+        })
         .filter(|w| !w.is_empty())
         .collect();
 
@@ -64,9 +67,7 @@ fn trigrams(text: &str) -> HashSet<Vec<String>> {
         return HashSet::new();
     }
 
-    words.windows(3)
-        .map(|w| w.to_vec())
-        .collect()
+    words.windows(3).map(|w| w.to_vec()).collect()
 }
 
 /// Extract identifiers from text as a HashSet.
@@ -79,10 +80,7 @@ fn identifier_set(text: &str) -> HashSet<String> {
 ///
 /// Call this after receiving the LLM response, passing in the
 /// fragments that were injected into the prompt context.
-pub fn score_utilization(
-    fragments: &[&ContextFragment],
-    response: &str,
-) -> UtilizationReport {
+pub fn score_utilization(fragments: &[&ContextFragment], response: &str) -> UtilizationReport {
     if fragments.is_empty() {
         return UtilizationReport {
             fragments_injected: 0,
@@ -171,46 +169,66 @@ mod tests {
     #[test]
     fn test_full_utilization() {
         // Response directly uses content from the fragment
-        let frag = make_frag("a", "def calculate_tax(income, rate):\n    return income * rate");
+        let frag = make_frag(
+            "a",
+            "def calculate_tax(income, rate):\n    return income * rate",
+        );
         let response = "To calculate_tax with the given income and rate, \
                         you can call calculate_tax(income, rate) which returns income * rate.";
 
         let report = score_utilization(&[&frag], response);
 
         assert_eq!(report.fragments_injected, 1);
-        assert!(report.per_fragment[0].identifier_overlap > 0.3,
+        assert!(
+            report.per_fragment[0].identifier_overlap > 0.3,
             "Identifier overlap should be high when response uses same identifiers: {:.3}",
-            report.per_fragment[0].identifier_overlap);
-        assert!(report.per_fragment[0].was_used,
-            "Fragment should be marked as used");
+            report.per_fragment[0].identifier_overlap
+        );
+        assert!(
+            report.per_fragment[0].was_used,
+            "Fragment should be marked as used"
+        );
     }
 
     #[test]
     fn test_zero_utilization() {
         // Response is completely unrelated to the fragment
-        let frag = make_frag("a", "def calculate_tax(income, rate):\n    return income * rate");
+        let frag = make_frag(
+            "a",
+            "def calculate_tax(income, rate):\n    return income * rate",
+        );
         let response = "The weather in San Francisco is sunny today with clear skies.";
 
         let report = score_utilization(&[&frag], response);
 
-        assert!(!report.per_fragment[0].was_used,
-            "Fragment should not be marked as used when response is unrelated");
+        assert!(
+            !report.per_fragment[0].was_used,
+            "Fragment should not be marked as used when response is unrelated"
+        );
         assert_eq!(report.fragments_ignored, 1);
     }
 
     #[test]
     fn test_partial_utilization() {
         // Two fragments: one used, one not
-        let frag_used = make_frag("used", "def connect_database(host, port):\n    return Connection(host, port)");
-        let frag_not = make_frag("not_used", "def send_email(recipient, body):\n    smtp.send(recipient, body)");
+        let frag_used = make_frag(
+            "used",
+            "def connect_database(host, port):\n    return Connection(host, port)",
+        );
+        let frag_not = make_frag(
+            "not_used",
+            "def send_email(recipient, body):\n    smtp.send(recipient, body)",
+        );
         let response = "Use connect_database with the host and port parameters \
                         to establish a Connection to the database.";
 
         let report = score_utilization(&[&frag_used, &frag_not], response);
 
         assert_eq!(report.fragments_injected, 2);
-        assert!(report.per_fragment[0].combined_score > report.per_fragment[1].combined_score,
-            "Used fragment should score higher than unused one");
+        assert!(
+            report.per_fragment[0].combined_score > report.per_fragment[1].combined_score,
+            "Used fragment should score higher than unused one"
+        );
     }
 
     #[test]
@@ -224,13 +242,16 @@ mod tests {
     fn test_identifier_overlap_weighted_higher() {
         // Fragment with identifiers that appear in response but different phrasing
         let frag = make_frag("a", "fn process_payment amount currency exchange_rate");
-        let response = "The process_payment function handles amount in currency with exchange_rate applied.";
+        let response =
+            "The process_payment function handles amount in currency with exchange_rate applied.";
 
         let report = score_utilization(&[&frag], response);
 
         // Identifier overlap should be higher than trigram overlap
         // because the sentence structure differs but identifier names are reused
-        assert!(report.per_fragment[0].identifier_overlap > 0.0,
-            "Should detect identifier reuse even with different sentence structure");
+        assert!(
+            report.per_fragment[0].identifier_overlap > 0.0,
+            "Should detect identifier reuse even with different sentence structure"
+        );
     }
 }

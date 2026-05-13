@@ -18,11 +18,11 @@
 //!   4. **Architecture Violations**: Cross-layer imports detected by naming convention.
 //!   5. **CodeHealth Score** [0–100]: weighted composite of the above signals.
 //!      Higher = healthier. Used to prioritize refactoring effort.
-use std::collections::{HashMap, HashSet};
-use serde::{Deserialize, Serialize};
 use crate::dedup::hamming_distance;
-use crate::fragment::ContextFragment;
 use crate::depgraph::DepGraph;
+use crate::fragment::ContextFragment;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -31,13 +31,13 @@ use crate::depgraph::DepGraph;
 /// A pair of fragments that are near-duplicates (code clones).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClonePair {
-    pub fragment_id_a:  String,
-    pub source_a:       String,
-    pub fragment_id_b:  String,
-    pub source_b:       String,
+    pub fragment_id_a: String,
+    pub source_a: String,
+    pub fragment_id_b: String,
+    pub source_b: String,
     /// Similarity [0.0, 1.0]. 1.0 = exact SimHash match.
-    pub similarity:     f64,
-    pub clone_type:     CloneType,
+    pub similarity: f64,
+    pub clone_type: CloneType,
     pub recommendation: String,
 }
 
@@ -54,75 +54,80 @@ pub enum CloneType {
 
 impl CloneType {
     fn from_hamming(dist: u32) -> Option<CloneType> {
-        if dist <= 2 { Some(CloneType::NearIdentical) }
-        else if dist <= 8 { Some(CloneType::Renamed) }
-        else if dist <= 16 { Some(CloneType::Structural) }
-        else { None }
+        if dist <= 2 {
+            Some(CloneType::NearIdentical)
+        } else if dist <= 8 {
+            Some(CloneType::Renamed)
+        } else if dist <= 16 {
+            Some(CloneType::Structural)
+        } else {
+            None
+        }
     }
 }
 
 /// A symbol that appears to be defined but never referenced across all known fragments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeadSymbol {
-    pub name:           String,
-    pub defined_in:     String,
-    pub fragment_id:    String,
-    pub confidence:     f64,
+    pub name: String,
+    pub defined_in: String,
+    pub fragment_id: String,
+    pub confidence: f64,
     pub recommendation: String,
 }
 
 /// A "god file" — a fragment that too many others depend on.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GodFile {
-    pub fragment_id:    String,
-    pub source:         String,
-    pub reverse_deps:   usize,
+    pub fragment_id: String,
+    pub source: String,
+    pub reverse_deps: usize,
     /// Standard deviations above the mean
-    pub z_score:        f64,
+    pub z_score: f64,
     pub recommendation: String,
 }
 
 /// An architectural layer violation — a lower-layer importing a higher-layer module.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchViolation {
-    pub fragment_id:  String,
-    pub source:       String,
+    pub fragment_id: String,
+    pub source: String,
     pub importer_layer: String,
     pub imported_layer: String,
-    pub evidence:     String,
+    pub evidence: String,
     pub recommendation: String,
 }
 
 /// Naming consistency issue: files that break established naming conventions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamingIssue {
-    pub source:         String,
+    pub source: String,
     pub expected_style: String,
-    pub actual_style:   String,
+    pub actual_style: String,
     pub recommendation: String,
 }
 
 /// Full codebase health report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthReport {
-    pub fragment_count:      usize,
-    pub clone_pairs:         Vec<ClonePair>,
-    pub dead_symbols:        Vec<DeadSymbol>,
-    pub god_files:           Vec<GodFile>,
-    pub arch_violations:     Vec<ArchViolation>,
-    pub naming_issues:       Vec<NamingIssue>,
+    pub fragment_count: usize,
+    pub clone_pairs: Vec<ClonePair>,
+    pub dead_symbols: Vec<DeadSymbol>,
+    pub god_files: Vec<GodFile>,
+    pub arch_violations: Vec<ArchViolation>,
+    pub naming_issues: Vec<NamingIssue>,
     /// Overall CodeHealth score [0–100]. Higher = healthier.
-    pub code_health_score:   f64,
-    pub health_grade:        &'static str,
+    pub code_health_score: f64,
+    pub health_grade: &'static str,
     /// Per-dimension breakdown
     pub duplication_penalty: f64,
-    pub dead_code_penalty:   f64,
-    pub coupling_penalty:    f64,
-    pub arch_penalty:        f64,
-    pub naming_penalty:      f64,
+    pub dead_code_penalty: f64,
+    pub coupling_penalty: f64,
+    pub arch_penalty: f64,
+    pub naming_penalty: f64,
     /// Human-readable summary
-    pub summary:             String,
-    pub top_recommendation:  Option<String>,
+    pub summary: String,
+    pub top_recommendation: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -185,7 +190,11 @@ fn detect_clones(fragments: &[&ContextFragment]) -> Vec<ClonePair> {
     }
 
     // Sort by similarity descending (most similar first)
-    pairs.sort_unstable_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.sort_unstable_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     pairs
 }
 
@@ -201,12 +210,10 @@ fn detect_clones(fragments: &[&ContextFragment]) -> Vec<ClonePair> {
 ///   - Symbol appears in a public API file → lower confidence (may be used externally)
 ///   - Internal helper naming (_, __, _private) → higher confidence
 // ═══════════════════════════════════════════════════════════════════
-fn find_dead_symbols(
-    fragments: &[&ContextFragment],
-    dep_graph: &DepGraph,
-) -> Vec<DeadSymbol> {
+fn find_dead_symbols(fragments: &[&ContextFragment], dep_graph: &DepGraph) -> Vec<DeadSymbol> {
     // Collect all defined symbols and their fragment IDs
-    let definitions: Vec<(String, String)> = dep_graph.symbol_definitions()
+    let definitions: Vec<(String, String)> = dep_graph
+        .symbol_definitions()
         .iter()
         .map(|(sym, fid)| (sym.clone(), fid.clone()))
         .collect();
@@ -231,7 +238,8 @@ fn find_dead_symbols(
     }
 
     // Build fragment_id → source map for reporting
-    let id_to_source: HashMap<&str, &str> = fragments.iter()
+    let id_to_source: HashMap<&str, &str> = fragments
+        .iter()
         .map(|f| (f.fragment_id.as_str(), f.source.as_str()))
         .collect();
 
@@ -250,12 +258,16 @@ fn find_dead_symbols(
             continue;
         }
 
-        let source = id_to_source.get(fid.as_str()).copied().unwrap_or("<unknown>");
+        let source = id_to_source
+            .get(fid.as_str())
+            .copied()
+            .unwrap_or("<unknown>");
 
         // Confidence: lower for public-facing files, higher for internals
         let confidence = if sym.starts_with('_') || sym.starts_with("__") {
             0.85 // Private/mangled names: high confidence they're actually dead
-        } else if source.contains("api") || source.contains("interface") || source.contains("types") {
+        } else if source.contains("api") || source.contains("interface") || source.contains("types")
+        {
             0.35 // Public API files: may be used by external consumers we haven't ingested
         } else {
             0.60 // Default
@@ -280,19 +292,61 @@ fn find_dead_symbols(
     }
 
     // Sort by confidence descending
-    dead.sort_unstable_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    dead.sort_unstable_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     dead.truncate(50); // Cap at 50 to avoid overwhelming reports
     dead
 }
 
 /// Skip symbols that are so common they're meaningless as dead-code indicators.
 fn is_generic_symbol(sym: &str) -> bool {
-    matches!(sym,
-        "new" | "init" | "main" | "run" | "start" | "stop" | "get" | "set" | "update" | "delete"
-        | "create" | "read" | "write" | "close" | "open" | "error" | "result" | "value"
-        | "data" | "name" | "id" | "key" | "type" | "self" | "this" | "true" | "false"
-        | "none" | "null" | "ok" | "err" | "ok_or" | "unwrap" | "expect" | "from" | "into"
-        | "clone" | "copy" | "default" | "debug" | "display" | "drop"
+    matches!(
+        sym,
+        "new"
+            | "init"
+            | "main"
+            | "run"
+            | "start"
+            | "stop"
+            | "get"
+            | "set"
+            | "update"
+            | "delete"
+            | "create"
+            | "read"
+            | "write"
+            | "close"
+            | "open"
+            | "error"
+            | "result"
+            | "value"
+            | "data"
+            | "name"
+            | "id"
+            | "key"
+            | "type"
+            | "self"
+            | "this"
+            | "true"
+            | "false"
+            | "none"
+            | "null"
+            | "ok"
+            | "err"
+            | "ok_or"
+            | "unwrap"
+            | "expect"
+            | "from"
+            | "into"
+            | "clone"
+            | "copy"
+            | "default"
+            | "debug"
+            | "display"
+            | "drop"
     ) || sym.len() <= 1
 }
 
@@ -305,24 +359,24 @@ fn is_generic_symbol(sym: &str) -> bool {
 /// Algorithm: Compute the population mean and standard deviation of reverse-dep counts.
 /// Flag any fragment > μ + 2σ (approximately the top 2.3% by coupling).
 // ═══════════════════════════════════════════════════════════════════
-fn find_god_files(
-    fragments: &[&ContextFragment],
-    dep_graph: &DepGraph,
-) -> Vec<GodFile> {
+fn find_god_files(fragments: &[&ContextFragment], dep_graph: &DepGraph) -> Vec<GodFile> {
     if fragments.len() < 3 {
         return Vec::new();
     }
 
     // Compute reverse-dep counts
-    let counts: Vec<(&&ContextFragment, usize)> = fragments.iter()
+    let counts: Vec<(&&ContextFragment, usize)> = fragments
+        .iter()
         .map(|f| (f, dep_graph.reverse_deps(&f.fragment_id).len()))
         .collect();
 
     let n = counts.len() as f64;
     let mean = counts.iter().map(|(_, c)| *c as f64).sum::<f64>() / n;
-    let variance = counts.iter()
+    let variance = counts
+        .iter()
         .map(|(_, c)| (*c as f64 - mean).powi(2))
-        .sum::<f64>() / n;
+        .sum::<f64>()
+        / n;
     let stddev = variance.sqrt();
 
     // Threshold: μ + 2σ (anything above is a statistical outlier)
@@ -331,10 +385,15 @@ fn find_god_files(
     // Require at least 3 reverse deps to be a god file (avoid flagging tiny codebases)
     let min_deps = 3_usize;
 
-    let mut god_files: Vec<GodFile> = counts.iter()
+    let mut god_files: Vec<GodFile> = counts
+        .iter()
         .filter(|(_, c)| *c as f64 > threshold && *c >= min_deps)
         .map(|(f, c)| {
-            let z_score = if stddev > 0.0 { (*c as f64 - mean) / stddev } else { 0.0 };
+            let z_score = if stddev > 0.0 {
+                (*c as f64 - mean) / stddev
+            } else {
+                0.0
+            };
             GodFile {
                 fragment_id: f.fragment_id.clone(),
                 source: f.source.clone(),
@@ -344,13 +403,19 @@ fn find_god_files(
                     "'{}' has {} reverse dependencies ({:.1}σ above average). \
                     Consider splitting into: interface (stable) + implementation (volatile) \
                     to reduce coupling through established boundary.",
-                    basename(&f.source), c, z_score
+                    basename(&f.source),
+                    c,
+                    z_score
                 ),
             }
         })
         .collect();
 
-    god_files.sort_unstable_by(|a, b| b.z_score.partial_cmp(&a.z_score).unwrap_or(std::cmp::Ordering::Equal));
+    god_files.sort_unstable_by(|a, b| {
+        b.z_score
+            .partial_cmp(&a.z_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     god_files
 }
 
@@ -372,12 +437,55 @@ fn find_god_files(
 /// OR when a foundational layer imports from a presentation layer.
 // ═══════════════════════════════════════════════════════════════════
 static ARCH_LAYERS: &[(&str, &[&str])] = &[
-    ("domain",         &["model", "entity", "domain", "schema", "types"]),
-    ("data",           &["repository", "repo", "store", "dao", "db", "database", "migration"]),
-    ("service",        &["service", "manager", "engine", "provider", "processor", "worker"]),
-    ("api",            &["controller", "handler", "route", "router", "endpoint", "api", "middleware"]),
-    ("presentation",   &["view", "component", "page", "screen", "widget", "ui", "template"]),
-    ("test",           &["test", "spec", "mock", "stub", "fixture"]),
+    ("domain", &["model", "entity", "domain", "schema", "types"]),
+    (
+        "data",
+        &[
+            "repository",
+            "repo",
+            "store",
+            "dao",
+            "db",
+            "database",
+            "migration",
+        ],
+    ),
+    (
+        "service",
+        &[
+            "service",
+            "manager",
+            "engine",
+            "provider",
+            "processor",
+            "worker",
+        ],
+    ),
+    (
+        "api",
+        &[
+            "controller",
+            "handler",
+            "route",
+            "router",
+            "endpoint",
+            "api",
+            "middleware",
+        ],
+    ),
+    (
+        "presentation",
+        &[
+            "view",
+            "component",
+            "page",
+            "screen",
+            "widget",
+            "ui",
+            "template",
+        ],
+    ),
+    ("test", &["test", "spec", "mock", "stub", "fixture"]),
 ];
 
 fn classify_layer(source: &str) -> Option<(usize, &'static str)> {
@@ -404,8 +512,10 @@ fn find_arch_violations(fragments: &[&ContextFragment]) -> Vec<ArchViolation> {
         // Scan content for import/use statements referencing other layers
         for line in frag.content.lines() {
             let line_lower = line.to_lowercase();
-            let is_import = line_lower.starts_with("import ") || line_lower.starts_with("from ")
-                || line_lower.starts_with("use ") || line_lower.contains("require(")
+            let is_import = line_lower.starts_with("import ")
+                || line_lower.starts_with("from ")
+                || line_lower.starts_with("use ")
+                || line_lower.contains("require(")
                 || line_lower.starts_with("#include");
 
             if !is_import {
@@ -470,12 +580,16 @@ fn find_naming_issues(fragments: &[&ContextFragment]) -> Vec<NamingIssue> {
 
         // Remove extension
         let stem = name.rsplit('.').nth(1).unwrap_or(name);
-        if stem.is_empty() || stem.len() < 3 { continue; }
+        if stem.is_empty() || stem.len() < 3 {
+            continue;
+        }
 
         let is_py = source.ends_with(".py");
         let is_rs = source.ends_with(".rs");
-        let is_js = source.ends_with(".js") || source.ends_with(".ts")
-            || source.ends_with(".jsx") || source.ends_with(".tsx");
+        let is_js = source.ends_with(".js")
+            || source.ends_with(".ts")
+            || source.ends_with(".jsx")
+            || source.ends_with(".tsx");
 
         if is_py || is_rs {
             // Expect snake_case: no uppercase, no hyphens
@@ -501,7 +615,9 @@ fn find_naming_issues(fragments: &[&ContextFragment]) -> Vec<NamingIssue> {
             // JS/TS: React components → PascalCase, utils/hooks → camelCase or kebab-case
             // Flag files that are inconsistent with their directory convention
             // Simple heuristic: components/ folder → PascalCase expected
-            if source.contains("/components/") && !stem.chars().next().is_some_and(|c| c.is_uppercase()) {
+            if source.contains("/components/")
+                && !stem.chars().next().is_some_and(|c| c.is_uppercase())
+            {
                 issues.push(NamingIssue {
                     source: source.clone(),
                     expected_style: "PascalCase (React component)".to_string(),
@@ -549,7 +665,9 @@ fn compute_code_health(
     let n_f = n.max(1) as f64;
 
     let max_pairs = (n * n.saturating_sub(1)) / 2;
-    let p_dup = if max_pairs == 0 { 0.0 } else {
+    let p_dup = if max_pairs == 0 {
+        0.0
+    } else {
         (clone_pairs.len() as f64 / (max_pairs as f64 * 0.05)).min(1.0)
     };
 
@@ -561,7 +679,8 @@ fn compute_code_health(
 
     let p_naming = (naming_issues.len() as f64 / (n_f * 0.20).max(1.0)).min(1.0);
 
-    let weighted = 0.30 * p_coupling + 0.30 * p_dup + 0.20 * p_dead + 0.15 * p_arch + 0.05 * p_naming;
+    let weighted =
+        0.30 * p_coupling + 0.30 * p_dup + 0.20 * p_dead + 0.15 * p_arch + 0.05 * p_naming;
     let score = (100.0 * (1.0 - weighted)).clamp(0.0, 100.0);
 
     (
@@ -575,33 +694,42 @@ fn compute_code_health(
 }
 
 fn health_grade(score: f64) -> &'static str {
-    if score >= 90.0 { "A" }
-    else if score >= 80.0 { "B" }
-    else if score >= 70.0 { "C" }
-    else if score >= 60.0 { "D" }
-    else { "F" }
+    if score >= 90.0 {
+        "A"
+    } else if score >= 80.0 {
+        "B"
+    } else if score >= 70.0 {
+        "C"
+    } else if score >= 60.0 {
+        "D"
+    } else {
+        "F"
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Main entry point
 // ═══════════════════════════════════════════════════════════════════
 
-pub fn analyze_health(
-    fragments: &[&ContextFragment],
-    dep_graph: &DepGraph,
-) -> HealthReport {
+pub fn analyze_health(fragments: &[&ContextFragment], dep_graph: &DepGraph) -> HealthReport {
     let n = fragments.len();
 
-    let clone_pairs     = detect_clones(fragments);
-    let dead_symbols    = find_dead_symbols(fragments, dep_graph);
-    let god_files       = find_god_files(fragments, dep_graph);
+    let clone_pairs = detect_clones(fragments);
+    let dead_symbols = find_dead_symbols(fragments, dep_graph);
+    let god_files = find_god_files(fragments, dep_graph);
     let arch_violations = find_arch_violations(fragments);
-    let naming_issues   = find_naming_issues(fragments);
+    let naming_issues = find_naming_issues(fragments);
 
     let total_symbols = dep_graph.symbol_definitions().len();
 
     let (score, p_dup, p_dead, p_coup, p_arch, p_name) = compute_code_health(
-        n, total_symbols, &clone_pairs, &dead_symbols, &god_files, &arch_violations, &naming_issues,
+        n,
+        total_symbols,
+        &clone_pairs,
+        &dead_symbols,
+        &god_files,
+        &arch_violations,
+        &naming_issues,
     );
 
     let grade = health_grade(score);
@@ -609,8 +737,15 @@ pub fn analyze_health(
     // Build human-readable summary
     let mut summary_parts: Vec<String> = Vec::new();
     if !clone_pairs.is_empty() {
-        let type1 = clone_pairs.iter().filter(|p| p.clone_type == CloneType::NearIdentical).count();
-        summary_parts.push(format!("{} clone pairs ({} near-identical)", clone_pairs.len(), type1));
+        let type1 = clone_pairs
+            .iter()
+            .filter(|p| p.clone_type == CloneType::NearIdentical)
+            .count();
+        summary_parts.push(format!(
+            "{} clone pairs ({} near-identical)",
+            clone_pairs.len(),
+            type1
+        ));
     }
     if !dead_symbols.is_empty() {
         summary_parts.push(format!("{} potentially dead symbols", dead_symbols.len()));
@@ -622,9 +757,16 @@ pub fn analyze_health(
         summary_parts.push(format!("{} architecture violations", arch_violations.len()));
     }
     let summary = if summary_parts.is_empty() {
-        format!("Codebase health is excellent ({} fragments analyzed, no issues found).", n)
+        format!(
+            "Codebase health is excellent ({} fragments analyzed, no issues found).",
+            n
+        )
     } else {
-        format!("{} fragments analyzed. Issues: {}.", n, summary_parts.join("; "))
+        format!(
+            "{} fragments analyzed. Issues: {}.",
+            n,
+            summary_parts.join("; ")
+        )
     };
 
     // Top recommendation: whichever issue has highest penalty
@@ -702,12 +844,17 @@ fn to_pascal_case(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fragment::ContextFragment;
     use crate::dedup::simhash;
     use crate::depgraph::DepGraph;
+    use crate::fragment::ContextFragment;
 
     fn make_frag(id: &str, content: &str, source: &str) -> ContextFragment {
-        let mut f = ContextFragment::new(id.into(), content.into(), content.len() as u32 / 4, source.into());
+        let mut f = ContextFragment::new(
+            id.into(),
+            content.into(),
+            content.len() as u32 / 4,
+            source.into(),
+        );
         f.simhash = simhash(content);
         f.token_count = content.split_whitespace().count() as u32;
         f
@@ -721,7 +868,10 @@ mod tests {
         let frags: Vec<&ContextFragment> = vec![&a, &b];
         let dep = DepGraph::new();
         let report = analyze_health(&frags, &dep);
-        assert!(!report.clone_pairs.is_empty(), "Exact same content should be a clone");
+        assert!(
+            !report.clone_pairs.is_empty(),
+            "Exact same content should be a clone"
+        );
         assert_eq!(report.clone_pairs[0].clone_type, CloneType::NearIdentical);
         assert!(report.clone_pairs[0].similarity > 0.95);
     }
@@ -735,7 +885,10 @@ mod tests {
         let dep = DepGraph::new();
         let report = analyze_health(&frags, &dep);
         // Same source → skip
-        assert!(report.clone_pairs.is_empty(), "Same-file pairs should be skipped");
+        assert!(
+            report.clone_pairs.is_empty(),
+            "Same-file pairs should be skipped"
+        );
     }
 
     #[test]
@@ -748,10 +901,18 @@ mod tests {
         let counts = vec![1usize, 1, 1, 1, 1, 1, 1, 1, 1, 20]; // outlier
         let n = counts.len() as f64;
         let mean = counts.iter().sum::<usize>() as f64 / n;
-        let var: f64 = counts.iter().map(|c| (*c as f64 - mean).powi(2)).sum::<f64>() / n;
+        let var: f64 = counts
+            .iter()
+            .map(|c| (*c as f64 - mean).powi(2))
+            .sum::<f64>()
+            / n;
         let std = var.sqrt();
         let threshold = mean + 2.0 * std;
-        assert!(20.0 > threshold, "20 should be above 2σ threshold (threshold={:.2})", threshold);
+        assert!(
+            20.0 > threshold,
+            "20 should be above 2σ threshold (threshold={:.2})",
+            threshold
+        );
     }
 
     #[test]
@@ -779,7 +940,10 @@ mod tests {
         let frags: Vec<&ContextFragment> = vec![&frag];
         let dep = DepGraph::new();
         let report = analyze_health(&frags, &dep);
-        assert!(!report.arch_violations.is_empty(), "domain importing from api should be flagged");
+        assert!(
+            !report.arch_violations.is_empty(),
+            "domain importing from api should be flagged"
+        );
     }
 
     #[test]
@@ -813,6 +977,9 @@ mod tests {
         let frags: Vec<&ContextFragment> = vec![&frag];
         let dep = DepGraph::new();
         let report = analyze_health(&frags, &dep);
-        assert!(!report.naming_issues.is_empty(), "myService.py should flag camelCase naming");
+        assert!(
+            !report.naming_issues.is_empty(),
+            "myService.py should flag camelCase naming"
+        );
     }
 }

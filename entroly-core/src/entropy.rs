@@ -10,8 +10,8 @@
 //!   - Stack-allocated 256-element histogram (vs heap-allocated Counter)
 //!   - Zero-copy string slicing for n-gram extraction
 //!
-use std::collections::HashSet;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::io::Write;
 
 /// **Kolmogorov entropy** — approximates information density via compression ratio.
@@ -108,7 +108,6 @@ pub fn ncd_similarity(a: &str, b: &str) -> f64 {
     (1.0 - ncd.clamp(0.0, 1.0)).clamp(0.0, 1.0)
 }
 
-
 /// Character-level Shannon entropy in bits per character.
 ///
 /// Uses a 256-element byte histogram for O(n) computation
@@ -176,7 +175,8 @@ pub fn renyi_entropy_2(text: &str) -> f64 {
     for &b in bytes {
         counts[b as usize] += 1;
     }
-    let sum_p_sq: f64 = counts.iter()
+    let sum_p_sq: f64 = counts
+        .iter()
         .filter(|&&c| c > 0)
         .map(|&c| {
             let p = c as f64 / len;
@@ -227,7 +227,8 @@ pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
 
     // Special case: α → 1 is Shannon entropy
     if (alpha - 1.0).abs() < 1e-10 {
-        return -probs.iter()
+        return -probs
+            .iter()
             .filter(|&&p| p > 0.0)
             .map(|&p| p * p.log2())
             .sum::<f64>();
@@ -255,7 +256,11 @@ pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
 /// Used to normalize EGSC admission threshold to [0, 1] scale.
 #[inline]
 pub fn renyi_max(n: usize) -> f64 {
-    if n <= 1 { 0.0 } else { (n as f64).log2() }
+    if n <= 1 {
+        0.0
+    } else {
+        (n as f64).log2()
+    }
 }
 
 /// Shannon–Rényi divergence: H₁(X) - H₂(X).
@@ -275,7 +280,6 @@ pub fn entropy_divergence(text: &str) -> f64 {
     let h2 = renyi_entropy_2(text);
     (h1 - h2).max(0.0)
 }
-
 
 /// ═══════════════════════════════════════════════════════════════════
 /// BPB — Bits-Per-Byte Information Density
@@ -339,7 +343,8 @@ pub fn bpb_quality(text: &str, redundancy: f64) -> f64 {
 ///   - closing braces
 pub fn boilerplate_ratio(text: &str) -> f64 {
     let lines: Vec<&str> = text.lines().collect();
-    let non_empty: Vec<&str> = lines.iter()
+    let non_empty: Vec<&str> = lines
+        .iter()
         .filter(|l| !l.trim().is_empty())
         .copied()
         .collect();
@@ -379,10 +384,18 @@ fn is_boilerplate(trimmed: &str) -> bool {
 
     // ── Universal structural delimiters ──
     // These carry zero semantic information in any language.
-    if trimmed == "}" || trimmed == ")" || trimmed == "]"
-        || trimmed == "{" || trimmed == "};" || trimmed == "},"
-        || trimmed == "})" || trimmed == "});" || trimmed == "];"
-        || trimmed == "]," || trimmed == "({" || trimmed == "})"
+    if trimmed == "}"
+        || trimmed == ")"
+        || trimmed == "]"
+        || trimmed == "{"
+        || trimmed == "};"
+        || trimmed == "},"
+        || trimmed == "})"
+        || trimmed == "});"
+        || trimmed == "];"
+        || trimmed == "],"
+        || trimmed == "({"
+        || trimmed == "})"
     {
         return true;
     }
@@ -400,16 +413,21 @@ fn is_boilerplate(trimmed: &str) -> bool {
     if trimmed.starts_with("def __") && trimmed.contains("__(") {
         return true;
     }
-    if trimmed == "return None" || trimmed == "return self"
-        || trimmed == "return True" || trimmed == "return False"
+    if trimmed == "return None"
+        || trimmed == "return self"
+        || trimmed == "return True"
+        || trimmed == "return False"
     {
         return true;
     }
 
     // ── Go ──
-    if trimmed == "if err != nil {" || trimmed == "return nil"
-        || trimmed == "return err" || trimmed == "return nil, err"
-        || trimmed == "return nil, nil" || trimmed == "return fmt.Errorf("
+    if trimmed == "if err != nil {"
+        || trimmed == "return nil"
+        || trimmed == "return err"
+        || trimmed == "return nil, err"
+        || trimmed == "return nil, nil"
+        || trimmed == "return fmt.Errorf("
     {
         return true;
     }
@@ -421,16 +439,21 @@ fn is_boilerplate(trimmed: &str) -> bool {
     if trimmed.starts_with("use ") || trimmed.starts_with("mod ") {
         return true;
     }
-    if trimmed == "Ok(())" || trimmed == "Ok(());"
-        || trimmed == "Err(e)" || trimmed == "unimplemented!()"
-        || trimmed == "todo!()" || trimmed == "unreachable!()"
+    if trimmed == "Ok(())"
+        || trimmed == "Ok(());"
+        || trimmed == "Err(e)"
+        || trimmed == "unimplemented!()"
+        || trimmed == "todo!()"
+        || trimmed == "unreachable!()"
     {
         return true;
     }
 
     // ── JS/TS ──
-    if trimmed.starts_with("require(") || trimmed == "module.exports"
-        || trimmed == "export default" || trimmed == "'use strict';"
+    if trimmed.starts_with("require(")
+        || trimmed == "module.exports"
+        || trimmed == "export default"
+        || trimmed == "'use strict';"
         || trimmed == "\"use strict\";"
     {
         return true;
@@ -446,20 +469,32 @@ fn is_boilerplate(trimmed: &str) -> bool {
     if trimmed == "---" || trimmed == "..." {
         return true;
     }
-    if trimmed.starts_with("apiVersion:") || trimmed.starts_with("kind:")
-        || trimmed.starts_with("metadata:") || trimmed.starts_with("spec:")
-        || trimmed.starts_with("namespace:") || trimmed.starts_with("labels:")
-        || trimmed.starts_with("annotations:") || trimmed.starts_with("name:")
-        || trimmed.starts_with("resources:") || trimmed.starts_with("type: ")
-        || trimmed.starts_with("selector:") || trimmed.starts_with("template:")
-        || trimmed.starts_with("containers:") || trimmed.starts_with("ports:")
+    if trimmed.starts_with("apiVersion:")
+        || trimmed.starts_with("kind:")
+        || trimmed.starts_with("metadata:")
+        || trimmed.starts_with("spec:")
+        || trimmed.starts_with("namespace:")
+        || trimmed.starts_with("labels:")
+        || trimmed.starts_with("annotations:")
+        || trimmed.starts_with("name:")
+        || trimmed.starts_with("resources:")
+        || trimmed.starts_with("type: ")
+        || trimmed.starts_with("selector:")
+        || trimmed.starts_with("template:")
+        || trimmed.starts_with("containers:")
+        || trimmed.starts_with("ports:")
     {
         return true;
     }
 
     // ── JSON structural ──
-    if trimmed == "{" || trimmed == "}" || trimmed == "[" || trimmed == "]"
-        || trimmed == "null" || trimmed == "null," || trimmed == "true,"
+    if trimmed == "{"
+        || trimmed == "}"
+        || trimmed == "["
+        || trimmed == "]"
+        || trimmed == "null"
+        || trimmed == "null,"
+        || trimmed == "true,"
         || trimmed == "false,"
     {
         return true;
@@ -469,7 +504,9 @@ fn is_boilerplate(trimmed: &str) -> bool {
     if trimmed.starts_with("#include ") || trimmed.starts_with("#pragma ") {
         return true;
     }
-    if trimmed == "return 0;" || trimmed == "return;" || trimmed == "break;"
+    if trimmed == "return 0;"
+        || trimmed == "return;"
+        || trimmed == "break;"
         || trimmed == "continue;"
     {
         return true;
@@ -521,16 +558,14 @@ pub fn simhash_uniqueness(fp: u64, sample_fps: &[u64]) -> f64 {
     if content_fps.is_empty() {
         return 0.7;
     }
-    let max_sim = content_fps.iter()
+    let max_sim = content_fps
+        .iter()
         .map(|&s| 1.0 - (fp ^ s).count_ones() as f64 / 64.0)
         .fold(0.0f64, f64::max);
     1.0 - max_sim
 }
 
-pub fn cross_fragment_redundancy(
-    fragment: &str,
-    others: &[&str],
-) -> f64 {
+pub fn cross_fragment_redundancy(fragment: &str, others: &[&str]) -> f64 {
     if fragment.is_empty() || others.is_empty() {
         return 0.0;
     }
@@ -551,20 +586,28 @@ pub fn cross_fragment_redundancy(
     };
 
     // We only compute n-levels where the fragment is long enough
-    let r2 = if n_words >= 2 { ngram_redundancy(&words, others, 2) } else { 0.0 };
-    let r3 = if n_words >= 3 { ngram_redundancy(&words, others, 3) } else { r2 };
-    let r4 = if n_words >= 4 { ngram_redundancy(&words, others, 4) } else { r3 };
+    let r2 = if n_words >= 2 {
+        ngram_redundancy(&words, others, 2)
+    } else {
+        0.0
+    };
+    let r3 = if n_words >= 3 {
+        ngram_redundancy(&words, others, 3)
+    } else {
+        r2
+    };
+    let r4 = if n_words >= 4 {
+        ngram_redundancy(&words, others, 4)
+    } else {
+        r3
+    };
 
     (w2 * r2 + w3 * r3 + w4 * r4).clamp(0.0, 1.0)
 }
 
 /// Compute single-scale n-gram overlap ratio against a set of other fragments.
 /// Parallelises over others when len > 10 (Rayon).
-fn ngram_redundancy(
-    words: &[&str],
-    others: &[&str],
-    ngram_size: usize,
-) -> f64 {
+fn ngram_redundancy(words: &[&str], others: &[&str], ngram_size: usize) -> f64 {
     // Extract n-grams from this fragment
     let mut fragment_ngrams: HashSet<Vec<&str>> = HashSet::new();
     for window in words.windows(ngram_size) {
@@ -576,10 +619,12 @@ fn ngram_redundancy(
 
     // Build n-gram set from other fragments (parallel when > 10)
     let other_ngrams: HashSet<Vec<&str>> = if others.len() > 10 {
-        others.par_iter()
+        others
+            .par_iter()
             .flat_map(|other| {
                 let other_words: Vec<&str> = other.split_whitespace().collect();
-                other_words.windows(ngram_size)
+                other_words
+                    .windows(ngram_size)
                     .map(|w| w.to_vec())
                     .collect::<Vec<_>>()
             })
@@ -595,7 +640,8 @@ fn ngram_redundancy(
         set
     };
 
-    let overlap = fragment_ngrams.iter()
+    let overlap = fragment_ngrams
+        .iter()
         .filter(|ng| other_ngrams.contains(*ng))
         .count();
 
@@ -608,10 +654,7 @@ fn ngram_redundancy(
 ///   40% Shannon entropy (normalized)
 ///   30% Boilerplate penalty (1 - ratio)
 ///   30% Uniqueness (1 - adaptive multi-scale redundancy)
-pub fn information_score(
-    text: &str,
-    other_fragments: &[&str],
-) -> f64 {
+pub fn information_score(text: &str, other_fragments: &[&str]) -> f64 {
     if text.trim().is_empty() {
         return 0.0;
     }
@@ -631,7 +674,11 @@ pub fn information_score(
     // Examples: base64 blobs, UUID strings, minified code.
     // Penalty kicks in above 1.5 bits divergence (empirical threshold).
     let div = entropy_divergence(text);
-    let noise_penalty = if div > 1.5 { (div - 1.5).min(1.0) * 0.15 } else { 0.0 };
+    let noise_penalty = if div > 1.5 {
+        (div - 1.5).min(1.0) * 0.15
+    } else {
+        0.0
+    };
 
     let score = 0.40 * ent + 0.30 * bp + 0.30 * uniqueness - noise_penalty;
     score.clamp(0.0, 1.0)
@@ -656,26 +703,42 @@ pub fn source_type_multiplier(source: &str) -> f64 {
     let lower = source.to_lowercase();
 
     // Source code: full value — implementation logic for AI reasoning
-    if lower.ends_with(".go") || lower.ends_with(".py") || lower.ends_with(".pyw")
+    if lower.ends_with(".go")
+        || lower.ends_with(".py")
+        || lower.ends_with(".pyw")
         || lower.ends_with(".rs")
-        || lower.ends_with(".ts") || lower.ends_with(".tsx")
-        || lower.ends_with(".js") || lower.ends_with(".jsx") || lower.ends_with(".mjs")
-        || lower.ends_with(".java") || lower.ends_with(".kt") || lower.ends_with(".scala")
-        || lower.ends_with(".cs") || lower.ends_with(".fs")
+        || lower.ends_with(".ts")
+        || lower.ends_with(".tsx")
+        || lower.ends_with(".js")
+        || lower.ends_with(".jsx")
+        || lower.ends_with(".mjs")
+        || lower.ends_with(".java")
+        || lower.ends_with(".kt")
+        || lower.ends_with(".scala")
+        || lower.ends_with(".cs")
+        || lower.ends_with(".fs")
         || lower.ends_with(".swift")
-        || lower.ends_with(".cpp") || lower.ends_with(".cc") || lower.ends_with(".c")
-        || lower.ends_with(".h") || lower.ends_with(".hpp")
-        || lower.ends_with(".rb") || lower.ends_with(".php")
-        || lower.ends_with(".ex") || lower.ends_with(".exs")
-        || lower.ends_with(".dart") || lower.ends_with(".lua")
+        || lower.ends_with(".cpp")
+        || lower.ends_with(".cc")
+        || lower.ends_with(".c")
+        || lower.ends_with(".h")
+        || lower.ends_with(".hpp")
+        || lower.ends_with(".rb")
+        || lower.ends_with(".php")
+        || lower.ends_with(".ex")
+        || lower.ends_with(".exs")
+        || lower.ends_with(".dart")
+        || lower.ends_with(".lua")
         || lower.ends_with(".zig")
     {
         return 1.0;
     }
 
     // Config / declarative: low multiplier — rarely the direct answer
-    if lower.ends_with(".yaml") || lower.ends_with(".yml")
-        || lower.ends_with(".json") || lower.ends_with(".toml")
+    if lower.ends_with(".yaml")
+        || lower.ends_with(".yml")
+        || lower.ends_with(".json")
+        || lower.ends_with(".toml")
     {
         return 0.35;
     }
@@ -686,8 +749,10 @@ pub fn source_type_multiplier(source: &str) -> f64 {
     }
 
     // Infrastructure: moderate value
-    if lower.contains("dockerfile") || lower.ends_with(".sh")
-        || lower.ends_with(".bash") || lower.ends_with(".zsh")
+    if lower.contains("dockerfile")
+        || lower.ends_with(".sh")
+        || lower.ends_with(".bash")
+        || lower.ends_with(".zsh")
     {
         return 0.40;
     }
@@ -698,9 +763,12 @@ pub fn source_type_multiplier(source: &str) -> f64 {
     }
 
     // Web templates: moderate
-    if lower.ends_with(".html") || lower.ends_with(".htm")
-        || lower.ends_with(".css") || lower.ends_with(".scss")
-        || lower.ends_with(".vue") || lower.ends_with(".svelte")
+    if lower.ends_with(".html")
+        || lower.ends_with(".htm")
+        || lower.ends_with(".css")
+        || lower.ends_with(".scss")
+        || lower.ends_with(".vue")
+        || lower.ends_with(".svelte")
     {
         return 0.60;
     }
@@ -743,8 +811,6 @@ pub fn information_mass_factor(token_count: u32) -> f64 {
     0.3 + 0.7 * sigma
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,22 +845,27 @@ mod tests {
     fn test_multiscale_short_fragment_uses_bigrams() {
         // 6-word fragment — trigrams (n=3) give only 4 grams, bigrams more reliable
         let short = "fn compute_tax income rate";
-        let other  = "fn compute_tax income rate";
+        let other = "fn compute_tax income rate";
         let r = cross_fragment_redundancy(short, &[other]);
-        assert!(r > 0.9, "Identical short fragments should score > 0.9, got {r:.3}");
+        assert!(
+            r > 0.9,
+            "Identical short fragments should score > 0.9, got {r:.3}"
+        );
     }
 
     #[test]
     fn test_multiscale_long_fragment_discriminates() {
         // Long fragment with shared bigrams but different 4-grams
         // should NOT be flagged as highly redundant
-        let base  = "fn process_payment amount currency exchange rate apply discount calculate"
-                    .repeat(5);
-        let other = "fn validate_user email password check_permissions audit_log record"
-                    .repeat(5);
+        let base =
+            "fn process_payment amount currency exchange rate apply discount calculate".repeat(5);
+        let other = "fn validate_user email password check_permissions audit_log record".repeat(5);
         let r = cross_fragment_redundancy(&base, &[&other]);
         // Very different 4-grams despite reuse of fn/common words
-        assert!(r < 0.3, "Distinct long fragments should score < 0.3, got {r:.3}");
+        assert!(
+            r < 0.3,
+            "Distinct long fragments should score < 0.3, got {r:.3}"
+        );
     }
 
     #[test]
@@ -810,24 +881,39 @@ mod tests {
 
     #[test]
     fn test_bpb_range() {
-        let code = "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
+        let code =
+            "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
         let bpb = bits_per_byte(code);
-        assert!(bpb > 0.3 && bpb < 0.9, "Code BPB should be 0.3–0.9, got {bpb:.3}");
+        assert!(
+            bpb > 0.3 && bpb < 0.9,
+            "Code BPB should be 0.3–0.9, got {bpb:.3}"
+        );
     }
 
     #[test]
     fn test_bpb_boilerplate_lower() {
         let boilerplate = "import os\nimport sys\nimport json\nimport time\nimport logging\n";
         let dense_code = "fn quick_sort(arr: &mut [i32]) { if arr.len() <= 1 { return; } let pivot = arr[arr.len()-1]; }";
-        assert!(bits_per_byte(dense_code) > bits_per_byte(boilerplate),
-            "Dense code should have higher BPB than boilerplate");
+        assert!(
+            bits_per_byte(dense_code) > bits_per_byte(boilerplate),
+            "Dense code should have higher BPB than boilerplate"
+        );
     }
 
     #[test]
     fn test_bpb_quality_combines_density_and_uniqueness() {
-        let q_unique = bpb_quality("complex algorithmic implementation with novel patterns", 0.0);
-        let q_redundant = bpb_quality("complex algorithmic implementation with novel patterns", 0.9);
-        assert!(q_unique > q_redundant, "Unique content should score higher: {q_unique} vs {q_redundant}");
+        let q_unique = bpb_quality(
+            "complex algorithmic implementation with novel patterns",
+            0.0,
+        );
+        let q_redundant = bpb_quality(
+            "complex algorithmic implementation with novel patterns",
+            0.9,
+        );
+        assert!(
+            q_unique > q_redundant,
+            "Unique content should score higher: {q_unique} vs {q_redundant}"
+        );
     }
 
     #[test]
@@ -844,11 +930,14 @@ mod tests {
     #[test]
     fn test_renyi_leq_shannon() {
         // Rényi H₂ ≤ Shannon H₁ for all distributions (well-known inequality)
-        let text = "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
+        let text =
+            "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
         let h1 = shannon_entropy(text);
         let h2 = renyi_entropy_2(text);
-        assert!(h2 <= h1 + 1e-10,
-            "Rényi H₂ ({h2:.4}) must be ≤ Shannon H₁ ({h1:.4})");
+        assert!(
+            h2 <= h1 + 1e-10,
+            "Rényi H₂ ({h2:.4}) must be ≤ Shannon H₁ ({h1:.4})"
+        );
     }
 
     #[test]
@@ -863,18 +952,23 @@ mod tests {
         // Real code has moderate divergence (genuine information diversity)
         let code = "def authenticate(user, password):\n    h = hashlib.sha256(password.encode())\n    return db.verify(user, h.hexdigest())\n";
         let div = entropy_divergence(code);
-        assert!(div < 2.0, "Code divergence should be moderate, got {div:.4}");
+        assert!(
+            div < 2.0,
+            "Code divergence should be moderate, got {div:.4}"
+        );
     }
 
     #[test]
     fn test_noise_penalty_in_information_score() {
         // Base64-like high-entropy noise should be penalized vs real code
-        let noise = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=";  // base64
+        let noise = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="; // base64
         let code = "def compute_tax(income, rate):\n    return income * rate";
         let score_noise = information_score(noise, &[]);
         let score_code = information_score(code, &[]);
         // Both have high Shannon entropy, but noise has high divergence
-        assert!(score_code >= score_noise * 0.8,
-            "Code should score well relative to noise: code={score_code:.3} noise={score_noise:.3}");
+        assert!(
+            score_code >= score_noise * 0.8,
+            "Code should score well relative to noise: code={score_code:.3} noise={score_noise:.3}"
+        );
     }
 }

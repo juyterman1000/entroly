@@ -87,7 +87,8 @@ pub fn renyi_entropy_2(text: &str) -> f64 {
     for &b in bytes {
         counts[b as usize] += 1;
     }
-    let sum_p_sq: f64 = counts.iter()
+    let sum_p_sq: f64 = counts
+        .iter()
         .filter(|&&c| c > 0)
         .map(|&c| {
             let p = c as f64 / len;
@@ -140,7 +141,8 @@ pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
 
     // Special case: α → 1 is Shannon entropy
     if (alpha - 1.0).abs() < 1e-10 {
-        return -probs.iter()
+        return -probs
+            .iter()
             .filter(|&&p| p > 0.0)
             .map(|&p| p * p.log2())
             .sum::<f64>();
@@ -168,7 +170,11 @@ pub fn renyi_entropy_alpha(scores: &[f64], alpha: f64) -> f64 {
 /// Used to normalize EGSC admission threshold to [0, 1] scale.
 #[inline]
 pub fn renyi_max(n: usize) -> f64 {
-    if n <= 1 { 0.0 } else { (n as f64).log2() }
+    if n <= 1 {
+        0.0
+    } else {
+        (n as f64).log2()
+    }
 }
 
 /// Shannon–Rényi divergence: H₁(X) - H₂(X).
@@ -188,7 +194,6 @@ pub fn entropy_divergence(text: &str) -> f64 {
     let h2 = renyi_entropy_2(text);
     (h1 - h2).max(0.0)
 }
-
 
 /// ═══════════════════════════════════════════════════════════════════
 /// BPB — Bits-Per-Byte Information Density
@@ -252,7 +257,8 @@ pub fn bpb_quality(text: &str, redundancy: f64) -> f64 {
 ///   - closing braces
 pub fn boilerplate_ratio(text: &str) -> f64 {
     let lines: Vec<&str> = text.lines().collect();
-    let non_empty: Vec<&str> = lines.iter()
+    let non_empty: Vec<&str> = lines
+        .iter()
         .filter(|l| !l.trim().is_empty())
         .copied()
         .collect();
@@ -306,8 +312,10 @@ fn is_boilerplate(trimmed: &str) -> bool {
     }
 
     // return None/self/True/False
-    if trimmed == "return None" || trimmed == "return self"
-        || trimmed == "return True" || trimmed == "return False"
+    if trimmed == "return None"
+        || trimmed == "return self"
+        || trimmed == "return True"
+        || trimmed == "return False"
     {
         return true;
     }
@@ -334,10 +342,7 @@ fn is_boilerplate(trimmed: &str) -> bool {
 ///   > 100 words  → (0.15, 0.35, 0.50) — 4-gram-heavy (more discriminative)
 ///
 /// Returns [0, 1]: 0.0 = completely unique · 1.0 = completely redundant.
-pub fn cross_fragment_redundancy(
-    fragment: &str,
-    others: &[&str],
-) -> f64 {
+pub fn cross_fragment_redundancy(fragment: &str, others: &[&str]) -> f64 {
     if fragment.is_empty() || others.is_empty() {
         return 0.0;
     }
@@ -358,20 +363,28 @@ pub fn cross_fragment_redundancy(
     };
 
     // We only compute n-levels where the fragment is long enough
-    let r2 = if n_words >= 2 { ngram_redundancy(&words, others, 2) } else { 0.0 };
-    let r3 = if n_words >= 3 { ngram_redundancy(&words, others, 3) } else { r2 };
-    let r4 = if n_words >= 4 { ngram_redundancy(&words, others, 4) } else { r3 };
+    let r2 = if n_words >= 2 {
+        ngram_redundancy(&words, others, 2)
+    } else {
+        0.0
+    };
+    let r3 = if n_words >= 3 {
+        ngram_redundancy(&words, others, 3)
+    } else {
+        r2
+    };
+    let r4 = if n_words >= 4 {
+        ngram_redundancy(&words, others, 4)
+    } else {
+        r3
+    };
 
     (w2 * r2 + w3 * r3 + w4 * r4).clamp(0.0, 1.0)
 }
 
 /// Compute single-scale n-gram overlap ratio against a set of other fragments.
 /// Parallelises over others when len > 10 (Rayon).
-fn ngram_redundancy(
-    words: &[&str],
-    others: &[&str],
-    ngram_size: usize,
-) -> f64 {
+fn ngram_redundancy(words: &[&str], others: &[&str], ngram_size: usize) -> f64 {
     // Extract n-grams from this fragment
     let mut fragment_ngrams: HashSet<Vec<&str>> = HashSet::new();
     for window in words.windows(ngram_size) {
@@ -402,7 +415,8 @@ fn ngram_redundancy(
         set
     };
 
-    let overlap = fragment_ngrams.iter()
+    let overlap = fragment_ngrams
+        .iter()
         .filter(|ng| other_ngrams.contains(*ng))
         .count();
 
@@ -415,10 +429,7 @@ fn ngram_redundancy(
 ///   40% Shannon entropy (normalized)
 ///   30% Boilerplate penalty (1 - ratio)
 ///   30% Uniqueness (1 - adaptive multi-scale redundancy)
-pub fn information_score(
-    text: &str,
-    other_fragments: &[&str],
-) -> f64 {
+pub fn information_score(text: &str, other_fragments: &[&str]) -> f64 {
     if text.trim().is_empty() {
         return 0.0;
     }
@@ -438,7 +449,11 @@ pub fn information_score(
     // Examples: base64 blobs, UUID strings, minified code.
     // Penalty kicks in above 1.5 bits divergence (empirical threshold).
     let div = entropy_divergence(text);
-    let noise_penalty = if div > 1.5 { (div - 1.5).min(1.0) * 0.15 } else { 0.0 };
+    let noise_penalty = if div > 1.5 {
+        (div - 1.5).min(1.0) * 0.15
+    } else {
+        0.0
+    };
 
     let score = 0.40 * ent + 0.30 * bp + 0.30 * uniqueness - noise_penalty;
     score.clamp(0.0, 1.0)
@@ -478,22 +493,27 @@ mod tests {
     fn test_multiscale_short_fragment_uses_bigrams() {
         // 6-word fragment — trigrams (n=3) give only 4 grams, bigrams more reliable
         let short = "fn compute_tax income rate";
-        let other  = "fn compute_tax income rate";
+        let other = "fn compute_tax income rate";
         let r = cross_fragment_redundancy(short, &[other]);
-        assert!(r > 0.9, "Identical short fragments should score > 0.9, got {r:.3}");
+        assert!(
+            r > 0.9,
+            "Identical short fragments should score > 0.9, got {r:.3}"
+        );
     }
 
     #[test]
     fn test_multiscale_long_fragment_discriminates() {
         // Long fragment with shared bigrams but different 4-grams
         // should NOT be flagged as highly redundant
-        let base  = "fn process_payment amount currency exchange rate apply discount calculate"
-                    .repeat(5);
-        let other = "fn validate_user email password check_permissions audit_log record"
-                    .repeat(5);
+        let base =
+            "fn process_payment amount currency exchange rate apply discount calculate".repeat(5);
+        let other = "fn validate_user email password check_permissions audit_log record".repeat(5);
         let r = cross_fragment_redundancy(&base, &[&other]);
         // Very different 4-grams despite reuse of fn/common words
-        assert!(r < 0.3, "Distinct long fragments should score < 0.3, got {r:.3}");
+        assert!(
+            r < 0.3,
+            "Distinct long fragments should score < 0.3, got {r:.3}"
+        );
     }
 
     #[test]
@@ -509,24 +529,39 @@ mod tests {
 
     #[test]
     fn test_bpb_range() {
-        let code = "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
+        let code =
+            "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
         let bpb = bits_per_byte(code);
-        assert!(bpb > 0.3 && bpb < 0.9, "Code BPB should be 0.3–0.9, got {bpb:.3}");
+        assert!(
+            bpb > 0.3 && bpb < 0.9,
+            "Code BPB should be 0.3–0.9, got {bpb:.3}"
+        );
     }
 
     #[test]
     fn test_bpb_boilerplate_lower() {
         let boilerplate = "import os\nimport sys\nimport json\nimport time\nimport logging\n";
         let dense_code = "fn quick_sort(arr: &mut [i32]) { if arr.len() <= 1 { return; } let pivot = arr[arr.len()-1]; }";
-        assert!(bits_per_byte(dense_code) > bits_per_byte(boilerplate),
-            "Dense code should have higher BPB than boilerplate");
+        assert!(
+            bits_per_byte(dense_code) > bits_per_byte(boilerplate),
+            "Dense code should have higher BPB than boilerplate"
+        );
     }
 
     #[test]
     fn test_bpb_quality_combines_density_and_uniqueness() {
-        let q_unique = bpb_quality("complex algorithmic implementation with novel patterns", 0.0);
-        let q_redundant = bpb_quality("complex algorithmic implementation with novel patterns", 0.9);
-        assert!(q_unique > q_redundant, "Unique content should score higher: {q_unique} vs {q_redundant}");
+        let q_unique = bpb_quality(
+            "complex algorithmic implementation with novel patterns",
+            0.0,
+        );
+        let q_redundant = bpb_quality(
+            "complex algorithmic implementation with novel patterns",
+            0.9,
+        );
+        assert!(
+            q_unique > q_redundant,
+            "Unique content should score higher: {q_unique} vs {q_redundant}"
+        );
     }
 
     #[test]
@@ -543,11 +578,14 @@ mod tests {
     #[test]
     fn test_renyi_leq_shannon() {
         // Rényi H₂ ≤ Shannon H₁ for all distributions (well-known inequality)
-        let text = "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
+        let text =
+            "def calculate_tax(income, rate):\n    return income * rate * (1 - deductions)\n";
         let h1 = shannon_entropy(text);
         let h2 = renyi_entropy_2(text);
-        assert!(h2 <= h1 + 1e-10,
-            "Rényi H₂ ({h2:.4}) must be ≤ Shannon H₁ ({h1:.4})");
+        assert!(
+            h2 <= h1 + 1e-10,
+            "Rényi H₂ ({h2:.4}) must be ≤ Shannon H₁ ({h1:.4})"
+        );
     }
 
     #[test]
@@ -562,18 +600,23 @@ mod tests {
         // Real code has moderate divergence (genuine information diversity)
         let code = "def authenticate(user, password):\n    h = hashlib.sha256(password.encode())\n    return db.verify(user, h.hexdigest())\n";
         let div = entropy_divergence(code);
-        assert!(div < 2.0, "Code divergence should be moderate, got {div:.4}");
+        assert!(
+            div < 2.0,
+            "Code divergence should be moderate, got {div:.4}"
+        );
     }
 
     #[test]
     fn test_noise_penalty_in_information_score() {
         // Base64-like high-entropy noise should be penalized vs real code
-        let noise = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=";  // base64
+        let noise = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo="; // base64
         let code = "def compute_tax(income, rate):\n    return income * rate";
         let score_noise = information_score(noise, &[]);
         let score_code = information_score(code, &[]);
         // Both have high Shannon entropy, but noise has high divergence
-        assert!(score_code >= score_noise * 0.8,
-            "Code should score well relative to noise: code={score_code:.3} noise={score_noise:.3}");
+        assert!(
+            score_code >= score_noise * 0.8,
+            "Code should score well relative to noise: code={score_code:.3} noise={score_noise:.3}"
+        );
     }
 }

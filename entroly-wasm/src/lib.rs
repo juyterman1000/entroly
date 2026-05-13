@@ -11,35 +11,46 @@
 //!   engine.ingest("code.py", "def hello(): ...", 50, false);
 //!   const result = engine.optimize(4096, "find auth bugs");
 
-mod fragment;
-mod knapsack;
-mod knapsack_sds;
-mod entropy;
+// The wasm crate intentionally mirrors the native Rust crate so the JS package
+// exposes the same API shape. Some structs and helpers are used only through
+// wasm-bindgen or kept for parity with native checkpoint formats, which makes
+// Rust's local dead-code analysis noisier than the product surface.
+#![allow(dead_code, unused_imports)]
+#![allow(
+    clippy::if_same_then_else,
+    clippy::manual_is_multiple_of,
+    clippy::new_without_default
+)]
+
+mod anomaly;
+mod cache;
+mod causal;
+mod channel;
+mod cognitive_bus;
+mod conversation_pruner;
 mod dedup;
 mod depgraph;
+mod entropy;
+mod fragment;
 mod guardrails;
-mod prism;
-mod query;
-mod nkbe;
-mod cognitive_bus;
-mod cache;
-mod skeleton;
-mod lsh;
-mod sast;
 mod health;
 mod hierarchical;
-mod anomaly;
-mod channel;
-mod conversation_pruner;
+mod knapsack;
+mod knapsack_sds;
+mod lsh;
+mod nkbe;
+mod prism;
+mod query;
 mod query_persona;
-mod semantic_dedup;
 mod resonance;
-mod causal;
+mod sast;
+mod semantic_dedup;
+mod skeleton;
 mod utilization;
 
-use wasm_bindgen::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use wasm_bindgen::prelude::*;
 
 /// Convert any Serialize type → JsValue via JSON string roundtrip.
 /// serde_wasm_bindgen::to_value() does NOT handle dynamic serde_json::Value correctly
@@ -50,19 +61,25 @@ fn json_to_js<T: serde::Serialize>(val: &T) -> JsValue {
     js_sys::JSON::parse(&s).unwrap_or(JsValue::NULL)
 }
 
-use fragment::{ContextFragment, compute_relevance, apply_ebbinghaus_decay};
-use knapsack::{knapsack_optimize, compute_lambda_star, ScoringWeights};
-use knapsack_sds::{ios_select, Resolution, InfoFactors};
-use entropy::{information_score, shannon_entropy, normalized_entropy, boilerplate_ratio, renyi_entropy_2, entropy_divergence};
-use dedup::{simhash, hamming_distance, DedupIndex};
-use depgraph::{DepGraph, extract_identifiers};
-use guardrails::{file_criticality, has_safety_signal, TaskType, FeedbackTracker, Criticality, compute_ordering_priority};
+use cache::{CacheLookup, EgscCache, EgscConfig};
+use causal::CausalContextGraph;
+use dedup::{hamming_distance, simhash, DedupIndex};
+use depgraph::{extract_identifiers, DepGraph};
+use entropy::{
+    boilerplate_ratio, entropy_divergence, information_score, normalized_entropy, renyi_entropy_2,
+    shannon_entropy,
+};
+use fragment::{apply_ebbinghaus_decay, compute_relevance, ContextFragment};
+use guardrails::{
+    compute_ordering_priority, file_criticality, has_safety_signal, Criticality, FeedbackTracker,
+    TaskType,
+};
+use knapsack::{compute_lambda_star, knapsack_optimize, ScoringWeights};
+use knapsack_sds::{ios_select, InfoFactors, Resolution};
 use prism::PrismOptimizer;
 use prism::PrismOptimizer5D;
 use query_persona::QueryPersonaManifold;
-use cache::{EgscCache, EgscConfig, CacheLookup};
 use resonance::ResonanceMatrix;
-use causal::CausalContextGraph;
 
 // ═══════════════════════════════════════════════════════════════════
 // Serializable result types (returned as JSON to JS)
@@ -306,7 +323,8 @@ impl WasmEntrolyEngine {
             gradient_norm_ema: 0.0,
             query_manifold: QueryPersonaManifold::new(
                 [w_recency, w_frequency, w_semantic, w_entropy],
-                1.0, 0.25,
+                1.0,
+                0.25,
             ),
             last_archetype_id: None,
             enable_query_personas: true,
@@ -374,11 +392,18 @@ impl WasmEntrolyEngine {
             self.total_duplicates_caught += 1;
             self.total_tokens_saved += tc as u64;
 
-            let max_freq = self.fragments.values().map(|f| f.access_count).max().unwrap_or(1);
+            let max_freq = self
+                .fragments
+                .values()
+                .map(|f| f.access_count)
+                .max()
+                .unwrap_or(1);
             if let Some(existing) = self.fragments.get_mut(&dup_id) {
                 existing.access_count += 1;
                 existing.turn_last_accessed = self.current_turn;
-                existing.frequency_score = (existing.access_count as f64 / max_freq.max(existing.access_count) as f64).min(1.0);
+                existing.frequency_score = (existing.access_count as f64
+                    / max_freq.max(existing.access_count) as f64)
+                    .min(1.0);
             }
 
             let result = IngestResult {
@@ -400,7 +425,11 @@ impl WasmEntrolyEngine {
         // Compute entropy score
         let mut sorted_frags: Vec<&ContextFragment> = self.fragments.values().collect();
         sorted_frags.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
-        let other_contents: Vec<String> = sorted_frags.iter().take(50).map(|f| f.content.clone()).collect();
+        let other_contents: Vec<String> = sorted_frags
+            .iter()
+            .take(50)
+            .map(|f| f.content.clone())
+            .collect();
         let other_refs: Vec<&str> = other_contents.iter().map(|s| s.as_str()).collect();
         let entropy = information_score(&content, &other_refs);
 
@@ -455,10 +484,16 @@ impl WasmEntrolyEngine {
         let mut stale_closure: HashSet<String> = std::iter::once(frag_id.clone()).collect();
         let mut depth_weights: HashMap<String, u32> = HashMap::new();
         depth_weights.insert(frag_id.clone(), 0);
-        let mut bfs_queue: std::collections::VecDeque<(String, u32)> = self.dep_graph
-            .reverse_deps(&frag_id).into_iter().map(|id| (id, 1)).collect();
+        let mut bfs_queue: std::collections::VecDeque<(String, u32)> = self
+            .dep_graph
+            .reverse_deps(&frag_id)
+            .into_iter()
+            .map(|id| (id, 1))
+            .collect();
         while let Some((id, depth)) = bfs_queue.pop_front() {
-            if depth > 3 || stale_closure.contains(&id) { continue; }
+            if depth > 3 || stale_closure.contains(&id) {
+                continue;
+            }
             stale_closure.insert(id.clone());
             depth_weights.insert(id.clone(), depth);
             for rev in self.dep_graph.reverse_deps(&id) {
@@ -467,7 +502,9 @@ impl WasmEntrolyEngine {
                 }
             }
         }
-        let _invalidated = self.egsc_cache.invalidate_weighted(&stale_closure, &depth_weights);
+        let _invalidated = self
+            .egsc_cache
+            .invalidate_weighted(&stale_closure, &depth_weights);
 
         let result = IngestResult {
             fragment_id: frag_id,
@@ -496,43 +533,65 @@ impl WasmEntrolyEngine {
         let effective_budget = if !query.is_empty() {
             let task_type = TaskType::classify(&query);
             (token_budget as f64 * task_type.budget_multiplier()) as u32
-        } else { token_budget };
+        } else {
+            token_budget
+        };
         self.last_effective_budget = effective_budget;
 
         // ── RAVEN-UCB Exploration ──
         let alpha_0 = 2.0_f64;
         let should_explore = if self.exploration_rate > 0.0 {
             let mut x = self.rng_state;
-            x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
             self.rng_state = x;
             (x % 10000) as f64 / 10000.0 < self.exploration_rate
-        } else { false };
+        } else {
+            false
+        };
 
         // ── EGSC Cache lookup ──
         if !query.is_empty() && !should_explore {
             let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
-            match self.egsc_cache.lookup_with_budget(&query, &current_frag_ids, effective_budget) {
-                CacheLookup::ExactHit { response, tokens_saved } => {
+            match self
+                .egsc_cache
+                .lookup_with_budget(&query, &current_frag_ids, effective_budget)
+            {
+                CacheLookup::ExactHit {
+                    response,
+                    tokens_saved,
+                } => {
                     self.total_tokens_saved += tokens_saved as u64;
                     if let Ok(cached) = serde_json::from_str::<serde_json::Value>(&response) {
                         let mut result = cached.clone();
                         if let Some(obj) = result.as_object_mut() {
                             obj.insert("cache_hit".into(), serde_json::json!(true));
                             obj.insert("cache_hit_type".into(), serde_json::json!("exact"));
-                            obj.insert("cache_tokens_saved".into(), serde_json::json!(tokens_saved));
+                            obj.insert(
+                                "cache_tokens_saved".into(),
+                                serde_json::json!(tokens_saved),
+                            );
                         }
                         self.last_cache_feedback_eligible = true;
                         return json_to_js(&result);
                     }
                 }
-                CacheLookup::SemanticHit { response, tokens_saved, .. } => {
+                CacheLookup::SemanticHit {
+                    response,
+                    tokens_saved,
+                    ..
+                } => {
                     self.total_tokens_saved += tokens_saved as u64;
                     if let Ok(cached) = serde_json::from_str::<serde_json::Value>(&response) {
                         let mut result = cached.clone();
                         if let Some(obj) = result.as_object_mut() {
                             obj.insert("cache_hit".into(), serde_json::json!(true));
                             obj.insert("cache_hit_type".into(), serde_json::json!("semantic"));
-                            obj.insert("cache_tokens_saved".into(), serde_json::json!(tokens_saved));
+                            obj.insert(
+                                "cache_tokens_saved".into(),
+                                serde_json::json!(tokens_saved),
+                            );
                         }
                         self.last_cache_feedback_eligible = true;
                         return json_to_js(&result);
@@ -552,68 +611,124 @@ impl WasmEntrolyEngine {
         }
 
         // Feedback multipliers
-        let feedback_mults: HashMap<String, f64> = self.fragments.keys()
-            .map(|fid| (fid.clone(), self.feedback.learned_value(fid))).collect();
+        let feedback_mults: HashMap<String, f64> = self
+            .fragments
+            .keys()
+            .map(|fid| (fid.clone(), self.feedback.learned_value(fid)))
+            .collect();
 
         // ── Query Persona Manifold ──
         let (archetype_weights, archetype_id) = if self.enable_query_personas && !query.is_empty() {
-            let fragment_summaries: Vec<String> = self.fragments.values()
-                .take(50).map(|f| f.source.clone()).collect();
+            let fragment_summaries: Vec<String> = self
+                .fragments
+                .values()
+                .take(50)
+                .map(|f| f.source.clone())
+                .collect();
             let analysis = query::analyze_query(&query, &fragment_summaries);
-            let tfidf_scores: Vec<f64> = analysis.key_terms.iter()
-                .enumerate().map(|(i, _)| 1.0 / (i as f64 + 1.0)).collect();
+            let tfidf_scores: Vec<f64> = analysis
+                .key_terms
+                .iter()
+                .enumerate()
+                .map(|(i, _)| 1.0 / (i as f64 + 1.0))
+                .collect();
             let features = query_persona::build_query_features(
-                &tfidf_scores, analysis.vagueness_score, query.len(), analysis.key_terms.len(), analysis.needs_refinement,
+                &tfidf_scores,
+                analysis.vagueness_score,
+                query.len(),
+                analysis.key_terms.len(),
+                analysis.needs_refinement,
             );
             let (aid, weights, _) = self.query_manifold.assign(&features);
             (Some(weights), Some(aid))
-        } else { (None, None) };
+        } else {
+            (None, None)
+        };
         self.last_archetype_id = archetype_id;
 
         let frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
         let weights = if let Some(aw) = archetype_weights {
-            ScoringWeights { recency: aw[prism::dim::RECENCY], frequency: aw[prism::dim::FREQUENCY],
-                semantic: aw[prism::dim::SEMANTIC], entropy: aw[prism::dim::ENTROPY] }
+            ScoringWeights {
+                recency: aw[prism::dim::RECENCY],
+                frequency: aw[prism::dim::FREQUENCY],
+                semantic: aw[prism::dim::SEMANTIC],
+                entropy: aw[prism::dim::ENTROPY],
+            }
         } else {
-            ScoringWeights { recency: self.w_recency, frequency: self.w_frequency,
-                semantic: self.w_semantic, entropy: self.w_entropy }
+            ScoringWeights {
+                recency: self.w_recency,
+                frequency: self.w_frequency,
+                semantic: self.w_semantic,
+                entropy: self.w_entropy,
+            }
         };
 
         // ── Initial knapsack for dep boosts + λ* ──
-        let result1 = knapsack_optimize(&frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature);
+        let result1 = knapsack_optimize(
+            &frags,
+            effective_budget,
+            &weights,
+            &feedback_mults,
+            self.gradient_temperature,
+        );
         self.last_lambda_star = result1.lambda_star;
         self.last_dual_gap = result1.dual_gap;
-        let initial_selected_ids: HashSet<String> = result1.selected_indices.iter()
-            .map(|&i| frags[i].fragment_id.clone()).collect();
+        let initial_selected_ids: HashSet<String> = result1
+            .selected_indices
+            .iter()
+            .map(|&i| frags[i].fragment_id.clone())
+            .collect();
         let dep_boosts = self.dep_graph.compute_dep_boosts(&initial_selected_ids);
 
         // ── Context Resonance bonuses ──
-        let resonance_bonuses: HashMap<String, f64> = if self.enable_resonance && !self.resonance_matrix.is_empty() {
-            let selected_refs: Vec<&str> = initial_selected_ids.iter().map(|s| s.as_str()).collect();
-            let candidate_refs: Vec<&str> = frags.iter()
-                .filter(|f| !initial_selected_ids.contains(&f.fragment_id))
-                .map(|f| f.fragment_id.as_str()).collect();
-            self.resonance_matrix.batch_resonance_bonuses(&candidate_refs, &selected_refs)
-        } else { HashMap::new() };
+        let resonance_bonuses: HashMap<String, f64> =
+            if self.enable_resonance && !self.resonance_matrix.is_empty() {
+                let selected_refs: Vec<&str> =
+                    initial_selected_ids.iter().map(|s| s.as_str()).collect();
+                let candidate_refs: Vec<&str> = frags
+                    .iter()
+                    .filter(|f| !initial_selected_ids.contains(&f.fragment_id))
+                    .map(|f| f.fragment_id.as_str())
+                    .collect();
+                self.resonance_matrix
+                    .batch_resonance_bonuses(&candidate_refs, &selected_refs)
+            } else {
+                HashMap::new()
+            };
 
         // ── Causal graph bonuses ──
-        let causal_gravity: HashMap<String, f64> = if self.enable_causal && !self.causal_graph.is_empty() {
-            let refs: Vec<&str> = frags.iter().map(|f| f.fragment_id.as_str()).collect();
-            self.causal_graph.gravity_bonuses(&refs)
-        } else { HashMap::new() };
-        let causal_temporal: HashMap<String, f64> = if self.enable_causal && !self.causal_graph.is_empty() {
+        let causal_gravity: HashMap<String, f64> =
+            if self.enable_causal && !self.causal_graph.is_empty() {
+                let refs: Vec<&str> = frags.iter().map(|f| f.fragment_id.as_str()).collect();
+                self.causal_graph.gravity_bonuses(&refs)
+            } else {
+                HashMap::new()
+            };
+        let causal_temporal: HashMap<String, f64> = if self.enable_causal
+            && !self.causal_graph.is_empty()
+        {
             let refs: Vec<&str> = frags.iter().map(|f| f.fragment_id.as_str()).collect();
             let prev_refs: Vec<&str> = self.prev_selected_ids.iter().map(|s| s.as_str()).collect();
             self.causal_graph.temporal_bonuses(&refs, &prev_refs)
-        } else { HashMap::new() };
+        } else {
+            HashMap::new()
+        };
 
         // ── Coverage Estimator ──
         let semantic_threshold = 0.15;
-        let semantic_candidate_ids: HashSet<String> = frags.iter()
-            .filter(|f| f.semantic_score > semantic_threshold).map(|f| f.fragment_id.clone()).collect();
-        let structural_candidate_ids: HashSet<String> = initial_selected_ids.iter().cloned()
-            .chain(dep_boosts.keys().filter(|k| dep_boosts[*k] > 0.3).cloned()).collect();
-        let candidate_overlap = semantic_candidate_ids.intersection(&structural_candidate_ids).count();
+        let semantic_candidate_ids: HashSet<String> = frags
+            .iter()
+            .filter(|f| f.semantic_score > semantic_threshold)
+            .map(|f| f.fragment_id.clone())
+            .collect();
+        let structural_candidate_ids: HashSet<String> = initial_selected_ids
+            .iter()
+            .cloned()
+            .chain(dep_boosts.keys().filter(|k| dep_boosts[*k] > 0.3).cloned())
+            .collect();
+        let candidate_overlap = semantic_candidate_ids
+            .intersection(&structural_candidate_ids)
+            .count();
         self.last_semantic_candidates = semantic_candidate_ids.len();
         self.last_structural_candidates = structural_candidate_ids.len();
         self.last_candidate_overlap = candidate_overlap;
@@ -623,11 +738,14 @@ impl WasmEntrolyEngine {
         for frag in boosted_frags.iter_mut() {
             if !initial_selected_ids.contains(&frag.fragment_id) {
                 if let Some(&boost) = dep_boosts.get(&frag.fragment_id) {
-                    if boost > 0.3 { frag.semantic_score = (frag.semantic_score + boost * 0.5).min(1.0); }
+                    if boost > 0.3 {
+                        frag.semantic_score = (frag.semantic_score + boost * 0.5).min(1.0);
+                    }
                 }
                 if let Some(&res_bonus) = resonance_bonuses.get(&frag.fragment_id) {
                     if res_bonus.abs() > 0.01 {
-                        frag.semantic_score = (frag.semantic_score + self.w_resonance * res_bonus).clamp(0.0, 1.0);
+                        frag.semantic_score =
+                            (frag.semantic_score + self.w_resonance * res_bonus).clamp(0.0, 1.0);
                     }
                 }
             }
@@ -650,12 +768,23 @@ impl WasmEntrolyEngine {
 
         if self.enable_ios {
             let info_factors = InfoFactors {
-                skeleton: self.ios_skeleton_info_factor, reference: self.ios_reference_info_factor,
+                skeleton: self.ios_skeleton_info_factor,
+                reference: self.ios_reference_info_factor,
             };
-            let ios_result = ios_select(&boosted_frags, effective_budget,
-                self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy,
-                &feedback_mults, self.enable_ios_diversity, self.enable_ios_multi_resolution,
-                &info_factors, self.ios_diversity_floor, self.min_relevance);
+            let ios_result = ios_select(
+                &boosted_frags,
+                effective_budget,
+                self.w_recency,
+                self.w_frequency,
+                self.w_semantic,
+                self.w_entropy,
+                &feedback_mults,
+                self.enable_ios_diversity,
+                self.enable_ios_multi_resolution,
+                &info_factors,
+                self.ios_diversity_floor,
+                self.min_relevance,
+            );
 
             final_indices = Vec::new();
             for (idx, resolution) in &ios_result.selections {
@@ -666,50 +795,105 @@ impl WasmEntrolyEngine {
                 ios_resolutions.insert(*idx, *resolution);
             }
             skeleton_tokens_used = ios_result.total_tokens.saturating_sub(
-                final_indices.iter().map(|&i| frags[i].token_count).sum::<u32>());
+                final_indices
+                    .iter()
+                    .map(|&i| frags[i].token_count)
+                    .sum::<u32>(),
+            );
             ios_diversity_score = Some(ios_result.diversity_score);
 
             // IOS-consistent λ* for REINFORCE
             if self.gradient_temperature >= 0.05 {
-                let ios_scored: Vec<(usize, f64)> = boosted_frags.iter().enumerate()
+                let ios_scored: Vec<(usize, f64)> = boosted_frags
+                    .iter()
+                    .enumerate()
                     .filter_map(|(i, f)| {
-                        if f.is_pinned { return None; }
+                        if f.is_pinned {
+                            return None;
+                        }
                         let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-                        let s = (weights.recency * f.recency_score + weights.frequency * f.frequency_score
-                            + weights.semantic * f.semantic_score + weights.entropy * f.entropy_score) * fm.max(0.01);
-                        if s > 0.0 && f.token_count > 0 { Some((i, s)) } else { None }
-                    }).collect();
-                self.last_lambda_star = compute_lambda_star(&ios_scored, &boosted_frags, ios_result.total_tokens, self.gradient_temperature);
+                        let s = (weights.recency * f.recency_score
+                            + weights.frequency * f.frequency_score
+                            + weights.semantic * f.semantic_score
+                            + weights.entropy * f.entropy_score)
+                            * fm.max(0.01);
+                        if s > 0.0 && f.token_count > 0 {
+                            Some((i, s))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                self.last_lambda_star = compute_lambda_star(
+                    &ios_scored,
+                    &boosted_frags,
+                    ios_result.total_tokens,
+                    self.gradient_temperature,
+                );
             }
 
             // Exploration swap (IOS path)
-            if frags.len() > final_indices.len() + skeleton_indices.len() && !final_indices.is_empty() && should_explore {
-                let selected_all: HashSet<usize> = final_indices.iter().chain(skeleton_indices.iter()).copied().collect();
-                let unselected: Vec<usize> = (0..frags.len()).filter(|i| !selected_all.contains(i) && !frags[*i].is_pinned).collect();
+            if frags.len() > final_indices.len() + skeleton_indices.len()
+                && !final_indices.is_empty()
+                && should_explore
+            {
+                let selected_all: HashSet<usize> = final_indices
+                    .iter()
+                    .chain(skeleton_indices.iter())
+                    .copied()
+                    .collect();
+                let unselected: Vec<usize> = (0..frags.len())
+                    .filter(|i| !selected_all.contains(i) && !frags[*i].is_pinned)
+                    .collect();
                 if !unselected.is_empty() {
                     let mut min_rel = f64::MAX;
                     let mut min_pos = None;
                     for (pos, &idx) in final_indices.iter().enumerate() {
                         if !frags[idx].is_pinned {
-                            let fm = feedback_mults.get(&frags[idx].fragment_id).copied().unwrap_or(1.0);
-                            let rel = compute_relevance(&frags[idx], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
-                            if rel < min_rel { min_rel = rel; min_pos = Some(pos); }
+                            let fm = feedback_mults
+                                .get(&frags[idx].fragment_id)
+                                .copied()
+                                .unwrap_or(1.0);
+                            let rel = compute_relevance(
+                                &frags[idx],
+                                self.w_recency,
+                                self.w_frequency,
+                                self.w_semantic,
+                                self.w_entropy,
+                                fm,
+                            );
+                            if rel < min_rel {
+                                min_rel = rel;
+                                min_pos = Some(pos);
+                            }
                         }
                     }
                     if let Some(pos) = min_pos {
                         let explore_idx = if self.exploration_rate > 0.0 && unselected.len() > 1 {
                             let mut x = self.rng_state;
-                            x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+                            x ^= x << 13;
+                            x ^= x >> 7;
+                            x ^= x << 17;
                             self.rng_state = x;
                             unselected[(x as usize) % unselected.len()]
                         } else {
-                            *unselected.iter().max_by(|&&a, &&b| {
-                                self.feedback.ucb_score(&frags[a].fragment_id, alpha_0)
-                                    .partial_cmp(&self.feedback.ucb_score(&frags[b].fragment_id, alpha_0))
-                                    .unwrap_or(std::cmp::Ordering::Equal)
-                            }).unwrap()
+                            *unselected
+                                .iter()
+                                .max_by(|&&a, &&b| {
+                                    self.feedback
+                                        .ucb_score(&frags[a].fragment_id, alpha_0)
+                                        .partial_cmp(
+                                            &self
+                                                .feedback
+                                                .ucb_score(&frags[b].fragment_id, alpha_0),
+                                        )
+                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                })
+                                .unwrap()
                         };
-                        if frags[explore_idx].token_count <= frags[final_indices[pos]].token_count + 100 {
+                        if frags[explore_idx].token_count
+                            <= frags[final_indices[pos]].token_count + 100
+                        {
                             explored_ids.push(frags[explore_idx].fragment_id.clone());
                             final_indices[pos] = explore_idx;
                             self.total_explorations += 1;
@@ -721,30 +905,62 @@ impl WasmEntrolyEngine {
             // Legacy knapsack path
             selection_method = "legacy_knapsack";
             let result = if dep_boosts.values().any(|&b| b > 0.3) {
-                knapsack_optimize(&boosted_frags, effective_budget, &weights, &feedback_mults, self.gradient_temperature)
-            } else { result1 };
+                knapsack_optimize(
+                    &boosted_frags,
+                    effective_budget,
+                    &weights,
+                    &feedback_mults,
+                    self.gradient_temperature,
+                )
+            } else {
+                result1
+            };
             final_indices = result.selected_indices.clone();
 
             // Legacy exploration
             if frags.len() > final_indices.len() && !final_indices.is_empty() && should_explore {
                 let selected_set: HashSet<usize> = final_indices.iter().copied().collect();
-                let unselected: Vec<usize> = (0..frags.len()).filter(|i| !selected_set.contains(i) && !frags[*i].is_pinned).collect();
+                let unselected: Vec<usize> = (0..frags.len())
+                    .filter(|i| !selected_set.contains(i) && !frags[*i].is_pinned)
+                    .collect();
                 if !unselected.is_empty() {
-                    let mut min_rel = f64::MAX; let mut min_pos = None;
+                    let mut min_rel = f64::MAX;
+                    let mut min_pos = None;
                     for (pos, &idx) in final_indices.iter().enumerate() {
                         if !frags[idx].is_pinned {
-                            let fm = feedback_mults.get(&frags[idx].fragment_id).copied().unwrap_or(1.0);
-                            let rel = compute_relevance(&frags[idx], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
-                            if rel < min_rel { min_rel = rel; min_pos = Some(pos); }
+                            let fm = feedback_mults
+                                .get(&frags[idx].fragment_id)
+                                .copied()
+                                .unwrap_or(1.0);
+                            let rel = compute_relevance(
+                                &frags[idx],
+                                self.w_recency,
+                                self.w_frequency,
+                                self.w_semantic,
+                                self.w_entropy,
+                                fm,
+                            );
+                            if rel < min_rel {
+                                min_rel = rel;
+                                min_pos = Some(pos);
+                            }
                         }
                     }
                     if let Some(pos) = min_pos {
-                        let explore_idx = *unselected.iter().max_by(|&&a, &&b| {
-                            self.feedback.ucb_score(&frags[a].fragment_id, alpha_0)
-                                .partial_cmp(&self.feedback.ucb_score(&frags[b].fragment_id, alpha_0))
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        }).unwrap();
-                        if frags[explore_idx].token_count <= frags[final_indices[pos]].token_count + 100 {
+                        let explore_idx = *unselected
+                            .iter()
+                            .max_by(|&&a, &&b| {
+                                self.feedback
+                                    .ucb_score(&frags[a].fragment_id, alpha_0)
+                                    .partial_cmp(
+                                        &self.feedback.ucb_score(&frags[b].fragment_id, alpha_0),
+                                    )
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .unwrap();
+                        if frags[explore_idx].token_count
+                            <= frags[final_indices[pos]].token_count + 100
+                        {
                             explored_ids.push(frags[explore_idx].fragment_id.clone());
                             final_indices[pos] = explore_idx;
                             self.total_explorations += 1;
@@ -759,27 +975,57 @@ impl WasmEntrolyEngine {
             let mut unselected_with_skel: Vec<(usize, f64)> = (0..frags.len())
                 .filter(|i| !selected_set.contains(i) && frags[*i].skeleton_token_count.is_some())
                 .map(|i| {
-                    let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                    (i, compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm))
-                }).collect();
-            unselected_with_skel.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                    let fm = feedback_mults
+                        .get(&frags[i].fragment_id)
+                        .copied()
+                        .unwrap_or(1.0);
+                    (
+                        i,
+                        compute_relevance(
+                            &frags[i],
+                            self.w_recency,
+                            self.w_frequency,
+                            self.w_semantic,
+                            self.w_entropy,
+                            fm,
+                        ),
+                    )
+                })
+                .collect();
+            unselected_with_skel.sort_unstable_by(|a, b| {
+                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
             let mut skel_budget = effective_budget.saturating_sub(full_tokens_legacy);
             for (idx, _) in unselected_with_skel {
                 if let Some(stc) = frags[idx].skeleton_token_count {
-                    if stc <= skel_budget { skeleton_indices.push(idx); skeleton_tokens_used += stc; skel_budget -= stc; }
+                    if stc <= skel_budget {
+                        skeleton_indices.push(idx);
+                        skeleton_tokens_used += stc;
+                        skel_budget -= stc;
+                    }
                 }
             }
         }
 
         // ── Channel Coding: Trailing Pass ──
         if self.enable_channel_coding {
-            let used_full: u32 = final_indices.iter().map(|&i| boosted_frags[i].token_count).sum();
+            let used_full: u32 = final_indices
+                .iter()
+                .map(|&i| boosted_frags[i].token_count)
+                .sum();
             let token_gap = effective_budget.saturating_sub(used_full + skeleton_tokens_used);
             if token_gap > 0 {
                 let mut all_selected = final_indices.clone();
                 all_selected.extend_from_slice(&skeleton_indices);
-                let trailing = channel::channel_trailing_pass(&boosted_frags, &all_selected, token_gap, &self.dep_graph);
-                for idx in trailing { final_indices.push(idx); }
+                let trailing = channel::channel_trailing_pass(
+                    &boosted_frags,
+                    &all_selected,
+                    token_gap,
+                    &self.dep_graph,
+                );
+                for idx in trailing {
+                    final_indices.push(idx);
+                }
             }
         }
 
@@ -793,7 +1039,8 @@ impl WasmEntrolyEngine {
         // Mark accessed
         let mut accessed_indices = final_indices.clone();
         accessed_indices.extend(skeleton_indices.iter().copied());
-        accessed_indices.sort_unstable(); accessed_indices.dedup();
+        accessed_indices.sort_unstable();
+        accessed_indices.dedup();
         for &idx in &accessed_indices {
             let fid = &frags[idx].fragment_id;
             if let Some(f) = self.fragments.get_mut(fid) {
@@ -803,46 +1050,101 @@ impl WasmEntrolyEngine {
         }
 
         // Sufficiency
-        let selected_id_set: HashSet<String> = final_indices.iter().chain(skeleton_indices.iter())
-            .map(|&i| frags[i].fragment_id.clone()).collect();
+        let selected_id_set: HashSet<String> = final_indices
+            .iter()
+            .chain(skeleton_indices.iter())
+            .map(|&i| frags[i].fragment_id.clone())
+            .collect();
         let sufficiency = self.compute_sufficiency(&frags, &final_indices);
 
         // ── Spectral Contradiction Guard ──
         let contradictions_evicted;
         let final_indices = if self.enable_channel_coding {
-            let pre_relevances: Vec<f64> = final_indices.iter().map(|&i| {
-                let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
-            }).collect();
-            let (filtered, report) = channel::contradiction_guard(&frags, &final_indices, &pre_relevances, 0.25, 0.60);
+            let pre_relevances: Vec<f64> = final_indices
+                .iter()
+                .map(|&i| {
+                    let fm = feedback_mults
+                        .get(&frags[i].fragment_id)
+                        .copied()
+                        .unwrap_or(1.0);
+                    compute_relevance(
+                        &frags[i],
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm,
+                    )
+                })
+                .collect();
+            let (filtered, report) =
+                channel::contradiction_guard(&frags, &final_indices, &pre_relevances, 0.25, 0.60);
             contradictions_evicted = report.pairs_found;
             filtered
-        } else { contradictions_evicted = 0; final_indices };
+        } else {
+            contradictions_evicted = 0;
+            final_indices
+        };
 
         // ── Context ordering ──
         let ordered_indices = if self.enable_channel_coding {
-            let relevances: Vec<f64> = final_indices.iter().map(|&i| {
-                let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
-            }).collect();
-            let interleaved = channel::semantic_interleave(&frags, &final_indices, &relevances, &self.dep_graph);
-            let rel_map: std::collections::HashMap<usize, f64> = final_indices.iter()
-                .zip(relevances.iter()).map(|(&idx, &rel)| (idx, rel)).collect();
+            let relevances: Vec<f64> = final_indices
+                .iter()
+                .map(|&i| {
+                    let fm = feedback_mults
+                        .get(&frags[i].fragment_id)
+                        .copied()
+                        .unwrap_or(1.0);
+                    compute_relevance(
+                        &frags[i],
+                        self.w_recency,
+                        self.w_frequency,
+                        self.w_semantic,
+                        self.w_entropy,
+                        fm,
+                    )
+                })
+                .collect();
+            let interleaved =
+                channel::semantic_interleave(&frags, &final_indices, &relevances, &self.dep_graph);
+            let rel_map: std::collections::HashMap<usize, f64> = final_indices
+                .iter()
+                .zip(relevances.iter())
+                .map(|(&idx, &rel)| (idx, rel))
+                .collect();
             channel::bookend_calibrate(&interleaved, &frags, &rel_map, &self.dep_graph)
         } else {
             let mut ordered = final_indices.clone();
             ordered.sort_by(|&a, &b| {
-                let fa = &frags[a]; let fb = &frags[b];
-                let crit_a = file_criticality(&fa.source); let crit_b = file_criticality(&fb.source);
+                let fa = &frags[a];
+                let fb = &frags[b];
+                let crit_a = file_criticality(&fa.source);
+                let crit_b = file_criticality(&fb.source);
                 let dep_count_a = self.dep_graph.reverse_deps(&fa.fragment_id).len();
                 let dep_count_b = self.dep_graph.reverse_deps(&fb.fragment_id).len();
                 let fm_a = feedback_mults.get(&fa.fragment_id).copied().unwrap_or(1.0);
                 let fm_b = feedback_mults.get(&fb.fragment_id).copied().unwrap_or(1.0);
-                let rel_a = compute_relevance(fa, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_a);
-                let rel_b = compute_relevance(fb, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm_b);
+                let rel_a = compute_relevance(
+                    fa,
+                    self.w_recency,
+                    self.w_frequency,
+                    self.w_semantic,
+                    self.w_entropy,
+                    fm_a,
+                );
+                let rel_b = compute_relevance(
+                    fb,
+                    self.w_recency,
+                    self.w_frequency,
+                    self.w_semantic,
+                    self.w_entropy,
+                    fm_b,
+                );
                 let prio_a = compute_ordering_priority(rel_a, crit_a, fa.is_pinned, dep_count_a);
                 let prio_b = compute_ordering_priority(rel_b, crit_b, fb.is_pinned, dep_count_b);
-                prio_b.partial_cmp(&prio_a).unwrap_or(std::cmp::Ordering::Equal)
+                prio_b
+                    .partial_cmp(&prio_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             ordered
         };
@@ -850,67 +1152,131 @@ impl WasmEntrolyEngine {
         // ── Build Explainability Snapshot ──
         let mut fragment_scores_snap: Vec<ExplainScore> = Vec::with_capacity(frags.len());
         for frag in frags.iter() {
-            let fm = feedback_mults.get(&frag.fragment_id).copied().unwrap_or(1.0);
+            let fm = feedback_mults
+                .get(&frag.fragment_id)
+                .copied()
+                .unwrap_or(1.0);
             let db = dep_boosts.get(&frag.fragment_id).copied().unwrap_or(0.0);
             let crit = file_criticality(&frag.source);
-            let composite = compute_relevance(frag, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+            let composite = compute_relevance(
+                frag,
+                self.w_recency,
+                self.w_frequency,
+                self.w_semantic,
+                self.w_entropy,
+                fm,
+            );
             let is_selected = selected_id_set.contains(&frag.fragment_id);
             let is_explored = explored_ids.contains(&frag.fragment_id);
-            let reason = if frag.is_pinned { "pinned/critical".into() }
-                else if is_explored { "ε-exploration".into() }
-                else if is_selected && db > 0.3 { format!("dep-boosted (boost={:.2})", db) }
-                else if is_selected { "knapsack-optimal".into() }
-                else if composite < self.min_relevance { "below min relevance".into() }
-                else { "budget exceeded".into() };
+            let reason = if frag.is_pinned {
+                "pinned/critical".into()
+            } else if is_explored {
+                "ε-exploration".into()
+            } else if is_selected && db > 0.3 {
+                format!("dep-boosted (boost={:.2})", db)
+            } else if is_selected {
+                "knapsack-optimal".into()
+            } else if composite < self.min_relevance {
+                "below min relevance".into()
+            } else {
+                "budget exceeded".into()
+            };
             fragment_scores_snap.push(ExplainScore {
-                fragment_id: frag.fragment_id.clone(), source: frag.source.clone(),
-                selected: is_selected || is_explored, recency: frag.recency_score,
-                frequency: frag.frequency_score, semantic: frag.semantic_score,
-                entropy: frag.entropy_score, feedback_mult: fm, dep_boost: db,
-                criticality: format!("{:?}", crit), composite, reason,
+                fragment_id: frag.fragment_id.clone(),
+                source: frag.source.clone(),
+                selected: is_selected || is_explored,
+                recency: frag.recency_score,
+                frequency: frag.frequency_score,
+                semantic: frag.semantic_score,
+                entropy: frag.entropy_score,
+                feedback_mult: fm,
+                dep_boost: db,
+                criticality: format!("{:?}", crit),
+                composite,
+                reason,
             });
         }
         self.last_optimization = Some(OptimizationSnapshot {
-            fragment_scores: fragment_scores_snap, sufficiency, explored_ids: explored_ids.clone(),
+            fragment_scores: fragment_scores_snap,
+            sufficiency,
+            explored_ids: explored_ids.clone(),
         });
 
         // ── Context efficiency ──
         let context_efficiency = if final_tokens > 0 {
-            let weighted_entropy: f64 = final_indices.iter()
-                .map(|&i| frags[i].entropy_score * frags[i].token_count as f64).sum::<f64>()
-                + skeleton_indices.iter().map(|&i| {
-                    let actual_tc = match ios_resolutions.get(&i) {
-                        Some(&Resolution::Reference) => (frags[i].source.len() as u32 / 4).clamp(3, 10),
-                        _ => frags[i].skeleton_token_count.unwrap_or(frags[i].token_count),
-                    };
-                    frags[i].entropy_score * actual_tc as f64
-                }).sum::<f64>();
+            let weighted_entropy: f64 = final_indices
+                .iter()
+                .map(|&i| frags[i].entropy_score * frags[i].token_count as f64)
+                .sum::<f64>()
+                + skeleton_indices
+                    .iter()
+                    .map(|&i| {
+                        let actual_tc = match ios_resolutions.get(&i) {
+                            Some(&Resolution::Reference) => {
+                                (frags[i].source.len() as u32 / 4).clamp(3, 10)
+                            }
+                            _ => frags[i]
+                                .skeleton_token_count
+                                .unwrap_or(frags[i].token_count),
+                        };
+                        frags[i].entropy_score * actual_tc as f64
+                    })
+                    .sum::<f64>();
             weighted_entropy / final_tokens as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         // ── Coverage estimate ──
         let coverage_est = resonance::estimate_coverage(
             ordered_indices.len() + skeleton_indices.len(),
-            self.last_semantic_candidates, self.last_structural_candidates, self.last_candidate_overlap);
+            self.last_semantic_candidates,
+            self.last_structural_candidates,
+            self.last_candidate_overlap,
+        );
 
         // Total relevance
-        let total_rel: f64 = final_indices.iter().chain(skeleton_indices.iter())
+        let total_rel: f64 = final_indices
+            .iter()
+            .chain(skeleton_indices.iter())
             .map(|&i| {
-                let fm = feedback_mults.get(&frags[i].fragment_id).copied().unwrap_or(1.0);
-                compute_relevance(&frags[i], self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm)
-            }).sum();
+                let fm = feedback_mults
+                    .get(&frags[i].fragment_id)
+                    .copied()
+                    .unwrap_or(1.0);
+                compute_relevance(
+                    &frags[i],
+                    self.w_recency,
+                    self.w_frequency,
+                    self.w_semantic,
+                    self.w_entropy,
+                    fm,
+                )
+            })
+            .sum();
 
         // ── Build selected list ──
         let mut selected_json: Vec<serde_json::Value> = Vec::new();
         for &idx in &ordered_indices {
             let f = &frags[idx];
             let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-            let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+            let rel = compute_relevance(
+                f,
+                self.w_recency,
+                self.w_frequency,
+                self.w_semantic,
+                self.w_entropy,
+                fm,
+            );
             let preview = if f.content.len() > 100 {
                 let mut end = 100;
-                while end < f.content.len() && !f.content.is_char_boundary(end) { end += 1; }
+                while end < f.content.len() && !f.content.is_char_boundary(end) {
+                    end += 1;
+                }
                 format!("{}...", &f.content[..end])
-            } else { f.content.clone() };
+            } else {
+                f.content.clone()
+            };
             selected_json.push(serde_json::json!({
                 "id": f.fragment_id, "source": f.source, "token_count": f.token_count,
                 "variant": "full", "relevance": (rel * 10000.0).round() / 10000.0,
@@ -919,9 +1285,19 @@ impl WasmEntrolyEngine {
         }
         for &idx in &skeleton_indices {
             let f = &frags[idx];
-            let resolution = ios_resolutions.get(&idx).copied().unwrap_or(Resolution::Skeleton);
+            let resolution = ios_resolutions
+                .get(&idx)
+                .copied()
+                .unwrap_or(Resolution::Skeleton);
             let fm = feedback_mults.get(&f.fragment_id).copied().unwrap_or(1.0);
-            let rel = compute_relevance(f, self.w_recency, self.w_frequency, self.w_semantic, self.w_entropy, fm);
+            let rel = compute_relevance(
+                f,
+                self.w_recency,
+                self.w_frequency,
+                self.w_semantic,
+                self.w_entropy,
+                fm,
+            );
             if resolution == Resolution::Reference {
                 let ref_tokens = (f.source.len() as u32 / 4).clamp(3, 10);
                 selected_json.push(serde_json::json!({
@@ -930,12 +1306,18 @@ impl WasmEntrolyEngine {
                     "entropy_score": (f.entropy_score * 10000.0).round() / 10000.0,
                     "preview": format!("[ref] {}", f.source),
                 }));
-            } else if let (Some(ref skel), Some(stc)) = (&f.skeleton_content, f.skeleton_token_count) {
+            } else if let (Some(ref skel), Some(stc)) =
+                (&f.skeleton_content, f.skeleton_token_count)
+            {
                 let preview = if skel.len() > 100 {
                     let mut end = 100;
-                    while end < skel.len() && !skel.is_char_boundary(end) { end += 1; }
+                    while end < skel.len() && !skel.is_char_boundary(end) {
+                        end += 1;
+                    }
                     format!("{}...", &skel[..end])
-                } else { skel.clone() };
+                } else {
+                    skel.clone()
+                };
                 selected_json.push(serde_json::json!({
                     "id": f.fragment_id, "source": f.source, "token_count": stc,
                     "variant": "skeleton", "relevance": (rel * 10000.0).round() / 10000.0,
@@ -967,39 +1349,76 @@ impl WasmEntrolyEngine {
 
         if let Some(obj) = result.as_object_mut() {
             if sufficiency < 0.7 {
-                obj.insert("sufficiency_warning".into(), serde_json::json!(
-                    format!("Only {:.0}% of referenced symbols have definitions in context", sufficiency * 100.0)));
+                obj.insert(
+                    "sufficiency_warning".into(),
+                    serde_json::json!(format!(
+                        "Only {:.0}% of referenced symbols have definitions in context",
+                        sufficiency * 100.0
+                    )),
+                );
             }
-            if !explored_ids.is_empty() { obj.insert("explored".into(), serde_json::json!(explored_ids)); }
-            if contradictions_evicted > 0 { obj.insert("contradictions_evicted".into(), serde_json::json!(contradictions_evicted)); }
+            if !explored_ids.is_empty() {
+                obj.insert("explored".into(), serde_json::json!(explored_ids));
+            }
+            if contradictions_evicted > 0 {
+                obj.insert(
+                    "contradictions_evicted".into(),
+                    serde_json::json!(contradictions_evicted),
+                );
+            }
             if let Some(div_score) = ios_diversity_score {
                 obj.insert("ios_diversity_score".into(), serde_json::json!(div_score));
                 obj.insert("ios_enabled".into(), serde_json::json!(true));
             }
             if self.enable_resonance {
-                obj.insert("resonance_pairs".into(), serde_json::json!(self.resonance_matrix.len()));
-                obj.insert("w_resonance".into(), serde_json::json!((self.w_resonance * 10000.0).round() / 10000.0));
+                obj.insert(
+                    "resonance_pairs".into(),
+                    serde_json::json!(self.resonance_matrix.len()),
+                );
+                obj.insert(
+                    "w_resonance".into(),
+                    serde_json::json!((self.w_resonance * 10000.0).round() / 10000.0),
+                );
             }
             if self.enable_causal && !self.causal_graph.is_empty() {
                 let cs = self.causal_graph.stats();
-                obj.insert("causal_tracked".into(), serde_json::json!(cs.tracked_fragments));
-                obj.insert("causal_temporal_links".into(), serde_json::json!(cs.temporal_links));
+                obj.insert(
+                    "causal_tracked".into(),
+                    serde_json::json!(cs.tracked_fragments),
+                );
+                obj.insert(
+                    "causal_temporal_links".into(),
+                    serde_json::json!(cs.temporal_links),
+                );
             }
         }
 
         // ── EGSC Cache store ──
         if cache_eligible {
             let current_frag_ids: HashSet<String> = self.fragments.keys().cloned().collect();
-            let entropies: Vec<(f64, u32)> = final_indices.iter().chain(skeleton_indices.iter())
-                .map(|&i| (frags[i].entropy_score, frags[i].token_count)).collect();
-            self.egsc_cache.store_with_budget(&query, current_frag_ids, &entropies,
-                result.to_string(), final_tokens, self.current_turn, effective_budget);
+            let entropies: Vec<(f64, u32)> = final_indices
+                .iter()
+                .chain(skeleton_indices.iter())
+                .map(|&i| (frags[i].entropy_score, frags[i].token_count))
+                .collect();
+            self.egsc_cache.store_with_budget(
+                &query,
+                current_frag_ids,
+                &entropies,
+                result.to_string(),
+                final_tokens,
+                self.current_turn,
+                effective_budget,
+            );
         }
 
         // ── Causal state tracking ──
         if self.enable_causal {
-            self.prev_selected_ids = ordered_indices.iter().chain(skeleton_indices.iter())
-                .map(|&i| frags[i].fragment_id.clone()).collect();
+            self.prev_selected_ids = ordered_indices
+                .iter()
+                .chain(skeleton_indices.iter())
+                .map(|&i| frags[i].fragment_id.clone())
+                .collect();
             self.prev_explored_ids = explored_ids;
         }
 
@@ -1010,26 +1429,44 @@ impl WasmEntrolyEngine {
     #[wasm_bindgen]
     pub fn record_success(&mut self, fragment_ids_json: &str) {
         let fragment_ids: Vec<String> = serde_json::from_str(fragment_ids_json).unwrap_or_default();
-        if fragment_ids.is_empty() { return; }
+        if fragment_ids.is_empty() {
+            return;
+        }
         self.feedback.record_success(&fragment_ids);
         if self.last_cache_feedback_eligible {
             let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
             self.egsc_cache.record_feedback_with_budget(
-                &self.last_query, &frag_set, self.last_effective_budget, true,
+                &self.last_query,
+                &frag_set,
+                self.last_effective_budget,
+                true,
             );
         }
         let raw_reward = if self.enable_channel_coding {
-            let suff = self.last_optimization.as_ref().map(|s| s.sufficiency).unwrap_or(0.7);
+            let suff = self
+                .last_optimization
+                .as_ref()
+                .map(|s| s.sufficiency)
+                .unwrap_or(0.7);
             channel::modulated_reward(true, suff)
-        } else { 1.0 };
+        } else {
+            1.0
+        };
         let advantage = raw_reward - self.reward_baseline_ema;
         self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * raw_reward;
         if self.enable_resonance {
-            self.resonance_matrix.record_outcome(&fragment_ids, advantage, self.current_turn);
+            self.resonance_matrix
+                .record_outcome(&fragment_ids, advantage, self.current_turn);
         }
         if self.enable_causal {
             let query_hash = simhash(&self.last_query);
-            self.causal_graph.record_trace(self.current_turn, query_hash, &self.prev_selected_ids, &self.prev_explored_ids, advantage);
+            self.causal_graph.record_trace(
+                self.current_turn,
+                query_hash,
+                &self.prev_selected_ids,
+                &self.prev_explored_ids,
+                advantage,
+            );
         }
         self.apply_prism_rl_update(&fragment_ids, advantage);
     }
@@ -1038,26 +1475,44 @@ impl WasmEntrolyEngine {
     #[wasm_bindgen]
     pub fn record_failure(&mut self, fragment_ids_json: &str) {
         let fragment_ids: Vec<String> = serde_json::from_str(fragment_ids_json).unwrap_or_default();
-        if fragment_ids.is_empty() { return; }
+        if fragment_ids.is_empty() {
+            return;
+        }
         self.feedback.record_failure(&fragment_ids);
         if self.last_cache_feedback_eligible {
             let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
             self.egsc_cache.record_feedback_with_budget(
-                &self.last_query, &frag_set, self.last_effective_budget, false,
+                &self.last_query,
+                &frag_set,
+                self.last_effective_budget,
+                false,
             );
         }
         let raw_reward = if self.enable_channel_coding {
-            let suff = self.last_optimization.as_ref().map(|s| s.sufficiency).unwrap_or(0.7);
+            let suff = self
+                .last_optimization
+                .as_ref()
+                .map(|s| s.sufficiency)
+                .unwrap_or(0.7);
             channel::modulated_reward(false, suff)
-        } else { -1.0 };
+        } else {
+            -1.0
+        };
         let advantage = raw_reward - self.reward_baseline_ema;
         self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * raw_reward;
         if self.enable_resonance {
-            self.resonance_matrix.record_outcome(&fragment_ids, advantage, self.current_turn);
+            self.resonance_matrix
+                .record_outcome(&fragment_ids, advantage, self.current_turn);
         }
         if self.enable_causal {
             let query_hash = simhash(&self.last_query);
-            self.causal_graph.record_trace(self.current_turn, query_hash, &self.prev_selected_ids, &self.prev_explored_ids, advantage);
+            self.causal_graph.record_trace(
+                self.current_turn,
+                query_hash,
+                &self.prev_selected_ids,
+                &self.prev_explored_ids,
+                advantage,
+            );
         }
         self.apply_prism_rl_update(&fragment_ids, advantage);
     }
@@ -1071,23 +1526,40 @@ impl WasmEntrolyEngine {
             self.feedback.record_success(&fragment_ids);
             if self.last_cache_feedback_eligible {
                 let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
-                self.egsc_cache.record_feedback_with_budget(&self.last_query, &frag_set, self.last_effective_budget, true);
+                self.egsc_cache.record_feedback_with_budget(
+                    &self.last_query,
+                    &frag_set,
+                    self.last_effective_budget,
+                    true,
+                );
             }
         } else {
             self.feedback.record_failure(&fragment_ids);
             if self.last_cache_feedback_eligible {
                 let frag_set: HashSet<String> = fragment_ids.iter().cloned().collect();
-                self.egsc_cache.record_feedback_with_budget(&self.last_query, &frag_set, self.last_effective_budget, false);
+                self.egsc_cache.record_feedback_with_budget(
+                    &self.last_query,
+                    &frag_set,
+                    self.last_effective_budget,
+                    false,
+                );
             }
         }
         let advantage = r - self.reward_baseline_ema;
         self.reward_baseline_ema = 0.9 * self.reward_baseline_ema + 0.1 * r;
         if self.enable_resonance {
-            self.resonance_matrix.record_outcome(&fragment_ids, advantage, self.current_turn);
+            self.resonance_matrix
+                .record_outcome(&fragment_ids, advantage, self.current_turn);
         }
         if self.enable_causal {
             let query_hash = simhash(&self.last_query);
-            self.causal_graph.record_trace(self.current_turn, query_hash, &self.prev_selected_ids, &self.prev_explored_ids, advantage);
+            self.causal_graph.record_trace(
+                self.current_turn,
+                query_hash,
+                &self.prev_selected_ids,
+                &self.prev_explored_ids,
+                advantage,
+            );
         }
         self.apply_prism_rl_update(&fragment_ids, advantage);
     }
@@ -1101,28 +1573,58 @@ impl WasmEntrolyEngine {
             let dt = self.current_turn.saturating_sub(frag.turn_last_accessed) as f64;
             frag.recency_score = (-decay_rate * dt).exp();
         }
-        let to_evict: Vec<String> = self.fragments.iter()
+        let to_evict: Vec<String> = self
+            .fragments
+            .iter()
             .filter(|(_, f)| f.recency_score < self.min_relevance && !f.is_pinned)
-            .map(|(k, _)| k.clone()).collect();
-        for id in &to_evict { self.dedup_index.remove(id); }
-        self.fragments.retain(|_, f| f.recency_score >= self.min_relevance || f.is_pinned);
+            .map(|(k, _)| k.clone())
+            .collect();
+        for id in &to_evict {
+            self.dedup_index.remove(id);
+        }
+        self.fragments
+            .retain(|_, f| f.recency_score >= self.min_relevance || f.is_pinned);
         self.rebuild_lsh_index();
-        if self.enable_query_personas { self.query_manifold.lifecycle_tick(); }
+        if self.enable_query_personas {
+            self.query_manifold.lifecycle_tick();
+        }
         self.egsc_cache.gc(0.15);
-        if self.enable_resonance { self.resonance_matrix.decay_tick(); }
-        if self.enable_causal { self.causal_graph.decay_tick(self.current_turn); }
+        if self.enable_resonance {
+            self.resonance_matrix.decay_tick();
+        }
+        if self.enable_causal {
+            self.causal_graph.decay_tick(self.current_turn);
+        }
         // Maxwell's Demon consolidation every 5 turns
         if self.current_turn % 5 == 0 && self.fragments.len() > 10 {
-            let frag_data: Vec<(String, u64, f64, bool, u32)> = self.fragments.values()
+            let frag_data: Vec<(String, u64, f64, bool, u32)> = self
+                .fragments
+                .values()
                 .map(|f| {
                     let fm = self.feedback.learned_value(&f.fragment_id);
-                    (f.fragment_id.clone(), f.simhash, fm, f.is_pinned, f.token_count)
-                }).collect();
-            let groups = resonance::find_consolidation_groups(&frag_data, self.consolidation_hamming_threshold);
+                    (
+                        f.fragment_id.clone(),
+                        f.simhash,
+                        fm,
+                        f.is_pinned,
+                        f.token_count,
+                    )
+                })
+                .collect();
+            let groups = resonance::find_consolidation_groups(
+                &frag_data,
+                self.consolidation_hamming_threshold,
+            );
             for group in &groups {
-                let total_access: u32 = group.consolidated_ids.iter()
-                    .filter_map(|id| self.fragments.get(id)).map(|f| f.access_count).sum();
-                if let Some(winner) = self.fragments.get_mut(&group.winner_id) { winner.access_count += total_access; }
+                let total_access: u32 = group
+                    .consolidated_ids
+                    .iter()
+                    .filter_map(|id| self.fragments.get(id))
+                    .map(|f| f.access_count)
+                    .sum();
+                if let Some(winner) = self.fragments.get_mut(&group.winner_id) {
+                    winner.access_count += total_access;
+                }
                 for loser_id in &group.consolidated_ids {
                     self.fragments.remove(loser_id);
                     self.dedup_index.remove(loser_id);
@@ -1130,7 +1632,9 @@ impl WasmEntrolyEngine {
                 self.total_consolidations += group.consolidated_ids.len() as u64;
                 self.consolidation_tokens_saved += group.tokens_saved as u64;
             }
-            if !groups.is_empty() { self.rebuild_lsh_index(); }
+            if !groups.is_empty() {
+                self.rebuild_lsh_index();
+            }
         }
     }
 
@@ -1140,7 +1644,8 @@ impl WasmEntrolyEngine {
         let query_fp = simhash(&query);
         let candidates = self.lsh_index.query(query_fp);
         let mut scored: Vec<(&ContextFragment, f64)> = if !candidates.is_empty() {
-            candidates.iter()
+            candidates
+                .iter()
                 .filter_map(|&slot| {
                     let frag_id = self.fragment_slot_ids.get(slot)?;
                     self.fragments.get(frag_id)
@@ -1148,28 +1653,50 @@ impl WasmEntrolyEngine {
                 .map(|f| {
                     let dist = hamming_distance(query_fp, f.simhash);
                     let fm = self.feedback.learned_value(&f.fragment_id);
-                    let rel = self.context_scorer.score(dist, f.recency_score, f.entropy_score, f.frequency_score, fm);
+                    let rel = self.context_scorer.score(
+                        dist,
+                        f.recency_score,
+                        f.entropy_score,
+                        f.frequency_score,
+                        fm,
+                    );
                     (f, rel)
-                }).collect()
+                })
+                .collect()
         } else {
-            self.fragments.values().map(|f| {
-                let dist = hamming_distance(query_fp, f.simhash);
-                let fm = self.feedback.learned_value(&f.fragment_id);
-                let rel = self.context_scorer.score(dist, f.recency_score, f.entropy_score, f.frequency_score, fm);
-                (f, rel)
-            }).collect()
+            self.fragments
+                .values()
+                .map(|f| {
+                    let dist = hamming_distance(query_fp, f.simhash);
+                    let fm = self.feedback.learned_value(&f.fragment_id);
+                    let rel = self.context_scorer.score(
+                        dist,
+                        f.recency_score,
+                        f.entropy_score,
+                        f.frequency_score,
+                        fm,
+                    );
+                    (f, rel)
+                })
+                .collect()
         };
-        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.fragment_id.cmp(&b.0.fragment_id)));
+        scored.sort_unstable_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.fragment_id.cmp(&b.0.fragment_id))
+        });
         scored.truncate(top_k);
-        let results: Vec<serde_json::Value> = scored.iter().map(|(f, rel)| {
-            serde_json::json!({
-                "fragment_id": f.fragment_id, "source": f.source,
-                "relevance": (*rel * 10000.0).round() / 10000.0,
-                "entropy": (f.entropy_score * 10000.0).round() / 10000.0,
-                "content": f.content,
+        let results: Vec<serde_json::Value> = scored
+            .iter()
+            .map(|(f, rel)| {
+                serde_json::json!({
+                    "fragment_id": f.fragment_id, "source": f.source,
+                    "relevance": (*rel * 10000.0).round() / 10000.0,
+                    "entropy": (f.entropy_score * 10000.0).round() / 10000.0,
+                    "content": f.content,
+                })
             })
-        }).collect();
+            .collect();
         json_to_js(&serde_json::Value::Array(results))
     }
 
@@ -1184,11 +1711,20 @@ impl WasmEntrolyEngine {
     #[wasm_bindgen]
     pub fn stats(&mut self) -> JsValue {
         let total_tokens: u32 = self.fragments.values().map(|f| f.token_count).sum();
-        let avg_entropy = if self.fragments.is_empty() { 0.0 }
-            else { self.fragments.values().map(|f| f.entropy_score).sum::<f64>() / self.fragments.len() as f64 };
+        let avg_entropy = if self.fragments.is_empty() {
+            0.0
+        } else {
+            self.fragments
+                .values()
+                .map(|f| f.entropy_score)
+                .sum::<f64>()
+                / self.fragments.len() as f64
+        };
         let pinned = self.fragments.values().filter(|f| f.is_pinned).count();
         let cs = self.egsc_cache.stats();
-        let total_exploitations = self.total_optimizations.saturating_sub(self.total_explorations);
+        let total_exploitations = self
+            .total_optimizations
+            .saturating_sub(self.total_explorations);
 
         let result = serde_json::json!({
             "session": {
@@ -1233,21 +1769,36 @@ impl WasmEntrolyEngine {
 
     /// Get the current turn number.
     #[wasm_bindgen]
-    pub fn get_turn(&self) -> u32 { self.current_turn }
+    pub fn get_turn(&self) -> u32 {
+        self.current_turn
+    }
 
     /// Get fragment count.
     #[wasm_bindgen]
-    pub fn fragment_count(&self) -> usize { self.fragments.len() }
+    pub fn fragment_count(&self) -> usize {
+        self.fragments.len()
+    }
 
     /// Set scoring weights (normalized to sum=1.0).
     #[wasm_bindgen]
-    pub fn set_weights(&mut self, w_recency: f64, w_frequency: f64, w_semantic: f64, w_entropy: f64) {
+    pub fn set_weights(
+        &mut self,
+        w_recency: f64,
+        w_frequency: f64,
+        w_semantic: f64,
+        w_entropy: f64,
+    ) {
         self.w_recency = w_recency.clamp(0.05, 0.80);
         self.w_frequency = w_frequency.clamp(0.05, 0.80);
         self.w_semantic = w_semantic.clamp(0.05, 0.80);
         self.w_entropy = w_entropy.clamp(0.05, 0.80);
         let sum = self.w_recency + self.w_frequency + self.w_semantic + self.w_entropy;
-        if sum > 0.0 { self.w_recency /= sum; self.w_frequency /= sum; self.w_semantic /= sum; self.w_entropy /= sum; }
+        if sum > 0.0 {
+            self.w_recency /= sum;
+            self.w_frequency /= sum;
+            self.w_semantic /= sum;
+            self.w_entropy /= sum;
+        }
         self.context_scorer.w_recency = self.w_recency;
         self.context_scorer.w_frequency = self.w_frequency;
         self.context_scorer.w_similarity = self.w_semantic;
@@ -1256,26 +1807,35 @@ impl WasmEntrolyEngine {
 
     /// Set exploration rate.
     #[wasm_bindgen]
-    pub fn set_exploration_rate(&mut self, rate: f64) { self.exploration_rate = rate.clamp(0.0, 1.0); }
+    pub fn set_exploration_rate(&mut self, rate: f64) {
+        self.exploration_rate = rate.clamp(0.0, 1.0);
+    }
 
     /// Enable/disable query personas.
     #[wasm_bindgen]
-    pub fn set_query_personas_enabled(&mut self, enabled: bool) { self.enable_query_personas = enabled; }
+    pub fn set_query_personas_enabled(&mut self, enabled: bool) {
+        self.enable_query_personas = enabled;
+    }
 
     /// Enable/disable channel coding.
     #[wasm_bindgen]
-    pub fn set_channel_coding_enabled(&mut self, enabled: bool) { self.enable_channel_coding = enabled; }
+    pub fn set_channel_coding_enabled(&mut self, enabled: bool) {
+        self.enable_channel_coding = enabled;
+    }
 
     /// Set cost model from model name.
     #[wasm_bindgen]
     pub fn set_model(&mut self, model_name: &str) {
         let cost_model = cache::CostModel::for_model(model_name);
-        self.egsc_cache.set_cost_per_token(cost_model.cost_per_token);
+        self.egsc_cache
+            .set_cost_per_token(cost_model.cost_per_token);
     }
 
     /// Set cost-per-token directly.
     #[wasm_bindgen]
-    pub fn set_cache_cost_per_token(&mut self, cost: f64) { self.egsc_cache.set_cost_per_token(cost); }
+    pub fn set_cache_cost_per_token(&mut self, cost: f64) {
+        self.egsc_cache.set_cost_per_token(cost);
+    }
 
     /// Classify a task query.
     #[wasm_bindgen]
@@ -1287,16 +1847,24 @@ impl WasmEntrolyEngine {
 
     /// Clear EGSC cache.
     #[wasm_bindgen]
-    pub fn cache_clear(&mut self) { self.egsc_cache.clear(); }
+    pub fn cache_clear(&mut self) {
+        self.egsc_cache.clear();
+    }
     /// Cache entry count.
     #[wasm_bindgen]
-    pub fn cache_len(&self) -> usize { self.egsc_cache.len() }
+    pub fn cache_len(&self) -> usize {
+        self.egsc_cache.len()
+    }
     /// Cache empty check.
     #[wasm_bindgen]
-    pub fn cache_is_empty(&self) -> bool { self.egsc_cache.is_empty() }
+    pub fn cache_is_empty(&self) -> bool {
+        self.egsc_cache.is_empty()
+    }
     /// Cache hit rate.
     #[wasm_bindgen]
-    pub fn cache_hit_rate(&mut self) -> f64 { self.egsc_cache.stats().hit_rate }
+    pub fn cache_hit_rate(&mut self) -> f64 {
+        self.egsc_cache.stats().hit_rate
+    }
 
     /// Dependency graph stats.
     #[wasm_bindgen]
@@ -1355,10 +1923,17 @@ impl WasmEntrolyEngine {
     pub fn scan_fragment(&self, fragment_id: &str) -> JsValue {
         let frag = match self.fragments.get(fragment_id) {
             Some(f) => f,
-            None => { let r = serde_json::json!({"error": format!("Fragment '{}' not found", fragment_id)}); return json_to_js(&r); }
+            None => {
+                let r =
+                    serde_json::json!({"error": format!("Fragment '{}' not found", fragment_id)});
+                return json_to_js(&r);
+            }
         };
         let report = sast::scan_content(&frag.content, &frag.source);
-        { let r = serde_json::to_value(&report).unwrap_or(serde_json::Value::Null); json_to_js(&r) }
+        {
+            let r = serde_json::to_value(&report).unwrap_or(serde_json::Value::Null);
+            json_to_js(&r)
+        }
     }
 
     /// Security report for all fragments.
@@ -1370,9 +1945,14 @@ impl WasmEntrolyEngine {
         let mut most_vulnerable = String::new();
         for (fid, frag) in &self.fragments {
             let report = sast::scan_content(&frag.content, &frag.source);
-            if report.findings.is_empty() { continue; }
+            if report.findings.is_empty() {
+                continue;
+            }
             critical_total += report.critical_count;
-            if report.risk_score > max_risk { max_risk = report.risk_score; most_vulnerable = fid.clone(); }
+            if report.risk_score > max_risk {
+                max_risk = report.risk_score;
+                most_vulnerable = fid.clone();
+            }
             all_findings.push(serde_json::json!({
                 "fragment_id": fid, "source": frag.source, "risk_score": report.risk_score,
                 "critical_count": report.critical_count, "finding_count": report.findings.len(), "top_fix": report.top_fix,
@@ -1438,12 +2018,29 @@ impl WasmEntrolyEngine {
             return json_to_js(&serde_json::json!({"status": "empty"}));
         }
         let query_hash = simhash(&query);
-        let mut scored: Vec<(usize, f64)> = frags.iter().enumerate()
-            .map(|(i, f)| { let dist = hamming_distance(query_hash, f.simhash); (i, (1.0 - dist as f64 / 64.0).max(0.0)) }).collect();
+        let mut scored: Vec<(usize, f64)> = frags
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let dist = hamming_distance(query_hash, f.simhash);
+                (i, (1.0 - dist as f64 / 64.0).max(0.0))
+            })
+            .collect();
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let top_k: Vec<String> = scored.iter().take(10).filter(|(_, sim)| *sim > 0.1).map(|(i, _)| frags[*i].fragment_id.clone()).collect();
+        let top_k: Vec<String> = scored
+            .iter()
+            .take(10)
+            .filter(|(_, sim)| *sim > 0.1)
+            .map(|(i, _)| frags[*i].fragment_id.clone())
+            .collect();
         let mean_entropy = frags.iter().map(|f| f.entropy_score).sum::<f64>() / frags.len() as f64;
-        let hcc = hierarchical::hierarchical_compress(&frags, &self.dep_graph, &top_k, token_budget, mean_entropy);
+        let hcc = hierarchical::hierarchical_compress(
+            &frags,
+            &self.dep_graph,
+            &top_k,
+            token_budget,
+            mean_entropy,
+        );
         let result = serde_json::json!({
             "status": "compressed",
             "level1_map": hcc.level1_map, "level1_tokens": hcc.budget_used.0,
@@ -1473,14 +2070,24 @@ impl WasmEntrolyEngine {
     pub fn import_state(&mut self, json_str: &str) -> JsValue {
         match serde_json::from_str::<serde_json::Value>(json_str) {
             Ok(state) => {
-                if let Some(v) = state.get("w_recency").and_then(|v| v.as_f64()) { self.w_recency = v; }
-                if let Some(v) = state.get("w_frequency").and_then(|v| v.as_f64()) { self.w_frequency = v; }
-                if let Some(v) = state.get("w_semantic").and_then(|v| v.as_f64()) { self.w_semantic = v; }
-                if let Some(v) = state.get("w_entropy").and_then(|v| v.as_f64()) { self.w_entropy = v; }
-                if let Some(v) = state.get("gradient_temperature").and_then(|v| v.as_f64()) { self.gradient_temperature = v; }
+                if let Some(v) = state.get("w_recency").and_then(|v| v.as_f64()) {
+                    self.w_recency = v;
+                }
+                if let Some(v) = state.get("w_frequency").and_then(|v| v.as_f64()) {
+                    self.w_frequency = v;
+                }
+                if let Some(v) = state.get("w_semantic").and_then(|v| v.as_f64()) {
+                    self.w_semantic = v;
+                }
+                if let Some(v) = state.get("w_entropy").and_then(|v| v.as_f64()) {
+                    self.w_entropy = v;
+                }
+                if let Some(v) = state.get("gradient_temperature").and_then(|v| v.as_f64()) {
+                    self.gradient_temperature = v;
+                }
                 json_to_js(&serde_json::json!({"status": "imported"}))
             }
-            Err(e) => json_to_js(&serde_json::json!({"error": e.to_string()}))
+            Err(e) => json_to_js(&serde_json::json!({"error": e.to_string()})),
         }
     }
 
@@ -1535,33 +2142,58 @@ impl WasmEntrolyEngine {
     #[inline]
     fn sigmoid(x: f64) -> f64 {
         let x = x.clamp(-500.0, 500.0);
-        if x >= 0.0 { 1.0 / (1.0 + (-x).exp()) } else { let ex = x.exp(); ex / (1.0 + ex) }
+        if x >= 0.0 {
+            1.0 / (1.0 + (-x).exp())
+        } else {
+            let ex = x.exp();
+            ex / (1.0 + ex)
+        }
     }
 
     /// Compute context sufficiency.
     fn compute_sufficiency(&self, frags: &[ContextFragment], selected_indices: &[usize]) -> f64 {
-        let selected_ids: HashSet<&str> = selected_indices.iter().map(|&i| frags[i].fragment_id.as_str()).collect();
-        let defined_symbols: HashSet<String> = self.dep_graph.symbol_definitions().iter()
+        let selected_ids: HashSet<&str> = selected_indices
+            .iter()
+            .map(|&i| frags[i].fragment_id.as_str())
+            .collect();
+        let defined_symbols: HashSet<String> = self
+            .dep_graph
+            .symbol_definitions()
+            .iter()
             .filter(|(_, fid)| selected_ids.contains(fid.as_str()))
-            .map(|(symbol, _)| symbol.clone()).collect();
+            .map(|(symbol, _)| symbol.clone())
+            .collect();
         let mut referenced_symbols: HashSet<String> = HashSet::new();
         for &idx in selected_indices {
             for ident in extract_identifiers(&frags[idx].content) {
-                if self.dep_graph.has_symbol(&ident) { referenced_symbols.insert(ident); }
+                if self.dep_graph.has_symbol(&ident) {
+                    referenced_symbols.insert(ident);
+                }
             }
         }
-        if referenced_symbols.is_empty() { return 1.0; }
-        referenced_symbols.iter().filter(|s| defined_symbols.contains(*s)).count() as f64 / referenced_symbols.len() as f64
+        if referenced_symbols.is_empty() {
+            return 1.0;
+        }
+        referenced_symbols
+            .iter()
+            .filter(|s| defined_symbols.contains(*s))
+            .count() as f64
+            / referenced_symbols.len() as f64
     }
 
     /// Apply PRISM RL update with REINFORCE-with-baseline policy gradient.
     fn apply_prism_rl_update(&mut self, fragment_ids: &[String], reward: f64) {
-        if self.fragments.is_empty() { return; }
+        if self.fragments.is_empty() {
+            return;
+        }
         let tau = self.gradient_temperature.max(0.01);
         let selected: HashSet<&str> = fragment_ids.iter().map(|s| s.as_str()).collect();
-        let selected_entropy_sum: f64 = fragment_ids.iter()
+        let selected_entropy_sum: f64 = fragment_ids
+            .iter()
             .filter_map(|id| self.fragments.get(id))
-            .map(|f| f.entropy_score.max(0.01)).sum::<f64>().max(0.01);
+            .map(|f| f.entropy_score.max(0.01))
+            .sum::<f64>()
+            .max(0.01);
         let lambda = self.last_lambda_star;
         let selected_ids_vec: Vec<&str> = selected.iter().copied().collect();
 
@@ -1576,23 +2208,31 @@ impl WasmEntrolyEngine {
             let tc = frag.token_count as f64;
             let p = Self::sigmoid((score - lambda * tc) / tau);
             let dp = p * (1.0 - p) / tau;
-            let action = if selected.contains(frag.fragment_id.as_str()) { 1.0 } else { 0.0 };
+            let action = if selected.contains(frag.fragment_id.as_str()) {
+                1.0
+            } else {
+                0.0
+            };
             let phi = if action > 0.5 {
                 (frag.entropy_score.max(0.01) / selected_entropy_sum).clamp(0.1, 3.0)
-            } else { 1.0 };
+            } else {
+                1.0
+            };
             let trace_update = (action - p) * dp;
             frag.eligibility_trace = 0.7 * frag.eligibility_trace + trace_update;
             let advantage = phi * frag.eligibility_trace * reward;
-            g[prism::dim::RECENCY]   += advantage * frag.recency_score;
+            g[prism::dim::RECENCY] += advantage * frag.recency_score;
             g[prism::dim::FREQUENCY] += advantage * frag.frequency_score;
-            g[prism::dim::SEMANTIC]  += advantage * frag.semantic_score;
-            g[prism::dim::ENTROPY]   += advantage * frag.entropy_score;
+            g[prism::dim::SEMANTIC] += advantage * frag.semantic_score;
+            g[prism::dim::ENTROPY] += advantage * frag.entropy_score;
             if self.enable_resonance {
-                let res_feature = self.resonance_matrix.resonance_bonus(frag.fragment_id.as_str(), &selected_ids_vec);
-                g5[prism::dim::RECENCY]   += advantage * frag.recency_score;
+                let res_feature = self
+                    .resonance_matrix
+                    .resonance_bonus(frag.fragment_id.as_str(), &selected_ids_vec);
+                g5[prism::dim::RECENCY] += advantage * frag.recency_score;
                 g5[prism::dim::FREQUENCY] += advantage * frag.frequency_score;
-                g5[prism::dim::SEMANTIC]  += advantage * frag.semantic_score;
-                g5[prism::dim::ENTROPY]   += advantage * frag.entropy_score;
+                g5[prism::dim::SEMANTIC] += advantage * frag.semantic_score;
+                g5[prism::dim::ENTROPY] += advantage * frag.entropy_score;
                 g5[prism::dim::RESONANCE] += advantage * res_feature;
             }
         }
@@ -1607,17 +2247,18 @@ impl WasmEntrolyEngine {
             let kappa = self.prism_optimizer.condition_number();
             let kappa_norm = (kappa / 2.0).clamp(0.5, 4.0);
             let natural_tau = (gap_per_frag * kappa_norm).clamp(0.1, 2.0);
-            self.gradient_temperature = (0.90 * self.gradient_temperature + 0.10 * natural_tau).max(0.1);
+            self.gradient_temperature =
+                (0.90 * self.gradient_temperature + 0.10 * natural_tau).max(0.1);
         } else {
             self.gradient_temperature = (self.gradient_temperature * 0.998).max(0.1);
         }
         self.gradient_norm_ema = 0.95 * self.gradient_norm_ema + 0.05 * g_norm;
 
         let update = self.prism_optimizer.compute_update(&g);
-        self.w_recency   += update[prism::dim::RECENCY];
+        self.w_recency += update[prism::dim::RECENCY];
         self.w_frequency += update[prism::dim::FREQUENCY];
-        self.w_semantic  += update[prism::dim::SEMANTIC];
-        self.w_entropy   += update[prism::dim::ENTROPY];
+        self.w_semantic += update[prism::dim::SEMANTIC];
+        self.w_entropy += update[prism::dim::ENTROPY];
         if self.enable_resonance {
             let update5 = self.prism_optimizer_5d.compute_update(&g5);
             self.w_resonance = (self.w_resonance + update5[prism::dim::RESONANCE]).clamp(0.0, 0.5);
@@ -1627,7 +2268,10 @@ impl WasmEntrolyEngine {
         self.w_semantic = self.w_semantic.clamp(0.05, 0.8);
         self.w_entropy = self.w_entropy.clamp(0.05, 0.8);
         let sum = self.w_recency + self.w_frequency + self.w_semantic + self.w_entropy;
-        self.w_recency /= sum; self.w_frequency /= sum; self.w_semantic /= sum; self.w_entropy /= sum;
+        self.w_recency /= sum;
+        self.w_frequency /= sum;
+        self.w_semantic /= sum;
+        self.w_entropy /= sum;
         self.context_scorer.w_similarity = self.w_semantic;
         self.context_scorer.w_recency = self.w_recency;
         self.context_scorer.w_entropy = self.w_entropy;
@@ -1639,4 +2283,3 @@ impl WasmEntrolyEngine {
         }
     }
 }
-

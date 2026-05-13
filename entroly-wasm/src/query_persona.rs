@@ -38,8 +38,8 @@
 //!   - Gretton et al., "A Kernel Two-Sample Test" (JMLR 2012)
 //!   - Ishwaran & James, "Gibbs Sampling for Pitman-Yor" (2001)
 
-use serde::{Serialize, Deserialize};
 use crate::prism::PrismOptimizer;
+use serde::{Deserialize, Serialize};
 
 // ════════════════════════════════════════════════════════════════════
 //  CONSTANTS
@@ -78,7 +78,10 @@ pub struct RbfKernel {
 impl RbfKernel {
     pub fn new(sigma: f32) -> Self {
         let s = sigma.max(0.01);
-        Self { sigma: s, inv_2sigma2: -1.0 / (2.0 * s * s) }
+        Self {
+            sigma: s,
+            inv_2sigma2: -1.0 / (2.0 * s * s),
+        }
     }
 
     /// Adaptive bandwidth via Silverman's rule:
@@ -97,7 +100,9 @@ impl RbfKernel {
                 means[i] += v;
             }
         }
-        for m in &mut means { *m /= n; }
+        for m in &mut means {
+            *m /= n;
+        }
 
         let mut stds = vec![0.0f32; dim];
         for p in particles {
@@ -106,7 +111,9 @@ impl RbfKernel {
                 stds[i] += diff * diff;
             }
         }
-        for s in &mut stds { *s = (*s / n.max(1.0)).sqrt(); }
+        for s in &mut stds {
+            *s = (*s / n.max(1.0)).sqrt();
+        }
 
         stds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median_std = stds[stds.len() / 2].max(0.01);
@@ -118,8 +125,13 @@ impl RbfKernel {
     /// k(x, y) = exp(-||x-y||² / (2σ²))
     #[inline]
     pub fn eval(&self, x: &[f32], y: &[f32]) -> f32 {
-        let sq_dist: f32 = x.iter().zip(y.iter())
-            .map(|(a, b)| { let d = a - b; d * d })
+        let sq_dist: f32 = x
+            .iter()
+            .zip(y.iter())
+            .map(|(a, b)| {
+                let d = a - b;
+                d * d
+            })
             .sum();
         (sq_dist * self.inv_2sigma2).exp()
     }
@@ -170,7 +182,10 @@ impl ParticleCloud {
             let mut max_idx = 0;
 
             for i in 0..self.particles.len() {
-                let redundancy: f32 = self.particles.iter().enumerate()
+                let redundancy: f32 = self
+                    .particles
+                    .iter()
+                    .enumerate()
                     .filter(|(j, _)| *j != i)
                     .map(|(_, pj)| prune_kernel.eval(&self.particles[i], pj))
                     .sum();
@@ -189,8 +204,12 @@ impl ParticleCloud {
 
     /// Kernel mean embedding affinity: A(t) = Σᵢ wᵢ k(t, xᵢ)
     pub fn affinity(&self, t: &[f32], kernel: &RbfKernel) -> f32 {
-        if self.particles.is_empty() { return 0.0; }
-        self.particles.iter().zip(self.weights.iter())
+        if self.particles.is_empty() {
+            return 0.0;
+        }
+        self.particles
+            .iter()
+            .zip(self.weights.iter())
             .map(|(xi, wi)| wi * kernel.eval(t, xi))
             .sum()
     }
@@ -227,7 +246,9 @@ impl ParticleCloud {
 
     /// Effective support size (kernel-weighted entropy).
     pub fn effective_support(&self, kernel: &RbfKernel) -> f32 {
-        if self.particles.len() < 2 { return self.particles.len() as f32; }
+        if self.particles.len() < 2 {
+            return self.particles.len() as f32;
+        }
         let mut entropies = 0.0f32;
         for xi in &self.particles {
             let aff = self.affinity(xi, kernel);
@@ -344,7 +365,11 @@ pub struct PitmanYorProcess {
 
 impl PitmanYorProcess {
     pub fn new(alpha: f32, discount: f32) -> Self {
-        Self { alpha, discount, total_observations: 0 }
+        Self {
+            alpha,
+            discount,
+            total_observations: 0,
+        }
     }
 
     /// P(new archetype | K existing, n observations).
@@ -427,11 +452,7 @@ pub struct QueryPersonaManifold {
 }
 
 impl QueryPersonaManifold {
-    pub fn new(
-        default_weights: [f64; 4],
-        alpha: f32,
-        discount: f32,
-    ) -> Self {
+    pub fn new(default_weights: [f64; 4], alpha: f32, discount: f32) -> Self {
         Self {
             archetypes: Vec::new(),
             py_process: PitmanYorProcess::new(alpha, discount),
@@ -446,7 +467,9 @@ impl QueryPersonaManifold {
         }
     }
 
-    pub fn population(&self) -> usize { self.archetypes.len() }
+    pub fn population(&self) -> usize {
+        self.archetypes.len()
+    }
 
     /// Assign a query to an archetype. Returns (archetype_id, weights, is_new).
     ///
@@ -483,7 +506,9 @@ impl QueryPersonaManifold {
 
         // Use raw affinity (before PY weighting) for birth decision.
         // High affinity = strong match to existing archetype → don't birth.
-        let best_affinity = self.archetypes.iter()
+        let best_affinity = self
+            .archetypes
+            .iter()
             .map(|a| a.affinity(query_features))
             .fold(f32::NEG_INFINITY, f32::max);
 
@@ -506,12 +531,7 @@ impl QueryPersonaManifold {
     }
 
     /// Record optimization result for an archetype.
-    pub fn record_result(
-        &mut self,
-        archetype_id: &str,
-        gradient: &[f64; 4],
-        success: bool,
-    ) {
+    pub fn record_result(&mut self, archetype_id: &str, gradient: &[f64; 4], success: bool) {
         if let Some(a) = self.archetypes.iter_mut().find(|a| a.id == archetype_id) {
             a.record_result(gradient, success);
         }
@@ -520,7 +540,8 @@ impl QueryPersonaManifold {
 
     /// Get weights for a specific archetype. Returns default if not found.
     pub fn get_weights(&self, archetype_id: &str) -> [f64; 4] {
-        self.archetypes.iter()
+        self.archetypes
+            .iter()
             .find(|a| a.id == archetype_id)
             .map(|a| a.weights)
             .unwrap_or(self.default_weights)
@@ -547,8 +568,11 @@ impl QueryPersonaManifold {
 
     /// Return statistics about the manifold.
     pub fn stats(&self) -> ManifoldStats {
-        let total_particles: usize = self.archetypes.iter()
-            .map(|a| a.cloud.particles.len()).sum();
+        let total_particles: usize = self
+            .archetypes
+            .iter()
+            .map(|a| a.cloud.particles.len())
+            .sum();
 
         ManifoldStats {
             population: self.archetypes.len(),
@@ -557,20 +581,26 @@ impl QueryPersonaManifold {
             total_fusions: self.total_fusions,
             tick: self.current_tick,
             total_particles,
-            archetypes: self.archetypes.iter().map(|a| ArchetypeInfo {
-                id: a.id.clone(),
-                health: a.health,
-                particles: a.cloud.particles.len(),
-                observations: a.cloud.count,
-                stick_weight: a.stick_weight,
-                effective_support: a.cloud.effective_support(&a.kernel),
-                weights: a.weights,
-                successes: a.successes,
-                total_uses: a.total_uses,
-                success_rate: if a.total_uses > 0 {
-                    a.successes as f64 / a.total_uses as f64
-                } else { 0.0 },
-            }).collect(),
+            archetypes: self
+                .archetypes
+                .iter()
+                .map(|a| ArchetypeInfo {
+                    id: a.id.clone(),
+                    health: a.health,
+                    particles: a.cloud.particles.len(),
+                    observations: a.cloud.count,
+                    stick_weight: a.stick_weight,
+                    effective_support: a.cloud.effective_support(&a.kernel),
+                    weights: a.weights,
+                    successes: a.successes,
+                    total_uses: a.total_uses,
+                    success_rate: if a.total_uses > 0 {
+                        a.successes as f64 / a.total_uses as f64
+                    } else {
+                        0.0
+                    },
+                })
+                .collect(),
         }
     }
 
@@ -579,11 +609,8 @@ impl QueryPersonaManifold {
     fn birth_archetype(&mut self, query_features: &[f32]) -> String {
         self.id_counter += 1;
         let id = format!("qa_{:04}", self.id_counter);
-        let mut archetype = QueryArchetype::new(
-            id.clone(),
-            self.default_weights,
-            self.current_tick,
-        );
+        let mut archetype =
+            QueryArchetype::new(id.clone(), self.default_weights, self.current_tick);
         archetype.cloud.add_particle(query_features);
         self.archetypes.push(archetype);
         self.total_births += 1;
@@ -592,13 +619,19 @@ impl QueryPersonaManifold {
 
     /// Fusion via MMD² — proper metric on probability measures.
     fn check_fusion(&mut self) {
-        if self.archetypes.len() < 2 { return; }
+        if self.archetypes.len() < 2 {
+            return;
+        }
 
         let mut to_absorb: Vec<usize> = Vec::new();
         for i in 0..self.archetypes.len() {
-            if to_absorb.contains(&i) { continue; }
-            for j in (i+1)..self.archetypes.len() {
-                if to_absorb.contains(&j) { continue; }
+            if to_absorb.contains(&i) {
+                continue;
+            }
+            for j in (i + 1)..self.archetypes.len() {
+                if to_absorb.contains(&j) {
+                    continue;
+                }
 
                 let kernel = if self.archetypes[i].kernel.sigma > self.archetypes[j].kernel.sigma {
                     &self.archetypes[i].kernel
@@ -606,7 +639,8 @@ impl QueryPersonaManifold {
                     &self.archetypes[j].kernel
                 };
 
-                let mmd2 = self.archetypes[i].cloud
+                let mmd2 = self.archetypes[i]
+                    .cloud
                     .mmd_squared(&self.archetypes[j].cloud, kernel);
 
                 if mmd2 < self.fusion_threshold {
@@ -621,9 +655,9 @@ impl QueryPersonaManifold {
                     let n_j = self.archetypes[j].total_uses as f64;
                     let total = (n_i + n_j).max(1.0);
                     for k in 0..4 {
-                        self.archetypes[i].weights[k] =
-                            (self.archetypes[i].weights[k] * n_i
-                             + self.archetypes[j].weights[k] * n_j) / total;
+                        self.archetypes[i].weights[k] = (self.archetypes[i].weights[k] * n_i
+                            + self.archetypes[j].weights[k] * n_j)
+                            / total;
                     }
 
                     self.archetypes[i].successes += self.archetypes[j].successes;
@@ -680,7 +714,9 @@ mod tests {
 
     fn make_features(primary: usize, vagueness: f32) -> Vec<f32> {
         let mut f = vec![0.0f32; QUERY_DIM];
-        if primary < 12 { f[primary] = 0.9; }
+        if primary < 12 {
+            f[primary] = 0.9;
+        }
         f[12] = vagueness;
         f[13] = 0.5;
         f[14] = 0.5;
@@ -732,8 +768,12 @@ mod tests {
             m.assign(&features);
         }
         // Population should not have grown much (at most 1 more archetype)
-        assert!(m.population() <= pop_before + 1,
-            "Identical queries should converge: pop went from {} to {}", pop_before, m.population());
+        assert!(
+            m.population() <= pop_before + 1,
+            "Identical queries should converge: pop went from {} to {}",
+            pop_before,
+            m.population()
+        );
     }
 
     #[test]
@@ -744,7 +784,11 @@ mod tests {
         m.assign(&make_features(5, 0.9));
         m.assign(&make_features(10, 0.5));
         // Should have created at least 2 archetypes
-        assert!(m.population() >= 2, "Different queries should birth archetypes: pop={}", m.population());
+        assert!(
+            m.population() >= 2,
+            "Different queries should birth archetypes: pop={}",
+            m.population()
+        );
     }
 
     #[test]
@@ -752,7 +796,9 @@ mod tests {
         let mut m = QueryPersonaManifold::new(default_weights(), 1.0, 0.25);
         m.assign(&make_features(0, 0.3));
         assert_eq!(m.population(), 1);
-        for _ in 0..1000 { m.lifecycle_tick(); }
+        for _ in 0..1000 {
+            m.lifecycle_tick();
+        }
         assert_eq!(m.population(), 0, "Should die from Ebbinghaus decay");
     }
 
@@ -782,7 +828,11 @@ mod tests {
 
         let weights = m.get_weights(&id);
         // Recency weight should have increased relative to others
-        assert!(weights[0] > 0.25, "Recency weight should increase with positive gradient: {:.3}", weights[0]);
+        assert!(
+            weights[0] > 0.25,
+            "Recency weight should increase with positive gradient: {:.3}",
+            weights[0]
+        );
     }
 
     #[test]
@@ -791,7 +841,10 @@ mod tests {
         let mut c1 = ParticleCloud::new(4, 50);
         let mut c2 = ParticleCloud::new(4, 50);
         let pts = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
-        for p in &pts { c1.add_particle(p); c2.add_particle(p); }
+        for p in &pts {
+            c1.add_particle(p);
+            c2.add_particle(p);
+        }
         let mmd2 = c1.mmd_squared(&c2, &k);
         assert!(mmd2 < 1e-4, "Identical clouds → MMD² ≈ 0: {}", mmd2);
     }
@@ -824,8 +877,12 @@ mod tests {
         for i in 0..20 {
             m.assign(&make_features(i % 12, i as f32 / 20.0));
         }
-        assert!(m.population() <= MAX_ARCHETYPES,
-            "Should cap at {} archetypes: pop={}", MAX_ARCHETYPES, m.population());
+        assert!(
+            m.population() <= MAX_ARCHETYPES,
+            "Should cap at {} archetypes: pop={}",
+            MAX_ARCHETYPES,
+            m.population()
+        );
     }
 
     #[test]
