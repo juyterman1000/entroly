@@ -58,6 +58,14 @@ from .reasoning_chain import cave_verify, CaveResult
 from .commit_alignment import triad_verify, TriadResult
 from .provenance_tracer import trace_provenance, BIPTResult
 from .repair_loop import forge_loop, ForgeResult
+from .lang_js import (
+    JSSymbolReference,
+    extract_js_definitions,
+    extract_js_scope,
+    extract_js_symbol_refs,
+    collect_js_repo_symbols,
+    collect_js_installed_packages,
+)
 
 __all__ = [
     # Core — Layer 1 (GRAPHS)
@@ -95,5 +103,12 @@ __all__ = [
     # FORGE — Layer 8 (hallucination suppression)
     "forge_loop",
     "ForgeResult",
+    # JS / TS symbol extraction (companion to symbol_resolution.py)
+    "JSSymbolReference",
+    "extract_js_definitions",
+    "extract_js_scope",
+    "extract_js_symbol_refs",
+    "collect_js_repo_symbols",
+    "collect_js_installed_packages",
 ]
 

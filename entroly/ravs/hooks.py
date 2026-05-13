@@ -1,8 +1,8 @@
 """
 Hook installer for Claude Code and other IDE integrations.
 
-`entroly hook install --claude-code` writes a PostToolUse hook into
-Claude Code's settings that auto-feeds every Bash exit into RAVS.
+`entroly ravs hook install --claude-code` writes a PostToolUse hook
+into Claude Code's settings that auto-feeds every Bash exit into RAVS.
 Deterministic, no model compliance needed — the hook fires on every
 tool use regardless of what the LLM decides to do.
 
@@ -14,10 +14,8 @@ Supported targets:
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 
 # ── Claude Code hook definition ──────────────────────────────────────

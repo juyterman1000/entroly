@@ -1,23 +1,29 @@
 """
-`entroly verify` — CLI surface for the hallucination verifiers
-==============================================================
+`entroly verify-code` — CLI surface for the hallucination verifiers
+====================================================================
+
+Distinct from `entroly verify`, which runs a verification pass on the
+vault's belief artifacts. This module verifies *generated source code*
+against a SymbolVerifier built from the local repository — the symbol
+manifest + n-gram surprisal model that powers BIPT-style hallucination
+detection at the identifier level.
 
 Usage::
 
     # Verify code from a file
-    entroly verify path/to/generated.py
+    entroly verify-code path/to/generated.py
 
     # Verify from stdin (e.g. piped from an LLM)
-    cat generated.py | entroly verify -
+    cat generated.py | entroly verify-code -
 
     # JSON output for programmatic use
-    entroly verify generated.py --json
+    entroly verify-code generated.py --json
 
     # Lower the strictness (more permissive)
-    entroly verify generated.py --lambda 8.0
+    entroly verify-code generated.py --lambda 8.0
 
     # Force rebuild the manifest cache
-    entroly verify generated.py --rebuild
+    entroly verify-code generated.py --rebuild
 """
 
 from __future__ import annotations

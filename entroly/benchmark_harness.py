@@ -102,7 +102,7 @@ def run_benchmark(engine: Any, budget_seconds: float = 10.0) -> dict[str, Any]:
         timed_out = True
 
     # Primary metric: context_efficiency from engine stats
-    stats = engine.stats()
+    stats = engine.get_stats()
     eff_block = stats.get("context_efficiency", {})
     ctx_eff = eff_block.get("context_efficiency", 0.0)
 

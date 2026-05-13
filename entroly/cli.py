@@ -1269,6 +1269,23 @@ def cmd_batch(args):
     else:
         print(f"\n  {C.GREEN}{C.BOLD}Processed {len(queries)} queries.{C.RESET}\n")
 
+    # CI gate: non-zero exit if any query exceeded the budget
+    if getattr(args, "fail_over_budget", False):
+        over_budget = [r for r in results if r["tokens_used"] > r["budget"]]
+        if over_budget:
+            if not args.json_output:
+                print(
+                    f"  {C.RED}{C.BOLD}✗ {len(over_budget)} of {len(results)} queries "
+                    f"exceeded the {args.budget}-token budget.{C.RESET}",
+                )
+                for r in over_budget[:5]:
+                    pct = (r["tokens_used"] / max(r["budget"], 1) - 1) * 100
+                    print(
+                        f"    {C.RED}- {r['query'][:60]}: "
+                        f"{r['tokens_used']:,} tokens (+{pct:.0f}%){C.RESET}",
+                    )
+            sys.exit(1)
+
 
 # ── Wrap: One-command agent launcher ─────────────────────────────────
 
@@ -3127,6 +3144,25 @@ def cmd_compile(args):
     print(f"\n  {C.GREEN}Beliefs persisted.{C.RESET} Next session starts warm.\n")
 
 
+def cmd_verify_code(args):
+    """entroly verify-code -- statically verify LLM-generated code against
+    your codebase's symbol manifest.
+
+    Wraps the verifier CLI in entroly/verifiers/cli.py — it loads (or
+    builds and caches) a SymbolVerifier from the local repo, then runs
+    Bayesian-symbol + n-gram surprisal scoring on the provided source.
+
+    Exit codes (returned to the shell):
+        0 — passes verification (H-score below threshold)
+        1 — fails (H-score >= threshold) — useful for CI gating
+        2 — usage error
+    """
+    from entroly.verifiers.cli import main as _verifier_main
+
+    forwarded = list(getattr(args, "verify_code_args", None) or [])
+    sys.exit(_verifier_main(forwarded))
+
+
 def cmd_verify(args):
     """entroly verify -- run verification pass on all beliefs.
 
@@ -3412,8 +3448,33 @@ def cmd_ravs(args):
                 print("  \u00b7 Skipped: not a verifiable command")
         return
 
+    if ravs_action == "hook":
+        hook_action = getattr(args, "hook_action", None)
+        if hook_action != "install":
+            print(f"  {C.YELLOW}Usage: entroly ravs hook install --claude-code [--dry-run]{C.RESET}")
+            return
+        if not getattr(args, "claude_code", False):
+            print(f"  {C.YELLOW}Specify a target: --claude-code{C.RESET}")
+            return
+        from entroly.ravs.hooks import install_claude_code
+        result = install_claude_code(dry_run=getattr(args, "dry_run", False))
+        action = result.get("action")
+        path = result.get("path", "")
+        if action == "installed":
+            print(f"  {C.GREEN}\u2713 Installed RAVS PostToolUse hook \u2192 {path}{C.RESET}")
+            print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
+        elif action == "already_present":
+            print(f"  {C.GRAY}\u00b7 Hook already present in {path}{C.RESET}")
+        elif action == "dry_run":
+            import json as _json
+            print(f"  {C.CYAN}Dry-run \u2014 would write to {path}:{C.RESET}")
+            print(_json.dumps(result.get("settings", {}), indent=2))
+        else:
+            print(f"  {C.RED}\u2717 Unknown action: {action}{C.RESET}")
+        return
+
     if ravs_action != "report":
-        print(f"  {C.YELLOW}Usage: entroly ravs [report|capture]{C.RESET}")
+        print(f"  {C.YELLOW}Usage: entroly ravs [report|capture|hook]{C.RESET}")
         return
 
     # Resolve log path
@@ -3752,6 +3813,10 @@ def main():
         "--json", dest="json_output", action="store_true",
         help="Output results as JSON (for CI pipelines)",
     )
+    batch_parser.add_argument(
+        "--fail-over-budget", dest="fail_over_budget", action="store_true",
+        help="Exit with non-zero status if any query's optimized tokens exceed --budget (for CI gating)",
+    )
 
     # entroly demo (Gap #41)
     subparsers.add_parser(
@@ -3863,6 +3928,21 @@ def main():
     subparsers.add_parser(
         "verify",
         help="Run verification pass on all beliefs (staleness, contradictions)",
+    )
+
+    # entroly verify-code — statically verify LLM-generated code
+    # Pass-through: all remaining args are forwarded to verifiers/cli.py,
+    # which has its own arg parser (handles `path`, --repo, --lambda,
+    # --threshold, --json, --rebuild, --max-items).
+    import argparse as _argparse
+    verify_code_parser = subparsers.add_parser(
+        "verify-code",
+        help="Statically verify LLM-generated code against the codebase symbol manifest",
+    )
+    verify_code_parser.add_argument(
+        "verify_code_args",
+        nargs=_argparse.REMAINDER,
+        help="Path to source file (use '-' for stdin) plus optional flags",
     )
 
     # entroly sync
@@ -3988,6 +4068,25 @@ def main():
         help="Override RAVS event log path",
     )
 
+    # entroly ravs hook — install/manage PostToolUse hooks
+    ravs_hook_parser = ravs_subparsers.add_parser(
+        "hook",
+        help="Install RAVS PostToolUse hooks into your IDE",
+    )
+    ravs_hook_subparsers = ravs_hook_parser.add_subparsers(dest="hook_action")
+    ravs_hook_install = ravs_hook_subparsers.add_parser(
+        "install",
+        help="Install the PostToolUse hook into a supported IDE",
+    )
+    ravs_hook_install.add_argument(
+        "--claude-code", action="store_true",
+        help="Install into Claude Code (~/.claude/settings.json)",
+    )
+    ravs_hook_install.add_argument(
+        "--dry-run", action="store_true",
+        help="Print the merged settings without writing",
+    )
+
     # ── daemon command ─────────────────────────────────────────────
     daemon_parser = subparsers.add_parser(
         "daemon",
@@ -4035,6 +4134,7 @@ def main():
         "completions": cmd_completions,
         "compile": cmd_compile,
         "verify": cmd_verify,
+        "verify-code": cmd_verify_code,
         "sync": cmd_sync,
         "search": cmd_search,
         "docs": cmd_docs,
