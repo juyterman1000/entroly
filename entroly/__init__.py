@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "0.19.2"
+__version__ = "0.19.3"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401

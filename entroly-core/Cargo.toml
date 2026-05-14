@@ -1,6 +1,6 @@
 [package]
 name = "entroly-core"
-version = "0.19.2"
+version = "0.19.3"
 edition = "2021"
 description = "Rust core for Entroly — information-theoretic context optimization"
 
@@ -16,7 +16,12 @@ default = []
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-pyo3 = { version = "0.24" }
+# PyO3 0.25 adds native Python 3.14 support. The `abi3-py310` feature builds
+# against the Python stable ABI, so a single wheel per platform covers Python
+# 3.10, 3.11, 3.12, 3.13, 3.14, and every future Python 3.x release without
+# rebuilding. This permanently eliminates the "newer Python rejected by build
+# script" failure mode (see closed GitHub issue #41).
+pyo3 = { version = "0.25", features = ["abi3-py310"] }
 
 # Serialization (checkpoint)
 serde = { version = "1.0", features = ["derive"] }

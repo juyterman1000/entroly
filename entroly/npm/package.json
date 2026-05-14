@@ -1,6 +1,6 @@
 {
   "name": "entroly-mcp",
-  "version": "0.19.2",
+  "version": "0.19.3",
   "description": "Information-theoretic context optimization MCP server for AI coding agents.",
   "main": "index.js",
   "bin": {

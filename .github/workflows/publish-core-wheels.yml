@@ -6,10 +6,19 @@ on:
       - 'entroly-v*'
   workflow_dispatch:
 
-env:
-  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
-
 jobs:
+  # ── ABI3 wheels ──────────────────────────────────────────────────────
+  #
+  # Each platform produces exactly ONE wheel (abi3-py310 in entroly-core's
+  # Cargo.toml). That single wheel works for Python 3.10, 3.11, 3.12, 3.13,
+  # 3.14, and every future Python 3.x release on that platform — no per-
+  # version interpreter flags, no PYO3_USE_ABI3_FORWARD_COMPATIBILITY env.
+  # PyO3 0.25+ supports Python 3.14 natively.
+  #
+  # This permanently retires the gh#41-class failure mode: pip on a new
+  # Python version always finds a wheel; it never falls back to a sdist
+  # build that depends on a specific PyO3 release.
+
   linux-x86_64:
     name: Linux (x86_64)
     runs-on: ubuntu-latest
@@ -18,10 +27,9 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml -i python3.12 -i python3.14
+          args: --release --out dist --manifest-path entroly-core/Cargo.toml
           manylinux: auto
           target: x86_64
-          docker-options: -e CI -e PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-x86_64
@@ -35,10 +43,9 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --manifest-path entroly-core/Cargo.toml -i python3.12 -i python3.14
+          args: --release --out dist --manifest-path entroly-core/Cargo.toml
           manylinux: manylinux_2_28
           target: aarch64-unknown-linux-gnu
-          docker-options: -e CI -e PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-aarch64
