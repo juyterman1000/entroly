@@ -53,7 +53,7 @@
   <a href="#install"><b>Install</b></a> ·
   <a href="cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="#benchmarks"><b>Benchmarks</b></a> ·
-  <a href="#works-with-your-stack"><b>38 supported agent wrappers</b></a>
+  <a href="#works-with-your-stack"><b>22 supported integrations</b></a>
 </p>
 
 <a id="install"></a>
@@ -69,7 +69,7 @@
     Or: <code>brew tap juyterman1000/entroly && brew install entroly</code> · <code>npm i -g entroly-wasm</code>
     <br/>
     See the <a href="cookbook/README.md"><b>Cookbook</b></a> for 10 concrete recipes,
-    or pick your stack from the <a href="#works-with-your-stack">38 supported agent wrappers</a>.
+    or pick your stack from the <a href="#works-with-your-stack">22 supported integrations</a>.
   </sub>
 </p>
 
@@ -614,7 +614,7 @@ Zero cloud dependencies for local indexing, selection, verification, and dashboa
 
 <a id="works-with-your-stack"></a>
 
-## Works With Your Stack — 38 Agent Wrappers, One Command
+## Works With Your Stack — Supported Integrations
 
 `entroly wrap <agent>` does the right thing for every tool. Three integration kinds, picked automatically:
 
@@ -657,56 +657,18 @@ Zero cloud dependencies for local indexing, selection, verification, and dashboa
 | Cline (VS Code) | `cline` |
 | Roo Code (VS Code) | `roo` |
 | Continue | `continue` |
-| Sourcegraph Cody | `cody` |
-| Sourcegraph Amp | `amp` |
-| Qoder | `qoder` |
-| Trae | `trae` |
-| Antigravity | `antigravity` |
-| Amazon Q Developer | `amazonq` |
-| Verdent | `verdent` |
-| Kiro (AWS) | `kiro` |
 | Helix | `helix` |
 | Tabby | `tabby` |
 | Twinny | `twinny` |
-| Fitten Code | `fittencode` |
-| Tabnine Enterprise | `tabnine` |
-| Supermaven | `supermaven` |
 | Sublime Text | `sublime` |
 | Emacs (gptel / aider.el) | `emacs` |
 | Neovim (avante / codecompanion) | `neovim` |
-| JetBrains AI / Junie | `jetbrains` |
 
-### Autonomous cloud agents (HTTP proxy)
+### Any agent that supports custom base URLs
 
-Entroly's proxy intercepts LLM API calls — these agents work automatically when pointed at `localhost:9377`:
+Entroly's proxy (`localhost:9377`) works with any tool that lets you override its API endpoint. If your agent supports `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or similar env vars, it works with entroly — just point it at the proxy.
 
-| Agent | What it is |
-|---|---|
-| Devin (Cognition) | Fully autonomous AI software engineer |
-| Jules (Google) | Async agent: clones repo, plans, executes, opens PR |
-| GitHub Copilot Workspace | Cloud-based multi-file changes from GitHub issues |
-| Sweep | GitHub app that turns issues into PRs |
-| Factory AI | Cloud-based autonomous coding agents platform |
-| Replit Agent | Cloud IDE agent that plans, writes, tests, deploys |
-
-### AI app builders (HTTP proxy)
-
-| Agent | What it is |
-|---|---|
-| v0 (Vercel) | AI React/UI component generator |
-| Bolt (StackBlitz) | Browser-based AI app builder |
-| Lovable | Full-stack AI app builder |
-| Pythagora | AI app generation from natural language specs |
-
-### Code review agents (HTTP proxy / CLI wrap)
-
-| Agent | What it is |
-|---|---|
-| Qodo (CodiumAI) | Multi-agent code review: bugs, security, test gaps |
-| CodeRabbit | AI PR reviewer with inline comments |
-| Greptile | Independent AI code review, Claude Code plugin |
-| Snyk | AI-powered security scanning |
-| CodeAnt AI | Automated code review and quality |
+> **Cloud-hosted agents** (Devin, Jules, Replit Agent, etc.) run in the vendor's cloud, not on your machine. Check your provider's documentation to see if they support custom base URLs before attempting to proxy through entroly. Always review the provider's Terms of Service.
 
 ### Library / framework integration
 
