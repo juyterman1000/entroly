@@ -42,7 +42,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "0.19.3"
+    __version__ = "0.19.4"
 
 # ── Force UTF-8 output on Windows ──
 # Windows terminals default to cp1252 which can't encode ✓/✗/─/⚡.
@@ -2682,11 +2682,17 @@ def cmd_doctor(args):
     except ImportError:
         print(f"  {C.RED}x{C.RESET} Rust engine (entroly-core) not loaded "
               f"{C.GRAY}— optional; core features still work{C.RESET}")
-        print(f"    {C.GRAY}Install:  pip install \"entroly[full]\"{C.RESET}")
-        print(f"    {C.GRAY}If it fails to compile on a very new Python, use "
-              f"Python 3.10–3.13 or set{C.RESET}")
-        print(f"    {C.GRAY}PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 before "
-              f"installing.{C.RESET}")
+        # Prebuilt abi3 wheels (py>=3.10, incl. 3.14) ship for
+        # mac/linux/windows. The usual failure is pip reusing a stale
+        # cache or being too old to match the wheel, then falling back
+        # to compiling an ancient sdist. Bust the cache + upgrade pip
+        # first — that fixes it without any compile.
+        print(f"    {C.GRAY}Fix:  pip install --no-cache-dir -U pip && "
+              f"pip install --no-cache-dir -U entroly-core{C.RESET}")
+        print(f"    {C.GRAY}(If pip still compiles from source and fails on "
+              f"a new Python, your pip is too old to{C.RESET}")
+        print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
+              f"fix, not a different Python.){C.RESET}")
 
     # 3. Check config validity
     checks_total += 1

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "0.19.3"
+version = "0.19.4"
 
 description = "The token saving proxy and context compression engine for AI coding agents. Reduce LLM API costs by 80% while providing full codebase context to Cursor, Claude Code, and Copilot."
 readme = "README.md"
@@ -34,7 +34,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.6.0,<2",
-    "entroly-core>=0.19.3,<1",
+    "entroly-core>=0.19.4,<1",
 ]
 
 [project.optional-dependencies]
@@ -44,10 +44,10 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=0.19.3,<1",
+    "entroly-core>=0.19.4,<1",
 ]
 full = [
-    "entroly-core>=0.19.3,<1",
+    "entroly-core>=0.19.4,<1",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",

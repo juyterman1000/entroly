@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "0.19.3",
+  "version": "0.19.4",
   "description": "Token-saving proxy and context compression engine for AI coding agents. 38 supported tools, MCP-native, deterministic Rust core.",
   "homepage": "https://github.com/juyterman1000/entroly",
   "repository": "https://github.com/juyterman1000/entroly",
