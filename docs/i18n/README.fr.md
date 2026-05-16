@@ -45,7 +45,7 @@
 
 ## Le Problème — et l'Impact sur vos Résultats
 
-Chaque outil de codage IA — Claude, Cursor, Copilot, Codex — a le même angle mort : **il ne voit que 5–10 fichiers à la fois.** Les 95% restants de votre code sont invisibles.
+Chaque outil de codage IA — Claude, Cursor, Codex, Aider — a le même angle mort : **il ne voit que 5–10 fichiers à la fois.** Les 95% restants de votre code sont invisibles.
 
 Les modèles continuent de grossir — **Claude Opus 4.7** vient de sortir avec encore plus de capacités et des coûts par token encore plus élevés. Des fenêtres de contexte plus grandes ne résolvent pas le problème ; elles l'aggravent. Vous payez pour 186 000 tokens par requête — dont la majeure partie n'est que du code boilerplate dupliqué.
 
@@ -57,7 +57,7 @@ Les modèles continuent de grossir — **Claude Opus 4.7** vient de sortir avec 
 
 | Métrique | Avant Entroly | **Après Entroly** |
 |---|---|---|
-| Fichiers visibles par l'IA | 5–10 | **Tout le dépôt** |
+| Fichiers visibles par l'IA | 5–10 | **Fichiers pris en charge sélectionnés à résolution variable** |
 | Tokens par requête | ~186 000 | **9 300 – 55 000** |
 | Dépense mensuelle IA (1K req/jour) | ~16 800$ | **840$ – 5 040$** |
 | Précision des réponses IA | Incomplète, hallucinations | **Consciente des dépendances, correcte** |

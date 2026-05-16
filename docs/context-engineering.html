@@ -115,11 +115,11 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 <table>
   <tr><th></th><th>RAG</th><th>Context Engineering</th></tr>
   <tr><td><strong>Selection method</strong></td><td>Cosine similarity</td><td>Information-theoretic optimization</td></tr>
-  <tr><td><strong>Coverage</strong></td><td>Top-K similar chunks</td><td>100% codebase at variable resolution</td></tr>
+  <tr><td><strong>Coverage</strong></td><td>Top-K similar chunks</td><td>Supported files at variable resolution</td></tr>
   <tr><td><strong>Dependencies</strong></td><td>Missed</td><td>Automatically included</td></tr>
   <tr><td><strong>Duplicates</strong></td><td>Sent multiple times</td><td>Detected and merged</td></tr>
   <tr><td><strong>Needs embeddings</strong></td><td>Yes (API cost + latency)</td><td>No (runs locally)</td></tr>
-  <tr><td><strong>Optimality</strong></td><td>Approximate</td><td>Provably optimal</td></tr>
+  <tr><td><strong>Optimality</strong></td><td>Approximate</td><td>Knapsack-optimal (proven for the scoring objective)</td></tr>
 </table>
 
 <p>RAG answers the question "what's similar to my query?" Context engineering answers the question <strong>"what's the optimal information set for this token budget?"</strong></p>
@@ -139,12 +139,12 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <h2>Entroly: Context Engineering, Automated</h2>
 
-<p><a href="https://github.com/juyterman1000/entroly">Entroly</a> is an open-source context engineering engine that implements all six components. It plugs into any AI coding tool — Cursor, Claude Code, Copilot, Windsurf — and automatically delivers optimal context for every request.</p>
+<p><a href="https://github.com/juyterman1000/entroly">Entroly</a> is an open-source context engineering engine that implements all six components. It integrates with compatible local tools such as Cursor, Claude Code, Windsurf, and Cline, then delivers selected context for each request.</p>
 
 <p>Key results:</p>
 <ul>
   <li><strong>78% fewer tokens</strong> per request (measured across real codebases)</li>
-  <li><strong>100% codebase visibility</strong> — every file represented at some resolution</li>
+  <li><strong>Variable-resolution coverage</strong> — supported files represented at some resolution</li>
   <li><strong>&lt;10ms overhead</strong> — Rust engine, imperceptible latency</li>
   <li><strong>Learns from usage</strong> — REINFORCE-based weight optimization</li>
   <li><strong>Zero config</strong> — one command setup</li>
@@ -167,7 +167,7 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <div class="cta-box">
   <h3>Automate your context engineering.</h3>
-  <p>Entroly delivers the right context to your AI, every time. Open source. Zero config.</p>
+  <p>Entroly selects context for your AI automatically. Open source. Zero config.</p>
   <pre>pip install entroly[full] && entroly go</pre>
   <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
 </div>

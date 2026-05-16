@@ -17,7 +17,7 @@
 
 <h1 align="center">Entroly — AI Token Maliyetlerini %70–95 Azaltın</h1>
 
-<h3 align="center">AI kodlama araçlarınız kod tabanınızın yalnızca %5'ini görüyor.<br/>Entroly onlara tam resmi verir — maliyetin küçük bir kısmı karşılığında.</h3>
+<h3 align="center">AI kodlama araçlarınız kod tabanınızın yalnızca küçük bir bölümünü görüyor.<br/>Entroly daha geniş bir bağlam seçimi sunar — daha az token ile.</h3>
 
 <p align="center">
   <a href="../../README.md#install"><b>Kurulum</b></a> ·
@@ -45,7 +45,7 @@
 
 ## Sorun — ve Kârlılığa Etkisi
 
-Her AI kodlama aracı — Claude, Cursor, Copilot, Codex — aynı kör noktaya sahip: **aynı anda sadece 5–10 dosya görür.** Kod tabanınızın diğer %95'i görünmez.
+Her AI kodlama aracı — Claude, Cursor, Codex, Aider — aynı kör noktaya sahip: **aynı anda sadece 5–10 dosya görür.** Kod tabanınızın diğer %95'i görünmez.
 
 Modeller büyümeye devam ediyor — **Claude Opus 4.7** daha fazla yetenek ve daha yüksek token başına maliyetle yeni çıktı. Daha büyük bağlam pencereleri sorunu çözmez; daha da kötüleştirir. İstek başına 186.000 token için ödeme yapıyorsunuz — ve bunun çoğu sadece kopyalanmış boilerplate kodu.
 
@@ -57,14 +57,14 @@ Modeller büyümeye devam ediyor — **Claude Opus 4.7** daha fazla yetenek ve d
 
 | Metrik | Entroly Öncesi | **Entroly Sonrası** |
 |---|---|---|
-| AI'nın gördüğü dosyalar | 5–10 | **Tüm depo** |
+| AI'nın gördüğü dosyalar | 5–10 | **Desteklenen dosyalar değişken çözünürlükte seçilir** |
 | İstek başına token | ~186.000 | **9.300 – 55.000** |
-| Aylık AI harcaması (günde 1K istek) | ~$16.800 | **$840 – $5.040** |
-| AI yanıt doğruluğu | Eksik, sıklıkla halüsinasyon | **Bağımlılık bilinçli, doğru** |
-| AI hatalarını düzeltmek için dev süresi | Saat/hafta | **Neredeyse sıfır** |
+| Aylık AI harcaması (günde 1K istek) | sağlayıcıya/modele bağlı | **giriş tokenları azaldığında düşer** |
+| AI yanıt doğruluğu | sağlanan bağlama bağlı | **seçilen kanıtlara göre denetlenebilir** |
+| İnceleme yükü | manuel inceleme | **sertifika/kanıt parçacıkları mevcut** |
 | Kurulum | Günlerce prompt mühendisliği | **30 saniye** |
 
-> **ROI:** AI API'lerine ayda $15K harcayan 10 kişilik ekip, 1. günde **ayda $10K–$14K tasarruf** eder.
+> Tasarruflar depo boyutuna, sorgu genişliğine, model fiyatlandırmasına ve bütçeye bağlıdır. Kendi deponuzda yerel ölçümler için `entroly demo` veya `entroly verify-claims` komutlarını çalıştırın.
 
 ---
 
@@ -72,7 +72,7 @@ Modeller büyümeye devam ediyor — **Claude Opus 4.7** daha fazla yetenek ve d
 
 Bugün Entroly'i benimseyen ekipler sadece para biriktirmiyor — ekibinizin **asla yetişemeyeceği bileşik bir avantaj** biriktiriyor.
 
-- **1. Hafta:** Onların AI'ı kod tabanının %100'ünü görüyor. Sizinki %5. Onlar daha hızlı teslim ediyor.
+- **1. Hafta:** Onların AI'ı desteklenen dosyaları değişken çözünürlükte görüyor. Sizinki sadece birkaç açık dosyayı.
 - **1. Ay:** Onların runtime'ı kod tabanı kalıplarını öğrendi. Sizinki hâlâ import'larda halüsinasyon görüyor.
 - **3. Ay:** Onların kurulumu federasyona bağlı — dünya çapında binlerce ekipten optimizasyon stratejileri emiyor. Siz bunun var olduğunu bile bilmiyorsunuz.
 - **6. Ay:** API maliyetlerinde $80K+ tasarruf ettiler. Bu bütçe işe alımlara gitti. Siz hâlâ finans ekibine AI faturasının neden arttığını açıklıyorsunuz.
@@ -129,7 +129,7 @@ Sıkıştırma doğruluğu etkilemez — canlı API ile doğrulandı (gpt-4o-min
 | MMLU | 100 | 50K | 82.0% [73.3–88.3%] | 85.9% [77.8–91.4%] | **104.7%** | pass-through¹ |
 | TruthfulQA (MC1) | 100 | 50K | 72.0% [62.5–79.9%] | 73.7% [64.3–81.4%] | **102.4%** | pass-through¹ |
 
-> ¹ **pass-through**: Bağlam zaten bütçe dahilinde — Entroly doğru şekilde hiçbir şey yapmaz. Tüm kıyaslamalarda güven aralıkları örtüşür.
+> ¹ **pass-through**: Bağlam zaten bütçe dahilinde — Entroly doğru şekilde hiçbir şey yapmaz. Sonuçlar modele, veri setine ve token bütçesine göre değişir.
 
 ### Entroly Karşılaştırması (Uzun Bağlam)
 

@@ -55,7 +55,7 @@
 
 ## El Problema — y el Impacto en los Resultados
 
-Toda herramienta de IA — Claude, Cursor, Copilot, Codex — tiene el mismo punto ciego: **solo ve 5–10 archivos a la vez.** El otro 95% de tu código es invisible.
+Toda herramienta de IA — Claude, Cursor, Codex, Aider — tiene el mismo punto ciego: **solo ve 5–10 archivos a la vez.** El otro 95% de tu código es invisible.
 
 Los modelos siguen creciendo — **Claude Opus 4.7** acaba de salir con aún más capacidad y costos por token aún más altos. Ventanas de contexto más grandes no resuelven el problema; lo empeoran. Estás pagando por 186,000 tokens por solicitud — y la mayor parte es código repetitivo duplicado.
 
@@ -67,7 +67,7 @@ Los modelos siguen creciendo — **Claude Opus 4.7** acaba de salir con aún má
 
 | Métrica | Antes de Entroly | **Después de Entroly** |
 |---|---|---|
-| Archivos visibles por la IA | 5–10 | **Todo el repositorio** |
+| Archivos visibles por la IA | 5–10 | **Archivos compatibles seleccionados a resolución variable** |
 | Tokens por solicitud | ~186,000 | **9,300 – 55,000** |
 | Gasto mensual en IA (1K req/día) | ~$16,800 | **$840 – $5,040** |
 | Precisión de las respuestas IA | Incompleta, alucinaciones | **Consciente de dependencias, correcta** |

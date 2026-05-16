@@ -45,7 +45,7 @@
 
 ## Das Problem — und die Auswirkung auf das Ergebnis
 
-Jedes KI-Coding-Tool — Claude, Cursor, Copilot, Codex — hat denselben blinden Fleck: **Es sieht nur 5–10 Dateien gleichzeitig.** Die anderen 95% deiner Codebase sind unsichtbar.
+Jedes KI-Coding-Tool — Claude, Cursor, Codex, Aider — hat denselben blinden Fleck: **Es sieht nur 5–10 Dateien gleichzeitig.** Die anderen 95% deiner Codebase sind unsichtbar.
 
 Modelle werden immer größer — **Claude Opus 4.7** wurde gerade mit noch mehr Funktionen und noch höheren Token-Kosten veröffentlicht. Größere Kontextfenster lösen das Problem nicht; sie machen es noch schlimmer. Du bezahlst für 186.000 Tokens pro Anfrage — wovon das meiste nur duplizierter Boilerplate-Code ist.
 
@@ -57,7 +57,7 @@ Modelle werden immer größer — **Claude Opus 4.7** wurde gerade mit noch mehr
 
 | Metrik | Vor Entroly | **Nach Entroly** |
 |---|---|---|
-| Für die KI sichtbare Dateien | 5–10 | **Dein gesamtes Repository** |
+| Für die KI sichtbare Dateien | 5–10 | **Unterstützte Dateien in variabler Auflösung ausgewählt** |
 | Tokens pro Anfrage | ~186.000 | **9.300 – 55.000** |
 | Monatliche KI-Ausgaben (1K Req/Tag) | ~$16.800 | **$840 – $5.040** |
 | KI-Antwortgenauigkeit | Unvollständig, oft halluziniert | **Dependency-aware, korrekt** |

@@ -45,7 +45,7 @@
 
 ## O Problema — e o Impacto nos Resultados
 
-Toda ferramenta de IA — Claude, Cursor, Copilot, Codex — tem o mesmo ponto cego: **só vê 5–10 arquivos por vez.** Os outros 95% do código são invisíveis.
+Toda ferramenta de IA — Claude, Cursor, Codex, Aider — tem o mesmo ponto cego: **só vê 5–10 arquivos por vez.** Os outros 95% do código são invisíveis.
 
 Os modelos continuam crescendo — o **Claude Opus 4.7** acabou de ser lançado com ainda mais capacidade e custos por token ainda mais altos. Janelas de contexto maiores não resolvem o problema; elas o agravam. Você está pagando por 186.000 tokens por requisição — e a maior parte disso é código boilerplate duplicado.
 
@@ -57,7 +57,7 @@ Os modelos continuam crescendo — o **Claude Opus 4.7** acabou de ser lançado 
 
 | Métrica | Antes do Entroly | **Depois do Entroly** |
 |---|---|---|
-| Arquivos visíveis à IA | 5–10 | **Todo o repositório** |
+| Arquivos visíveis à IA | 5–10 | **Arquivos suportados selecionados em resolução variável** |
 | Tokens por requisição | ~186.000 | **9.300 – 55.000** |
 | Gasto mensal com IA (1K req/dia) | ~$16.800 | **$840 – $5.040** |
 | Precisão das respostas da IA | Incompleta, alucinações | **Ciente de dependências, correta** |
@@ -89,7 +89,7 @@ npm install entroly-wasm && npx entroly-wasm
 pip install entroly && entroly go
 ```
 
-Pronto. O Entroly detecta sua IDE, conecta ao Claude/Cursor/Copilot/Codex/MiniMax e começa a otimizar.
+Pronto. O Entroly detecta sua IDE, conecta ao Claude/Cursor/Codex/Aider e começa a otimizar.
 
 ---
 

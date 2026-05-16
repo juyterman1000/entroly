@@ -7,7 +7,7 @@
 <meta name="description" content="Set up an MCP server that gives AI coding tools full codebase context. Works with Cursor, Claude Code, VS Code, Windsurf, and Cline. One command install.">
 <meta name="keywords" content="MCP server, Model Context Protocol, MCP server Cursor, MCP server Claude Code, MCP context, MCP coding, MCP setup guide, MCP server setup, context MCP, code context MCP server, AI MCP server">
 <meta property="og:title" content="MCP Server for Full Codebase Context — Setup Guide">
-<meta property="og:description" content="Give any MCP-compatible AI tool access to your entire codebase. One command setup with Entroly.">
+<meta property="og:description" content="Give supported MCP-compatible AI tools access to your codebase context. One command setup with Entroly.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html">
@@ -54,7 +54,7 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <p>The <strong>Model Context Protocol (MCP)</strong> is the new standard for connecting AI coding tools to external context sources. Cursor, Claude Code, VS Code, Windsurf, and Cline all support MCP servers — but most MCP servers just expose basic file read/search operations.</p>
 
-<p><strong>Entroly's MCP server is different.</strong> It doesn't just serve files — it serves <strong>optimally selected, compressed, dependency-aware context</strong> that gives your AI tool visibility into your entire codebase.</p>
+<p><strong>Entroly's MCP server is different.</strong> It doesn't just serve files — it serves <strong>optimally selected, compressed, dependency-aware context</strong> that gives your AI tool broader visibility into your codebase.</p>
 
 <h2>What is MCP?</h2>
 
@@ -122,7 +122,7 @@ entroly serve --transport stdio</pre>
   <li>The AI tool calls <code>optimize_context</code> with the user's query and token budget</li>
   <li>Entroly's Rust engine scores and selects the optimal code fragments in &lt;10ms</li>
   <li>The selected context is delivered at variable resolution — full, signatures, or references</li>
-  <li>The AI tool receives context covering <strong>100% of the codebase</strong> using <strong>78% fewer tokens</strong></li>
+  <li>The AI tool receives context covering <strong>supported files at variable resolution</strong> using <strong>78% fewer tokens</strong></li>
   <li>After the AI responds, <code>record_outcome</code> feeds the learning loop</li>
 </ol>
 
@@ -162,7 +162,7 @@ entroly serve --quality speed       # fastest, lighter optimization</pre>
 
 <div class="cta-box">
   <h3>The smartest MCP server for AI coding.</h3>
-  <p>Full codebase context. 78% fewer tokens. Works with every MCP-compatible tool.</p>
+  <p>Broader codebase context. 78% fewer tokens. Works with supported MCP-compatible tools.</p>
   <pre>pip install entroly[full] && entroly init</pre>
   <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
 </div>
