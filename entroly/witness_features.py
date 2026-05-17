@@ -174,6 +174,35 @@ def extract_numbers(text: str) -> set[str]:
     return set(_NUMBER_RE.findall(text))
 
 
+def _tokens(text: str) -> list[str]:
+    """Ordered lowercased word tokens (no stopword removal — order matters
+    for contiguity)."""
+    return [w.lower() for w in _WORD_RE.findall(text)]
+
+
+def _longest_contiguous_run(ans: list[str], sent: list[str]) -> int:
+    """Length of the longest *contiguous token substring* shared by `ans`
+    and `sent` (any offset in either). Classic LCS-substring DP, O(|ans|·
+    |sent|) time / O(|sent|) space; inputs are short (a QA answer vs. one
+    sentence). This is the extractive-grounding primitive: a genuine
+    extractive answer is a contiguous span of its evidence sentence; a
+    recombination / wrong-option answer is not.
+    """
+    if not ans or not sent:
+        return 0
+    prev = [0] * (len(sent) + 1)
+    best = 0
+    for a in ans:
+        cur = [0] * (len(sent) + 1)
+        for j, s in enumerate(sent, 1):
+            if a == s:
+                cur[j] = prev[j - 1] + 1
+                if cur[j] > best:
+                    best = cur[j]
+        prev = cur
+    return best
+
+
 # ── Per-feature computations ─────────────────────────────────────────
 
 
@@ -503,6 +532,71 @@ def feat_qa_alignment(
             # Word-only answer with 0 overlap with the Q-relevant
             # sentence: active mismatch.
             return -(0.2 - raw_score) / 0.2
+
+    # ── Extractive-binding margin gate ────────────────────────────
+    # The block above only fires when answer words are nearly absent
+    # from the Q-evidence sentence (raw_score < 0.2). The dominant
+    # HaluEval-QA miss class is different: the answer REUSES the
+    # knowledge's vocabulary (raw_score ≈ 0.4–0.7) but recombines it
+    # into a false proposition, or picks the wrong option in an
+    # "A or B?" question. Word-presence can't see this; contiguity
+    # can. A genuine extractive answer is a *contiguous span* of its
+    # evidence sentence (empirically, safe HaluEval-QA answers have
+    # quote_support ≈ 0.97). A recombination/wrong-option answer is
+    # not — its longest contiguous run at the Q-locus is short, and
+    # any contiguous run it does have lives in a *distractor*
+    # sentence. Both promotions are conservative (need confident_locus
+    # and ≥2 answer tokens) so genuine extractive answers — which keep
+    # a high bind_q — are never demoted, protecting Retention.
+    a_tok = _tokens(answer)
+    if confident_locus and len(a_tok) >= 2:
+        denom = float(len(a_tok))
+        bind_q = _longest_contiguous_run(a_tok, _tokens(best_sentence)) / denom
+
+        # Empirical separator (HaluEval-QA, N=120 forensic): genuine
+        # extractive answers are near-verbatim spans of their evidence
+        # sentence — bind_q mean 0.94, 95% ≥ 0.34. Recombination /
+        # wrong-option hallucinations are not — bind_q mean ~0.27,
+        # ~70% < 0.34. So a *confident* question locus with no
+        # contiguous answer span is strong (≈95%-specific) evidence the
+        # answer is not extractively supported, regardless of how many
+        # of its tokens are scattered across the knowledge (which is
+        # what the additive bag-of-words features over-credit).
+        #
+        # Strength is floored at 0.6 so this gate can actually cross the
+        # QA suppress threshold: ρ_soft ≈ 0.85 for this class (bias
+        # dominates) and τ_warn ≈ 0.92, so a timid negative is absorbed.
+        # It rises to 1.0 as bind_q → 0 (no span at all). Conservative
+        # by construction: confident_locus + ≥2 answer tokens + the
+        # 0.34 cut that costs only ~5% of safe answers.
+        if bind_q < 0.34:
+            return -min(1.0, 0.6 + (0.34 - bind_q) * 1.2)
+
+        # ── Question-residual payload gate ────────────────────────
+        # The dominant residual miss (forensic: 67% of post-binding
+        # FNs) is the WRONG-SLOT factoid: the answer parrots the
+        # question's own frame and appends a wrong filler — e.g.
+        # Q "Which state ... CEO is Warren Bryant ... located?"
+        # A "...located in Utah." Full-answer overlap is inflated by
+        # the echoed question words, masking that the *asserted*
+        # filler is unsupported. Only the answer's question-RESIDUAL
+        # (tokens it adds beyond the question's words) carries truth
+        # value. If that residual payload is ENTIRELY absent from the
+        # question's evidence sentence, the answer fills the slot with
+        # something the locus does not support. `present == 0` is the
+        # lowest-false-positive condition (a genuine extractive answer
+        # has its payload in its evidence sentence); raw_score < 0.6
+        # keeps strongly-grounded (likely-correct/​paraphrase or
+        # multi-hop) answers out of scope to protect Retention.
+        payload = [
+            t for t in a_tok
+            if len(t) > 2 and t not in _STOPWORDS and t not in q_words
+        ]
+        if payload and raw_score < 0.6:
+            best_tok_set = set(_tokens(best_sentence))
+            present = sum(1 for t in set(payload) if t in best_tok_set)
+            if present == 0:
+                return -0.7
 
     return raw_score
 

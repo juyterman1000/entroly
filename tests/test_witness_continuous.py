@@ -145,6 +145,93 @@ class TestQAAlignment:
     def test_empty_answer_neutral(self):
         assert feat_qa_alignment("", self.K, self.Q) == 0.0
 
+    # ── Extractive-binding margin gate (recombination / wrong-option) ──
+    # The dominant HaluEval-QA miss class: the answer reuses the
+    # knowledge's own vocabulary (so every bag-of-words feature is
+    # mildly supportive) but recombines it into a false proposition or
+    # picks the wrong option. Empirically, genuine QA answers are
+    # near-verbatim contiguous spans of their evidence sentence; these
+    # are not. The gate must fire on them WITHOUT demoting genuine
+    # extractive answers (retention guard).
+    K2 = (
+        "Jonathan Stark won two Grand Slam doubles titles during his career. "
+        "Henri Leconte reached the 1988 French Open singles final."
+    )
+    Q2 = "Which player won more Grand Slam titles, Henri Leconte or Jonathan Stark?"
+
+    def test_wrong_option_recombination_negative(self):
+        # Wrong option; tokens all present in K but no contiguous answer
+        # span at the question's evidence sentence (the Stark sentence).
+        v = feat_qa_alignment(
+            "Henri Leconte won more Grand Slam titles.", self.K2, self.Q2
+        )
+        assert v < 0, f"wrong-option recombination should gate negative, got {v}"
+
+    def test_genuine_extractive_answer_stays_positive(self):
+        # The true answer IS a contiguous span of its evidence sentence —
+        # bind_q high — so the gate must NOT fire (retention preserved).
+        v = feat_qa_alignment(
+            "Jonathan Stark won two Grand Slam doubles titles.",
+            self.K2, self.Q2,
+        )
+        assert v > 0, f"genuine extractive answer must stay positive, got {v}"
+
+    def test_binding_gate_needs_confident_locus(self):
+        # No question keywords land a confident locus → gate must not
+        # fire spuriously; feature stays non-negative.
+        v = feat_qa_alignment(
+            "Henri Leconte won more Grand Slam titles.",
+            self.K2, "Tell me something interesting?",
+        )
+        assert v >= 0.0
+
+    # ── Question-residual payload gate (wrong-slot factoid) ──────────
+    # The answer parrots the question's frame and appends a filler. Only
+    # the answer's question-residual carries truth value. Single-hop
+    # guarantee: if the asserted filler is entirely absent from the
+    # question's evidence sentence, gate; if present there, don't.
+    K3 = (
+        "Warren Bryant was the CEO of Longs Drugs, a chain "
+        "headquartered in California."
+    )
+    Q3 = "In which state is the drugstore chain whose CEO was Warren Bryant?"
+
+    def test_wrong_slot_filler_negative(self):
+        # "Utah" is the asserted novelty and is absent from the evidence
+        # sentence — wrong-slot hallucination.
+        v = feat_qa_alignment(
+            "The drugstore chain whose CEO was Warren Bryant is in Utah.",
+            self.K3, self.Q3,
+        )
+        assert v < 0, f"wrong-slot filler should gate negative, got {v}"
+
+    def test_correct_extractive_answer_retained(self):
+        # The gate's actual guarantee: a correct answer phrased
+        # *extractively* (mirrors the evidence sentence — which is how
+        # HaluEval-QA safe answers empirically look: bind_q ≈ 0.94) is
+        # retained. This is why measured Retention stays flat at 0.738.
+        v = feat_qa_alignment(
+            "Warren Bryant was the CEO of a chain headquartered in California.",
+            self.K3, self.Q3,
+        )
+        assert v > 0, f"correct extractive answer must stay positive, got {v}"
+
+    @pytest.mark.xfail(
+        reason="KNOWN LIMITATION: a correct but heavily reordered / "
+        "non-extractive paraphrase can be false-gated (bind_q low). "
+        "Out-of-distribution for HaluEval-QA (safe answers are "
+        "extractive), so empirical Retention is unaffected (0.738 flat). "
+        "Documented in benchmarks/results/witness_v3_report.md. "
+        "Lifting this needs a paraphrase-robust (e.g. NLI) verifier.",
+        strict=True,
+    )
+    def test_reordered_paraphrase_limitation(self):
+        v = feat_qa_alignment(
+            "The drugstore chain whose CEO was Warren Bryant is in California.",
+            self.K3, self.Q3,
+        )
+        assert v > 0  # currently fails by design — encodes the gap
+
 
 # ═══════════════════════════════════════════════════════════════════
 # witness_risk_model

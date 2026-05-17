@@ -626,6 +626,58 @@ def _extract_text_from_sse(raw_bytes: bytes) -> str:
     return "".join(text_parts)
 
 
+def _extract_logprobs_from_sse(
+    raw_bytes: bytes,
+) -> tuple[list[float], list[str]]:
+    """Extract per-token logprobs + token text from SSE stream bytes.
+
+    Grounded in HALT (arXiv:2602.02888) and EPR research (2025-2026):
+    logprobs from a single generation pass contain direct uncertainty
+    information at zero extra API cost.
+
+    Handles OpenAI format: choices[0].logprobs.content[i].{logprob, token}
+
+    Returns:
+        (logprobs, token_texts) — aligned lists.
+        Empty lists if logprobs not present in the stream.
+    """
+    logprobs: list[float] = []
+    token_texts: list[str] = []
+    try:
+        text = raw_bytes.decode("utf-8", errors="replace")
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line.startswith("data: "):
+                continue
+            data_str = line[6:]
+            if data_str == "[DONE]":
+                break
+            try:
+                data = json.loads(data_str)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            # OpenAI streaming format:
+            # choices[0].logprobs.content[i].{token, logprob}
+            for choice in data.get("choices", []):
+                lp_obj = choice.get("logprobs")
+                if not lp_obj or not isinstance(lp_obj, dict):
+                    continue
+                content = lp_obj.get("content")
+                if not content or not isinstance(content, list):
+                    continue
+                for item in content:
+                    if isinstance(item, dict):
+                        tok = item.get("token", "")
+                        lp = item.get("logprob")
+                        if lp is not None and tok:
+                            logprobs.append(float(lp))
+                            token_texts.append(str(tok))
+    except Exception:
+        pass
+    return logprobs, token_texts
+
+
+
 def _looks_like_structured_text(text: str) -> bool:
     stripped = text.strip()
     if not stripped or stripped[0] not in "{[":
@@ -756,11 +808,40 @@ class PromptCompilerProxy:
             logger.debug("RAVS router init skipped: %s", e)
             self._ravs_router = None
 
+        # ECE: Epistemic Cascade Engine (RAVS V5) — mathematical
+        # uncertainty verification for routed responses. Uses Fisher
+        # curvature, adaptive Rényi divergence, and Lyapunov-stable
+        # thresholding to detect hallucination without an LLM judge.
+        self._ece = None
+        self._ece_enabled = (
+            os.environ.get("ENTROLY_ECE", "1") != "0"
+        )
+        if self._ece_enabled:
+            try:
+                from .ravs.ece import EpistemicCascadeEngine
+                self._ece = EpistemicCascadeEngine(
+                    curvature_threshold=float(
+                        os.environ.get("ENTROLY_ECE_CURVATURE_THRESHOLD", "0.4")
+                    ),
+                    enable_lyapunov=True,
+                )
+                logger.info("ECE v6 epistemic cascade engine initialized")
+            except Exception as e:
+                logger.debug("ECE init skipped: %s", e)
+                self._ece = None
+
         # WITNESS: proof-carrying factuality gateway. Disabled by default
         # unless ENTROLY_WITNESS_MODE or CLI --witness is set.
-        self._witness_mode = (getattr(self.config, "witness_mode", "off") or "off").lower()
-        if os.environ.get("ENTROLY_WITNESS", "0") == "1" and self._witness_mode == "off":
-            self._witness_mode = "audit"
+        # P1: WITNESS defaults to audit mode — zero visible change,
+        # but every response gets certificate headers + observability.
+        # Opt OUT with ENTROLY_WITNESS=0 or witness_mode=off.
+        self._witness_mode = (getattr(self.config, "witness_mode", "") or "").lower()
+        if not self._witness_mode or self._witness_mode == "off":
+            # Default: audit unless explicitly disabled
+            if os.environ.get("ENTROLY_WITNESS", "1") == "0":
+                self._witness_mode = "off"
+            else:
+                self._witness_mode = "audit"
         self._witness_enabled = self._witness_mode != "off"
         self._witness_use_nli = bool(getattr(self.config, "witness_use_nli", False))
         self._witness_profile = (getattr(self.config, "witness_profile", "auto") or "auto").lower()
@@ -789,6 +870,62 @@ class PromptCompilerProxy:
         self._witness_certificates: collections.OrderedDict[str, dict[str, Any]] = collections.OrderedDict()
         self._witness_store_max = int(os.environ.get("ENTROLY_WITNESS_STORE_MAX", "500"))
         self._witness_feedback: dict[str, int] = collections.Counter()
+
+        # P2: Conformal cascade observability counters
+        # Track post-response WITNESS→ECE→escalation.py decisions
+        self._cascade_total = 0
+        self._cascade_escalations = 0
+        self._cascade_last: dict[str, Any] | None = None
+
+        # ── Active Escalation Engine ──────────────────────────────────
+        # When ENTROLY_ESCALATION_MODE=active, the proxy will re-issue
+        # flagged requests to a stronger model when the 4-signal fusion
+        # risk exceeds the escalation threshold. This adds latency
+        # (~200-500ms) for escalated requests but catches hallucinations
+        # that the original model would miss.
+        #
+        # Modes:
+        #   observe (default) — log escalation decisions, never re-route
+        #   active            — actually re-issue to a stronger model
+        #   shadow            — re-issue in background, compare (no block)
+        #
+        # Safety: max_depth=1 prevents recursive escalation chains.
+        # The escalated model's response is NEVER re-escalated.
+        self._escalation_mode = os.environ.get(
+            "ENTROLY_ESCALATION_MODE", "observe"
+        ).lower().strip()
+        self._escalation_max_depth = 1  # never escalate the escalation
+        self._escalation_total = 0
+        self._escalation_actual = 0
+        self._escalation_saved_tokens = 0
+        self._escalation_last: dict[str, Any] | None = None
+
+        # Model escalation ladder: current_model → stronger_model
+        # Only populated models trigger escalation. Unknown models
+        # stay as-is (fail-open). Each mapping includes approximate
+        # cost multiplier for ROI tracking.
+        self._escalation_ladder: dict[str, tuple[str, float]] = {
+            # OpenAI
+            "gpt-4o-mini": ("gpt-4o", 6.0),
+            "gpt-4o-mini-2024-07-18": ("gpt-4o", 6.0),
+            "gpt-3.5-turbo": ("gpt-4o-mini", 3.0),
+            "gpt-3.5-turbo-0125": ("gpt-4o-mini", 3.0),
+            # Anthropic
+            "claude-3-5-haiku-20241022": ("claude-sonnet-4-20250514", 5.0),
+            "claude-3-5-haiku-latest": ("claude-sonnet-4-20250514", 5.0),
+            "claude-sonnet-4-20250514": ("claude-opus-4-20250514", 5.0),
+            # Gemini
+            "gemini-2.0-flash": ("gemini-2.5-pro-preview-05-06", 8.0),
+            "gemini-1.5-flash": ("gemini-2.5-pro-preview-05-06", 10.0),
+            "gemini-2.0-flash-lite": ("gemini-2.0-flash", 3.0),
+        }
+
+        if self._escalation_mode != "observe":
+            logger.info(
+                "Escalation mode: %s (ladder: %d models)",
+                self._escalation_mode,
+                len(self._escalation_ladder),
+            )
 
     async def startup(self) -> None:
         self._client = httpx.AsyncClient(
@@ -1266,14 +1403,31 @@ class PromptCompilerProxy:
                 if _current_model:
                     decision = self._ravs_router.route(_current_model, user_message)
                     if not decision.use_original and decision.recommended_model:
-                        from .ravs.router import swap_model_in_body
-                        _ravs_original_model = _current_model
-                        body = swap_model_in_body(body, decision.recommended_model)
-                        _ravs_swapped = True
-                        logger.info(
-                            "RAVS: %s → %s (%s)",
-                            _current_model, decision.recommended_model, decision.reason,
-                        )
+                        # ── ECE Pre-Screen (V5): Tier 0 ambiguity filter only ──
+                        # Tier 0 is the ONLY pre-routing check that works without
+                        # response text (regex-based open-ended query detection).
+                        # Full ECE (Fisher curvature on response text) runs
+                        # POST-response alongside WITNESS — see P0 in
+                        # _run_post_response_verification().
+                        _ece_blocked = False
+                        if self._ece and self._ece._is_open_ended(user_message):
+                            # Open-ended queries: allow swap (aleatoric, not epistemic)
+                            pass  # Allow the swap — open-ended = cheap model is fine
+                        elif self._ece:
+                            # For factual queries, allow RAVS swap but flag for
+                            # post-response ECE verification. The real curvature
+                            # check happens after we get the actual response.
+                            pass
+
+                        if not _ece_blocked:
+                            from .ravs.router import swap_model_in_body
+                            _ravs_original_model = _current_model
+                            body = swap_model_in_body(body, decision.recommended_model)
+                            _ravs_swapped = True
+                            logger.info(
+                                "RAVS: %s -> %s (%s)",
+                                _current_model, decision.recommended_model, decision.reason,
+                            )
 
                 # Store for next-request feedback attribution
                 if _ravs_swapped:
@@ -1673,6 +1827,109 @@ class PromptCompilerProxy:
         self._record_witness_result(result, changed=rewrite.changed and not structured_output)
         witness_id = self._store_witness_certificate(result, rewrite)
 
+        # P0+P2: Post-response ECE + conformal cascade (buffered path)
+        self._run_post_response_verification(
+            response_text, witness_context, result,
+        )
+
+        # ── Active Escalation: re-issue to stronger model if flagged ──
+        # Only in buffered path (annotate/strict) — streaming can't be
+        # intercepted. This is the key cost-saving loop:
+        #   cheap model → hallucination detected → re-issue to expensive
+        #   model → serve the better response → learn from the event.
+        #
+        # The alternative (always use the expensive model) costs ~5-10x
+        # more. Active escalation only pays the premium on the ~5-15%
+        # of requests that trigger hallucination risk.
+        escalation_attempted = False
+        if (
+            self._escalation_mode == "active"
+            and self._cascade_last
+            and self._cascade_last.get("would_escalate")
+            and not body.get("_entroly_escalation_depth", 0)
+        ):
+            original_model = str(body.get("model", ""))
+            ladder_entry = self._escalation_ladder.get(original_model)
+            if ladder_entry:
+                escalated_model, cost_mult = ladder_entry
+                try:
+                    # Build escalated request: same body, stronger model
+                    escalated_body = dict(body)
+                    escalated_body["model"] = escalated_model
+                    escalated_body["_entroly_escalation_depth"] = 1
+
+                    logger.info(
+                        "ESCALATING: %s → %s (fused_risk=%.3f, "
+                        "entity_gap=%.3f, cost_mult=%.1fx)",
+                        original_model,
+                        escalated_model,
+                        self._cascade_last.get("fused_risk", 0),
+                        self._cascade_last.get("entity_gap", 0),
+                        cost_mult,
+                    )
+
+                    # Re-issue to the stronger model
+                    esc_client = await self._ensure_client()
+                    esc_chunks: list[bytes] = []
+                    max_bytes = int(os.environ.get(
+                        "ENTROLY_WITNESS_STREAM_MAX_BYTES",
+                        str(2 * 1024 * 1024),
+                    ))
+                    esc_total = 0
+                    async with esc_client.stream(
+                        "POST", url, json=escalated_body, headers=headers
+                    ) as esc_response:
+                        if esc_response.status_code < 400:
+                            async for chunk in esc_response.aiter_bytes():
+                                esc_total += len(chunk)
+                                if esc_total > max_bytes:
+                                    break
+                                esc_chunks.append(chunk)
+
+                    if esc_chunks:
+                        esc_raw = b"".join(esc_chunks)
+                        esc_text = _extract_text_from_sse(esc_raw)
+                        if esc_text:
+                            # Success: replace response with escalated version
+                            raw = esc_raw
+                            response_text = esc_text
+                            rewrite = self._witness_analyzer.analyze_and_rewrite(
+                                witness_context, esc_text,
+                                mode=self._witness_mode,
+                            )[1]  # just the rewrite
+                            escalation_attempted = True
+
+                            with self._stats_lock:
+                                self._escalation_total += 1
+                                self._escalation_actual += 1
+                                self._escalation_last = {
+                                    "from": original_model,
+                                    "to": escalated_model,
+                                    "fused_risk": self._cascade_last.get(
+                                        "fused_risk", 0
+                                    ),
+                                    "cost_multiplier": cost_mult,
+                                    "timestamp": time.time(),
+                                }
+
+                            logger.info(
+                                "Escalation successful: %s → %s "
+                                "(%d bytes)",
+                                original_model,
+                                escalated_model,
+                                len(esc_raw),
+                            )
+                except Exception as e:
+                    # Fail-open: serve original response
+                    logger.warning(
+                        "Escalation failed (%s → %s): %s",
+                        original_model,
+                        ladder_entry[0] if ladder_entry else "?",
+                        str(e)[:200],
+                    )
+                    with self._stats_lock:
+                        self._escalation_total += 1
+
         if self._enable_passive_feedback and selected_frag_ids:
             try:
                 reward = self._feedback_tracker.assess_response(rewrite.output)
@@ -1695,6 +1952,14 @@ class PromptCompilerProxy:
             "X-Entroly-Witness-Suppressed": str(getattr(rewrite, "suppressed_count", 0)),
             "X-Entroly-Witness-Warned": str(getattr(rewrite, "warned_count", 0)),
         }
+        # Escalation telemetry headers
+        if escalation_attempted and self._escalation_last:
+            resp_headers["X-Entroly-Escalated"] = "true"
+            resp_headers["X-Entroly-Escalated-From"] = self._escalation_last.get("from", "")
+            resp_headers["X-Entroly-Escalated-To"] = self._escalation_last.get("to", "")
+            resp_headers["X-Entroly-Escalated-Risk"] = str(
+                round(self._escalation_last.get("fused_risk", 0), 4)
+            )
         if structured_output:
             resp_headers["X-Entroly-Witness-Rewrite-Skipped"] = "structured-output"
             return StreamingResponse(
@@ -1889,6 +2154,10 @@ class PromptCompilerProxy:
                     if response_text:
                         result = self._witness_analyzer.analyze(witness_context, response_text)
                         self._record_witness_result(result, changed=False)
+                        # P0+P2: Post-response ECE + conformal cascade
+                        self._run_post_response_verification(
+                            response_text, witness_context, result,
+                        )
                 except Exception:
                     logger.debug("WITNESS stream audit failed", exc_info=True)
 
@@ -2009,6 +2278,10 @@ class PromptCompilerProxy:
                 changed = self._replace_response_text(content, rewrite.output)
             self._record_witness_result(result, changed=changed)
             witness_id = self._store_witness_certificate(result, rewrite)
+            # P0+P2: Post-response ECE + conformal cascade (non-streaming)
+            self._run_post_response_verification(
+                response_text, witness_context, result,
+            )
             if self._witness_embed:
                 content["entroly_witness"] = result.as_dict()
                 content["entroly_witness"]["policy"] = rewrite.as_dict()
@@ -2030,6 +2303,145 @@ class PromptCompilerProxy:
         except Exception as e:
             logger.debug("WITNESS gateway failed: %s", e, exc_info=True)
             return content, {"X-Entroly-Witness": "error"}
+
+    # ── P0 + P2: Post-Response Verification ─────────────────────────
+    #
+    # This is the architectural fix: ECE evaluates REAL response text
+    # (not empty strings) and the conformal cascade ties WITNESS risk
+    # to escalation.py's rule (★). Runs after every response,
+    # alongside WITNESS. Zero extra latency for the user (runs after
+    # stream completion / in the buffered path).
+
+    def _run_post_response_verification(
+        self,
+        response_text: str,
+        witness_context: str,
+        witness_result: Any,
+    ) -> None:
+        """P0+P2: Post-response ECE + conformal cascade verification.
+
+        Called after WITNESS has already analyzed the response. This:
+        1. Runs ECE Fisher curvature on the ACTUAL response text (P0)
+        2. Feeds WITNESS risk into the conformal cascade (P2)
+        3. Records the cascade decision for observability
+
+        Never blocks the response — this is post-response telemetry.
+        Fail-open: any error here is logged and swallowed.
+        """
+        # ── P0: ECE on real response text ──
+        ece_signal = None
+        if self._ece and response_text:
+            try:
+                from .ravs.router import classify_risk as _cr
+                risk = _cr(witness_context[:500] if witness_context else "").value
+                ece_signal = self._ece.evaluate_uncertainty(
+                    query=witness_context[:500] if witness_context else "",
+                    response_text=response_text,
+                    risk_level=risk,
+                )
+                logger.debug(
+                    "ECE post-response: tier=%d kappa=%.3f U_e=%.3f (%s)",
+                    ece_signal.tier_used,
+                    ece_signal.fisher_curvature,
+                    ece_signal.epistemic_uncertainty,
+                    ece_signal.reason,
+                )
+            except Exception:
+                pass  # ECE failure = no telemetry, never blocks
+
+        # ── P2: 4-Signal Fusion Cascade Decision ──
+        # Previously used single-signal WITNESS risk (AUROC 0.80).
+        # Now applies benchmark-optimized 4-signal fusion (AUROC 0.90):
+        #   fused_risk = 0.05*witness + 0.05*ece + 0.80*entity_gap + 0.10*spectral
+        # Weights from grid search on HaluEval-QA calibration (n=4000),
+        # validated on test split (n=16000): AUROC 0.9003.
+        if witness_result is not None:
+            try:
+                witness_risk = 1.0 - float(witness_result.summary_score)
+                from .conformal_cascade import ACCEPT, FLAG, ESCALATE
+                from .escalation import should_escalate as _se
+
+                # ── Signal 2: ECE curvature (already computed above) ──
+                ece_curvature = 0.0
+                if ece_signal:
+                    ece_curvature = min(1.0, ece_signal.fisher_curvature * 2.5)
+
+                # ── Signal 3: Entity coverage gap ──
+                entity_gap = 0.0
+                try:
+                    _ent_pats = [
+                        re.compile(r'\b\d+\.?\d*\b'),
+                        re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b'),
+                    ]
+                    ans_ents = set()
+                    ctx_lower = (witness_context or "").lower()
+                    for _pat in _ent_pats:
+                        for _m in _pat.finditer(response_text):
+                            ans_ents.add(_m.group().lower())
+                    if ans_ents:
+                        missing = sum(1 for e in ans_ents if e not in ctx_lower)
+                        entity_gap = missing / len(ans_ents)
+                except Exception:
+                    pass
+
+                # ── Signal 4: Spectral consistency ──
+                spectral_risk = 0.0
+                try:
+                    from .ravs.spectral import compute_spectral_consistency
+                    spec = compute_spectral_consistency(
+                        witness_context or "", response_text
+                    )
+                    spectral_risk = 1.0 - spec.score
+                except Exception:
+                    pass
+
+                # ── 4-signal fusion (benchmark-optimized weights) ──
+                # Weights: W=0.05, E=0.05, G=0.80, S=0.10
+                # Source: benchmarks/results/fusion4_optimized.json
+                fused_risk = min(1.0, max(0.0, (
+                    0.05 * witness_risk
+                    + 0.05 * ece_curvature
+                    + 0.80 * entity_gap
+                    + 0.10 * spectral_risk
+                )))
+
+                # Escalation rule (★): escalate iff fused_risk > r_floor + c/q
+                _c_exp = 0.05   # 5% of q as escalation cost ratio
+                _q = 1.0        # normalized hallucination cost
+                _r_floor = 0.0  # no irreducible error assumed
+                would_escalate = _se(fused_risk, _c_exp, _q, _r_floor)
+
+                cascade_decision = {
+                    "witness_risk": round(witness_risk, 4),
+                    "ece_curvature": round(ece_curvature, 4),
+                    "entity_gap": round(entity_gap, 4),
+                    "spectral_risk": round(spectral_risk, 4),
+                    "fused_risk": round(fused_risk, 4),
+                    "would_escalate": would_escalate,
+                    "rule_threshold": round(_r_floor + _c_exp / _q, 4),
+                    "ece_epistemic_u": round(
+                        ece_signal.epistemic_uncertainty if ece_signal else 0.0, 4
+                    ),
+                    "ece_tier": ece_signal.tier_used if ece_signal else -1,
+                    "fusion_weights": "W=0.05,E=0.05,G=0.80,S=0.10",
+                }
+
+                with self._stats_lock:
+                    self._cascade_last = cascade_decision
+                    self._cascade_total += 1
+                    if would_escalate:
+                        self._cascade_escalations += 1
+
+                logger.debug(
+                    "Cascade: fused=%.3f (W=%.3f E=%.3f G=%.3f S=%.3f) "
+                    "threshold=%.3f -> %s",
+                    fused_risk, witness_risk, ece_curvature,
+                    entity_gap, spectral_risk,
+                    _r_floor + _c_exp / _q,
+                    "ESCALATE" if would_escalate else "ACCEPT",
+                )
+            except Exception:
+                pass  # Cascade failure = no telemetry, never blocks
 
     def _store_witness_certificate(self, result: Any, rewrite: Any) -> str:
         raw = f"{time.time_ns()}:{result.summary_score}:{len(result.certificates)}:{rewrite.mode}"
@@ -2061,6 +2473,25 @@ class PromptCompilerProxy:
                 "unknown": result.n_unknown,
                 "latency_ms": round(result.latency_ms, 1),
             }
+        # Real hallucination value: when WITNESS actually rewrote the
+        # response, the unsupported/contradicted claims it removed are
+        # hallucinations that never reached the user. Record to the
+        # shared sink so the dashboard's "Hallucinations Blocked" tile
+        # shows REAL data across pip/proxy/MCP. Fail-open: telemetry must
+        # never alter or break the response path.
+        if changed:
+            try:
+                blocked = int(result.n_unsupported) + int(
+                    result.n_contradicted)
+                if blocked > 0:
+                    from entroly.value_tracker import get_tracker
+                    get_tracker().record_hallucination_blocked(
+                        blocked, source="witness:proxy",
+                        detail=(f"WITNESS blocked {blocked} unsupported/"
+                                f"contradicted claim(s)"),
+                    )
+            except Exception:
+                pass
 
     async def _forward_response(
         self, url: str, headers: dict[str, str], body: dict[str, Any],
@@ -2856,6 +3287,30 @@ async def _proxy_stats(request: Request) -> JSONResponse:
             }
         # Passive RL feedback stats
         stats["implicit_feedback"] = proxy._feedback_tracker.stats()
+        # ECE: Epistemic Cascade Engine stats (V5)
+        if proxy._ece:
+            try:
+                stats["ece"] = proxy._ece.stats()
+            except Exception:
+                stats["ece"] = {"error": "stats_unavailable"}
+        # P2: Conformal cascade stats (WITNESS → ECE → escalation rule ★)
+        if proxy._cascade_total > 0:
+            stats["conformal_cascade"] = {
+                "total": proxy._cascade_total,
+                "escalations": proxy._cascade_escalations,
+                "escalation_rate": round(
+                    proxy._cascade_escalations / max(proxy._cascade_total, 1), 4
+                ),
+                "last": proxy._cascade_last,
+            }
+        # Active escalation stats
+        stats["active_escalation"] = {
+            "mode": proxy._escalation_mode,
+            "total_decisions": proxy._escalation_total,
+            "actual_escalations": proxy._escalation_actual,
+            "last": proxy._escalation_last,
+            "ladder_models": len(proxy._escalation_ladder),
+        }
     return JSONResponse(stats)
 
 

@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 static WORD_RE: OnceLock<Regex> = OnceLock::new();
+static GATE_WORD_RE: OnceLock<Regex> = OnceLock::new();
 static NUMBER_RE: OnceLock<Regex> = OnceLock::new();
 static ENTITY_RE: OnceLock<Regex> = OnceLock::new();
 static CAPS_RE: OnceLock<Regex> = OnceLock::new();
@@ -18,6 +19,19 @@ static QUOTED_RE: OnceLock<Regex> = OnceLock::new();
 
 fn word_re() -> &'static Regex {
     WORD_RE.get_or_init(|| Regex::new(r"\b[A-Za-z][A-Za-z0-9_-]{3,}\b").expect("valid word regex"))
+}
+
+/// Tokenizer for the QA binding/residual gates ONLY. Mirrors Python's
+/// `_WORD_RE = [A-Za-z][A-Za-z0-9_'-]+` *exactly* (≥2 chars, apostrophe
+/// kept) so that `bind_q` and the residual-payload set are computed over
+/// the same token alphabet in both runtimes. Without this the gates
+/// would use the module's ≥4-char `word_re()`, mis-calibrating the
+/// data-derived 0.34 threshold (which was fit on the Python tokenizer)
+/// and breaking Python↔Rust parity. The surrounding feature code keeps
+/// using `word_re()` — only the gate is unified here.
+fn gate_word_re() -> &'static Regex {
+    GATE_WORD_RE
+        .get_or_init(|| Regex::new(r"[A-Za-z][A-Za-z0-9_'-]+").expect("valid gate word regex"))
 }
 
 fn number_re() -> &'static Regex {
@@ -983,6 +997,45 @@ fn content_words(text: &str) -> HashSet<String> {
         .collect()
 }
 
+/// Ordered, lowercased word tokens (no stopword filter — order matters
+/// for contiguity). Exact analogue of the Python `_tokens` helper: uses
+/// `gate_word_re()` (≥2 chars, apostrophe) so the binding/residual gate
+/// is computed over the *same* token alphabet as Python, making the
+/// data-calibrated 0.34 threshold valid in both runtimes.
+fn word_tokens(text: &str) -> Vec<String> {
+    gate_word_re()
+        .find_iter(text)
+        .map(|m| m.as_str().to_lowercase())
+        .collect()
+}
+
+/// Longest contiguous token substring shared by `ans` and `sent` (any
+/// offset). Token-level LCS-substring DP, O(|ans|·|sent|); inputs are a
+/// short QA answer vs. one sentence. Parity with Python
+/// `_longest_contiguous_run`: a genuine extractive answer is a
+/// contiguous span of its evidence sentence; a recombination /
+/// wrong-option answer is not.
+fn longest_contiguous_run(ans: &[String], sent: &[String]) -> usize {
+    if ans.is_empty() || sent.is_empty() {
+        return 0;
+    }
+    let mut prev = vec![0usize; sent.len() + 1];
+    let mut best = 0usize;
+    for a in ans {
+        let mut cur = vec![0usize; sent.len() + 1];
+        for (j, s) in sent.iter().enumerate() {
+            if a == s {
+                cur[j + 1] = prev[j] + 1;
+                if cur[j + 1] > best {
+                    best = cur[j + 1];
+                }
+            }
+        }
+        prev = cur;
+    }
+    best
+}
+
 fn extract_numbers(text: &str) -> Vec<String> {
     let lower = text.to_lowercase();
     let mut nums: Vec<String> = number_re()
@@ -1275,6 +1328,54 @@ fn continuous_qa_alignment(answer: &str, knowledge: &str, question: &str) -> f64
             return -((0.2 - raw) / 0.2).clamp(0.0, 1.0);
         }
     }
+
+    // ── Extractive-binding + question-residual gates ──────────────
+    // Parity with the Python feat_qa_alignment refinement that cut
+    // HaluEval-QA exposure 0.639 → 0.340 at flat retention. The block
+    // above only fires when answer words are nearly absent from the
+    // Q-evidence sentence (raw < 0.2). The dominant miss class is
+    // different: the answer REUSES the knowledge's vocabulary (raw ≈
+    // 0.4–0.7) but recombines it into a false proposition, picks the
+    // wrong option, or parrots the question frame with a wrong filler.
+    // Word-presence can't see this; contiguity can. Conservative:
+    // needs confident_locus + ≥2 answer tokens, so genuine extractive
+    // answers (high bind_q) are never demoted.
+    if confident_locus {
+        let a_tok = word_tokens(answer);
+        if a_tok.len() >= 2 {
+            let best_tok = word_tokens(&best_sentence);
+            let denom = a_tok.len() as f64;
+            let bind_q = longest_contiguous_run(&a_tok, &best_tok) as f64 / denom;
+            if bind_q < 0.34 {
+                return -(0.6 + (0.34 - bind_q) * 1.2).min(1.0);
+            }
+            // Question-residual payload: only tokens the answer adds
+            // beyond the question's own words carry truth value. If
+            // that payload is ENTIRELY absent from the evidence
+            // sentence (and the answer is not strongly grounded
+            // overall), it is a wrong-slot fill.
+            if raw < 0.6 {
+                let stop = stopwords();
+                let payload: Vec<String> = a_tok
+                    .iter()
+                    .filter(|t| {
+                        t.len() > 2
+                            && !stop.contains(t.as_str())
+                            && !q_words.contains(t.as_str())
+                    })
+                    .cloned()
+                    .collect();
+                if !payload.is_empty() {
+                    let best_set: HashSet<String> = best_tok.iter().cloned().collect();
+                    let present = payload.iter().filter(|t| best_set.contains(*t)).count();
+                    if present == 0 {
+                        return -0.7;
+                    }
+                }
+            }
+        }
+    }
+
     raw.clamp(0.0, 1.0)
 }
 

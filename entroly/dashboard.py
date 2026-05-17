@@ -100,18 +100,76 @@ def _get_full_snapshot() -> dict:
         "errors": [],
     }
 
-    # Persistent value tracker (independent of engine — always available)
+    # Persistent value tracker (independent of engine — always available).
+    # reload_if_changed() is THE cross-process fix: a standalone
+    # `entroly dashboard` is a different process from the proxy/MCP/npm
+    # writer, so without this its in-memory copy froze at startup and the
+    # page looked permanently blank/stale. One cheap stat() per poll.
     try:
         from entroly.value_tracker import get_tracker
         tracker = get_tracker()
+        tracker.reload_if_changed()
         snap["value_trends"] = tracker.get_trends()
         snap["value_confidence"] = tracker.get_confidence()
+        # Persistent, cross-process activity feed. Merge any same-process
+        # proxy in-memory rows (richer) ahead of the disk feed, dedup by
+        # (ts, summary) so we never double-count an event.
+        disk_activity = snap["value_trends"].get("activity", []) \
+            if isinstance(snap.get("value_trends"), dict) else []
+        with _lock:
+            mem = list(reversed(_request_log))
+        seen = set()
+        merged = []
+        for row in (mem + disk_activity):
+            key = (round(float(row.get("ts", 0)), 1),
+                   str(row.get("summary", row.get("model", ""))))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(row)
+        snap["activity"] = _safe_json(merged[:50])
+        snap["data_source"] = "disk+memory (live)"
+        # Map the cross-process feed into the shape the existing
+        # renderRequests()/hero sparkline already consume, so EVERY
+        # install mode (npm/SDK/MCP/proxy) lights up the live panel
+        # with zero JS changes. The engine path may override this with
+        # richer same-process proxy rows below (only if it has any).
+        snap["recent_requests"] = _safe_json([
+            {
+                "time": row.get("ts", row.get("time", 0)),
+                "model": row.get("model", "") or row.get("kind", ""),
+                "tokens_in": row.get("tokens_in", 0),
+                "tokens_saved": row.get("tokens_saved", 0),
+                "dedup_hits": row.get("duplicates", row.get("dedup_hits", 0)),
+                "sast_findings": row.get("sast_findings", 0),
+                "query": row.get("summary", row.get("query", "")),
+            }
+            for row in merged[:50]
+        ])
     except Exception as e:
         snap["value_trends"] = None
         snap["value_confidence"] = None
+        snap["activity"] = []
         _record_section_error(snap, "value_tracker", e)
 
     if _engine is None:
+        # No Rust engine (npm/SDK-only users, or dashboard launched
+        # standalone). This is NOT an error and must NOT render blank:
+        # the value tiles + activity above are the whole point for these
+        # users. Signal a friendly zero/degraded state instead.
+        lt = (snap.get("value_confidence") or {}).get("lifetime", {}) \
+            if isinstance(snap.get("value_confidence"), dict) else {}
+        snap["engine_state"] = {
+            "available": False,
+            "reason": "native engine not running in this process",
+            "has_value_data": bool(
+                lt.get("tokens_saved") or lt.get("hallucinations_blocked")
+            ),
+            "hint": ("Value metrics below are live from the shared "
+                     "telemetry file written by your MCP server / proxy / "
+                     "npm runtime. Engine-only panels (health, SAST, "
+                     "knapsack) need the in-process Rust engine."),
+        }
         return snap
 
     try:
@@ -263,9 +321,12 @@ def _get_full_snapshot() -> dict:
         snap["causal"] = None
         _record_section_error(snap, "resonance/consolidation/causal", e)
 
-    # 9. Recent proxy requests
+    # 9. Recent proxy requests — only override the activity-derived feed
+    # when this process actually has richer same-process proxy rows;
+    # otherwise keep the cross-process feed set above (don't blank it).
     with _lock:
-        snap["recent_requests"] = list(_request_log)
+        if _request_log:
+            snap["recent_requests"] = list(_request_log)
 
     # 9b. WITNESS sidecar certificates from the live proxy, when available.
     snap["witness"] = _fetch_witness_snapshot()
@@ -668,12 +729,13 @@ function renderHero(d){
   // Track sparkline data
   if(reqs.length>0){reqs.forEach(r=>{if(heroSparkData.length>=40)heroSparkData.shift();heroSparkData.push(r.tokens_saved||0);});}
 
-  // Empty state — no fragments indexed yet
-  if(frags===0&&!hasRequests){
+  // Empty state — nothing indexed AND no value from any path yet.
+  const anyVal=realTokens>0||realReqs>0||(lt.hallucinations_blocked||0)>0||(lt.routing_saved_usd||0)>0||(d.activity||[]).length>0;
+  if(frags===0&&!hasRequests&&!anyVal){
     document.getElementById('hero').innerHTML=`<div class="empty-hero">
       <div class="empty-icon">🚀</div>
       <div class="empty-title">Ready to optimize</div>
-      <div class="empty-desc">Point your AI tool to <code>http://localhost:9377/v1</code> and Entroly will start optimizing every LLM call automatically.</div>
+      <div class="empty-desc">Entroly will track value automatically through any path you use — the <b>proxy</b> (<code>http://localhost:9377/v1</code>), the <b>MCP server</b> (pip or npm — call <code>optimize_context</code>), or the <b>SDK</b> (<code>from entroly import compress</code>).</div>
     </div>`;return;
   }
 
@@ -925,7 +987,7 @@ function renderRequests(d){
   if(reqs.length>0){reqs.forEach(r=>{if(sparkData.length>=30)sparkData.shift();sparkData.push(r.tokens_saved||0);});
     const mx=Math.max(...sparkData,1);
     document.getElementById('sparkarea').innerHTML='<div class="sparkline">'+sparkData.map(v=>'<div class="bar" style="height:'+Math.max(2,v/mx*40)+'px;"></div>').join('')+'</div>';}
-  if(reqs.length===0){tbody.innerHTML='<tr><td colspan="7" class="empty">No requests yet — route LLM calls through proxy on :9377</td></tr>';return;}
+  if(reqs.length===0){tbody.innerHTML='<tr><td colspan="7" class="empty">No activity yet — flows in live from proxy, MCP (pip/npm), or the SDK on first use</td></tr>';return;}
   tbody.innerHTML=reqs.slice().reverse().slice(0,15).map(r=>`<tr>
     <td>${ago(r.time||0)}</td><td>${r.model||'—'}</td><td class="mono">${fmt(r.tokens_in||0)}</td>
     <td><span class="tag t-green">−${fmt(r.tokens_saved||0)}</span></td>
@@ -938,7 +1000,27 @@ let trendsView='daily';
 function renderValueTrends(d){
   const vt=d.value_trends,vc=d.value_confidence,el=document.getElementById('valueTrends');
   if(!el)return;
-  if(!vt||!vc||(!vt.lifetime.tokens_saved&&!vc.session.tokens_saved)){el.innerHTML='';return;}
+  const _lt0=(vt&&vt.lifetime)||{};
+  const anyValue=vt&&vc&&(vt.lifetime.tokens_saved||vc.session.tokens_saved||
+    _lt0.hallucinations_blocked||_lt0.routing_saved_usd);
+  if(!anyValue){
+    // Friendly zero-state instead of a blank panel. Works for every
+    // install mode — proxy, MCP (pip), SDK, and npm.
+    el.innerHTML='<div class="trends-panel"><div class="trends-header">'+
+      '<h2>Lifetime Value</h2><span class="badge" style="background:'+
+      'rgba(148,163,184,.12);color:var(--dim)">waiting for first request</span>'+
+      '</div><div class="empty" style="padding:22px 16px;line-height:1.6">'+
+      'No value recorded yet. Entroly starts counting tokens saved, '+
+      'hallucinations blocked, and model-routing savings the moment your '+
+      'first request flows through <b>any</b> path:<br>'+
+      '&nbsp;&nbsp;• <b>Proxy</b>: point your AI tool at '+
+      '<code>http://localhost:9377/v1</code><br>'+
+      '&nbsp;&nbsp;• <b>MCP</b> (pip/npm): call the <code>optimize_context</code> tool<br>'+
+      '&nbsp;&nbsp;• <b>SDK</b>: <code>from entroly import compress</code><br>'+
+      'This panel is live from the shared telemetry file and refreshes '+
+      'automatically.</div></div>';
+    return;
+  }
   const lt=vt.lifetime||{},sess=vc.session||{},today=vc.today||{};
   const status=vc.status||'idle';
   const statusColor=status==='active'?'var(--emerald)':'var(--dim)';
@@ -962,6 +1044,8 @@ function renderValueTrends(d){
     '<div class="trends-kpi"><div class="trends-kpi-label">Today</div><div class="trends-kpi-val hv-blue">$'+(today.cost_saved_usd||0).toFixed(4)+'</div><div class="trends-kpi-sub">'+fmt(today.tokens_saved||0)+' tokens · '+(today.requests||0)+' reqs</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">This Session</div><div class="trends-kpi-val hv-amber">'+fmt(sess.tokens_saved||0)+'</div><div class="trends-kpi-sub">$'+(sess.cost_saved_usd||0).toFixed(4)+' · '+(sess.requests||0)+' reqs</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Daily Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.requests_optimized||0)+' reqs optimized · '+(lt.duplicates_caught||0)+' dedup</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Hallucinations Blocked</div><div class="trends-kpi-val hv-rose">'+fmt(lt.hallucinations_blocked||0)+'</div><div class="trends-kpi-sub">unsupported claims stopped by WITNESS</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Model-Routing Saved</div><div class="trends-kpi-val hv-violet">$'+(lt.routing_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+(lt.routing_decisions||0)+' RAVS routing decisions</div></div>'+
     '</div>'+
     '<div class="trends-tabs">'+
     '<div class="trends-tab'+(trendsView==='daily'?' active':'')+'" onclick="trendsView=\'daily\'">Daily</div>'+

@@ -84,3 +84,11 @@ entroly-wasm/.entroly/
 
 # Rust build artifacts (lint output, never commit)
 **/clippy_errors.txt
+
+# Secrets — NEVER commit (live API keys live here)
+.env
+.env.*
+!.env.example
+
+# Stray research artifact (large external HTML dump, not project code)
+halueval_paper.html
