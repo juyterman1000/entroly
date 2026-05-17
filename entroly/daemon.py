@@ -117,6 +117,7 @@ class EntrolyDaemonState:
             "learning": {
                 "local_enabled": self.learning_enabled,
                 "autotune_enabled": self.autotune_enabled,
+                "dreaming_active": self.autotune_enabled and self.learning_enabled,
             },
             "federation": {
                 "enabled": self.federation_enabled,
@@ -199,6 +200,9 @@ class EntrolyDaemon:
         # 4. Start file watcher
         self._start_watcher()
 
+        # 5. Start learning loop (DreamingLoop + FeedbackJournal + PRISM)
+        self._start_learning_loop()
+
         self.state.status = "running"
 
         # Auto-open dashboard in browser
@@ -211,7 +215,8 @@ class EntrolyDaemon:
         logger.info(
             f"Entroly daemon running — "
             f"proxy:{self.state.proxy.port} "
-            f"dashboard:{self.state.dashboard.port}"
+            f"dashboard:{self.state.dashboard.port} "
+            f"learning:{'ON' if self.state.learning_enabled else 'OFF'}"
         )
 
     def stop(self):
@@ -372,6 +377,144 @@ class EntrolyDaemon:
         except Exception as e:
             logger.warning(f"File watcher failed to start: {e}")
 
+    def _start_learning_loop(self):
+        """Start the self-learning background worker.
+
+        Integrates three learning systems:
+          1. OnlinePrism (inline) — updates PRISM 5D weights on every
+             optimize_context() call via Dirichlet posterior updates.
+             Already wired in EntrolyEngine.__init__ — no daemon action needed.
+
+          2. FeedbackJournal + TaskProfileOptimizer — persists (weights, reward)
+             episodes to disk, builds per-task-type weight profiles.
+             Wired here: journal → optimizer → profiles.
+
+          3. DreamingLoop — during idle periods (>60s), generates synthetic
+             queries from journal history, tests counterfactual weight
+             perturbations, and keeps only monotonic improvements.
+             Runs in a background thread, yields to user queries.
+
+        All computation is local — zero tokens, zero API calls.
+        """
+        if not self.state.learning_enabled:
+            logger.info("Learning loop disabled — skipping")
+            return
+
+        try:
+            from entroly.autotune import (
+                DreamingLoop,
+                FeedbackJournal,
+                TaskProfileOptimizer,
+            )
+
+            checkpoint_dir = os.environ.get(
+                "ENTROLY_DIR",
+                os.path.join(os.getcwd(), ".entroly"),
+            )
+
+            # Initialize the feedback journal (cross-session persistence)
+            self._feedback_journal = FeedbackJournal(checkpoint_dir)
+
+            # Task-conditioned weight profiles
+            self._task_profiles = TaskProfileOptimizer(self._feedback_journal)
+            self._task_profiles.optimize_all()
+
+            # Wire journal callback into the engine so every
+            # optimize_context() call logs a (weights, reward) episode
+            if self._engine and hasattr(self._engine, "set_journal_callback"):
+                self._engine.set_journal_callback(self._feedback_journal.log)
+
+            # DreamingLoop: autonomous self-play during idle
+            self._dreaming_loop = DreamingLoop(
+                journal=self._feedback_journal,
+                max_iterations=10,
+            )
+
+            # Background thread that periodically checks idle → dream
+            def _learning_worker():
+                while not self._shutdown.is_set():
+                    self._shutdown.wait(timeout=30.0)
+                    if self._shutdown.is_set():
+                        break
+
+                    if not self.state.learning_enabled:
+                        continue
+
+                    try:
+                        # 1. Re-optimize task profiles from accumulated journal
+                        self._task_profiles.optimize_all()
+
+                        # 2. If idle, run a dream cycle
+                        if (
+                            self.state.autotune_enabled
+                            and self._dreaming_loop.should_dream()
+                        ):
+                            result = self._dreaming_loop.run_dream_cycle()
+                            if result.get("status") == "completed":
+                                improvements = result.get("improvements", 0)
+                                if improvements > 0:
+                                    logger.info(
+                                        "DreamingLoop: %d improvements in "
+                                        "cycle #%d (eff=%.6f)",
+                                        improvements,
+                                        result.get("dream_id", 0),
+                                        result.get("best_efficiency", 0),
+                                    )
+                                    # Apply improved weights to live engine
+                                    self._apply_dreamed_weights()
+                    except Exception as e:
+                        logger.debug(f"Learning loop error: {e}")
+
+            t = threading.Thread(
+                target=_learning_worker,
+                daemon=True,
+                name="entroly-learning",
+            )
+            t.start()
+            self._workers["learning"] = t
+            logger.info(
+                "Learning loop started: journal=%d episodes, "
+                "dreaming=idle>60s, profiles=%d task types",
+                self._feedback_journal.count(),
+                len(self._task_profiles._profiles),
+            )
+
+        except Exception as e:
+            logger.warning(f"Learning loop failed to start: {e}")
+            self._feedback_journal = None
+            self._task_profiles = None
+            self._dreaming_loop = None
+
+    def _apply_dreamed_weights(self):
+        """Apply DreamingLoop improvements to the live engine."""
+        if not self._engine:
+            return
+        try:
+            from entroly.autotune import load_config
+            config = load_config()
+            if self._engine._use_rust:
+                self._engine._rust.set_weights(
+                    config.get("weight_recency", 0.30),
+                    config.get("weight_frequency", 0.25),
+                    config.get("weight_semantic_sim", 0.25),
+                    config.get("weight_entropy", 0.20),
+                )
+            else:
+                self._engine.config.weight_recency = config.get(
+                    "weight_recency", 0.30
+                )
+                self._engine.config.weight_frequency = config.get(
+                    "weight_frequency", 0.25
+                )
+                self._engine.config.weight_semantic_sim = config.get(
+                    "weight_semantic_sim", 0.25
+                )
+                self._engine.config.weight_entropy = config.get(
+                    "weight_entropy", 0.20
+                )
+        except Exception as e:
+            logger.debug(f"Failed to apply dreamed weights: {e}")
+
     # ── Control methods (called by control API) ────────────────────
 
     def set_optimization(self, enabled: bool):
@@ -404,25 +547,143 @@ class EntrolyDaemon:
             logger.info("Quality dial applied: %s → %.2f", mode, quality_val)
 
     def get_learning_weights(self) -> dict:
-        """Get current PRISM RL weights."""
+        """Get current PRISM 5D weights + OnlinePrism state.
+
+        Returns weights from three sources (priority order):
+          1. OnlinePrism Dirichlet posterior (live, most accurate)
+          2. Rust engine's current weights (if no OnlinePrism)
+          3. Config defaults (fallback)
+        """
+        result = {
+            "source": "defaults",
+            "weights": {
+                "recency": 0.30,
+                "frequency": 0.25,
+                "semantic": 0.25,
+                "entropy": 0.20,
+            },
+        }
+
+        # Try OnlinePrism first (most accurate — live posterior mean)
+        if self._engine and hasattr(self._engine, "_online_prism"):
+            try:
+                prism = self._engine._online_prism
+                prism_w = prism.weights()
+                prism_stats = prism.stats()
+                result = {
+                    "source": "online_prism",
+                    "weights": {
+                        "recency": round(prism_w.get("w_recency", 0.30), 4),
+                        "frequency": round(prism_w.get("w_frequency", 0.25), 4),
+                        "semantic": round(prism_w.get("w_semantic", 0.25), 4),
+                        "entropy": round(prism_w.get("w_entropy", 0.20), 4),
+                    },
+                    "online_prism": {
+                        "n_observations": prism_stats.get("n_observations", 0),
+                        "phase": prism_stats.get("phase", "warmup"),
+                        "reward_ema": prism_stats.get("reward_ema", 0),
+                        "avg_reward": prism_stats.get("avg_reward", 0),
+                        "best_reward": prism_stats.get("best_reward", 0),
+                        "learning_rate": prism_stats.get("learning_rate", 0),
+                    },
+                }
+                # Add resonance if available (5th PRISM dimension)
+                if "w_resonance" in prism_w:
+                    result["weights"]["resonance"] = round(
+                        prism_w["w_resonance"], 4
+                    )
+                return result
+            except Exception:
+                pass
+
+        # Fallback: Rust engine direct
         if self._engine and hasattr(self._engine, "_rust"):
-            rust = self._engine._rust
-            return {
-                "recency": round(getattr(rust, "w_recency", 0.3), 4),
-                "frequency": round(getattr(rust, "w_frequency", 0.25), 4),
-                "semantic": round(getattr(rust, "w_semantic", 0.25), 4),
-                "entropy": round(getattr(rust, "w_entropy", 0.2), 4),
-            }
-        return {}
+            try:
+                rust = self._engine._rust
+                result = {
+                    "source": "rust_engine",
+                    "weights": {
+                        "recency": round(getattr(rust, "w_recency", 0.3), 4),
+                        "frequency": round(getattr(rust, "w_frequency", 0.25), 4),
+                        "semantic": round(getattr(rust, "w_semantic", 0.25), 4),
+                        "entropy": round(getattr(rust, "w_entropy", 0.2), 4),
+                    },
+                }
+            except Exception:
+                pass
+
+        return result
+
+    def get_learning_stats(self) -> dict:
+        """Get comprehensive learning loop stats for the dashboard.
+
+        Aggregates telemetry from all three learning systems:
+          - OnlinePrism: live Dirichlet posterior state
+          - FeedbackJournal: cross-session episode persistence
+          - DreamingLoop: idle-time counterfactual self-play
+          - TaskProfileOptimizer: per-task-type weight profiles
+        """
+        stats: dict = {
+            "learning_enabled": self.state.learning_enabled,
+            "autotune_enabled": self.state.autotune_enabled,
+        }
+
+        # PRISM weights
+        stats["prism"] = self.get_learning_weights()
+
+        # FeedbackJournal
+        journal = getattr(self, "_feedback_journal", None)
+        if journal:
+            stats["journal"] = journal.stats()
+        else:
+            stats["journal"] = {"episodes": 0, "status": "not_initialized"}
+
+        # DreamingLoop
+        dreaming = getattr(self, "_dreaming_loop", None)
+        if dreaming:
+            stats["dreaming"] = dreaming.stats()
+        else:
+            stats["dreaming"] = {"status": "not_initialized"}
+
+        # TaskProfileOptimizer
+        profiles = getattr(self, "_task_profiles", None)
+        if profiles:
+            profile_data = {}
+            for task_type, profile in profiles._profiles.items():
+                profile_data[task_type] = {
+                    "confidence": profile.get("confidence", 0),
+                    "episodes": profile.get("episodes", 0),
+                }
+            stats["task_profiles"] = profile_data
+        else:
+            stats["task_profiles"] = {}
+
+        return stats
 
     def reset_learning(self):
-        """Reset PRISM weights to defaults."""
+        """Reset PRISM weights to defaults and clear journal."""
+        if self._engine and hasattr(self._engine, "_online_prism"):
+            try:
+                self._engine._online_prism.reset_to_prior(
+                    {"w_recency": 0.30, "w_frequency": 0.25,
+                     "w_semantic": 0.25, "w_entropy": 0.20},
+                    prior_strength=20.0,
+                )
+                logger.info("OnlinePrism reset to default prior")
+            except Exception:
+                pass
         if self._engine and hasattr(self._engine, "_rust"):
             try:
                 self._engine._rust.reset_weights()
             except AttributeError:
                 pass
         self.state.learning_enabled = True
+
+    def record_activity(self):
+        """Record user activity (resets the DreamingLoop idle timer)."""
+        dreaming = getattr(self, "_dreaming_loop", None)
+        if dreaming:
+            dreaming.record_activity()
 
     def reindex_repo(self, path: str | None = None):
         """Re-index a specific repo or all repos."""

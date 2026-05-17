@@ -84,6 +84,26 @@ except Exception:
     _rust_witness_analyze = None
     _rust_witness_claims = None
 
+# ── Single source of truth ───────────────────────────────────────────
+# WITNESS had two implementations (Python here, Rust in entroly-core).
+# The proxy/MCP hot path silently preferred Rust when the native engine
+# was installed — and the Rust path diverged badly from the calibrated,
+# benchmarked Python behaviour (shipped QA retention ~0.11 vs validated
+# 0.74), so native-engine users got a different, broken WITNESS than
+# every report measured. The user-facing product must be ONE behaviour,
+# not "depends which binary you have".
+#
+# Resolution: the validated Python implementation is the one shipped
+# behaviour for every surface (proxy, MCP, SDK, CLI). The Rust fast-path
+# is OFF unless explicitly opted in AND it has passed the conformance
+# gate (tests/test_witness_parity.py). Nulling the handles here is the
+# single chokepoint — every call site falls through to Python with no
+# per-caller changes. Re-enable only once conformant:
+#     ENTROLY_WITNESS_RUST=1
+if os.environ.get("ENTROLY_WITNESS_RUST", "0") != "1":
+    _rust_witness_analyze = None
+    _rust_witness_claims = None
+
 
 @dataclass(frozen=True)
 class Claim:

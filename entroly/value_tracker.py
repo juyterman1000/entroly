@@ -131,16 +131,34 @@ class ValueTracker:
     """
 
     _FILE_NAME = "value_tracker.json"
+    _ACTIVITY_NAME = "activity.jsonl"
     _MAX_DAILY_ENTRIES = 90    # ~3 months of daily data
     _MAX_WEEKLY_ENTRIES = 52   # ~1 year
     _MAX_MONTHLY_ENTRIES = 24  # ~2 years
+    _MAX_ACTIVITY = 200        # bounded cross-process live feed
+    _SCHEMA_VERSION = 3
+
+    @staticmethod
+    def _default_dir() -> Path:
+        """The shared telemetry directory. Honors ENTROLY_DIR so the
+        Python and Node (npm) runtimes write to the SAME place — without
+        this they diverge (~/.entroly vs cwd/.entroly) and no cross-mode
+        dashboard ever sees data."""
+        env = os.environ.get("ENTROLY_DIR")
+        return Path(env) if env else (Path.home() / ".entroly")
 
     def __init__(self, data_dir: Path | None = None):
-        self._dir = data_dir or (Path.home() / ".entroly")
+        self._dir = data_dir or self._default_dir()
         self._dir.mkdir(parents=True, exist_ok=True)
         self._path = self._dir / self._FILE_NAME
+        self._activity_path = self._dir / self._ACTIVITY_NAME
         self._lock = threading.Lock()
         self._data = self._load()
+        self._activity: list[dict[str, Any]] = self._load_activity()
+        # mtime fingerprints so reader processes (the dashboard) can go
+        # live on writes made by OTHER processes (proxy/MCP/npm).
+        self._data_mtime: float = self._mtime(self._path)
+        self._activity_mtime: float = self._mtime(self._activity_path)
 
         # In-memory snapshot for fast reads (updated on every record)
         self._last_confidence: float = 0.0
@@ -149,22 +167,46 @@ class ValueTracker:
         self._session_tokens_saved: int = 0
         self._session_cost_saved: float = 0.0
 
+    @staticmethod
+    def _mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
     def _load(self) -> dict[str, Any]:
-        """Load tracker data from disk, or return fresh defaults."""
+        """Load tracker data from disk, or return fresh defaults.
+
+        Migrates older (v2) files forward by back-filling any missing
+        keys so a long-lived install never loses history on upgrade."""
         if self._path.exists():
             try:
                 raw = self._path.read_text(encoding="utf-8")
                 data = json.loads(raw)
                 if isinstance(data, dict) and "version" in data:
-                    return data
+                    return self._migrate(data)
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Value tracker load failed, starting fresh: %s", e)
         return self._defaults()
 
-    @staticmethod
-    def _defaults() -> dict[str, Any]:
+    @classmethod
+    def _migrate(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Backward-compatible forward migration. Adds v3 value fields
+        (hallucinations blocked, model-routing $ saved) without touching
+        existing counters."""
+        base = cls._defaults()
+        lt = data.setdefault("lifetime", {})
+        for k, v in base["lifetime"].items():
+            lt.setdefault(k, v)
+        for bucket in ("daily", "weekly", "monthly"):
+            data.setdefault(bucket, {})
+        data["version"] = cls._SCHEMA_VERSION
+        return data
+
+    @classmethod
+    def _defaults(cls) -> dict[str, Any]:
         return {
-            "version": 2,
+            "version": cls._SCHEMA_VERSION,
             "lifetime": {
                 "tokens_saved": 0,
                 "cost_saved_usd": 0.0,
@@ -177,11 +219,35 @@ class ValueTracker:
                 "evolution_spent_usd": 0.0,
                 "evolution_attempts": 0,
                 "evolution_successes": 0,
+                # v3: hallucination + model-routing value (WITNESS / RAVS)
+                "hallucinations_blocked": 0,
+                "routing_saved_usd": 0.0,
+                "routing_decisions": 0,
             },
             "daily": {},    # "YYYY-MM-DD" -> {tokens_saved, cost_saved, requests}
             "weekly": {},   # "YYYY-WNN" -> {tokens_saved, cost_saved, requests}
             "monthly": {},  # "YYYY-MM" -> {tokens_saved, cost_saved, requests}
         }
+
+    def _load_activity(self) -> list[dict[str, Any]]:
+        """Load the bounded cross-process activity feed (JSONL)."""
+        if not self._activity_path.exists():
+            return []
+        out: list[dict[str, Any]] = []
+        try:
+            for line in self._activity_path.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        except OSError as e:
+            logger.debug("activity load failed: %s", e)
+        return out[-self._MAX_ACTIVITY:]
 
     def _save(self) -> None:
         """Atomic write: write to temp file then rename (no partial writes)."""
@@ -206,6 +272,140 @@ class ValueTracker:
                 raise
         except OSError as e:
             logger.debug("Value tracker save failed: %s", e)
+        self._data_mtime = self._mtime(self._path)
+
+    def _save_activity(self) -> None:
+        """Atomically rewrite the bounded activity JSONL (≤200 lines, so
+        whole-file rewrite is cheap and crash-safe via temp+rename)."""
+        try:
+            self._activity = self._activity[-self._MAX_ACTIVITY:]
+            content = "\n".join(json.dumps(e, separators=(",", ":"))
+                                for e in self._activity)
+            if content:
+                content += "\n"
+            fd, tmp = tempfile.mkstemp(dir=str(self._dir),
+                                       suffix=".tmp", prefix="act_")
+            try:
+                os.write(fd, content.encode("utf-8"))
+                os.close(fd)
+                os.replace(tmp, str(self._activity_path))
+            except Exception:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+                raise
+        except OSError as e:
+            logger.debug("activity save failed: %s", e)
+        self._activity_mtime = self._mtime(self._activity_path)
+
+    def reload_if_changed(self) -> bool:
+        """Re-read disk state IF another process advanced the files.
+
+        This is the fix for the cross-process dashboard: the writer
+        (proxy/MCP/npm) and the reader (`entroly dashboard`) are usually
+        different processes, and the singleton otherwise froze its
+        in-memory copy at startup. Readers call this each poll; it is a
+        no-op (one cheap stat) when nothing changed. Per-process session
+        counters are intentionally preserved (they are not on disk)."""
+        changed = False
+        with self._lock:
+            dm = self._mtime(self._path)
+            if dm > self._data_mtime:
+                self._data = self._load()
+                self._data_mtime = dm
+                changed = True
+            am = self._mtime(self._activity_path)
+            if am > self._activity_mtime:
+                self._activity = self._load_activity()
+                self._activity_mtime = am
+                changed = True
+        return changed
+
+    def record_event(
+        self,
+        kind: str,
+        summary: str,
+        *,
+        source: str = "",
+        tokens_saved: int = 0,
+        cost_saved_usd: float = 0.0,
+        model: str = "",
+        **extra: Any,
+    ) -> None:
+        """Append one row to the persistent, cross-process activity feed.
+
+        `kind` is a short tag the dashboard groups on: "optimize",
+        "hallucination", "routing", "compress". Fail-open: telemetry must
+        never break the caller."""
+        try:
+            row: dict[str, Any] = {
+                "ts": round(time.time(), 3),
+                "kind": str(kind),
+                "summary": str(summary)[:240],
+            }
+            if source:
+                row["source"] = source
+            if tokens_saved:
+                row["tokens_saved"] = int(tokens_saved)
+            if cost_saved_usd:
+                row["cost_saved_usd"] = round(float(cost_saved_usd), 6)
+            if model:
+                row["model"] = model
+            for k, v in extra.items():
+                if isinstance(v, (str, int, float, bool)):
+                    row[k] = v
+            with self._lock:
+                self._activity.append(row)
+                self._save_activity()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("record_event failed (non-fatal): %s", e)
+
+    def record_hallucination_blocked(
+        self, n: int = 1, *, source: str = "", detail: str = ""
+    ) -> None:
+        """WITNESS suppressed `n` unsupported claims before they reached
+        the user. Fail-open."""
+        try:
+            with self._lock:
+                self._data["lifetime"]["hallucinations_blocked"] = (
+                    self._data["lifetime"].get("hallucinations_blocked", 0)
+                    + int(n)
+                )
+                self._save()
+            self.record_event(
+                "hallucination",
+                detail or f"Blocked {n} unsupported claim(s)",
+                source=source, blocked=int(n),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("record_hallucination_blocked failed: %s", e)
+
+    def record_routing_saving(
+        self, cost_saved_usd: float, *, source: str = "",
+        chosen_model: str = "", detail: str = "",
+    ) -> None:
+        """RAVS routed to a cheaper capable model; record the $ avoided.
+        Fail-open."""
+        try:
+            with self._lock:
+                lt = self._data["lifetime"]
+                lt["routing_saved_usd"] = round(
+                    lt.get("routing_saved_usd", 0.0)
+                    + float(cost_saved_usd), 6)
+                lt["routing_decisions"] = lt.get("routing_decisions", 0) + 1
+                self._save()
+            self.record_event(
+                "routing",
+                detail or f"Routed to {chosen_model or 'cheaper model'}",
+                source=source, cost_saved_usd=float(cost_saved_usd),
+                model=chosen_model,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("record_routing_saving failed: %s", e)
+
+    def get_activity(self, last_n: int = 50) -> list[dict[str, Any]]:
+        """Most-recent-first slice of the cross-process activity feed."""
+        with self._lock:
+            return list(reversed(self._activity[-last_n:]))
 
     def _trim_history(self) -> None:
         """Keep history within size limits."""
@@ -284,6 +484,20 @@ class ValueTracker:
             self._trim_history()
             self._save()
 
+            # Light up the cross-process live feed for free. Append
+            # in-lock to keep ordering; persist outside the heavy path.
+            self._activity.append({
+                "ts": round(now, 3),
+                "kind": "optimize",
+                "summary": (f"Optimized request: saved {tokens_saved:,} "
+                            f"tokens" + (f" ({model})" if model else "")),
+                "tokens_saved": int(tokens_saved),
+                "cost_saved_usd": round(cost, 6),
+                "model": model or "",
+                "duplicates": int(duplicates),
+            })
+            self._save_activity()
+
     def get_lifetime(self) -> dict[str, Any]:
         """Return lifetime cumulative stats."""
         with self._lock:
@@ -345,6 +559,9 @@ class ValueTracker:
                     "tokens_saved": lt.get("tokens_saved", 0),
                     "cost_saved_usd": lt.get("cost_saved_usd", 0.0),
                     "requests_optimized": lt.get("requests_optimized", 0),
+                    "hallucinations_blocked": lt.get(
+                        "hallucinations_blocked", 0),
+                    "routing_saved_usd": lt.get("routing_saved_usd", 0.0),
                 },
                 "status": "active" if self._session_requests > 0 else "idle",
             }
@@ -357,6 +574,7 @@ class ValueTracker:
             "monthly": self.get_monthly(12),
             "lifetime": self.get_lifetime(),
             "session": self.get_session(),
+            "activity": self.get_activity(50),
         }
 
     # ── Evolution Budget Guardrail (Pillar 1) ─────────────────────────────

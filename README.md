@@ -78,6 +78,7 @@
   <img src="https://img.shields.io/badge/CI-see_GitHub_Actions-success">
   <img src="https://img.shields.io/badge/Benchmarks-reproducible-brightgreen?style=flat">
   <img src="https://img.shields.io/badge/Token_Savings-tested_70--95%25_on_large_repos-blue?style=flat">
+  <img src="https://img.shields.io/badge/AI_Hallucination-HaluEval--QA_0.80_AUROC_·_85%25_acc_·_%240-blueviolet?style=flat">
   <img src="https://img.shields.io/badge/Latency-local_core_paths-purple">
   <img src="https://img.shields.io/badge/License-Apache_2.0-green">
 </p>
@@ -113,6 +114,8 @@
 ---
 
 ### WITNESS — Proof-Carrying Output Gateway
+
+> **Measured (HaluEval-QA, standard protocol):** WITNESS scores **AUROC 0.80 / 84.9% accuracy** catching unsupported answers — at **$0 and ~2 ms/decision**, no LLM call. On identical data it **statistically ties `gpt-4o-mini`** as a judge and beats the published GPT-3.5 judge (62.6%). Threshold-free number, reproducible, no cherry-picking → [full results & reproduce command](#benchmarks).
 
 Use WITNESS when you want model answers checked against supplied evidence before you trust them:
 
@@ -174,6 +177,23 @@ Compression did not reduce measured accuracy in these release benchmarks. Result
 | TruthfulQA (MC1) | 100 | 50K | 72.0% [62.5-79.9%] | 73.7% [64.3-81.4%] | **102.4%** | pass-through¹ |
 
 > ¹ **pass-through**: Context already fits within budget, so Entroly leaves it unchanged. Results vary by model, dataset, prompt shape, and token budget.
+
+### Hallucination Detection — [HaluEval-QA](https://github.com/RUCAIBox/HaluEval) (faithful protocol)
+
+How well does WITNESS catch unsupported answers? Measured under the **standard HaluEval-QA protocol** (Li et al., EMNLP 2023): the full `qa` set — 10,000 items, *both* the correct and the hallucinated answer scored = 20,000 balanced decisions. The operating threshold is selected on a disjoint calibration split (no test-set tuning). The threshold-free **AUROC** is the primary, unspoofable figure; accuracy is reported at the calibrated point. GPT judges see the *same* knowledge WITNESS sees (fair grounded comparison) on a shared 1,200-decision sample.
+
+```bash
+python benchmarks/halueval_qa_faithful.py
+```
+
+| System | Accuracy | AUROC | F1 | Cost / latency | Notes |
+|---|---|---|---|---|---|
+| **WITNESS** (full 20K, calibrated τ) | **84.9% ± 0.6%** | **0.798** | 0.864 | **$0**, 2.4 ms/decision | deterministic, no LLM |
+| WITNESS (same 1.2K sample) | 86.6% ± 1.9% | 0.813 | 0.878 | $0 | — |
+| gpt-4o-mini (grounded judge, same sample) | 86.3% ± 2.0% | — | 0.853 | LLM call | statistical tie with WITNESS |
+| gpt-3.5-turbo (HaluEval paper, published) | 62.6% | — | — | LLM call | no-knowledge reference |
+
+**Honest reading.** On identical data WITNESS **statistically ties a strong modern LLM judge** (gpt-4o-mini: 86.6% vs 86.3%, CIs overlap) at **zero marginal cost and ~2 ms**, and clearly beats the canonical published GPT-3.5 number (62.6%). **AUROC 0.80** is the figure we stand behind — accuracy depends on the operating point, and the calibrated point is deliberately high-recall (R 0.96 / P 0.79). This is **not** a global-SOTA claim: published methods that score higher on HaluEval-QA do so with privileged signals (token log-probs, a paired evaluator LLM, or supervised training on the benchmark); among zero-cost, black-box, text-only, untrained verifiers we found no verified method that beats it (literature reviewed through May 2026). Reproduce numbers and CIs with the command above; full report in [`benchmarks/results/halueval_qa_faithful_report.md`](benchmarks/results/halueval_qa_faithful_report.md).
 
 ### Packaged Self-Test Results
 

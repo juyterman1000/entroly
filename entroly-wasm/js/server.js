@@ -10,6 +10,7 @@ const { CheckpointManager, persistIndex, loadIndex } = require('./checkpoint');
 const { autoIndex, startIncrementalWatcher } = require('./auto_index');
 const { startAutotuneDaemon, FeedbackJournal, TaskProfileOptimizer } = require('./autotune');
 const { VaultManager } = require('./vault');
+const { getTracker } = require('./value_tracker');
 const { EpistemicRouter, BeliefCompiler, VerificationEngine, ChangePipeline, FlowOrchestrator, compileDocs, exportTrainingData } = require('./cogops');
 const { WorkspaceChangeListener } = require('./workspace');
 const { SkillEngine } = require('./skills');
@@ -25,6 +26,11 @@ class EntrolyMCPServer {
     this.config = config || new EntrolyConfig();
     this.engine = new WasmEntrolyEngine();
     this.turnCounter = 0;
+
+    // Shared cross-runtime telemetry sink — SAME file/schema/dir as the
+    // Python tracker, so npm users' value shows up on the same dashboard
+    // as pip/MCP/SDK users. Fail-open: never let telemetry break a tool.
+    try { this.valueTracker = getTracker(); } catch (_) { this.valueTracker = null; }
 
     // Feedback journal — persists episodes for cross-session autotune
     this.feedbackJournal = new FeedbackJournal(this.config.checkpointDir);
@@ -112,6 +118,8 @@ class EntrolyMCPServer {
       // ── Analysis Tools (2) ──
       { name: 'repo_file_map', description: 'Return the canonical Entroly file map across Python, Rust core, and WASM repos with ownership roles.', inputSchema: { type: 'object', properties: { format: { type: 'string', description: 'Output format: markdown or json', default: 'markdown' } } } },
       { name: 'prefetch_related', description: 'Predict which files the LLM will need next based on co-access patterns and dependency graph.', inputSchema: { type: 'object', properties: { file_path: { type: 'string', description: 'Current file being worked on' }, source_content: { type: 'string', description: 'Content of current file for import analysis', default: '' }, language: { type: 'string', description: 'Programming language', default: '' } }, required: ['file_path'] } },
+      // ── Hallucination Detection Tool ──
+      { name: 'verify_response', description: 'Verify an AI-generated response for hallucination. Computes entity coverage gap, hedging curvature, and entropy consistency. Returns fused_risk [0.0=safe, 1.0=hallucinated], verdict (pass/warn/flag), and flagged claims. All local — zero LLM calls.', inputSchema: { type: 'object', properties: { response: { type: 'string', description: 'The AI-generated text to verify' }, context: { type: 'string', description: 'Source context provided to the AI', default: '' }, prompt: { type: 'string', description: 'Original user prompt', default: '' } }, required: ['response'] } },
     ];
   }
 
@@ -130,6 +138,18 @@ class EntrolyMCPServer {
         const profile = this.taskProfiles.applyToEngine(this.engine, query);
         const result = this.engine.optimize(budget, query);
         result._taskProfile = { taskType: profile.taskType, confidence: profile.confidence };
+        // Record value to the shared sink (mirrors entroly/server.py).
+        try {
+          const ts = (result && result.tokens_saved) || 0;
+          if (this.valueTracker && ts > 0) {
+            this.valueTracker.record({
+              tokensSaved: ts,
+              model: (result && result.model) || '',
+              duplicates: (result && result.duplicates_caught) || 0,
+              optimized: true,
+            });
+          }
+        } catch (_) { /* never fail optimization for telemetry */ }
         const state = this.engine.export_state();
         this._lastOptCtx = { weights: { w_r: state.w_recency, w_f: state.w_frequency, w_s: state.w_semantic, w_e: state.w_entropy }, selectedSources: (result.selected || []).map(s => s.source).filter(Boolean), selectedCount: result.selected_count || 0, tokenBudget: budget, query, turn: this.turnCounter };
         if (this.checkpointMgr.shouldAutoCheckpoint()) { try { persistIndex(this.engine, this.indexPath); this.checkpointMgr.save({ engine_state: state, turn: this.turnCounter }); } catch {} }
@@ -181,7 +201,21 @@ class EntrolyMCPServer {
       case 'entroly_dashboard': {
         const stats = this.engine.stats();
         const explanation = this.engine.explain_selection();
-        return { stats, explanation, turn: this.turnCounter };
+        // npm users live in their MCP client (no Python dashboard), so
+        // surface the persisted cross-session value here directly.
+        let value = null;
+        try {
+          if (this.valueTracker) {
+            const tr = this.valueTracker.getTrends();
+            value = {
+              lifetime: tr.lifetime,
+              today: (tr.daily.slice(-1)[0]) || null,
+              recent_activity: tr.activity.slice(0, 10),
+              data_source: 'shared telemetry file (cross-runtime)',
+            };
+          }
+        } catch (_) { /* fail-open */ }
+        return { stats, explanation, value, turn: this.turnCounter };
       }
 
       // ── CogOps Epistemic Tools ──
@@ -325,6 +359,71 @@ class EntrolyMCPServer {
         let m;
         while ((m = importRe.exec(content)) !== null) imports.push(m[1]);
         return { file: args.file_path, language: args.language || 'unknown', predicted_files: imports.slice(0, 10), dep_graph: depStats, engine: 'javascript' };
+      }
+
+      // ── Hallucination Detection ──
+      case 'verify_response': {
+        const resp = args.response || '';
+        const ctx = args.context || '';
+        const prm = args.prompt || '';
+
+        // Entity coverage gap: extract identifiers from context vs response
+        const ctxEntities = new Set((ctx + ' ' + prm).match(/[a-zA-Z_][a-zA-Z0-9_.]{2,}/g) || []);
+        const respEntities = (resp.match(/[a-zA-Z_][a-zA-Z0-9_.]{2,}/g) || []);
+        const respUnique = [...new Set(respEntities)];
+        let grounded = 0;
+        const flaggedClaims = [];
+        for (const ent of respUnique) {
+          if (ctxEntities.has(ent) || ent.length <= 3) {
+            grounded++;
+          } else {
+            flaggedClaims.push({ claim: ent, score: 1.0 });
+          }
+        }
+        const entityGap = respUnique.length > 0 ? 1.0 - (grounded / respUnique.length) : 0;
+
+        // ECE-like: hedging language curvature
+        const hedgeWords = ['might', 'could', 'possibly', 'perhaps', 'maybe', 'uncertain', 'likely', 'probably', 'appears to', 'seems'];
+        const wordCount = resp.split(/\s+/).length;
+        let hedgeCount = 0;
+        for (const h of hedgeWords) { hedgeCount += (resp.toLowerCase().match(new RegExp(h, 'g')) || []).length; }
+        const hedgeCurvature = Math.min(1.0, hedgeCount / Math.max(wordCount, 1) * 20);
+
+        // EPR-like: entropy consistency (char-bigram)
+        const bigrams = {};
+        for (let i = 0; i < resp.length - 1; i++) {
+          const bg = resp.slice(i, i + 2);
+          bigrams[bg] = (bigrams[bg] || 0) + 1;
+        }
+        const total = Object.values(bigrams).reduce((a, b) => a + b, 0) || 1;
+        let entropy = 0;
+        for (const c of Object.values(bigrams)) {
+          const p = c / total;
+          if (p > 0) entropy -= p * Math.log2(p);
+        }
+        // Normalize: high entropy is normal for text, low entropy is suspicious
+        const maxEntropy = Math.log2(Math.min(Object.keys(bigrams).length, 500)) || 1;
+        const eprRisk = Math.max(0, 1.0 - entropy / maxEntropy);
+
+        // Fuse (same weights as proxy)
+        const fused = Math.max(0, Math.min(1.0,
+          0.80 * entityGap + 0.08 * hedgeCurvature + 0.07 * eprRisk + 0.05 * 0
+        ));
+
+        let verdict, recommendation;
+        if (fused < 0.15) { verdict = 'pass'; recommendation = 'Accept — response appears well-grounded'; }
+        else if (fused < 0.40) { verdict = 'warn'; recommendation = 'Review — some claims may not be grounded'; }
+        else { verdict = 'flag'; recommendation = 'Reject or rephrase — high hallucination risk'; }
+
+        return {
+          fused_risk: Math.round(fused * 10000) / 10000,
+          verdict,
+          recommendation,
+          witness: { entity_coverage_gap: Math.round(entityGap * 10000) / 10000, total_entities: respUnique.length, grounded_count: grounded },
+          ece: { hedging_curvature: Math.round(hedgeCurvature * 10000) / 10000, hedge_count: hedgeCount },
+          epr: { entropy_risk: Math.round(eprRisk * 10000) / 10000, bigram_entropy: Math.round(entropy * 100) / 100 },
+          flagged_claims: flaggedClaims.slice(0, 10),
+        };
       }
 
       default:

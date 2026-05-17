@@ -33,6 +33,28 @@ from .universal_compress import (
 )
 
 
+def _track_savings(before_tokens: int, after_tokens: int, label: str) -> None:
+    """Record SDK compression value to the shared telemetry sink so the
+    dashboard reflects SDK-only users (previously a hard blank). Strictly
+    fail-open: telemetry must NEVER affect compress() output or raise.
+
+    `model=""` on purpose: it books the default cost rate without
+    emitting the unknown-model warning on every compress() call."""
+    try:
+        saved = int(before_tokens) - int(after_tokens)
+        if saved <= 0:
+            return
+        from .value_tracker import get_tracker
+        tracker = get_tracker()
+        tracker.record(tokens_saved=saved, model="", optimized=True)
+        tracker.record_event(
+            "compress", f"SDK {label}: saved {saved:,} tokens",
+            source="sdk", tokens_saved=saved,
+        )
+    except Exception:  # noqa: BLE001 — telemetry is best-effort only
+        pass
+
+
 def compress(
     content: str,
     budget: int | None = None,
@@ -77,11 +99,14 @@ def compress(
     # Handle code content with the Rust engine if available
     if content_type == "code" or (content_type is None and _looks_like_code(content)):
         try:
-            return _compress_code(content, target_ratio)
+            out = _compress_code(content, target_ratio)
+            _track_savings(current_tokens, len(out) // 4, "compress(code)")
+            return out
         except Exception:
             pass  # Fall through to universal compressor
 
     compressed, _, _ = universal_compress(content, target_ratio, content_type)
+    _track_savings(current_tokens, len(compressed) // 4, "compress")
     return compressed
 
 
@@ -307,4 +332,217 @@ def verify(
         "total_identifiers": len(bipt.traces),
         "invented_count": len(invented),
         "invented": invented,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Full Hallucination Detection — 4-Signal Fusion Cascade
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Same pipeline as the proxy (WITNESS + ECE + EPR + Spectral) but callable
+# as a single function.  Zero LLM calls — pure local compute.
+#
+#   from entroly import detect_hallucination
+#   result = detect_hallucination(response, context=source_code)
+#   if result["verdict"] == "flag":
+#       print("Hallucination detected:", result["recommendation"])
+#
+
+
+def detect_hallucination(
+    response: str,
+    context: str = "",
+    prompt: str = "",
+) -> dict[str, Any]:
+    """Detect hallucination in AI-generated text using the 4-signal fusion cascade.
+
+    Runs WITNESS (entity coverage gap), ECE (Fisher curvature), EPR (entropy
+    production rate), and Spectral (entity cross-similarity) locally, then
+    fuses the four signals into a single risk score.
+
+    Args:
+        response: The AI-generated text to verify
+        context: Source material the AI was supposed to reference
+        prompt: The original query/instruction (helps calibrate)
+
+    Returns:
+        Dict with:
+          - fused_risk: Combined probability [0.0 = safe, 1.0 = hallucinated]
+          - verdict: "pass" (<0.15), "warn" (0.15–0.40), or "flag" (>0.40)
+          - recommendation: Human-readable action to take
+          - witness: Entity coverage analysis
+          - ece: Hedging/uncertainty curvature
+          - epr: Entropy production rate
+          - spectral: Entity cross-similarity
+          - flagged_claims: Specific claims that may be hallucinated
+
+    Example::
+
+        from entroly import detect_hallucination
+
+        result = detect_hallucination(
+            response=llm_output,
+            context=repo_code,
+            prompt="fix the login bug",
+        )
+        if result["verdict"] == "flag":
+            print("Hallucination risk:", result["fused_risk"])
+            for claim in result["flagged_claims"]:
+                print(f"  - {claim['claim']} (score={claim['score']})")
+    """
+    signals: dict[str, Any] = {}
+
+    # 1. WITNESS: entity coverage gap
+    try:
+        from .witness import WitnessAnalyzer
+        analyzer = WitnessAnalyzer()
+        witness_result = analyzer.analyze(context or prompt, response)
+        signals["witness"] = {
+            "entity_coverage_gap": round(witness_result.summary_score, 4),
+            "total_claims": witness_result.total_claims,
+        }
+        flagged_claims = [
+            {"claim": c.text[:120], "score": round(c.score, 3)}
+            for c in (witness_result.flagged() or [])[:10]
+        ]
+    except Exception:
+        signals["witness"] = {"entity_coverage_gap": 0, "status": "unavailable"}
+        flagged_claims = []
+
+    # 2. ECE: Fisher curvature (hedging language detection)
+    try:
+        from .ravs.ece import EpistemicCascadeEngine
+        ece = EpistemicCascadeEngine()
+        ece_result = ece.evaluate(response)
+        signals["ece"] = {
+            "curvature": round(ece_result.get("curvature", 0), 4),
+            "risk_score": round(ece_result.get("risk_score", 0), 4),
+        }
+    except Exception:
+        signals["ece"] = {"risk_score": 0, "status": "unavailable"}
+
+    # 3. EPR: Entropy Production Rate
+    try:
+        from .ravs.epr import compute_epr
+        epr_result = compute_epr(response)
+        signals["epr"] = {
+            "entropy_production_rate": round(epr_result.get("epr", 0), 4),
+            "risk_score": round(epr_result.get("risk_score", 0), 4),
+        }
+    except Exception:
+        signals["epr"] = {"risk_score": 0, "status": "unavailable"}
+
+    # 4. Spectral: entity cross-similarity SVD
+    try:
+        from .ravs.spectral import compute_spectral_consistency
+        spec_result = compute_spectral_consistency(response, context)
+        signals["spectral"] = {
+            "consistency": round(spec_result.get("consistency", 1.0), 4),
+            "risk_score": round(spec_result.get("risk_score", 0), 4),
+        }
+    except Exception:
+        signals["spectral"] = {"risk_score": 0, "status": "unavailable"}
+
+    # 5. Fuse (same weights as proxy)
+    fused = (
+        0.80 * signals.get("witness", {}).get("entity_coverage_gap", 0)
+        + 0.08 * signals.get("ece", {}).get("risk_score", 0)
+        + 0.07 * signals.get("epr", {}).get("risk_score", 0)
+        + 0.05 * signals.get("spectral", {}).get("risk_score", 0)
+    )
+    fused = max(0.0, min(1.0, fused))
+
+    if fused < 0.15:
+        verdict, rec = "pass", "Accept — response appears well-grounded"
+    elif fused < 0.40:
+        verdict, rec = "warn", "Review — some claims may not be grounded"
+    else:
+        verdict, rec = "flag", "Reject or rephrase — high hallucination risk"
+
+    return {
+        "fused_risk": round(fused, 4),
+        "verdict": verdict,
+        "recommendation": rec,
+        "flagged_claims": flagged_claims,
+        **signals,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PRISM-Weighted Context Optimization — Full Engine Access
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Gives pip SDK users the same PRISM 5D retrieval + knapsack DP as MCP/proxy.
+#
+#   from entroly import optimize
+#   result = optimize(fragments, budget=8000, query="fix login bug")
+#
+
+
+def optimize(
+    fragments: list[dict[str, Any]],
+    budget: int = 128000,
+    query: str = "",
+) -> dict[str, Any]:
+    """Select the optimal context subset using PRISM 5D + knapsack DP.
+
+    Same algorithm as MCP optimize_context and proxy context injection,
+    exposed as a simple function call for pip users.
+
+    Args:
+        fragments: List of dicts with keys:
+            - content (str): The text content
+            - source (str): Source identifier (e.g. filename)
+            - token_count (int, optional): Token count (auto-estimated if missing)
+        budget: Maximum token budget for the selected context
+        query: Current task/query for semantic relevance scoring
+
+    Returns:
+        Dict with:
+          - selected: List of selected fragments (sorted by relevance)
+          - total_tokens: Total tokens in selected context
+          - fragments_selected: Count of selected fragments
+          - fragments_total: Count of input fragments
+          - context_text: Concatenated selected content (ready to inject)
+
+    Example::
+
+        from entroly import optimize
+
+        fragments = [
+            {"content": open(f).read(), "source": f}
+            for f in Path(".").glob("**/*.py")
+        ]
+        result = optimize(fragments, budget=8000, query="fix the auth middleware")
+        print(f"Selected {result['fragments_selected']}/{result['fragments_total']}")
+        # Use result["context_text"] as your LLM system prompt context
+    """
+    from .server import EntrolyEngine
+
+    engine = EntrolyEngine()
+
+    # Ingest all fragments
+    for frag in fragments:
+        content = frag.get("content", "")
+        source = frag.get("source", "unknown")
+        tokens = frag.get("token_count", len(content) // 4)
+        engine.ingest_fragment(content, source, tokens)
+
+    # Optimize
+    result = engine.optimize_context(token_budget=budget, query=query)
+
+    selected = result.get("selected", [])
+    context_parts = []
+    total_tokens = 0
+    for item in selected:
+        if isinstance(item, dict):
+            context_parts.append(item.get("content", ""))
+            total_tokens += item.get("token_count", 0)
+
+    return {
+        "selected": selected,
+        "total_tokens": total_tokens,
+        "fragments_selected": len(selected),
+        "fragments_total": len(fragments),
+        "context_text": "\n\n".join(context_parts),
     }

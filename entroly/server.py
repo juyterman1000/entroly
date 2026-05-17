@@ -299,22 +299,47 @@ def _py_knapsack_optimize(
         scored.append((frag, rel, efficiency))
     scored.sort(key=lambda x: x[2], reverse=True)
 
-    selected = list(pinned)
-    used_tokens = pinned_tokens
-    total_relevance = sum(
+    pinned_relevance = sum(
         _py_compute_relevance(f, w_recency, w_frequency, w_semantic, w_entropy) for f in pinned
     )
 
+    # Density-greedy pass.
+    selected = list(pinned)
+    used_tokens = pinned_tokens
+    total_relevance = pinned_relevance
     for frag, rel, _ in scored:
         if used_tokens + frag.token_count <= token_budget:
             selected.append(frag)
             used_tokens += frag.token_count
             total_relevance += rel
 
+    # Khuller–Moss–Naor (1999) singleton champion. Pure density-greedy
+    # has NO constant-factor guarantee: a low-value high-density item
+    # can block a high-value budget-filling item (proven by
+    # tests/test_compression_contract.py against brute-force OPT —
+    # greedy hit 30% of optimal where ≥63% is required). KMN: take the
+    # better of {density-greedy, pinned ∪ best single feasible item};
+    # this restores the (1 − 1/e) guarantee qccr.py advertises, on the
+    # same objective, with no new dependency. The Rust 0/1-DP hot path
+    # is already exact; this makes the degraded fallback contract-
+    # honouring so every runtime keeps the guarantee.
+    cand_budget = token_budget - pinned_tokens
+    best_single = None
+    best_single_rel = 0.0
+    for frag, rel, _ in scored:
+        if frag.token_count <= cand_budget and rel > best_single_rel:
+            best_single, best_single_rel = frag, rel
+    method = "greedy_python"
+    if best_single is not None and pinned_relevance + best_single_rel > total_relevance:
+        selected = list(pinned) + [best_single]
+        used_tokens = pinned_tokens + best_single.token_count
+        total_relevance = pinned_relevance + best_single_rel
+        method = "greedy_python+kmn_singleton"
+
     stats = {
         "total_tokens": used_tokens,
         "total_relevance": round(total_relevance, 4),
-        "method": "greedy_python",
+        "method": method,
         "pinned_count": len(pinned),
         "candidate_count": len(candidates),
     }
@@ -3815,6 +3840,127 @@ def create_mcp_server():
                 "Code appears grounded in the provided context."
             ),
         }, indent=2)
+
+    @mcp.tool()
+    def verify_response(
+        response: str,
+        context: str = "",
+        prompt: str = "",
+    ) -> str:
+        """Verify an AI-generated response for hallucination using the 4-signal fusion cascade.
+
+        Runs the same hallucination detection pipeline as the proxy (WITNESS + ECE + EPR + Spectral)
+        but callable directly from any MCP client. Use this after generating a response to check
+        for factual claims that aren't grounded in the provided context.
+
+        Returns a structured verification report with:
+          - fused_risk: Combined hallucination probability [0.0 = safe, 1.0 = hallucinated]
+          - verdict: "pass", "warn", or "flag"
+          - per-signal scores (entity_coverage_gap, ece_curvature, epr_rate, spectral_consistency)
+          - flagged_claims: List of specific claims that may be hallucinated
+          - recommendation: Suggested action (accept / review / reject)
+
+        All computation is 100% local — zero LLM calls, zero API calls.
+
+        Args:
+            response: The AI-generated text to verify
+            context: The source context that was provided to the AI
+            prompt: The original user prompt/query (helps calibrate verification)
+        """
+        verification = {}
+
+        # 1. WITNESS: entity coverage gap
+        try:
+            from .witness import WitnessAnalyzer
+            analyzer = WitnessAnalyzer()
+            witness_result = analyzer.analyze(context or prompt, response)
+            verification["witness"] = {
+                "entity_coverage_gap": round(witness_result.summary_score, 4),
+                "flagged_claims": [
+                    {"claim": c.text[:120], "score": round(c.score, 3)}
+                    for c in (witness_result.flagged() or [])[:10]
+                ],
+                "total_claims": witness_result.total_claims,
+            }
+        except Exception as e:
+            verification["witness"] = {"status": "unavailable", "reason": str(e)[:100]}
+
+        # 2. ECE: Fisher curvature (hedging/uncertainty detection)
+        try:
+            from .ravs.ece import EpistemicCascadeEngine
+            ece = EpistemicCascadeEngine()
+            ece_result = ece.evaluate(response)
+            verification["ece"] = {
+                "curvature": round(ece_result.get("curvature", 0), 4),
+                "renyi_divergence": round(ece_result.get("renyi_divergence", 0), 4),
+                "risk_score": round(ece_result.get("risk_score", 0), 4),
+            }
+        except Exception as e:
+            verification["ece"] = {"status": "unavailable", "reason": str(e)[:100]}
+
+        # 3. EPR: Entropy Production Rate
+        try:
+            from .ravs.epr import compute_epr
+            epr_result = compute_epr(response)
+            verification["epr"] = {
+                "entropy_production_rate": round(epr_result.get("epr", 0), 4),
+                "risk_score": round(epr_result.get("risk_score", 0), 4),
+            }
+        except Exception as e:
+            verification["epr"] = {"status": "unavailable", "reason": str(e)[:100]}
+
+        # 4. Spectral: entity cross-similarity SVD
+        try:
+            from .ravs.spectral import compute_spectral_consistency
+            spec_result = compute_spectral_consistency(response, context)
+            verification["spectral"] = {
+                "consistency": round(spec_result.get("consistency", 1.0), 4),
+                "risk_score": round(spec_result.get("risk_score", 0), 4),
+            }
+        except Exception as e:
+            verification["spectral"] = {"status": "unavailable", "reason": str(e)[:100]}
+
+        # 5. Fused risk score (same 4-signal fusion as proxy)
+        w_entity = 0.80
+        w_ece = 0.08
+        w_epr = 0.07
+        w_spectral = 0.05
+
+        entity_gap = verification.get("witness", {}).get("entity_coverage_gap", 0)
+        ece_risk = verification.get("ece", {}).get("risk_score", 0)
+        epr_risk = verification.get("epr", {}).get("risk_score", 0)
+        spec_risk = verification.get("spectral", {}).get("risk_score", 0)
+
+        fused = (
+            w_entity * entity_gap
+            + w_ece * ece_risk
+            + w_epr * epr_risk
+            + w_spectral * spec_risk
+        )
+        fused = max(0.0, min(1.0, fused))
+
+        # Verdict thresholds
+        if fused < 0.15:
+            verdict = "pass"
+            recommendation = "Accept — response appears well-grounded"
+        elif fused < 0.40:
+            verdict = "warn"
+            recommendation = "Review — some claims may not be grounded in context"
+        else:
+            verdict = "flag"
+            recommendation = "Reject or rephrase — high hallucination risk detected"
+
+        verification["fused_risk"] = round(fused, 4)
+        verification["verdict"] = verdict
+        verification["recommendation"] = recommendation
+        verification["signal_weights"] = {
+            "entity_coverage_gap": w_entity,
+            "ece_curvature": w_ece,
+            "epr_rate": w_epr,
+            "spectral_consistency": w_spectral,
+        }
+
+        return json.dumps(verification, indent=2)
 
     return mcp, engine
 

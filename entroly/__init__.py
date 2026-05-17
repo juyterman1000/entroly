@@ -28,6 +28,7 @@ __version__ = "0.19.4"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
+    from .sdk import detect_hallucination, optimize  # noqa: F401
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 
