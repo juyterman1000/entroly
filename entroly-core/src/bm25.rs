@@ -56,15 +56,12 @@ pub struct BM25Index {
 pub struct BM25Score {
     /// Fraction of query terms that appear in this document [0, 1].
     /// High coverage = document addresses multiple aspects of the query.
+    // Full explainability breakdown. Every field is surfaced per hit by
+    // `recall_bm25`/`recall_auto`, so retrieval scores are auditable and
+    // all fields are genuinely consumed in production (no suppression).
     pub query_coverage: f64,
     pub bm25_base: f64,
-    // Explainability breakdown: computed and folded into `combined`
-    // (see `score`), and asserted by the test suite. Production code
-    // consumes only `combined`/`bm25_base`, so the lib build sees these
-    // two as write-only — intentional inspection fields, not dead code.
-    #[allow(dead_code)]
     pub path_boost: f64,
-    #[allow(dead_code)]
     pub identifier_boost: f64,
     pub combined: f64,
 }
