@@ -36,3 +36,14 @@ flate2 = "1.0"
 
 # Concurrency
 rayon = "1.12"
+
+# NOTE: Tantivy was evaluated as a retrieval substrate and REJECTED
+# (falsified): on Entroly's bounded-corpus regime a correct BM25 is
+# already at the quality ceiling, so Tantivy added ~no relevance gain
+# while pulling 50+ transitive crates (incl. an uncompilable
+# libm 0.2.16) and OOMing the release build — a direct violation of the
+# zero-dependency identity for zero benefit here. The retrieval fix
+# (auto-routing relevance recall to the existing in-tree `recall_bm25`
+# instead of the SimHash `recall()`) needs NO new dependency. A
+# learned-sparse / Tantivy tier remains a documented, CI-only,
+# falsify-first option for the semantic regime only — never default.

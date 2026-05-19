@@ -158,13 +158,17 @@ def load_swebench_tasks(max_samples: int = 50) -> list[SWETask]:
 # ── Retrieval Engine ─────────────────────────────────────────────────────
 
 def _simulate_repo_files(task: SWETask) -> list[dict]:
-    """Generate synthetic file fragments from SWE-bench task context.
+    """Generate a SYNTHETIC candidate corpus from the task.
 
-    SWE-bench doesn't include the full repo contents in the dataset.
-    We use the gold patch to extract real code snippets and generate
-    realistic file fragments that test retrieval quality.
-
-    This simulates what auto_index would produce on the real repo.
+    ⚠️ HONEST LIMITATION (audit P0-2): SWE-bench Lite ships no repo
+    contents, so the "gold" file's content here is RECONSTRUCTED FROM
+    THE GOLD PATCH ITSELF and the distractors are generic template
+    stubs. Retrieving it among ~50 boilerplate stubs is therefore close
+    to tautological — this is a wiring/sanity check that the selector
+    surfaces patch-relevant code among noise, NOT a real-repo retrieval
+    result. Do not report the hit-rate as a headline retrieval metric;
+    a true measurement requires cloning the real repos at the base
+    commit. The harness prints this caveat with every run.
     """
     fragments = []
 

@@ -84,9 +84,27 @@ jobs:
           name: wheels-windows
           path: dist
 
+  rust-gate:
+    # RELEASE SAFETY GATE (audit P0-4): the entroly-core wheel
+    # previously published gated only on the wheel compiling — a
+    # failing clippy/cargo-test still shipped. Mirrors ci.yml rust-tests.
+    name: Rust quality gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: entroly-core
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Clippy (-D warnings)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Unit tests
+        run: cargo test --lib
+
   publish:
     name: Publish to PyPI
-    needs: [linux-x86_64, linux-aarch64, macos-universal, windows]
+    needs: [rust-gate, linux-x86_64, linux-aarch64, macos-universal, windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/entroly-v') || github.event_name == 'workflow_dispatch'
     permissions:
