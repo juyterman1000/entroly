@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-wasm"
-version = "0.19.5"
+version = "0.19.6"
 dependencies = [
  "flate2",
  "js-sys",

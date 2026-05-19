@@ -42,7 +42,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "0.19.5"
+    __version__ = "0.19.6"
 
 # ── Force UTF-8 output on Windows ──
 # Windows terminals default to cp1252 which can't encode ✓/✗/─/⚡.

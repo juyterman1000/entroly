@@ -4068,7 +4068,7 @@ def main():
         from importlib.metadata import version as _pkg_version
         _version = _pkg_version("entroly")
     except Exception:
-        _version = "0.19.5"
+        _version = "0.19.6"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 
