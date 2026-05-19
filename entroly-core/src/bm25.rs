@@ -58,7 +58,13 @@ pub struct BM25Score {
     /// High coverage = document addresses multiple aspects of the query.
     pub query_coverage: f64,
     pub bm25_base: f64,
+    // Explainability breakdown: computed and folded into `combined`
+    // (see `score`), and asserted by the test suite. Production code
+    // consumes only `combined`/`bm25_base`, so the lib build sees these
+    // two as write-only — intentional inspection fields, not dead code.
+    #[allow(dead_code)]
     pub path_boost: f64,
+    #[allow(dead_code)]
     pub identifier_boost: f64,
     pub combined: f64,
 }
