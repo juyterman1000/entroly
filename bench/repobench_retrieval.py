@@ -16,7 +16,9 @@ Metric: Recall@K (does the correct function appear in the top-K retrieved?)
 Baselines:
   - Top-K:   Take first K functions in corpus order (FIFO)
   - BM25:    Classic Okapi BM25 sparse retrieval (zero external dependencies)
-  - Entroly: Entropy-weighted fragment selection via universal_compress
+  - Entroly: the real shipped engine (entroly_core: BM25 + entropy +
+             semantic + PRISM). Falls back to BM25 (clearly labelled)
+             only if the native engine is unavailable.
 
 No OpenAI key or GPU required — pure CPU computation.
 Cost: $0.00  |  Time: ~60s for 500 queries
@@ -40,6 +42,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+# Prefer the locally-built entroly_core.pyd (has recall_bm25) over the
+# stale site-packages version.
+_LOCAL_PYD = REPO_ROOT / "entroly" / "entroly_core.pyd"
+if _LOCAL_PYD.exists():
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("entroly_core", str(_LOCAL_PYD))
+    if _spec and _spec.loader:
+        _mod = importlib.util.module_from_spec(_spec)
+        sys.modules["entroly_core"] = _mod
+        _spec.loader.exec_module(_mod)
 
 GREEN, RED, BOLD, DIM, RESET = "\033[32m", "\033[31m", "\033[1m", "\033[2m", "\033[0m"
 
@@ -104,24 +117,81 @@ def rank_bm25(pool: list[str], query: str) -> list[int]:
 
 
 def rank_entroly(pool: list[str], query: str) -> list[int]:
-    """Entroly: score each snippet by KL-divergence from query tokens."""
-    # Use BM25 as the ranking signal; then rerank by entropy alignment
-    # For a fair comparison, use the same query-BM25 scores but normalise
-    # through universal_compress as a scoring oracle.
-    # Simplification: use BM25 rank as seed, then apply entropy re-ranking.
+    """Entroly: rank the pool with the REAL shipped engine.
+
+    Uses ``optimize_context`` — the production BM25 + TPKS (Tiered
+    Path-Kernel Scoring) pipeline that the engine actually uses for
+    repo-level context selection.
+
+    **Why not ``recall()``?**  ``recall()`` scores by SimHash Hamming
+    distance — a near-duplicate detection metric that produces ~0.45
+    noise for query→document retrieval.  ``optimize_context`` is where
+    the real BM25 index is built and used; it is the code path that
+    ships in the product.
+
+    NOTE: if the native engine is unavailable this transparently falls
+    back to BM25 and the harness labels the row accordingly.
+    """
+    if not pool:
+        return []
     try:
-        from entroly.universal_compress import universal_compress
-        # Score each snippet individually by compression ratio (high ratio = low entropy = less novel)
-        query_toks = set(_tok(query))
-        scores = []
-        for i, fn in enumerate(pool):
-            fn_toks = set(_tok(fn))
-            overlap = len(query_toks & fn_toks)
-            scores.append((overlap, i))
-        scores.sort(reverse=True)
-        return [i for _, i in scores]
+        import entroly_core as ec
+    except Exception:
+        return BM25(pool).rank(query)  # honest fallback (harness labels it)
+
+    engine = ec.EntrolyEngine()
+    for i, fn in enumerate(pool):
+        # source encodes the pool index so we can map ranking back.
+        engine.ingest(fn, f"idx{i}", max(1, len(fn) // 4), False)
+
+    # Use recall_bm25 — the dedicated BM25+TPKS ranking path added to
+    # the Rust engine.  Pure O(N×Q) scoring without knapsack/IOS overhead.
+    # Falls back to optimize_context (same quality, higher latency) if
+    # the method isn't available in the installed wheel yet.
+    ranked: list[int] = []
+    seen: set[int] = set()
+    try:
+        if hasattr(engine, "recall_bm25"):
+            for item in engine.recall_bm25(query, len(pool)):
+                src = item.get("source", "")
+                if src.startswith("idx"):
+                    idx = int(src[3:])
+                    if idx not in seen:
+                        ranked.append(idx)
+                        seen.add(idx)
+        else:
+            # Fallback: optimize (full pipeline, same BM25 quality)
+            total_tokens = sum(max(1, len(fn) // 4) for fn in pool)
+            budget = total_tokens + 10000
+            engine.advance_turn()
+            result = engine.optimize(budget, query)
+            selected = result.get("selected_fragments", []) or result.get("selected", [])
+            for item in selected:
+                src = item.get("source", "")
+                if src.startswith("idx"):
+                    idx = int(src[3:])
+                    if idx not in seen:
+                        ranked.append(idx)
+                        seen.add(idx)
     except Exception:
         return BM25(pool).rank(query)
+
+    # Any candidates the engine did not surface (e.g. deduped or
+    # below the scoring threshold) rank last, in original order.
+    for i in range(len(pool)):
+        if i not in seen:
+            ranked.append(i)
+    return ranked
+
+
+def entroly_engine_available() -> bool:
+    """Whether the native engine (the real Entroly path) is usable."""
+    try:
+        import entroly_core as ec
+        ec.EntrolyEngine()
+        return True
+    except Exception:
+        return False
 
 
 def recall_at_k(ranked: list[int], gold_idx: int, k: int = 1) -> bool:
@@ -224,6 +294,7 @@ def run_benchmark(args) -> dict:
             "avg_ms": round(s["ms"] / n, 2),
         }
 
+    entroly_real = entroly_engine_available()
     return {
         "dataset": "CodeSearchNet",
         "task": "code retrieval (docstring → function)",
@@ -231,6 +302,8 @@ def run_benchmark(args) -> dict:
         "n_sampled": n_sample,
         "pool_size": pool_size,
         "budget_tokens": args.budget,
+        "entroly_path": ("entroly_core engine (real)" if entroly_real
+                         else "BM25 FALLBACK (native engine unavailable)"),
         "summary": summary,
     }
 
@@ -248,6 +321,7 @@ def print_report(report: dict) -> None:
     print(f"  dataset=CodeSearchNet  lang={report['language']}  "
           f"n={report['n_sampled']}  pool={report['pool_size']}  "
           f"budget={report['budget_tokens']} tokens")
+    print(f"  entroly path: {report.get('entroly_path', '?')}")
     print()
 
     header = f"  {'method':<12} {'R@1':>8} {'R@5':>6} {'MRR':>7} {'avg ms':>9} {'errors':>7}"

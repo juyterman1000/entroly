@@ -1,0 +1,24 @@
+# Smithery Configuration File for Entroly
+# Enables one-click installation on Smithery.ai for Cursor, Claude Desktop, and Windsurf.
+
+startCommand:
+  type: "stdio"
+  configSchema:
+    type: "object"
+    properties:
+      DEBUG:
+        type: "boolean"
+        description: "Enable debug-level logging (all subsystem details to stderr)"
+        default: false
+  commandFunction: |-
+    (config) => {
+      const args = ["serve"];
+      if (config.DEBUG) {
+        args.push("--debug");
+      }
+      return {
+        command: "uvx",
+        args: ["--from", "entroly", "entroly", ...args],
+        env: {}
+      };
+    }

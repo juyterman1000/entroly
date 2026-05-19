@@ -354,11 +354,20 @@ def detect_hallucination(
     context: str = "",
     prompt: str = "",
 ) -> dict[str, Any]:
-    """Detect hallucination in AI-generated text using the 4-signal fusion cascade.
+    """Detect hallucination in AI-generated text, locally and at $0.
 
-    Runs WITNESS (entity coverage gap), ECE (Fisher curvature), EPR (entropy
-    production rate), and Spectral (entity cross-similarity) locally, then
-    fuses the four signals into a single risk score.
+    Scoring is WITNESS-only — the one benchmark-validated detector here
+    (faithful HaluEval-QA AUROC ≈ 0.80; deterministic, no LLM call).
+    `fused_risk` is exactly the WITNESS risk and is never blended with
+    the other signals: a fitted blend over them was falsified as a
+    benchmark-construction artifact (see the Fusion-4 falsification
+    report), and mixing uncalibrated correlates into a calibrated score
+    only degrades it. ECE (Fisher curvature), EPR (entropy production)
+    and Spectral (entity cross-similarity) run as labelled *unvalidated*
+    diagnostics; their only authority is selective abstention — on
+    strong joint disagreement they can nudge the *action* one notch
+    toward caution (pass → warn), never alter the number or lower a
+    verdict. Every signal is returned for audit.
 
     Args:
         response: The AI-generated text to verify
@@ -367,14 +376,14 @@ def detect_hallucination(
 
     Returns:
         Dict with:
-          - fused_risk: Combined probability [0.0 = safe, 1.0 = hallucinated]
+          - fused_risk: WITNESS risk [0.0 = grounded, 1.0 = hallucinated]
           - verdict: "pass" (<0.15), "warn" (0.15–0.40), or "flag" (>0.40)
           - recommendation: Human-readable action to take
-          - witness: Entity coverage analysis
-          - ece: Hedging/uncertainty curvature
-          - epr: Entropy production rate
-          - spectral: Entity cross-similarity
-          - flagged_claims: Specific claims that may be hallucinated
+          - primary_signal: always "witness" (the validated detector)
+          - auxiliary_abstention: True if aux signals forced pass→warn
+          - witness: {risk_score, groundedness, n_claims, validated:True}
+          - ece / epr / spectral: {risk_score, validated:False} diagnostics
+          - flagged_claims: [{claim, risk, label}, ...] from WITNESS
 
     Example::
 
@@ -388,70 +397,84 @@ def detect_hallucination(
         if result["verdict"] == "flag":
             print("Hallucination risk:", result["fused_risk"])
             for claim in result["flagged_claims"]:
-                print(f"  - {claim['claim']} (score={claim['score']})")
+                print(f"  - {claim['claim']} (risk={claim['risk']})")
     """
     signals: dict[str, Any] = {}
 
-    # 1. WITNESS: entity coverage gap
+    # ── 1. WITNESS — the ONLY benchmark-validated signal ──────────────
+    # Faithful HaluEval-QA protocol: AUROC 0.798 (README). risk is the
+    # *complement* of groundedness (summary_score is faithfulness, higher
+    # = LESS risk). Deterministic + $0 (force_python, no NLI) to match
+    # the published number and stay zero-cost.
+    witness_risk = 0.0
+    flagged_claims: list[dict[str, Any]] = []
     try:
         from .witness import WitnessAnalyzer
-        analyzer = WitnessAnalyzer()
-        witness_result = analyzer.analyze(context or prompt, response)
+        analyzer = WitnessAnalyzer(use_nli=False, force_python=True)
+        wr = analyzer.analyze(context or prompt, response)
+        witness_risk = round(max(0.0, 1.0 - float(wr.summary_score)), 4)
         signals["witness"] = {
-            "entity_coverage_gap": round(witness_result.summary_score, 4),
-            "total_claims": witness_result.total_claims,
+            "risk_score": witness_risk,
+            "groundedness": round(float(wr.summary_score), 4),
+            "n_claims": len(getattr(wr, "certificates", []) or []),
+            "validated": True,
         }
         flagged_claims = [
-            {"claim": c.text[:120], "score": round(c.score, 3)}
-            for c in (witness_result.flagged() or [])[:10]
+            {"claim": c.claim_text[:120], "risk": round(c.risk, 3),
+             "label": getattr(c, "label", "")}
+            for c in (wr.flagged() or [])[:10]
         ]
     except Exception:
-        signals["witness"] = {"entity_coverage_gap": 0, "status": "unavailable"}
-        flagged_claims = []
+        signals["witness"] = {"risk_score": 0.0, "validated": True,
+                              "status": "unavailable"}
 
-    # 2. ECE: Fisher curvature (hedging language detection)
-    try:
-        from .ravs.ece import EpistemicCascadeEngine
-        ece = EpistemicCascadeEngine()
-        ece_result = ece.evaluate(response)
-        signals["ece"] = {
-            "curvature": round(ece_result.get("curvature", 0), 4),
-            "risk_score": round(ece_result.get("risk_score", 0), 4),
-        }
-    except Exception:
-        signals["ece"] = {"risk_score": 0, "status": "unavailable"}
+    def _aux(name: str, fn: Any) -> float:
+        """Run an unvalidated auxiliary signal, fail-open to 0.0."""
+        try:
+            r = max(0.0, min(1.0, float(fn())))
+            signals[name] = {"risk_score": round(r, 4), "validated": False}
+            return r
+        except Exception:
+            signals[name] = {"risk_score": 0.0, "validated": False,
+                             "status": "unavailable"}
+            return 0.0
 
-    # 3. EPR: Entropy Production Rate
-    try:
-        from .ravs.epr import compute_epr
-        epr_result = compute_epr(response)
-        signals["epr"] = {
-            "entropy_production_rate": round(epr_result.get("epr", 0), 4),
-            "risk_score": round(epr_result.get("risk_score", 0), 4),
-        }
-    except Exception:
-        signals["epr"] = {"risk_score": 0, "status": "unavailable"}
+    # ── 2-4. Unvalidated auxiliary tripwires ──────────────────────────
+    # NOT individually benchmark-validated. Used ONLY to RAISE the alarm,
+    # never to lower the WITNESS verdict, and combined with NO fitted
+    # weights. A fitted linear blend over these is exactly what produced
+    # the rejected Fusion-4 HaluEval-construction artifact — see
+    # benchmarks/results/fusion4_falsification_report.md. Do not
+    # "optimize" weights here; that re-introduces the artifact.
+    from .ravs.ece import compute_fisher_curvature
+    from .ravs.epr import compute_epr
+    from .ravs.spectral import compute_spectral_consistency
 
-    # 4. Spectral: entity cross-similarity SVD
-    try:
-        from .ravs.spectral import compute_spectral_consistency
-        spec_result = compute_spectral_consistency(response, context)
-        signals["spectral"] = {
-            "consistency": round(spec_result.get("consistency", 1.0), 4),
-            "risk_score": round(spec_result.get("risk_score", 0), 4),
-        }
-    except Exception:
-        signals["spectral"] = {"risk_score": 0, "status": "unavailable"}
-
-    # 5. Fuse (same weights as proxy)
-    fused = (
-        0.80 * signals.get("witness", {}).get("entity_coverage_gap", 0)
-        + 0.08 * signals.get("ece", {}).get("risk_score", 0)
-        + 0.07 * signals.get("epr", {}).get("risk_score", 0)
-        + 0.05 * signals.get("spectral", {}).get("risk_score", 0)
+    ece_risk = _aux(
+        "ece", lambda: min(1.0, compute_fisher_curvature(response)[0] * 2.5)
     )
-    fused = max(0.0, min(1.0, fused))
+    epr_risk = _aux("epr", lambda: compute_epr(response).risk_score)
+    spectral_risk = _aux(
+        "spectral",
+        lambda: 1.0 - compute_spectral_consistency(
+            context or prompt, response).score,
+    )
 
+    # ── 5. Risk = the validated WITNESS signal ONLY ───────────────────
+    # The numeric risk is exactly the WITNESS score (faithful HaluEval-QA
+    # AUROC ≈ 0.80). It is NEVER blended with the unvalidated
+    # auxiliaries: a fitted blend over those was falsified as a
+    # benchmark-construction artifact (see benchmarks/results/
+    # fusion4_falsification_report.md). Mixing an uncalibrated correlate
+    # into a calibrated probability strictly degrades it — so the
+    # auxiliaries do not touch the number.
+    fused = witness_risk
+
+    # Verdict bands on the validated signal. These are documented
+    # heuristic operating points, NOT a conformal coverage guarantee:
+    # the high-recall calibrated τ from the faithful benchmark would
+    # flag almost everything, so balanced review bands are used and
+    # labelled honestly rather than overclaimed.
     if fused < 0.15:
         verdict, rec = "pass", "Accept — response appears well-grounded"
     elif fused < 0.40:
@@ -459,10 +482,31 @@ def detect_hallucination(
     else:
         verdict, rec = "flag", "Reject or rephrase — high hallucination risk"
 
+    # ── 6. Selective-abstention escalator (action only, never score) ──
+    # Unvalidated auxiliaries get exactly one defensible job: push the
+    # ACTION one notch toward caution on STRONG JOINT disagreement
+    # (≥2 of 3 above a high bar) when WITNESS would otherwise pass. They
+    # never lower a verdict, never alter `fused_risk`, never fabricate a
+    # number. This is the proven-safe direction (selective abstention /
+    # route-to-review) consistent with the falsified escalation/
+    # conformal work already in this codebase. No fitted constants.
+    aux_strong = sum(r >= 0.60 for r in (ece_risk, epr_risk, spectral_risk))
+    abstained = False
+    if verdict == "pass" and aux_strong >= 2:
+        verdict = "warn"
+        rec = ("Review — WITNESS reads grounded but multiple unvalidated "
+               "auxiliary signals disagree; abstaining toward caution")
+        abstained = True
+
     return {
         "fused_risk": round(fused, 4),
         "verdict": verdict,
         "recommendation": rec,
+        "primary_signal": "witness",
+        "scoring": ("witness-only (benchmark-validated); auxiliaries are "
+                    "unvalidated diagnostics that can only escalate the "
+                    "action via selective abstention"),
+        "auxiliary_abstention": abstained,
         "flagged_claims": flagged_claims,
         **signals,
     }

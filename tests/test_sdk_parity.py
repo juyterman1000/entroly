@@ -1,51 +1,101 @@
-"""Smoke test: verify new SDK functions are importable and callable."""
+"""SDK public-surface regression tests.
 
-# 1. Import check
-from entroly import detect_hallucination, optimize, compress, verify
-print("[PASS] All 4 SDK functions importable from entroly")
+These are real pytest tests (the old file was module-level script style
+and collected ZERO tests under pytest, which is exactly how the broken
+`detect_hallucination` shipped — 3/4 signals silently dead and the
+WITNESS signal inverted/mislabelled). Each test below would have failed
+on the shipped v0.19.x code.
+"""
 
-# 2. detect_hallucination
-result = detect_hallucination(
-    response="The function process_data() calls validate_input() and returns a DataFrame.",
-    context="def process_data(x): return x * 2\ndef transform(y): return y + 1",
-    prompt="fix the data pipeline",
-)
-assert "fused_risk" in result
-assert "verdict" in result
-assert result["verdict"] in ("pass", "warn", "flag")
-assert "recommendation" in result
-print(f"[PASS] detect_hallucination: verdict={result['verdict']}, fused_risk={result['fused_risk']}")
+from __future__ import annotations
 
-# 3. Grounded text should pass
-grounded = detect_hallucination(
-    response="The function process_data takes x and returns x times 2. The transform function adds 1.",
-    context="def process_data(x): return x * 2\ndef transform(y): return y + 1",
-)
-print(f"[PASS] Grounded text: verdict={grounded['verdict']}, fused_risk={grounded['fused_risk']}")
+import pytest
 
-# 4. optimize
-fragments = [
-    {"content": "def login(user, password): validate(user); return token", "source": "auth.py", "token_count": 15},
-    {"content": "def logout(session): clear(session); return True", "source": "auth.py", "token_count": 12},
-    {"content": "const PI = 3.14159; function area(r) { return PI*r*r; }", "source": "math.js", "token_count": 18},
-]
-opt_result = optimize(fragments, budget=30, query="fix the login function")
-assert "selected" in opt_result
-assert "context_text" in opt_result
-assert "fragments_selected" in opt_result
-assert opt_result["fragments_total"] == 3
-print(f"[PASS] optimize: selected {opt_result['fragments_selected']}/{opt_result['fragments_total']} fragments, {opt_result['total_tokens']} tokens")
+from entroly import compress, detect_hallucination, optimize, verify
 
-# 5. compress still works
-long_text = "The quick brown fox jumped over the lazy dog. " * 100
-compressed = compress(long_text, budget=50)
-assert len(compressed) <= len(long_text)
-print(f"[PASS] compress: {len(long_text)} -> {len(compressed)} chars")
+CTX = ("The Eiffel Tower is in Paris, France, completed in 1889 by "
+       "Gustave Eiffel.")
+HALLUCINATION = ("The Eiffel Tower is in Berlin and was built in 1750 "
+                 "by Napoleon Bonaparte.")
+GROUNDED = "The Eiffel Tower is in Paris and was completed in 1889."
 
-# 6. verify still works
-v = verify("import os\nos.path.exists('/tmp')", context="import os")
-assert "ipd" in v
-print(f"[PASS] verify: ipd={v['ipd']}, verdict={v['verdict']}")
 
-print()
-print("All 6 SDK integration tests passed!")
+def test_sdk_functions_importable():
+    for fn in (detect_hallucination, optimize, compress, verify):
+        assert callable(fn)
+
+
+def test_detect_hallucination_shape():
+    r = detect_hallucination(HALLUCINATION, context=CTX)
+    for k in ("fused_risk", "verdict", "recommendation", "primary_signal",
+              "auxiliary_abstention", "witness", "ece", "epr", "spectral",
+              "flagged_claims"):
+        assert k in r, f"missing key {k!r}"
+    assert r["verdict"] in ("pass", "warn", "flag")
+    assert 0.0 <= r["fused_risk"] <= 1.0
+
+
+def test_all_four_signals_actually_execute():
+    """The shipped P0 bug: ece/epr/spectral threw on every call and were
+    silently zeroed with status 'unavailable'. Guard that they run."""
+    r = detect_hallucination(HALLUCINATION, context=CTX)
+    for sig in ("witness", "ece", "epr", "spectral"):
+        assert "risk_score" in r[sig], f"{sig} has no risk_score"
+        assert r[sig].get("status") != "unavailable", (
+            f"{sig} did not execute (regression: signal API broken)"
+        )
+    assert r["witness"]["validated"] is True
+    for sig in ("ece", "epr", "spectral"):
+        assert r[sig]["validated"] is False, (
+            f"{sig} must be marked unvalidated, not sold as validated"
+        )
+
+
+def test_score_is_witness_only_never_polluted():
+    """fused_risk must equal the validated WITNESS risk exactly — no
+    fitted blend (that blend was the falsified Fusion-4 artifact)."""
+    r = detect_hallucination(HALLUCINATION, context=CTX)
+    assert r["primary_signal"] == "witness"
+    assert r["fused_risk"] == pytest.approx(
+        r["witness"]["risk_score"], abs=1e-4
+    ), "score was blended with unvalidated signals — artifact risk"
+
+
+def test_hallucination_scores_higher_than_grounded():
+    bad = detect_hallucination(HALLUCINATION, context=CTX)
+    good = detect_hallucination(GROUNDED, context=CTX)
+    assert bad["fused_risk"] > good["fused_risk"] + 0.2, (
+        f"detector not discriminative: bad={bad['fused_risk']} "
+        f"good={good['fused_risk']}"
+    )
+    assert bad["verdict"] in ("warn", "flag")
+    assert good["verdict"] == "pass"
+    # WITNESS must surface the contradicted claim on the hallucination.
+    assert bad["flagged_claims"], "no flagged claims on a blatant hallucination"
+    assert "risk" in bad["flagged_claims"][0]
+
+
+def test_auxiliaries_can_only_escalate_action_not_lower():
+    """Selective abstention may turn pass→warn but must never lower a
+    verdict nor change the number."""
+    r = detect_hallucination(GROUNDED, context=CTX)
+    assert r["verdict"] in ("pass", "warn")  # never silently downgraded
+    if r["auxiliary_abstention"]:
+        assert r["verdict"] == "warn"
+    # Number is unchanged regardless of abstention.
+    assert r["fused_risk"] == pytest.approx(r["witness"]["risk_score"],
+                                            abs=1e-4)
+
+
+def test_optimize_and_compress_still_work():
+    frags = [
+        {"content": "def login(u,p): validate(u); return token",
+         "source": "auth.py", "token_count": 15},
+        {"content": "const PI=3.14159; function area(r){return PI*r*r;}",
+         "source": "math.js", "token_count": 18},
+    ]
+    o = optimize(frags, budget=30, query="fix the login function")
+    assert o["fragments_total"] == 2
+    assert "context_text" in o
+    long_text = "The quick brown fox jumped over the lazy dog. " * 100
+    assert len(compress(long_text, budget=50)) <= len(long_text)
