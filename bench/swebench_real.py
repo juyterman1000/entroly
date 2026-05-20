@@ -329,7 +329,8 @@ def main() -> None:
     ds = load_dataset("princeton-nlp/SWE-bench_Lite", split="test")
     tasks = _stratified(ds, args.samples, args.seed)
 
-    methods = ["engine", "bm25", "tier0", "engine_s5"]
+    methods = ["engine", "bm25", "tier0", "engine_s5", "tier0_ppr",
+               "engine_s6"]
     if args.embed:
         _load_env()
         if os.environ.get("OPENAI_API_KEY"):
@@ -378,11 +379,18 @@ def main() -> None:
         loc = Tier0Localizer(files)
         bm25_full = loc._bm25_content.ranking(_tok(query))
         engine_full = _rank(files, query, max(kmax, 50))   # base for rerank
+        engine_s5_full = loc.rerank(engine_full, query, kmax)
         ranked_by = {
             "engine": engine_full[:kmax],
             "bm25": bm25_full[:kmax],
             "tier0": loc.rank(query, kmax),                 # v4 pure fusion
-            "engine_s5": loc.rerank(engine_full, query, kmax),  # v4 rerank
+            "engine_s5": engine_s5_full,                    # v4 rerank
+            "tier0_ppr": loc.rerank_ppr(query, kmax),       # BM25 prior + PPR
+            # engine_s6 = engine_s5 + deterministic edit-target prior
+            # (window=20, frozen explicit cues, src>test>non-src class
+            # re-prio with doc/test intent guards, test→source mirror).
+            "engine_s6": loc.rerank_edit_target(
+                engine_s5_full, query, kmax),
         }
         if "embed" in methods:
             ranked_by["embed"] = _embed_rank(files, query, kmax, bm25_full)

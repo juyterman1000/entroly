@@ -161,12 +161,19 @@ def extract_model(body: dict[str, Any], path: str = "") -> str:
     return ""
 
 
-# Anthropic accepts some request fields only on newer Claude generations.
-# If a client sends them while targeting Claude 3.x, the native Anthropic API
-# rejects the request with "Extra inputs are not permitted". Keep this as a
-# pure transform so the proxy can apply it whether or not RAVS changes models.
-ANTHROPIC_LEGACY_REJECTED_PARAMS: frozenset[str] = frozenset({
+# Claude Code may send local/client-side request metadata that the public
+# Anthropic Messages API rejects with "Extra inputs are not permitted".
+# `context_management` is one of those fields: it is useful to Claude Code's
+# own transport, but it is not safe to forward through an API-compatible proxy.
+ANTHROPIC_ALWAYS_REJECTED_PARAMS: frozenset[str] = frozenset({
     "context_management",
+})
+
+# Anthropic accepts some request fields only on newer Claude generations. If a
+# client sends them while targeting Claude 3.x, the native Anthropic API rejects
+# the request. Keep this as a pure transform so the proxy can apply it whether
+# or not RAVS changes models.
+ANTHROPIC_LEGACY_REJECTED_PARAMS: frozenset[str] = frozenset({
     "thinking",
 })
 
@@ -190,16 +197,19 @@ def strip_anthropic_unsupported_params(
 ) -> dict[str, Any]:
     """Strip Anthropic fields rejected by the request's target model.
 
-    The function is intentionally conservative: unknown/future model names keep
-    the original fields. Only confidently identified Claude 3.x targets lose
-    Claude-4-only parameters.
+    `context_management` is stripped for every native Anthropic forward because
+    Claude Code can emit it even when the public API rejects it. Generation
+    fields that are only known to be rejected by legacy Claude 3.x models are
+    stripped only for those confidently identified model IDs.
     """
     model = target_model if target_model is not None else str(body.get("model", ""))
-    if not is_legacy_claude_3_model(model):
+    params_to_strip = set(ANTHROPIC_ALWAYS_REJECTED_PARAMS)
+    if is_legacy_claude_3_model(model):
+        params_to_strip.update(ANTHROPIC_LEGACY_REJECTED_PARAMS)
+    if not any(param in body for param in params_to_strip):
         return body
-
     cleaned = dict(body)
-    for param in ANTHROPIC_LEGACY_REJECTED_PARAMS:
+    for param in params_to_strip:
         cleaned.pop(param, None)
     return cleaned
 

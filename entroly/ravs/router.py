@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..proxy_transform import (
+    ANTHROPIC_ALWAYS_REJECTED_PARAMS,
     ANTHROPIC_LEGACY_REJECTED_PARAMS,
     is_legacy_claude_3_model,
     strip_anthropic_unsupported_params,
@@ -564,15 +565,16 @@ def _load_cells_from_log(log_path: str) -> dict[str, dict[str, Any]]:
     return cells
 
 
-# Parameters that only the Claude 4.5+ / Opus 4.5+ generation accepts.
-# Sending these to a Claude 3.x model (Sonnet 3.5, Haiku 3, Haiku 3.5)
-# makes Anthropic respond with `400 ... Extra inputs are not permitted`.
+# Parameters that are unsafe to strand in a routed native-Anthropic body.
+# `context_management` is stripped for every Anthropic target because Claude
+# Code can emit it while the public Messages API rejects it. Generation params
+# such as `thinking` are stripped only for legacy Claude 3.x targets.
 #
 # This list is intentionally minimal; it grows as Anthropic adds new
-# gated parameters. See gh#44 for the original symptom report from a
-# user whose Claude Code session sent `context_management` and got
-# routed to Haiku-3 by RAVS, leaving the field stranded.
-_EXTENDED_ONLY_PARAMS = ANTHROPIC_LEGACY_REJECTED_PARAMS
+# gated/rejected parameters. See gh#44 / gh#45 for the original symptom report
+# from users whose Claude Code session sent `context_management` and Anthropic
+# returned `400 ... Extra inputs are not permitted`.
+_EXTENDED_ONLY_PARAMS = ANTHROPIC_ALWAYS_REJECTED_PARAMS | ANTHROPIC_LEGACY_REJECTED_PARAMS
 
 
 def _is_legacy_claude_3(model: str) -> bool:

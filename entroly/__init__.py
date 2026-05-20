@@ -32,6 +32,13 @@ try:
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 
+# engine_s6 — public file-localization API (used internally by SDK / MCP /
+# proxy / CLI; also callable directly for advanced agent integrations).
+try:
+    from .file_localizer import localize_files, localize_fragments  # noqa: F401
+except ImportError:
+    pass
+
 # Verification SDK: hallucination detection + suppression
 try:
     from .verifiers import trace_provenance, forge_loop  # noqa: F401

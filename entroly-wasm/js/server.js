@@ -157,7 +157,9 @@ class EntrolyMCPServer {
       }
 
       case 'recall_relevant':
-        return this.engine.recall(args.query, args.top_k || 5);
+        // Use BM25-backed relevance recall, not SimHash near-duplicate recall.
+        // This mirrors the Python MCP server's recall_relevant path.
+        return this.engine.recall_auto(args.query, args.top_k || 5);
 
       case 'record_outcome': {
         const ids = (args.fragment_ids || '').split(',').map(s => s.trim()).filter(Boolean);

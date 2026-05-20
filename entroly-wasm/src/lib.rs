@@ -23,6 +23,7 @@
 )]
 
 mod anomaly;
+mod bm25;
 mod cache;
 mod causal;
 mod channel;
@@ -37,6 +38,7 @@ mod health;
 mod hierarchical;
 mod knapsack;
 mod knapsack_sds;
+mod localization;
 mod lsh;
 mod nkbe;
 mod prism;
@@ -1326,6 +1328,82 @@ impl WasmEntrolyEngine {
             }
         }
 
+        // ── engine_s6: edit-target reorder of selected items by source ──
+        // Mirrors the Python `engine.optimize_context` post-pass exactly so
+        // npm/WASM users get the same engine_s6 ordering as pip / Python-MCP.
+        // Knapsack already picked WHICH fragments stay in budget; this only
+        // re-orders those by file-edit-target priority (source > test > non-
+        // source within a top-20 window, explicit-cue freeze, doc/test
+        // intent guards, test→source mirror). Token totals and savings are
+        // unchanged. Recall-safe by construction.
+        if !query.is_empty() && selected_json.len() > 1 {
+            let mut by_src: HashMap<String, String> = HashMap::new();
+            for f in &frags {
+                by_src
+                    .entry(f.source.clone())
+                    .and_modify(|s| {
+                        s.push('\n');
+                        s.push_str(&f.content);
+                    })
+                    .or_insert_with(|| f.content.clone());
+            }
+            // Distinct source paths in current emission order.
+            let mut sel_sources: Vec<String> = Vec::new();
+            let mut sel_seen: HashSet<String> = HashSet::new();
+            for item in &selected_json {
+                if let Some(s) = item.get("source").and_then(|v| v.as_str()) {
+                    let st = s.to_string();
+                    if sel_seen.insert(st.clone()) {
+                        sel_sources.push(st);
+                    }
+                }
+            }
+            if sel_sources.len() >= 2 {
+                let files: Vec<(String, String)> = sel_sources
+                    .iter()
+                    .map(|s| (s.clone(), by_src.get(s).cloned().unwrap_or_default()))
+                    .collect();
+                let reranked = localization::rerank_edit_target(
+                    &files,
+                    &sel_sources,
+                    &query,
+                    sel_sources.len().saturating_add(20),
+                );
+                // Re-emit in reranked source order, within-source order preserved.
+                let mut groups: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+                for item in selected_json.drain(..) {
+                    let key = item
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    groups.entry(key).or_default().push(item);
+                }
+                let mut out: Vec<serde_json::Value> = Vec::new();
+                let mut emitted: HashSet<String> = HashSet::new();
+                for s in &reranked {
+                    if let Some(v) = groups.remove(s) {
+                        out.extend(v);
+                        emitted.insert(s.clone());
+                    }
+                }
+                // Any sources missing from the rerank result → keep them in
+                // the original emission order (recall floor).
+                for s in &sel_sources {
+                    if !emitted.contains(s) {
+                        if let Some(v) = groups.remove(s) {
+                            out.extend(v);
+                        }
+                    }
+                }
+                // Empty-source items (defensive) at the tail.
+                if let Some(v) = groups.remove("") {
+                    out.extend(v);
+                }
+                selected_json = out;
+            }
+        }
+
         // ── Build result ──
         let cache_eligible = !query.is_empty() && explored_ids.is_empty();
         self.last_cache_feedback_eligible = cache_eligible;
@@ -1698,6 +1776,72 @@ impl WasmEntrolyEngine {
             })
             .collect();
         json_to_js(&serde_json::Value::Array(results))
+    }
+
+    /// BM25 relevance retrieval — byte-identical behaviour to
+    /// entroly-core's `recall_bm25` (same ported `bm25.rs`, same schema
+    /// incl. the auditable score breakdown). This is the npm/wasm half
+    /// of the cross-runtime parity fix: SimHash `recall()` is a
+    /// near-duplicate metric (~0.44 R@1); a real BM25 is the correct
+    /// tool (~1.0). pip / Python-MCP / npm now behave the same.
+    #[wasm_bindgen]
+    pub fn recall_bm25(&self, query: String, top_k: usize) -> JsValue {
+        if query.is_empty() || self.fragments.is_empty() {
+            return json_to_js(&serde_json::Value::Array(vec![]));
+        }
+        let query_terms: Vec<String> = bm25::tokenize_code(&query);
+        if query_terms.is_empty() {
+            return json_to_js(&serde_json::Value::Array(vec![]));
+        }
+        let doc_tuples: Vec<(String, String, String)> = self
+            .fragments
+            .iter()
+            .map(|(id, f)| (id.clone(), f.content.clone(), f.source.clone()))
+            .collect();
+        let bm25_idx = bm25::BM25Index::build(&doc_tuples);
+        let mut scored: Vec<(&ContextFragment, bm25::BM25Score)> = self
+            .fragments
+            .values()
+            .map(|f| {
+                let identifiers = depgraph::extract_identifiers(&f.content);
+                let s = bm25_idx.score(&query_terms, &f.content, &f.source, &identifiers);
+                (f, s)
+            })
+            .collect();
+        scored.sort_unstable_by(|a, b| {
+            b.1.combined
+                .partial_cmp(&a.1.combined)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.fragment_id.cmp(&b.0.fragment_id))
+        });
+        scored.truncate(top_k);
+        let r4 = |x: f64| (x * 10000.0).round() / 10000.0;
+        let results: Vec<serde_json::Value> = scored
+            .iter()
+            .map(|(f, s)| {
+                serde_json::json!({
+                    "fragment_id": f.fragment_id, "source": f.source,
+                    "relevance": r4(s.combined),
+                    "entropy": r4(f.entropy_score),
+                    "content": f.content,
+                    "token_count": f.token_count,
+                    "bm25_base": r4(s.bm25_base),
+                    "path_boost": r4(s.path_boost),
+                    "identifier_boost": r4(s.identifier_boost),
+                    "query_coverage": r4(s.query_coverage),
+                })
+            })
+            .collect();
+        json_to_js(&serde_json::Value::Array(results))
+    }
+
+    /// AUTO retrieval — zero-config: relevance recall is *always* a
+    /// relevance need, so route to BM25, never the SimHash `recall()`.
+    /// Mirrors entroly-core's `recall_auto` exactly so every surface
+    /// (pip / Python-MCP / npm-wasm) ships ONE behaviour.
+    #[wasm_bindgen]
+    pub fn recall_auto(&self, query: String, top_k: usize) -> JsValue {
+        self.recall_bm25(query, top_k)
     }
 
     /// Remove a fragment by ID.
