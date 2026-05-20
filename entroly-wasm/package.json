@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "0.19.6",
+  "version": "0.19.7",
   "description": "Information-theoretic context optimization for AI coding agents. Zero-friction, pure WebAssembly - no Python dependency.",
   "main": "index.js",
   "types": "pkg/entroly_wasm.d.ts",
