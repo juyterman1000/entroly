@@ -160,7 +160,7 @@ jobs:
         working-directory: entroly-wasm
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.TEST_NPM }}
+          NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
   publish-npm-mcp:
     needs: [build-and-push, quality-gate]
@@ -188,7 +188,7 @@ jobs:
         working-directory: entroly/npm
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.TEST_NPM }}
+          NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
   github-release:
     # The GitHub Releases page was frozen at v0.19.2 because nothing
