@@ -189,3 +189,35 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.TEST_NPM }}
+
+  github-release:
+    # The GitHub Releases page was frozen at v0.19.2 because nothing
+    # here ever created a Release object — tags shipped to PyPI/npm but
+    # never appeared under "Releases". This creates one automatically
+    # for every tagged release, AFTER the quality gate AND all publishes
+    # succeed, so a Release never advertises a version that failed to
+    # ship. Auto-generated notes from commit history.
+    needs: [quality-gate, publish-pypi, publish-npm, publish-npm-mcp]
+    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (full history for release notes)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#entroly-v}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists — skipping."
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "v${VERSION}" \
+              --verify-tag \
+              --generate-notes
+          fi

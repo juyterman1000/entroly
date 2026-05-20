@@ -74,22 +74,41 @@ class TestAnthropicCompatibilitySanitizer:
         assert cleaned["max_tokens"] == 1024
         assert body["context_management"] == {"strategy": "auto"}
 
-    def test_preserves_extended_params_for_newer_anthropic_target(self):
+    def test_strips_context_management_for_newer_anthropic_target(self):
         body = {
             "model": "claude-sonnet-4-5-20250929",
             "context_management": {"strategy": "auto"},
             "thinking": {"type": "enabled"},
         }
 
-        assert strip_anthropic_unsupported_params(body) is body
+        cleaned = strip_anthropic_unsupported_params(body)
+        assert "context_management" not in cleaned
+        assert "thinking" in cleaned
 
-    def test_preserves_unknown_model_defensively(self):
+    def test_strips_context_management_for_unknown_anthropic_target(self):
         body = {
             "model": "custom-anthropic-compatible-model",
             "context_management": {"strategy": "auto"},
+            "thinking": {"type": "enabled"},
         }
 
-        assert "context_management" in strip_anthropic_unsupported_params(body)
+        cleaned = strip_anthropic_unsupported_params(body)
+        assert "context_management" not in cleaned
+        assert "thinking" in cleaned
+
+    def test_claude_code_sonnet_46_context_management_is_removed(self):
+        body = {
+            "model": "claude-sonnet-4-6-20260501",
+            "messages": [{"role": "user", "content": "what is nix"}],
+            "context_management": {"edits": "auto"},
+            "max_tokens": 1024,
+        }
+
+        cleaned = strip_anthropic_unsupported_params(body)
+
+        assert "context_management" not in cleaned
+        assert cleaned["messages"] == body["messages"]
+        assert cleaned["max_tokens"] == 1024
 
 
 # ═══════════════════════════════════════════════════════════════════════

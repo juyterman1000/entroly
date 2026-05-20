@@ -1,4 +1,4 @@
-// Comprehensive E2E test for all 37 wasm engine methods
+// Comprehensive E2E test for wasm engine methods
 const { WasmEntrolyEngine } = require('./pkg/entroly_wasm');
 
 let pass = 0, fail = 0;
@@ -67,6 +67,36 @@ test('recall()', () => {
     assert(r[0].fragment_id);
     assert(typeof r[0].relevance === 'number');
   }
+});
+
+test('recall_bm25() and recall_auto()', () => {
+  const bm25 = engine.recall_bm25('payment processor charge', 3);
+  const auto = engine.recall_auto('payment processor charge', 3);
+  assert(Array.isArray(bm25));
+  assert(Array.isArray(auto));
+  assert(bm25.length <= 3);
+  assert(auto.length <= 3);
+  if (bm25.length > 0) {
+    assert(typeof bm25[0].relevance === 'number');
+    assert('bm25_base' in bm25[0], 'missing BM25 score breakdown');
+  }
+  assert(JSON.stringify(auto) === JSON.stringify(bm25), 'auto must route to BM25');
+});
+
+test('optimize() applies engine_s6 edit-target ordering', () => {
+  const e = new WasmEntrolyEngine();
+  e.ingest('login documentation talks about auth errors', 'docs/auth.rst', 20, false);
+  e.ingest('def helper(): return 1', 'pkg/util.py', 20, false);
+  e.ingest('def test_login(): assert True', 'tests/test_auth.py', 20, false);
+  e.advance_turn();
+  const r = e.optimize(1000, 'login is broken');
+  const sources = (r.selected || []).map(x => x.source);
+  assert(sources.includes('docs/auth.rst'), 'docs fragment not selected');
+  assert(sources.includes('pkg/util.py'), 'source fragment not selected');
+  assert(
+    sources.indexOf('pkg/util.py') < sources.indexOf('docs/auth.rst'),
+    `source should precede docs after edit-target rerank: ${sources.join(', ')}`
+  );
 });
 
 // 10. record_success()

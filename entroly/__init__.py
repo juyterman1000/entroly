@@ -24,13 +24,20 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "0.19.5"
+__version__ = "0.19.6"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
     from .sdk import detect_hallucination, optimize  # noqa: F401
 except ImportError:
     pass  # Graceful degradation if dependencies missing
+
+# engine_s6 — public file-localization API (used internally by SDK / MCP /
+# proxy / CLI; also callable directly for advanced agent integrations).
+try:
+    from .file_localizer import localize_files, localize_fragments  # noqa: F401
+except ImportError:
+    pass
 
 # Verification SDK: hallucination detection + suppression
 try:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "0.19.5"
+version = "0.19.6"
 
 description = "Information-theoretic context optimization for AI coding agents. Knapsack-optimal token budgeting, Shannon entropy scoring, SimHash dedup, predictive pre-fetch. MCP server."
 readme = "README.md"
@@ -27,6 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -37,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 native = [
-    "entroly-core>=0.19.5,<1",
+    "entroly-core>=0.19.6,<1",
     "mcp>=1.0.0,<2",
 ]
 

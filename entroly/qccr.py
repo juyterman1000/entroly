@@ -246,6 +246,27 @@ def select(
         for i in range(N)
     ]
     file_scores.sort(reverse=True)
+
+    # engine_s6 edit-target rerank — delegated to the centralized
+    # service so this surface stays a thin caller and the recall-safe
+    # try/except lives in exactly one place. Window-local permutation
+    # of the existing BM25 candidate set; tail preserved (recall floor);
+    # budget allocation below still uses each file's original BM25
+    # score, so this only changes the ORDER excerpts are emitted in.
+    # Validation: see entroly/file_localizer.py module docstring.
+    if N > 1 and any(s > 0 for s, _, _ in file_scores):
+        from .file_localizer import localize_files
+        files_map = dict(zip(file_sources, file_texts))
+        bm25_order = [src for _, src, _ in file_scores]
+        reranked = localize_files(
+            files_map, query, k=len(bm25_order), base_ranked=bm25_order,
+        )
+        score_text_by_src = {src: (sc, txt)
+                             for sc, src, txt in file_scores}
+        file_scores = [(score_text_by_src[s][0], s,
+                        score_text_by_src[s][1])
+                       for s in reranked if s in score_text_by_src]
+
     top_files = [fs for fs in file_scores[:_MAX_FILES_CONSIDERED] if fs[0] > 0]
     if not top_files:
         return []

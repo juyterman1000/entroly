@@ -392,7 +392,7 @@ Or use the proxy — zero code changes, any language:
 entroly proxy --port 9377
 ANTHROPIC_BASE_URL=http://localhost:9377        your-app
 OPENAI_BASE_URL=http://localhost:9377/v1        your-app
-GEMINI_BASE_URL=http://localhost:9377/v1beta    your-app
+GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta  your-app
 ```
 
 > **Why the different path suffixes?** They are *not* arbitrary tags. Each
@@ -403,6 +403,8 @@ GEMINI_BASE_URL=http://localhost:9377/v1beta    your-app
 > the Gemini SDK calls `/v1beta/models/...` (base URL ends in `/v1beta`).
 > Use the suffix that matches the SDK you're pointing at the proxy; one
 > proxy handles all three concurrently.
+> Environment variable names are client-specific; use the base-url setting
+> your SDK or CLI actually documents.
 
 Drop it into your own code — two lines:
 

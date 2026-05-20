@@ -3265,8 +3265,12 @@ impl EntrolyEngine {
                 .collect();
             let bm25_idx = BM25Index::build(&doc_tuples);
 
-            // Score each fragment with BM25 + path/identifier boosting
-            let mut scored: Vec<(&ContextFragment, f64)> = self
+            // Score each fragment, keeping the FULL BM25 breakdown.
+            // The breakdown is surfaced per hit below so retrieval is
+            // auditable (consistent with the repo's explainable /
+            // proof-carrying ethos) — this is also why every BM25Score
+            // field is genuinely consumed in production.
+            let mut scored: Vec<(&ContextFragment, bm25::BM25Score)> = self
                 .fragments
                 .values()
                 .map(|f| {
@@ -3277,26 +3281,33 @@ impl EntrolyEngine {
                         &f.source,
                         &identifiers,
                     );
-                    (f, score.combined)
+                    (f, score)
                 })
                 .collect();
 
             scored.sort_unstable_by(|a, b| {
-                b.1.partial_cmp(&a.1)
+                b.1.combined
+                    .partial_cmp(&a.1.combined)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.0.fragment_id.cmp(&b.0.fragment_id))
             });
             scored.truncate(top_k);
 
+            let r4 = |x: f64| (x * 10000.0).round() / 10000.0;
             let result = pyo3::types::PyList::empty(py);
-            for (f, score) in scored {
+            for (f, s) in scored {
                 let d = PyDict::new(py);
                 d.set_item("fragment_id", &f.fragment_id)?;
                 d.set_item("source", &f.source)?;
-                d.set_item("relevance", (score * 10000.0).round() / 10000.0)?;
-                d.set_item("entropy", (f.entropy_score * 10000.0).round() / 10000.0)?;
+                d.set_item("relevance", r4(s.combined))?;
+                d.set_item("entropy", r4(f.entropy_score))?;
                 d.set_item("content", &f.content)?;
                 d.set_item("token_count", f.token_count)?;
+                // Explainability breakdown (auditable retrieval score).
+                d.set_item("bm25_base", r4(s.bm25_base))?;
+                d.set_item("path_boost", r4(s.path_boost))?;
+                d.set_item("identifier_boost", r4(s.identifier_boost))?;
+                d.set_item("query_coverage", r4(s.query_coverage))?;
                 result.append(d)?;
             }
 

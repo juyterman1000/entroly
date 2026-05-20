@@ -728,6 +728,29 @@ class EntrolyEngine:
                 if query_analysis:
                     result["query_analysis"] = query_analysis
 
+            # ── engine_s6 edit-target reordering (post-selection) ──
+            # The knapsack picks WHICH fragments stay in budget; engine_s6
+            # then re-orders those by file-edit-target priority (source >
+            # test > non-source within a top-20 window, explicit-cue
+            # freeze, doc/test intent guards, test→source mirror) so the
+            # LLM sees the most plausible edit target first. Selection
+            # is unchanged — only order — so token budget, savings, and
+            # PRISM outcome math below remain correct. Recall-safe by
+            # construction (see entroly/file_localizer.py).
+            if refined_query and result.get("selected_fragments"):
+                try:
+                    from .file_localizer import localize_fragments
+                    result["selected_fragments"] = localize_fragments(
+                        result["selected_fragments"], refined_query,
+                    )
+                    # Keep the "selected" alias (Rust path) in sync so
+                    # downstream consumers reading either key get the
+                    # same reordered list.
+                    if "selected" in result:
+                        result["selected"] = result["selected_fragments"]
+                except Exception:  # noqa: BLE001 — never fail optimize
+                    pass
+
             # ── Online PRISM: observe outcome and update weights live ──
             # This is the key integration: after every optimize_context() call,
             # compute an implicit reward from the result quality and update the
@@ -4068,7 +4091,7 @@ def main():
         from importlib.metadata import version as _pkg_version
         _version = _pkg_version("entroly")
     except Exception:
-        _version = "0.19.5"
+        _version = "0.19.6"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

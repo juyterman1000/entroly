@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "entroly-core"
-version = "0.19.5"
+version = "0.19.6"
 description = "Rust core for Entroly — information-theoretic context optimization (knapsack, entropy, dedup, SAST, query analysis)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -19,6 +19,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
