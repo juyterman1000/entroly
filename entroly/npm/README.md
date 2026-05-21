@@ -1,4 +1,4 @@
-# @entroly/entroly-mcp
+# entroly-mcp
 
 An MCP (Model Context Protocol) server for information-theoretic context optimization. 
 Use it to optimize Claude/Cursor's context window by selecting only the most relevant, high-entropy, and critical code fragments based on a Knapsack constraint.
@@ -32,7 +32,7 @@ You can use it directly in any MCP-compatible client like Cursor or Claude Deskt
       "command": "npx",
       "args": [
         "-y",
-        "@entroly/entroly-mcp",
+        "entroly-mcp",
         "serve"
       ],
       "env": {

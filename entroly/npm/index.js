@@ -14,7 +14,7 @@ if (checkStatus.status !== 0) {
   console.error("=====================================================================");
   console.error("  Error: 'entroly' Python package is not installed.");
   console.error("");
-  console.error("  The @ebbiforge/entroly-mcp package is a bridge. To use it,");
+  console.error("  The entroly-mcp package is a bridge. To use it,");
   console.error("  you must have the Python engine installed on your system.");
   console.error("");
   console.error("  Please run:");
