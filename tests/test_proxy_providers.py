@@ -45,6 +45,12 @@ from entroly.proxy_transform import (  # noqa: E402
     strip_anthropic_unsupported_params,
 )
 from entroly.proxy_config import ProxyConfig, context_window_for_model  # noqa: E402
+from entroly.proxy import (  # noqa: E402
+    _content_to_text,
+    _estimate_message_tokens,
+    compress_conversation_messages,
+    PromptCompilerProxy,
+)
 
 
 class TestAnthropicCompatibilitySanitizer:
@@ -109,6 +115,128 @@ class TestAnthropicCompatibilitySanitizer:
         assert "context_management" not in cleaned
         assert cleaned["messages"] == body["messages"]
         assert cleaned["max_tokens"] == 1024
+
+
+class TestProxyContentBlockAccounting:
+    """Regression coverage for Claude Code block-list message content."""
+
+    def test_content_to_text_handles_anthropic_blocks(self):
+        content = [
+            {"type": "text", "text": "review this PR"},
+            {"type": "image", "source": {"type": "base64", "data": "..."}},
+        ]
+
+        assert _content_to_text(content) == "review this PR"
+
+    def test_token_estimate_handles_anthropic_blocks(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "what is nix"}],
+            }
+        ]
+
+        assert _estimate_message_tokens(messages) > 0
+
+    def test_conversation_compression_preserves_block_content_shape(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "what is nix"}],
+            }
+        ]
+
+        result = compress_conversation_messages(messages, context_window=1)
+
+        assert result[0]["content"] == messages[0]["content"]
+
+    def test_full_proxy_optimizes_claude_code_blocks_without_split_error(self):
+        import asyncio
+        import json
+
+        from httpx import ASGITransport, AsyncClient
+        from starlette.applications import Starlette
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        class FakeEngine:
+            def __init__(self):
+                self._turn_counter = 0
+
+            def advance_turn(self):
+                return None
+
+            def optimize_context(self, token_budget, query):
+                return {
+                    "selected_fragments": [
+                        {
+                            "id": "auth-1",
+                            "source": "auth.py",
+                            "content": "def nix_package(): return 'nix'",
+                            "preview": "def nix_package(): return 'nix'",
+                            "token_count": 16,
+                            "entropy_score": 1.0,
+                            "variant": "full",
+                        }
+                    ],
+                    "query_analysis": {},
+                }
+
+        async def run():
+            cfg = ProxyConfig()
+            cfg.enable_adaptive_budget = False
+            cfg.enable_dynamic_budget = False
+            cfg.enable_hierarchical_compression = False
+            cfg.enable_temperature_calibration = False
+            cfg.enable_passive_feedback = False
+            cfg.enable_context_scaffold = False
+            proxy = PromptCompilerProxy(FakeEngine(), cfg)
+            proxy._confidence_threshold = 0.0
+            app = Starlette(
+                routes=[Route("/v1/messages", proxy.handle_proxy, methods=["POST"])]
+            )
+            captured = {}
+
+            async def capture(_url, _headers, body, *_args, **_kwargs):
+                captured["body"] = json.loads(json.dumps(body))
+                return JSONResponse(
+                    {
+                        "id": "msg-test",
+                        "type": "message",
+                        "model": "claude-sonnet-4-6-20260501",
+                        "content": [{"type": "text", "text": "Nix is a package manager."}],
+                    }
+                )
+
+            proxy._forward_response = capture
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/v1/messages",
+                    json={
+                        "model": "claude-sonnet-4-6-20260501",
+                        "max_tokens": 128,
+                        "context_management": {"edits": "auto"},
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": "what is nix"}],
+                            }
+                        ],
+                    },
+                    headers={
+                        "x-api-key": "sk-ant-test",
+                        "anthropic-version": "2023-06-01",
+                    },
+                )
+            return response, captured, proxy
+
+        response, captured, proxy = asyncio.run(run())
+
+        assert response.status_code == 200
+        assert proxy._requests_optimized == 1
+        assert "context_management" not in captured["body"]
+        assert "auth.py" in json.dumps(captured["body"])
 
 
 # ═══════════════════════════════════════════════════════════════════════

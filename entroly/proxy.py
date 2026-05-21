@@ -102,6 +102,44 @@ def _safe_preview(content: str, max_chars: int = 30) -> str:
     return f"[{len(content)} chars, {content.count(chr(10)) + 1} lines]"
 
 
+def _content_to_text(content: Any) -> str:
+    """Best-effort text extraction from provider message content."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            text = _content_to_text(item)
+            if text:
+                parts.append(text)
+        return " ".join(parts)
+    if isinstance(content, dict):
+        for key in ("text", "content", "input"):
+            value = content.get(key)
+            if isinstance(value, (str, list, dict)):
+                text = _content_to_text(value)
+                if text:
+                    return text
+        parts = content.get("parts")
+        if isinstance(parts, list):
+            return _content_to_text(parts)
+        return ""
+    return str(content)
+
+
+def _estimate_message_tokens(messages: Any) -> int:
+    """Rough token estimate for OpenAI/Anthropic message arrays."""
+    if not isinstance(messages, list):
+        return 0
+    words = 0
+    for msg in messages:
+        if isinstance(msg, dict):
+            words += len(_content_to_text(msg.get("content", "")).split())
+    return words * 4 // 3
+
+
 # ── Resilience primitives ────────────────────────────────────────────
 
 
@@ -245,7 +283,11 @@ def compress_conversation_messages(
         return messages
 
     # Estimate utilization (rough: 4 chars ≈ 1 token)
-    total_chars = sum(len(m.get("content", "")) for m in messages)
+    total_chars = sum(
+        len(_content_to_text(m.get("content", "")))
+        for m in messages
+        if isinstance(m, dict)
+    )
     total_tokens_est = total_chars // 4
     utilization = total_tokens_est / max(context_window, 1)
 
@@ -260,7 +302,8 @@ def compress_conversation_messages(
         # Build block descriptors for Rust
         blocks = []
         for i, msg in enumerate(messages):
-            content = msg.get("content", "")
+            raw_content = msg.get("content", "")
+            content = _content_to_text(raw_content)
             role = msg.get("role", "user")
             tool_name = msg.get("name") or msg.get("tool_name")
             token_count = len(content) // 4  # rough estimate
@@ -290,6 +333,9 @@ def compress_conversation_messages(
                 compressed.append(msg)
             else:
                 content = msg.get("content", "")
+                if not isinstance(content, str):
+                    compressed.append(msg)
+                    continue
                 role = msg.get("role", "user")
                 tool_name = msg.get("name") or msg.get("tool_name")
                 token_count = len(content) // 4
@@ -1129,10 +1175,9 @@ class PromptCompilerProxy:
                         _instr_text = body.get("instructions", "")
                         original_tokens = (len(_inp_text.split()) + len(_instr_text.split())) * 4 // 3
                     else:
-                        original_tokens = sum(
-                            len(m.get("content", "").split())
-                            for m in body.get("messages", [])
-                        ) * 4 // 3
+                        original_tokens = _estimate_message_tokens(
+                            body.get("messages", [])
+                        )
                     optimized_tokens = len(context_text.split()) * 4 // 3
                     with self._stats_lock:
                         self._total_original_tokens += original_tokens
@@ -2624,7 +2669,7 @@ class PromptCompilerProxy:
                 for choice in content.get("choices", []):
                     msg = choice.get("message", {})
                     if msg.get("content"):
-                        response_text += msg["content"]
+                        response_text += _content_to_text(msg.get("content"))
                 # Anthropic direct: content[0].text
                 for block in content.get("content", []):
                     if isinstance(block, dict) and block.get("text"):
