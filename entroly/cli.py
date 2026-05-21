@@ -42,7 +42,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "0.19.10"
+    __version__ = "0.19.11"
 
 # ── Force UTF-8 output on Windows ──
 # Windows terminals default to cp1252 which can't encode ✓/✗/─/⚡.
@@ -1452,10 +1452,8 @@ _WRAP_AGENTS = {
     },
     "claude-code": {
         "kind": "mcp", "name": "Claude Code (MCP mode)",
-        "config_path_macos": "{home}/Library/Application Support/Claude/claude_desktop_config.json",
-        "config_path_windows": "{appdata}/Claude/claude_desktop_config.json",
-        "config_path_linux": "{home}/.config/claude/claude_desktop_config.json",
-        "post_hint": "Equivalent to claude-desktop. Use `entroly wrap claude` for proxy-mode wrapping instead.",
+        "config_path": "{cwd}/.mcp.json",
+        "post_hint": "Restart Claude Code or run `/mcp` to verify the Entroly server. Use `entroly wrap claude` for proxy-mode wrapping instead.",
     },
     "zed": {
         "kind": "mcp", "name": "Zed",
@@ -1601,6 +1599,11 @@ _WRAP_AGENTS = {
         "url": "http://localhost:{port}/v1",
     },
 }
+
+
+def _wrap_agent_names() -> str:
+    """Human-readable supported-agent list for argparse help."""
+    return ", ".join(sorted(_WRAP_AGENTS))
 
 
 def _resolve_agent_config_path(spec: dict) -> str | None:
@@ -2695,7 +2698,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=0.19.10\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=0.19.11\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -3733,7 +3736,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=0.19.10\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=0.19.11\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -3776,7 +3779,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=0.19.10\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=0.19.11\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -4277,11 +4280,11 @@ def main():
     # entroly wrap
     wrap_parser = subparsers.add_parser(
         "wrap",
-        help="Start proxy + launch coding agent in one command (claude, codex, aider, cursor)",
+        help="Start proxy, configure MCP, or print setup for a coding agent",
     )
     wrap_parser.add_argument(
         "agent", type=str, nargs="?",
-        help="Agent to wrap: claude, codex, aider, cursor",
+        help=f"Agent to wrap: {_wrap_agent_names()}",
     )
     wrap_parser.add_argument(
         "--port", type=int, default=None,

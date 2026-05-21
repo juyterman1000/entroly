@@ -150,7 +150,9 @@ def test_ravs_subactions_resolve(ravs_action: str):
 
 
 @pytest.mark.parametrize("agent", [
-    "claude", "cursor", "aider", "codex",
+    "claude", "codex", "aider", "gemini", "qwen", "opencode",
+    "crush", "hermes", "pi", "ollama",
+    "cursor", "windsurf", "vscode", "claude-desktop", "claude-code", "zed",
 ])
 def test_wrap_agents_parse(agent: str):
     """`entroly wrap <agent>` must at least parse — the README documents
@@ -165,15 +167,16 @@ def test_wrap_agents_parse(agent: str):
     assert "agent" in out.lower(), (
         "`entroly wrap --help` does not document the agent positional"
     )
-    # And that the specific agent name is at least mentioned somewhere
-    # in CLI surface (wrap parser help OR cmd_wrap dispatch).
-    # We use a separate check: import cmd_wrap and look at its source.
-    from entroly.cli import cmd_wrap as _cmd_wrap
-    import inspect
-    src = inspect.getsource(_cmd_wrap)
-    assert agent in src, (
-        f"`entroly wrap {agent}` is documented in README but no branch "
-        f"in cmd_wrap() references the agent name."
+    assert agent in out, (
+        f"`entroly wrap {agent}` is documented in README but missing from "
+        "`entroly wrap --help`."
+    )
+
+    from entroly.cli import _WRAP_AGENTS
+
+    assert agent in _WRAP_AGENTS, (
+        f"`entroly wrap {agent}` is documented in README but missing from "
+        "_WRAP_AGENTS."
     )
 
 
@@ -191,6 +194,17 @@ def test_cursor_mcp_config_uses_current_python_interpreter():
     assert cfg["command"] == sys.executable
     assert cfg["args"] == ["-m", "entroly.server"]
     assert cfg["env"]["PYTHONIOENCODING"] == "utf-8"
+
+
+def test_claude_code_mcp_wrap_uses_project_mcp_json():
+    """Claude Code MCP mode should write the project `.mcp.json`, not the
+    Claude Desktop global config."""
+    from entroly.cli import _WRAP_AGENTS
+
+    spec = _WRAP_AGENTS["claude-code"]
+
+    assert spec["kind"] == "mcp"
+    assert spec["config_path"] == "{cwd}/.mcp.json"
 
 
 # ── 3. Hook installer (entroly ravs hook install) ────────────────────
