@@ -156,7 +156,6 @@ npx entroly-wasm serve             # start MCP server
 | Package | What you get |
 |---------|---|
 | `npm install entroly-wasm` | Full Rust engine via WebAssembly — MCP server, CLI, autotune, health |
-| `npm install @entroly/entroly-mcp` | Bridge to Python engine (requires `pip install entroly`) |
 
 ### pip packages
 
