@@ -177,6 +177,22 @@ def test_wrap_agents_parse(agent: str):
     )
 
 
+def test_cursor_mcp_config_uses_current_python_interpreter():
+    """MCP-aware IDEs must not resolve a stale global `entroly` binary.
+
+    Cursor launches the configured MCP command outside the shell that ran
+    `entroly wrap cursor`; using `sys.executable -m entroly.server` keeps the
+    server pinned to the package environment that generated the config.
+    """
+    from entroly.cli import _generate_mcp_config
+
+    cfg = _generate_mcp_config()["entroly"]
+
+    assert cfg["command"] == sys.executable
+    assert cfg["args"] == ["-m", "entroly.server"]
+    assert cfg["env"]["PYTHONIOENCODING"] == "utf-8"
+
+
 # ── 3. Hook installer (entroly ravs hook install) ────────────────────
 
 
