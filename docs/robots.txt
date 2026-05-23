@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://juyterman1000.github.io/entroly/sitemap.xml

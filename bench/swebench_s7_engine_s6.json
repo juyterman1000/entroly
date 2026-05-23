@@ -1,0 +1,82 @@
+{
+  "protocol": "SWE-bench Lite, real repo @ base_commit, gold=patch file paths (labels only, no content)",
+  "n_eval": 36,
+  "n_skipped": 0,
+  "seed": 7,
+  "embedding_model": null,
+  "methods": {
+    "engine": {
+      "hit_rate@5": 0.5278,
+      "hit_rate@5_ci95": 0.1631,
+      "file_recall@5": 0.5278,
+      "hit_rate@10": 0.6667,
+      "hit_rate@10_ci95": 0.154,
+      "file_recall@10": 0.6667,
+      "hit_rate@20": 0.7778,
+      "hit_rate@20_ci95": 0.1358,
+      "file_recall@20": 0.7778,
+      "mrr": 0.3945
+    },
+    "bm25": {
+      "hit_rate@5": 0.3611,
+      "hit_rate@5_ci95": 0.1569,
+      "file_recall@5": 0.3611,
+      "hit_rate@10": 0.4722,
+      "hit_rate@10_ci95": 0.1631,
+      "file_recall@10": 0.4722,
+      "hit_rate@20": 0.5278,
+      "hit_rate@20_ci95": 0.1631,
+      "file_recall@20": 0.5278,
+      "mrr": 0.2242
+    },
+    "tier0": {
+      "hit_rate@5": 0.4722,
+      "hit_rate@5_ci95": 0.1631,
+      "file_recall@5": 0.4722,
+      "hit_rate@10": 0.5833,
+      "hit_rate@10_ci95": 0.161,
+      "file_recall@10": 0.5833,
+      "hit_rate@20": 0.6389,
+      "hit_rate@20_ci95": 0.1569,
+      "file_recall@20": 0.6389,
+      "mrr": 0.3676
+    },
+    "engine_s5": {
+      "hit_rate@5": 0.5278,
+      "hit_rate@5_ci95": 0.1631,
+      "file_recall@5": 0.5278,
+      "hit_rate@10": 0.6389,
+      "hit_rate@10_ci95": 0.1569,
+      "file_recall@10": 0.6389,
+      "hit_rate@20": 0.8056,
+      "hit_rate@20_ci95": 0.1293,
+      "file_recall@20": 0.8056,
+      "mrr": 0.405
+    },
+    "tier0_ppr": {
+      "hit_rate@5": 0.1111,
+      "hit_rate@5_ci95": 0.1027,
+      "file_recall@5": 0.1111,
+      "hit_rate@10": 0.4722,
+      "hit_rate@10_ci95": 0.1631,
+      "file_recall@10": 0.4722,
+      "hit_rate@20": 0.6111,
+      "hit_rate@20_ci95": 0.1592,
+      "file_recall@20": 0.6111,
+      "mrr": 0.1285
+    },
+    "engine_s6": {
+      "hit_rate@5": 0.5278,
+      "hit_rate@5_ci95": 0.1631,
+      "file_recall@5": 0.5278,
+      "hit_rate@10": 0.75,
+      "hit_rate@10_ci95": 0.1415,
+      "file_recall@10": 0.75,
+      "hit_rate@20": 0.8333,
+      "hit_rate@20_ci95": 0.1217,
+      "file_recall@20": 0.8333,
+      "mrr": 0.4397
+    }
+  },
+  "verdict": "Tier0+RM3 hit@10=0.583 vs BM25=0.472 (embedding baseline not run)"
+}

@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Entroly Docker Image — Multi-platform (amd64 + arm64)
+#
+# Build:  docker build -f Dockerfile.entroly -t entroly .
+# Run:    docker run --rm -p 9377:9377 entroly
+#
+# CI publishes to ghcr.io/juyterman1000/entroly:latest
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Stage 1: Build Rust extension
+FROM python:3.13 AS builder
+
+WORKDIR /build
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN apt-get update && apt-get install -y curl build-essential libssl-dev pkg-config \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir maturin
+
+COPY entroly-core/ ./entroly-core/
+RUN cd entroly-core && maturin build --release -o /build/wheels/
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install the Rust wheel and runtime deps
+COPY --from=builder /build/wheels/*.whl /tmp/wheels/
+RUN pip install --no-cache-dir /tmp/wheels/*.whl \
+    "mcp>=1.0.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" \
+    && rm -rf /tmp/wheels
+
+# Copy entroly Python package (all modules — glob avoids missing new files)
+COPY entroly/ /app/entroly/
+
+# Copy bench directory (tuning_config.json + benchmark cases for autotune)
+COPY bench/ /app/bench/
+
+COPY pyproject.toml /app/
+COPY README.md /app/
+
+# Make the entroly package importable
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Proxy mode: expose port 9377
+EXPOSE 9377
+
+# Health check: ping the proxy
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:9377/health')" || exit 1
+
+# Default: run MCP server (use --proxy for proxy mode)
+ENTRYPOINT ["python", "-m", "entroly.server"]

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/spec/main/schemas/mcp-config.json",
+  "_comment": "Project-shared MCP server config for VS Code 1.95+ Copilot Chat and the Continue / MCP extensions. Anyone who opens this repo in VS Code with one of those extensions installed automatically gets entroly's tools available in their AI side-panel.",
+  "servers": {
+    "entroly": {
+      "type": "stdio",
+      "command": "entroly",
+      "args": ["serve"],
+      "env": {}
+    }
+  }
+}

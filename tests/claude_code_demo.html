@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Entroly + Claude Code Integration Demo</title>
+<style>
+  body {
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 40px;
+    margin: 0;
+    overflow: hidden;
+  }
+  .container {
+    max-width: 950px;
+    margin: 0 auto;
+    background: #000000;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 20px 30px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    height: 700px;
+    overflow: hidden;
+  }
+  .mac-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .btn { width: 12px; height: 12px; border-radius: 50%; }
+  .close { background: #ff5f56; }
+  .min { background: #ffbd2e; }
+  .max { background: #27c93f; }
+  
+  .dim { color: #8b949e; }
+  .green { color: #3fb950; font-weight: bold; }
+  .blue { color: #58a6ff; font-weight: bold; }
+  .yellow { color: #d29922; font-weight: bold; }
+  .purple { color: #bc8cff; font-weight: bold; }
+  .cyan { color: #39c5cf; }
+  .bold { font-weight: bold; color: #f0f6fc; }
+  .prompt { color: #3fb950; font-weight: bold; }
+  
+  .line {
+    opacity: 0;
+    transform: translateY(5px);
+    animation: fadein 0.2s forwards;
+    margin-bottom: 2px;
+  }
+  
+  @keyframes fadein {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  .typing {
+    border-right: 2px solid #58a6ff;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { border-color: transparent; } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="mac-buttons">
+      <div class="btn close"></div>
+      <div class="btn min"></div>
+      <div class="btn max"></div>
+    </div>
+    <div id="term"></div>
+  </div>
+
+<script>
+  const term = document.getElementById('term');
+  const lines = [
+    '<span class="prompt">~/langfuse</span>$ <span class="typing">entroly wrap claude -p "Explain how trace ingestion works in the worker package"</span>',
+    '<br>',
+    '<span class="dim">2026-05-04 20:25:01 [entroly]</span> <span class="green">✓</span> Entroly Daemon v0.12.0 started on localhost:9377',
+    '<span class="dim">2026-05-04 20:25:01 [entroly]</span> <span class="cyan">●</span> Wrapping Claude Code with ANTHROPIC_BASE_URL override...',
+    '<br>',
+    '<span class="bold">Welcome to Claude Code!</span>',
+    '<span class="dim">Loading workspace: C:\\Users\\abhis\\langfuse\\langfuse (1,968 files)</span>',
+    '<br>',
+    '<span class="blue">▶</span> <span class="bold">Claude is analyzing the workspace...</span>',
+    '<span class="dim">  Reading packages/worker/src/ingestion... (42 files)</span>',
+    '<span class="dim">  Reading packages/shared/prisma... (12 files)</span>',
+    '<br>',
+    '<span class="dim">2026-05-04 20:25:04 [entroly/proxy]</span> <span class="purple">⚡</span> Intercepted Claude request: 184,200 tokens of context.',
+    '<span class="dim">2026-05-04 20:25:04 [entroly/cse]</span> <span class="yellow">⚙</span> Generating dependency scaffold for 54 files... <span class="dim">(+212 tokens)</span>',
+    '<span class="dim">2026-05-04 20:25:04 [entroly/compress]</span> <span class="green">✓</span> Pruned redundant boilerplate: <span class="bold">184,200 → 12,450 tokens (-93%)</span>',
+    '<span class="dim">2026-05-04 20:25:04 [entroly/router]</span> <span class="blue">⇄</span> Task is safe. Downgrading backend from <span class="bold">Opus</span> to <span class="bold">Haiku</span>.',
+    '<br>',
+    '<span class="green">✔</span> <span class="bold">Claude:</span> Trace ingestion in the worker package works through a high-throughput queue system.',
+    '  1. The API receives traces and pushes them to Redis/Kafka.',
+    '  2. `packages/worker/src/ingestion/consumer.ts` reads batches from the queue.',
+    '  3. It validates the schema using Zod definitions in `packages/shared`.',
+    '  4. Finally, `upsertTrace()` writes them to the Postgres database via Prisma.',
+    '<br>',
+    '<span class="dim">2026-05-04 20:25:07 [entroly/distill]</span> <span class="cyan">✂</span> Stripped 140 tokens of conversational filler from output.',
+    '<br>',
+    '<span class="bold">Session Summary:</span>',
+    '<span class="dim">─────────────────────────────────────────────────</span>',
+    '<span class="dim">Tokens Sent to LLM:</span>     <span class="bold">12,450</span> <span class="green">(-171,750 via Entroly)</span>',
+    '<span class="dim">Original Request Cost:</span>  <span class="bold">$2.76</span>  <span class="dim">(Opus, 184K tokens)</span>',
+    '<span class="dim">Actual Request Cost:</span>    <span class="bold">$0.003</span> <span class="green">(Haiku, 12K tokens)</span>',
+    '<span class="dim">─────────────────────────────────────────────────</span>',
+    '<span class="green">Total Savings:          $2.75 (99.8%) on a single query</span>',
+    '<br>',
+    '<span class="prompt">~/langfuse</span>$ <span class="typing"></span>'
+  ];
+
+  let currentLine = 0;
+  
+  function renderLine() {
+    if (currentLine >= lines.length) return;
+    
+    // Remove typing cursor from previous line
+    if (currentLine > 0) {
+      const prev = term.lastElementChild;
+      if (prev && prev.innerHTML.includes('typing')) {
+        prev.innerHTML = prev.innerHTML.replace('typing', '');
+      }
+    }
+    
+    const div = document.createElement('div');
+    div.className = 'line';
+    div.innerHTML = lines[currentLine];
+    term.appendChild(div);
+    
+    currentLine++;
+    
+    // Delays tailored for realistic pacing
+    let delay = 100;
+    const content = lines[currentLine - 1];
+    
+    if (content.includes('entroly wrap claude')) delay = 1500; // Time to "type" and execute
+    else if (content.includes('Claude is analyzing')) delay = 1500; // Claude reading files
+    else if (content.includes('Intercepted')) delay = 600; // Entroly processing
+    else if (content.includes('Task is safe')) delay = 1200; // LLM thinking
+    else if (content.includes('Claude:')) delay = 800; // Streaming answer
+    else if (content.includes('Total Savings')) delay = 1000;
+    
+    setTimeout(renderLine, delay);
+  }
+  
+  // Start animation after a short pause
+  setTimeout(renderLine, 800);
+</script>
+</body>
+</html>

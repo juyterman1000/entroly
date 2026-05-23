@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "entroly",
+      "args": [],
+      "timeout": 60000
+    },
+    "colab-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/googlecolab/colab-mcp",
+        "colab-mcp"
+      ],
+      "timeout": 60000
+    }
+  }
+}

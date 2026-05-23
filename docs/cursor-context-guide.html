@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How to Give Cursor Your Full Codebase — Fix Context Window Limits | Entroly</title>
+<meta name="description" content="Cursor only sees 5-10 files at a time. Learn how to give Cursor access to your entire codebase with Entroly's context engineering engine. Fix hallucinations, reduce token costs by 78%.">
+<meta name="keywords" content="Cursor context window, Cursor limit, Cursor hallucination, Cursor MCP server, Cursor context engineering, Cursor sees few files, Cursor AI coding, fix Cursor errors, Cursor token limit, Cursor full codebase">
+<meta property="og:title" content="Fix Cursor's Context Window Limit — Give It Your Full Codebase">
+<meta property="og:description" content="Cursor only sees 5-10 files. Entroly shows it your entire codebase at variable resolution. 78% fewer tokens, better answers.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"How to Give Cursor Your Full Codebase — Fix Context Window Limits","description":"Cursor only sees 5-10 files at a time. Learn how to give Cursor access to your entire codebase with context engineering.","author":{"@type":"Organization","name":"Entroly"},"datePublished":"2026-04-05","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html"}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#09090b;--surface:#18181b;--border:#27272a;--text:#fafafa;--muted:#a1a1aa;--accent:#818cf8;--green:#34d399;--red:#f87171}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.7}
+a{color:var(--accent)}
+code{font-family:'JetBrains Mono',monospace;background:var(--surface);padding:2px 6px;border-radius:4px;font-size:14px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6}
+nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(9,9,11,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+nav .logo{font-weight:800;font-size:20px;text-decoration:none;color:var(--text)}
+nav .links{display:flex;gap:20px;font-size:14px}
+nav .links a{color:var(--muted);text-decoration:none}
+nav .links a:hover{color:var(--text)}
+.cta-btn{background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block}
+.cta-btn:hover{opacity:0.9}
+article{max-width:740px;margin:0 auto;padding:100px 24px 80px}
+h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:16px}
+h2{font-size:1.5rem;font-weight:700;margin:48px 0 16px;letter-spacing:-0.5px}
+h3{font-size:1.2rem;font-weight:600;margin:32px 0 12px}
+p{margin-bottom:16px;color:var(--muted)}
+ul,ol{margin:0 0 16px 24px;color:var(--muted)}
+li{margin-bottom:8px}
+strong{color:var(--text)}
+blockquote{border-left:3px solid var(--accent);padding-left:16px;margin:20px 0;color:var(--muted);font-style:italic}
+.highlight{color:var(--green)}
+.warning{color:var(--red)}
+table{width:100%;border-collapse:collapse;margin:20px 0}
+th,td{text-align:left;padding:12px;border-bottom:1px solid var(--border);font-size:14px}
+th{color:var(--text);font-weight:600}
+td{color:var(--muted)}
+.cta-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;margin:48px 0}
+.cta-box h3{margin-top:0}
+.cta-box p{margin-bottom:20px}
+footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/entroly/" class="logo">entroly</a>
+  <div class="links">
+    <a href="/entroly/">Home</a>
+    <a href="/entroly/docs/context-engineering.html">Context Engineering</a>
+    <a href="/entroly/docs/token-optimization.html">Token Optimization</a>
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn">GitHub</a>
+  </div>
+</nav>
+
+<article>
+<h1>How to Give Cursor Your Full Codebase — Fix Context Window Limits</h1>
+
+<p><strong>Last updated: April 2026</strong> | Reading time: 6 min</p>
+
+<p>If you've used <strong>Cursor</strong> on a real project, you've experienced the frustration: Cursor hallucinates function calls, invents APIs that don't exist, and misses obvious dependencies. The root cause isn't Cursor's AI model — <strong>it's the context window limit.</strong></p>
+
+<h2>The Problem: Cursor Only Sees 5-10 Files</h2>
+
+<p>Cursor uses a combination of open tabs, recent files, and embedding-based retrieval to fill the context window. On a typical project with 500+ files, <strong>Cursor can only see about 5-10 files per request</strong> — roughly 5% of your codebase.</p>
+
+<p>The other 95% is completely invisible to the AI. This means:</p>
+
+<ul>
+  <li><strong>Hallucinated imports</strong> — Cursor references modules it can't see</li>
+  <li><strong>Invented APIs</strong> — it guesses function signatures instead of reading them</li>
+  <li><strong>Missed dependencies</strong> — changes <code>auth.py</code> without knowing about <code>auth_config.py</code></li>
+  <li><strong>Duplicate code</strong> — writes functions that already exist elsewhere</li>
+  <li><strong>Incomplete refactors</strong> — only updates files it can see, breaking the rest</li>
+</ul>
+
+<p>You've probably worked around this by manually pasting code, writing detailed system prompts, or adding <code>.cursorrules</code> files. <strong>There's a better way.</strong></p>
+
+<h2>The Fix: Context Engineering with Entroly</h2>
+
+<p><a href="https://github.com/juyterman1000/entroly">Entroly</a> is a context engineering engine that compresses your <strong>entire codebase</strong> into Cursor's context window at variable resolution:</p>
+
+<ul>
+  <li><strong>Critical files</strong> appear in full (the code Cursor needs to edit)</li>
+  <li><strong>Supporting files</strong> appear as function signatures (types, interfaces, configs)</li>
+  <li><strong>Everything else</strong> appears as one-line references (so Cursor knows they exist)</li>
+</ul>
+
+<p>The result: <strong>Cursor sees all your files</strong>, uses 78% fewer tokens, and gives dramatically better answers.</p>
+
+<h2>Setup: 2 Minutes with Cursor</h2>
+
+<h3>Step 1: Install Entroly</h3>
+
+<pre>pip install entroly[full]</pre>
+
+<h3>Step 2: Initialize for Cursor</h3>
+
+<pre>entroly init</pre>
+
+<p>This auto-detects Cursor and generates <code>.cursor/mcp.json</code> — the MCP server configuration that connects Entroly to Cursor.</p>
+
+<h3>Step 3: Verify</h3>
+
+<pre>entroly demo</pre>
+
+<p>This runs a before/after comparison on YOUR codebase, showing exactly how many tokens you'll save and which files get which resolution level.</p>
+
+<h2>Before vs After</h2>
+
+<table>
+  <tr><th></th><th>Before Entroly</th><th>After Entroly</th></tr>
+  <tr><td><strong>Files visible</strong></td><td class="warning">5-10 files</td><td class="highlight">All files</td></tr>
+  <tr><td><strong>Tokens/request</strong></td><td class="warning">~186,000</td><td class="highlight">~40,000 (78% less)</td></tr>
+  <tr><td><strong>Hallucinations</strong></td><td class="warning">Frequent</td><td class="highlight">Rare</td></tr>
+  <tr><td><strong>Cost/1K requests</strong></td><td class="warning">~$560</td><td class="highlight">~$124</td></tr>
+  <tr><td><strong>Setup time</strong></td><td>Hours of prompt eng.</td><td class="highlight">2 minutes</td></tr>
+  <tr><td><strong>Overhead</strong></td><td>N/A</td><td class="highlight">&lt;10ms</td></tr>
+</table>
+
+<h2>How It Works Under the Hood</h2>
+
+<p>Entroly runs as an <strong>MCP (Model Context Protocol) server</strong> that Cursor connects to natively. When you make a request in Cursor:</p>
+
+<ol>
+  <li><strong>Entroly indexes your codebase</strong> — builds a dependency graph, fingerprints every code fragment</li>
+  <li><strong>Scores fragments by information density</strong> — high-value code ranks high, boilerplate ranks low</li>
+  <li><strong>Selects the optimal subset</strong> — mathematically proven optimal via knapsack solver (not approximate top-K)</li>
+  <li><strong>Delivers at variable resolution</strong> — critical files in full, supporting files as signatures, everything else as references</li>
+  <li><strong>Learns from outcomes</strong> — reinforcement learning adjusts weights based on which context produced good AI responses</li>
+</ol>
+
+<p>The entire pipeline adds <strong>less than 10ms</strong> per request. You won't notice it.</p>
+
+<h2>Quality Presets</h2>
+
+<p>Control the speed vs quality tradeoff:</p>
+
+<pre>entroly proxy --quality speed       # minimal optimization, lowest latency
+entroly proxy --quality balanced    # recommended for most projects
+entroly proxy --quality max         # full pipeline, best results</pre>
+
+<h2>FAQ</h2>
+
+<h3>Does it send my code to any external service?</h3>
+<p><strong>No.</strong> Everything runs locally on your machine. Your code never leaves your computer.</p>
+
+<h3>Does it work with Cursor's free tier?</h3>
+<p><strong>Yes.</strong> Entroly works with any Cursor plan. In fact, it's even more valuable on the free tier since you have fewer requests — each one needs to count.</p>
+
+<h3>Does it replace .cursorrules?</h3>
+<p>No — they're complementary. <code>.cursorrules</code> gives Cursor instructions about your preferences. Entroly gives Cursor visibility into your actual code. Use both.</p>
+
+<h3>What languages does it support?</h3>
+<p>All of them. Entroly works at the file/fragment level, not the AST level. It supports any text-based source code.</p>
+
+<div class="cta-box">
+  <h3>Stop Cursor from hallucinating. Give it your full codebase.</h3>
+  <p>One install. Zero config changes to Cursor. Works immediately.</p>
+  <pre>pip install entroly[full] && entroly go</pre>
+  <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
+</div>
+
+</article>
+
+<footer>
+  <p><a href="/entroly/">Entroly</a> — Context Engineering Engine for AI Coding Agents</p>
+  <p style="margin-top:8px"><a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> · <a href="/entroly/docs/token-optimization.html">Token Optimization</a> · <a href="/entroly/docs/context-engineering.html">What is Context Engineering?</a></p>
+</footer>
+</body>
+</html>

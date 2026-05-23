@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PIP_RETRIES: 10
+  PIP_TIMEOUT: 120
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+jobs:
+  lint:
+    name: Python Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff==0.12.9
+
+      - name: Run ruff check
+        run: ruff check entroly/
+
+  rust-tests:
+    name: Rust Tests + Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: entroly-core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Set up Python
+        # pyo3 needs libpython at link time when the extension-module feature
+        # is off (which it is for `cargo test --lib`).
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            entroly-core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('entroly-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Clippy (lint)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --lib
+
+  integration:
+    name: Build Wheel + Functional Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Create virtualenv
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+      - name: Install maturin and build entroly-core wheel
+        run: |
+          .venv/bin/pip install maturin --timeout 120 --retries 5
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+
+      - name: Install entroly Python package
+        run: |
+          # maturin develop already installed entroly-core into the venv.
+          # Install only the remaining runtime deps (mcp, httpx, starlette)
+          # without re-resolving entroly-core from PyPI (0.3.0 isn't there yet).
+          .venv/bin/pip install --timeout 120 --retries 5 -e . "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil
+
+      - name: Verify imports
+        run: |
+          .venv/bin/python -c "from entroly_core import EntrolyEngine; print('rust engine ok')"
+          .venv/bin/python -c "from entroly.server import EntrolyEngine; print('server ok')"
+          .venv/bin/python -c "from entroly.cli import _detect_project_type; print('cli ok')"
+          .venv/bin/python -c "from entroly.auto_index import _should_index; print('auto_index ok')"
+          .venv/bin/python -c "from entroly.verifiers import trace_provenance, forge_loop; print('verifiers ok')"
+
+      - name: Run functional test
+        run: .venv/bin/python tests/functional_test.py
+
+      - name: Run Python tests
+        run: |
+          .venv/bin/pip install pytest pytest-timeout --timeout 120 --retries 5
+          .venv/bin/pytest tests/ -v --tb=short -x --timeout=60
+
+      - name: Run entroly-core integration tests
+        run: |
+          .venv/bin/python entroly-core/tests/test_integration.py
+          .venv/bin/python entroly-core/tests/test_brutal.py

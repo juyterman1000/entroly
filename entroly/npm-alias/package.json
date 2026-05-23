@@ -1,0 +1,36 @@
+{
+  "name": "entroly",
+  "version": "1.0.0",
+  "description": "Compatibility alias for Entroly's Node/WASM runtime. Installs and delegates to entroly-wasm.",
+  "main": "index.js",
+  "bin": {
+    "entroly": "./bin/entroly.js"
+  },
+  "files": [
+    "index.js",
+    "bin/entroly.js",
+    "README.md"
+  ],
+  "dependencies": {
+    "entroly-wasm": "1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juyterman1000/entroly"
+  },
+  "keywords": [
+    "entroly",
+    "entroly-wasm",
+    "context-optimization",
+    "mcp",
+    "mcp-server",
+    "ai",
+    "agents",
+    "webassembly"
+  ],
+  "author": "entroly",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

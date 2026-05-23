@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 340" width="860" height="340">
+  <defs>
+    <style>
+      .label { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; fill: #e2e8f0; }
+      .label-bold { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; font-weight: 700; fill: #f1f5f9; }
+      .metric { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; }
+      .metric-sub { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 11px; fill: #94a3b8; }
+      .header { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 16px; font-weight: 700; }
+      .tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; }
+    </style>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="barGreen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="barRed" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#f87171"/>
+    </linearGradient>
+    <linearGradient id="barPurple" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="860" height="340" rx="12" fill="url(#bg)"/>
+  <rect width="860" height="340" rx="12" fill="none" stroke="#334155" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="430" y="32" text-anchor="middle" class="header" fill="#e2e8f0">The Entroly Difference</text>
+  <text x="430" y="48" text-anchor="middle" class="metric-sub">Real numbers from an 847-file production codebase</text>
+
+  <!-- ═══ LEFT: Without Entroly ═══ -->
+  <rect x="20" y="62" width="400" height="115" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="1" opacity="0.7"/>
+  <text x="40" y="84" class="header" fill="#ef4444">Without Entroly</text>
+
+  <!-- Token bar (full) -->
+  <text x="40" y="106" class="label">Tokens per request:</text>
+  <rect x="210" y="93" width="190" height="16" rx="4" fill="url(#barRed)" opacity="0.8"/>
+  <text x="408" y="106" text-anchor="end" class="label-bold" fill="#fca5a5">186,420</text>
+
+  <!-- Visibility bar -->
+  <text x="40" y="130" class="label">Codebase visibility:</text>
+  <rect x="210" y="117" width="11" height="16" rx="4" fill="url(#barRed)" opacity="0.8"/>
+  <text x="230" y="130" class="label-bold" fill="#fca5a5">5-10 files</text>
+
+  <!-- Cost -->
+  <text x="40" y="154" class="label">Cost per 1K requests:</text>
+  <text x="210" y="154" class="label-bold" fill="#fca5a5">~$560</text>
+
+  <!-- Learning -->
+  <text x="40" y="170" class="label">Learns from outcomes:</text>
+  <text x="210" y="170" class="label-bold" fill="#fca5a5">No</text>
+
+  <!-- ═══ RIGHT: With Entroly ═══ -->
+  <rect x="440" y="62" width="400" height="115" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="1" opacity="0.7"/>
+  <text x="460" y="84" class="header" fill="#22c55e">With Entroly</text>
+
+  <!-- Token bar (reduced) -->
+  <text x="460" y="106" class="label">Tokens per request:</text>
+  <rect x="630" y="93" width="10" height="16" rx="4" fill="url(#barGreen)" opacity="0.8"/>
+  <text x="828" y="106" text-anchor="end" class="label-bold" fill="#86efac">9,300 - 55K</text>
+  <!-- Savings badge -->
+  <rect x="688" y="90" width="65" height="20" rx="10" fill="#059669" opacity="0.9"/>
+  <text x="720" y="104" text-anchor="middle" class="tag" fill="#ecfdf5"><tspan style="opacity:0.5;font-weight:400">70-</tspan>95%</text>
+
+  <!-- Visibility bar -->
+  <text x="460" y="130" class="label">Codebase visibility:</text>
+  <rect x="630" y="117" width="190" height="16" rx="4" fill="url(#barGreen)" opacity="0.8"/>
+  <text x="828" y="130" text-anchor="end" class="label-bold" fill="#86efac">ALL 847 files</text>
+
+  <!-- Cost -->
+  <text x="460" y="154" class="label">Cost per 1K requests:</text>
+  <text x="630" y="154" class="label-bold" fill="#86efac">$28 - $168</text>
+  <rect x="688" y="141" width="75" height="20" rx="10" fill="#059669" opacity="0.9"/>
+  <text x="725" y="155" text-anchor="middle" class="tag" fill="#ecfdf5">SAVE UP TO 95%</text>
+
+  <!-- Learning -->
+  <text x="460" y="170" class="label">Learns from outcomes:</text>
+  <text x="630" y="170" class="label-bold" fill="#86efac">Yes (PRISM RL)</text>
+
+  <!-- ═══ BOTTOM: Key metrics ═══ -->
+  <line x1="40" y1="196" x2="820" y2="196" stroke="#334155" stroke-width="1"/>
+
+  <!-- Metric 1: Token Savings -->
+  <g>
+    <text x="120" y="234" text-anchor="middle" class="metric" fill="#34d399" filter="url(#glow)"><tspan style="font-size:0.4em;opacity:0.4;font-weight:400;baseline-shift:super">70-</tspan>95%</text>
+    <text x="120" y="254" text-anchor="middle" class="metric-sub">Token Reduction</text>
+    <text x="120" y="268" text-anchor="middle" class="metric-sub">per request</text>
+  </g>
+
+  <!-- Metric 2: Latency -->
+  <g>
+    <text x="310" y="234" text-anchor="middle" class="metric" fill="#a78bfa" filter="url(#glow)">8ms</text>
+    <text x="310" y="254" text-anchor="middle" class="metric-sub">Pipeline Latency</text>
+    <text x="310" y="268" text-anchor="middle" class="metric-sub">entropy + knapsack + RL</text>
+  </g>
+
+  <!-- Metric 3: Coverage -->
+  <g>
+    <text x="500" y="234" text-anchor="middle" class="metric" fill="#38bdf8" filter="url(#glow)">100%</text>
+    <text x="500" y="254" text-anchor="middle" class="metric-sub">Codebase Visibility</text>
+    <text x="500" y="268" text-anchor="middle" class="metric-sub">3-level compression</text>
+  </g>
+
+  <!-- Metric 4: Tests -->
+  <g>
+    <text x="690" y="234" text-anchor="middle" class="metric" fill="#fbbf24" filter="url(#glow)">436</text>
+    <text x="690" y="254" text-anchor="middle" class="metric-sub">Tests Passing</text>
+    <text x="690" y="268" text-anchor="middle" class="metric-sub">126 Rust + 310 Python</text>
+  </g>
+
+  <!-- Bottom tagline -->
+  <text x="430" y="310" text-anchor="middle" class="label" fill="#64748b">pip install entroly</text>
+  <text x="430" y="328" text-anchor="middle" class="metric-sub">One command. Zero config. Immediate savings.</text>
+</svg>

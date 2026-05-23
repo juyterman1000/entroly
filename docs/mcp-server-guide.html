@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MCP Server for Code Context — Entroly MCP Server Setup Guide</title>
+<meta name="description" content="Set up an MCP server that gives AI coding tools full codebase context. Works with Cursor, Claude Code, VS Code, Windsurf, and Cline. One command install.">
+<meta name="keywords" content="MCP server, Model Context Protocol, MCP server Cursor, MCP server Claude Code, MCP context, MCP coding, MCP setup guide, MCP server setup, context MCP, code context MCP server, AI MCP server">
+<meta property="og:title" content="MCP Server for Full Codebase Context — Setup Guide">
+<meta property="og:description" content="Give supported MCP-compatible AI tools access to your codebase context. One command setup with Entroly.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"MCP Server for Code Context — Setup Guide","description":"Set up an MCP server that gives AI coding tools full codebase context.","author":{"@type":"Organization","name":"Entroly"},"datePublished":"2026-04-05"}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#09090b;--surface:#18181b;--border:#27272a;--text:#fafafa;--muted:#a1a1aa;--accent:#818cf8;--green:#34d399;--red:#f87171}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.7}
+a{color:var(--accent)}code{font-family:'JetBrains Mono',monospace;background:var(--surface);padding:2px 6px;border-radius:4px;font-size:14px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6}
+nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(9,9,11,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+nav .logo{font-weight:800;font-size:20px;text-decoration:none;color:var(--text)}
+nav .links{display:flex;gap:20px;font-size:14px}nav .links a{color:var(--muted);text-decoration:none}nav .links a:hover{color:var(--text)}
+.cta-btn{background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block}.cta-btn:hover{opacity:0.9}
+article{max-width:740px;margin:0 auto;padding:100px 24px 80px}
+h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:16px}
+h2{font-size:1.5rem;font-weight:700;margin:48px 0 16px}h3{font-size:1.2rem;font-weight:600;margin:32px 0 12px}
+p{margin-bottom:16px;color:var(--muted)}ul,ol{margin:0 0 16px 24px;color:var(--muted)}li{margin-bottom:8px}strong{color:var(--text)}
+blockquote{border-left:3px solid var(--accent);padding-left:16px;margin:20px 0;color:var(--muted);font-style:italic}
+.highlight{color:var(--green)}.warning{color:var(--red)}
+table{width:100%;border-collapse:collapse;margin:20px 0}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--border);font-size:14px}th{color:var(--text);font-weight:600}td{color:var(--muted)}
+.cta-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;margin:48px 0}.cta-box h3{margin-top:0}.cta-box p{margin-bottom:20px}
+footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/entroly/" class="logo">entroly</a>
+  <div class="links">
+    <a href="/entroly/">Home</a>
+    <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a>
+    <a href="/entroly/docs/context-engineering.html">Context Engineering</a>
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn">GitHub</a>
+  </div>
+</nav>
+
+<article>
+<h1>MCP Server for Full Codebase Context — Setup Guide</h1>
+
+<p><strong>Last updated: April 2026</strong> | Reading time: 6 min</p>
+
+<p>The <strong>Model Context Protocol (MCP)</strong> is the new standard for connecting AI coding tools to external context sources. Cursor, Claude Code, VS Code, Windsurf, and Cline all support MCP servers — but most MCP servers just expose basic file read/search operations.</p>
+
+<p><strong>Entroly's MCP server is different.</strong> It doesn't just serve files — it serves <strong>optimally selected, compressed, dependency-aware context</strong> that gives your AI tool broader visibility into your codebase.</p>
+
+<h2>What is MCP?</h2>
+
+<p>Model Context Protocol (MCP) is an open standard by Anthropic that lets AI tools connect to external data sources. Instead of the AI tool searching for files itself, it can call tools on an MCP server to get better context.</p>
+
+<p>Think of it like a database adapter — MCP standardizes how AI tools request and receive context, so any MCP-compatible tool can benefit from better context sources.</p>
+
+<h2>Why Entroly's MCP Server is Different</h2>
+
+<table>
+  <tr><th></th><th>Basic MCP Server</th><th>Entroly MCP Server</th></tr>
+  <tr><td><strong>Serves</strong></td><td>Raw files</td><td>Optimally compressed context</td></tr>
+  <tr><td><strong>Coverage</strong></td><td>Files you ask for</td><td>Entire codebase at variable resolution</td></tr>
+  <tr><td><strong>Dependencies</strong></td><td>Not tracked</td><td>Auto-included</td></tr>
+  <tr><td><strong>Duplicates</strong></td><td>Sent as-is</td><td>Detected and merged (SimHash)</td></tr>
+  <tr><td><strong>Token budget</strong></td><td>No awareness</td><td>Knapsack-optimal allocation</td></tr>
+  <tr><td><strong>Learning</strong></td><td>None</td><td>RL-based weight optimization</td></tr>
+  <tr><td><strong>Tools provided</strong></td><td>1-2 (read, search)</td><td>10+ specialized tools</td></tr>
+</table>
+
+<h2>Setup by AI Tool</h2>
+
+<h3>Cursor</h3>
+<pre>pip install entroly[full]
+entroly init</pre>
+<p>Entroly auto-detects Cursor and generates <code>.cursor/mcp.json</code>. Restart Cursor and the MCP server connects automatically.</p>
+
+<h3>Claude Code</h3>
+<pre>pip install entroly[full]
+claude mcp add entroly -- entroly</pre>
+<p>One command. Claude Code connects to Entroly's MCP server on the next session.</p>
+
+<h3>VS Code / Windsurf / Cline</h3>
+<pre>pip install entroly[full]
+entroly init</pre>
+<p>Auto-detects your IDE and generates the appropriate MCP configuration.</p>
+
+<h3>Any MCP-Compatible Tool</h3>
+<pre>pip install entroly[full]
+entroly serve --transport stdio</pre>
+<p>Or with SSE transport for remote connections:</p>
+<pre>entroly serve --transport sse --port 9378</pre>
+
+<h2>MCP Tools Provided by Entroly</h2>
+
+<table>
+  <tr><th>Tool</th><th>What It Does</th></tr>
+  <tr><td><code>optimize_context</code></td><td>Select optimal context for a query and token budget</td></tr>
+  <tr><td><code>remember_fragment</code></td><td>Store context with auto-dedup and entropy scoring</td></tr>
+  <tr><td><code>recall_relevant</code></td><td>Sub-linear semantic recall via multi-probe LSH</td></tr>
+  <tr><td><code>record_outcome</code></td><td>Feed the reinforcement learning loop</td></tr>
+  <tr><td><code>explain_context</code></td><td>Show why each fragment was included/excluded</td></tr>
+  <tr><td><code>checkpoint_state</code></td><td>Save full session state</td></tr>
+  <tr><td><code>resume_state</code></td><td>Restore from checkpoint</td></tr>
+  <tr><td><code>prefetch_related</code></td><td>Predict and pre-load likely-needed context</td></tr>
+  <tr><td><code>get_stats</code></td><td>Session statistics and cost savings</td></tr>
+  <tr><td><code>health_check</code></td><td>Codebase health: clones, dead code, god files</td></tr>
+</table>
+
+<h2>How It Works</h2>
+
+<p>When your AI tool makes a request:</p>
+
+<ol>
+  <li>The AI tool calls <code>optimize_context</code> with the user's query and token budget</li>
+  <li>Entroly's Rust engine scores and selects the optimal code fragments in &lt;10ms</li>
+  <li>The selected context is delivered at variable resolution — full, signatures, or references</li>
+  <li>The AI tool receives context covering <strong>supported files at variable resolution</strong> using <strong>78% fewer tokens</strong></li>
+  <li>After the AI responds, <code>record_outcome</code> feeds the learning loop</li>
+</ol>
+
+<h2>Configuration</h2>
+
+<h3>Transport Options</h3>
+<pre># stdio (default — for local IDE connections)
+entroly serve --transport stdio
+
+# SSE (for remote / multi-client setups)
+entroly serve --transport sse --port 9378</pre>
+
+<h3>Quality Presets</h3>
+<pre>entroly serve --quality balanced    # recommended
+entroly serve --quality max         # best context, slightly more latency
+entroly serve --quality speed       # fastest, lighter optimization</pre>
+
+<h3>Environment Variables</h3>
+<table>
+  <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>ENTROLY_MCP_TRANSPORT</code></td><td>stdio</td><td>Transport mode</td></tr>
+  <tr><td><code>ENTROLY_QUALITY</code></td><td>0.5</td><td>Quality dial (0.0-1.0)</td></tr>
+  <tr><td><code>ENTROLY_MAX_FILES</code></td><td>5000</td><td>Max files to index</td></tr>
+</table>
+
+<h2>Troubleshooting</h2>
+
+<h3>MCP server not connecting</h3>
+<pre>entroly doctor</pre>
+<p>Runs 7 diagnostic checks including MCP connectivity, port availability, and config validation.</p>
+
+<h3>Cursor doesn't see the MCP server</h3>
+<p>Check that <code>.cursor/mcp.json</code> exists and restart Cursor. Entroly needs to be installed globally or in the same environment Cursor can access.</p>
+
+<h3>High latency</h3>
+<p>Switch to a faster quality preset: <code>entroly serve --quality speed</code>. Or install the Rust engine: <code>pip install entroly[native]</code>.</p>
+
+<div class="cta-box">
+  <h3>The smartest MCP server for AI coding.</h3>
+  <p>Broader codebase context. 78% fewer tokens. Works with supported MCP-compatible tools.</p>
+  <pre>pip install entroly[full] && entroly init</pre>
+  <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
+</div>
+
+</article>
+
+<footer>
+  <p><a href="/entroly/">Entroly</a> — Context Engineering Engine for AI Coding Agents</p>
+  <p style="margin-top:8px"><a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a> · <a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> · <a href="/entroly/docs/token-optimization.html">Token Optimization</a></p>
+</footer>
+</body>
+</html>

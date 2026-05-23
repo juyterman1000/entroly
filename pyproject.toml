@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "entroly"
+version = "1.0.0"
+
+description = "The token saving proxy and context compression engine for AI coding agents. Reduce LLM API costs by 80% while providing full codebase context to Cursor, Claude Code, and Copilot."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+logo = { file = "docs/assets/logo.png", content-type = "image/png" }
+requires-python = ">=3.10"
+authors = [
+    { name = "entroly", email = "fastrunner10090@gmail.com" },
+]
+keywords = [
+    "token-saving", "context-compression", "reduce-llm-costs", "llm-proxy",
+    "mcp", "agentic-ai", "cursor", "claude-code", "copilot", "llm",
+    "knapsack", "entropy", "context-optimization", "token-reduction"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "mcp>=1.6.0,<2",
+    "entroly-core>=1.0.0,<2",
+]
+
+[project.optional-dependencies]
+proxy = [
+    "httpx>=0.27",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+native = [
+    "entroly-core>=1.0.0,<2",
+]
+full = [
+    "entroly-core>=1.0.0,<2",
+    "httpx>=0.27",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+
+[project.urls]
+Homepage = "https://github.com/juyterman1000/entroly"
+Documentation = "https://github.com/juyterman1000/entroly#readme"
+Repository = "https://github.com/juyterman1000/entroly"
+"Bug Tracker" = "https://github.com/juyterman1000/entroly/issues"
+
+[project.scripts]
+entroly = "entroly._rust_launcher:main"
+entroly-py = "entroly.cli:main"
+entroly-docker = "entroly._docker_launcher:launch"
+
+[tool.hatch.build.targets.wheel]
+packages = ["entroly"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/bench/_*",
+    "/bench/*.log",
+    "/bench/*_result.json",
+    "/bench/swebench_forensics.py",
+    "/bench/swebench_s7_engine_s6.json",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501", "E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

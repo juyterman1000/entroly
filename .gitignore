@@ -1,0 +1,94 @@
+# Build artifacts
+target/
+dist/
+*.whl
+*.egg-info/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Compiled extensions
+*.pyd
+*.so
+*.dll
+
+# Entroly runtime state (per-project, generated at runtime)
+.entroly/
+.test_vault/
+
+# Personal tooling
+vault/
+
+# Scratch / debug artifacts
+.tmp/
+*.restored
+tuning_config.json
+tuning_config.*.bak.json
+entroly-report.html
+training_data.jsonl
+
+# Benchmark workflow artifacts (regenerated each run)
+bench/results.tsv
+bench/.cache/
+bench/results_*.json
+bench/quality_eval_results.json
+benchmarks/results/
+bench_section.md
+bench_output.txt
+test_output.txt
+entroly-wasm/pkg/
+entroly-wasm/*.tgz
+
+# Build and lint logs
+*_errors.txt
+*_errors2.txt
+*_output.txt
+*_dump.txt
+*_list.txt
+
+# IDE / editor
+.idea/
+claudecode/
+*.swp
+*.swo
+
+# .vscode and .claude: track the shared project files, ignore personal overrides.
+.vscode/*
+!.vscode/mcp.json
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.claude/*
+!.claude/settings.json
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / CI caches
+.pytest_cache/
+.ruff_cache/
+.entroly_verification.json
+
+# Test artifacts (should not be committed)
+.test_ravs_log/
+
+# Generated belief artifacts (never commit)
+.entroly/
+entroly-wasm/.entroly/
+
+# Rust build artifacts (lint output, never commit)
+**/clippy_errors.txt
+
+# Secrets — NEVER commit (live API keys live here)
+.env
+.env.*
+!.env.example
+
+# Stray research artifact (large external HTML dump, not project code)
+halueval_paper.html

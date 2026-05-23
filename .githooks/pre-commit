@@ -1,0 +1,81 @@
+#!/bin/sh
+# entroly pre-commit hook
+#
+# Enforces the same checks CI runs, before code leaves your machine.
+# Activate this hook on every clone (run once per machine):
+#
+#   git config core.hooksPath .githooks
+#
+# Skip on a one-off basis if you really need to:
+#
+#   git commit --no-verify   # use sparingly — CI will still catch it
+
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Skip the hook entirely if the user opted out via env var. Documented but
+# undefaulted: the convention is "the hook is always on unless you say so."
+if [ "${ENTROLY_SKIP_HOOKS:-0}" = "1" ]; then
+    echo "pre-commit: skipped (ENTROLY_SKIP_HOOKS=1)"
+    exit 0
+fi
+
+CHANGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+
+# ── Python: ruff ──────────────────────────────────────────────────────
+if echo "$CHANGED" | grep -qE '\.py$'; then
+    if command -v ruff >/dev/null 2>&1; then
+        echo "pre-commit: running ruff check entroly/ tests/ ..."
+        if ! ruff check entroly/ tests/ 2>&1; then
+            echo ""
+            echo "pre-commit: ruff failed. Fix the warnings or run:"
+            echo "  ruff check --fix entroly/ tests/"
+            exit 1
+        fi
+    else
+        echo "pre-commit: ruff not installed, skipping Python lint."
+        echo "            Install with: pip install ruff"
+    fi
+fi
+
+# ── Rust: fmt + clippy ────────────────────────────────────────────────
+if echo "$CHANGED" | grep -qE '^entroly-core/.*\.rs$|^entroly-core/Cargo\.(toml|lock)$'; then
+    if command -v cargo >/dev/null 2>&1; then
+        echo "pre-commit: running cargo fmt --check (entroly-core) ..."
+        if ! (cd entroly-core && cargo fmt --check 2>&1); then
+            echo ""
+            echo "pre-commit: rustfmt failed. Run:"
+            echo "  (cd entroly-core && cargo fmt)"
+            exit 1
+        fi
+
+        echo "pre-commit: running cargo clippy --all-targets -- -D warnings ..."
+        if ! (cd entroly-core && cargo clippy --all-targets -- -D warnings 2>&1); then
+            echo ""
+            echo "pre-commit: clippy failed. Fix the warnings or rerun with:"
+            echo "  (cd entroly-core && cargo clippy --all-targets --fix -- -D warnings)"
+            exit 1
+        fi
+    else
+        echo "pre-commit: cargo not installed, skipping Rust lint."
+    fi
+fi
+
+# ── Secret-pattern guard ──────────────────────────────────────────────
+# Catch the easy-to-spot leaks. CI's secret scanner is the real defence;
+# this is a friendly local heuristic.
+if [ -n "$CHANGED" ]; then
+    LEAKED=$(git diff --cached -U0 -- $CHANGED 2>/dev/null | grep -nE '^\+.*(sk-(proj-)?[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_-]{30,}|AKIA[0-9A-Z]{16})' || true)
+    if [ -n "$LEAKED" ]; then
+        echo ""
+        echo "pre-commit: BLOCKED — looks like an API key in your staged diff:"
+        echo "$LEAKED"
+        echo ""
+        echo "If this is a false positive (e.g. a test fixture), commit with --no-verify."
+        exit 1
+    fi
+fi
+
+echo "pre-commit: ok"

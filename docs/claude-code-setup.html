@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fix Claude Code Hallucinations — Full Codebase Context with Entroly</title>
+<meta name="description" content="Claude Code hallucinates because it can't see your full codebase. Learn how to give Claude Code 100% code visibility with Entroly. One command setup, 78% fewer tokens.">
+<meta name="keywords" content="Claude Code hallucination, Claude Code context, Claude Code MCP server, Claude Code setup, Claude Code full codebase, Claude Code token limit, Claude Code errors, fix Claude Code, Anthropic Claude Code, Claude Code tips">
+<meta property="og:title" content="Fix Claude Code Hallucinations — Give It Your Full Codebase">
+<meta property="og:description" content="Claude Code sees a fraction of your code. Entroly shows it everything. One command setup.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/claude-code-setup.html">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/claude-code-setup.html">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Fix Claude Code Hallucinations — Full Codebase Context with Entroly","description":"Give Claude Code 100% codebase visibility with context engineering.","author":{"@type":"Organization","name":"Entroly"},"datePublished":"2026-04-05"}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#09090b;--surface:#18181b;--border:#27272a;--text:#fafafa;--muted:#a1a1aa;--accent:#818cf8;--green:#34d399;--red:#f87171}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.7}
+a{color:var(--accent)}code{font-family:'JetBrains Mono',monospace;background:var(--surface);padding:2px 6px;border-radius:4px;font-size:14px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6}
+nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(9,9,11,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+nav .logo{font-weight:800;font-size:20px;text-decoration:none;color:var(--text)}
+nav .links{display:flex;gap:20px;font-size:14px}nav .links a{color:var(--muted);text-decoration:none}nav .links a:hover{color:var(--text)}
+.cta-btn{background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block}.cta-btn:hover{opacity:0.9}
+article{max-width:740px;margin:0 auto;padding:100px 24px 80px}
+h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:16px}
+h2{font-size:1.5rem;font-weight:700;margin:48px 0 16px}h3{font-size:1.2rem;font-weight:600;margin:32px 0 12px}
+p{margin-bottom:16px;color:var(--muted)}ul,ol{margin:0 0 16px 24px;color:var(--muted)}li{margin-bottom:8px}strong{color:var(--text)}
+blockquote{border-left:3px solid var(--accent);padding-left:16px;margin:20px 0;color:var(--muted);font-style:italic}
+.highlight{color:var(--green)}.warning{color:var(--red)}
+table{width:100%;border-collapse:collapse;margin:20px 0}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--border);font-size:14px}th{color:var(--text);font-weight:600}td{color:var(--muted)}
+.cta-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;margin:48px 0}.cta-box h3{margin-top:0}.cta-box p{margin-bottom:20px}
+footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/entroly/" class="logo">entroly</a>
+  <div class="links">
+    <a href="/entroly/">Home</a>
+    <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a>
+    <a href="/entroly/docs/context-engineering.html">Context Engineering</a>
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn">GitHub</a>
+  </div>
+</nav>
+
+<article>
+<h1>Fix Claude Code Hallucinations — Full Codebase Context</h1>
+
+<p><strong>Last updated: April 2026</strong> | Reading time: 5 min</p>
+
+<p><strong>Claude Code</strong> is one of the most powerful AI coding tools available — Anthropic's Claude model is exceptional at reasoning about code. But even Claude Code has a critical blind spot: <strong>it can only see a fraction of your codebase at a time.</strong></p>
+
+<p>When Claude Code can't see the full picture, it hallucinates. It invents function signatures, misses config files, and breaks dependencies it doesn't know about. This guide shows you how to fix that with <strong>one command</strong>.</p>
+
+<h2>Why Claude Code Hallucinates</h2>
+
+<p>Claude Code uses file search, grep, and open files to build context. On a large project, it faces a fundamental constraint: <strong>the context window has a token limit.</strong> Claude Code is smart about what it reads, but it can't read everything.</p>
+
+<p>The result:</p>
+
+<ul>
+  <li><strong>Partial visibility</strong> — Claude Code sees files relevant to your query, but misses related configs, utilities, and type definitions</li>
+  <li><strong>Wasted tokens</strong> — when it does read files, it reads them in full — including boilerplate, comments, and duplicate code</li>
+  <li><strong>No dependency awareness</strong> — it doesn't know that <code>auth.py</code> depends on <code>auth_config.py</code> unless it explicitly searches for it</li>
+  <li><strong>No learning</strong> — each conversation starts fresh with no memory of which context worked best</li>
+</ul>
+
+<h2>The Fix: Entroly as an MCP Server</h2>
+
+<p><a href="https://github.com/juyterman1000/entroly">Entroly</a> plugs into Claude Code as an <strong>MCP (Model Context Protocol) server</strong>. Instead of Claude Code searching for files manually, Entroly delivers the optimal context automatically:</p>
+
+<table>
+  <tr><th></th><th>Without Entroly</th><th>With Entroly</th></tr>
+  <tr><td><strong>Codebase visibility</strong></td><td class="warning">Partial (~5%)</td><td class="highlight">100% at variable resolution</td></tr>
+  <tr><td><strong>Tokens per request</strong></td><td class="warning">~186,000 (raw)</td><td class="highlight">~40,000 (78% less)</td></tr>
+  <tr><td><strong>Dependency tracking</strong></td><td class="warning">Manual</td><td class="highlight">Automatic</td></tr>
+  <tr><td><strong>Learns from usage</strong></td><td class="warning">No</td><td class="highlight">Yes (RL-based)</td></tr>
+  <tr><td><strong>Duplicate detection</strong></td><td class="warning">None</td><td class="highlight">SimHash O(1)</td></tr>
+</table>
+
+<h2>Setup: One Command</h2>
+
+<h3>Step 1: Install</h3>
+<pre>pip install entroly[full]</pre>
+
+<h3>Step 2: Connect to Claude Code</h3>
+<pre>claude mcp add entroly -- entroly</pre>
+
+<p>That's it. Claude Code now uses Entroly's MCP server for context. Every request gets optimized automatically.</p>
+
+<h3>Step 3: Verify</h3>
+<pre>entroly demo</pre>
+
+<p>See the before/after on your actual codebase. Check token savings, file coverage, and cost reduction.</p>
+
+<h2>What Happens Behind the Scenes</h2>
+
+<p>When you ask Claude Code a question, Entroly:</p>
+
+<ol>
+  <li><strong>Analyzes your query</strong> — extracts intent, keywords, and relevant code areas</li>
+  <li><strong>Selects optimal context</strong> — uses a knapsack solver to pick the best fragments that fit the token budget</li>
+  <li><strong>Delivers at 3 resolution levels</strong> — critical files in full, supporting files as signatures, peripheral files as references</li>
+  <li><strong>Tracks what worked</strong> — reinforcement learning improves selection over time</li>
+</ol>
+
+<p>The entire pipeline takes <strong>less than 10ms</strong>. Claude Code gets better context, you get better answers, and you pay less for tokens.</p>
+
+<h2>Advanced: Claude Code + Entroly Pro Tips</h2>
+
+<h3>Use quality presets for different tasks</h3>
+<pre># Quick fixes — speed matters
+entroly proxy --quality speed
+
+# Architecture questions — quality matters
+entroly proxy --quality max</pre>
+
+<h3>Check your savings</h3>
+<pre>entroly dashboard</pre>
+
+<p>The dashboard shows lifetime token savings, cost trends, codebase health grades, and PRISM weight evolution.</p>
+
+<h3>Role-based optimization</h3>
+<pre>entroly role backend   # optimizes for backend-heavy context
+entroly role frontend  # optimizes for UI/component context
+entroly role fullstack # balanced</pre>
+
+<h2>FAQ</h2>
+
+<h3>Does my code leave my machine?</h3>
+<p><strong>No.</strong> Entroly runs 100% locally. It processes your code on your machine and delivers context to Claude Code locally via MCP.</p>
+
+<h3>Does it work with Claude Code's free usage?</h3>
+<p><strong>Yes.</strong> Every tier benefits — fewer tokens per request means more requests within your quota.</p>
+
+<h3>Can I use it alongside CLAUDE.md files?</h3>
+<p><strong>Absolutely.</strong> CLAUDE.md gives Claude Code your project instructions. Entroly gives it your code context. They're complementary.</p>
+
+<div class="cta-box">
+  <h3>Make Claude Code see your entire codebase.</h3>
+  <p>One install. One command. Immediate results.</p>
+  <pre>pip install entroly[full]
+claude mcp add entroly -- entroly</pre>
+  <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
+</div>
+
+</article>
+
+<footer>
+  <p><a href="/entroly/">Entroly</a> — Context Engineering Engine for AI Coding Agents</p>
+  <p style="margin-top:8px"><a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a> · <a href="/entroly/docs/token-optimization.html">Token Optimization</a> · <a href="/entroly/docs/context-engineering.html">What is Context Engineering?</a></p>
+</footer>
+</body>
+</html>

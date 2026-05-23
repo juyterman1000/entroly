@@ -1,0 +1,67 @@
+name: Entroly Context Index — Competitive Benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'bench/**'
+      - 'entroly/**'
+      - 'entroly-core/**'
+      - 'BENCHMARKS.md'
+      - '.github/workflows/benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true
+
+      - name: Run competitive benchmark with regression guard
+        run: |
+          python bench/compare.py \
+            --markdown bench_section.md \
+            --check-regression \
+            | tee bench_output.txt
+
+      - name: Verify BENCHMARKS.md is in sync with code
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, sys
+
+          doc = Path("BENCHMARKS.md").read_text(encoding="utf-8")
+          fresh = Path("bench_section.md").read_text(encoding="utf-8").rstrip()
+
+          start, end = "<!-- BENCH:START -->", "<!-- BENCH:END -->"
+          if start not in doc or end not in doc:
+              sys.exit("::error::BENCHMARKS.md is missing BENCH sentinels")
+
+          m = re.search(re.escape(start) + r"\n(.*?)\n" + re.escape(end), doc, flags=re.DOTALL)
+          committed = m.group(1).rstrip()
+
+          if committed != fresh:
+              print("::error::BENCHMARKS.md is stale — regenerate and commit it in this PR.")
+              print("Run locally:")
+              print("  python bench/compare.py --markdown bench_section.md")
+              print("then splice bench_section.md into BENCHMARKS.md between the BENCH sentinels.")
+              print()
+              print("--- expected (fresh) ---")
+              print(fresh)
+              print("--- committed ---")
+              print(committed)
+              sys.exit(1)
+
+          print("BENCHMARKS.md is in sync with bench/compare.py output.")
+          PY

@@ -1,0 +1,21 @@
+services:
+  entroly:
+    build:
+      context: .
+      dockerfile: Dockerfile.entroly
+    ports:
+      - "9377:9377"
+      - "9378:9378"
+    environment:
+      - ENTROLY_NO_DOCKER=1
+    volumes:
+      - .:/workspace:ro
+      - entroly-data:/root/.entroly
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:9377/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  entroly-data:

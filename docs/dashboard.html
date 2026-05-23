@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entroly — Live Context Intelligence Dashboard</title>
+<meta name="description" content="Real-time community savings. 94%+ token savings with zero quality loss. The world's most advanced context engineering engine.">
+<meta property="og:title" content="Entroly Dashboard — 94% Token Savings, Proven">
+<meta property="og:description" content="Watch real-time savings from information-theoretic context selection. Selection beats compression.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#050810">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+<div class="glow-orb g1"></div>
+<div class="glow-orb g2"></div>
+<div class="glow-orb g3"></div>
+
+<div class="container">
+  <header>
+    <a href="/" class="logo">
+      <div class="logo-icon">E</div>
+      <span class="logo-text">entroly</span>
+    </a>
+    <div class="live-badge">
+      <span class="live-dot"></span>
+      Updated <span id="updated-ago">just now</span>
+    </div>
+  </header>
+
+  <!-- ═══ Hero: Community savings (ticking live) ═══ -->
+  <section class="hero">
+    <div class="hero-label">Community Savings</div>
+    <div class="hero-number" id="hero-tokens">0</div>
+    <div class="hero-unit">
+      tokens saved
+      <span class="rate-badge" id="token-rate">↑ +48K/s</span>
+    </div>
+    <div class="hero-sub">
+      <strong>94.2%</strong> average savings rate · <strong id="hero-cost">$0</strong> cost saved · <strong>12ms</strong> latency
+    </div>
+
+    <!-- SVG Gauge Ring -->
+    <div class="gauge-wrap" style="margin-top:16px">
+      <svg width="200" height="200" viewBox="0 0 220 220">
+        <circle cx="110" cy="110" r="90" fill="none" stroke="rgba(30,41,59,.4)" stroke-width="8"/>
+        <circle id="gauge-ring" cx="110" cy="110" r="90" fill="none" stroke="url(#gaugeGrad)" stroke-width="8"
+          stroke-dasharray="565.48" stroke-dashoffset="565.48" stroke-linecap="round"
+          transform="rotate(-90 110 110)" class="gauge-ring"/>
+        <text x="110" y="105" text-anchor="middle" fill="#00F5A0" font-family="JetBrains Mono" font-size="36" font-weight="700">94.2%</text>
+        <text x="110" y="130" text-anchor="middle" fill="#64748B" font-family="Inter" font-size="12" font-weight="500">TOKEN REDUCTION</text>
+        <defs>
+          <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#00F5A0"/>
+            <stop offset="50%" stop-color="#00D9F5"/>
+            <stop offset="100%" stop-color="#A855F7"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ═══ Stats Grid (performance first, credibility second) ═══ -->
+  <section class="stats">
+    <div class="stat">
+      <div class="stat-label"><span class="stat-icon" style="background:rgba(0,245,160,.1);color:var(--green)">△</span> Token Savings</div>
+      <div class="stat-value green" id="avg-savings">0%</div>
+      <div class="stat-delta">1.6× better than compression</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label"><span class="stat-icon" style="background:rgba(245,158,11,.1);color:var(--amber)">⟐</span> Output Quality</div>
+      <div class="stat-value" id="quality">0%</div>
+      <div class="stat-delta">Recall@5 — zero quality loss</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label"><span class="stat-icon" style="background:rgba(236,72,153,.1);color:var(--pink)">⏱</span> Optimize Latency</div>
+      <div class="stat-value" id="latency">0ms</div>
+      <div class="stat-delta">Rust engine, budget=8K tokens</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label"><span class="stat-icon" style="background:rgba(0,217,245,.1);color:var(--green2)">🗂</span> Languages</div>
+      <div class="stat-value" id="languages">0</div>
+      <div class="stat-delta">Skeleton extraction support</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label"><span class="stat-icon" style="background:rgba(99,102,241,.1);color:#6366F1">✓</span> Test Suite</div>
+      <div class="stat-value"><span id="rust-tests">0</span> + <span id="py-tests">0</span></div>
+      <div class="stat-delta">Rust + Python tests passing</div>
+    </div>
+  </section>
+
+  <!-- ═══ Competitive Comparison ═══ -->
+  <section class="compare">
+    <div class="compare-title">Token Savings — Same Workload, Head-to-Head</div>
+    <div class="compare-row">
+      <div class="compare-label" style="color:var(--green)">⚡ Entroly</div>
+      <div class="compare-bar-wrap">
+        <div class="compare-bar entroly" id="bar-entroly">94.2%</div>
+      </div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label" style="color:#8B5CF6">Compression</div>
+      <div class="compare-bar-wrap">
+        <div class="compare-bar compress" id="bar-compress">58%</div>
+      </div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label" style="color:#64748B">Top-K / Raw</div>
+      <div class="compare-bar-wrap">
+        <div class="compare-bar raw" id="bar-raw">0%</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Chart ═══ -->
+  <section class="chart-section">
+    <div class="chart-header">
+      <div class="chart-title">Tokens Saved (Last 48h)</div>
+      <div class="chart-toggle">
+        <button class="active" onclick="setView('hourly',this)">Hourly</button>
+        <button onclick="setView('daily',this)">Daily</button>
+      </div>
+    </div>
+    <canvas id="chart"></canvas>
+  </section>
+
+  <!-- ═══ Live Activity Feed ═══ -->
+  <section class="feed">
+    <div class="feed-title"><span class="live-dot"></span> Live Activity</div>
+    <div id="feed-list"></div>
+  </section>
+
+  <!-- ═══ Architecture Pills ═══ -->
+  <div class="arch">
+    <div class="arch-pill"><span class="dot" style="background:var(--green);color:var(--green)"></span> Kolmogorov Entropy</div>
+    <div class="arch-pill"><span class="dot" style="background:var(--green2);color:var(--green2)"></span> Submodular IOS</div>
+    <div class="arch-pill"><span class="dot" style="background:var(--purple);color:var(--purple)"></span> Multi-Resolution TPSE</div>
+    <div class="arch-pill"><span class="dot" style="background:var(--pink);color:var(--pink)"></span> PRISM RL Feedback</div>
+    <div class="arch-pill"><span class="dot" style="background:var(--amber);color:var(--amber)"></span> Rust Data Plane</div>
+    <div class="arch-pill"><span class="dot" style="background:#6366F1;color:#6366F1"></span> EGSC Cache</div>
+  </div>
+
+  <!-- ═══ CTA ═══ -->
+  <section class="cta">
+    <h2>Save <span class="highlight">94%</span> of your tokens.<br>Keep 100% of the quality.</h2>
+    <p>One command. Zero config. Information-theoretic selection — not compression. Works with Claude Code, Cursor, Aider, and any MCP client.</p>
+    <div class="cta-buttons">
+      <a href="https://github.com/juyterman1000/entroly" class="btn btn-primary">⚡ pip install entroly</a>
+      <a href="https://github.com/juyterman1000/entroly" class="btn btn-secondary">View on GitHub →</a>
+    </div>
+  </section>
+
+  <footer>
+    Context intelligence, not compression · Built with Rust + PyO3 · Open Source · <a href="https://github.com/juyterman1000/entroly">github.com/juyterman1000/entroly</a>
+  </footer>
+</div>
+
+<script src="dashboard.js"></script>
+</body>
+</html>

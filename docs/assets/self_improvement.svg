@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 480" width="840" height="480">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .t { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+      .tb { font-weight: 700; }
+      .g  { fill: #50fa7b; }
+      .c  { fill: #8be9fd; }
+      .y  { fill: #f1fa8c; }
+      .r  { fill: #ff5555; }
+      .p  { fill: #bd93f9; }
+      .o  { fill: #ffb86c; }
+      .w  { fill: #f8f8f2; }
+      .d  { fill: #6272a4; }
+    </style>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#282a36"/>
+      <stop offset="100%" stop-color="#1e1f29"/>
+    </linearGradient>
+    <linearGradient id="tb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#44475a"/>
+      <stop offset="100%" stop-color="#383a4a"/>
+    </linearGradient>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect width="840" height="480" fill="#0d0e17"/>
+  <g filter="url(#sh)">
+    <rect x="20" y="12" width="800" height="456" rx="10" fill="url(#bg)" stroke="#44475a" stroke-width="1"/>
+  </g>
+  <rect x="20" y="12" width="800" height="36" rx="10" fill="url(#tb)"/>
+  <rect x="20" y="38" width="800" height="10" fill="url(#tb)"/>
+  <circle cx="44" cy="30" r="6" fill="#ff5f56"/>
+  <circle cx="64" cy="30" r="6" fill="#ffbd2e"/>
+  <circle cx="84" cy="30" r="6" fill="#27c93f"/>
+  <text x="420" y="34" text-anchor="middle" class="t d" font-size="12">entroly — self-improvement</text>
+
+  <!-- Phase 1: Day 1 weights (visible first) -->
+  <g opacity="1">
+    <animate attributeName="opacity" values="1;1;0;0;0;0" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly status --weights</text>
+    <text x="40" y="100" class="t d">Day 1 — PRISM weights (default)</text>
+    <text x="40" y="130" class="t w">  code_density    </text><text x="230" y="130" class="t y">0.25</text>
+    <text x="280" y="130" class="t o">████░░░░░░░░░░░░</text>
+    <text x="40" y="150" class="t w">  import_graph    </text><text x="230" y="150" class="t y">0.25</text>
+    <text x="280" y="150" class="t o">████░░░░░░░░░░░░</text>
+    <text x="40" y="170" class="t w">  recency         </text><text x="230" y="170" class="t y">0.25</text>
+    <text x="280" y="170" class="t o">████░░░░░░░░░░░░</text>
+    <text x="40" y="190" class="t w">  query_relevance </text><text x="230" y="190" class="t y">0.25</text>
+    <text x="280" y="190" class="t o">████░░░░░░░░░░░░</text>
+    <text x="40" y="225" class="t d">All weights equal — engine hasn't learned your patterns yet.</text>
+  </g>
+
+  <!-- Phase 2: Learning in progress -->
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly autotune --show-delta</text>
+    <text x="40" y="100" class="t g">⟳ Learning from 847 observations...</text>
+    <text x="40" y="130" class="t w">  [session 1]  </text><text x="200" y="130" class="t d">query="auth flow"</text>
+    <text x="430" y="130" class="t g">→ import_graph +0.08</text>
+    <text x="40" y="150" class="t w">  [session 2]  </text><text x="200" y="150" class="t d">query="test coverage"</text>
+    <text x="430" y="150" class="t g">→ recency +0.05</text>
+    <text x="40" y="170" class="t w">  [session 3]  </text><text x="200" y="170" class="t d">query="refactor utils"</text>
+    <text x="430" y="170" class="t g">→ code_density +0.12</text>
+    <text x="40" y="190" class="t w">  [session 4]  </text><text x="200" y="190" class="t d">query="debug proxy"</text>
+    <text x="430" y="190" class="t g">→ import_graph +0.06</text>
+    <text x="40" y="220" class="t p">  Gradient step applied. Natural gradient via Jacobi eigendecomposition.</text>
+    <text x="40" y="245" class="t g tb">  ✓ PRISM weights updated — loss decreased 23.4%</text>
+  </g>
+
+  <!-- Phase 3: Day 30 weights (optimized) -->
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;0;0;1;1" dur="12s" repeatCount="indefinite"/>
+    <text x="40" y="75" class="t c tb">$ entroly status --weights</text>
+    <text x="40" y="100" class="t g tb">Day 30 — PRISM weights (learned)</text>
+    <text x="40" y="130" class="t w">  code_density    </text><text x="230" y="130" class="t g">0.37</text>
+    <text x="280" y="130" class="t g">██████░░░░░░░░░░</text>
+    <text x="40" y="150" class="t w">  import_graph    </text><text x="230" y="150" class="t g">0.31</text>
+    <text x="280" y="150" class="t g">█████░░░░░░░░░░░</text>
+    <text x="40" y="170" class="t w">  recency         </text><text x="230" y="170" class="t y">0.18</text>
+    <text x="280" y="170" class="t y">███░░░░░░░░░░░░░</text>
+    <text x="40" y="190" class="t w">  query_relevance </text><text x="230" y="190" class="t y">0.14</text>
+    <text x="280" y="190" class="t y">██░░░░░░░░░░░░░░</text>
+    <text x="40" y="225" class="t g">  ✓ Weights optimized for YOUR codebase. Token savings: 70% → 91%</text>
+    <text x="40" y="250" class="t d">  Engine learned: this repo is dependency-heavy. import_graph upweighted.</text>
+    <text x="40" y="280" class="t p tb">  No config changed. No tokens spent. PRISM learned by watching you work.</text>
+  </g>
+</svg>

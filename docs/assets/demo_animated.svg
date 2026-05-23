@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 712" width="840" height="712">
+  <defs>
+    <style>
+      .t { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace; font-size: 13px; }
+      .b { font-weight: 700; }
+    </style>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#282a36"/>
+      <stop offset="100%" stop-color="#1e1f29"/>
+    </linearGradient>
+    <linearGradient id="tb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#44475a"/>
+      <stop offset="100%" stop-color="#383a4a"/>
+    </linearGradient>
+  </defs>
+  <rect width="840" height="712" rx="0" fill="#0d0e17"/>
+  <rect x="20" y="12" width="800" height="688" rx="10" fill="url(#bg)" stroke="#44475a" stroke-width="1"/>
+  <rect x="20" y="12" width="800" height="36" rx="10" fill="url(#tb)"/>
+  <rect x="20" y="38" width="800" height="10" fill="url(#tb)"/>
+  <circle cx="44" cy="30" r="6" fill="#ff5f56"/>
+  <circle cx="64" cy="30" r="6" fill="#ffbd2e"/>
+  <circle cx="84" cy="30" r="6" fill="#27c93f"/>
+  <text x="420" y="34" text-anchor="middle" class="t" fill="#6272a4" font-size="12">entroly — Developer Demo</text>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="0.80s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="74" class="t b" fill="#ffffff">$ entroly demo</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="2.16s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="110" class="t" fill="#6272a4">  ⏳ Indexing your codebase...</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="3.24s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="128" class="t" fill="#50fa7b">  ✓ Indexed 847 files (186,420 tokens) in 1.8s</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="4.60s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="164" class="t" fill="#ff5555">  ┌──────────────────────────────────────────────────────┐</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="4.68s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="182" class="t b" fill="#ff5555">  │  WITHOUT ENTROLY                                       │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="4.76s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="200" class="t" fill="#f8f8f2">  │  Your AI sees: 5-10 files (rest is invisible)          │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="4.84s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="218" class="t" fill="#f8f8f2">  │  Tokens sent:  186,420 (entire raw dump)               │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="4.92s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="236" class="t b" fill="#ff5555">  │  Cost / 1K requests: ~$560                             │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="5.00s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="254" class="t" fill="#ff5555">  └──────────────────────────────────────────────────────┘</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="6.36s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="290" class="t" fill="#50fa7b">  ┌──────────────────────────────────────────────────────┐</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="6.44s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="308" class="t b" fill="#50fa7b">  │  WITH ENTROLY                                          │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="6.52s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="326" class="t" fill="#f8f8f2">  │  Your AI sees: ALL 847 files (variable resolution)     │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="7.50s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="344" class="t" fill="#50fa7b">  │                                                        │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="7.58s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="362" class="t" fill="#8be9fd">  │  Q1: &quot;Fix the authentication bug&quot;                      │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="8.36s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="380" class="t b" fill="#50fa7b">  │      → 12 fragments, 7,450 tokens       ▼ 96% saved  │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="9.34s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="398" class="t" fill="#50fa7b">  │                                                        │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="9.42s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="416" class="t" fill="#8be9fd">  │  Q2: &quot;Explain the module architecture&quot;                 │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="10.20s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="434" class="t b" fill="#50fa7b">  │      → 35 fragments, 10,240 tokens      ▼ 94% saved  │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="11.18s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="452" class="t" fill="#50fa7b">  │                                                        │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="11.26s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="470" class="t" fill="#8be9fd">  │  Q3: &quot;Find SQL injection vulnerabilities&quot;              │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="12.04s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="488" class="t b" fill="#50fa7b">  │      → 42 fragments, 9,320 tokens       ▼ 95% saved  │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="12.72s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="506" class="t" fill="#50fa7b">  │                                                        │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="12.80s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="524" class="t" fill="#50fa7b">  │  ────────────────────────────────────────────────────  │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="13.68s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="542" class="t b" fill="#50fa7b">  │  Average:   <tspan style="opacity:0.4;font-weight:400">70-</tspan>95% fewer tokens                        │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="13.76s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="560" class="t b" fill="#50fa7b">  │  Cost:      <tspan style="opacity:0.4;font-weight:400">$28 -</tspan> $168 / 1K requests (was $560)        │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="13.84s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="578" class="t" fill="#bd93f9">  │  Pipeline:  8.2ms (entropy → knapsack → PRISM)         │</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="14.32s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="596" class="t" fill="#50fa7b">  └──────────────────────────────────────────────────────┘</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="15.68s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="632" class="t b" fill="#ffffff">  ✓ Your AI sees more. You pay less. Zero config changes.</text>
+  </g>
+  <g opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="17.34s" dur="0.25s" fill="freeze"/>
+    <text x="36" y="668" class="t" fill="#8be9fd">  Start now:  pip install entroly &amp;&amp; entroly proxy</text>
+  </g>
+  <rect x="36" y="674" width="8" height="16" fill="#f8f8f2" opacity="0">
+    <animate attributeName="opacity" from="0" to="1" begin="17.84s" dur="0.01s" fill="freeze"/>
+    <animate attributeName="opacity" values="1;1;0;0" dur="1s" begin="17.84s" repeatCount="indefinite"/>
+  </rect>
+</svg>

@@ -1,0 +1,25 @@
+{
+  "name": "entroly-mcp",
+  "version": "1.0.0",
+  "description": "Information-theoretic context optimization MCP server with deterministic hallucination detection and suppression for AI coding agents.",
+  "main": "index.js",
+  "bin": {
+    "entroly-mcp": "./bin/entroly-mcp.js"
+  },
+  "scripts": {
+    "test": "echo \"No JS tests yet\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juyterman1000/entroly"
+  },
+  "keywords": [
+    "mcp",
+    "context-optimization",
+    "entroly",
+    "ai",
+    "agents"
+  ],
+  "author": "entroly",
+  "license": "Apache-2.0"
+}

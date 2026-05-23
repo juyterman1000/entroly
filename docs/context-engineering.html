@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What is Context Engineering? The Complete Guide (2026) | Entroly</title>
+<meta name="description" content="Context engineering is the practice of automatically selecting, compressing, and delivering the right information to AI models. Learn why it matters for AI coding tools and how it works.">
+<meta name="keywords" content="context engineering, what is context engineering, context engineering AI, context engineering LLM, context window optimization, AI context, LLM context management, context engineering tools, Andrej Karpathy context engineering, context is everything">
+<meta property="og:title" content="What is Context Engineering? The Complete Guide (2026)">
+<meta property="og:description" content="Context engineering is the most important skill in AI development. Learn what it is, why it matters, and how to automate it.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/context-engineering.html">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/context-engineering.html">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"What is Context Engineering? The Complete Guide (2026)","description":"Context engineering is the practice of automatically selecting, compressing, and delivering the right information to AI models.","author":{"@type":"Organization","name":"Entroly"},"datePublished":"2026-04-05"}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#09090b;--surface:#18181b;--border:#27272a;--text:#fafafa;--muted:#a1a1aa;--accent:#818cf8;--green:#34d399;--red:#f87171}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.7}
+a{color:var(--accent)}code{font-family:'JetBrains Mono',monospace;background:var(--surface);padding:2px 6px;border-radius:4px;font-size:14px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6}
+nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(9,9,11,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+nav .logo{font-weight:800;font-size:20px;text-decoration:none;color:var(--text)}
+nav .links{display:flex;gap:20px;font-size:14px}nav .links a{color:var(--muted);text-decoration:none}nav .links a:hover{color:var(--text)}
+.cta-btn{background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block}.cta-btn:hover{opacity:0.9}
+article{max-width:740px;margin:0 auto;padding:100px 24px 80px}
+h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:16px}
+h2{font-size:1.5rem;font-weight:700;margin:48px 0 16px}h3{font-size:1.2rem;font-weight:600;margin:32px 0 12px}
+p{margin-bottom:16px;color:var(--muted)}ul,ol{margin:0 0 16px 24px;color:var(--muted)}li{margin-bottom:8px}strong{color:var(--text)}
+blockquote{border-left:3px solid var(--accent);padding-left:16px;margin:20px 0;color:var(--muted);font-style:italic}
+.highlight{color:var(--green)}.warning{color:var(--red)}
+table{width:100%;border-collapse:collapse;margin:20px 0}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--border);font-size:14px}th{color:var(--text);font-weight:600}td{color:var(--muted)}
+.cta-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;margin:48px 0}.cta-box h3{margin-top:0}.cta-box p{margin-bottom:20px}
+footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/entroly/" class="logo">entroly</a>
+  <div class="links">
+    <a href="/entroly/">Home</a>
+    <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a>
+    <a href="/entroly/docs/token-optimization.html">Token Optimization</a>
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn">GitHub</a>
+  </div>
+</nav>
+
+<article>
+<h1>What is Context Engineering? The Complete Guide (2026)</h1>
+
+<p><strong>Last updated: April 2026</strong> | Reading time: 8 min</p>
+
+<blockquote>"The hottest new skill in AI is not prompt engineering — it's context engineering."<br>— Andrej Karpathy</blockquote>
+
+<p>If you've been building with LLMs, you've noticed something: <strong>the model is rarely the bottleneck. The context is.</strong> Two developers using the same model get wildly different results — the difference is what information they put in the context window.</p>
+
+<p><strong>Context engineering</strong> is the discipline of automatically selecting, compressing, and delivering the right information to AI models at the right time.</p>
+
+<h2>The Context Window is RAM</h2>
+
+<p>Think of an LLM like a CPU. The context window is its RAM. Everything the model knows about your task must fit in that window — your code, your question, your docs, your conversation history.</p>
+
+<p>The problem: <strong>RAM is finite and expensive.</strong></p>
+
+<ul>
+  <li>GPT-4 Turbo: 128K tokens (~300 pages)</li>
+  <li>Claude Opus: 200K tokens (~500 pages)</li>
+  <li>A medium codebase: 500K-2M tokens</li>
+</ul>
+
+<p>Your codebase doesn't fit. So every AI tool makes a choice: <strong>which code to include and which to ignore.</strong> Most tools make this choice poorly — they stuff files until the window is full, then cut. The result is an AI that sees 5% of your code and hallucinates the rest.</p>
+
+<h2>The Three Layers of Context Engineering</h2>
+
+<h3>Layer 1: Selection — What Goes In</h3>
+<p>Which code fragments, documents, and context should be included? This is where most approaches fail — they use embedding similarity (RAG) which misses dependencies, ignores information density, and can't guarantee optimality.</p>
+
+<p>An ideal selection system:</p>
+<ul>
+  <li>Considers <strong>all</strong> fragments, not just top-K similar ones</li>
+  <li>Accounts for <strong>dependencies</strong> — if you include auth.py, include auth_config.py</li>
+  <li>Ensures <strong>diversity</strong> — don't send 3 auth files and 0 database files</li>
+  <li>Is <strong>mathematically optimal</strong> — proven best subset for the budget, not approximate</li>
+</ul>
+
+<h3>Layer 2: Compression — How It Fits</h3>
+<p>Not all code needs full resolution. A file your AI needs to edit should appear in full. A utility it might call only needs the function signature. A config file it should know exists only needs a one-line reference.</p>
+
+<p><strong>Variable resolution</strong> is the key insight: represent your entire codebase at different levels of detail, allocating more resolution to more important code.</p>
+
+<h3>Layer 3: Learning — Getting Better Over Time</h3>
+<p>Which context produced good AI responses? Which selections led to hallucinations? A context engineering system should learn from every interaction and improve its selection weights over time.</p>
+
+<p>This is where <strong>reinforcement learning</strong> enters: the system observes outcomes and adjusts, without manual tuning.</p>
+
+<h2>Context Engineering vs Prompt Engineering</h2>
+
+<table>
+  <tr><th></th><th>Prompt Engineering</th><th>Context Engineering</th></tr>
+  <tr><td><strong>Focus</strong></td><td>How you ask</td><td>What information the AI sees</td></tr>
+  <tr><td><strong>Scale</strong></td><td>Manual per-prompt</td><td>Automated per-request</td></tr>
+  <tr><td><strong>Handles code</strong></td><td>You paste it manually</td><td>Auto-selects optimal subset</td></tr>
+  <tr><td><strong>Learns</strong></td><td>You iterate manually</td><td>RL optimizes automatically</td></tr>
+  <tr><td><strong>Token efficiency</strong></td><td>Low (you guess)</td><td>High (mathematically optimal)</td></tr>
+</table>
+
+<p>Prompt engineering is about <strong>how you phrase the question</strong>. Context engineering is about <strong>what information the AI has access to when answering</strong>. Both matter. But context engineering has far more leverage — the best prompt in the world can't fix an AI that can't see your code.</p>
+
+<h2>Context Engineering vs RAG</h2>
+
+<p>RAG (Retrieval Augmented Generation) is one approach to context selection. It uses embedding vectors to find chunks similar to your query. But RAG has fundamental limitations for code:</p>
+
+<table>
+  <tr><th></th><th>RAG</th><th>Context Engineering</th></tr>
+  <tr><td><strong>Selection method</strong></td><td>Cosine similarity</td><td>Information-theoretic optimization</td></tr>
+  <tr><td><strong>Coverage</strong></td><td>Top-K similar chunks</td><td>Supported files at variable resolution</td></tr>
+  <tr><td><strong>Dependencies</strong></td><td>Missed</td><td>Automatically included</td></tr>
+  <tr><td><strong>Duplicates</strong></td><td>Sent multiple times</td><td>Detected and merged</td></tr>
+  <tr><td><strong>Needs embeddings</strong></td><td>Yes (API cost + latency)</td><td>No (runs locally)</td></tr>
+  <tr><td><strong>Optimality</strong></td><td>Approximate</td><td>Knapsack-optimal (proven for the scoring objective)</td></tr>
+</table>
+
+<p>RAG answers the question "what's similar to my query?" Context engineering answers the question <strong>"what's the optimal information set for this token budget?"</strong></p>
+
+<h2>The Context Engineering Stack</h2>
+
+<p>A complete context engineering system has these components:</p>
+
+<ol>
+  <li><strong>Indexer</strong> — Maps your codebase: files, dependencies, symbols, types</li>
+  <li><strong>Scorer</strong> — Ranks fragments by information density (Shannon entropy, not embedding similarity)</li>
+  <li><strong>Deduplicator</strong> — Finds and merges duplicate/near-duplicate code (SimHash, LSH)</li>
+  <li><strong>Selector</strong> — Picks the optimal subset for a token budget (knapsack solver, submodular optimization)</li>
+  <li><strong>Compressor</strong> — Represents code at variable resolution (full, skeleton, reference)</li>
+  <li><strong>Learner</strong> — Tracks outcomes, updates selection weights (reinforcement learning)</li>
+</ol>
+
+<h2>Entroly: Context Engineering, Automated</h2>
+
+<p><a href="https://github.com/juyterman1000/entroly">Entroly</a> is an open-source context engineering engine that implements all six components. It integrates with compatible local tools such as Cursor, Claude Code, Windsurf, and Cline, then delivers selected context for each request.</p>
+
+<p>Key results:</p>
+<ul>
+  <li><strong>78% fewer tokens</strong> per request (measured across real codebases)</li>
+  <li><strong>Variable-resolution coverage</strong> — supported files represented at some resolution</li>
+  <li><strong>&lt;10ms overhead</strong> — Rust engine, imperceptible latency</li>
+  <li><strong>Learns from usage</strong> — REINFORCE-based weight optimization</li>
+  <li><strong>Zero config</strong> — one command setup</li>
+</ul>
+
+<pre>pip install entroly[full] && entroly go</pre>
+
+<h2>The Future of Context Engineering</h2>
+
+<p>As context windows grow (1M+ tokens), you might think context engineering becomes less important. The opposite is true:</p>
+
+<ul>
+  <li><strong>Larger windows = more wasted tokens</strong> — filling 1M tokens with raw code is even more expensive</li>
+  <li><strong>Cost scales linearly</strong> — 10x more tokens = 10x more cost</li>
+  <li><strong>Attention degrades with length</strong> — models perform worse with more irrelevant context ("lost in the middle" problem)</li>
+  <li><strong>Multi-agent systems</strong> — multiple AI agents sharing a token budget need allocation, not just stuffing</li>
+</ul>
+
+<p>Context engineering isn't a stopgap for small context windows. It's a <strong>permanent discipline</strong> — like database query optimization didn't disappear when RAM got cheaper.</p>
+
+<div class="cta-box">
+  <h3>Automate your context engineering.</h3>
+  <p>Entroly selects context for your AI automatically. Open source. Zero config.</p>
+  <pre>pip install entroly[full] && entroly go</pre>
+  <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
+</div>
+
+</article>
+
+<footer>
+  <p><a href="/entroly/">Entroly</a> — Context Engineering Engine for AI Coding Agents</p>
+  <p style="margin-top:8px"><a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a> · <a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> · <a href="/entroly/docs/token-optimization.html">Token Optimization</a></p>
+</footer>
+</body>
+</html>

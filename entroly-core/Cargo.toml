@@ -1,0 +1,49 @@
+[package]
+name = "entroly-core"
+version = "1.0.0"
+edition = "2021"
+description = "Rust core for Entroly — information-theoretic context optimization"
+
+[lib]
+name = "entroly_core"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Enabled by maturin (see pyproject.toml `[tool.maturin] features`) so wheel
+# builds skip linking libpython — Python loads the .so at runtime. Left off
+# for `cargo test` so the test binary links libpython normally.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+# PyO3 0.25 adds native Python 3.14 support. The `abi3-py310` feature builds
+# against the Python stable ABI, so a single wheel per platform covers Python
+# 3.10, 3.11, 3.12, 3.13, 3.14, and every future Python 3.x release without
+# rebuilding. This permanently eliminates the "newer Python rejected by build
+# script" failure mode (see closed GitHub issue #41).
+pyo3 = { version = "0.25", features = ["abi3-py310"] }
+
+# Serialization (checkpoint)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.11"
+
+# Hashing
+md-5 = "0.11"
+
+# Compression (checkpoint)
+flate2 = "1.0"
+
+# Concurrency
+rayon = "1.12"
+
+# NOTE: Tantivy was evaluated as a retrieval substrate and REJECTED
+# (falsified): on Entroly's bounded-corpus regime a correct BM25 is
+# already at the quality ceiling, so Tantivy added ~no relevance gain
+# while pulling 50+ transitive crates (incl. an uncompilable
+# libm 0.2.16) and OOMing the release build — a direct violation of the
+# zero-dependency identity for zero benefit here. The retrieval fix
+# (auto-routing relevance recall to the existing in-tree `recall_bm25`
+# instead of the SimHash `recall()`) needs NO new dependency. A
+# learned-sparse / Tantivy tier remains a documented, CI-only,
+# falsify-first option for the semantic regime only — never default.

@@ -1,0 +1,28 @@
+# GitHub Linguist should describe Entroly's core implementation, not every
+# published wrapper, demo page, generated asset, or install helper.
+#
+# Core product code: Python + Rust.
+# Distribution/user surfaces below remain tracked and shipped, but are excluded
+# from the repository language bar because they are wrappers, docs, or generated
+# artifacts rather than the core engine.
+
+# Documentation sites, dashboards, demos, and static assets.
+docs/** linguist-documentation
+tests/*.html linguist-documentation
+bench/*.ipynb linguist-documentation
+
+# JavaScript surfaces are Node/WASM wrappers around the Rust engine.
+entroly-wasm/**/*.js linguist-vendored
+entroly/npm/**/*.js linguist-vendored
+
+# wasm-pack output is generated distribution glue.
+entroly-wasm/pkg/** linguist-generated
+
+# Shell files are install/test helpers, not implementation language.
+scripts/*.sh linguist-vendored
+bench/*.sh linguist-vendored
+.githooks/** linguist-vendored
+
+# Packaging metadata for downstream channels.
+Dockerfile* linguist-vendored
+packaging/homebrew/** linguist-vendored

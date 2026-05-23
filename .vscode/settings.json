@@ -1,0 +1,35 @@
+{
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+
+  "editor.formatOnSave": false,
+  "editor.rulers": [100],
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true
+  },
+
+  "rust-analyzer.cargo.features": [],
+  "rust-analyzer.linkedProjects": ["entroly-core/Cargo.toml"],
+
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+
+  "search.exclude": {
+    "**/.venv": true,
+    "**/target": true,
+    "**/dist": true,
+    "**/.entroly": true,
+    "**/.tmp": true,
+    "**/__pycache__": true
+  }
+}

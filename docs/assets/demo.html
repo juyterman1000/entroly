@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Entroly — Developer Demo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0e17;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .terminal {
+    background: linear-gradient(180deg, #282a36 0%, #1e1f29 100%);
+    border: 1px solid #44475a;
+    border-radius: 10px;
+    width: 800px;
+    max-width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+  .title-bar {
+    background: linear-gradient(180deg, #44475a 0%, #383a4a 100%);
+    height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    position: relative;
+  }
+  .traffic-light {
+    width: 12px; height: 12px; border-radius: 50%;
+    margin-right: 8px; display: inline-block;
+  }
+  .tl-red { background: #ff5f56; }
+  .tl-yellow { background: #ffbd2e; }
+  .tl-green { background: #27c93f; }
+  .title-text {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    color: #6272a4;
+  }
+  .content {
+    padding: 16px 20px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 480px;
+  }
+  .line {
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    white-space: pre;
+  }
+  .line.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 16px;
+    background: #f8f8f2;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+    opacity: 0;
+  }
+  .cursor.show { opacity: 1; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px;
+    border-top: 1px solid #44475a;
+  }
+  .controls button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: #44475a;
+    color: #f8f8f2;
+    border: 1px solid #6272a4;
+    border-radius: 4px;
+    padding: 6px 16px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .controls button:hover { background: #6272a4; }
+</style>
+</head>
+<body>
+<div class="terminal">
+  <div class="title-bar">
+    <span class="traffic-light tl-red"></span>
+    <span class="traffic-light tl-yellow"></span>
+    <span class="traffic-light tl-green"></span>
+    <span class="title-text">entroly — Developer Demo</span>
+  </div>
+  <div class="content" id="content"></div>
+  <div class="controls">
+    <button onclick="replay()">Replay</button>
+    <button onclick="skipToEnd()">Skip to End</button>
+  </div>
+</div>
+<script>
+const L=[
+    {t:"$ entroly demo",c:"#ffffff",b:true,d:800},
+    {t:"",c:"#f8f8f2",b:false,d:2060},
+    {t:"  ⏳ Indexing your codebase...",c:"#6272a4",b:false,d:2120},
+    {t:"  ✓ Indexed 847 files (186,420 tokens) in 1.8s",c:"#50fa7b",b:false,d:3180},
+    {t:"",c:"#f8f8f2",b:false,d:4440},
+    {t:"  ┌──────────────────────────────────────────────────────┐",c:"#ff5555",b:false,d:4500},
+    {t:"  │  WITHOUT ENTROLY                                       │",c:"#ff5555",b:true,d:4560},
+    {t:"  │  Your AI sees: 5-10 files (rest is invisible)          │",c:"#f8f8f2",b:false,d:4620},
+    {t:"  │  Tokens sent:  186,420 (entire raw dump)               │",c:"#f8f8f2",b:false,d:4680},
+    {t:"  │  Cost / 1K requests: ~$560                             │",c:"#ff5555",b:true,d:4740},
+    {t:"  └──────────────────────────────────────────────────────┘",c:"#ff5555",b:false,d:4800},
+    {t:"",c:"#f8f8f2",b:false,d:6060},
+    {t:"  ┌──────────────────────────────────────────────────────┐",c:"#50fa7b",b:false,d:6120},
+    {t:"  │  WITH ENTROLY                                          │",c:"#50fa7b",b:true,d:6180},
+    {t:"  │  Your AI sees: ALL 847 files (variable resolution)     │",c:"#f8f8f2",b:false,d:6240},
+    {t:"  │                                                        │",c:"#50fa7b",b:false,d:7200},
+    {t:"  │  Q1: \"Fix the authentication bug\"                      │",c:"#8be9fd",b:false,d:7260},
+    {t:"  │      → 12 fragments, 7,450 tokens       ▼ <span style='opacity:0.5'>90-</span>96% saved  │",c:"#50fa7b",b:true,d:8020},
+    {t:"  │                                                        │",c:"#50fa7b",b:false,d:8980},
+    {t:"  │  Q2: \"Explain the module architecture\"                 │",c:"#8be9fd",b:false,d:9040},
+    {t:"  │      → 35 fragments, 10,240 tokens      ▼ <span style='opacity:0.5'>80-</span>94% saved  │",c:"#50fa7b",b:true,d:9800},
+    {t:"  │                                                        │",c:"#50fa7b",b:false,d:10760},
+    {t:"  │  Q3: \"Find SQL injection vulnerabilities\"              │",c:"#8be9fd",b:false,d:10820},
+    {t:"  │      → 42 fragments, 9,320 tokens       ▼ <span style='opacity:0.5'>70-</span>95% saved  │",c:"#50fa7b",b:true,d:11580},
+    {t:"  │                                                        │",c:"#50fa7b",b:false,d:12240},
+    {t:"  │  ────────────────────────────────────────────────────  │",c:"#50fa7b",b:false,d:12300},
+    {t:"  │  Average:   <span style='opacity:0.5;font-weight:400'>70-</span>95% fewer tokens                        │",c:"#50fa7b",b:true,d:13160},
+    {t:"  │  Cost:      <span style='opacity:0.5;font-weight:400'>$28 -</span> $168 / 1K requests (was $560)        │",c:"#50fa7b",b:true,d:13220},
+    {t:"  │  Pipeline:  8.2ms (entropy → knapsack → PRISM)         │",c:"#bd93f9",b:false,d:13280},
+    {t:"  └──────────────────────────────────────────────────────┘",c:"#50fa7b",b:false,d:13740},
+    {t:"",c:"#f8f8f2",b:false,d:15000},
+    {t:"  ✓ Your AI sees more. You pay less. Zero config changes.",c:"#ffffff",b:true,d:15060},
+    {t:"",c:"#f8f8f2",b:false,d:16620},
+    {t:"  Start now:  pip install entroly && entroly proxy",c:"#8be9fd",b:false,d:16680}
+];
+const content=document.getElementById('content');
+let timeouts=[];
+function clear(){
+    timeouts.forEach(clearTimeout);
+    timeouts=[];
+    content.innerHTML='';
+}
+function play() {
+    clear();
+    const cur=document.createElement('span');
+    cur.className='cursor show';
+    L.forEach((l,i) => {
+        const div=document.createElement('div');
+        div.className='line';
+        if(l.b) div.style.fontWeight='700';
+        div.style.color=l.c;
+        div.innerHTML=l.t||'\u00a0';
+        content.appendChild(div);
+        timeouts.push(setTimeout(() => {
+            div.classList.add('show');
+            content.appendChild(cur);
+            content.scrollTop = content.scrollHeight;
+        }, l.d));
+    });
+}
+function skipToEnd() {
+    clear();
+    const cur=document.createElement('span');
+    cur.className='cursor show';
+    L.forEach((l,i) => {
+        const div=document.createElement('div');
+        div.className='line show';
+        if(l.b) div.style.fontWeight='700';
+        div.style.color=l.c;
+        div.innerHTML=l.t||'\u00a0';
+        content.appendChild(div);
+    });
+    content.appendChild(cur);
+    content.scrollTop = content.scrollHeight;
+}
+function replay() {
+    play();
+}
+play();
+
+</script>
+</body>
+</html>
