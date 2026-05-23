@@ -1059,10 +1059,13 @@ class DreamingLoop:
         self._config_path = config_path or CONFIG_PATH
         self._max_iterations = max_iterations
         self._last_activity: float = time.time()
+        self._last_check_at: float | None = None
         self._total_dreams: int = 0
         self._total_improvements: int = 0
         self._best_efficiency: float = 0.0
         self._archetype_optimizer = archetype_optimizer
+        self._last_dream_result: dict[str, Any] | None = None
+        self._last_dream_at: float | None = None
 
     def record_activity(self) -> None:
         """Called on every user query to reset the idle timer."""
@@ -1162,24 +1165,35 @@ class DreamingLoop:
 
         Returns stats about the cycle.
         """
+        self._last_check_at = time.time()
         if not self.should_dream():
-            return {"status": "not_idle", "idle_seconds": time.time() - self._last_activity}
+            result = {
+                "status": "not_idle",
+                "idle_seconds": time.time() - self._last_activity,
+            }
+            self._last_dream_result = dict(result)
+            return result
 
         t_start = time.time()
         self._total_dreams += 1
+        self._last_dream_at = t_start
 
         # Load current best config
         config = load_config()
         cases = load_cases()
         if not cases:
-            return {"status": "no_cases", "dream_id": self._total_dreams}
+            result = {"status": "no_cases", "dream_id": self._total_dreams}
+            self._last_dream_result = dict(result)
+            return result
 
         # Evaluate baseline
         try:
             baseline = evaluate(config, cases, time_budget=DEFAULT_TIME_BUDGET_SECS)
             self._best_efficiency = baseline.context_efficiency
         except Exception as e:
-            return {"status": "error", "error": str(e)}
+            result = {"status": "error", "error": str(e)}
+            self._last_dream_result = dict(result)
+            return result
 
         improvements = 0
         experiments = 0
@@ -1237,7 +1251,7 @@ class DreamingLoop:
 
         wall_seconds = time.time() - t_start
 
-        return {
+        result = {
             "status": "completed",
             "dream_id": self._total_dreams,
             "experiments": experiments,
@@ -1249,12 +1263,30 @@ class DreamingLoop:
             "total_dreams": self._total_dreams,
             "total_improvements": self._total_improvements,
         }
+        self._last_dream_result = dict(result)
+        return result
 
     def stats(self) -> dict[str, Any]:
+        last_status = None
+        last_wall_seconds = None
+        last_improvements = None
+        if self._last_dream_result:
+            last_status = self._last_dream_result.get("status")
+            last_wall_seconds = self._last_dream_result.get("wall_seconds")
+            last_improvements = self._last_dream_result.get("improvements")
+
+        idle_seconds = time.time() - self._last_activity
+        next_dream_in_s = max(0.0, DREAMING_IDLE_THRESHOLD_S - idle_seconds)
         return {
             "total_dreams": self._total_dreams,
             "total_improvements": self._total_improvements,
             "best_efficiency": self._best_efficiency,
-            "idle_seconds": round(time.time() - self._last_activity, 1),
+            "idle_seconds": round(idle_seconds, 1),
             "will_dream": self.should_dream(),
+            "next_dream_in_s": round(next_dream_in_s, 1),
+            "last_check_at": self._last_check_at,
+            "last_dream_at": self._last_dream_at,
+            "last_status": last_status,
+            "last_wall_seconds": last_wall_seconds,
+            "last_improvements": last_improvements,
         }

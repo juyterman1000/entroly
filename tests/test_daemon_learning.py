@@ -66,6 +66,15 @@ with tempfile.TemporaryDirectory() as td:
     # 7. DreamingLoop
     dl = DreamingLoop(journal=journal, max_iterations=3)
     assert not dl.should_dream()
+    pre = dl.stats()
+    assert pre["last_dream_at"] is None
+    assert pre["last_check_at"] is None
+    r = dl.run_dream_cycle()
+    assert r["status"] == "not_idle"
+    mid = dl.stats()
+    assert mid["last_dream_at"] is None, "Not-idle checks should not count as dreams"
+    assert mid["last_check_at"] is not None
+    assert mid["next_dream_in_s"] > 0
     dl._last_activity = _time.time() - 120  # fake idle
     assert dl.should_dream()
     ds = dl.stats()

@@ -1,5 +1,5 @@
-"""
-Entroly Live Dashboard — Real-time AI value metrics at localhost:9378
+﻿"""
+Entroly Live Dashboard â€” Real-time AI value metrics at localhost:9378
 =====================================================================
 
 Shows developers exactly what Entroly's Rust engine is doing for them,
@@ -7,7 +7,7 @@ pulling REAL data from all engine subsystems:
 
   Engine Stats:       tokens saved, cost saved, dedup hits, turn count
   PRISM RL Weights:   learned scoring weights (recency/frequency/semantic/entropy)
-  Health Analysis:    code health grade A–F, clones, dead symbols, god files
+  Health Analysis:    code health grade Aâ€“F, clones, dead symbols, god files
   SAST Security:      vulnerability findings with CWE categories
   Knapsack Decisions: which fragments were included/excluded and why
   Dep Graph:          symbol definitions, edges, coupling stats
@@ -26,7 +26,7 @@ from typing import Any
 
 logger = logging.getLogger("entroly.dashboard")
 
-# ── Engine reference (set by start_dashboard) ─────────────────────────────────
+# â”€â”€ Engine reference (set by start_dashboard) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _engine: Any | None = None
 _lock = threading.Lock()
 
@@ -55,11 +55,24 @@ def _safe_json(obj: Any) -> Any:
         return round(obj, 6)
     return obj
 
+def _control_learning_snapshot(daemon: Any) -> dict:
+    """Control API payload for /api/control/learning."""
+    if hasattr(daemon, "get_learning_stats"):
+        try:
+            return _safe_json(daemon.get_learning_stats())
+        except Exception:
+            pass
+    state = getattr(daemon, "state", None)
+    return _safe_json({
+        "local_enabled": getattr(state, "learning_enabled", True),
+        "autotune_enabled": getattr(state, "autotune_enabled", True),
+        "weights": daemon.get_learning_weights() if hasattr(daemon, "get_learning_weights") else {},
+    })
 
 def _record_section_error(snap: dict, section: str, exc: BaseException) -> None:
     """Append a structured error so the dashboard JS can render a banner.
     Per-section error fields (`snap[section] = {"error": str(e)}` or `None`)
-    are kept for backward-compat, but they're invisible to the user — the
+    are kept for backward-compat, but they're invisible to the user â€” the
     `errors` array is what gets surfaced in the UI."""
     snap.setdefault("errors", []).append({
         "section": section,
@@ -83,7 +96,7 @@ def _cogops_unavailable_snapshot(reason: str) -> dict:
         "hint": (
             "CogOps is degraded: the native engine 'entroly_core' isn't "
             "installed. Everything else works. To enable it, reinstall "
-            "with the native extra — pip: `pip install 'entroly[full]'`; "
+            "with the native extra â€” pip: `pip install 'entroly[full]'`; "
             "uv: `uv tool install 'entroly[full]'` (or `uv tool install "
             "entroly --with entroly-core`). If no prebuilt wheel exists "
             "for your platform, a Rust toolchain is required to build it."
@@ -100,7 +113,7 @@ def _get_full_snapshot() -> dict:
         "errors": [],
     }
 
-    # Persistent value tracker (independent of engine — always available).
+    # Persistent value tracker (independent of engine â€” always available).
     # reload_if_changed() is THE cross-process fix: a standalone
     # `entroly dashboard` is a different process from the proxy/MCP/npm
     # writer, so without this its in-memory copy froze at startup and the
@@ -173,11 +186,11 @@ def _get_full_snapshot() -> dict:
         return snap
 
     try:
-        # 1. Core stats — engine telemetry only. NEVER prices "$ saved" from
+        # 1. Core stats â€” engine telemetry only. NEVER prices "$ saved" from
         # these numbers; the only source of truth for money saved is
         # value_trends.lifetime (proxy-only). The Rust struct historically
         # exposed a `savings` block with a fabricated `estimated_cost_saved_usd`
-        # field that conflated CLI dedup with real LLM savings — we normalize
+        # field that conflated CLI dedup with real LLM savings â€” we normalize
         # that block to `engine` here and strip the misleading cost field.
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             stats = _engine._rust.stats()
@@ -204,7 +217,7 @@ def _get_full_snapshot() -> dict:
         _record_section_error(snap, "stats", e)
 
     try:
-        # 2. PRISM RL weights — the learned scoring weights
+        # 2. PRISM RL weights â€” the learned scoring weights
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             rust = _engine._rust
             snap["prism_weights"] = {
@@ -218,7 +231,7 @@ def _get_full_snapshot() -> dict:
         _record_section_error(snap, "prism_weights", e)
 
     try:
-        # 3. Health analysis — code health grade
+        # 3. Health analysis â€” code health grade
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             health_json = _engine._rust.analyze_health()
             snap["health"] = _safe_json(json.loads(health_json))
@@ -236,7 +249,7 @@ def _get_full_snapshot() -> dict:
         _record_section_error(snap, "security", e)
 
     try:
-        # 5. Knapsack explainability — last optimization decisions
+        # 5. Knapsack explainability â€” last optimization decisions
         if hasattr(_engine, "_rust") and _engine._rust is not None:
             explain = _engine._rust.explain_selection()
             snap["explain"] = _safe_json(dict(explain))
@@ -254,7 +267,7 @@ def _get_full_snapshot() -> dict:
         _record_section_error(snap, "dep_graph", e)
 
     try:
-        # 7. Cache intelligence — live EGSC + RAVEN-UCB observability
+        # 7. Cache intelligence â€” live EGSC + RAVEN-UCB observability
         stats = snap.get("stats", {}) if isinstance(snap.get("stats"), dict) else {}
         cache = stats.get("cache", {}) if isinstance(stats.get("cache"), dict) else {}
         policy = stats.get("policy", {}) if isinstance(stats.get("policy"), dict) else {}
@@ -321,7 +334,7 @@ def _get_full_snapshot() -> dict:
         snap["causal"] = None
         _record_section_error(snap, "resonance/consolidation/causal", e)
 
-    # 9. Recent proxy requests — only override the activity-derived feed
+    # 9. Recent proxy requests â€” only override the activity-derived feed
     # when this process actually has richer same-process proxy rows;
     # otherwise keep the cross-process feed set above (don't blank it).
     with _lock:
@@ -340,7 +353,7 @@ def _get_full_snapshot() -> dict:
             "ENTROLY_VAULT",
             os.path.join(os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly")), "vault"),
         )
-        _cogops = CogOpsEngine(vault_base)  # noqa: F841 — side-effect: initializes vault
+        _cogops = CogOpsEngine(vault_base)  # noqa: F841 â€” side-effect: initializes vault
 
         # Read all beliefs for summary stats
         from pathlib import Path
@@ -442,14 +455,14 @@ def _fetch_witness_snapshot() -> dict[str, Any]:
     return {"available": False, "count": 0, "items": [], "feedback": {}}
 
 
-# ── HTML Dashboard ────────────────────────────────────────────────────────────
+# â”€â”€ HTML Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Entroly — Intelligence Dashboard</title>
+<title>Entroly â€” Intelligence Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -489,7 +502,7 @@ body::before{content:'';position:fixed;top:-50%;left:-50%;width:200%;height:200%
 .whisper code{background:rgba(96,165,250,0.15);padding:2px 8px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:12px;}
 .whisper .dismiss{margin-left:auto;cursor:pointer;opacity:0.5;font-size:16px;}
 .whisper .dismiss:hover{opacity:1;}
-/* Hero — Impact-first design */
+/* Hero â€” Impact-first design */
 .hero{margin-bottom:20px;}
 .hero-impact{text-align:center;padding:32px 24px 24px;background:var(--card);border:1px solid var(--border);
   border-radius:20px;position:relative;overflow:hidden;margin-bottom:16px;}
@@ -649,17 +662,17 @@ tr:hover td{background:rgba(255,255,255,0.015);}
 </head>
 <body>
 <div class="topbar">
-  <div class="brand"><h1>⚡ Entroly</h1><span class="btag">INTELLIGENCE DASHBOARD</span></div>
+  <div class="brand"><h1>âš¡ Entroly</h1><span class="btag">INTELLIGENCE DASHBOARD</span></div>
   <div style="display:flex;align-items:center;gap:16px;">
     <a href="/" style="color:var(--emerald);text-decoration:none;font-size:13px;font-weight:600;">Dashboard</a>
-    <a href="/controls" style="color:var(--dim);text-decoration:none;font-size:13px;font-weight:500;transition:color .2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--dim)'">⚙️ Controls</a>
-    <div class="live"><div class="dot"></div>Live · 3s refresh</div>
+    <a href="/controls" style="color:var(--dim);text-decoration:none;font-size:13px;font-weight:500;transition:color .2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--dim)'">âš™ï¸ Controls</a>
+    <div class="live"><div class="dot"></div>Live Â· 3s refresh</div>
   </div>
 </div>
 <div class="main">
   <div class="whisper" id="whisper">
-    💡 Point your AI tool's API base URL to <code>http://localhost:9377/v1</code> to start optimizing every LLM call.
-    <span class="dismiss" onclick="this.parentElement.style.display='none'">✕</span>
+    ðŸ’¡ Point your AI tool's API base URL to <code>http://localhost:9377/v1</code> to start optimizing every LLM call.
+    <span class="dismiss" onclick="this.parentElement.style.display='none'">âœ•</span>
   </div>
   <div id="errBanner" style="display:none;margin-bottom:16px;padding:12px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.4);border-radius:10px;color:#fecaca;font-size:13px;line-height:1.5;"></div>
   <div class="hero" id="hero"></div>
@@ -667,20 +680,20 @@ tr:hover td{background:rgba(255,255,255,0.015);}
   <div id="ba"></div>
   <div class="grid2">
     <div class="panel">
-      <div class="ph"><h2>🧠 PRISM Intelligence</h2><span id="pb" class="badge b-amber">Default</span></div>
+      <div class="ph"><h2>ðŸ§  PRISM Intelligence</h2><span id="pb" class="badge b-amber">Default</span></div>
       <div class="pb" id="prism"></div>
     </div>
     <div class="panel">
-      <div class="ph"><h2>🏥 Code Health</h2><span id="hb" class="badge b-green">—</span></div>
+      <div class="ph"><h2>ðŸ¥ Code Health</h2><span id="hb" class="badge b-green">â€”</span></div>
       <div class="pb" id="health"></div>
     </div>
   </div>
   <div class="panel" style="margin-bottom:20px;">
-    <div class="ph"><h2>Cache Intelligence</h2><span id="cb" class="badge b-blue">—</span></div>
+    <div class="ph"><h2>Cache Intelligence</h2><span id="cb" class="badge b-blue">â€”</span></div>
     <div class="pb" id="cacheintel"></div>
   </div>
   <div class="panel" style="margin-bottom:20px;">
-    <div class="ph"><h2>🧠 Epistemic Engine</h2><span id="cogb" class="badge b-violet">CogOps</span></div>
+    <div class="ph"><h2>ðŸ§  Epistemic Engine</h2><span id="cogb" class="badge b-violet">CogOps</span></div>
     <div class="pb" id="cogops"></div>
   </div>
   <div class="panel" style="margin-bottom:20px;">
@@ -689,7 +702,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
   </div>
   <div id="grid3wrap"></div>
   <div class="panel" style="margin-bottom:28px;">
-    <div class="ph"><h2>📡 Request Flow</h2><span id="rb" class="badge b-cyan">—</span></div>
+    <div class="ph"><h2>ðŸ“¡ Request Flow</h2><span id="rb" class="badge b-cyan">â€”</span></div>
     <div id="sparkarea" style="padding:12px 20px 0;"></div>
     <div style="overflow-x:auto;">
       <table><thead><tr><th>Time</th><th>Model</th><th>Tokens In</th><th>Saved</th><th>Dedup</th><th>SAST</th><th>Query</th></tr></thead>
@@ -698,7 +711,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
   </div>
 </div>
 <script>
-const fmt=n=>{if(n==null)return'—';return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)};
+const fmt=n=>{if(n==null)return'â€”';return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)};
 const money=n=>'$'+(n||0).toFixed(2);
 const pct=n=>Math.round((n||0)*100)+'%';
 const ago=ts=>{const s=Math.floor(Date.now()/1000-ts);return s<60?s+'s ago':s<3600?Math.floor(s/60)+'m ago':Math.floor(s/3600)+'h ago';};
@@ -707,7 +720,7 @@ let hasRequests=false;
 let heroSparkData=[];
 function renderHero(d){
   // Single source of truth for "saved": value_trends.lifetime (proxy-only).
-  // stats.engine is internal efficiency telemetry — never priced as $$.
+  // stats.engine is internal efficiency telemetry â€” never priced as $$.
   const s=d.stats||{},eng=s.engine||s.savings||{},ss=s.session||{},dd=s.dedup||{};
   const frags=ss.total_fragments||0;
   const secTotal=(d.security&&!d.security.error)?((d.security.critical_total||0)+(d.security.high_total||0)):0;
@@ -729,13 +742,13 @@ function renderHero(d){
   // Track sparkline data
   if(reqs.length>0){reqs.forEach(r=>{if(heroSparkData.length>=40)heroSparkData.shift();heroSparkData.push(r.tokens_saved||0);});}
 
-  // Empty state — nothing indexed AND no value from any path yet.
+  // Empty state â€” nothing indexed AND no value from any path yet.
   const anyVal=realTokens>0||realReqs>0||(lt.hallucinations_blocked||0)>0||(lt.routing_saved_usd||0)>0||(d.activity||[]).length>0;
   if(frags===0&&!hasRequests&&!anyVal){
     document.getElementById('hero').innerHTML=`<div class="empty-hero">
-      <div class="empty-icon">🚀</div>
+      <div class="empty-icon">ðŸš€</div>
       <div class="empty-title">Ready to optimize</div>
-      <div class="empty-desc">Entroly will track value automatically through any path you use — the <b>proxy</b> (<code>http://localhost:9377/v1</code>), the <b>MCP server</b> (pip or npm — call <code>optimize_context</code>), or the <b>SDK</b> (<code>from entroly import compress</code>).</div>
+      <div class="empty-desc">Entroly will track value automatically through any path you use â€” the <b>proxy</b> (<code>http://localhost:9377/v1</code>), the <b>MCP server</b> (pip or npm â€” call <code>optimize_context</code>), or the <b>SDK</b> (<code>from entroly import compress</code>).</div>
     </div>`;return;
   }
 
@@ -750,7 +763,7 @@ function renderHero(d){
   const bigLabel=realReqs>0?'COST SAVED':'FRAGMENTS READY';
   const subtitle=realReqs>0
     ?`<b>${fmt(realTokens)}</b> tokens saved across <b>${realReqs}</b> real LLM request${realReqs!==1?'s':''}`
-    :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
+    :`Indexed and ready Â· <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
     <div class="hero-impact">
@@ -760,19 +773,19 @@ function renderHero(d){
       ${sparkHTML}
     </div>
     <div class="hero-metrics">
-      <div class="hero-metric hm-files"><div class="hm-icon">📁</div>
+      <div class="hero-metric hm-files"><div class="hm-icon">ðŸ“</div>
         <div class="hm-val hv-blue">${frags}</div>
         <div class="hm-label">Files Indexed</div>
         <div class="hm-sub">${fmt(ss.total_tokens_tracked||ss.total_tokens_ingested||ss.total_token_count||0)} tokens</div></div>
-      <div class="hero-metric hm-health"><div class="hm-icon">🏥</div>
+      <div class="hero-metric hm-health"><div class="hm-icon">ðŸ¥</div>
         <div class="hm-val" style="color:${gc}">${grade}</div>
         <div class="hm-label">Code Health</div>
-        <div class="hm-sub">${score}/100 · ${(h.god_files||[]).length} god files</div></div>
-      <div class="hero-metric hm-sast"><div class="hm-icon">🛡️</div>
-        <div class="hm-val ${secTotal>0?'hv-rose':'hv-green'}">${secTotal>0?secTotal:'✓'}</div>
+        <div class="hm-sub">${score}/100 Â· ${(h.god_files||[]).length} god files</div></div>
+      <div class="hero-metric hm-sast"><div class="hm-icon">ðŸ›¡ï¸</div>
+        <div class="hm-val ${secTotal>0?'hv-rose':'hv-green'}">${secTotal>0?secTotal:'âœ“'}</div>
         <div class="hm-label">${secTotal>0?'Findings':'All Clear'}</div>
-        <div class="hm-sub">${secTotal>0?(d.security.critical_total||0)+' crit · '+(d.security.high_total||0)+' high':'No vulnerabilities'}</div></div>
-      <div class="hero-metric hm-reqs"><div class="hm-icon">⚡</div>
+        <div class="hm-sub">${secTotal>0?(d.security.critical_total||0)+' crit Â· '+(d.security.high_total||0)+' high':'No vulnerabilities'}</div></div>
+      <div class="hero-metric hm-reqs"><div class="hm-icon">âš¡</div>
         <div class="hm-val hv-cyan">${realReqs}</div>
         <div class="hm-label">Requests</div>
         <div class="hm-sub">${dedupCount} fragments deduped</div></div>
@@ -795,18 +808,18 @@ function renderBA(d){
     <div class="ba-side ba-left">
       <div class="ba-title">Without Entroly (Raw)</div>
       <div class="ba-val" style="color:var(--rose);">${fmt(totalTokens)} tokens</div>
-      <div class="ba-detail">${totalFrag} fragments · no dedup · no scoring</div>
+      <div class="ba-detail">${totalFrag} fragments Â· no dedup Â· no scoring</div>
       <div class="ba-detail" style="margin-top:4px;">Top-K: ~5 files visible to LLM</div>
     </div>
     <div class="ba-center">
-      <div class="ba-arrow">→</div>
-      <div class="ba-pct">${ratio>0?ratio+'%':'—'}</div>
+      <div class="ba-arrow">â†’</div>
+      <div class="ba-pct">${ratio>0?ratio+'%':'â€”'}</div>
       <div class="ba-pct-label">${ratio>0?'reduction':'awaiting optimize'}</div>
     </div>
     <div class="ba-side">
       <div class="ba-title">With Entroly (Optimized)</div>
-      <div class="ba-val" style="color:var(--emerald);">${selTokens>0?fmt(selTokens)+' tokens':'—'}</div>
-      <div class="ba-detail">${selected.length} fragments · knapsack-optimal · deduped</div>
+      <div class="ba-val" style="color:var(--emerald);">${selTokens>0?fmt(selTokens)+' tokens':'â€”'}</div>
+      <div class="ba-detail">${selected.length} fragments Â· knapsack-optimal Â· deduped</div>
       <div class="ba-detail" style="margin-top:4px;">Coverage: ${coverPct}% of codebase at variable resolution</div>
     </div>
   </div>`;
@@ -833,11 +846,11 @@ function renderPrism(d){
   if(pb){pb.textContent=isLearned?'RL-Learned':'Default';pb.className='badge '+(isLearned?'b-violet':'b-amber');}
   const colors=['#667eea','#f5576c','#4facfe','#43e97b'];
   const maxIdx=vals.indexOf(Math.max(...vals));
-  const insight=`Your codebase responds best to <b>${names[maxIdx].toLowerCase()}</b> — ${names[maxIdx]==='Recency'?'recent edits are most predictive of what the LLM needs next':names[maxIdx]==='Frequency'?'frequently accessed files are the best context signal':names[maxIdx]==='Semantic'?'semantic similarity to the query drives the best results':'information-dense files contribute most to LLM accuracy'}.`;
+  const insight=`Your codebase responds best to <b>${names[maxIdx].toLowerCase()}</b> â€” ${names[maxIdx]==='Recency'?'recent edits are most predictive of what the LLM needs next':names[maxIdx]==='Frequency'?'frequently accessed files are the best context signal':names[maxIdx]==='Semantic'?'semantic similarity to the query drives the best results':'information-dense files contribute most to LLM accuracy'}.`;
   document.getElementById('prism').innerHTML=`<div class="radar-wrap">
     <canvas class="radar-canvas" id="radarC" width="180" height="180"></canvas>
     <ul class="radar-legend">${names.map((n,i)=>`<li><span class="rdot" style="background:${colors[i]}"></span>${n}<span class="rval">${pct(vals[i])}</span></li>`).join('')}</ul>
-  </div><div class="prism-insight">💡 ${insight}</div>`;
+  </div><div class="prism-insight">ðŸ’¡ ${insight}</div>`;
   const c=document.getElementById('radarC');if(c)drawRadar(c.getContext('2d'),180,vals,colors);
 }
 
@@ -846,7 +859,7 @@ function renderHealth(d){
   if(!h||h.error){el.innerHTML='<div class="empty">Ingest code to see health</div>';return;}
   const g=h.health_grade||'?',sc=h.code_health_score||0;
   const gc={'A':'var(--emerald)','B':'var(--blue)','C':'var(--amber)','D':'#e3872d','F':'var(--rose)'}[g]||'var(--dim)';
-  b.textContent=g+' · '+sc+'/100';b.className='badge '+(g<='B'?'b-green':g==='C'?'b-amber':'b-rose');
+  b.textContent=g+' Â· '+sc+'/100';b.className='badge '+(g<='B'?'b-green':g==='C'?'b-amber':'b-rose');
   el.innerHTML=`<div class="health-ring-wrap">
     <div class="health-ring"><canvas id="hring" width="110" height="110"></canvas><div class="grade" style="color:${gc}">${g}</div></div>
     <ul class="health-stats">
@@ -856,7 +869,7 @@ function renderHealth(d){
       <li><span class="hv">${(h.arch_violations||[]).length}</span>arch violations</li>
       <li><span class="hv">${(h.naming_issues||[]).length}</span>naming issues</li>
     </ul></div>
-    ${h.top_recommendation?'<div class="health-rec">💡 '+h.top_recommendation+'</div>':''}`;
+    ${h.top_recommendation?'<div class="health-rec">ðŸ’¡ '+h.top_recommendation+'</div>':''}`;
   const c=document.getElementById('hring');
   if(c){const ctx=c.getContext('2d'),cx=55,cy=55,r=46,p=sc/100;
     ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=8;ctx.stroke();
@@ -872,19 +885,19 @@ function renderCache(d){
   const realHits=exact+semantic;
   const realHitRate=lookups>0?realHits/lookups:0;
   const warmState=entries===0?'Cold':realHits>0?'Warm':lookups>0?'Warming':'Idle';
-  b.textContent=warmState+' · '+pct(realHitRate);
+  b.textContent=warmState+' Â· '+pct(realHitRate);
   b.className='badge '+(realHits>0?'b-green':entries>0?'b-amber':'b-blue');
   el.innerHTML=`<div class="cache-kpis">
-    <div class="cache-kpi"><div class="cache-kpi-label">Hit Rate EMA</div><div class="cache-kpi-val hv-green">${pct(hitRateEma)}</div><div class="cache-kpi-sub">${exact} exact · ${semantic} semantic</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Hit Rate EMA</div><div class="cache-kpi-val hv-green">${pct(hitRateEma)}</div><div class="cache-kpi-sub">${exact} exact Â· ${semantic} semantic</div></div>
     <div class="cache-kpi"><div class="cache-kpi-label">Entries</div><div class="cache-kpi-val hv-blue">${fmt(entries)}</div><div class="cache-kpi-sub">${fmt(lookups)} lookups processed</div></div>
-    <div class="cache-kpi"><div class="cache-kpi-label">Tokens Saved</div><div class="cache-kpi-val hv-amber">${fmt(c.tokens_saved||0)}</div><div class="cache-kpi-sub">${c.invalidations||0} invalidations · ${c.total_resets||0} resets</div></div>
-    <div class="cache-kpi"><div class="cache-kpi-label">Explore / Exploit</div><div class="cache-kpi-val hv-rose">${pct(exploreRatio)} / ${pct(exploitRatio)}</div><div class="cache-kpi-sub">${c.total_explorations||0} explore · ${c.total_exploitations||0} exploit</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Tokens Saved</div><div class="cache-kpi-val hv-amber">${fmt(c.tokens_saved||0)}</div><div class="cache-kpi-sub">${c.invalidations||0} invalidations Â· ${c.total_resets||0} resets</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Explore / Exploit</div><div class="cache-kpi-val hv-rose">${pct(exploreRatio)} / ${pct(exploitRatio)}</div><div class="cache-kpi-sub">${c.total_explorations||0} explore Â· ${c.total_exploitations||0} exploit</div></div>
   </div>
   <div class="cache-split">
     <div class="cache-block">
       <h3>Thompson Gate</h3>
-      <div class="cache-pair"><span>Posterior α / β</span><strong>${(c.thompson_alpha||0).toFixed(2)} / ${(c.thompson_beta||0).toFixed(2)}</strong></div>
-      <div class="cache-pair"><span>Adaptive Rényi α</span><strong>${(c.adaptive_alpha||0).toFixed(4)}</strong></div>
+      <div class="cache-pair"><span>Posterior Î± / Î²</span><strong>${(c.thompson_alpha||0).toFixed(2)} / ${(c.thompson_beta||0).toFixed(2)}</strong></div>
+      <div class="cache-pair"><span>Adaptive RÃ©nyi Î±</span><strong>${(c.adaptive_alpha||0).toFixed(4)}</strong></div>
       <div class="cache-pair"><span>Admissions / Rejections</span><strong>${fmt(c.admissions||0)} / ${fmt(c.rejections||0)}</strong></div>
     </div>
     <div class="cache-block">
@@ -903,12 +916,12 @@ function renderSecAndKnapsack(d){
   let panels='<div class="grid3" style="margin-bottom:20px;">';
 
   // Security panel with top findings
-  panels+='<div class="panel"><div class="ph"><h2>🛡️ Security</h2><span id="sb" class="badge '+(sec&&(sec.critical_total||0)+(sec.high_total||0)>0?'b-rose':'b-green')+'">';
+  panels+='<div class="panel"><div class="ph"><h2>ðŸ›¡ï¸ Security</h2><span id="sb" class="badge '+(sec&&(sec.critical_total||0)+(sec.high_total||0)>0?'b-rose':'b-green')+'">';
   if(sec&&!sec.error){
     const tot=(sec.critical_total||0)+(sec.high_total||0);
-    panels+=tot>0?tot+' findings':'✓ Clean';
+    panels+=tot>0?tot+' findings':'âœ“ Clean';
     panels+='</span></div><div class="pb">';
-    if(tot===0){panels+='<div style="text-align:center;padding:16px;"><div style="font-size:40px;filter:drop-shadow(0 0 16px rgba(52,211,153,0.4));">🛡️</div><div style="color:var(--emerald);font-weight:700;margin-top:8px;">No vulnerabilities</div><div style="font-size:12px;color:var(--dim);margin-top:4px;">'+(sec.fragments_scanned||0)+' fragments scanned</div></div>';}
+    if(tot===0){panels+='<div style="text-align:center;padding:16px;"><div style="font-size:40px;filter:drop-shadow(0 0 16px rgba(52,211,153,0.4));">ðŸ›¡ï¸</div><div style="color:var(--emerald);font-weight:700;margin-top:8px;">No vulnerabilities</div><div style="font-size:12px;color:var(--dim);margin-top:4px;">'+(sec.fragments_scanned||0)+' fragments scanned</div></div>';}
     else{
       const findings=sec.findings||sec.top_findings||[];
       const cats=sec.findings_by_category||{};
@@ -918,13 +931,13 @@ function renderSecAndKnapsack(d){
         panels+=Object.entries(cats).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:var(--dim);">${k}</span><span class="tag t-rose">${v}</span></div>`).join('');
       }
     }
-  } else {panels+='—</span></div><div class="pb"><div class="empty">No scan yet</div>';}
+  } else {panels+='â€”</span></div><div class="pb"><div class="empty">No scan yet</div>';}
   panels+='</div></div>';
 
   // Dep graph - only show if data exists
   if(dg&&(dg.total_symbols||dg.symbol_count||0)>0){
     const sym=dg.total_symbols||dg.symbol_count||0,edg=dg.total_edges||dg.edge_count||0;
-    panels+='<div class="panel"><div class="ph"><h2>🕸️ Dep Graph</h2><span class="badge b-cyan">'+sym+' symbols</span></div><div class="pb">';
+    panels+='<div class="panel"><div class="ph"><h2>ðŸ•¸ï¸ Dep Graph</h2><span class="badge b-cyan">'+sym+' symbols</span></div><div class="pb">';
     panels+='<div style="display:flex;gap:20px;justify-content:center;padding:12px 0;"><div style="text-align:center;"><div style="font-size:28px;font-weight:800;color:var(--cyan);">'+sym+'</div><div style="font-size:10px;color:var(--dim);margin-top:4px;">SYMBOLS</div></div>';
     panels+='<div style="text-align:center;"><div style="font-size:28px;font-weight:800;color:var(--blue);">'+edg+'</div><div style="font-size:10px;color:var(--dim);margin-top:4px;">EDGES</div></div></div>';
     panels+='</div></div>';
@@ -933,10 +946,10 @@ function renderSecAndKnapsack(d){
   // Knapsack with included AND excluded
   if(ex&&!ex.error){
     const inc=ex.included||[],exc=ex.excluded||[];
-    panels+='<div class="panel"><div class="ph"><h2>🎯 Knapsack</h2><span class="badge b-violet">'+inc.length+' selected · '+pct(ex.sufficiency)+' suff.</span></div>';
+    panels+='<div class="panel"><div class="ph"><h2>ðŸŽ¯ Knapsack</h2><span class="badge b-violet">'+inc.length+' selected Â· '+pct(ex.sufficiency)+' suff.</span></div>';
     panels+='<div class="pb" style="max-height:320px;overflow-y:auto;">';
-    let rows=inc.slice(0,5).map(f=>{const sc=f.scores||{};return`<tr><td class="mono" style="color:var(--emerald);">✓ ${(f.source||f.id||'').split(/[\\/]/).pop()}</td><td class="mono">${pct(sc.composite)}</td><td style="font-size:11px;color:var(--dim);">${(f.reason||'').slice(0,30)}</td></tr>`;}).join('');
-    rows+=exc.slice(0,3).map(f=>{const sc=f.scores||{};return`<tr style="opacity:0.5;"><td class="mono" style="color:var(--rose);">✗ ${(f.source||f.id||'').split(/[\\/]/).pop()}</td><td class="mono">${pct(sc.composite)}</td><td style="font-size:11px;color:var(--rose);">${(f.reason||'below threshold').slice(0,30)}</td></tr>`;}).join('');
+    let rows=inc.slice(0,5).map(f=>{const sc=f.scores||{};return`<tr><td class="mono" style="color:var(--emerald);">âœ“ ${(f.source||f.id||'').split(/[\\/]/).pop()}</td><td class="mono">${pct(sc.composite)}</td><td style="font-size:11px;color:var(--dim);">${(f.reason||'').slice(0,30)}</td></tr>`;}).join('');
+    rows+=exc.slice(0,3).map(f=>{const sc=f.scores||{};return`<tr style="opacity:0.5;"><td class="mono" style="color:var(--rose);">âœ— ${(f.source||f.id||'').split(/[\\/]/).pop()}</td><td class="mono">${pct(sc.composite)}</td><td style="font-size:11px;color:var(--rose);">${(f.reason||'below threshold').slice(0,30)}</td></tr>`;}).join('');
     panels+='<table><thead><tr><th>Fragment</th><th>Score</th><th>Reason</th></tr></thead><tbody>'+rows+'</tbody></table>';
     panels+='</div></div>';
   }
@@ -959,7 +972,7 @@ function renderWitness(d){
   const items=w.items||[],feedback=w.feedback||{};
   const suppressed=items.reduce((a,x)=>a+(((x.policy||{}).suppressed_count)||0),0);
   const flagged=items.reduce((a,x)=>a+((x.n_contradicted||0)+(x.n_unsupported||0)+(x.n_unknown||0)),0);
-  b.textContent=items.length+' recent · '+flagged+' flagged';
+  b.textContent=items.length+' recent Â· '+flagged+' flagged';
   b.className='badge '+(flagged>0?'b-rose':'b-green');
   const kpis=`<div class="cache-kpis">
     <div class="cache-kpi"><div class="cache-kpi-label">Flagged Claims</div><div class="cache-kpi-val hv-rose">${flagged}</div><div class="cache-kpi-sub">recent sidecar certificates</div></div>
@@ -987,13 +1000,13 @@ function renderRequests(d){
   if(reqs.length>0){reqs.forEach(r=>{if(sparkData.length>=30)sparkData.shift();sparkData.push(r.tokens_saved||0);});
     const mx=Math.max(...sparkData,1);
     document.getElementById('sparkarea').innerHTML='<div class="sparkline">'+sparkData.map(v=>'<div class="bar" style="height:'+Math.max(2,v/mx*40)+'px;"></div>').join('')+'</div>';}
-  if(reqs.length===0){tbody.innerHTML='<tr><td colspan="7" class="empty">No activity yet — flows in live from proxy, MCP (pip/npm), or the SDK on first use</td></tr>';return;}
+  if(reqs.length===0){tbody.innerHTML='<tr><td colspan="7" class="empty">No activity yet â€” flows in live from proxy, MCP (pip/npm), or the SDK on first use</td></tr>';return;}
   tbody.innerHTML=reqs.slice().reverse().slice(0,15).map(r=>`<tr>
-    <td>${ago(r.time||0)}</td><td>${r.model||'—'}</td><td class="mono">${fmt(r.tokens_in||0)}</td>
-    <td><span class="tag t-green">−${fmt(r.tokens_saved||0)}</span></td>
+    <td>${ago(r.time||0)}</td><td>${r.model||'â€”'}</td><td class="mono">${fmt(r.tokens_in||0)}</td>
+    <td><span class="tag t-green">âˆ’${fmt(r.tokens_saved||0)}</span></td>
     <td>${(r.dedup_hits||0)>0?'<span class="tag t-amber">'+r.dedup_hits+'</span>':'<span style="color:var(--dim2)">0</span>'}</td>
     <td>${(r.sast_findings||0)>0?'<span class="tag t-rose">'+r.sast_findings+'</span>':'<span style="color:var(--dim2)">0</span>'}</td>
-    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim);">${r.query||'—'}</td></tr>`).join('');
+    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim);">${r.query||'â€”'}</td></tr>`).join('');
 }
 
 let trendsView='daily';
@@ -1005,7 +1018,7 @@ function renderValueTrends(d){
     _lt0.hallucinations_blocked||_lt0.routing_saved_usd);
   if(!anyValue){
     // Friendly zero-state instead of a blank panel. Works for every
-    // install mode — proxy, MCP (pip), SDK, and npm.
+    // install mode â€” proxy, MCP (pip), SDK, and npm.
     el.innerHTML='<div class="trends-panel"><div class="trends-header">'+
       '<h2>Lifetime Value</h2><span class="badge" style="background:'+
       'rgba(148,163,184,.12);color:var(--dim)">waiting for first request</span>'+
@@ -1013,10 +1026,10 @@ function renderValueTrends(d){
       'No value recorded yet. Entroly starts counting tokens saved, '+
       'hallucinations blocked, and model-routing savings the moment your '+
       'first request flows through <b>any</b> path:<br>'+
-      '&nbsp;&nbsp;• <b>Proxy</b>: point your AI tool at '+
+      '&nbsp;&nbsp;â€¢ <b>Proxy</b>: point your AI tool at '+
       '<code>http://localhost:9377/v1</code><br>'+
-      '&nbsp;&nbsp;• <b>MCP</b> (pip/npm): call the <code>optimize_context</code> tool<br>'+
-      '&nbsp;&nbsp;• <b>SDK</b>: <code>from entroly import compress</code><br>'+
+      '&nbsp;&nbsp;â€¢ <b>MCP</b> (pip/npm): call the <code>optimize_context</code> tool<br>'+
+      '&nbsp;&nbsp;â€¢ <b>SDK</b>: <code>from entroly import compress</code><br>'+
       'This panel is live from the shared telemetry file and refreshes '+
       'automatically.</div></div>';
     return;
@@ -1041,9 +1054,9 @@ function renderValueTrends(d){
     '<div class="trends-body">'+
     '<div class="trends-kpis">'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Lifetime Saved</div><div class="trends-kpi-val hv-green">$'+(lt.cost_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+fmt(lt.tokens_saved||0)+' tokens across '+days_active+' day'+(days_active!==1?'s':'')+'</div></div>'+
-    '<div class="trends-kpi"><div class="trends-kpi-label">Today</div><div class="trends-kpi-val hv-blue">$'+(today.cost_saved_usd||0).toFixed(4)+'</div><div class="trends-kpi-sub">'+fmt(today.tokens_saved||0)+' tokens · '+(today.requests||0)+' reqs</div></div>'+
-    '<div class="trends-kpi"><div class="trends-kpi-label">This Session</div><div class="trends-kpi-val hv-amber">'+fmt(sess.tokens_saved||0)+'</div><div class="trends-kpi-sub">$'+(sess.cost_saved_usd||0).toFixed(4)+' · '+(sess.requests||0)+' reqs</div></div>'+
-    '<div class="trends-kpi"><div class="trends-kpi-label">Daily Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.requests_optimized||0)+' reqs optimized · '+(lt.duplicates_caught||0)+' dedup</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Today</div><div class="trends-kpi-val hv-blue">$'+(today.cost_saved_usd||0).toFixed(4)+'</div><div class="trends-kpi-sub">'+fmt(today.tokens_saved||0)+' tokens Â· '+(today.requests||0)+' reqs</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">This Session</div><div class="trends-kpi-val hv-amber">'+fmt(sess.tokens_saved||0)+'</div><div class="trends-kpi-sub">$'+(sess.cost_saved_usd||0).toFixed(4)+' Â· '+(sess.requests||0)+' reqs</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Daily Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.requests_optimized||0)+' reqs optimized Â· '+(lt.duplicates_caught||0)+' dedup</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Hallucinations Blocked</div><div class="trends-kpi-val hv-rose">'+fmt(lt.hallucinations_blocked||0)+'</div><div class="trends-kpi-sub">unsupported claims stopped by WITNESS</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Model-Routing Saved</div><div class="trends-kpi-val hv-violet">$'+(lt.routing_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+(lt.routing_decisions||0)+' RAVS routing decisions</div></div>'+
     '</div>'+
@@ -1058,16 +1071,16 @@ function renderValueTrends(d){
 function renderCogops(d){
   const c=d.cogops,el=document.getElementById('cogops'),b=document.getElementById('cogb');
   if(!el)return;
-  if(!c){el.innerHTML='<div class="empty">Epistemic engine not initialized — vault missing or unreadable</div>';return;}
+  if(!c){el.innerHTML='<div class="empty">Epistemic engine not initialized â€” vault missing or unreadable</div>';return;}
   const tb=c.total_beliefs||0,ver=c.verified||0,st=c.stale||0,db=c.doc_beliefs||0;
   const conf=c.avg_confidence||0,fresh=c.freshness_pct||0,ents=c.entity_count||0;
-  if(b){b.textContent=(c.engine||'cogops')+' · '+tb+' beliefs';b.className='badge '+(tb>0?'b-violet':'b-blue');}
-  if(tb===0){el.innerHTML='<div class="empty">No beliefs yet — run <code>compile_beliefs</code> to seed the vault</div>';return;}
+  if(b){b.textContent=(c.engine||'cogops')+' Â· '+tb+' beliefs';b.className='badge '+(tb>0?'b-violet':'b-blue');}
+  if(tb===0){el.innerHTML='<div class="empty">No beliefs yet â€” run <code>compile_beliefs</code> to seed the vault</div>';return;}
   el.innerHTML=`<div class="cache-kpis">
-    <div class="cache-kpi"><div class="cache-kpi-label">Total Beliefs</div><div class="cache-kpi-val hv-blue">${fmt(tb)}</div><div class="cache-kpi-sub">${ents} distinct entities · ${db} doc-linked</div></div>
-    <div class="cache-kpi"><div class="cache-kpi-label">Avg Confidence</div><div class="cache-kpi-val hv-green">${(conf*100).toFixed(1)}%</div><div class="cache-kpi-sub">${ver} verified · ${tb-ver-st} inferred</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Total Beliefs</div><div class="cache-kpi-val hv-blue">${fmt(tb)}</div><div class="cache-kpi-sub">${ents} distinct entities Â· ${db} doc-linked</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Avg Confidence</div><div class="cache-kpi-val hv-green">${(conf*100).toFixed(1)}%</div><div class="cache-kpi-sub">${ver} verified Â· ${tb-ver-st} inferred</div></div>
     <div class="cache-kpi"><div class="cache-kpi-label">Freshness</div><div class="cache-kpi-val hv-amber">${fresh.toFixed(0)}%</div><div class="cache-kpi-sub">${st} stale beliefs flagged</div></div>
-    <div class="cache-kpi"><div class="cache-kpi-label">Engine</div><div class="cache-kpi-val hv-violet">${c.engine||'—'}</div><div class="cache-kpi-sub">5-layer epistemic topology</div></div>
+    <div class="cache-kpi"><div class="cache-kpi-label">Engine</div><div class="cache-kpi-val hv-violet">${c.engine||'â€”'}</div><div class="cache-kpi-sub">5-layer epistemic topology</div></div>
   </div>`;
 }
 
@@ -1075,9 +1088,9 @@ function renderErrors(items){
   const el=document.getElementById('errBanner');
   if(!el){return;}
   if(!items||items.length===0){el.style.display='none';el.innerHTML='';return;}
-  const head=`<b>${items.length} subsystem error${items.length!==1?'s':''}</b> — dashboard data may be incomplete.`;
+  const head=`<b>${items.length} subsystem error${items.length!==1?'s':''}</b> â€” dashboard data may be incomplete.`;
   const list=items.slice(0,5).map(x=>`<div style="margin-top:6px;opacity:.85"><code style="background:rgba(239,68,68,.12);padding:1px 6px;border-radius:4px">${x.section||'?'}</code> ${x.type||'Error'}: ${(x.message||'').substring(0,200)}</div>`).join('');
-  const more=items.length>5?`<div style="margin-top:6px;opacity:.6">…and ${items.length-5} more</div>`:'';
+  const more=items.length>5?`<div style="margin-top:6px;opacity:.6">â€¦and ${items.length-5} more</div>`:'';
   el.innerHTML=head+list+more;el.style.display='block';
 }
 
@@ -1120,7 +1133,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         self.send_header("Referrer-Policy", "no-referrer")
 
-    # Maps URL path → daemon-state key for the read-only control GETs.
+    # Maps URL path â†’ daemon-state key for the read-only control GETs.
     _CONTROL_GET_ROUTES = {
         "/api/control/status": "status",
         "/api/control/repos": "repos",
@@ -1145,7 +1158,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/confidence":
             self._send_json(200, self._safe_tracker_call("get_confidence"))
         elif self.path == "/health":
-            # Health probe — no CORS, kept tight for internal liveness checks.
+            # Health probe â€” no CORS, kept tight for internal liveness checks.
             self._respond(200, "application/json", b'{"status":"ok"}')
         # Control API reads
         elif self.path in self._CONTROL_GET_ROUTES:
@@ -1169,7 +1182,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         from entroly.daemon import get_daemon
         daemon = get_daemon()
 
-        # Read POST body. Reject malformed JSON loudly — silent fallback to
+        # Read POST body. Reject malformed JSON loudly â€” silent fallback to
         # `{}` lets bad payloads enable features by accident (every handler
         # below uses `body.get("enabled", True)` style defaults).
         content_length = int(self.headers.get("Content-Length", 0))
@@ -1198,7 +1211,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         status_code = 404
 
         if daemon is None:
-            # Daemon not running — control API unavailable
+            # Daemon not running â€” control API unavailable
             result = {"ok": False, "error": "daemon not running (use `entroly daemon` to start)"}
             status_code = 503
         elif self.path == "/api/control/optimization/enable":
@@ -1276,7 +1289,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     ) -> None:
         """Single response writer for *all* routes (HTML, JSON, health).
         Centralizing here is the only way headers (CORS, CSP, cache) stay
-        in sync across handlers — every previous drift bug came from
+        in sync across handlers â€” every previous drift bug came from
         copy-pasted send_header blocks falling out of step."""
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -1332,11 +1345,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 for r in daemon.state.repos
             ]}
         elif key == "learning":
-            data = {
-                "local_enabled": daemon.state.learning_enabled,
-                "autotune_enabled": daemon.state.autotune_enabled,
-                "weights": daemon.get_learning_weights(),
-            }
+            data = _control_learning_snapshot(daemon)
         elif key == "federation":
             data = {
                 "enabled": daemon.state.federation_enabled,

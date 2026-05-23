@@ -111,6 +111,16 @@ def test_dreaming_loop_end_to_end():
         result = loop.run_dream_cycle()
         assert result.get("status") in {"completed", "no_cases", "error"}
 
+        # Observability: DreamingLoop records the last attempt for dashboards/Control API.
+        dream_stats = loop.stats()
+        assert dream_stats.get("last_dream_at") is not None
+        assert dream_stats.get("last_status") == result.get("status")
+        if result.get("status") == "completed":
+            assert isinstance(dream_stats.get("last_wall_seconds"), (int, float))
+            assert isinstance(dream_stats.get("last_improvements"), int)
+        else:
+            assert dream_stats.get("last_wall_seconds") is None
+
         # Monotonic-improvement invariant: whatever the cycle reports,
         # the tracked best_efficiency never goes DOWN.
         # (DreamingLoop only overwrites it with strictly-greater values.)
