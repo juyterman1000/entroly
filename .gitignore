@@ -35,6 +35,10 @@ bench/results.tsv
 bench/.cache/
 bench/results_*.json
 bench/quality_eval_results.json
+# Underscore-prefixed bench files are run-specific caches, logs, and
+# scratch scripts — never check in. Spare __init__.py / __pycache__.
+bench/_*
+!bench/__init__.py
 benchmarks/results/
 bench_section.md
 bench_output.txt
