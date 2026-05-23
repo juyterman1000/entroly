@@ -419,10 +419,10 @@ class GuardedRouter:
 
 MODEL_TIERS: dict[str, dict[str, Any]] = {
     # Anthropic
-    "claude-sonnet-4-20250514": {"tier": "flagship", "cost_per_m": 3.0, "cheap_alt": "claude-haiku-3-5-20241022"},
-    "claude-3-5-sonnet-20241022": {"tier": "flagship", "cost_per_m": 3.0, "cheap_alt": "claude-haiku-3-5-20241022"},
-    "claude-3-opus-20240229": {"tier": "flagship", "cost_per_m": 15.0, "cheap_alt": "claude-haiku-3-5-20241022"},
-    "claude-haiku-3-5-20241022": {"tier": "cheap", "cost_per_m": 0.80},
+    "claude-sonnet-4-20250514": {"tier": "flagship", "cost_per_m": 3.0, "cheap_alt": "claude-3-5-haiku-20241022"},
+    "claude-3-5-sonnet-20241022": {"tier": "flagship", "cost_per_m": 3.0, "cheap_alt": "claude-3-5-haiku-20241022"},
+    "claude-3-opus-20240229": {"tier": "flagship", "cost_per_m": 15.0, "cheap_alt": "claude-3-5-haiku-20241022"},
+    "claude-3-5-haiku-20241022": {"tier": "cheap", "cost_per_m": 0.80},
     "claude-3-haiku-20240307": {"tier": "cheap", "cost_per_m": 0.25},
     # OpenAI
     "gpt-4o": {"tier": "flagship", "cost_per_m": 2.50, "cheap_alt": "gpt-4o-mini"},

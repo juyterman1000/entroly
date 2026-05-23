@@ -2938,8 +2938,12 @@ def cmd_doctor(args):
                             halu_external.append(py_file.name)
                 except OSError:
                     pass
-        if not halu_external:
-            print(f"  {C.GREEN}+{C.RESET} Hallucination detection is 100% local (WITNESS, ECE, EPR, Spectral)")
+        witness_nli = os.environ.get("ENTROLY_WITNESS_NLI", "0") == "1"
+        if not halu_external and not witness_nli:
+            print(f"  {C.GREEN}+{C.RESET} Hallucination detection uses local deterministic paths by default")
+            privacy_passed += 1
+        elif not halu_external and witness_nli:
+            print(f"  {C.YELLOW}!{C.RESET} WITNESS NLI is ON -- selected evidence/claims may be sent to OpenAI")
             privacy_passed += 1
         else:
             print(f"  {C.RED}x{C.RESET} Hallucination modules with external calls: {halu_external}")
@@ -2952,6 +2956,16 @@ def cmd_doctor(args):
             privacy_passed += 1
         else:
             print(f"  {C.YELLOW}!{C.RESET} Federation is ON (ENTROLY_FEDERATION=1) — DP-noised weights may be shared")
+
+        # 4b. Check RAVS model routing is opt-in
+        privacy_total += 1
+        ravs_router = os.environ.get("ENTROLY_RAVS_ROUTER", "0")
+        if ravs_router != "1":
+            print(f"  {C.GREEN}+{C.RESET} RAVS model routing is OFF by default (ENTROLY_RAVS_ROUTER={ravs_router})")
+            privacy_passed += 1
+        else:
+            print(f"  {C.YELLOW}!{C.RESET} RAVS model routing is ON -- routed requests may use a different model")
+            privacy_passed += 1
 
         # 5. Check escalation mode
         privacy_total += 1
@@ -3001,7 +3015,8 @@ def cmd_doctor(args):
         # Summary
         if privacy_passed == privacy_total:
             print(f"\n  {C.GREEN}{C.BOLD}PRIVACY VERIFIED: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
-            print(f"  {C.GREEN}Your prompts and code never leave your machine through Entroly.{C.RESET}")
+            print(f"  {C.GREEN}No Entroly-owned phone-home path detected.{C.RESET}")
+            print(f"  {C.GRAY}Configured cloud LLM providers still receive optimized prompt content sent through the proxy.{C.RESET}")
         else:
             print(f"\n  {C.YELLOW}{C.BOLD}PRIVACY: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
             print(f"  {C.YELLOW}Review the warnings above.{C.RESET}")

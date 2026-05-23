@@ -530,7 +530,7 @@ Entroly compresses your context. **RAVS can also evaluate whether repeated low-r
 
 Many turns are simple: reading a file, checking a log, running tests, formatting code. Using a flagship model for these can be unnecessary spend.
 
-RAVS watches honest outcomes and can be enabled as a guarded proxy router. Once local evidence passes the configured gate for a low-risk task class, it can route that task class down:
+RAVS watches honest outcomes and can be enabled as a guarded proxy router with `ENTROLY_RAVS_ROUTER=1`. Once local evidence passes the configured gate for a low-risk task class, it can route that task class down:
 
 ```
 You type: "run the tests"
@@ -552,8 +552,9 @@ You type: "run the tests"
 **How it works:**
 1. Add one hook to `.claude/settings.json` — RAVS starts watching silently
 2. Use your tools normally — every pass/fail outcome is recorded locally
-3. When local evidence passes the configured gate, routing can activate
-4. If confidence drops or the request is high-risk, the original model handles it
+3. Opt into routing with `ENTROLY_RAVS_ROUTER=1`
+4. When local evidence passes the configured gate, routing can activate
+5. If confidence drops or the request is high-risk, the original model handles it
 
 **The numbers:**
 
@@ -614,6 +615,8 @@ Three intensity levels: `lite` → `full` → `ultra`. Enable with one env var.
 ### Local Indexing; Provider Requests Stay Under Your Control
 
 Local indexing, selection, deterministic verification, and dashboards do not require a cloud service. If you proxy a cloud AI provider, that provider still receives the selected prompt content you send through Entroly. Core scoring paths are local and fast; full end-to-end optimization commonly runs in tens of milliseconds depending on repo size and engine mode. Air-gapped use is possible when you use only local/offline commands and local model endpoints.
+
+See [Provider Compliance Notes](docs/provider-compliance.md) for the provider-specific checklist and official documentation links used for wrapper/base-URL support.
 
 ---
 

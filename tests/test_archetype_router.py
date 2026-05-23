@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from entroly.ravs.router import BayesianRouter, classify_archetype
+from entroly.ravs.router import BayesianRouter, MODEL_TIERS, classify_archetype
 
 
 # ── classify_archetype ────────────────────────────────────────────────
@@ -77,6 +77,26 @@ def test_router_stats_returns_dict(router):
 def test_router_risk_level_is_string(router):
     d = router.route("claude-3-opus-20240229", "explain this code")
     assert isinstance(d.risk_level, str)
+
+
+def test_anthropic_cheap_alt_uses_valid_haiku_model_id():
+    assert (
+        MODEL_TIERS["claude-sonnet-4-20250514"]["cheap_alt"]
+        == "claude-3-5-haiku-20241022"
+    )
+    assert "claude-haiku-3-5-20241022" not in MODEL_TIERS
+
+
+def test_router_routes_anthropic_to_valid_haiku_id(router):
+    router._cache.cells = {
+        "explain": {"n": 100, "alpha": 100.0, "beta": 1.0}
+    }
+    router._cache.loaded_at = 9999999999.0
+
+    d = router.route("claude-sonnet-4-20250514", "explain this code")
+
+    assert d.use_original is False
+    assert d.recommended_model == "claude-3-5-haiku-20241022"
 
 
 if __name__ == "__main__":

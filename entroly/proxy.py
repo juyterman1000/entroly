@@ -826,10 +826,12 @@ class PromptCompilerProxy:
             os.environ.get("ENTROLY_PASSIVE_FEEDBACK", "1") != "0"
         )
 
-        # RAVS Bayesian Router — routes cheap tasks to cheaper models
-        # when hook-captured event data proves it's safe
+        # RAVS Bayesian Router -- routes cheap tasks to cheaper models only
+        # when explicitly enabled and hook-captured event data proves it is safe.
+        # Silent model substitution must be opt-in because it can change provider,
+        # capability, cost, and data-handling semantics.
         self._ravs_router_enabled = (
-            os.environ.get("ENTROLY_RAVS_ROUTER", "1") != "0"
+            os.environ.get("ENTROLY_RAVS_ROUTER", "0") == "1"
         )
         try:
             from .ravs.router import BayesianRouter
@@ -1462,6 +1464,17 @@ class PromptCompilerProxy:
                             # post-response ECE verification. The real curvature
                             # check happens after we get the actual response.
                             pass
+
+                        _model_specific_fields = {
+                            "thinking",
+                            "reasoning_effort",
+                            "effort",
+                        }
+                        if any(field in body for field in _model_specific_fields):
+                            _ece_blocked = True
+                            logger.info(
+                                "RAVS: kept original model because request has model-specific controls"
+                            )
 
                         if not _ece_blocked:
                             from .ravs.router import swap_model_in_body

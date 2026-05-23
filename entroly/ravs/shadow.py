@@ -94,7 +94,7 @@ _MODEL_TIERS: dict[str, tuple[str, float]] = {
     "claude-sonnet-4":       ("flagship", 3.0),
     "claude-3-5-sonnet":     ("flagship", 3.0),
     "claude-3-opus":         ("flagship", 15.0),
-    "claude-haiku-3-5":      ("cheap", 0.80),
+    "claude-3-5-haiku":      ("cheap", 0.80),
     "claude-3-haiku":        ("cheap", 0.25),
     "gpt-4o-mini":           ("cheap", 0.15),
     "gpt-4o":                ("flagship", 2.50),
