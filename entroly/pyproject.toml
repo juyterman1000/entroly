@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.3"
+version = "1.0.4"
 
 description = "Information-theoretic context optimization with deterministic hallucination detection and suppression. MCP server, HTTP proxy, and Python SDK for AI coding agents."
 readme = "README.md"
