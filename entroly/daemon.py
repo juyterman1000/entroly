@@ -170,6 +170,7 @@ class EntrolyDaemon:
         self._proxy_config: Any = None  # live ProxyConfig ref for quality toggle
         self._shutdown = threading.Event()
         self._lock = threading.Lock()
+        self._learning_interval_s = 30.0
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -432,24 +433,37 @@ class EntrolyDaemon:
 
             # Background thread that periodically checks idle → dream
             def _learning_worker():
+                interval_s = 30.0
+                min_interval_s = 10.0
+                max_interval_s = 120.0
+                last_episode_count = self._feedback_journal.count()
+                self._learning_interval_s = interval_s
+
                 while not self._shutdown.is_set():
-                    self._shutdown.wait(timeout=30.0)
+                    self._learning_interval_s = interval_s
+                    self._shutdown.wait(timeout=interval_s)
                     if self._shutdown.is_set():
                         break
 
                     if not self.state.learning_enabled:
+                        interval_s = max_interval_s
                         continue
 
                     try:
                         # 1. Re-optimize task profiles from accumulated journal
                         self._task_profiles.optimize_all()
+                        episode_count = self._feedback_journal.count()
+                        saw_new_feedback = episode_count > last_episode_count
+                        last_episode_count = episode_count
 
                         # 2. If idle, run a dream cycle
+                        dreamed = False
                         if (
                             self.state.autotune_enabled
                             and self._dreaming_loop.should_dream()
                         ):
                             result = self._dreaming_loop.run_dream_cycle()
+                            dreamed = result.get("status") == "completed"
                             if result.get("status") == "completed":
                                 improvements = result.get("improvements", 0)
                                 if improvements > 0:
@@ -462,8 +476,16 @@ class EntrolyDaemon:
                                     )
                                     # Apply improved weights to live engine
                                     self._apply_dreamed_weights()
+
+                        if saw_new_feedback:
+                            interval_s = min_interval_s
+                        elif dreamed:
+                            interval_s = 30.0
+                        else:
+                            interval_s = min(max_interval_s, interval_s * 1.5)
                     except Exception as e:
                         logger.debug(f"Learning loop error: {e}")
+                        interval_s = min(max_interval_s, interval_s * 1.5)
 
             t = threading.Thread(
                 target=_learning_worker,
@@ -626,6 +648,9 @@ class EntrolyDaemon:
         stats: dict = {
             "learning_enabled": self.state.learning_enabled,
             "autotune_enabled": self.state.autotune_enabled,
+            "learning_interval_s": round(
+                getattr(self, "_learning_interval_s", 30.0), 1
+            ),
         }
 
         # PRISM weights
