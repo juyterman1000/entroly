@@ -40,7 +40,7 @@ pub fn rnr_score(claim: &str, evidence: &str) -> f64 {
         .filter(|w| {
             w.chars()
                 .next()
-                .map_or(false, |c| c.is_uppercase())
+                .is_some_and(|c| c.is_uppercase())
         })
         .map(|w| w.to_lowercase())
         .collect();
@@ -51,7 +51,7 @@ pub fn rnr_score(claim: &str, evidence: &str) -> f64 {
         .count();
 
     let penalty = novel_count as f64 * 0.1;
-    (recognition - penalty).max(0.0).min(1.0)
+    (recognition - penalty).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

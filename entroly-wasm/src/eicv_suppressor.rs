@@ -143,7 +143,7 @@ impl EicvSuppressor {
                 }
                 "abstain" => {
                     // HEDGE — append [unverified]
-                    let trimmed = claim.text.trim_end_matches(|c: char| c == '.' || c == '!' || c == '?');
+                    let trimmed = claim.text.trim_end_matches(['.', '!', '?']);
                     let replacement = format!("{} [unverified].", trimmed);
                     replacements.push((claim.start, claim.end, replacement));
                     warned += 1;
@@ -159,7 +159,7 @@ impl EicvSuppressor {
 
         // Apply replacements in reverse order to preserve offsets
         let mut result = output.to_string();
-        replacements.sort_by(|a, b| b.0.cmp(&a.0));
+        replacements.sort_by_key(|r| std::cmp::Reverse(r.0));
         for (start, end, replacement) in &replacements {
             let actual_end = (*end).min(result.len());
             let actual_start = (*start).min(actual_end);

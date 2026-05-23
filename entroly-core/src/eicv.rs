@@ -80,14 +80,12 @@ fn profile_thresholds(profile: &str) -> ProfileThresholds {
 /// EICV analyzer — stateless, reusable across calls.
 pub struct EicvAnalyzer {
     thresholds: ProfileThresholds,
-    profile: String,
 }
 
 impl EicvAnalyzer {
     pub fn new(profile: &str) -> Self {
         Self {
             thresholds: profile_thresholds(profile),
-            profile: profile.to_string(),
         }
     }
 
