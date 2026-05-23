@@ -85,37 +85,75 @@ def _free_port(port: int) -> bool:
             return True  # port is free
 
     killed = False
-    try:
-        result = subprocess.run(
-            ["fuser", f"{port}/tcp"],
-            capture_output=True, text=True, timeout=3,
-        )
-        pids = result.stdout.strip().split()
-        for pid_str in pids:
-            pid_str = pid_str.strip()
-            if pid_str.isdigit():
-                pid = int(pid_str)
-                if pid == os.getpid():
-                    continue
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    killed = True
-                except ProcessLookupError:
-                    pass
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
 
-    if killed:
-        _time.sleep(0.3)
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.3)
-            if s.connect_ex(("127.0.0.1", port)) != 0:
-                return True
+    # ── POSIX: use fuser ─────────────────────────────────────────────────
+    if os.name != "nt":
         try:
-            subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True, timeout=3)
+            result = subprocess.run(
+                ["fuser", f"{port}/tcp"],
+                capture_output=True, text=True, timeout=3,
+            )
+            pids = result.stdout.strip().split()
+            for pid_str in pids:
+                pid_str = pid_str.strip()
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    if pid == os.getpid():
+                        continue
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        killed = True
+                    except ProcessLookupError:
+                        pass
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
-        _time.sleep(0.3)
+
+        if killed:
+            _time.sleep(0.3)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.3)
+                if s.connect_ex(("127.0.0.1", port)) != 0:
+                    return True
+            try:
+                subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True, timeout=3)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+            _time.sleep(0.3)
+
+    # ── Windows: use netstat + taskkill ──────────────────────────────────
+    else:
+        try:
+            result = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in result.stdout.splitlines():
+                # Look for "  TCP  0.0.0.0:<port>  ...  LISTENING  <PID>"
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                if f":{port}" not in parts[1]:
+                    continue
+                if "LISTENING" not in line.upper():
+                    continue
+                pid_str = parts[-1]
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    if pid == os.getpid():
+                        continue
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/PID", str(pid)],
+                            capture_output=True, timeout=3,
+                        )
+                        killed = True
+                    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                        pass
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        if killed:
+            _time.sleep(0.5)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.3)
@@ -1704,14 +1742,16 @@ def _start_proxy_if_needed(port: int) -> bool:
     proxy_cmd = [sys.executable, "-m", "entroly.cli", "proxy", "--port", str(port)]
     subprocess.Popen(proxy_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     import time as _time
-    for _ in range(30):
+    # Poll for up to 30s (150 × 0.2s). The proxy loads a persistent index before
+    # uvicorn binds the port — on machines with large indexes this can take 10–15s.
+    for _ in range(150):
         _time.sleep(0.2)
         with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
             s.settimeout(0.3)
             if s.connect_ex(("127.0.0.1", port)) == 0:
                 print(f"  {C.GREEN}Proxy running at http://localhost:{port}{C.RESET}")
                 return True
-    print(f"  {C.RED}Proxy failed to start on port {port} within 6s.{C.RESET}")
+    print(f"  {C.RED}Proxy failed to start on port {port} within 30s.{C.RESET}")
     print(f"  {C.GRAY}Try: entroly proxy --port {port} in another terminal to see the error.{C.RESET}\n")
     return False
 
