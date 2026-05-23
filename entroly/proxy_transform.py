@@ -168,13 +168,16 @@ ANTHROPIC_ALWAYS_REJECTED_PARAMS: frozenset[str] = frozenset({
     "context_management",
 })
 
-# Anthropic accepts some request fields only on newer Claude generations. If a
-# client sends them while targeting Claude 3.x, the native Anthropic API rejects
-# the request. Keep this as a pure transform so the proxy can apply it whether
-# or not RAVS changes models.
-ANTHROPIC_LEGACY_REJECTED_PARAMS: frozenset[str] = frozenset({
-    "thinking",
-})
+# Architectural rule: Entroly modifies model OUTPUT only — never the
+# generation parameters on the request side (temperature, thinking,
+# adaptive thinking, etc.). If a client sends a generation parameter
+# that the target model rejects, that's between the client and Anthropic;
+# the proxy does not silently rewrite it.
+#
+# This set is intentionally empty. Do NOT add `thinking`, `temperature`,
+# or any other generation field here. See:
+# memory/feedback_output_only.md
+ANTHROPIC_LEGACY_REJECTED_PARAMS: frozenset[str] = frozenset()
 
 
 def is_legacy_claude_3_model(model: str) -> bool:

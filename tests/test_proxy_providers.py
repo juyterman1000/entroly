@@ -63,6 +63,10 @@ class TestAnthropicCompatibilitySanitizer:
         assert not is_legacy_claude_3_model("some-future-model")
 
     def test_strips_context_management_for_legacy_anthropic_target(self):
+        # Architectural rule: generation params (`thinking`, `temperature`, …)
+        # are NEVER touched, even on legacy Claude 3.x targets. Only the
+        # transport-layer `context_management` field, which the public
+        # Messages API actively rejects, gets removed.
         body = {
             "model": "claude-3-5-haiku-20241022",
             "messages": [{"role": "user", "content": "hi"}],
@@ -74,7 +78,7 @@ class TestAnthropicCompatibilitySanitizer:
         cleaned = strip_anthropic_unsupported_params(body)
 
         assert "context_management" not in cleaned
-        assert "thinking" not in cleaned
+        assert "thinking" in cleaned, "generation params must not be stripped"
         assert cleaned["max_tokens"] == 1024
         assert body["context_management"] == {"strategy": "auto"}
 

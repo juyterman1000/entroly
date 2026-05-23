@@ -1,13 +1,15 @@
 """Regression tests for `swap_model_in_body` and Anthropic cleanup.
 
 When RAVS routes or proxies native Anthropic traffic, request metadata that
-the public Messages API rejects (for example `context_management`) must be
-stripped from the body. Legacy Claude 3.x targets also reject newer generation
-fields such as `thinking`. Otherwise Anthropic returns:
+the public Messages API actively rejects (currently `context_management`,
+emitted by Claude Code's internal transport) is stripped from the body.
+Otherwise Anthropic returns:
 
     400 ... context_management: Extra inputs are not permitted
 
-and the user sees the proxy as broken on the first request.
+Generation parameters (`temperature`, `thinking`, adaptive thinking, …)
+are NEVER touched, even across a model swap — they belong to the client
+and the model, not the proxy.
 """
 
 from __future__ import annotations
@@ -73,14 +75,18 @@ class TestSwapModelInBody:
         assert out["messages"] == [{"role": "user", "content": "hi"}]
         assert out["max_tokens"] == 1024
 
-    def test_strips_thinking_on_legacy_swap(self):
+    def test_preserves_thinking_across_legacy_swap(self):
+        # Architectural rule: generation params (including `thinking`) are
+        # NEVER touched by the proxy, even when RAVS downgrades the model
+        # to a Claude 3.x SKU that may not support thinking. The client and
+        # the upstream API own that contract — the proxy does not rewrite it.
         body = {
             "model": "claude-opus-4-5",
             "thinking": {"type": "enabled", "budget_tokens": 8192},
             "messages": [],
         }
         out = swap_model_in_body(body, "claude-3-haiku-20240307")
-        assert "thinking" not in out
+        assert out["thinking"] == {"type": "enabled", "budget_tokens": 8192}
 
     def test_strips_context_management_on_non_legacy_swap(self):
         body = {
@@ -109,6 +115,9 @@ class TestSwapModelInBody:
         assert "context_management" not in out
 
     def test_all_known_extended_params_stripped(self):
+        # All currently-tracked unsafe transport params are removed across
+        # a legacy swap. (As of the output-only rule, `_EXTENDED_ONLY_PARAMS`
+        # contains transport fields only — no generation params.)
         body = {"model": "claude-sonnet-4-5"}
         for p in _EXTENDED_ONLY_PARAMS:
             body[p] = {"dummy": True}

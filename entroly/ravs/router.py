@@ -566,14 +566,14 @@ def _load_cells_from_log(log_path: str) -> dict[str, dict[str, Any]]:
 
 
 # Parameters that are unsafe to strand in a routed native-Anthropic body.
-# `context_management` is stripped for every Anthropic target because Claude
-# Code can emit it while the public Messages API rejects it. Generation params
-# such as `thinking` are stripped only for legacy Claude 3.x targets.
+# Currently this is only `context_management` — a transport-layer field that
+# Claude Code emits but the public Messages API rejects with
+# `400 ... Extra inputs are not permitted` (gh#44, gh#45).
 #
-# This list is intentionally minimal; it grows as Anthropic adds new
-# gated/rejected parameters. See gh#44 / gh#45 for the original symptom report
-# from users whose Claude Code session sent `context_management` and Anthropic
-# returned `400 ... Extra inputs are not permitted`.
+# DO NOT add generation parameters (`temperature`, `thinking`, adaptive
+# thinking, top_p, …) here. Entroly modifies model OUTPUT only and never
+# rewrites the generation settings on a request. See
+# `memory/feedback_output_only.md`.
 _EXTENDED_ONLY_PARAMS = ANTHROPIC_ALWAYS_REJECTED_PARAMS | ANTHROPIC_LEGACY_REJECTED_PARAMS
 
 
@@ -588,14 +588,17 @@ def _is_legacy_claude_3(model: str) -> bool:
 
 
 def swap_model_in_body(body: dict[str, Any], new_model: str) -> dict[str, Any]:
-    """Swap the model field and strip target-incompatible parameters.
+    """Swap the model field and strip target-incompatible transport params.
 
-    Critical invariant for the proxy: if the original request body
-    contains parameters that are gated to newer Claude generations
-    (e.g. ``context_management``, ``thinking``), they MUST be removed
-    when the model is downgraded to a Claude 3.x SKU. Otherwise
-    Anthropic returns ``400 ... Extra inputs are not permitted`` and
-    the user sees the proxy as broken (gh#44).
+    Generation parameters (``temperature``, ``thinking``, adaptive
+    thinking, ``top_p``, …) are NEVER touched — those belong to the
+    client and the model, not the proxy.
+
+    Only transport-layer fields the public Anthropic Messages API
+    actively rejects (currently ``context_management``, emitted by
+    Claude Code's internal transport) are removed so the request
+    doesn't fail with ``400 ... Extra inputs are not permitted``
+    (gh#44).
 
     Args:
         body: Original request body. Not mutated; a shallow copy is
