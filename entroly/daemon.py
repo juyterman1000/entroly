@@ -420,10 +420,10 @@ class EntrolyDaemon:
             self._task_profiles = TaskProfileOptimizer(self._feedback_journal)
             self._task_profiles.optimize_all()
 
-            # Wire journal callback into the engine so every
-            # optimize_context() call logs a (weights, reward) episode
+            # Wire journal callback into the engine so every outcome signal
+            # logs a (weights, reward) episode and resets the idle timer.
             if self._engine and hasattr(self._engine, "set_journal_callback"):
-                self._engine.set_journal_callback(self._feedback_journal.log)
+                self._engine.set_journal_callback(self._log_learning_episode)
 
             # DreamingLoop: autonomous self-play during idle
             self._dreaming_loop = DreamingLoop(
@@ -538,6 +538,13 @@ class EntrolyDaemon:
             logger.debug(f"Failed to apply dreamed weights: {e}")
 
     # ── Control methods (called by control API) ────────────────────
+
+    def _log_learning_episode(self, **episode: Any) -> None:
+        """Persist an outcome episode and mark the daemon as active."""
+        self.record_activity()
+        journal = getattr(self, "_feedback_journal", None)
+        if journal:
+            journal.log(**episode)
 
     def set_optimization(self, enabled: bool):
         self.state.optimization_enabled = enabled

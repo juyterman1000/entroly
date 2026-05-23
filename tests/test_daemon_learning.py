@@ -2,7 +2,7 @@
 import tempfile
 import time as _time
 
-from entroly.daemon import EntrolyDaemonState
+from entroly.daemon import EntrolyDaemon, EntrolyDaemonState
 from entroly.autotune import DreamingLoop, FeedbackJournal, TaskProfileOptimizer
 from entroly.online_learner import OnlinePrism
 
@@ -72,5 +72,17 @@ with tempfile.TemporaryDirectory() as td:
     assert ds["will_dream"] is True
     print(f"[PASS] DreamingLoop idle detection: idle={ds['idle_seconds']:.0f}s, will_dream={ds['will_dream']}")
 
+    # 8. Daemon outcome callback resets idle timer before journal logging
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._feedback_journal = journal
+    daemon._dreaming_loop = dl
+    daemon._log_learning_episode(
+        weights={"w_r": 0.3, "w_f": 0.25, "w_s": 0.25, "w_e": 0.2},
+        reward=0.9,
+    )
+    assert journal.count() == 4
+    assert not dl.should_dream()
+    print("[PASS] Daemon learning callback records activity before dreaming")
+
 print()
-print("All 7 learning loop integration tests passed!")
+print("All 8 learning loop integration tests passed!")
