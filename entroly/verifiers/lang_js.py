@@ -278,7 +278,7 @@ def collect_js_repo_symbols(
             continue
         if path.suffix not in extensions:
             continue
-        if any(p in skip for p in path.parts):
+        if any(p in skip for p in path.relative_to(root).parts):
             continue
         files_seen += 1
         try:
@@ -301,7 +301,7 @@ def collect_js_installed_packages(repo_root: str) -> set[str]:
     out: set[str] = set()
     root = Path(repo_root)
     for pkg_json in root.rglob("package.json"):
-        if "node_modules" in pkg_json.parts:
+        if "node_modules" in pkg_json.relative_to(root).parts:
             continue
         try:
             data = json.loads(pkg_json.read_text(encoding="utf-8"))

@@ -29,6 +29,7 @@ __version__ = "1.0.0"
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
     from .sdk import detect_hallucination, optimize  # noqa: F401
+    from .sdk import eicv_verify, eicv_suppress  # noqa: F401
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 
@@ -55,8 +56,8 @@ except ImportError:
 # specific datasets, splits, and accuracy numbers achieved in our test
 # runs. No claims of superiority over any specific external system.
 try:
-    from .eicv import EICVAnalyzer, EICVCertificate, verify as eicv_verify  # noqa: F401
-    from .eicv_suppressor import EICVSuppressor, suppress as eicv_suppress  # noqa: F401
+    from .eicv import EICVAnalyzer, EICVCertificate  # noqa: F401
+    from .eicv_suppressor import EICVSuppressor  # noqa: F401
     from .esg import ESGAnalyzer, compute_tension  # noqa: F401
 except ImportError:
     pass

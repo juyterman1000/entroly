@@ -253,7 +253,7 @@ def _collect_repo_symbols(
             continue
         if path.suffix not in extensions:
             continue
-        if any(part in skip_dirs for part in path.parts):
+        if any(part in skip_dirs for part in path.relative_to(root).parts):
             continue
         files_seen += 1
         _extract_python_top_level(path, out)
@@ -691,7 +691,7 @@ def verify_code(
     if ngram_path_glob is None:
         files = [
             str(p) for p in Path(root).rglob("*.py")
-            if all(seg not in p.parts for seg in {
+            if all(seg not in p.relative_to(root).parts for seg in {
                 "__pycache__", ".git", ".venv", "venv",
                 "node_modules", "target", "dist", "build",
             })

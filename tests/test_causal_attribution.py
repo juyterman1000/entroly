@@ -16,10 +16,13 @@ that retrieval never surfaced. This test pins the corrected behaviour:
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+_HAS_GIT = shutil.which("git") is not None
 
 from entroly.causal_attribution import (
     CausalCredit,
@@ -45,6 +48,8 @@ def _git(*args: str, cwd: Path) -> str:
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A throwaway git repo with three committed source files."""
+    if not _HAS_GIT:
+        pytest.skip("git not available")
     _git("init", "-q", "-b", "main", cwd=tmp_path)
     _git("config", "user.email", "test@example.com", cwd=tmp_path)
     _git("config", "user.name", "test", cwd=tmp_path)
@@ -181,11 +186,13 @@ def test_dirty_at_start_files_are_excluded(repo: Path):
     assert credit.verified_hits == ["frag_B1"]
 
 
-def test_fallback_when_git_unavailable(monkeypatch, repo: Path):
+def test_fallback_when_git_unavailable(monkeypatch, tmp_path: Path):
     """Without git HEAD we MUST fall back to legacy (no silent abstain)."""
+    # This test does NOT need a real git repo — it sets git_head=None.
+    (tmp_path / "retrieved_a.py").write_text("# dummy\n")
     snap = RetrievalSnapshot(
         request_id="req-5",
-        repo_root=str(repo),
+        repo_root=str(tmp_path),
         git_head=None,  # simulates: not a git repo
         dirty_at_start=frozenset(),
         retrieved=(RetrievedFragment("frag_A1", "retrieved_a.py"),),

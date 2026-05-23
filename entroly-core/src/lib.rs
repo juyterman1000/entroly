@@ -39,6 +39,9 @@ mod semantic_dedup;
 mod skeleton;
 mod utilization;
 mod witness;
+mod rnr;
+pub mod eicv;
+pub mod eicv_suppressor;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;

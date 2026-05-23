@@ -49,6 +49,9 @@ mod sast;
 mod semantic_dedup;
 mod skeleton;
 mod utilization;
+mod rnr;
+mod eicv;
+mod eicv_suppressor;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -2260,6 +2263,54 @@ impl WasmEntrolyEngine {
         self.egsc_cache.clear();
         self.lsh_index.clear();
         self.last_optimization = None;
+    }
+
+    // ── EICV: Evidence-Invariant Causal Verification ─────────────────
+    // Deterministic hallucination detection — no neural model, no LLM calls.
+    // Accessible to npm/WASM users via these two methods.
+
+    /// Verify a single claim against evidence using the EICV pipeline.
+    ///
+    /// Returns a JSON object with:
+    ///   - phi: epistemic support density [0=hallucinated, 1=grounded]
+    ///   - hallucination_score: 1 - phi
+    ///   - decision: "supported" | "abstain" | "hallucinated"
+    ///   - layer_scores: per-layer breakdown (tg, nli, rnr, gamma, h_sem)
+    ///   - n_claim_atoms, n_ev_atoms, unsupported_fraction, contradiction_fraction
+    ///   - elapsed_ms
+    ///
+    /// Profiles: "rag" (default), "qa", "summarization", "dialogue", "fact_check"
+    #[wasm_bindgen]
+    pub fn eicv_verify(&self, evidence: String, claim: String, profile: String) -> JsValue {
+        let analyzer = eicv::EicvAnalyzer::new(&profile);
+        let cert = analyzer.verify(&evidence, &claim);
+        json_to_js(&cert)
+    }
+
+    /// Verify and suppress hallucinations in LLM output.
+    ///
+    /// Modes:
+    ///   - "audit": no output change, certificates only (for dashboards)
+    ///   - "annotate": append warning footer listing unverified claims
+    ///   - "strict": supported→PASS, abstain→HEDGE [unverified], hallucinated→SUPPRESS
+    ///
+    /// Returns a JSON object with:
+    ///   - rewritten_output: the (possibly modified) response text
+    ///   - n_claims, n_supported, n_abstained, n_hallucinated
+    ///   - suppressed_count, warned_count, hallucination_rate
+    ///   - certificates: per-claim verification results
+    ///   - latency_ms
+    #[wasm_bindgen]
+    pub fn eicv_suppress(
+        &self,
+        context: String,
+        output: String,
+        profile: String,
+        mode: String,
+    ) -> JsValue {
+        let suppressor = eicv_suppressor::EicvSuppressor::new(&profile, &mode);
+        let result = suppressor.suppress(&context, &output);
+        json_to_js(&result)
     }
 }
 

@@ -590,3 +590,118 @@ def optimize(
         "fragments_total": len(fragments),
         "context_text": "\n\n".join(context_parts),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EICV — Evidence-Invariant Causal Verification (Deterministic, $0)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Deterministic hallucination detection + suppression. No neural model,
+# no LLM calls. Pure string operations + information theory.
+#
+#   from entroly import eicv_verify, eicv_suppress
+#   cert = eicv_verify("Paris is in France", evidence="Paris is the capital of France.")
+#   result = eicv_suppress(context="...", output="...")
+#
+
+
+def eicv_verify(
+    claim: str,
+    evidence: str,
+    profile: str = "rag",
+) -> dict[str, Any]:
+    """Verify a single claim against evidence using the EICV pipeline.
+
+    100% deterministic, zero LLM calls, zero network requests.
+
+    Returns a dict (EICVCertificate) with:
+      - phi: epistemic support density [0.0 = hallucinated, 1.0 = grounded]
+      - hallucination_score: 1 - phi
+      - decision: "supported" | "abstain" | "hallucinated"
+      - layer_scores: per-layer breakdown (T(G), NLI, RNR, gamma, H_sem)
+      - n_claim_atoms / n_ev_atoms: atomic decomposition counts
+      - unsupported_fraction / contradiction_fraction
+      - elapsed_ms
+
+    Profiles control the decision thresholds:
+      - "rag" (default): strict, for retrieval-augmented generation
+      - "qa": moderate-strict for QA outputs
+      - "summarization": tolerant of paraphrase
+      - "dialogue": broader abstain band
+      - "fact_check": hardest (FEVER-like)
+
+    Accuracy on public benchmarks (FEVER, SQuAD v2, HaluEval-QA) is
+    documented in benchmarks/results/. False-positive and false-negative
+    rates are non-zero.
+
+    Example::
+
+        from entroly import eicv_verify
+
+        cert = eicv_verify(
+            claim="Paris is the capital of France.",
+            evidence="France is a country in Europe. Its capital is Paris."
+        )
+        if cert["decision"] == "hallucinated":
+            print(f"Hallucinated (phi={cert['phi']})")
+
+    Args:
+        claim: The claim to verify
+        evidence: The grounding evidence
+        profile: Decision profile (default "rag")
+    """
+    from .eicv import EICVAnalyzer
+    analyzer = EICVAnalyzer(profile=profile)
+    cert = analyzer.verify(evidence, claim)
+    return cert.as_dict()
+
+
+def eicv_suppress(
+    context: str,
+    output: str,
+    profile: str = "rag",
+    mode: str = "strict",
+) -> dict[str, Any]:
+    """Verify and suppress hallucinations in LLM output using EICV.
+
+    100% deterministic, zero LLM calls. Decomposes output into claims,
+    verifies each claim against the grounding context, and applies a
+    graduated suppression policy.
+
+    Modes:
+      - "audit": no output change; certificates only (for dashboards)
+      - "annotate": append warning footer listing unverified claims
+      - "strict" (default): graduated 4-action policy:
+          supported   → PASS (no change)
+          abstain     → HEDGE (append "[unverified]")
+          hallucinated → SUPPRESS (remove claim sentence)
+
+    Returns a dict (SuppressionResult) with:
+      - rewritten_output: the (possibly modified) response text
+      - n_claims / n_supported / n_abstained / n_hallucinated
+      - suppressed_count / warned_count / hallucination_rate
+      - certificates: list of per-claim EICVCertificate dicts
+      - latency_ms
+
+    Example::
+
+        from entroly import eicv_suppress
+
+        result = eicv_suppress(
+            context="The project uses Rust and Python.",
+            output="The project uses Rust. It also uses Java and C++.",
+            mode="strict",
+        )
+        print(result["rewritten_output"])
+        print(f"Suppressed {result['suppressed_count']} hallucinated claims")
+
+    Args:
+        context: The grounding evidence the LLM was supposed to use
+        output: The LLM's response text to verify
+        profile: Suppression profile (default "rag")
+        mode: "audit" | "annotate" | "strict" (default "strict")
+    """
+    from .eicv_suppressor import EICVSuppressor
+    suppressor = EICVSuppressor(profile=profile, mode=mode)
+    result = suppressor.suppress(context, output)
+    return result.as_dict()
