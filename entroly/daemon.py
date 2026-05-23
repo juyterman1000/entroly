@@ -198,6 +198,9 @@ class EntrolyDaemon:
         if self._enable_proxy:
             self._start_proxy_worker()
 
+        if self._enable_mcp:
+            self._start_mcp_worker()
+
         # 4. Start file watcher
         self._start_watcher()
 
@@ -215,8 +218,9 @@ class EntrolyDaemon:
 
         logger.info(
             f"Entroly daemon running — "
-            f"proxy:{self.state.proxy.port} "
+            f"proxy:{self.state.proxy.port if self._enable_proxy else 'off'} "
             f"dashboard:{self.state.dashboard.port} "
+            f"mcp:{self.state.mcp.port if self._enable_mcp else 'off'} "
             f"learning:{'ON' if self.state.learning_enabled else 'OFF'}"
         )
 
@@ -364,11 +368,53 @@ class EntrolyDaemon:
             except Exception as e:
                 self.state.proxy.error = str(e)
                 self.state.proxy.running = False
-                logger.error(f"Proxy failed: {e}")
+                logger.exception("Proxy failed: %s", e)
 
         t = threading.Thread(target=_run_proxy, daemon=True, name="entroly-proxy")
         t.start()
         self._workers["proxy"] = t
+
+    def _start_mcp_worker(self):
+        """Start MCP server on :9379 (SSE transport) in a background thread.
+
+        SSE is the only transport that can run inside the daemon — stdio
+        would conflict with the daemon's stdout and prevent multiple IDE
+        clients from connecting. The MCP worker reuses the daemon's own
+        EntrolyEngine via create_mcp_server() so all on-disk state is shared.
+        """
+
+        def _run_mcp():
+            try:
+                from entroly.server import create_mcp_server
+
+                mcp, _engine = create_mcp_server()
+                mcp.settings.port = self.state.mcp.port
+                # Bind to the daemon's host so external clients on the same
+                # machine can reach the SSE endpoint at /sse.
+                try:
+                    mcp.settings.host = self._host
+                except Exception:
+                    pass  # older FastMCP may not expose host setting
+
+                self.state.mcp.running = True
+                self.state.mcp.started_at = time.time()
+
+                # mcp.run(transport="sse") blocks running its own asyncio
+                # loop inside this thread — exactly what we want here.
+                try:
+                    mcp.run(transport="sse")
+                except TypeError:
+                    # Older MCP SDK doesn't accept transport kwarg;
+                    # fall back to whatever default the SDK provides.
+                    mcp.run()
+            except Exception as e:
+                self.state.mcp.error = str(e)
+                self.state.mcp.running = False
+                logger.exception("MCP server failed: %s", e)
+
+        t = threading.Thread(target=_run_mcp, daemon=True, name="entroly-mcp")
+        t.start()
+        self._workers["mcp"] = t
 
     def _start_watcher(self):
         """Start incremental file watcher."""

@@ -825,18 +825,29 @@ def cmd_daemon(args):
     daemon = EntrolyDaemon(
         proxy_port=getattr(args, "proxy_port", 9377),
         dashboard_port=getattr(args, "dashboard_port", 9378),
+        mcp_port=getattr(args, "mcp_port", 9379),
         host=getattr(args, "host", "127.0.0.1"),
         enable_proxy=not getattr(args, "no_proxy", False),
+        enable_mcp=not getattr(args, "no_mcp", False),
         quality=getattr(args, "quality", "balanced") or "balanced",
     )
 
     daemon.start()
 
+    proxy_line = (
+        f"    Proxy:     http://localhost:{daemon.state.proxy.port}\n"
+        if daemon._enable_proxy else
+        f"    Proxy:     {C.GRAY}disabled (--no-proxy){C.RESET}\n"
+    )
+    mcp_line = (
+        f"    MCP (SSE): http://localhost:{daemon.state.mcp.port}/sse\n"
+        if daemon._enable_mcp else
+        f"    MCP (SSE): {C.GRAY}disabled (--no-mcp){C.RESET}\n"
+    )
     print(f"""
   {C.GREEN}{C.BOLD}Daemon running{C.RESET}
-    Proxy:     http://localhost:{daemon.state.proxy.port}
-    Dashboard: http://localhost:{daemon.state.dashboard.port}
-    Control:   http://localhost:{daemon.state.dashboard.port}/api/control/status
+{proxy_line}    Dashboard: http://localhost:{daemon.state.dashboard.port}
+{mcp_line}    Control:   http://localhost:{daemon.state.dashboard.port}/api/control/status
 
   {C.GRAY}Press Ctrl+C to stop all services.{C.RESET}
 """)
@@ -4657,8 +4668,10 @@ def main():
     )
     daemon_parser.add_argument("--proxy-port", type=int, default=9377, help="Proxy port")
     daemon_parser.add_argument("--dashboard-port", type=int, default=9378, help="Dashboard port")
+    daemon_parser.add_argument("--mcp-port", type=int, default=9379, help="MCP (SSE) port")
     daemon_parser.add_argument("--host", type=str, default="127.0.0.1", help="Bind host")
     daemon_parser.add_argument("--no-proxy", action="store_true", help="Skip proxy server")
+    daemon_parser.add_argument("--no-mcp", action="store_true", help="Skip MCP server")
     daemon_parser.add_argument("--quality", type=str, default="balanced", help="Quality mode: fast/balanced/max")
     daemon_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
