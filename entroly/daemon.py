@@ -349,7 +349,9 @@ class EntrolyDaemon:
                     os.environ["ENTROLY_BYPASS"] = "1"
 
                 app = create_proxy_app(
-                    self._engine, config, start_dashboard=False
+                    self._engine,
+                    config,
+                    start_dashboard=False,
                 )
                 self.state.proxy.running = True
                 self.state.proxy.started_at = time.time()
@@ -387,7 +389,7 @@ class EntrolyDaemon:
             try:
                 from entroly.server import create_mcp_server
 
-                mcp, _engine = create_mcp_server()
+                mcp, _engine = create_mcp_server(engine=self._engine)
                 mcp.settings.port = self.state.mcp.port
                 # Bind to the daemon's host so external clients on the same
                 # machine can reach the SSE endpoint at /sse.

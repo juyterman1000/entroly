@@ -1774,7 +1774,9 @@ class EntrolyEngine:
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
 
-def create_mcp_server():
+def create_mcp_server(
+    engine: EntrolyEngine | None = None,
+):
     """
     Create the MCP server with all tools registered.
 
@@ -1816,7 +1818,8 @@ def create_mcp_server():
         decay_half_life_turns=_tuning_cfg.get("decay_half_life_turns", 15),
         min_relevance_threshold=_tuning_cfg.get("min_relevance_threshold", 0.05),
     )
-    engine = EntrolyEngine(config=_config)
+    if engine is None:
+        engine = EntrolyEngine(config=_config)
 
     # Cross-session feedback journal + task-conditioned profiles
     _checkpoint_dir = os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly"))
@@ -1829,7 +1832,8 @@ def create_mcp_server():
     # P2.2: Wire implicit-reward → FeedbackJournal so TaskProfileOptimizer
     # and DreamingLoop get signal from every optimize_context() call,
     # not just rare explicit record_outcome MCP calls.
-    engine.set_journal_callback(_feedback_journal.log)
+    if getattr(engine, "_journal_callback", None) is None:
+        engine.set_journal_callback(_feedback_journal.log)
 
     # ── RAVS v1: append-only event log + helpers ─────────────────────
     # Path lives under the same checkpoint dir so a project's RAVS data
