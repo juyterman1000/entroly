@@ -1,0 +1,25 @@
+{
+  "benchmark": "HaluEval-QA full 10K",
+  "n_items": 10000,
+  "n_decisions": 20000,
+  "n_test": 16000,
+  "witness": {
+    "auroc_full": 0.7977,
+    "auroc_test": 0.7981,
+    "accuracy": 0.8498,
+    "ci95": 0.0055,
+    "threshold": 0.000335
+  },
+  "fusion": {
+    "auroc_full": 0.8431,
+    "auroc_test": 0.8435,
+    "accuracy": 0.8501,
+    "ci95": 0.0055,
+    "threshold": 0.000168,
+    "weights": {
+      "witness": 0.5,
+      "ece": 0.3,
+      "entity": 0.2
+    }
+  }
+}

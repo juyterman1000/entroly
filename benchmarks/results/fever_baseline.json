@@ -1,0 +1,23 @@
+{
+  "benchmark": "FEVER",
+  "source_dataset": "copenlu/fever_gold_evidence",
+  "n_items": 1000,
+  "seed": 42,
+  "preregistered_target_accuracy": 0.75,
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md",
+  "ms_per_item": 2.17,
+  "metrics": {
+    "auroc": 0.704,
+    "accuracy_at_best_threshold": 0.7,
+    "accuracy_ci95": 0.0284,
+    "precision": 0.6156,
+    "recall": 0.4242,
+    "f1": 0.5023,
+    "best_threshold": 1.0
+  },
+  "labels": {
+    "0": "SUPPORTS",
+    "1": "REFUTES"
+  },
+  "notes": "Phase 0 baseline. No C1-C4 falsification probe yet (Phase 0 step 1.6). Scoring uses WITNESS only; full Fusion-4 (W+E+G+S) wiring is a follow-up."
+}

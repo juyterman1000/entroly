@@ -1,0 +1,53 @@
+{
+  "benchmark": "ragas",
+  "n": 400,
+  "weights": {
+    "W": 0.05,
+    "E": 0.05,
+    "G": 0.8,
+    "S": 0.1
+  },
+  "backend": "deterministic",
+  "conditions": [
+    {
+      "name": "C1 original (r vs h)",
+      "fusion": 0.94995625,
+      "g_only": 0.765,
+      "witness_only": 0.88858125
+    },
+    {
+      "name": "C2 entity-controlled (r vs h_ctrl)",
+      "fusion": 0.787490625,
+      "g_only": 0.51,
+      "witness_only": 0.82544375
+    },
+    {
+      "name": "C3 paraphrase-stress (r_para vs h)",
+      "fusion": 0.9439375,
+      "g_only": 0.76245,
+      "witness_only": 0.8836125
+    },
+    {
+      "name": "C4 realistic (r_para vs h_ctrl)",
+      "fusion": 0.7786875,
+      "g_only": 0.50749375,
+      "witness_only": 0.8190125
+    }
+  ],
+  "min_fusion_auroc_c1_c4": 0.7786875,
+  "max_fusion_auroc_c1_c4": 0.94995625,
+  "artifact_drop_c1_c4": 0.17126874999999997,
+  "mean_g": {
+    "r": 0.0,
+    "h": 0.520625,
+    "h_ctrl": 0.01875,
+    "r_para": 0.005
+  },
+  "artifact_detected": true,
+  "target": 0.85,
+  "survives_threshold": 0.82,
+  "survives_falsification": false,
+  "dataset_hash": "d8a7f9235d69ca75",
+  "preregistered_target": 0.85,
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md"
+}

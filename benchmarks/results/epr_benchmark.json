@@ -1,0 +1,10 @@
+{
+  "benchmark": "EPR on HaluEval-QA",
+  "n_test": 600,
+  "witness_auroc": 0.7816,
+  "epr_heuristic_auroc": 0.7836,
+  "epr_logprob_auroc": 0.7449,
+  "delta_heuristic": 0.002,
+  "delta_logprob": -0.0367,
+  "caveat": "Logprob AUROC uses synthetic logprobs, not real API logprobs."
+}

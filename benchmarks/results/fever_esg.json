@@ -1,0 +1,40 @@
+{
+  "schema": "fever-esg-v1",
+  "dataset": "copenlu/fever_gold_evidence",
+  "n_items": 5000,
+  "seed": 42,
+  "scorers": {
+    "esg_slot_aware": {
+      "auroc": 0.7504,
+      "accuracy": 0.81,
+      "ci95": 0.0109,
+      "f1": 0.6024,
+      "precision": 0.5759,
+      "recall": 0.6315,
+      "ms_per_item": 0.63,
+      "best_threshold": 1.0
+    },
+    "eicv_integrated": {
+      "auroc": 0.7504,
+      "accuracy": 0.81,
+      "ci95": 0.0109,
+      "f1": 0.6024,
+      "precision": 0.5759,
+      "recall": 0.6315,
+      "ms_per_item": 1.94,
+      "best_threshold": 1.0
+    }
+  },
+  "comparison": {
+    "witness_only_pre_eicv": {
+      "auroc": 0.704,
+      "accuracy": 0.7
+    },
+    "deberta_large_published": {
+      "accuracy": 0.74
+    },
+    "llm_judge_published": {
+      "accuracy": 0.78
+    }
+  }
+}

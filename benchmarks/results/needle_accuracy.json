@@ -1,0 +1,21 @@
+[
+  {
+    "benchmark": "needle",
+    "retention": 1.0,
+    "token_savings_pct": 99.5,
+    "cost_savings_pct": 92.5,
+    "baseline_accuracy": 1.0,
+    "baseline_ci_95": [
+      0.8389,
+      1.0
+    ],
+    "entroly_accuracy": 1.0,
+    "entroly_ci_95": [
+      0.8389,
+      1.0
+    ],
+    "baseline_avg_tokens": 10807.0,
+    "entroly_avg_tokens": 56.4,
+    "samples": 20
+  }
+]

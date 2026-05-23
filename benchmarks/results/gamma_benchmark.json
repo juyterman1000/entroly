@@ -1,0 +1,98 @@
+{
+  "schema": "gamma-benchmark-v1",
+  "scorer": "ESG_T(G)",
+  "stylistic_target_max": 0.1,
+  "semantic_target_min": 0.15,
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md",
+  "results": [
+    {
+      "dataset": "squad_grounded",
+      "n_items": 300,
+      "gamma": 0.38162,
+      "manifolds": {
+        "entity": {
+          "mean_delta": 0.7998,
+          "fraction_changed": 0.9869,
+          "n_perturbable": 153,
+          "kind": "semantic",
+          "passes": true
+        },
+        "numeric": {
+          "mean_delta": 0.0759,
+          "fraction_changed": 0.1319,
+          "n_perturbable": 182,
+          "kind": "semantic",
+          "passes": false
+        },
+        "compose": {
+          "mean_delta": 0.0444,
+          "fraction_changed": 0.1481,
+          "n_perturbable": 27,
+          "kind": "stylistic",
+          "passes": true
+        },
+        "temporal": {
+          "mean_delta": 0.1328,
+          "fraction_changed": 0.4286,
+          "n_perturbable": 7,
+          "kind": "stylistic",
+          "passes": false
+        },
+        "retrieval": {
+          "mean_delta": 0.8552,
+          "fraction_changed": 0.9767,
+          "n_perturbable": 300,
+          "kind": "semantic",
+          "passes": true
+        }
+      },
+      "all_manifolds_pass": false,
+      "elapsed_s": 0.66
+    },
+    {
+      "dataset": "halueval_mixed",
+      "n_items": 300,
+      "gamma": 0.2145,
+      "manifolds": {
+        "entity": {
+          "mean_delta": 0.4554,
+          "fraction_changed": 0.65,
+          "n_perturbable": 260,
+          "kind": "semantic",
+          "passes": true
+        },
+        "numeric": {
+          "mean_delta": 0.0493,
+          "fraction_changed": 0.0891,
+          "n_perturbable": 247,
+          "kind": "semantic",
+          "passes": false
+        },
+        "compose": {
+          "mean_delta": 0.1104,
+          "fraction_changed": 0.4857,
+          "n_perturbable": 35,
+          "kind": "stylistic",
+          "passes": false
+        },
+        "temporal": {
+          "mean_delta": 0.0118,
+          "fraction_changed": 0.0789,
+          "n_perturbable": 114,
+          "kind": "stylistic",
+          "passes": true
+        },
+        "retrieval": {
+          "mean_delta": 0.4456,
+          "fraction_changed": 0.6,
+          "n_perturbable": 300,
+          "kind": "semantic",
+          "passes": true
+        }
+      },
+      "all_manifolds_pass": false,
+      "elapsed_s": 0.49
+    }
+  ],
+  "overall_passes": false
+}

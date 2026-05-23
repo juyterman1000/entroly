@@ -1,0 +1,47 @@
+{
+  "benchmark": "RAGAS-style faithfulness (SQuAD v2)",
+  "dataset": "rajpurkar/squad_v2",
+  "license": "CC-BY-SA-4.0",
+  "n_questions": 500,
+  "n_decisions": 1000,
+  "n_test": 500,
+  "seed": 42,
+  "ms_per_decision": 1.9,
+  "avg_claims_per_response": 0.99,
+  "witness": {
+    "n": 500,
+    "tp": 228,
+    "fp": 15,
+    "fn": 23,
+    "tn": 234,
+    "accuracy": 0.924,
+    "ci95": 0.0234,
+    "precision": 0.9383,
+    "recall": 0.9084,
+    "f1": 0.9231,
+    "threshold": 0.800009,
+    "auroc": 0.9002
+  },
+  "fusion": {
+    "n": 500,
+    "tp": 229,
+    "fp": 16,
+    "fn": 22,
+    "tn": 233,
+    "accuracy": 0.924,
+    "ci95": 0.0234,
+    "precision": 0.9347,
+    "recall": 0.9124,
+    "f1": 0.9234,
+    "threshold": 0.354441,
+    "auroc": 0.9115,
+    "weights": {
+      "witness": 0.5,
+      "ece": 0.3,
+      "entity": 0.2
+    }
+  },
+  "ragas_comparison": {
+    "note": "RAGAS uses LLM-as-judge. Published faithfulness ~0.82-0.90. WITNESS is deterministic at $0. AUROC is the fair comparison."
+  }
+}

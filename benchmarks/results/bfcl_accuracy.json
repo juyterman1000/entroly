@@ -1,0 +1,21 @@
+[
+  {
+    "benchmark": "bfcl",
+    "retention": 1.0,
+    "token_savings_pct": 79.1,
+    "cost_savings_pct": 61.7,
+    "baseline_accuracy": 1.0,
+    "baseline_ci_95": [
+      0.9286,
+      1.0
+    ],
+    "entroly_accuracy": 1.0,
+    "entroly_ci_95": [
+      0.9286,
+      1.0
+    ],
+    "baseline_avg_tokens": 2850.2,
+    "entroly_avg_tokens": 595.8,
+    "samples": 50
+  }
+]

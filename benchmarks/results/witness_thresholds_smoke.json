@@ -1,0 +1,53 @@
+{
+  "benchmark_qa": {
+    "profile": "benchmark_qa",
+    "n_samples": 10,
+    "n_hallucinated": 4,
+    "n_safe": 6,
+    "alpha_pass": 0.8,
+    "alpha_hedge": 0.5,
+    "alpha_warn": 0.2,
+    "tau_pass": 0.05969295208263925,
+    "tau_hedge": 0.5386566984136198,
+    "tau_warn": 0.92,
+    "empirical_exposure_at_warn": 0.75,
+    "empirical_retention_at_pass": 0.5,
+    "dataset_hash": "ca024d07a7ef4e2d",
+    "dataset_crc32": "d1de01f1",
+    "timestamp": 1778852332.444495
+  },
+  "dialogue": {
+    "profile": "dialogue",
+    "n_samples": 10,
+    "n_hallucinated": 4,
+    "n_safe": 6,
+    "alpha_pass": 0.8,
+    "alpha_hedge": 0.5,
+    "alpha_warn": 0.2,
+    "tau_pass": 0.5910385582459279,
+    "tau_hedge": 1.0,
+    "tau_warn": 1.0,
+    "empirical_exposure_at_warn": 0.25,
+    "empirical_retention_at_pass": 0.1667,
+    "dataset_hash": "214489d834e20ceb",
+    "dataset_crc32": "f1db0a3a",
+    "timestamp": 1778852333.2511601
+  },
+  "summary": {
+    "profile": "summary",
+    "n_samples": 10,
+    "n_hallucinated": 4,
+    "n_safe": 6,
+    "alpha_pass": 0.8,
+    "alpha_hedge": 0.5,
+    "alpha_warn": 0.2,
+    "tau_pass": 0.6588628617968707,
+    "tau_hedge": 1.0,
+    "tau_warn": 1.0,
+    "empirical_exposure_at_warn": 0.25,
+    "empirical_retention_at_pass": 0.5,
+    "dataset_hash": "fa9e6eabbdf9e55c",
+    "dataset_crc32": "a51f36af",
+    "timestamp": 1778852335.4476068
+  }
+}

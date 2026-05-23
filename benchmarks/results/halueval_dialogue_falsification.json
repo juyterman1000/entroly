@@ -1,0 +1,53 @@
+{
+  "benchmark": "halueval_dialogue",
+  "n": 400,
+  "weights": {
+    "W": 0.05,
+    "E": 0.05,
+    "G": 0.8,
+    "S": 0.1
+  },
+  "backend": "deterministic",
+  "conditions": [
+    {
+      "name": "C1 original (r vs h)",
+      "fusion": 0.753634375,
+      "g_only": 0.754903125,
+      "witness_only": 0.72150625
+    },
+    {
+      "name": "C2 entity-controlled (r vs h_ctrl)",
+      "fusion": 0.15994375,
+      "g_only": 0.148884375,
+      "witness_only": 0.267253125
+    },
+    {
+      "name": "C3 paraphrase-stress (r_para vs h)",
+      "fusion": 0.7488875,
+      "g_only": 0.750278125,
+      "witness_only": 0.71203125
+    },
+    {
+      "name": "C4 realistic (r_para vs h_ctrl)",
+      "fusion": 0.153565625,
+      "g_only": 0.142071875,
+      "witness_only": 0.255590625
+    }
+  ],
+  "min_fusion_auroc_c1_c4": 0.153565625,
+  "max_fusion_auroc_c1_c4": 0.753634375,
+  "artifact_drop_c1_c4": 0.6000687499999999,
+  "mean_g": {
+    "r": 0.4863402014652014,
+    "h": 0.8097636183261183,
+    "h_ctrl": 0.031785714285714285,
+    "r_para": 0.4950485347985347
+  },
+  "artifact_detected": true,
+  "target": 0.78,
+  "survives_threshold": 0.75,
+  "survives_falsification": false,
+  "dataset_hash": "e2977e4690e2cb5e",
+  "preregistered_target": 0.78,
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md"
+}

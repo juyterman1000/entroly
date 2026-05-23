@@ -1,0 +1,36 @@
+{
+  "schema": "sem-entropy-benchmark-v1",
+  "scorer": "NLI_bidir_proxy + H_sem_stylistic",
+  "target_auroc": 0.75,
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md",
+  "results": [
+    {
+      "dataset": "squad_v2",
+      "n_items": 600,
+      "auroc_nli_bidir": 0.9991,
+      "auroc_composite": 0.9986,
+      "passes_target": true,
+      "target_auroc": 0.75,
+      "elapsed_s": 2.8
+    },
+    {
+      "dataset": "halueval_qa",
+      "n_items": 600,
+      "auroc_nli_bidir": 0.9756,
+      "auroc_composite": 0.9766,
+      "passes_target": true,
+      "target_auroc": 0.75,
+      "elapsed_s": 2.27
+    },
+    {
+      "dataset": "fever",
+      "n_items": 600,
+      "auroc_nli_bidir": 0.6103,
+      "auroc_composite": 0.6176,
+      "passes_target": false,
+      "target_auroc": 0.75,
+      "elapsed_s": 1.72
+    }
+  ],
+  "overall_passes": false
+}

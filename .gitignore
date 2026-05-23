@@ -39,7 +39,12 @@ bench/quality_eval_results.json
 # scratch scripts — never check in. Spare __init__.py / __pycache__.
 bench/_*
 !bench/__init__.py
-benchmarks/results/
+# benchmarks/results/ — keep evidence (JSON results, MD reports) so they
+# can be linked from README as proof. Only large caches and run logs are
+# ignored. NEVER blanket-ignore the whole dir again.
+benchmarks/results/*_cache.json
+benchmarks/results/_*.log
+benchmarks/results/_*.tmp
 bench_section.md
 bench_output.txt
 test_output.txt

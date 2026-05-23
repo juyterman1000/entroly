@@ -1,0 +1,821 @@
+{
+  "schema": "phi-weight-search-v1",
+  "n_per_dataset": 150,
+  "grid_size": 66,
+  "best_dro": {
+    "weights": {
+      "esg": 1.0,
+      "nli": 0.0,
+      "hsem": 0.0
+    },
+    "squad_auroc": 0.9978,
+    "halueval_auroc": 0.9464,
+    "fever_auroc": 0.7703,
+    "worst_auroc": 0.7703
+  },
+  "best_erm": {
+    "weights": {
+      "esg": 1.0,
+      "nli": 0.0,
+      "hsem": 0.0
+    },
+    "squad_auroc": 0.9978,
+    "halueval_auroc": 0.9464,
+    "fever_auroc": 0.7703,
+    "mean_auroc": 0.9048
+  },
+  "all_results": [
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.0,
+        "hsem": 1.0
+      },
+      "squad": 1.0,
+      "halueval": 1.0,
+      "fever": 0.6476,
+      "worst": 0.6476,
+      "mean": 0.8825
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.1,
+        "hsem": 0.9
+      },
+      "squad": 0.9999,
+      "halueval": 0.9895,
+      "fever": 0.5511,
+      "worst": 0.5511,
+      "mean": 0.8468
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.2,
+        "hsem": 0.8
+      },
+      "squad": 0.9999,
+      "halueval": 0.9895,
+      "fever": 0.5527,
+      "worst": 0.5527,
+      "mean": 0.8474
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.3,
+        "hsem": 0.7
+      },
+      "squad": 0.9999,
+      "halueval": 0.9895,
+      "fever": 0.556,
+      "worst": 0.556,
+      "mean": 0.8484
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.4,
+        "hsem": 0.6
+      },
+      "squad": 0.9999,
+      "halueval": 0.9889,
+      "fever": 0.5686,
+      "worst": 0.5686,
+      "mean": 0.8525
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.5,
+        "hsem": 0.5
+      },
+      "squad": 0.9999,
+      "halueval": 0.9864,
+      "fever": 0.5867,
+      "worst": 0.5867,
+      "mean": 0.8576
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.6,
+        "hsem": 0.4
+      },
+      "squad": 0.9999,
+      "halueval": 0.9844,
+      "fever": 0.6033,
+      "worst": 0.6033,
+      "mean": 0.8625
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.7,
+        "hsem": 0.3
+      },
+      "squad": 0.9999,
+      "halueval": 0.9828,
+      "fever": 0.6157,
+      "worst": 0.6157,
+      "mean": 0.8661
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.8,
+        "hsem": 0.2
+      },
+      "squad": 0.9998,
+      "halueval": 0.982,
+      "fever": 0.6335,
+      "worst": 0.6335,
+      "mean": 0.8718
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 0.9,
+        "hsem": 0.1
+      },
+      "squad": 0.9998,
+      "halueval": 0.9816,
+      "fever": 0.6394,
+      "worst": 0.6394,
+      "mean": 0.8736
+    },
+    {
+      "weights": {
+        "esg": 0.0,
+        "nli": 1.0,
+        "hsem": 0.0
+      },
+      "squad": 0.9997,
+      "halueval": 0.9813,
+      "fever": 0.6437,
+      "worst": 0.6437,
+      "mean": 0.8749
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.0,
+        "hsem": 0.9
+      },
+      "squad": 0.998,
+      "halueval": 0.9733,
+      "fever": 0.5937,
+      "worst": 0.5937,
+      "mean": 0.855
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.1,
+        "hsem": 0.8
+      },
+      "squad": 0.9983,
+      "halueval": 0.9782,
+      "fever": 0.5637,
+      "worst": 0.5637,
+      "mean": 0.8467
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.2,
+        "hsem": 0.7
+      },
+      "squad": 0.9983,
+      "halueval": 0.9854,
+      "fever": 0.566,
+      "worst": 0.566,
+      "mean": 0.8499
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.3,
+        "hsem": 0.6
+      },
+      "squad": 0.9983,
+      "halueval": 0.9853,
+      "fever": 0.576,
+      "worst": 0.576,
+      "mean": 0.8532
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.4,
+        "hsem": 0.5
+      },
+      "squad": 0.9983,
+      "halueval": 0.9851,
+      "fever": 0.5986,
+      "worst": 0.5986,
+      "mean": 0.8607
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.5,
+        "hsem": 0.4
+      },
+      "squad": 0.9982,
+      "halueval": 0.9829,
+      "fever": 0.6078,
+      "worst": 0.6078,
+      "mean": 0.863
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.6,
+        "hsem": 0.3
+      },
+      "squad": 0.9982,
+      "halueval": 0.9826,
+      "fever": 0.6246,
+      "worst": 0.6246,
+      "mean": 0.8685
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.7,
+        "hsem": 0.2
+      },
+      "squad": 0.9981,
+      "halueval": 0.9818,
+      "fever": 0.6435,
+      "worst": 0.6435,
+      "mean": 0.8745
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.8,
+        "hsem": 0.1
+      },
+      "squad": 0.9981,
+      "halueval": 0.9814,
+      "fever": 0.6501,
+      "worst": 0.6501,
+      "mean": 0.8765
+    },
+    {
+      "weights": {
+        "esg": 0.1,
+        "nli": 0.9,
+        "hsem": 0.0
+      },
+      "squad": 0.9981,
+      "halueval": 0.9812,
+      "fever": 0.6537,
+      "worst": 0.6537,
+      "mean": 0.8777
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.0,
+        "hsem": 0.8
+      },
+      "squad": 0.998,
+      "halueval": 0.9733,
+      "fever": 0.5978,
+      "worst": 0.5978,
+      "mean": 0.8564
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.1,
+        "hsem": 0.7
+      },
+      "squad": 0.9982,
+      "halueval": 0.9726,
+      "fever": 0.5681,
+      "worst": 0.5681,
+      "mean": 0.8463
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.2,
+        "hsem": 0.6
+      },
+      "squad": 0.9983,
+      "halueval": 0.9776,
+      "fever": 0.5812,
+      "worst": 0.5812,
+      "mean": 0.8524
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.3,
+        "hsem": 0.5
+      },
+      "squad": 0.9983,
+      "halueval": 0.9818,
+      "fever": 0.6006,
+      "worst": 0.6006,
+      "mean": 0.8602
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.4,
+        "hsem": 0.4
+      },
+      "squad": 0.9982,
+      "halueval": 0.9816,
+      "fever": 0.6135,
+      "worst": 0.6135,
+      "mean": 0.8644
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.5,
+        "hsem": 0.3
+      },
+      "squad": 0.9982,
+      "halueval": 0.9792,
+      "fever": 0.6263,
+      "worst": 0.6263,
+      "mean": 0.8679
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.6,
+        "hsem": 0.2
+      },
+      "squad": 0.9981,
+      "halueval": 0.9784,
+      "fever": 0.6463,
+      "worst": 0.6463,
+      "mean": 0.8743
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.7,
+        "hsem": 0.1
+      },
+      "squad": 0.9981,
+      "halueval": 0.9796,
+      "fever": 0.6556,
+      "worst": 0.6556,
+      "mean": 0.8777
+    },
+    {
+      "weights": {
+        "esg": 0.2,
+        "nli": 0.8,
+        "hsem": 0.0
+      },
+      "squad": 0.9981,
+      "halueval": 0.9793,
+      "fever": 0.6603,
+      "worst": 0.6603,
+      "mean": 0.8792
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.0,
+        "hsem": 0.7
+      },
+      "squad": 0.998,
+      "halueval": 0.9732,
+      "fever": 0.604,
+      "worst": 0.604,
+      "mean": 0.8584
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.1,
+        "hsem": 0.6
+      },
+      "squad": 0.9982,
+      "halueval": 0.9684,
+      "fever": 0.5856,
+      "worst": 0.5856,
+      "mean": 0.8508
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.2,
+        "hsem": 0.5
+      },
+      "squad": 0.9982,
+      "halueval": 0.9713,
+      "fever": 0.6043,
+      "worst": 0.6043,
+      "mean": 0.8579
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.3,
+        "hsem": 0.4
+      },
+      "squad": 0.9983,
+      "halueval": 0.9752,
+      "fever": 0.6209,
+      "worst": 0.6209,
+      "mean": 0.8648
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.4,
+        "hsem": 0.3
+      },
+      "squad": 0.9982,
+      "halueval": 0.9761,
+      "fever": 0.6252,
+      "worst": 0.6252,
+      "mean": 0.8665
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.5,
+        "hsem": 0.2
+      },
+      "squad": 0.9981,
+      "halueval": 0.9783,
+      "fever": 0.6387,
+      "worst": 0.6387,
+      "mean": 0.8717
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.6,
+        "hsem": 0.1
+      },
+      "squad": 0.9981,
+      "halueval": 0.9775,
+      "fever": 0.6562,
+      "worst": 0.6562,
+      "mean": 0.8773
+    },
+    {
+      "weights": {
+        "esg": 0.3,
+        "nli": 0.7,
+        "hsem": 0.0
+      },
+      "squad": 0.9981,
+      "halueval": 0.9771,
+      "fever": 0.6626,
+      "worst": 0.6626,
+      "mean": 0.8793
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.0,
+        "hsem": 0.6
+      },
+      "squad": 0.998,
+      "halueval": 0.9721,
+      "fever": 0.6234,
+      "worst": 0.6234,
+      "mean": 0.8645
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.1,
+        "hsem": 0.5
+      },
+      "squad": 0.9982,
+      "halueval": 0.9672,
+      "fever": 0.6101,
+      "worst": 0.6101,
+      "mean": 0.8585
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.2,
+        "hsem": 0.4
+      },
+      "squad": 0.9982,
+      "halueval": 0.97,
+      "fever": 0.6195,
+      "worst": 0.6195,
+      "mean": 0.8626
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.3,
+        "hsem": 0.3
+      },
+      "squad": 0.9981,
+      "halueval": 0.968,
+      "fever": 0.6235,
+      "worst": 0.6235,
+      "mean": 0.8632
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.4,
+        "hsem": 0.2
+      },
+      "squad": 0.9981,
+      "halueval": 0.971,
+      "fever": 0.637,
+      "worst": 0.637,
+      "mean": 0.8687
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.5,
+        "hsem": 0.1
+      },
+      "squad": 0.9981,
+      "halueval": 0.9736,
+      "fever": 0.6552,
+      "worst": 0.6552,
+      "mean": 0.8756
+    },
+    {
+      "weights": {
+        "esg": 0.4,
+        "nli": 0.6,
+        "hsem": 0.0
+      },
+      "squad": 0.9981,
+      "halueval": 0.9749,
+      "fever": 0.6608,
+      "worst": 0.6608,
+      "mean": 0.8779
+    },
+    {
+      "weights": {
+        "esg": 0.5,
+        "nli": 0.0,
+        "hsem": 0.5
+      },
+      "squad": 0.998,
+      "halueval": 0.9695,
+      "fever": 0.6387,
+      "worst": 0.6387,
+      "mean": 0.8688
+    },
+    {
+      "weights": {
+        "esg": 0.5,
+        "nli": 0.1,
+        "hsem": 0.4
+      },
+      "squad": 0.9981,
+      "halueval": 0.9658,
+      "fever": 0.6201,
+      "worst": 0.6201,
+      "mean": 0.8613
+    },
+    {
+      "weights": {
+        "esg": 0.5,
+        "nli": 0.2,
+        "hsem": 0.3
+      },
+      "squad": 0.9982,
+      "halueval": 0.9684,
+      "fever": 0.6251,
+      "worst": 0.6251,
+      "mean": 0.8639
+    },
+    {
+      "weights": {
+        "esg": 0.5,
+        "nli": 0.3,
+        "hsem": 0.2
+      },
+      "squad": 0.998,
+      "halueval": 0.9661,
+      "fever": 0.6302,
+      "worst": 0.6302,
+      "mean": 0.8648
+    },
+    {
+      "weights": {
+        "esg": 0.5,
+        "nli": 0.4,
+        "hsem": 0.1
+      },
+      "squad": 0.9981,
+      "halueval": 0.9648,
+      "fever": 0.6521,
+      "worst": 0.6521,
+      "mean": 0.8717
+    },
+    {
+      "weights": {
+        "esg": 0.5,
+        "nli": 0.5,
+        "hsem": 0.0
+      },
+      "squad": 0.9981,
+      "halueval": 0.9677,
+      "fever": 0.6632,
+      "worst": 0.6632,
+      "mean": 0.8763
+    },
+    {
+      "weights": {
+        "esg": 0.6,
+        "nli": 0.0,
+        "hsem": 0.4
+      },
+      "squad": 0.998,
+      "halueval": 0.9668,
+      "fever": 0.6499,
+      "worst": 0.6499,
+      "mean": 0.8716
+    },
+    {
+      "weights": {
+        "esg": 0.6,
+        "nli": 0.1,
+        "hsem": 0.3
+      },
+      "squad": 0.9981,
+      "halueval": 0.9618,
+      "fever": 0.6217,
+      "worst": 0.6217,
+      "mean": 0.8605
+    },
+    {
+      "weights": {
+        "esg": 0.6,
+        "nli": 0.2,
+        "hsem": 0.2
+      },
+      "squad": 0.998,
+      "halueval": 0.9555,
+      "fever": 0.6262,
+      "worst": 0.6262,
+      "mean": 0.8599
+    },
+    {
+      "weights": {
+        "esg": 0.6,
+        "nli": 0.3,
+        "hsem": 0.1
+      },
+      "squad": 0.998,
+      "halueval": 0.9563,
+      "fever": 0.6481,
+      "worst": 0.6481,
+      "mean": 0.8674
+    },
+    {
+      "weights": {
+        "esg": 0.6,
+        "nli": 0.4,
+        "hsem": 0.0
+      },
+      "squad": 0.998,
+      "halueval": 0.9555,
+      "fever": 0.6632,
+      "worst": 0.6632,
+      "mean": 0.8722
+    },
+    {
+      "weights": {
+        "esg": 0.7,
+        "nli": 0.0,
+        "hsem": 0.3
+      },
+      "squad": 0.998,
+      "halueval": 0.9595,
+      "fever": 0.6503,
+      "worst": 0.6503,
+      "mean": 0.8693
+    },
+    {
+      "weights": {
+        "esg": 0.7,
+        "nli": 0.1,
+        "hsem": 0.2
+      },
+      "squad": 0.9979,
+      "halueval": 0.9545,
+      "fever": 0.6229,
+      "worst": 0.6229,
+      "mean": 0.8584
+    },
+    {
+      "weights": {
+        "esg": 0.7,
+        "nli": 0.2,
+        "hsem": 0.1
+      },
+      "squad": 0.9979,
+      "halueval": 0.9512,
+      "fever": 0.6343,
+      "worst": 0.6343,
+      "mean": 0.8611
+    },
+    {
+      "weights": {
+        "esg": 0.7,
+        "nli": 0.3,
+        "hsem": 0.0
+      },
+      "squad": 0.9979,
+      "halueval": 0.9516,
+      "fever": 0.6614,
+      "worst": 0.6614,
+      "mean": 0.8703
+    },
+    {
+      "weights": {
+        "esg": 0.8,
+        "nli": 0.0,
+        "hsem": 0.2
+      },
+      "squad": 0.9978,
+      "halueval": 0.954,
+      "fever": 0.6475,
+      "worst": 0.6475,
+      "mean": 0.8664
+    },
+    {
+      "weights": {
+        "esg": 0.8,
+        "nli": 0.1,
+        "hsem": 0.1
+      },
+      "squad": 0.9978,
+      "halueval": 0.9463,
+      "fever": 0.6236,
+      "worst": 0.6236,
+      "mean": 0.8559
+    },
+    {
+      "weights": {
+        "esg": 0.8,
+        "nli": 0.2,
+        "hsem": 0.0
+      },
+      "squad": 0.9979,
+      "halueval": 0.9445,
+      "fever": 0.6606,
+      "worst": 0.6606,
+      "mean": 0.8677
+    },
+    {
+      "weights": {
+        "esg": 0.9,
+        "nli": 0.0,
+        "hsem": 0.1
+      },
+      "squad": 0.9978,
+      "halueval": 0.9484,
+      "fever": 0.6502,
+      "worst": 0.6502,
+      "mean": 0.8655
+    },
+    {
+      "weights": {
+        "esg": 0.9,
+        "nli": 0.1,
+        "hsem": 0.0
+      },
+      "squad": 0.9978,
+      "halueval": 0.9374,
+      "fever": 0.6609,
+      "worst": 0.6609,
+      "mean": 0.8654
+    },
+    {
+      "weights": {
+        "esg": 1.0,
+        "nli": 0.0,
+        "hsem": 0.0
+      },
+      "squad": 0.9978,
+      "halueval": 0.9464,
+      "fever": 0.7703,
+      "worst": 0.7703,
+      "mean": 0.9048
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "protocol": "Multi-signal fusion cascade on HaluEval-QA",
+  "n_decisions": 1200,
+  "n_test": 600,
+  "baselines": {
+    "witness_only_error": 0.155,
+    "witness_auroc": 0.7816010063341163,
+    "fusion_only_error": 0.15666666666666668,
+    "fusion_auroc": 0.8394429539913838,
+    "fusion_threshold": 0.0001676750652332415,
+    "gpt4o_mini_error": 0.14333333333333334
+  },
+  "score_concentration": {
+    "witness_std": 0.4490659794357599,
+    "fusion_std": 0.24808718590095474
+  },
+  "fusion_weights": {
+    "witness": 0.5,
+    "ece": 0.3,
+    "entity": 0.2
+  },
+  "best_fusion_pareto": {
+    "eps": 0.1,
+    "error": 0.14166666666666666,
+    "escalation_rate": 0.43833333333333335,
+    "cost": 0.43833333333333335
+  },
+  "best_witness_pareto": {
+    "eps": 0.05,
+    "error": 0.13333333333333333,
+    "escalation_rate": 0.9116666666666666,
+    "cost": 0.9116666666666666
+  }
+}

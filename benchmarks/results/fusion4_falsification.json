@@ -1,0 +1,45 @@
+{
+  "weights": {
+    "W": 0.05,
+    "E": 0.05,
+    "G": 0.8,
+    "S": 0.1
+  },
+  "n": 400,
+  "conditions": [
+    {
+      "name": "C1 original (r vs h)",
+      "fusion": 0.89380625,
+      "g_only": 0.695,
+      "witness_only": 0.796053125
+    },
+    {
+      "name": "C2 entity-controlled (r vs h_ctrl)",
+      "fusion": 0.8504375,
+      "g_only": 0.585,
+      "witness_only": 0.75521875
+    },
+    {
+      "name": "C3 paraphrase-stress (r_para vs h)",
+      "fusion": 0.571940625,
+      "g_only": 0.57993125,
+      "witness_only": 0.589315625
+    },
+    {
+      "name": "C4 realistic (r_para vs h_ctrl)",
+      "fusion": 0.45349375,
+      "g_only": 0.471978125,
+      "witness_only": 0.450546875
+    }
+  ],
+  "mean_G": {
+    "r": 0.0,
+    "h": 0.18775694444444452,
+    "h_ctrl": 0.06749404761904758,
+    "r_para": 0.1371488095238096
+  },
+  "drop_c1_c2": 0.04336875000000007,
+  "artifact": true,
+  "survives": false,
+  "verdict": "ARTIFACT CONFIRMED \u2014 the 0.90 is largely HaluEval's entity-swap synthesis. Does NOT generalize. Keep README at WITNESS 0.798."
+}

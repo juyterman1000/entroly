@@ -1,0 +1,44 @@
+{
+  "benchmark": "TruthfulQA",
+  "dataset": "truthful_qa/generation",
+  "license": "Apache-2.0",
+  "n_questions": 817,
+  "n_decisions": 1634,
+  "n_test": 817,
+  "seed": 42,
+  "ms_per_decision": 0.81,
+  "witness": {
+    "n": 817,
+    "tp": 377,
+    "fp": 245,
+    "fn": 17,
+    "tn": 178,
+    "accuracy": 0.6793,
+    "ci95": 0.0319,
+    "precision": 0.6061,
+    "recall": 0.9569,
+    "f1": 0.7421,
+    "threshold": 0.003235,
+    "auroc": 0.6846
+  },
+  "fusion": {
+    "n": 817,
+    "tp": 382,
+    "fp": 250,
+    "fn": 12,
+    "tn": 173,
+    "accuracy": 0.6793,
+    "ci95": 0.0319,
+    "precision": 0.6044,
+    "recall": 0.9695,
+    "f1": 0.7446,
+    "threshold": 0.001618,
+    "auroc": 0.7113,
+    "weights": {
+      "witness": 0.5,
+      "ece": 0.3,
+      "entity": 0.2
+    }
+  },
+  "note": "Published TruthfulQA baselines measure generation truthfulness. Our numbers measure detection accuracy (different task). Direct comparison is not valid."
+}

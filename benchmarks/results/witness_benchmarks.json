@@ -1,0 +1,466 @@
+[
+  {
+    "benchmark": "HaluEval-QA (string/local)",
+    "n_samples": 200,
+    "tp": 65,
+    "fp": 86,
+    "fn": 32,
+    "tn": 17,
+    "precision": 0.4305,
+    "recall": 0.6701,
+    "f1": 0.5242,
+    "accuracy": 0.41,
+    "suppression_precision": 0.4822,
+    "suppression_recall": 0.9794,
+    "suppression_f1": 0.6463,
+    "unsupported_exposure_rate": 0.0206,
+    "supported_retention_rate": 0.0097,
+    "avg_ms": 1.0,
+    "examples": [
+      {
+        "output_snippet": "First for Women was started first.",
+        "actual": "hallucinated",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.08,
+        "labels": [
+          "contradicted"
+        ]
+      },
+      {
+        "output_snippet": "Delhi",
+        "actual": "grounded",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.2,
+        "labels": [
+          "unsupported"
+        ]
+      },
+      {
+        "output_snippet": "President Richard Nixon",
+        "actual": "grounded",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.2,
+        "labels": [
+          "unsupported"
+        ]
+      },
+      {
+        "output_snippet": "American",
+        "actual": "grounded",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.2,
+        "labels": [
+          "unsupported"
+        ]
+      },
+      {
+        "output_snippet": "water with a hint of alcohol",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      }
+    ]
+  },
+  {
+    "benchmark": "HaluEval-Dialogue (string/local)",
+    "n_samples": 200,
+    "tp": 3,
+    "fp": 0,
+    "fn": 94,
+    "tn": 103,
+    "precision": 1.0,
+    "recall": 0.0309,
+    "f1": 0.06,
+    "accuracy": 0.53,
+    "suppression_precision": 0.0,
+    "suppression_recall": 0.0,
+    "suppression_f1": 0.0,
+    "unsupported_exposure_rate": 1.0,
+    "supported_retention_rate": 1.0,
+    "avg_ms": 3.1,
+    "examples": [
+      {
+        "output_snippet": "I'm not a fan of crime movies, but I did know that RDJ starred in Zodiac with To",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "yes and he also produced White Oleander and it was released in 1999",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "Yes, Healing the World is one of my favorite songs and the music video was very ",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "Do you like this book because of it's author Charlaine Harris?",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 1.0,
+        "labels": []
+      },
+      {
+        "output_snippet": "Actually, Snoop Dog wasn't in Turbo. But you should check out Green Lantern, a g",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.672,
+        "labels": [
+          "grounded",
+          "unknown"
+        ]
+      }
+    ]
+  },
+  {
+    "benchmark": "HaluEval-Summarization (string/local)",
+    "n_samples": 200,
+    "tp": 2,
+    "fp": 0,
+    "fn": 95,
+    "tn": 103,
+    "precision": 1.0,
+    "recall": 0.0206,
+    "f1": 0.0404,
+    "accuracy": 0.525,
+    "suppression_precision": 0.7273,
+    "suppression_recall": 0.1649,
+    "suppression_f1": 0.2689,
+    "unsupported_exposure_rate": 0.8351,
+    "supported_retention_rate": 0.9417,
+    "avg_ms": 43.2,
+    "examples": [
+      {
+        "output_snippet": "A video showing the final moments of Germanwings Flight 9525 has been recovered ",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.904,
+        "labels": [
+          "grounded",
+          "grounded",
+          "grounded"
+        ]
+      },
+      {
+        "output_snippet": "Membership gives the ICC jurisdiction over alleged crimes committed in Palestini",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.907,
+        "labels": [
+          "grounded",
+          "grounded"
+        ]
+      },
+      {
+        "output_snippet": "Amnesty's annual death penalty report catalogs encouraging signs, but setbacks i",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.906,
+        "labels": [
+          "grounded",
+          "grounded",
+          "grounded"
+        ]
+      },
+      {
+        "output_snippet": "Amnesty International releases its annual review of the death penalty worldwide;",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.683,
+        "labels": [
+          "grounded",
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "Anne Frank and her sister Margot were found alive in the Bergen-Belsen concentra",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.897,
+        "labels": [
+          "grounded",
+          "grounded",
+          "grounded"
+        ]
+      }
+    ]
+  },
+  {
+    "benchmark": "HaluEval-QA (nli)",
+    "n_samples": 50,
+    "tp": 17,
+    "fp": 21,
+    "fn": 8,
+    "tn": 4,
+    "precision": 0.4474,
+    "recall": 0.68,
+    "f1": 0.5397,
+    "accuracy": 0.42,
+    "suppression_precision": 0.5,
+    "suppression_recall": 0.96,
+    "suppression_f1": 0.6575,
+    "unsupported_exposure_rate": 0.04,
+    "supported_retention_rate": 0.04,
+    "avg_ms": 181.3,
+    "examples": [
+      {
+        "output_snippet": "First for Women was started first.",
+        "actual": "hallucinated",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.08,
+        "labels": [
+          "contradicted"
+        ]
+      },
+      {
+        "output_snippet": "Delhi",
+        "actual": "grounded",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.2,
+        "labels": [
+          "unsupported"
+        ]
+      },
+      {
+        "output_snippet": "President Richard Nixon",
+        "actual": "grounded",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.2,
+        "labels": [
+          "unsupported"
+        ]
+      },
+      {
+        "output_snippet": "American",
+        "actual": "grounded",
+        "detected": "hallucinated",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.2,
+        "labels": [
+          "unsupported"
+        ]
+      },
+      {
+        "output_snippet": "water with a hint of alcohol",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": true,
+        "warned": false,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      }
+    ]
+  },
+  {
+    "benchmark": "HaluEval-Dialogue (nli)",
+    "n_samples": 50,
+    "tp": 1,
+    "fp": 0,
+    "fn": 24,
+    "tn": 25,
+    "precision": 1.0,
+    "recall": 0.04,
+    "f1": 0.0769,
+    "accuracy": 0.52,
+    "suppression_precision": 0.0,
+    "suppression_recall": 0.0,
+    "suppression_f1": 0.0,
+    "unsupported_exposure_rate": 1.0,
+    "supported_retention_rate": 1.0,
+    "avg_ms": 141.0,
+    "examples": [
+      {
+        "output_snippet": "I'm not a fan of crime movies, but I did know that RDJ starred in Zodiac with To",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "yes and he also produced White Oleander and it was released in 1999",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "Yes, Healing the World is one of my favorite songs and the music video was very ",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.45,
+        "labels": [
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "Do you like this book because of it's author Charlaine Harris?",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 1.0,
+        "labels": []
+      },
+      {
+        "output_snippet": "Actually, Snoop Dog wasn't in Turbo. But you should check out Green Lantern, a g",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.672,
+        "labels": [
+          "grounded",
+          "unknown"
+        ]
+      }
+    ]
+  },
+  {
+    "benchmark": "HaluEval-Summarization (nli)",
+    "n_samples": 50,
+    "tp": 0,
+    "fp": 0,
+    "fn": 25,
+    "tn": 25,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.5,
+    "suppression_precision": 0.6667,
+    "suppression_recall": 0.16,
+    "suppression_f1": 0.2581,
+    "unsupported_exposure_rate": 0.84,
+    "supported_retention_rate": 0.92,
+    "avg_ms": 216.2,
+    "examples": [
+      {
+        "output_snippet": "A video showing the final moments of Germanwings Flight 9525 has been recovered ",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.904,
+        "labels": [
+          "grounded",
+          "grounded",
+          "grounded"
+        ]
+      },
+      {
+        "output_snippet": "Membership gives the ICC jurisdiction over alleged crimes committed in Palestini",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.907,
+        "labels": [
+          "grounded",
+          "grounded"
+        ]
+      },
+      {
+        "output_snippet": "Amnesty's annual death penalty report catalogs encouraging signs, but setbacks i",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.906,
+        "labels": [
+          "grounded",
+          "grounded",
+          "grounded"
+        ]
+      },
+      {
+        "output_snippet": "Amnesty International releases its annual review of the death penalty worldwide;",
+        "actual": "grounded",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": true,
+        "summary_score": 0.683,
+        "labels": [
+          "grounded",
+          "unknown"
+        ]
+      },
+      {
+        "output_snippet": "Anne Frank and her sister Margot were found alive in the Bergen-Belsen concentra",
+        "actual": "hallucinated",
+        "detected": "grounded",
+        "suppressed": false,
+        "warned": false,
+        "summary_score": 0.897,
+        "labels": [
+          "grounded",
+          "grounded",
+          "grounded"
+        ]
+      }
+    ]
+  }
+]

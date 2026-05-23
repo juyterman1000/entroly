@@ -1,0 +1,67 @@
+{
+  "schema": "esg-falsification-v1",
+  "results": {
+    "squad_v2": {
+      "analyzer": "ESG_T(G)",
+      "dataset": "squad_v2",
+      "n_items": 400,
+      "target_auroc": 0.77,
+      "survives_threshold": 0.74,
+      "conditions": [
+        {
+          "name": "C1",
+          "auroc": 0.999
+        },
+        {
+          "name": "C2",
+          "auroc": 0.9988
+        },
+        {
+          "name": "C3",
+          "auroc": 0.991
+        },
+        {
+          "name": "C4",
+          "auroc": 0.9989
+        }
+      ],
+      "min_auroc_c1_c4": 0.991,
+      "artifact_drop_c1_c4": 0.0001,
+      "artifact_detected": false,
+      "survives_falsification": true,
+      "elapsed_s": 2.26,
+      "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md"
+    },
+    "halueval_qa": {
+      "analyzer": "ESG_T(G)",
+      "dataset": "halueval_qa",
+      "n_items": 400,
+      "target_auroc": 0.77,
+      "survives_threshold": 0.74,
+      "conditions": [
+        {
+          "name": "C1",
+          "auroc": 0.9487
+        },
+        {
+          "name": "C2",
+          "auroc": 0.94
+        },
+        {
+          "name": "C3",
+          "auroc": 0.8068
+        },
+        {
+          "name": "C4",
+          "auroc": 0.9427
+        }
+      ],
+      "min_auroc_c1_c4": 0.8068,
+      "artifact_drop_c1_c4": 0.006,
+      "artifact_detected": false,
+      "survives_falsification": true,
+      "elapsed_s": 2.48,
+      "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md"
+    }
+  }
+}

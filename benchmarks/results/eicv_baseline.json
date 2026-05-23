@@ -1,0 +1,564 @@
+{
+  "schema_version": "eicv-baseline-v1",
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md",
+  "preregistration_frozen_commit": "9587650c3f4288c7e163d7cfbdbe9a5b95ae1cf5",
+  "run": {
+    "timestamp_utc": "2026-05-22T04:36:53Z",
+    "git_commit": "9587650c3f4288c7e163d7cfbdbe9a5b95ae1cf5",
+    "entroly_version": "0.19.13",
+    "python_version": "3.10.0",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "host": "Ashu"
+  },
+  "preregistered_targets": {
+    "primary": {
+      "name": "risk_at_coverage_80_worst_manifold",
+      "target": 0.05,
+      "computed_in_phase": 4
+    },
+    "tier1": {
+      "halueval_qa": {
+        "metric": "auroc",
+        "target": 0.85,
+        "anchor": "DeBERTa-v3-large NLI ~0.85"
+      },
+      "halueval_dialogue": {
+        "metric": "f1",
+        "target": 0.68,
+        "anchor": "NLI baselines ~0.78"
+      },
+      "halueval_summarization": {
+        "metric": "f1",
+        "target": 0.55,
+        "anchor": "NLI baselines ~0.65"
+      },
+      "truthfulqa": {
+        "metric": "auroc",
+        "target": 0.78,
+        "anchor": "LLM-judge baselines"
+      },
+      "factscore": {
+        "metric": "atomic_precision",
+        "target": 0.72,
+        "anchor": "GPT-4 0.76 / smaller 0.60-0.65"
+      },
+      "fever": {
+        "metric": "accuracy",
+        "target": 0.75,
+        "anchor": "DeBERTa-large 0.74 / LLM 0.78"
+      },
+      "true": {
+        "metric": "mean_auroc",
+        "target": 0.8,
+        "anchor": "DeBERTa-v3-large 0.79"
+      },
+      "hhem": {
+        "metric": "leaderboard_rank",
+        "target": "top_decile",
+        "anchor": "leaderboard-relative"
+      },
+      "ragas": {
+        "metric": "faithfulness_auroc",
+        "target": "report_only",
+        "anchor": "RAGAS uses LLM-judge, no fair comparison"
+      }
+    },
+    "robustness": {
+      "falsification_survived_auroc_drop": {
+        "target_max": 0.03,
+        "anchor": "Fusion-4 collapse 0.441 on HaluEval-QA"
+      },
+      "worst_manifold_ece": {
+        "target_max": 0.08,
+        "anchor": "LLM-judge ~0.15, DeBERTa-NLI ~0.12"
+      },
+      "conformal_coverage_violation_a01": {
+        "target_max": 0.02,
+        "anchor": "Theoretical bound under exchangeability"
+      },
+      "cost_per_claim_ms_p99": {
+        "target_max": 20.0,
+        "anchor": "LLM-judge ~500ms + cost"
+      }
+    }
+  },
+  "benchmarks": {
+    "halueval_qa": {
+      "status": "ok",
+      "source_file": "halueval_10k_fusion.json",
+      "source_hash": "5a2b3db9fa37aabb",
+      "dataset": "pminervini/HaluEval",
+      "config": "qa",
+      "n_items": 10000,
+      "n_decisions": 20000,
+      "n_test": 16000,
+      "metrics": {
+        "witness": {
+          "auroc": 0.7981,
+          "ci95": 0.0055,
+          "accuracy": 0.8498,
+          "threshold": 0.000335
+        },
+        "fusion": {
+          "auroc": 0.8435,
+          "ci95": 0.0055,
+          "accuracy": 0.8501,
+          "threshold": 0.000168,
+          "weights": {
+            "witness": 0.5,
+            "ece": 0.3,
+            "entity": 0.2
+          }
+        }
+      }
+    },
+    "halueval_dialogue": {
+      "status": "ok_stale_n200",
+      "data": {
+        "n_samples": 200,
+        "tp": 3,
+        "fp": 0,
+        "fn": 94,
+        "tn": 103,
+        "precision": 1.0,
+        "recall": 0.0309,
+        "f1": 0.06,
+        "accuracy": 0.53,
+        "suppression_f1": 0.0,
+        "unsupported_exposure_rate": 1.0,
+        "supported_retention_rate": 1.0,
+        "avg_ms": 3.1
+      },
+      "stale_warning": "These n=200 numbers predate the v3 binding/residual gates that brought HaluEval-QA exposure 0.639 -> 0.340 (see witness_v3_report.md). Phase 0 step 1.1 will re-run on n=10k with the v3 gates.",
+      "source_file": "witness_benchmarks.json",
+      "source_hash": "2eaeae818aaf4a3b"
+    },
+    "halueval_summarization": {
+      "status": "ok_stale_n200",
+      "data": {
+        "n_samples": 200,
+        "tp": 2,
+        "fp": 0,
+        "fn": 95,
+        "tn": 103,
+        "precision": 1.0,
+        "recall": 0.0206,
+        "f1": 0.0404,
+        "accuracy": 0.525,
+        "suppression_f1": 0.2689,
+        "unsupported_exposure_rate": 0.8351,
+        "supported_retention_rate": 0.9417,
+        "avg_ms": 43.2
+      },
+      "stale_warning": "These n=200 numbers predate the v3 binding/residual gates that brought HaluEval-QA exposure 0.639 -> 0.340 (see witness_v3_report.md). Phase 0 step 1.1 will re-run on n=10k with the v3 gates.",
+      "source_file": "witness_benchmarks.json",
+      "source_hash": "2eaeae818aaf4a3b"
+    },
+    "truthfulqa": {
+      "status": "ok",
+      "source_file": "truthfulqa_benchmark.json",
+      "source_hash": "3c739aca2ac9056e",
+      "dataset": "truthful_qa/generation",
+      "license": "Apache-2.0",
+      "n_questions": 817,
+      "n_decisions": 1634,
+      "seed": 42,
+      "ms_per_decision": 0.81,
+      "metrics": {
+        "witness": {
+          "auroc": 0.6846,
+          "accuracy": 0.6793,
+          "f1": 0.7421,
+          "precision": 0.6061,
+          "recall": 0.9569,
+          "ci95_acc": 0.0319,
+          "threshold": 0.003235
+        },
+        "fusion": {
+          "auroc": 0.7113,
+          "accuracy": 0.6793,
+          "f1": 0.7446,
+          "precision": 0.6044,
+          "recall": 0.9695,
+          "weights": {
+            "witness": 0.5,
+            "ece": 0.3,
+            "entity": 0.2
+          }
+        }
+      },
+      "note": "Published TruthfulQA baselines measure generation truthfulness. Our numbers measure detection accuracy (different task). Direct comparison is not valid."
+    },
+    "ragas": {
+      "status": "ok",
+      "source_file": "ragas_faithfulness_benchmark.json",
+      "source_hash": "42d697d7ae160d0c",
+      "dataset": "rajpurkar/squad_v2",
+      "license": "CC-BY-SA-4.0",
+      "n_questions": 500,
+      "n_decisions": 1000,
+      "seed": 42,
+      "avg_claims_per_response": 0.99,
+      "ms_per_decision": 1.9,
+      "metrics": {
+        "witness": {
+          "auroc": 0.9002,
+          "accuracy": 0.924,
+          "f1": 0.9231,
+          "precision": 0.9383,
+          "recall": 0.9084,
+          "ci95_acc": 0.0234
+        },
+        "fusion": {
+          "auroc": 0.9115,
+          "accuracy": 0.924,
+          "f1": 0.9234,
+          "precision": 0.9347,
+          "recall": 0.9124,
+          "weights": {
+            "witness": 0.5,
+            "ece": 0.3,
+            "entity": 0.2
+          }
+        }
+      },
+      "ragas_comparison_note": "RAGAS uses LLM-as-judge. Published faithfulness ~0.82-0.90. WITNESS is deterministic at $0. AUROC is the fair comparison."
+    },
+    "factscore": {
+      "status": "not_run",
+      "reason": "adapter_pending_wikipedia_fetcher"
+    },
+    "fever": {
+      "status": "ok",
+      "source_file": "fever_baseline.json",
+      "source_hash": "84d06a686566574e",
+      "benchmark": "FEVER",
+      "source_dataset": "copenlu/fever_gold_evidence",
+      "n_items": 1000,
+      "seed": 42,
+      "preregistered_target": 0.75,
+      "ms_per_item": 2.13,
+      "metrics": {
+        "auroc": 0.704,
+        "accuracy_at_best_threshold": 0.7,
+        "accuracy_ci95": 0.0284,
+        "precision": 0.6156,
+        "recall": 0.4242,
+        "f1": 0.5023,
+        "best_threshold": 1.0
+      },
+      "labels": {
+        "0": "SUPPORTS",
+        "1": "REFUTES"
+      },
+      "notes": "Phase 0 baseline. No C1-C4 falsification probe yet (Phase 0 step 1.6). Scoring uses WITNESS only; full Fusion-4 (W+E+G+S) wiring is a follow-up.",
+      "falsification_status": "not_yet_run"
+    },
+    "true": {
+      "status": "not_run",
+      "reason": "adapter_pending_11_subtasks"
+    },
+    "hhem": {
+      "status": "not_run",
+      "reason": "adapter_pending_vectara_api"
+    }
+  },
+  "falsification_probes": {
+    "halueval_qa": {
+      "status": "ok",
+      "source_file": "fusion4_falsification.json",
+      "source_hash": "f3e021b9d68ea69b",
+      "applies_to": "halueval_qa",
+      "weights": {
+        "W": 0.05,
+        "E": 0.05,
+        "G": 0.8,
+        "S": 0.1
+      },
+      "n": 400,
+      "backend": "gpt-4o-mini",
+      "conditions": {
+        "C1_original": {
+          "fusion_auroc": 0.89380625,
+          "witness_only": 0.796053125,
+          "g_only": 0.695
+        },
+        "C2_entity_ctrl": {
+          "fusion_auroc": 0.8504375,
+          "witness_only": 0.75521875,
+          "g_only": 0.585
+        },
+        "C3_paraphrase": {
+          "fusion_auroc": 0.571940625,
+          "witness_only": 0.589315625,
+          "g_only": 0.57993125
+        },
+        "C4_realistic": {
+          "fusion_auroc": 0.45349375,
+          "witness_only": 0.450546875,
+          "g_only": 0.471978125
+        }
+      },
+      "min_fusion_auroc_c1_c4": 0.45349375,
+      "max_fusion_auroc_c1_c4": 0.89380625,
+      "artifact_drop_c1_c4": 0.44031250000000005,
+      "artifact_detected": true,
+      "survives_falsification": false,
+      "survives_threshold": null,
+      "verdict": "ARTIFACT CONFIRMED \u2014 the 0.90 is largely HaluEval's entity-swap synthesis. Does NOT generalize. Keep README at WITNESS 0.798."
+    },
+    "halueval_dialogue": {
+      "status": "ok",
+      "source_file": "halueval_dialogue_falsification.json",
+      "source_hash": "b46852d073b7accf",
+      "applies_to": "halueval_dialogue",
+      "weights": {
+        "W": 0.05,
+        "E": 0.05,
+        "G": 0.8,
+        "S": 0.1
+      },
+      "n": 400,
+      "backend": "deterministic",
+      "conditions": {
+        "C1_original": {
+          "fusion_auroc": 0.753634375,
+          "witness_only": 0.72150625,
+          "g_only": 0.754903125
+        },
+        "C2_entity_ctrl": {
+          "fusion_auroc": 0.15994375,
+          "witness_only": 0.267253125,
+          "g_only": 0.148884375
+        },
+        "C3_paraphrase": {
+          "fusion_auroc": 0.7488875,
+          "witness_only": 0.71203125,
+          "g_only": 0.750278125
+        },
+        "C4_realistic": {
+          "fusion_auroc": 0.153565625,
+          "witness_only": 0.255590625,
+          "g_only": 0.142071875
+        }
+      },
+      "min_fusion_auroc_c1_c4": 0.153565625,
+      "max_fusion_auroc_c1_c4": 0.753634375,
+      "artifact_drop_c1_c4": 0.6000687499999999,
+      "artifact_detected": true,
+      "survives_falsification": false,
+      "survives_threshold": 0.75,
+      "preregistered_target": 0.78,
+      "dataset_hash": "e2977e4690e2cb5e"
+    },
+    "halueval_summarization": {
+      "status": "ok",
+      "source_file": "halueval_summarization_falsification.json",
+      "source_hash": "320fee7436b03e3d",
+      "applies_to": "halueval_summarization",
+      "weights": {
+        "W": 0.05,
+        "E": 0.05,
+        "G": 0.8,
+        "S": 0.1
+      },
+      "n": 400,
+      "backend": "deterministic",
+      "conditions": {
+        "C1_original": {
+          "fusion_auroc": 0.51551875,
+          "witness_only": 0.62595625,
+          "g_only": 0.47288125
+        },
+        "C2_entity_ctrl": {
+          "fusion_auroc": 0.35075625,
+          "witness_only": 0.5631625,
+          "g_only": 0.26
+        },
+        "C3_paraphrase": {
+          "fusion_auroc": 0.50310625,
+          "witness_only": 0.5980125,
+          "g_only": 0.46454375
+        },
+        "C4_realistic": {
+          "fusion_auroc": 0.33885,
+          "witness_only": 0.53471875,
+          "g_only": 0.255
+        }
+      },
+      "min_fusion_auroc_c1_c4": 0.33885,
+      "max_fusion_auroc_c1_c4": 0.51551875,
+      "artifact_drop_c1_c4": 0.17666875000000004,
+      "artifact_detected": true,
+      "survives_falsification": false,
+      "survives_threshold": 0.72,
+      "preregistered_target": 0.75,
+      "dataset_hash": "2841a1cb6a52f930"
+    },
+    "truthfulqa": {
+      "status": "ok",
+      "source_file": "truthfulqa_falsification.json",
+      "source_hash": "581a692f16c4ac04",
+      "applies_to": "truthfulqa",
+      "weights": {
+        "W": 0.05,
+        "E": 0.05,
+        "G": 0.8,
+        "S": 0.1
+      },
+      "n": 400,
+      "backend": "deterministic",
+      "conditions": {
+        "C1_original": {
+          "fusion_auroc": 0.740153125,
+          "witness_only": 0.725159375,
+          "g_only": 0.657253125
+        },
+        "C2_entity_ctrl": {
+          "fusion_auroc": 0.503309375,
+          "witness_only": 0.582496875,
+          "g_only": 0.425278125
+        },
+        "C3_paraphrase": {
+          "fusion_auroc": 0.73565625,
+          "witness_only": 0.71698125,
+          "g_only": 0.654078125
+        },
+        "C4_realistic": {
+          "fusion_auroc": 0.495825,
+          "witness_only": 0.572728125,
+          "g_only": 0.420465625
+        }
+      },
+      "min_fusion_auroc_c1_c4": 0.495825,
+      "max_fusion_auroc_c1_c4": 0.740153125,
+      "artifact_drop_c1_c4": 0.24432812499999995,
+      "artifact_detected": true,
+      "survives_falsification": false,
+      "survives_threshold": 0.75,
+      "preregistered_target": 0.78,
+      "dataset_hash": "2f4505199beff9b2"
+    },
+    "ragas": {
+      "status": "ok",
+      "source_file": "ragas_falsification.json",
+      "source_hash": "3f96bc112878eedc",
+      "applies_to": "ragas",
+      "weights": {
+        "W": 0.05,
+        "E": 0.05,
+        "G": 0.8,
+        "S": 0.1
+      },
+      "n": 400,
+      "backend": "deterministic",
+      "conditions": {
+        "C1_original": {
+          "fusion_auroc": 0.94995625,
+          "witness_only": 0.88858125,
+          "g_only": 0.765
+        },
+        "C2_entity_ctrl": {
+          "fusion_auroc": 0.787490625,
+          "witness_only": 0.82544375,
+          "g_only": 0.51
+        },
+        "C3_paraphrase": {
+          "fusion_auroc": 0.9439375,
+          "witness_only": 0.8836125,
+          "g_only": 0.76245
+        },
+        "C4_realistic": {
+          "fusion_auroc": 0.7786875,
+          "witness_only": 0.8190125,
+          "g_only": 0.50749375
+        }
+      },
+      "min_fusion_auroc_c1_c4": 0.7786875,
+      "max_fusion_auroc_c1_c4": 0.94995625,
+      "artifact_drop_c1_c4": 0.17126874999999997,
+      "artifact_detected": true,
+      "survives_falsification": false,
+      "survives_threshold": 0.82,
+      "preregistered_target": 0.85,
+      "dataset_hash": "d8a7f9235d69ca75"
+    }
+  },
+  "verdict": {
+    "trust_defensible": [],
+    "headline_only": [
+      {
+        "benchmark": "halueval_qa",
+        "min_auroc_c1_c4": 0.4535,
+        "target_minus_tolerance": 0.82,
+        "artifact_drop_c1_c4": 0.44031250000000005,
+        "backend": "gpt-4o-mini",
+        "survives": false,
+        "reason": "falsification_did_not_survive"
+      },
+      {
+        "benchmark": "halueval_dialogue",
+        "min_auroc_c1_c4": 0.1536,
+        "target_minus_tolerance": 0.75,
+        "artifact_drop_c1_c4": 0.6000687499999999,
+        "backend": "deterministic",
+        "survives": false,
+        "reason": "falsification_did_not_survive"
+      },
+      {
+        "benchmark": "halueval_summarization",
+        "min_auroc_c1_c4": 0.3388,
+        "target_minus_tolerance": 0.72,
+        "artifact_drop_c1_c4": 0.17666875000000004,
+        "backend": "deterministic",
+        "survives": false,
+        "reason": "falsification_did_not_survive"
+      },
+      {
+        "benchmark": "truthfulqa",
+        "min_auroc_c1_c4": 0.4958,
+        "target_minus_tolerance": 0.75,
+        "artifact_drop_c1_c4": 0.24432812499999995,
+        "backend": "deterministic",
+        "survives": false,
+        "reason": "falsification_did_not_survive"
+      },
+      {
+        "benchmark": "ragas",
+        "min_auroc_c1_c4": 0.7787,
+        "target_minus_tolerance": 0.82,
+        "artifact_drop_c1_c4": 0.17126874999999997,
+        "backend": "deterministic",
+        "survives": false,
+        "reason": "falsification_did_not_survive"
+      },
+      {
+        "benchmark": "fever",
+        "reason": "no_falsification_probe_for_this_benchmark"
+      }
+    ],
+    "not_run": [
+      {
+        "benchmark": "factscore",
+        "reason": "adapter_pending_wikipedia_fetcher"
+      },
+      {
+        "benchmark": "true",
+        "reason": "adapter_pending_11_subtasks"
+      },
+      {
+        "benchmark": "hhem",
+        "reason": "adapter_pending_vectara_api"
+      }
+    ]
+  },
+  "summary": {
+    "trust_defensible_count": 0,
+    "headline_only_count": 6,
+    "not_run_count": 3,
+    "primary_metric_value": null,
+    "primary_metric_target": 0.05,
+    "primary_metric_met": null,
+    "primary_metric_status": "deferred_to_phase_4"
+  }
+}

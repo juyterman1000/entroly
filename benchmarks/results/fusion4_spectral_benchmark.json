@@ -1,0 +1,14 @@
+{
+  "benchmark": "4-signal fusion on HaluEval-QA full 10K",
+  "n": 20000,
+  "n_test": 16000,
+  "witness_auroc": 0.798,
+  "spectral_auroc": 0.726,
+  "fusion3_auroc": 0.8434,
+  "fusion4_auroc": 0.8525,
+  "witness_accuracy": 0.8497,
+  "fusion3_accuracy": 0.85,
+  "fusion4_accuracy": 0.8304,
+  "delta_f4_vs_f3": 0.0091,
+  "delta_f4_vs_witness": 0.0545
+}

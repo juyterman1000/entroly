@@ -1,0 +1,21 @@
+[
+  {
+    "benchmark": "squad",
+    "retention": 0.8571,
+    "token_savings_pct": 39.1,
+    "cost_savings_pct": 9.9,
+    "baseline_accuracy": 0.84,
+    "baseline_ci_95": [
+      0.7149,
+      0.9166
+    ],
+    "entroly_accuracy": 0.72,
+    "entroly_ci_95": [
+      0.5833,
+      0.8253
+    ],
+    "baseline_avg_tokens": 283.9,
+    "entroly_avg_tokens": 173.0,
+    "samples": 50
+  }
+]

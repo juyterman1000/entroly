@@ -1,0 +1,126 @@
+{
+  "schema": "eicv-endtoend-v1",
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md",
+  "n_items": 200,
+  "results": {
+    "squad_v2": {
+      "dataset": "squad_v2",
+      "n_items": 200,
+      "conditions": {
+        "C1": {
+          "auroc": 0.9977,
+          "phi_gap": 0.849,
+          "phi_right_mean": 0.8662,
+          "phi_halu_mean": 0.0172,
+          "mean_latency_ms": 1.78,
+          "decisions": {
+            "supported": 0,
+            "abstain": 157,
+            "hallucinated": 243
+          }
+        },
+        "C2": {
+          "auroc": 0.9979,
+          "phi_gap": 0.854,
+          "phi_right_mean": 0.8712,
+          "phi_halu_mean": 0.0172,
+          "mean_latency_ms": 1.83,
+          "decisions": {
+            "supported": 0,
+            "abstain": 156,
+            "hallucinated": 244
+          }
+        },
+        "C3": {
+          "auroc": 0.9977,
+          "phi_gap": 0.849,
+          "phi_right_mean": 0.8662,
+          "phi_halu_mean": 0.0172,
+          "mean_latency_ms": 1.93,
+          "decisions": {
+            "supported": 0,
+            "abstain": 157,
+            "hallucinated": 243
+          }
+        },
+        "C4": {
+          "auroc": 0.9976,
+          "phi_gap": 0.847,
+          "phi_right_mean": 0.8662,
+          "phi_halu_mean": 0.0192,
+          "mean_latency_ms": 1.78,
+          "decisions": {
+            "supported": 0,
+            "abstain": 157,
+            "hallucinated": 243
+          }
+        }
+      },
+      "min_auroc_c1_c4": 0.9976,
+      "max_auroc_c1_c4": 0.9979,
+      "c1_c4_drop": 0.0001,
+      "artifact_detected": false,
+      "survives_falsification": true
+    },
+    "halueval_qa": {
+      "dataset": "halueval_qa",
+      "n_items": 200,
+      "conditions": {
+        "C1": {
+          "auroc": 0.9444,
+          "phi_gap": 0.6588,
+          "phi_right_mean": 0.8391,
+          "phi_halu_mean": 0.1804,
+          "mean_latency_ms": 1.43,
+          "decisions": {
+            "supported": 0,
+            "abstain": 166,
+            "hallucinated": 234
+          }
+        },
+        "C2": {
+          "auroc": 0.9341,
+          "phi_gap": 0.624,
+          "phi_right_mean": 0.8449,
+          "phi_halu_mean": 0.2209,
+          "mean_latency_ms": 1.4,
+          "decisions": {
+            "supported": 0,
+            "abstain": 176,
+            "hallucinated": 224
+          }
+        },
+        "C3": {
+          "auroc": 0.9444,
+          "phi_gap": 0.6588,
+          "phi_right_mean": 0.8391,
+          "phi_halu_mean": 0.1804,
+          "mean_latency_ms": 1.45,
+          "decisions": {
+            "supported": 0,
+            "abstain": 166,
+            "hallucinated": 234
+          }
+        },
+        "C4": {
+          "auroc": 0.9312,
+          "phi_gap": 0.609,
+          "phi_right_mean": 0.8391,
+          "phi_halu_mean": 0.2302,
+          "mean_latency_ms": 1.39,
+          "decisions": {
+            "supported": 0,
+            "abstain": 178,
+            "hallucinated": 222
+          }
+        }
+      },
+      "min_auroc_c1_c4": 0.9312,
+      "max_auroc_c1_c4": 0.9444,
+      "c1_c4_drop": 0.0132,
+      "artifact_detected": false,
+      "survives_falsification": true
+    }
+  },
+  "all_survive": true
+}

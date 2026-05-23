@@ -1,0 +1,78 @@
+{
+  "witness_only_error": 0.155,
+  "llm_only_error": 0.14333333333333334,
+  "llm_model": "gpt-4o-mini",
+  "n_test": 600,
+  "frontier": [
+    {
+      "target_eps": 0.02,
+      "escalation_rate": 0.915,
+      "selective_risk_cheap": 0.0196078431372549,
+      "overall_error": 0.13333333333333333,
+      "expected_cost": 0.915,
+      "beats_witness": true,
+      "beats_llm": true,
+      "cheaper_than_llm": true
+    },
+    {
+      "target_eps": 0.03,
+      "escalation_rate": 0.9133333333333333,
+      "selective_risk_cheap": 0.038461538461538464,
+      "overall_error": 0.13333333333333333,
+      "expected_cost": 0.9133333333333333,
+      "beats_witness": true,
+      "beats_llm": true,
+      "cheaper_than_llm": true
+    },
+    {
+      "target_eps": 0.05,
+      "escalation_rate": 0.9116666666666666,
+      "selective_risk_cheap": 0.03773584905660377,
+      "overall_error": 0.13333333333333333,
+      "expected_cost": 0.9116666666666666,
+      "beats_witness": true,
+      "beats_llm": true,
+      "cheaper_than_llm": true
+    },
+    {
+      "target_eps": 0.08,
+      "escalation_rate": 0.6216666666666667,
+      "selective_risk_cheap": 0.0881057268722467,
+      "overall_error": 0.15,
+      "expected_cost": 0.6216666666666667,
+      "beats_witness": true,
+      "beats_llm": false,
+      "cheaper_than_llm": true
+    },
+    {
+      "target_eps": 0.1,
+      "escalation_rate": 0.61,
+      "selective_risk_cheap": 0.10683760683760683,
+      "overall_error": 0.15666666666666668,
+      "expected_cost": 0.61,
+      "beats_witness": false,
+      "beats_llm": false,
+      "cheaper_than_llm": true
+    },
+    {
+      "target_eps": 0.15,
+      "escalation_rate": 0.58,
+      "selective_risk_cheap": 0.17063492063492064,
+      "overall_error": 0.18333333333333332,
+      "expected_cost": 0.58,
+      "beats_witness": false,
+      "beats_llm": false,
+      "cheaper_than_llm": true
+    },
+    {
+      "target_eps": 0.2,
+      "escalation_rate": 0.5383333333333333,
+      "selective_risk_cheap": 0.22743682310469315,
+      "overall_error": 0.205,
+      "expected_cost": 0.5383333333333333,
+      "beats_witness": false,
+      "beats_llm": false,
+      "cheaper_than_llm": true
+    }
+  ]
+}

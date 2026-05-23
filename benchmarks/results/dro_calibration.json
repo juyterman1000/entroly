@@ -1,0 +1,39 @@
+{
+  "schema": "dro-calibration-v1",
+  "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md",
+  "dataset": "halueval_qa data (N=150)",
+  "elapsed_s": 14.75,
+  "best_config": {
+    "lambda_contradict": 0.5,
+    "num_penalty_weight": 0.5,
+    "ent_penalty_weight": 0.35,
+    "ent_bonus_weight": 0.15,
+    "num_bonus_weight": 0.15
+  },
+  "erm_config": {
+    "lambda_contradict": 0.5,
+    "num_penalty_weight": 0.5,
+    "ent_penalty_weight": 0.35,
+    "ent_bonus_weight": 0.15,
+    "num_bonus_weight": 0.15
+  },
+  "best_manifold_aurocs": {
+    "C1": 0.9462,
+    "C2": 0.93,
+    "C3": 0.9462,
+    "C4": 0.9273
+  },
+  "erm_manifold_aurocs": {
+    "C1": 0.9462,
+    "C2": 0.93,
+    "C3": 0.9462,
+    "C4": 0.9273
+  },
+  "worst_auroc_best": 0.9273,
+  "worst_auroc_erm": 0.9273,
+  "mean_auroc_best": 0.9374,
+  "mean_auroc_erm": 0.9374,
+  "dro_improvement_worst_case": 0.0,
+  "n_configs_evaluated": 36,
+  "n_items_per_manifold": 150
+}
