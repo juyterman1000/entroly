@@ -1724,13 +1724,16 @@ def _wrap_via_print(spec: dict, port: int) -> None:
     print(f"  {C.GRAY}Value:{C.RESET}           {C.CYAN}{url}{C.RESET}")
 
     # Render any language-specific snippet with {port} substituted.
+    # NOTE: Use str.replace, not str.format — snippets contain literal `{` `}`
+    # (JSON objects, Lua tables, etc.) that .format() would misinterpret as
+    # placeholders, e.g. KeyError on `{ "models": [...] }` in the continue config.
     for snippet_key in ("snippet_json", "snippet_lua", "snippet_elisp", "snippet_yaml", "snippet_toml"):
         snippet = spec.get(snippet_key)
         if snippet:
             lang = snippet_key.replace("snippet_", "")
             print(f"\n  {C.GRAY}Or paste this {lang} block:{C.RESET}")
             print()
-            for line in snippet.format(port=port).splitlines():
+            for line in snippet.replace("{port}", str(port)).splitlines():
                 print(f"      {line}")
 
     print(f"\n  {C.GRAY}Once configured, every {spec['name']} request flows through Entroly.{C.RESET}\n")

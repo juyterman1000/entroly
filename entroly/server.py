@@ -4190,9 +4190,11 @@ def _start_autotune_daemon(engine: EntrolyEngine) -> None:
 def main():
     """Entry point for the entroly MCP server."""
     engine_type = "Rust" if _RUST_AVAILABLE else "Python"
+    # Prefer the constant on the loaded package — guaranteed to match the code
+    # actually running. `importlib.metadata.version()` can return a stale value
+    # if a leftover `.dist-info` from a previous install exists on sys.path.
     try:
-        from importlib.metadata import version as _pkg_version
-        _version = _pkg_version("entroly")
+        from entroly import __version__ as _version
     except Exception:
         _version = "1.0.3"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
