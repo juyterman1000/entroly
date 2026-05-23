@@ -1151,6 +1151,8 @@ def cmd_export(args):
     # Write export file. Positional `output_path` takes precedence over -o/--output.
     chosen = getattr(args, "output_path", None) or args.output
     out_path = Path(chosen) if chosen else Path("entroly_export.json")
+    if out_path.parent != Path("."):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(export_data, indent=2) + "\n")
     print(f"\n  {C.GREEN}{C.BOLD}Exported to {out_path}{C.RESET}")
     print(f"  {C.GRAY}Share this file with teammates: entroly import {out_path}{C.RESET}\n")
@@ -1418,6 +1420,12 @@ _WRAP_AGENTS = {
         "kind": "cli", "name": "Aider",
         "cmd": ["aider"],
         "env_key": "OPENAI_API_BASE",
+        "env_val": "http://localhost:{port}/v1",
+    },
+    "copilot": {
+        "kind": "cli", "name": "GitHub Copilot CLI",
+        "cmd": ["github-copilot-cli"],
+        "env_key": "OPENAI_BASE_URL",
         "env_val": "http://localhost:{port}/v1",
     },
     "gemini": {
@@ -2532,6 +2540,8 @@ def cmd_share(args):
     )
 
     out_path = Path(args.output) if hasattr(args, "output") and args.output else Path("entroly-report.html")
+    if out_path.parent != Path("."):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
 
     print(f"\n  {C.GREEN}{C.BOLD}Context Report Card{C.RESET}")

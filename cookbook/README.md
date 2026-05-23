@@ -13,7 +13,7 @@ when you want the deep dive.
 | 5 | [Audit your codebase, get a grade](#5-audit-your-codebase-get-a-grade) | `entroly health` |
 | 6 | [Weekly digest of what you saved](#6-weekly-digest-of-what-you-saved) | `entroly digest` |
 | 7 | [Gate PRs in CI by token budget](#7-gate-prs-in-ci-by-token-budget) | `entroly batch` in GitHub Actions |
-| 8 | [Share a teammate-ready context pack](#8-share-a-teammate-ready-context-pack) | `entroly share` |
+| 8 | [Share teammate-ready learned state](#8-share-teammate-ready-learned-state) | `entroly export` |
 | 9 | [Strip output filler too](#9-strip-output-filler-too) | `ENTROLY_DISTILL_MODE=ultra` |
 | 10 | [Opt into federated learning](#10-opt-into-federated-learning) | `ENTROLY_FEDERATION=1` |
 
@@ -187,23 +187,22 @@ production AI bill.
 
 ---
 
-## 8. Share a teammate-ready context pack
+## 8. Share teammate-ready learned state
 
-You found the right context for a task. You want your teammate to start where
-you ended:
+You tuned Entroly on a repo and want a teammate to start with the same learned
+state:
 
 ```bash
-entroly share --task "implement OAuth refresh flow" --out oauth-context.json
+entroly export oauth-context.json
 ```
 
-Generates a portable Context Report Card with the file list, ranking rationale,
-and SHA-256 integrity. Your teammate runs:
+Generates a portable learned-state export. Your teammate runs:
 
 ```bash
 entroly import oauth-context.json
 ```
 
-Their proxy now prioritizes the same files for that task.
+Their proxy now uses the same shared tuning state after restart.
 
 ---
 

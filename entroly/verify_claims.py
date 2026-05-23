@@ -133,6 +133,8 @@ def run(output: str | None = None, max_files: int = 120) -> int:
 
     out_path = Path(output or ".entroly_verification.json")
     try:
+        if out_path.parent != Path("."):
+            out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"\nReport saved: {out_path}")
     except OSError as exc:
