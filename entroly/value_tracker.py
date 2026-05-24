@@ -247,6 +247,19 @@ class ValueTracker:
                     continue
         except OSError as e:
             logger.debug("activity load failed: %s", e)
+        # Enforce time-based retention on disk telemetry (privacy-by-default).
+        try:
+            from entroly.privacy import retention_cutoff_ts
+
+            cutoff = retention_cutoff_ts()
+            if cutoff is not None:
+                out = [
+                    row for row in out
+                    if float(row.get("ts", 0) or 0) >= cutoff
+                ]
+        except Exception:
+            pass
+
         return out[-self._MAX_ACTIVITY:]
 
     def _save(self) -> None:
@@ -278,6 +291,19 @@ class ValueTracker:
         """Atomically rewrite the bounded activity JSONL (≤200 lines, so
         whole-file rewrite is cheap and crash-safe via temp+rename)."""
         try:
+            # Enforce time-based retention before size bounding.
+            try:
+                from entroly.privacy import retention_cutoff_ts
+
+                cutoff = retention_cutoff_ts()
+                if cutoff is not None:
+                    self._activity = [
+                        row for row in self._activity
+                        if float(row.get("ts", 0) or 0) >= cutoff
+                    ]
+            except Exception:
+                pass
+
             self._activity = self._activity[-self._MAX_ACTIVITY:]
             content = "\n".join(json.dumps(e, separators=(",", ":"))
                                 for e in self._activity)

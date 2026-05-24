@@ -479,6 +479,14 @@ class EntrolyDaemon:
 
             # Initialize the feedback journal (cross-session persistence)
             self._feedback_journal = FeedbackJournal(checkpoint_dir)
+            try:
+                from entroly.privacy import retention_days
+
+                days = retention_days()
+                if days > 0:
+                    self._feedback_journal.prune(max_age=days * 24 * 60 * 60)
+            except Exception:
+                pass
 
             # Task-conditioned weight profiles
             self._task_profiles = TaskProfileOptimizer(self._feedback_journal)
@@ -510,6 +518,7 @@ class EntrolyDaemon:
                 self._last_profile_optimize_at = None
                 self._profile_optimize_runs = 0
                 self._learning_interval_s = interval_s
+                self._last_retention_prune_at = None
 
                 while not self._shutdown.is_set():
                     self._learning_interval_s = interval_s
@@ -525,6 +534,19 @@ class EntrolyDaemon:
 
                     try:
                         self._learning_last_tick_at = time.time()
+                        # Periodically prune journal to enforce retention.
+                        try:
+                            from entroly.privacy import retention_days
+
+                            days = retention_days()
+                            if days > 0:
+                                now = time.time()
+                                last = self._last_retention_prune_at
+                                if last is None or (now - float(last)) >= 3600.0:
+                                    self._feedback_journal.prune(max_age=days * 24 * 60 * 60)
+                                    self._last_retention_prune_at = now
+                        except Exception:
+                            pass
                         # 0. Detect new feedback since last loop
                         episode_count = self._feedback_journal.count()
                         saw_new_feedback = episode_count > last_episode_count

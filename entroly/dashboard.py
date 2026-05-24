@@ -1138,6 +1138,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         "/api/control/status": "status",
         "/api/control/repos": "repos",
         "/api/control/learning": "learning",
+        "/api/control/privacy": "privacy",
         "/api/control/federation": "federation",
         "/api/control/context/last": "context_last",
         "/api/control/logs": "logs",
@@ -1346,6 +1347,50 @@ class DashboardHandler(BaseHTTPRequestHandler):
             ]}
         elif key == "learning":
             data = _control_learning_snapshot(daemon)
+        elif key == "privacy":
+            try:
+                import os
+                from pathlib import Path
+
+                from entroly.privacy import file_info, retention_days
+
+                dirs: list[Path] = []
+                env_dir = os.environ.get("ENTROLY_DIR")
+                if env_dir:
+                    dirs.append(Path(env_dir))
+                # Supervisor default (when ENTROLY_DIR not set)
+                dirs.append(Path(os.getcwd()) / ".entroly")
+                # Shared telemetry default (~/.entroly)
+                dirs.append(Path.home() / ".entroly")
+
+                seen = set()
+                roots: list[Path] = []
+                for d in dirs:
+                    dp = d.resolve()
+                    if str(dp) in seen:
+                        continue
+                    seen.add(str(dp))
+                    roots.append(dp)
+
+                files = []
+                for root in roots:
+                    files.extend([
+                        file_info(root / "value_tracker.json"),
+                        file_info(root / "activity.jsonl"),
+                        file_info(root / "feedback_journal.jsonl"),
+                    ])
+
+                data = {
+                    "retention_days": retention_days(),
+                    "telemetry_roots": [str(r) for r in roots],
+                    "files": files,
+                    "notes": [
+                        "Local-only: data stays on this machine unless federation is enabled.",
+                        "Retention applies to JSONL telemetry; set ENTROLY_RETENTION_DAYS=0 to disable pruning.",
+                    ],
+                }
+            except Exception as e:
+                data = {"error": str(e)}
         elif key == "federation":
             data = {
                 "enabled": daemon.state.federation_enabled,
