@@ -93,6 +93,11 @@ class EntrolyDaemonState:
     # Learning
     learning_enabled: bool = True
     autotune_enabled: bool = True
+    last_activity_at: float | None = None
+    last_feedback_at: float | None = None
+    last_dream_at: float | None = None
+    dream_cycles: int = 0
+    dream_improvements: int = 0
 
     # Federation
     federation_enabled: bool = False
@@ -118,6 +123,11 @@ class EntrolyDaemonState:
                 "local_enabled": self.learning_enabled,
                 "autotune_enabled": self.autotune_enabled,
                 "dreaming_active": self.autotune_enabled and self.learning_enabled,
+                "last_activity_at": self.last_activity_at,
+                "last_feedback_at": self.last_feedback_at,
+                "last_dream_at": self.last_dream_at,
+                "dream_cycles": self.dream_cycles,
+                "dream_improvements": self.dream_improvements,
             },
             "federation": {
                 "enabled": self.federation_enabled,
@@ -171,6 +181,12 @@ class EntrolyDaemon:
         self._shutdown = threading.Event()
         self._lock = threading.Lock()
         self._learning_interval_s = 30.0
+        self._learning_last_tick_at: float | None = None
+        self._learning_last_tick_status: str = "not_started"  # ok|error|disabled|not_started
+        self._learning_last_error: str | None = None
+        self._learning_last_tick_saw_new_feedback: bool | None = None
+        self._learning_last_tick_optimized_profiles: bool | None = None
+        self._learning_last_tick_dreamed: bool | None = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -485,6 +501,9 @@ class EntrolyDaemon:
                 min_interval_s = 10.0
                 max_interval_s = 120.0
                 last_episode_count = self._feedback_journal.count()
+                self._last_profile_optimize_episode_count = last_episode_count
+                self._last_profile_optimize_at = None
+                self._profile_optimize_runs = 0
                 self._learning_interval_s = interval_s
 
                 while not self._shutdown.is_set():
@@ -494,15 +513,24 @@ class EntrolyDaemon:
                         break
 
                     if not self.state.learning_enabled:
+                        self._learning_last_tick_at = time.time()
+                        self._learning_last_tick_status = "disabled"
                         interval_s = max_interval_s
                         continue
 
                     try:
-                        # 1. Re-optimize task profiles from accumulated journal
-                        self._task_profiles.optimize_all()
+                        self._learning_last_tick_at = time.time()
+                        # 0. Detect new feedback since last loop
                         episode_count = self._feedback_journal.count()
                         saw_new_feedback = episode_count > last_episode_count
                         last_episode_count = episode_count
+
+                        # 1. Re-optimize task profiles when feedback arrives (or
+                        # periodically as a safety net), instead of on every tick.
+                        optimized_profiles = self._maybe_optimize_task_profiles(
+                            episode_count=episode_count,
+                            now=time.time(),
+                        )
 
                         # 2. If idle, run a dream cycle
                         dreamed = False
@@ -513,6 +541,11 @@ class EntrolyDaemon:
                             result = self._dreaming_loop.run_dream_cycle()
                             dreamed = result.get("status") == "completed"
                             if result.get("status") == "completed":
+                                self.state.last_dream_at = time.time()
+                                self.state.dream_cycles += 1
+                                self.state.dream_improvements += int(
+                                    result.get("improvements", 0) or 0
+                                )
                                 improvements = result.get("improvements", 0)
                                 if improvements > 0:
                                     logger.info(
@@ -525,13 +558,23 @@ class EntrolyDaemon:
                                     # Apply improved weights to live engine
                                     self._apply_dreamed_weights()
 
+                        self._learning_last_tick_saw_new_feedback = bool(saw_new_feedback)
+                        self._learning_last_tick_optimized_profiles = bool(optimized_profiles)
+                        self._learning_last_tick_dreamed = bool(dreamed)
+                        self._learning_last_tick_status = "ok"
+                        self._learning_last_error = None
+
                         if saw_new_feedback:
                             interval_s = min_interval_s
                         elif dreamed:
                             interval_s = 30.0
+                        elif optimized_profiles:
+                            interval_s = 30.0
                         else:
                             interval_s = min(max_interval_s, interval_s * 1.5)
                     except Exception as e:
+                        self._learning_last_tick_status = "error"
+                        self._learning_last_error = str(e)
                         logger.debug(f"Learning loop error: {e}")
                         interval_s = min(max_interval_s, interval_s * 1.5)
 
@@ -554,6 +597,39 @@ class EntrolyDaemon:
             self._feedback_journal = None
             self._task_profiles = None
             self._dreaming_loop = None
+
+    def _maybe_optimize_task_profiles(self, episode_count: int, now: float) -> bool:
+        """Optimize task profiles when it is likely to be useful.
+
+        The TaskProfileOptimizer can be relatively expensive; running it every
+        learning tick wastes CPU when there is no new feedback. We optimize on:
+          - New feedback episodes; or
+          - A periodic safety refresh (default ~5 minutes).
+        """
+        profiles = getattr(self, "_task_profiles", None)
+        journal = getattr(self, "_feedback_journal", None)
+        if not profiles or not journal:
+            return False
+
+        last_opt_ep = getattr(self, "_last_profile_optimize_episode_count", 0)
+        last_opt_at = getattr(self, "_last_profile_optimize_at", None)
+        refresh_s = 300.0
+
+        should_optimize = episode_count > last_opt_ep
+        if not should_optimize and last_opt_at is not None:
+            should_optimize = (now - last_opt_at) >= refresh_s
+        elif not should_optimize and last_opt_at is None:
+            # First tick after startup: only optimize if we have any data.
+            should_optimize = episode_count > 0
+
+        if not should_optimize:
+            return False
+
+        profiles.optimize_all()
+        self._last_profile_optimize_episode_count = episode_count
+        self._last_profile_optimize_at = now
+        self._profile_optimize_runs = int(getattr(self, "_profile_optimize_runs", 0)) + 1
+        return True
 
     def _apply_dreamed_weights(self):
         """Apply DreamingLoop improvements to the live engine."""
@@ -589,6 +665,7 @@ class EntrolyDaemon:
 
     def _log_learning_episode(self, **episode: Any) -> None:
         """Persist an outcome episode and mark the daemon as active."""
+        self.state.last_feedback_at = time.time()
         self.record_activity()
         journal = getattr(self, "_feedback_journal", None)
         if journal:
@@ -707,6 +784,27 @@ class EntrolyDaemon:
                 getattr(self, "_learning_interval_s", 30.0), 1
             ),
         }
+        stats["learning_loop"] = {
+            "status": getattr(self, "_learning_last_tick_status", "not_started"),
+            "last_tick_at": getattr(self, "_learning_last_tick_at", None),
+            "last_error": getattr(self, "_learning_last_error", None),
+            "last_tick": {
+                "saw_new_feedback": getattr(
+                    self, "_learning_last_tick_saw_new_feedback", None
+                ),
+                "optimized_profiles": getattr(
+                    self, "_learning_last_tick_optimized_profiles", None
+                ),
+                "dreamed": getattr(self, "_learning_last_tick_dreamed", None),
+            },
+        }
+        stats["daemon"] = {
+            "last_activity_at": self.state.last_activity_at,
+            "last_feedback_at": self.state.last_feedback_at,
+            "last_dream_at": self.state.last_dream_at,
+            "dream_cycles": self.state.dream_cycles,
+            "dream_improvements": self.state.dream_improvements,
+        }
 
         # PRISM weights
         stats["prism"] = self.get_learning_weights()
@@ -738,6 +836,14 @@ class EntrolyDaemon:
         else:
             stats["task_profiles"] = {}
 
+        stats["task_profile_optimizer"] = {
+            "optimize_runs": int(getattr(self, "_profile_optimize_runs", 0) or 0),
+            "last_optimize_at": getattr(self, "_last_profile_optimize_at", None),
+            "last_optimized_episode_count": int(
+                getattr(self, "_last_profile_optimize_episode_count", 0) or 0
+            ),
+        }
+
         return stats
 
     def reset_learning(self):
@@ -761,6 +867,7 @@ class EntrolyDaemon:
 
     def record_activity(self):
         """Record user activity (resets the DreamingLoop idle timer)."""
+        self.state.last_activity_at = time.time()
         dreaming = getattr(self, "_dreaming_loop", None)
         if dreaming:
             dreaming.record_activity()

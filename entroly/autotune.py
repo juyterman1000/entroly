@@ -760,15 +760,25 @@ class FeedbackJournal:
     def stats(self) -> dict[str, Any]:
         eps = self.load()
         if not eps:
-            return {"episodes": 0, "successes": 0, "failures": 0, "avg_reward": 0}
+            return {
+                "episodes": 0,
+                "successes": 0,
+                "failures": 0,
+                "avg_reward": 0,
+                "last_episode_at": None,
+                "last_reward": None,
+            }
         successes = sum(1 for e in eps if e["r"] > 0)
         failures = sum(1 for e in eps if e["r"] < 0)
         avg_reward = sum(e["r"] for e in eps) / len(eps)
+        last_ep = max(eps, key=lambda e: e.get("t", 0) or 0)
         return {
             "episodes": len(eps),
             "successes": successes,
             "failures": failures,
             "avg_reward": round(avg_reward, 3),
+            "last_episode_at": last_ep.get("t"),
+            "last_reward": round(float(last_ep.get("r", 0) or 0), 3),
         }
 
 
@@ -1038,6 +1048,8 @@ class TaskProfileOptimizer:
 DREAMING_IDLE_THRESHOLD_S = 60.0    # seconds of inactivity before dreaming
 DREAMING_MAX_ITERATIONS = 10        # max experiments per dream cycle
 DREAMING_WEIGHT_PERTURB_STD = 0.05  # standard deviation for weight perturbation
+# Cooldown between dream cycles to avoid continuous dreaming while idle.
+DREAMING_COOLDOWN_S = 5 * 60.0      # seconds
 
 
 class DreamingLoop:
@@ -1053,11 +1065,13 @@ class DreamingLoop:
         journal: FeedbackJournal,
         config_path: Path | None = None,
         max_iterations: int = DREAMING_MAX_ITERATIONS,
+        cooldown_s: float = DREAMING_COOLDOWN_S,
         archetype_optimizer: Any = None,
     ):
         self._journal = journal
         self._config_path = config_path or CONFIG_PATH
         self._max_iterations = max_iterations
+        self._cooldown_s = cooldown_s
         self._last_activity: float = time.time()
         self._last_check_at: float | None = None
         self._total_dreams: int = 0
@@ -1066,6 +1080,7 @@ class DreamingLoop:
         self._archetype_optimizer = archetype_optimizer
         self._last_dream_result: dict[str, Any] | None = None
         self._last_dream_at: float | None = None
+        self._dream_in_progress: bool = False
 
     def record_activity(self) -> None:
         """Called on every user query to reset the idle timer."""
@@ -1073,7 +1088,13 @@ class DreamingLoop:
 
     def should_dream(self) -> bool:
         """Returns True if the system has been idle long enough to dream."""
-        return (time.time() - self._last_activity) > DREAMING_IDLE_THRESHOLD_S
+        now = time.time()
+        idle_ok = (now - self._last_activity) > DREAMING_IDLE_THRESHOLD_S
+        if not idle_ok:
+            return False
+        if self._last_dream_at is None:
+            return True
+        return (now - self._last_dream_at) >= self._cooldown_s
 
     def generate_synthetic_queries(self) -> list[dict[str, Any]]:
         """Generate synthetic queries from journal history.
@@ -1166,117 +1187,144 @@ class DreamingLoop:
         Returns stats about the cycle.
         """
         self._last_check_at = time.time()
+        if self._dream_in_progress:
+            return {"status": "busy"}
         if not self.should_dream():
-            result = {
-                "status": "not_idle",
-                "idle_seconds": time.time() - self._last_activity,
-            }
+            now = time.time()
+            idle_seconds = now - self._last_activity
+            if idle_seconds <= DREAMING_IDLE_THRESHOLD_S:
+                result = {
+                    "status": "not_idle",
+                    "idle_seconds": idle_seconds,
+                }
+            else:
+                # In this branch we're idle, but still within the cooldown window
+                # after a prior dream cycle.
+                since_last = (now - self._last_dream_at) if self._last_dream_at is not None else 0.0
+                cooldown_remaining = max(0.0, self._cooldown_s - since_last)
+                result = {
+                    "status": "cooldown",
+                    "idle_seconds": idle_seconds,
+                    "cooldown_remaining_s": cooldown_remaining,
+                }
             self._last_dream_result = dict(result)
             return result
 
+        self._dream_in_progress = True
         t_start = time.time()
         self._total_dreams += 1
         self._last_dream_at = t_start
-
-        # Load current best config
-        config = load_config()
-        cases = load_cases()
-        if not cases:
-            result = {"status": "no_cases", "dream_id": self._total_dreams}
-            self._last_dream_result = dict(result)
-            return result
-
-        # Evaluate baseline
         try:
+            # Load current best config
+            config = load_config()
+            cases = load_cases()
+            if not cases:
+                result = {"status": "no_cases", "dream_id": self._total_dreams}
+                self._last_dream_result = dict(result)
+                return result
+
+            # Evaluate baseline
             baseline = evaluate(config, cases, time_budget=DEFAULT_TIME_BUDGET_SECS)
             self._best_efficiency = baseline.context_efficiency
+
+            improvements = 0
+            experiments = 0
+            synthetic_queries = self.generate_synthetic_queries()
+
+            for _ in range(min(self._max_iterations, len(synthetic_queries))):
+                # Check if user has become active
+                if (time.time() - self._last_activity) <= DREAMING_IDLE_THRESHOLD_S:
+                    break
+
+                experiments += 1
+
+                # Perturb weights using Gaussian noise
+                mutated_config = dict(config)
+                for param, (lo, hi) in TUNABLE_PARAMS.items():
+                    if param in mutated_config:
+                        current = mutated_config[param]
+                        delta = random.gauss(0, DREAMING_WEIGHT_PERTURB_STD)
+                        new_val = max(lo, min(hi, current + delta * (hi - lo)))
+                        if isinstance(current, int):
+                            new_val = int(round(new_val))
+                        mutated_config[param] = new_val
+
+                # Evaluate the mutation
+                try:
+                    result = evaluate(mutated_config, cases,
+                                      time_budget=DEFAULT_TIME_BUDGET_SECS)
+                except Exception:
+                    continue
+
+                # Keep only strict improvements (monotonic improvement guarantee)
+                if result.context_efficiency > self._best_efficiency:
+                    self._best_efficiency = result.context_efficiency
+                    config = mutated_config
+                    save_config(config)
+                    improvements += 1
+                    self._total_improvements += 1
+
+                    # ── Pillar 4: Feed improvement to archetype optimizer ──
+                    # Maps the improved autotune config weights to the archetype
+                    # strategy table so they persist per-archetype across sessions.
+                    if self._archetype_optimizer:
+                        try:
+                            updated = self._archetype_optimizer.current_weights()
+                            key_map = {
+                                "w_r": "w_recency", "w_f": "w_frequency",
+                                "w_s": "w_semantic", "w_e": "w_entropy",
+                            }
+                            for short, full in key_map.items():
+                                if short in mutated_config:
+                                    updated[full] = mutated_config[short]
+                            self._archetype_optimizer.update_weights(updated)
+                        except Exception:
+                            pass  # non-critical: don't break dreaming
+
+            wall_seconds = time.time() - t_start
+
+            result = {
+                "status": "completed",
+                "dream_id": self._total_dreams,
+                "experiments": experiments,
+                "improvements": improvements,
+                "baseline_efficiency": baseline.context_efficiency,
+                "best_efficiency": self._best_efficiency,
+                "wall_seconds": round(wall_seconds, 2),
+                "synthetic_queries_generated": len(synthetic_queries),
+                "total_dreams": self._total_dreams,
+                "total_improvements": self._total_improvements,
+            }
+            self._last_dream_result = dict(result)
+            return result
         except Exception as e:
             result = {"status": "error", "error": str(e)}
             self._last_dream_result = dict(result)
             return result
-
-        improvements = 0
-        experiments = 0
-        synthetic_queries = self.generate_synthetic_queries()
-
-        for _ in range(min(self._max_iterations, len(synthetic_queries))):
-            # Check if user has become active
-            if not self.should_dream():
-                break
-
-            experiments += 1
-
-            # Perturb weights using Gaussian noise
-            mutated_config = dict(config)
-            for param, (lo, hi) in TUNABLE_PARAMS.items():
-                if param in mutated_config:
-                    current = mutated_config[param]
-                    delta = random.gauss(0, DREAMING_WEIGHT_PERTURB_STD)
-                    new_val = max(lo, min(hi, current + delta * (hi - lo)))
-                    if isinstance(current, int):
-                        new_val = int(round(new_val))
-                    mutated_config[param] = new_val
-
-            # Evaluate the mutation
-            try:
-                result = evaluate(mutated_config, cases,
-                                  time_budget=DEFAULT_TIME_BUDGET_SECS)
-            except Exception:
-                continue
-
-            # Keep only strict improvements (monotonic improvement guarantee)
-            if result.context_efficiency > self._best_efficiency:
-                self._best_efficiency = result.context_efficiency
-                config = mutated_config
-                save_config(config)
-                improvements += 1
-                self._total_improvements += 1
-
-                # ── Pillar 4: Feed improvement to archetype optimizer ──
-                # Maps the improved autotune config weights to the archetype
-                # strategy table so they persist per-archetype across sessions.
-                if self._archetype_optimizer:
-                    try:
-                        updated = self._archetype_optimizer.current_weights()
-                        key_map = {
-                            "w_r": "w_recency", "w_f": "w_frequency",
-                            "w_s": "w_semantic", "w_e": "w_entropy",
-                        }
-                        for short, full in key_map.items():
-                            if short in mutated_config:
-                                updated[full] = mutated_config[short]
-                        self._archetype_optimizer.update_weights(updated)
-                    except Exception:
-                        pass  # non-critical: don't break dreaming
-
-        wall_seconds = time.time() - t_start
-
-        result = {
-            "status": "completed",
-            "dream_id": self._total_dreams,
-            "experiments": experiments,
-            "improvements": improvements,
-            "baseline_efficiency": baseline.context_efficiency,
-            "best_efficiency": self._best_efficiency,
-            "wall_seconds": round(wall_seconds, 2),
-            "synthetic_queries_generated": len(synthetic_queries),
-            "total_dreams": self._total_dreams,
-            "total_improvements": self._total_improvements,
-        }
-        self._last_dream_result = dict(result)
-        return result
+        finally:
+            # Always clear the in-progress flag even if we hit an unexpected error.
+            self._dream_in_progress = False
 
     def stats(self) -> dict[str, Any]:
         last_status = None
         last_wall_seconds = None
         last_improvements = None
+        last_error = None
         if self._last_dream_result:
             last_status = self._last_dream_result.get("status")
             last_wall_seconds = self._last_dream_result.get("wall_seconds")
             last_improvements = self._last_dream_result.get("improvements")
+            if last_status == "error":
+                last_error = self._last_dream_result.get("error")
 
         idle_seconds = time.time() - self._last_activity
-        next_dream_in_s = max(0.0, DREAMING_IDLE_THRESHOLD_S - idle_seconds)
+        idle_remaining_s = max(0.0, DREAMING_IDLE_THRESHOLD_S - idle_seconds)
+        cooldown_remaining_s = None
+        if self._last_dream_at is not None:
+            cooldown_remaining_s = max(
+                0.0, self._cooldown_s - (time.time() - self._last_dream_at)
+            )
+        next_dream_in_s = max(idle_remaining_s, cooldown_remaining_s or 0.0)
         return {
             "total_dreams": self._total_dreams,
             "total_improvements": self._total_improvements,
@@ -1284,9 +1332,17 @@ class DreamingLoop:
             "idle_seconds": round(idle_seconds, 1),
             "will_dream": self.should_dream(),
             "next_dream_in_s": round(next_dream_in_s, 1),
+            "dream_in_progress": self._dream_in_progress,
+            "cooldown_s": round(self._cooldown_s, 1),
+            "cooldown_remaining_s": (
+                round(cooldown_remaining_s, 1)
+                if cooldown_remaining_s is not None
+                else None
+            ),
             "last_check_at": self._last_check_at,
             "last_dream_at": self._last_dream_at,
             "last_status": last_status,
             "last_wall_seconds": last_wall_seconds,
             "last_improvements": last_improvements,
+            "last_error": last_error,
         }

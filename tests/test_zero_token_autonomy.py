@@ -220,6 +220,63 @@ class TestDreamingLoop:
         loop._last_activity = time.time() - 120  # 2 minutes ago
         assert loop.should_dream()
 
+    def test_cooldown_prevents_back_to_back_dreams(self):
+        loop = self._make_loop()
+        loop._last_activity = time.time() - 120  # idle long enough
+        loop._last_dream_at = time.time()        # just dreamed
+        assert not loop.should_dream()
+        stats = loop.stats()
+        assert stats["cooldown_s"] > 0
+        assert stats["cooldown_remaining_s"] is not None
+        assert stats["cooldown_remaining_s"] > 0
+        assert stats["next_dream_in_s"] > 0
+        result = loop.run_dream_cycle()
+        assert result["status"] == "cooldown"
+        assert result["cooldown_remaining_s"] > 0
+
+    def test_busy_guard_prevents_reentrancy(self):
+        loop = self._make_loop()
+        loop._dream_in_progress = True
+        assert loop.stats()["dream_in_progress"] is True
+        result = loop.run_dream_cycle()
+        assert result["status"] == "busy"
+
+    def test_dream_in_progress_clears_on_unexpected_error(self, monkeypatch):
+        loop = self._make_loop()
+        loop._last_activity = time.time() - 120  # idle long enough
+
+        import entroly.autotune as autotune
+
+        def boom():
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(autotune, "load_config", boom)
+        result = loop.run_dream_cycle()
+        assert result["status"] == "error"
+        stats = loop.stats()
+        assert stats["dream_in_progress"] is False
+        assert isinstance(stats.get("last_error"), str)
+        assert "boom" in stats.get("last_error", "")
+
+    def test_run_dream_cycle_runs_experiments_while_idle(self, monkeypatch):
+        loop = self._make_loop()
+        loop._last_activity = time.time() - 120  # idle long enough
+
+        import entroly.autotune as autotune
+
+        class DummyEval:
+            def __init__(self, eff: float):
+                self.context_efficiency = eff
+
+        monkeypatch.setattr(autotune, "load_config", lambda: {"w_r": 0.2, "w_f": 0.2, "w_s": 0.3, "w_e": 0.3})
+        monkeypatch.setattr(autotune, "save_config", lambda _cfg: None)
+        monkeypatch.setattr(autotune, "load_cases", lambda: [{"q": "x", "a": "y"}])
+        monkeypatch.setattr(autotune, "evaluate", lambda _cfg, _cases, time_budget=None: DummyEval(0.5))
+
+        result = loop.run_dream_cycle()
+        assert result["status"] == "completed"
+        assert result["experiments"] > 0
+
     def test_generates_synthetic_queries(self):
         loop = self._make_loop()
         queries = loop.generate_synthetic_queries()
@@ -613,4 +670,3 @@ class TestFlowOrchestratorFeedback:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-
