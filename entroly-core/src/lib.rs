@@ -37,6 +37,7 @@ mod resonance;
 mod sast;
 mod semantic_dedup;
 mod skeleton;
+mod telemetry;
 mod utilization;
 mod witness;
 mod rnr;
@@ -5378,6 +5379,22 @@ fn py_scan_content(content: &str, source: &str) -> String {
 }
 
 #[pyfunction]
+fn py_prune_jsonl_by_ts(
+    py: Python<'_>,
+    path: String,
+    ts_key: String,
+    cutoff_ts: f64,
+) -> PyResult<PyObject> {
+    let out = telemetry::prune_jsonl_by_ts(&path, &ts_key, cutoff_ts)
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+    let d = PyDict::new(py);
+    d.set_item("kept", out.kept)?;
+    d.set_item("removed", out.removed)?;
+    d.set_item("changed", out.changed)?;
+    Ok(d.into())
+}
+
+#[pyfunction]
 fn py_analyze_query(
     query: &str,
     fragment_summaries: Vec<String>,
@@ -5912,6 +5929,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_witness_risk, m)?)?;
     // ── SAST / Health / Query
     m.add_function(wrap_pyfunction!(py_scan_content, m)?)?;
+    m.add_function(wrap_pyfunction!(py_prune_jsonl_by_ts, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_health_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_refine_heuristic, m)?)?;

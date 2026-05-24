@@ -432,6 +432,7 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
 ///
 /// # Example (32 GB machine, leave 28 GB for OS/model):
 /// ```rust
+/// use entroly_core::ipc::{max_agents_for_ram, DEFAULT_WINDOW};
 /// let safe_agents = max_agents_for_ram(4 * 1024 * 1024 * 1024, DEFAULT_WINDOW);
 /// assert!(safe_agents >= 100_000);
 /// ```

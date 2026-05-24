@@ -59,6 +59,19 @@ def prune_jsonl_by_ts(path: Path, *, ts_key: str, cutoff_ts: float) -> PruneResu
     Fail-open: any parse errors keep the original line (so telemetry never
     breaks the product). Returns counts best-effort.
     """
+    # Prefer Rust implementation when available (faster for large JSONL).
+    try:
+        import entroly_core  # type: ignore
+
+        if hasattr(entroly_core, "prune_jsonl_by_ts"):
+            out = entroly_core.prune_jsonl_by_ts(str(path), str(ts_key), float(cutoff_ts))
+            kept = int(out.get("kept", 0) or 0) if isinstance(out, dict) else 0
+            removed = int(out.get("removed", 0) or 0) if isinstance(out, dict) else 0
+            changed = bool(out.get("changed", False)) if isinstance(out, dict) else False
+            return PruneResult(kept=kept, removed=removed, changed=changed)
+    except Exception:
+        pass
+
     try:
         if not path.exists():
             return PruneResult(kept=0, removed=0, changed=False)
@@ -113,4 +126,3 @@ def file_info(path: Path) -> dict[str, Any]:
         }
     except OSError:
         return {"path": str(path), "exists": False, "bytes": 0, "mtime": None}
-
