@@ -37,6 +37,10 @@ flate2 = "1.0"
 # Concurrency
 rayon = "1.12"
 
+# Randomness — needed by memory/kanerva.rs (Sparse Distributed Memory)
+# vendored from juyterman1000/AgentOS for cross-agent memory IPC.
+rand = "0.8"
+
 # NOTE: Tantivy was evaluated as a retrieval substrate and REJECTED
 # (falsified): on Entroly's bounded-corpus regime a correct BM25 is
 # already at the quality ceiling, so Tantivy added ~no relevance gain

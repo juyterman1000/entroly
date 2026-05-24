@@ -42,6 +42,16 @@ mod witness;
 mod rnr;
 pub mod eicv;
 pub mod eicv_suppressor;
+// Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
+// (MIT-licensed, same author). Provides:
+//   - ipc:         SimHash Conditional-Entropy IPC bus (SCHIPC)
+//   - compliance:  PII + injection guard for cross-agent traffic
+//   - pollination: cross-agent knowledge transfer kernel
+//   - memory:      episode store + Kanerva SDM + LSH + consolidation
+pub mod ipc;
+pub mod compliance;
+pub mod pollination;
+pub mod memory;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
