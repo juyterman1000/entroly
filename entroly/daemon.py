@@ -489,10 +489,15 @@ class EntrolyDaemon:
             if self._engine and hasattr(self._engine, "set_journal_callback"):
                 self._engine.set_journal_callback(self._log_learning_episode)
 
-            # DreamingLoop: autonomous self-play during idle
+            # DreamingLoop: autonomous self-play during idle. Pass the live
+            # engine reference so per-archetype w_resonance priors actually
+            # flow into the Rust 5D PRISM optimizer when DreamingLoop finds
+            # an improvement (otherwise Rust cold-starts at 0 every restart
+            # and ignores any Python-side resonance prior).
             self._dreaming_loop = DreamingLoop(
                 journal=self._feedback_journal,
                 max_iterations=10,
+                engine=self._engine,
             )
 
             # Background thread that periodically checks idle → dream

@@ -4643,6 +4643,28 @@ impl EntrolyEngine {
         self.exploration_rate = rate.clamp(0.0, 1.0);
     }
 
+    /// Set the resonance weight (5th PRISM dimension).
+    ///
+    /// Wires the Python ArchetypeOptimizer's per-archetype `w_resonance`
+    /// prior into the live engine. Without this call the engine cold-starts
+    /// at 0.0 and learns w_resonance autonomously from observed pairwise
+    /// co-occurrence — correct behavior absent priors, but it ignores
+    /// domain knowledge encoded in archetype profiles (e.g., Rust workloads
+    /// benefit from higher resonance than JS frontends).
+    ///
+    /// Clamped to [0.0, 0.5] matching the internal update-step clamp.
+    /// Pass 0.0 to reset to cold-start behavior. Idempotent — subsequent
+    /// gradient updates continue from the value set here.
+    pub fn set_w_resonance(&mut self, value: f64) {
+        self.w_resonance = value.clamp(0.0, 0.5);
+    }
+
+    /// Read the current resonance weight. Useful from Python to confirm a
+    /// `set_w_resonance(...)` took effect and to inspect the learned value.
+    pub fn get_w_resonance(&self) -> f64 {
+        self.w_resonance
+    }
+
     /// Scan a specific fragment for security vulnerabilities.
     ///
     /// Returns a JSON-encoded SastReport with:

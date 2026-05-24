@@ -1070,6 +1070,7 @@ class DreamingLoop:
         max_iterations: int = DREAMING_MAX_ITERATIONS,
         cooldown_s: float = DREAMING_COOLDOWN_S,
         archetype_optimizer: Any = None,
+        engine: Any = None,
     ):
         self._journal = journal
         self._config_path = config_path or CONFIG_PATH
@@ -1081,6 +1082,12 @@ class DreamingLoop:
         self._total_improvements: int = 0
         self._best_efficiency: float = 0.0
         self._archetype_optimizer = archetype_optimizer
+        # Optional reference to the live EntrolyEngine. When set, every
+        # improvement that touches w_resonance is also pushed to the engine
+        # via set_w_resonance(), so the Rust 5D PRISM optimizer learns from
+        # the same prior as the Python archetype profile. Without this, the
+        # Rust optimizer cold-starts at 0 and ignores Python priors.
+        self._engine = engine
         self._last_dream_result: dict[str, Any] | None = None
         self._last_dream_at: float | None = None
         self._dream_in_progress: bool = False
@@ -1273,14 +1280,32 @@ class DreamingLoop:
                     if self._archetype_optimizer:
                         try:
                             updated = self._archetype_optimizer.current_weights()
+                            # `w_res` is the 5th PRISM dimension (resonance).
+                            # Added so per-archetype resonance priors actually
+                            # flow back into the strategy table — without this
+                            # mapping the autotune-found w_resonance values
+                            # were silently dropped at this step.
                             key_map = {
                                 "w_r": "w_recency", "w_f": "w_frequency",
                                 "w_s": "w_semantic", "w_e": "w_entropy",
+                                "w_res": "w_resonance",
                             }
                             for short, full in key_map.items():
                                 if short in mutated_config:
                                     updated[full] = mutated_config[short]
                             self._archetype_optimizer.update_weights(updated)
+                            # If we have a live engine reference, push the new
+                            # resonance prior so the Rust 5D optimizer actually
+                            # uses it (otherwise it cold-starts at 0.0 and
+                            # ignores Python-side archetype priors).
+                            engine = getattr(self, "_engine", None)
+                            if engine is not None and hasattr(engine, "set_w_resonance"):
+                                try:
+                                    engine.set_w_resonance(
+                                        float(updated.get("w_resonance", 0.0))
+                                    )
+                                except Exception:
+                                    pass  # non-critical: don't break dreaming
                         except Exception:
                             pass  # non-critical: don't break dreaming
 
