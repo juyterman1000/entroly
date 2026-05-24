@@ -771,7 +771,10 @@ class FeedbackJournal:
         successes = sum(1 for e in eps if e["r"] > 0)
         failures = sum(1 for e in eps if e["r"] < 0)
         avg_reward = sum(e["r"] for e in eps) / len(eps)
-        last_ep = max(eps, key=lambda e: e.get("t", 0) or 0)
+        # The journal is append-only and `load()` preserves file order, so
+        # "last" means the most recently appended valid episode. Using max(t)
+        # is unstable when several writes occur inside the same clock tick.
+        last_ep = eps[-1]
         return {
             "episodes": len(eps),
             "successes": successes,
