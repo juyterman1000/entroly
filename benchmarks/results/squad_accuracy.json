@@ -1,21 +1,33 @@
 [
   {
     "benchmark": "squad",
-    "retention": 0.8571,
-    "token_savings_pct": 39.1,
-    "cost_savings_pct": 9.9,
-    "baseline_accuracy": 0.84,
+    "retention": 0.9,
+    "token_savings_pct": 43.8,
+    "baseline_accuracy": 0.8,
     "baseline_ci_95": [
-      0.7149,
-      0.9166
+      0.6696,
+      0.8876
     ],
     "entroly_accuracy": 0.72,
     "entroly_ci_95": [
       0.5833,
       0.8253
     ],
-    "baseline_avg_tokens": 283.9,
-    "entroly_avg_tokens": 173.0,
-    "samples": 50
+    "baseline_avg_tokens": 232.9,
+    "entroly_avg_tokens": 130.8,
+    "samples": 50,
+    "provenance": {
+      "model": "gpt-4o-mini",
+      "seed": 42,
+      "budget": 100,
+      "timestamp_utc": "2026-05-24T01:36:06.748788+00:00",
+      "git_sha": "0a54982698ee",
+      "elapsed_s": 108.5,
+      "audit_jsonl": "squad_audit.jsonl",
+      "audit_record_count": 50,
+      "scoring": "bench.accuracy._check_answer (benchmark='squad')",
+      "compressor": "entroly.qccr.select (via bench.accuracy._compress_messages_modal mode='entroly')",
+      "dataset_loader": "_load_squad"
+    }
   }
 ]

@@ -1,21 +1,33 @@
 [
   {
     "benchmark": "gsm8k",
-    "retention": 1.0,
-    "token_savings_pct": 3.8,
-    "cost_savings_pct": 0.0,
-    "baseline_accuracy": 0.9,
+    "retention": 0.5,
+    "token_savings_pct": 0.0,
+    "baseline_accuracy": 0.1,
     "baseline_ci_95": [
-      0.699,
-      0.9721
+      0.0279,
+      0.301
     ],
-    "entroly_accuracy": 0.9,
+    "entroly_accuracy": 0.05,
     "entroly_ci_95": [
-      0.699,
-      0.9721
+      0.0089,
+      0.2361
     ],
-    "baseline_avg_tokens": 302.8,
-    "entroly_avg_tokens": 291.2,
-    "samples": 20
+    "baseline_avg_tokens": 125.1,
+    "entroly_avg_tokens": 125.1,
+    "samples": 20,
+    "provenance": {
+      "model": "gpt-4o-mini",
+      "seed": 42,
+      "budget": 50000,
+      "timestamp_utc": "2026-05-24T01:37:02.762593+00:00",
+      "git_sha": "0a54982698ee",
+      "elapsed_s": 56.0,
+      "audit_jsonl": "gsm8k_audit.jsonl",
+      "audit_record_count": 20,
+      "scoring": "bench.accuracy._check_answer (benchmark='gsm8k')",
+      "compressor": "entroly.qccr.select (via bench.accuracy._compress_messages_modal mode='entroly')",
+      "dataset_loader": "_load_gsm8k"
+    }
   }
 ]

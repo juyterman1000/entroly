@@ -1,21 +1,33 @@
 [
   {
     "benchmark": "longbench",
-    "retention": 1.0625,
+    "retention": 1.0312,
     "token_savings_pct": 85.3,
-    "cost_savings_pct": 80.3,
     "baseline_accuracy": 0.64,
     "baseline_ci_95": [
       0.5014,
       0.7586
     ],
-    "entroly_accuracy": 0.68,
+    "entroly_accuracy": 0.66,
     "entroly_ci_95": [
-      0.5419,
-      0.7924
+      0.5215,
+      0.7756
     ],
-    "baseline_avg_tokens": 12651.1,
-    "entroly_avg_tokens": 1856.3,
-    "samples": 50
+    "baseline_avg_tokens": 12652.3,
+    "entroly_avg_tokens": 1860.1,
+    "samples": 50,
+    "provenance": {
+      "model": "gpt-4o-mini",
+      "seed": 42,
+      "budget": 2000,
+      "timestamp_utc": "2026-05-24T01:32:48.398421+00:00",
+      "git_sha": "0a54982698ee",
+      "elapsed_s": 161.8,
+      "audit_jsonl": "longbench_audit.jsonl",
+      "audit_record_count": 50,
+      "scoring": "bench.accuracy._check_answer (benchmark='longbench')",
+      "compressor": "entroly.qccr.select (via bench.accuracy._compress_messages_modal mode='entroly')",
+      "dataset_loader": "_load_longbench"
+    }
   }
 ]

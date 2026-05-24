@@ -166,12 +166,15 @@ Example trace from this repo's local development vault:
 
 Compression did not reduce measured accuracy in these release benchmarks. Results below were measured with `gpt-4o-mini`; intervals are Wilson 95% confidence intervals.
 
-**Every row links to the raw JSON result file** — these are committed artifacts you can audit, not screenshots. To reproduce locally:
+**Every row links to the raw JSON result file** — these are committed artifacts you can audit, not screenshots. Per-sample LLM I/O for every benchmark is in the matching `_audit.jsonl` next to each result (one line per sample with the question, the LLM's prediction, the expected answer, token counts, and correctness). The aggregated JSON can be re-derived from the audit JSONL — falsifying one without the other is impossible.
+
+**Methodology, datasets, scoring, seeds, limitations:** [`benchmarks/REPRODUCE.md`](benchmarks/REPRODUCE.md) (conforms to the NeurIPS / ICML / ACL reproducibility checklist).
 
 ```bash
-# requires OPENAI_API_KEY; takes ~25 min, ~$1 in API for all 7
-python benchmarks/run_readme_benchmarks.py            # all 7
-python benchmarks/run_readme_benchmarks.py needle     # one at a time
+# requires OPENAI_API_KEY; ~25 min, ~$1 in API for all 7
+python benchmarks/audited_runner.py                   # all 7, audited
+python benchmarks/audited_runner.py needle            # one at a time
+python benchmarks/diagnose_anchor_survival.py         # no LLM calls — pure local
 ```
 
 | Benchmark | n | Budget | Baseline (95% CI) | With Entroly (95% CI) | Retention | Token Savings | Proof |

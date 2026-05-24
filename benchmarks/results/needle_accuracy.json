@@ -3,7 +3,6 @@
     "benchmark": "needle",
     "retention": 1.0,
     "token_savings_pct": 99.5,
-    "cost_savings_pct": 92.5,
     "baseline_accuracy": 1.0,
     "baseline_ci_95": [
       0.8389,
@@ -14,8 +13,21 @@
       0.8389,
       1.0
     ],
-    "baseline_avg_tokens": 10807.0,
+    "baseline_avg_tokens": 10807.6,
     "entroly_avg_tokens": 56.4,
-    "samples": 20
+    "samples": 20,
+    "provenance": {
+      "model": "gpt-4o-mini",
+      "seed": 42,
+      "budget": 2000,
+      "timestamp_utc": "2026-05-24T01:28:20.963507+00:00",
+      "git_sha": "0a54982698ee",
+      "elapsed_s": 42.0,
+      "audit_jsonl": "needle_audit.jsonl",
+      "audit_record_count": 20,
+      "scoring": "bench.accuracy._check_answer (benchmark='needle')",
+      "compressor": "entroly.qccr.select (via bench.accuracy._compress_messages_modal mode='entroly')",
+      "dataset_loader": "<lambda>"
+    }
   }
 ]

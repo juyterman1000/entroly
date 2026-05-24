@@ -2,8 +2,7 @@
   {
     "benchmark": "bfcl",
     "retention": 1.0,
-    "token_savings_pct": 79.1,
-    "cost_savings_pct": 61.7,
+    "token_savings_pct": 79.3,
     "baseline_accuracy": 1.0,
     "baseline_ci_95": [
       0.9286,
@@ -14,8 +13,21 @@
       0.9286,
       1.0
     ],
-    "baseline_avg_tokens": 2850.2,
-    "entroly_avg_tokens": 595.8,
-    "samples": 50
+    "baseline_avg_tokens": 2849.6,
+    "entroly_avg_tokens": 589.7,
+    "samples": 50,
+    "provenance": {
+      "model": "gpt-4o-mini",
+      "seed": 42,
+      "budget": 500,
+      "timestamp_utc": "2026-05-24T01:34:18.155208+00:00",
+      "git_sha": "0a54982698ee",
+      "elapsed_s": 89.7,
+      "audit_jsonl": "bfcl_audit.jsonl",
+      "audit_record_count": 50,
+      "scoring": "bench.accuracy._check_answer (benchmark='bfcl')",
+      "compressor": "entroly.qccr.select (via bench.accuracy._compress_messages_modal mode='entroly')",
+      "dataset_loader": "_load_bfcl"
+    }
   }
 ]
