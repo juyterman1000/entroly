@@ -1,0 +1,21 @@
+[
+  {
+    "benchmark": "truthfulqa",
+    "retention": 1.0,
+    "token_savings_pct": 0.0,
+    "cost_savings_pct": 0.0,
+    "baseline_accuracy": 0.95,
+    "baseline_ci_95": [
+      0.7639,
+      0.9911
+    ],
+    "entroly_accuracy": 0.95,
+    "entroly_ci_95": [
+      0.7639,
+      0.9911
+    ],
+    "baseline_avg_tokens": 85.6,
+    "entroly_avg_tokens": 85.6,
+    "samples": 20
+  }
+]

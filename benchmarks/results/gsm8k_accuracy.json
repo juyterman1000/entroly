@@ -1,0 +1,21 @@
+[
+  {
+    "benchmark": "gsm8k",
+    "retention": 1.0,
+    "token_savings_pct": 3.8,
+    "cost_savings_pct": 0.0,
+    "baseline_accuracy": 0.9,
+    "baseline_ci_95": [
+      0.699,
+      0.9721
+    ],
+    "entroly_accuracy": 0.9,
+    "entroly_ci_95": [
+      0.699,
+      0.9721
+    ],
+    "baseline_avg_tokens": 302.8,
+    "entroly_avg_tokens": 291.2,
+    "samples": 20
+  }
+]

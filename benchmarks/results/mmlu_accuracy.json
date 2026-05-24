@@ -1,0 +1,21 @@
+[
+  {
+    "benchmark": "mmlu",
+    "retention": 0.9412,
+    "token_savings_pct": 0.0,
+    "cost_savings_pct": 0.0,
+    "baseline_accuracy": 0.85,
+    "baseline_ci_95": [
+      0.6396,
+      0.9476
+    ],
+    "entroly_accuracy": 0.8,
+    "entroly_ci_95": [
+      0.584,
+      0.9193
+    ],
+    "baseline_avg_tokens": 77.1,
+    "entroly_avg_tokens": 77.1,
+    "samples": 20
+  }
+]

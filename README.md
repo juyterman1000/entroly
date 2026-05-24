@@ -180,13 +180,15 @@ python benchmarks/run_readme_benchmarks.py needle     # one at a time
 | LongBench (HotpotQA) | 50 | 2K | 64.0% [50.1-75.9%] | 68.0% [54.2-79.2%] | **106.2%** | **85.3%** | [json](benchmarks/results/longbench_accuracy.json) |
 | Berkeley Function Calling | 50 | 500 | 100% [92.9-100%] | 100% [92.9-100%] | **100.0%** | **79.1%** | [json](benchmarks/results/bfcl_accuracy.json) |
 | SQuAD 2.0 | 50 | 100 | 76.0% [62.6-85.7%] | 70.0% [56.1-81.0%] | **92.1%** | **37.7%** | [json](benchmarks/results/squad_accuracy.json)² |
-| GSM8K | 100 | 50K | 85.0% [76.7-90.7%] | 86.0% [77.9-91.5%] | **101.2%** | pass-through¹ | rerun pending |
-| MMLU | 100 | 50K | 82.0% [73.3-88.3%] | 85.9% [77.8-91.4%] | **104.7%** | pass-through¹ | rerun pending |
-| TruthfulQA (MC1) | 100 | 50K | 72.0% [62.5-79.9%] | 73.7% [64.3-81.4%] | **102.4%** | pass-through¹ | rerun pending |
+| GSM8K | 20 | 50K | 90.0% [69.9-97.2%] | 90.0% [69.9-97.2%] | **100.0%** | pass-through¹ | [json](benchmarks/results/gsm8k_accuracy.json)³ |
+| MMLU | 20 | 50K | 85.0% [64.0-94.8%] | 80.0% [58.4-91.9%] | **94.1%** | pass-through¹ | [json](benchmarks/results/mmlu_accuracy.json)³ |
+| TruthfulQA (MC1) | 20 | 50K | 95.0% [76.4-99.1%] | 95.0% [76.4-99.1%] | **100.0%** | pass-through¹ | [json](benchmarks/results/truthfulqa_accuracy.json)³ |
 
 > ¹ **pass-through**: Context already fits within budget, so Entroly leaves it unchanged. Results vary by model, dataset, prompt shape, and token budget.
 >
 > ² **SQuAD honesty note**: numbers in the table are from a fresh `gpt-4o-mini` reproduction (n=50, May 2026) committed to `squad_accuracy.json`. At n=50 the Wilson 95% CI is ±13pp; an earlier release run at n=50 gave 78% / 76% / 97.4% — both readings are within each other's confidence intervals. Re-run via `python benchmarks/run_readme_benchmarks.py squad` to verify.
+>
+> ³ **Pass-through honesty note**: GSM8K / MMLU / TruthfulQA rows are from a fast n=20 reproduction so every row in this table is JSON-backed without an unreasonable API spend. At n=20 the Wilson 95% CI is ±18pp; previous release runs at n=100 gave the earlier tighter numbers (85/86, 82/86, 72/74) — both readings agree on the core claim (retention ≥ 94%, savings ≈ 0%, i.e. context fit budget so Entroly correctly passed through). For tighter CIs run `python benchmarks/run_readme_benchmarks.py gsm8k mmlu truthfulqa` (set sample size in `BENCHMARKS` to 100).
 >
 > **Algorithm uplift** — `entroly/qccr.py` was improved with sentence-level IDF entity-boost + degenerate-case fallbacks. Local SQuAD answer-survival rose 90.0% → 92.5% on n=200 (deterministic, no LLM). Reproduce: `python benchmarks/diagnose_anchor_survival.py`.
 
@@ -198,12 +200,12 @@ How well does WITNESS catch unsupported answers? Measured under the **standard H
 python benchmarks/halueval_qa_faithful.py
 ```
 
-| System | Accuracy | AUROC | F1 | Cost / latency | Notes |
+| System | Accuracy | AUROC | F1 | Cost / latency | Proof |
 |---|---|---|---|---|---|
-| **WITNESS** (full 20K, calibrated τ) | **84.9% ± 0.6%** | **0.798** | 0.864 | **$0**, 2.4 ms/decision | deterministic, no LLM |
-| WITNESS (same 1.2K sample) | 86.6% ± 1.9% | 0.813 | 0.878 | $0 | — |
-| gpt-4o-mini (grounded judge, same sample) | 86.3% ± 2.0% | — | 0.853 | LLM call | statistical tie with WITNESS |
-| gpt-3.5-turbo (HaluEval paper, published) | 62.6% | — | — | LLM call | no-knowledge reference |
+| **WITNESS** (full 20K, calibrated τ) | **84.9% ± 0.6%** | **0.798** | 0.864 | **$0**, 2.4 ms/decision | [json](benchmarks/results/halueval_qa_faithful.json) · [report](benchmarks/results/halueval_qa_faithful_report.md) |
+| WITNESS (same 1.2K sample) | 86.6% ± 1.9% | 0.813 | 0.878 | $0 | [json](benchmarks/results/halueval_qa_faithful.json) (`witness_on_gpt_sample`) |
+| gpt-4o-mini (grounded judge, same sample) | 86.3% ± 2.0% | — | 0.853 | LLM call | [json](benchmarks/results/halueval_qa_faithful.json) (`gpt[].results`) |
+| gpt-3.5-turbo (HaluEval paper, published) | 62.6% | — | — | LLM call | Li et al., EMNLP 2023 |
 
 **Honest reading.** On identical data WITNESS **statistically ties a strong modern LLM judge** (gpt-4o-mini: 86.6% vs 86.3%, CIs overlap) at **zero marginal cost and ~2 ms**, and clearly beats the canonical published GPT-3.5 number (62.6%). **AUROC 0.80** is the figure we stand behind — accuracy depends on the operating point, and the calibrated point is deliberately high-recall (R 0.96 / P 0.79). This is **not** a global-SOTA claim: published methods that score higher on HaluEval-QA do so with privileged signals (token log-probs, a paired evaluator LLM, or supervised training on the benchmark); among zero-cost, black-box, text-only, untrained verifiers we found no verified method that beats it (literature reviewed through May 2026). Reproduce numbers and CIs with the command above; full report in [`benchmarks/results/halueval_qa_faithful_report.md`](benchmarks/results/halueval_qa_faithful_report.md).
 
