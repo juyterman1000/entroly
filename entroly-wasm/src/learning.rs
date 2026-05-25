@@ -17,6 +17,56 @@ pub struct LearningEpisode {
     pub r: f64,
     #[serde(default)]
     pub w: Value,
+    #[serde(default)]
+    pub q: String,
+}
+
+const TASK_PATTERNS: [(&str, &[&str]); 6] = [
+    ("Debugging", &["fix", "bug", "error", "crash", "issue", "debug", "broken", "fail", "wrong", "exception"]),
+    ("Feature", &["add", "implement", "create", "build", "feature", "new", "support", "integrate", "enable"]),
+    ("Refactoring", &["refactor", "clean", "reorganize", "simplify", "extract", "rename", "move", "split", "merge"]),
+    ("Performance", &["optimize", "performance", "slow", "fast", "speed", "cache", "memory", "leak", "bottleneck"]),
+    ("Testing", &["test", "spec", "assert", "expect", "mock", "stub", "coverage", "unit", "integration", "e2e"]),
+    ("Documentation", &["document", "readme", "comment", "explain", "describe", "usage", "api"]),
+];
+
+const TASK_ORDER: [&str; 7] = [
+    "Debugging",
+    "Feature",
+    "Refactoring",
+    "Performance",
+    "Testing",
+    "Documentation",
+    "General",
+];
+
+fn task_prior(task_type: &str) -> Value {
+    match task_type {
+        "Debugging" => json!({"w_r": 0.35, "w_f": 0.15, "w_s": 0.35, "w_e": 0.15}),
+        "Feature" => json!({"w_r": 0.20, "w_f": 0.25, "w_s": 0.25, "w_e": 0.30}),
+        "Refactoring" => json!({"w_r": 0.15, "w_f": 0.35, "w_s": 0.20, "w_e": 0.30}),
+        "Performance" => json!({"w_r": 0.25, "w_f": 0.30, "w_s": 0.25, "w_e": 0.20}),
+        "Testing" => json!({"w_r": 0.30, "w_f": 0.20, "w_s": 0.30, "w_e": 0.20}),
+        "Documentation" => json!({"w_r": 0.20, "w_f": 0.20, "w_s": 0.30, "w_e": 0.30}),
+        _ => json!({"w_r": 0.30, "w_f": 0.25, "w_s": 0.25, "w_e": 0.20}),
+    }
+}
+
+pub fn classify_query(query: &str) -> &'static str {
+    if query.trim().is_empty() {
+        return "General";
+    }
+    let tokens: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+    for (task_type, words) in TASK_PATTERNS {
+        if tokens.iter().any(|token| words.contains(&token.as_str())) {
+            return task_type;
+        }
+    }
+    "General"
 }
 
 fn weight_from_value(w: &Value, key: &str, alias: &str, default: f64) -> f64 {
@@ -198,3 +248,48 @@ pub fn reward_weighted_optimize_json(
     Ok(reward_weighted_optimize(&episodes, &current_weights))
 }
 
+pub fn optimize_task_profiles(episodes: &[LearningEpisode]) -> Value {
+    if episodes.len() < 3 {
+        return json!({});
+    }
+
+    let mut buckets: HashMap<&'static str, Vec<LearningEpisode>> = HashMap::new();
+    for ep in episodes {
+        buckets.entry(classify_query(&ep.q)).or_default().push(ep.clone());
+    }
+
+    let mut profiles = serde_json::Map::new();
+    for task_type in TASK_ORDER {
+        if let Some(task_eps) = buckets.get(task_type) {
+            let prior = task_prior(task_type);
+            if task_eps.len() >= 3 {
+                if let Some(result) = reward_weighted_optimize(task_eps, &prior) {
+                    profiles.insert(task_type.to_string(), json!({
+                        "weights": result["blended"].clone(),
+                        "confidence": result["confidence"].clone(),
+                        "episodes": task_eps.len(),
+                    }));
+                    continue;
+                }
+            }
+            profiles.insert(task_type.to_string(), json!({
+                "weights": prior,
+                "confidence": 0,
+                "episodes": task_eps.len(),
+            }));
+        } else {
+            profiles.insert(task_type.to_string(), json!({
+                "weights": task_prior(task_type),
+                "confidence": 0,
+                "episodes": 0,
+            }));
+        }
+    }
+
+    Value::Object(profiles)
+}
+
+pub fn optimize_task_profiles_json(episodes_json: &str) -> Result<Value, serde_json::Error> {
+    let episodes: Vec<LearningEpisode> = serde_json::from_str(episodes_json)?;
+    Ok(optimize_task_profiles(&episodes))
+}

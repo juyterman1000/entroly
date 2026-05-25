@@ -128,6 +128,36 @@ def test_reward_weighted_optimize_prefers_rust_core(monkeypatch):
     assert result["blended"]["w_r"] == 0.4
 
 
+def test_task_profile_optimizer_prefers_rust_core(tmp_path, monkeypatch):
+    calls = {"n": 0}
+
+    def native_profiles(episodes_json: str) -> str:
+        calls["n"] += 1
+        assert len(json.loads(episodes_json)) == 3
+        return json.dumps({
+            "Debugging": {
+                "weights": {"w_r": 0.5, "w_f": 0.1, "w_s": 0.3, "w_e": 0.1},
+                "confidence": 0.75,
+                "episodes": 3,
+            }
+        })
+
+    monkeypatch.setitem(
+        sys.modules,
+        "entroly_core",
+        SimpleNamespace(py_optimize_task_profiles=native_profiles),
+    )
+    journal = FeedbackJournal(str(tmp_path))
+    journal.log(weights=_weights(), reward=0.7, query="fix auth bug")
+    journal.log(weights=_weights(), reward=0.8, query="debug auth error")
+    journal.log(weights=_weights(), reward=0.6, query="wrong login behavior")
+
+    profiles = TaskProfileOptimizer(journal).optimize_all()
+
+    assert calls["n"] == 1
+    assert profiles["Debugging"]["confidence"] == 0.75
+
+
 def test_dreaming_loop_idle_detection_and_stats(tmp_path):
     journal = FeedbackJournal(str(tmp_path))
     journal.log(weights=_weights(), reward=0.7)

@@ -13,11 +13,15 @@
 let WasmEntrolyEngine;
 let classifyQueryTransitionRust;
 let rewardWeightedOptimizeRust;
+let optimizeTaskProfilesRust;
+let classifyLearningQueryRust;
 function bindWasmExports(mod) {
   ({
     WasmEntrolyEngine,
     classify_query_transition: classifyQueryTransitionRust,
     reward_weighted_optimize: rewardWeightedOptimizeRust,
+    optimize_task_profiles: optimizeTaskProfilesRust,
+    classify_learning_query: classifyLearningQueryRust,
   } = mod);
 }
 
@@ -34,7 +38,12 @@ function buildAndBindWasm() {
 
 try {
   bindWasmExports(require('./pkg/entroly_wasm'));
-  if (!classifyQueryTransitionRust || !rewardWeightedOptimizeRust) {
+  if (
+    !classifyQueryTransitionRust ||
+    !rewardWeightedOptimizeRust ||
+    !optimizeTaskProfilesRust ||
+    !classifyLearningQueryRust
+  ) {
     buildAndBindWasm();
   }
 } catch (err) {
@@ -71,12 +80,28 @@ function rewardWeightedOptimize(...args) {
   return rewardWeightedOptimizeRust(...args);
 }
 
+function optimizeTaskProfiles(...args) {
+  if (!optimizeTaskProfilesRust) {
+    throw new Error('Rust optimize_task_profiles is unavailable; rebuild entroly-wasm');
+  }
+  return optimizeTaskProfilesRust(...args);
+}
+
+function classifyLearningQuery(...args) {
+  if (!classifyLearningQueryRust) {
+    throw new Error('Rust classify_learning_query is unavailable; rebuild entroly-wasm');
+  }
+  return classifyLearningQueryRust(...args);
+}
+
 module.exports = {
   // Core engine (wasm)
   EntrolyEngine: WasmEntrolyEngine,
   WasmEntrolyEngine,
   classifyQueryTransition,
   rewardWeightedOptimize,
+  optimizeTaskProfiles,
+  classifyLearningQuery,
 
   // Configuration
   EntrolyConfig,

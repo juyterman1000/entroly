@@ -120,6 +120,19 @@ pub fn reward_weighted_optimize(
     }
 }
 
+#[wasm_bindgen]
+pub fn optimize_task_profiles(episodes_json: &str) -> Result<JsValue, JsValue> {
+    match learning::optimize_task_profiles_json(episodes_json) {
+        Ok(v) => Ok(json_to_js(&v)),
+        Err(e) => Err(JsValue::from_str(&format!("JSON error: {}", e))),
+    }
+}
+
+#[wasm_bindgen]
+pub fn classify_learning_query(query: &str) -> String {
+    learning::classify_query(query).to_string()
+}
+
 use cache::{CacheLookup, EgscCache, EgscConfig};
 use causal::CausalContextGraph;
 use dedup::{hamming_distance, simhash, DedupIndex};

@@ -955,6 +955,13 @@ TASK_PRIORS = {
 
 def classify_query(query: str) -> str:
     """Classify a query into a task type."""
+    try:
+        from entroly_core import py_classify_learning_query  # type: ignore
+
+        return py_classify_learning_query(query)
+    except Exception:
+        pass
+
     if not query:
         return "General"
     for task_type, pattern in TASK_PATTERNS.items():
@@ -975,6 +982,16 @@ class TaskProfileOptimizer:
         episodes = self.journal.load()
         if len(episodes) < 3:
             return {}
+
+        try:
+            from entroly_core import py_optimize_task_profiles  # type: ignore
+
+            profiles = json.loads(py_optimize_task_profiles(json.dumps(episodes)))
+            if isinstance(profiles, dict):
+                self._profiles = profiles
+                return profiles
+        except Exception:
+            pass
 
         buckets: dict[str, list] = {}
         for ep in episodes:

@@ -5441,6 +5441,17 @@ fn py_reward_weighted_optimize(
 }
 
 #[pyfunction]
+fn py_optimize_task_profiles(episodes_json: &str) -> PyResult<String> {
+    learning::optimize_task_profiles_json(episodes_json)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("JSON error: {}", e)))
+}
+
+#[pyfunction]
+fn py_classify_learning_query(query: &str) -> String {
+    learning::classify_query(query).to_string()
+}
+
+#[pyfunction]
 fn py_analyze_query(
     query: &str,
     fragment_summaries: Vec<String>,
@@ -5978,6 +5989,8 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_prune_jsonl_by_ts, m)?)?;
     m.add_function(wrap_pyfunction!(py_classify_query_transition, m)?)?;
     m.add_function(wrap_pyfunction!(py_reward_weighted_optimize, m)?)?;
+    m.add_function(wrap_pyfunction!(py_optimize_task_profiles, m)?)?;
+    m.add_function(wrap_pyfunction!(py_classify_learning_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_health_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_refine_heuristic, m)?)?;
