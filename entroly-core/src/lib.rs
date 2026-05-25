@@ -38,6 +38,7 @@ mod sast;
 mod semantic_dedup;
 mod skeleton;
 mod telemetry;
+mod trajectory;
 mod utilization;
 mod witness;
 mod rnr;
@@ -5395,6 +5396,41 @@ fn py_prune_jsonl_by_ts(
 }
 
 #[pyfunction]
+#[pyo3(signature = (
+    prev_hash,
+    current_query,
+    elapsed_s,
+    time_window_s,
+    rephrase_threshold,
+    topic_change_threshold = None
+))]
+fn py_classify_query_transition(
+    py: Python<'_>,
+    prev_hash: u64,
+    current_query: &str,
+    elapsed_s: f64,
+    time_window_s: f64,
+    rephrase_threshold: f64,
+    topic_change_threshold: Option<f64>,
+) -> PyResult<PyObject> {
+    let out = trajectory::classify_query_transition(
+        prev_hash,
+        current_query,
+        elapsed_s,
+        time_window_s,
+        rephrase_threshold,
+        topic_change_threshold,
+    );
+    let d = PyDict::new(py);
+    d.set_item("status", out.status)?;
+    d.set_item("current_hash", out.current_hash)?;
+    d.set_item("similarity", out.similarity)?;
+    d.set_item("hamming", out.hamming)?;
+    d.set_item("elapsed_s", out.elapsed_s)?;
+    Ok(d.into())
+}
+
+#[pyfunction]
 fn py_analyze_query(
     query: &str,
     fragment_summaries: Vec<String>,
@@ -5930,6 +5966,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── SAST / Health / Query
     m.add_function(wrap_pyfunction!(py_scan_content, m)?)?;
     m.add_function(wrap_pyfunction!(py_prune_jsonl_by_ts, m)?)?;
+    m.add_function(wrap_pyfunction!(py_classify_query_transition, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_health_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_refine_heuristic, m)?)?;

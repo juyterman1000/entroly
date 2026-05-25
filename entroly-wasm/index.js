@@ -11,19 +11,36 @@
 //   npx entroly-wasm serve
 
 let WasmEntrolyEngine;
+let classifyQueryTransitionRust;
+function bindWasmExports(mod) {
+  ({
+    WasmEntrolyEngine,
+    classify_query_transition: classifyQueryTransitionRust,
+  } = mod);
+}
+
+function buildAndBindWasm() {
+  const { execFileSync } = require('child_process');
+  execFileSync('wasm-pack', ['build', '--target', 'nodejs', '--out-dir', 'pkg'], {
+    cwd: __dirname,
+    stdio: 'inherit',
+  });
+  const pkgPath = require.resolve('./pkg/entroly_wasm');
+  delete require.cache[pkgPath];
+  bindWasmExports(require('./pkg/entroly_wasm'));
+}
+
 try {
-  ({ WasmEntrolyEngine } = require('./pkg/entroly_wasm'));
+  bindWasmExports(require('./pkg/entroly_wasm'));
+  if (!classifyQueryTransitionRust) {
+    buildAndBindWasm();
+  }
 } catch (err) {
   if (err && err.code === 'MODULE_NOT_FOUND') {
     // Source checkouts do not commit wasm-pack output. Build it lazily so
     // `node -e "require('./entroly-wasm')"` and local smoke tests exercise the
     // same module shape that the published npm tarball contains.
-    const { execFileSync } = require('child_process');
-    execFileSync('wasm-pack', ['build', '--target', 'nodejs', '--out-dir', 'pkg'], {
-      cwd: __dirname,
-      stdio: 'inherit',
-    });
-    ({ WasmEntrolyEngine } = require('./pkg/entroly_wasm'));
+    buildAndBindWasm();
   } else {
     throw err;
   }
@@ -38,10 +55,18 @@ const { exportPromoted: exportAgentSkills } = require('./js/agentskills_export')
 const { TelegramGateway, DiscordGateway, SlackGateway } = require('./js/gateways');
 const { VaultObserver } = require('./js/vault_observer');
 
+function classifyQueryTransition(...args) {
+  if (!classifyQueryTransitionRust) {
+    throw new Error('Rust classify_query_transition is unavailable; rebuild entroly-wasm');
+  }
+  return classifyQueryTransitionRust(...args);
+}
+
 module.exports = {
   // Core engine (wasm)
   EntrolyEngine: WasmEntrolyEngine,
   WasmEntrolyEngine,
+  classifyQueryTransition,
 
   // Configuration
   EntrolyConfig,

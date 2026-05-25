@@ -48,6 +48,7 @@ mod resonance;
 mod sast;
 mod semantic_dedup;
 mod skeleton;
+mod trajectory;
 mod utilization;
 mod rnr;
 mod eicv;
@@ -64,6 +65,46 @@ use wasm_bindgen::prelude::*;
 fn json_to_js<T: serde::Serialize>(val: &T) -> JsValue {
     let s = serde_json::to_string(val).unwrap_or_else(|_| "null".to_string());
     js_sys::JSON::parse(&s).unwrap_or(JsValue::NULL)
+}
+
+#[wasm_bindgen]
+pub fn classify_query_transition(
+    prev_hash: u64,
+    current_query: String,
+    elapsed_s: f64,
+    time_window_s: f64,
+    rephrase_threshold: f64,
+    topic_change_threshold: f64,
+) -> JsValue {
+    #[derive(Serialize)]
+    struct JsQueryTransition {
+        status: String,
+        current_hash: String,
+        similarity: f64,
+        hamming: u32,
+        elapsed_s: f64,
+    }
+
+    let topic_threshold = if topic_change_threshold.is_sign_negative() {
+        None
+    } else {
+        Some(topic_change_threshold)
+    };
+    let out = trajectory::classify_query_transition(
+        prev_hash,
+        &current_query,
+        elapsed_s,
+        time_window_s,
+        rephrase_threshold,
+        topic_threshold,
+    );
+    json_to_js(&JsQueryTransition {
+        status: out.status,
+        current_hash: out.current_hash.to_string(),
+        similarity: out.similarity,
+        hamming: out.hamming,
+        elapsed_s: out.elapsed_s,
+    })
 }
 
 use cache::{CacheLookup, EgscCache, EgscConfig};

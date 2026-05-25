@@ -485,17 +485,38 @@ class ImplicitFeedbackTracker:
         if not prev_ids:
             return None  # No fragment IDs to attribute
 
-        # Compute SimHash similarity (Hamming-based)
-        xor = query_hash ^ prev_hash
-        hamming = bin(xor).count("1")
-        similarity = 1.0 - (hamming / 64.0)
+        # Rust owns the classification math; Python keeps only per-client
+        # trajectory state and feedback side effects.
+        try:
+            from entroly_core import py_classify_query_transition
 
-        if similarity > self._REPHRASE_SIMILARITY_THRESHOLD:
+            transition = py_classify_query_transition(
+                prev_hash,
+                query_text,
+                time_delta,
+                self._REPHRASE_TIME_WINDOW_S,
+                self._REPHRASE_SIMILARITY_THRESHOLD,
+                self._TOPIC_CHANGE_THRESHOLD,
+            )
+            status = transition.get("status")
+        except Exception:
+            # Fallback for older wheels: same thresholds, same Hamming math.
+            xor = query_hash ^ prev_hash
+            hamming = bin(xor).count("1")
+            similarity = 1.0 - (hamming / 64.0)
+            if similarity > self._REPHRASE_SIMILARITY_THRESHOLD:
+                status = "rephrase"
+            elif similarity < self._TOPIC_CHANGE_THRESHOLD:
+                status = "topic_change"
+            else:
+                status = "ambiguous"
+
+        if status == "rephrase":
             with self._lock:
                 self._rephrase_detections += 1
             return ("rephrase", prev_ids)
 
-        if similarity < self._TOPIC_CHANGE_THRESHOLD:
+        if status == "topic_change":
             with self._lock:
                 self._topic_changes += 1
             return ("topic_change", prev_ids)

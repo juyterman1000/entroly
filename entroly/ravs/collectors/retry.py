@@ -111,11 +111,30 @@ class RetryCollector:
             return None
 
         # Hamming-similarity on 64-bit hashes
-        xor = qhash ^ prior.query_hash
-        hamming = bin(xor).count("1")
-        similarity = 1.0 - (hamming / 64.0)
+        try:
+            from entroly_core import py_classify_query_transition
 
-        if similarity > self._similarity_threshold:
+            transition = py_classify_query_transition(
+                prior.query_hash,
+                query_text,
+                time_delta,
+                self._time_window_s,
+                self._similarity_threshold,
+                None,
+            )
+            status = transition.get("status")
+            similarity = float(transition.get("similarity", 0.0))
+        except Exception:
+            xor = qhash ^ prior.query_hash
+            hamming = bin(xor).count("1")
+            similarity = 1.0 - (hamming / 64.0)
+            status = (
+                "rephrase"
+                if similarity > self._similarity_threshold
+                else "topic_change"
+            )
+
+        if status == "rephrase":
             event_type = "retry_event"
             value = "failure"   # rephrase ⇒ prior likely failed
         else:
