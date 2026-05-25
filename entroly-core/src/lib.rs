@@ -28,6 +28,7 @@ mod health;
 mod hierarchical;
 mod knapsack;
 mod knapsack_sds;
+mod learning;
 mod lsh;
 mod nkbe;
 mod prism;
@@ -5431,6 +5432,15 @@ fn py_classify_query_transition(
 }
 
 #[pyfunction]
+fn py_reward_weighted_optimize(
+    episodes_json: &str,
+    current_weights_json: &str,
+) -> PyResult<Option<String>> {
+    learning::reward_weighted_optimize_json(episodes_json, current_weights_json)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("JSON error: {}", e)))
+}
+
+#[pyfunction]
 fn py_analyze_query(
     query: &str,
     fragment_summaries: Vec<String>,
@@ -5967,6 +5977,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_scan_content, m)?)?;
     m.add_function(wrap_pyfunction!(py_prune_jsonl_by_ts, m)?)?;
     m.add_function(wrap_pyfunction!(py_classify_query_transition, m)?)?;
+    m.add_function(wrap_pyfunction!(py_reward_weighted_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_health_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_analyze_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_refine_heuristic, m)?)?;

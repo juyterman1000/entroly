@@ -1,8 +1,16 @@
 """Regression tests for daemon learning-loop integration."""
 
+import json
+import sys
 import time as _time
+from types import SimpleNamespace
 
-from entroly.autotune import DreamingLoop, FeedbackJournal, TaskProfileOptimizer
+from entroly.autotune import (
+    DreamingLoop,
+    FeedbackJournal,
+    TaskProfileOptimizer,
+    reward_weighted_optimize,
+)
 from entroly.daemon import EntrolyDaemon, EntrolyDaemonState
 from entroly.online_learner import OnlinePrism
 
@@ -85,6 +93,39 @@ def test_task_profile_optimizer_uses_feedback_journal(tmp_path):
     profiles = TaskProfileOptimizer(journal).optimize_all()
 
     assert len(profiles) >= 1
+
+
+def test_reward_weighted_optimize_prefers_rust_core(monkeypatch):
+    calls = {"n": 0}
+
+    def native_optimizer(episodes_json: str, current_weights_json: str) -> str:
+        calls["n"] += 1
+        assert json.loads(episodes_json)[0]["r"] == 0.7
+        assert json.loads(current_weights_json)["w_r"] == 0.3
+        return json.dumps({
+            "blended": {"w_r": 0.4, "w_f": 0.2, "w_s": 0.2, "w_e": 0.2},
+            "confidence": 0.5,
+            "success_count": 3,
+            "failure_count": 0,
+            "total_episodes": 3,
+        })
+
+    monkeypatch.setitem(
+        sys.modules,
+        "entroly_core",
+        SimpleNamespace(py_reward_weighted_optimize=native_optimizer),
+    )
+    result = reward_weighted_optimize(
+        [
+            {"t": 1, "w": _weights(), "r": 0.7},
+            {"t": 2, "w": _weights(), "r": 0.8},
+            {"t": 3, "w": _weights(), "r": 0.6},
+        ],
+        _weights(),
+    )
+
+    assert calls["n"] == 1
+    assert result["blended"]["w_r"] == 0.4
 
 
 def test_dreaming_loop_idle_detection_and_stats(tmp_path):

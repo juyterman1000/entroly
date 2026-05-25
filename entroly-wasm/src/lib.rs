@@ -38,6 +38,7 @@ mod health;
 mod hierarchical;
 mod knapsack;
 mod knapsack_sds;
+mod learning;
 mod localization;
 mod lsh;
 mod nkbe;
@@ -105,6 +106,18 @@ pub fn classify_query_transition(
         hamming: out.hamming,
         elapsed_s: out.elapsed_s,
     })
+}
+
+#[wasm_bindgen]
+pub fn reward_weighted_optimize(
+    episodes_json: &str,
+    current_weights_json: &str,
+) -> Result<JsValue, JsValue> {
+    match learning::reward_weighted_optimize_json(episodes_json, current_weights_json) {
+        Ok(Some(v)) => Ok(json_to_js(&v)),
+        Ok(None) => Ok(JsValue::NULL),
+        Err(e) => Err(JsValue::from_str(&format!("JSON error: {}", e))),
+    }
 }
 
 use cache::{CacheLookup, EgscCache, EgscConfig};

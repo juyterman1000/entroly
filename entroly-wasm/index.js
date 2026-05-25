@@ -12,10 +12,12 @@
 
 let WasmEntrolyEngine;
 let classifyQueryTransitionRust;
+let rewardWeightedOptimizeRust;
 function bindWasmExports(mod) {
   ({
     WasmEntrolyEngine,
     classify_query_transition: classifyQueryTransitionRust,
+    reward_weighted_optimize: rewardWeightedOptimizeRust,
   } = mod);
 }
 
@@ -32,7 +34,7 @@ function buildAndBindWasm() {
 
 try {
   bindWasmExports(require('./pkg/entroly_wasm'));
-  if (!classifyQueryTransitionRust) {
+  if (!classifyQueryTransitionRust || !rewardWeightedOptimizeRust) {
     buildAndBindWasm();
   }
 } catch (err) {
@@ -62,11 +64,19 @@ function classifyQueryTransition(...args) {
   return classifyQueryTransitionRust(...args);
 }
 
+function rewardWeightedOptimize(...args) {
+  if (!rewardWeightedOptimizeRust) {
+    throw new Error('Rust reward_weighted_optimize is unavailable; rebuild entroly-wasm');
+  }
+  return rewardWeightedOptimizeRust(...args);
+}
+
 module.exports = {
   // Core engine (wasm)
   EntrolyEngine: WasmEntrolyEngine,
   WasmEntrolyEngine,
   classifyQueryTransition,
+  rewardWeightedOptimize,
 
   // Configuration
   EntrolyConfig,

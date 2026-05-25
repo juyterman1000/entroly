@@ -813,6 +813,19 @@ def reward_weighted_optimize(
     - Fisher information natural gradient
     - Polyak-Ruppert averaging
     """
+    try:
+        from entroly_core import py_reward_weighted_optimize  # type: ignore
+
+        result_json = py_reward_weighted_optimize(
+            json.dumps(episodes),
+            json.dumps(current_weights),
+        )
+        if result_json:
+            return json.loads(result_json)
+        return None
+    except Exception:
+        pass
+
     if len(episodes) < 3:
         return None
 
