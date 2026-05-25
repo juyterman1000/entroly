@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# pre-push — gate that runs the SAME checks CI runs, locally, before
+# code reaches origin. Stops the "push, break CI, scramble to fix" loop.
+#
+# Install (one-time, any contributor / Codex / Claude):
+#     scripts/install-hooks.sh
+#
+# Bypass (use sparingly, only when you know the hook is wrong):
+#     git push --no-verify
+#
+# Exit non-zero on any check failure → git aborts the push.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Color helpers (disabled if not a tty)
+if [ -t 1 ]; then
+  RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
+else
+  RED=""; GREEN=""; YELLOW=""; BOLD=""; RESET=""
+fi
+
+failed=()
+
+run_check() {
+  local label="$1"; shift
+  printf "%s\n" "${BOLD}=== ${label} ===${RESET}"
+  if "$@"; then
+    printf "%s\n\n" "${GREEN}✓ ${label} passed${RESET}"
+  else
+    printf "%s\n\n" "${RED}✗ ${label} FAILED${RESET}"
+    failed+=("$label")
+  fi
+}
+
+# 1. Python lint (matches CI's `ruff check entroly/`)
+if command -v ruff >/dev/null 2>&1; then
+  run_check "ruff (entroly/)" ruff check entroly/
+else
+  printf "%s\n" "${YELLOW}! ruff not on PATH; skipping Python lint${RESET}"
+fi
+
+# 2. Rust clippy (matches CI's `cargo clippy --all-targets -- -D warnings`)
+if [ -d "entroly-core" ] && command -v cargo >/dev/null 2>&1; then
+  run_check "clippy (entroly-core)" bash -c "cd entroly-core && cargo clippy --all-targets -- -D warnings"
+else
+  printf "%s\n" "${YELLOW}! cargo not on PATH or entroly-core/ missing; skipping clippy${RESET}"
+fi
+
+# 3. Rust tests (matches CI's cargo test --lib)
+if [ -d "entroly-core" ] && command -v cargo >/dev/null 2>&1; then
+  run_check "cargo test --lib (entroly-core)" bash -c "cd entroly-core && cargo test --lib --quiet 2>&1 | tail -5"
+fi
+
+if [ ${#failed[@]} -gt 0 ]; then
+  printf "\n%s\n" "${RED}${BOLD}pre-push BLOCKED: ${#failed[@]} check(s) failed:${RESET}"
+  for f in "${failed[@]}"; do printf "  ${RED}- %s${RESET}\n" "$f"; done
+  printf "\n%s\n" "${YELLOW}fix locally OR run \`git push --no-verify\` to bypass (not recommended).${RESET}"
+  exit 1
+fi
+
+printf "%s\n" "${GREEN}${BOLD}all pre-push checks passed. pushing…${RESET}"
+exit 0
