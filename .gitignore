@@ -24,6 +24,9 @@ vault/
 
 # Scratch / debug artifacts
 .tmp/
+tasks/
+logs/
+telemetry/
 *.restored
 tuning_config.json
 tuning_config.*.bak.json

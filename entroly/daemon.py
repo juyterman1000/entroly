@@ -187,6 +187,12 @@ class EntrolyDaemon:
         self._learning_last_tick_saw_new_feedback: bool | None = None
         self._learning_last_tick_optimized_profiles: bool | None = None
         self._learning_last_tick_dreamed: bool | None = None
+        self._learning_next_interval_s = self._learning_interval_s
+        self._learning_last_interval_reason = "startup"
+        self._learning_journal_log_attempts = 0
+        self._learning_journal_log_failures = 0
+        self._learning_last_journal_log_status = "not_started"
+        self._learning_last_journal_log_error: str | None = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -530,6 +536,8 @@ class EntrolyDaemon:
                         self._learning_last_tick_at = time.time()
                         self._learning_last_tick_status = "disabled"
                         interval_s = max_interval_s
+                        self._learning_next_interval_s = interval_s
+                        self._learning_last_interval_reason = "disabled"
                         continue
 
                     try:
@@ -591,19 +599,23 @@ class EntrolyDaemon:
                         self._learning_last_tick_status = "ok"
                         self._learning_last_error = None
 
-                        if saw_new_feedback:
-                            interval_s = min_interval_s
-                        elif dreamed:
-                            interval_s = 30.0
-                        elif optimized_profiles:
-                            interval_s = 30.0
-                        else:
-                            interval_s = min(max_interval_s, interval_s * 1.5)
+                        interval_s, interval_reason = self._next_learning_interval(
+                            current_interval_s=interval_s,
+                            saw_new_feedback=saw_new_feedback,
+                            dreamed=dreamed,
+                            optimized_profiles=optimized_profiles,
+                            min_interval_s=min_interval_s,
+                            max_interval_s=max_interval_s,
+                        )
+                        self._learning_next_interval_s = interval_s
+                        self._learning_last_interval_reason = interval_reason
                     except Exception as e:
                         self._learning_last_tick_status = "error"
                         self._learning_last_error = str(e)
                         logger.debug(f"Learning loop error: {e}")
                         interval_s = min(max_interval_s, interval_s * 1.5)
+                        self._learning_next_interval_s = interval_s
+                        self._learning_last_interval_reason = "error_backoff"
 
             t = threading.Thread(
                 target=_learning_worker,
@@ -624,6 +636,31 @@ class EntrolyDaemon:
             self._feedback_journal = None
             self._task_profiles = None
             self._dreaming_loop = None
+
+    def _next_learning_interval(
+        self,
+        *,
+        current_interval_s: float,
+        saw_new_feedback: bool,
+        dreamed: bool,
+        optimized_profiles: bool,
+        min_interval_s: float = 10.0,
+        max_interval_s: float = 120.0,
+    ) -> tuple[float, str]:
+        """Pick the next learning-loop sleep and explain why it changed."""
+        lower_bound = min(min_interval_s, max_interval_s)
+        upper_bound = max(min_interval_s, max_interval_s)
+
+        def bounded_interval(target_s: float) -> float:
+            return min(upper_bound, max(lower_bound, target_s))
+
+        if saw_new_feedback:
+            return bounded_interval(min_interval_s), "new_feedback"
+        if dreamed:
+            return bounded_interval(30.0), "dreamed"
+        if optimized_profiles:
+            return bounded_interval(30.0), "optimized_profiles"
+        return bounded_interval(current_interval_s * 1.5), "idle_backoff"
 
     def _maybe_optimize_task_profiles(self, episode_count: int, now: float) -> bool:
         """Optimize task profiles when it is likely to be useful.
@@ -694,9 +731,26 @@ class EntrolyDaemon:
         """Persist an outcome episode and mark the daemon as active."""
         self.state.last_feedback_at = time.time()
         self.record_activity()
+        self._learning_journal_log_attempts = int(
+            getattr(self, "_learning_journal_log_attempts", 0) or 0
+        ) + 1
         journal = getattr(self, "_feedback_journal", None)
-        if journal:
+        if not journal:
+            self._learning_last_journal_log_status = "skipped_no_journal"
+            self._learning_last_journal_log_error = None
+            return
+
+        try:
             journal.log(**episode)
+            self._learning_last_journal_log_status = "ok"
+            self._learning_last_journal_log_error = None
+        except Exception as e:
+            self._learning_journal_log_failures = int(
+                getattr(self, "_learning_journal_log_failures", 0) or 0
+            ) + 1
+            self._learning_last_journal_log_status = "error"
+            self._learning_last_journal_log_error = str(e)
+            logger.debug("Learning episode journal log failed: %s", e)
 
     def set_optimization(self, enabled: bool):
         self.state.optimization_enabled = enabled
@@ -815,6 +869,17 @@ class EntrolyDaemon:
             "status": getattr(self, "_learning_last_tick_status", "not_started"),
             "last_tick_at": getattr(self, "_learning_last_tick_at", None),
             "last_error": getattr(self, "_learning_last_error", None),
+            "next_interval_s": round(
+                getattr(
+                    self,
+                    "_learning_next_interval_s",
+                    getattr(self, "_learning_interval_s", 30.0),
+                ),
+                1,
+            ),
+            "interval_reason": getattr(
+                self, "_learning_last_interval_reason", "unknown"
+            ),
             "last_tick": {
                 "saw_new_feedback": getattr(
                     self, "_learning_last_tick_saw_new_feedback", None
@@ -823,6 +888,20 @@ class EntrolyDaemon:
                     self, "_learning_last_tick_optimized_profiles", None
                 ),
                 "dreamed": getattr(self, "_learning_last_tick_dreamed", None),
+            },
+            "journal_callback": {
+                "attempts": int(
+                    getattr(self, "_learning_journal_log_attempts", 0) or 0
+                ),
+                "failures": int(
+                    getattr(self, "_learning_journal_log_failures", 0) or 0
+                ),
+                "last_status": getattr(
+                    self, "_learning_last_journal_log_status", "unknown"
+                ),
+                "last_error": getattr(
+                    self, "_learning_last_journal_log_error", None
+                ),
             },
         }
         stats["daemon"] = {
@@ -839,7 +918,10 @@ class EntrolyDaemon:
         # FeedbackJournal
         journal = getattr(self, "_feedback_journal", None)
         if journal:
-            stats["journal"] = journal.stats()
+            try:
+                stats["journal"] = journal.stats()
+            except Exception as e:
+                stats["journal"] = {"status": "error", "error": str(e)}
         else:
             stats["journal"] = {"episodes": 0, "status": "not_initialized"}
 

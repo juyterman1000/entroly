@@ -28,6 +28,80 @@ def test_daemon_state_exposes_learning_fields():
     assert data["learning"]["dreaming_active"] is True
 
 
+def test_learning_interval_decision_explains_cadence():
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+
+    interval, reason = daemon._next_learning_interval(
+        current_interval_s=60.0,
+        saw_new_feedback=True,
+        dreamed=True,
+        optimized_profiles=True,
+    )
+    assert interval == 10.0
+    assert reason == "new_feedback"
+
+    interval, reason = daemon._next_learning_interval(
+        current_interval_s=60.0,
+        saw_new_feedback=False,
+        dreamed=True,
+        optimized_profiles=True,
+    )
+    assert interval == 30.0
+    assert reason == "dreamed"
+
+    interval, reason = daemon._next_learning_interval(
+        current_interval_s=100.0,
+        saw_new_feedback=False,
+        dreamed=False,
+        optimized_profiles=False,
+    )
+    assert interval == 120.0
+    assert reason == "idle_backoff"
+
+
+def test_learning_interval_decision_respects_configured_bounds():
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+
+    interval, reason = daemon._next_learning_interval(
+        current_interval_s=30.0,
+        saw_new_feedback=False,
+        dreamed=True,
+        optimized_profiles=False,
+        min_interval_s=5.0,
+        max_interval_s=20.0,
+    )
+    assert interval == 20.0
+    assert reason == "dreamed"
+
+    interval, reason = daemon._next_learning_interval(
+        current_interval_s=1.0,
+        saw_new_feedback=False,
+        dreamed=False,
+        optimized_profiles=False,
+        min_interval_s=10.0,
+        max_interval_s=120.0,
+    )
+    assert interval == 10.0
+    assert reason == "idle_backoff"
+
+
+def test_learning_stats_include_next_cadence_reason():
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._learning_next_interval_s = 10.0
+    daemon._learning_last_interval_reason = "new_feedback"
+
+    stats = daemon.get_learning_stats()
+
+    assert stats["learning_loop"]["next_interval_s"] == 10.0
+    assert stats["learning_loop"]["interval_reason"] == "new_feedback"
+    assert stats["learning_loop"]["journal_callback"] == {
+        "attempts": 0,
+        "failures": 0,
+        "last_status": "not_started",
+        "last_error": None,
+    }
+
+
 def test_online_prism_observes_and_enters_learning_phase():
     prism = OnlinePrism(
         prior_weights={
@@ -205,3 +279,29 @@ def test_daemon_learning_callback_resets_idle_before_logging(tmp_path):
     assert journal.count() == 4
     assert journal.stats()["last_reward"] == 0.9
     assert not dreaming.should_dream()
+
+    callback = daemon.get_learning_stats()["learning_loop"]["journal_callback"]
+    assert callback["attempts"] == 1
+    assert callback["failures"] == 0
+    assert callback["last_status"] == "ok"
+    assert callback["last_error"] is None
+
+
+def test_daemon_learning_callback_reports_journal_failures():
+    class BrokenJournal:
+        def log(self, **episode):
+            raise RuntimeError("disk full")
+
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._feedback_journal = BrokenJournal()
+
+    daemon._log_learning_episode(weights=_weights(), reward=0.2)
+
+    stats = daemon.get_learning_stats()
+    callback = stats["learning_loop"]["journal_callback"]
+    assert callback["attempts"] == 1
+    assert callback["failures"] == 1
+    assert callback["last_status"] == "error"
+    assert callback["last_error"] == "disk full"
+    assert stats["journal"]["status"] == "error"
+    assert daemon.state.last_feedback_at is not None
