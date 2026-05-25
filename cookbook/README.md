@@ -59,7 +59,7 @@ Then point your app at the proxy:
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:9377
 export OPENAI_BASE_URL=http://localhost:9377/v1
-export GEMINI_BASE_URL=http://localhost:9377/v1beta
+export GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta
 your-app
 ```
 

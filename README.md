@@ -644,7 +644,7 @@ Third-party product names are used only to describe compatibility. Entroly is no
 
 - **CLI agents** — for tools with supported custom endpoint variables, entroly starts the proxy, sets the endpoint, and execs the binary. Some tools may require their own provider config instead.
 - **MCP-aware IDEs** — entroly auto-merges its MCP server into the IDE's `mcp.json` (with a `.entroly-backup` of any prior config). Restart the IDE.
-- **Other IDEs** — entroly prints a copy-paste-ready snippet with the exact file path and field to set.
+- **Other IDEs** — entroly prints a best-effort endpoint/config hint. Exact setting names can vary by tool version; use only when the installed tool documents custom endpoint support.
 
 ### CLI agents (env-wrap, exec)
 
@@ -676,7 +676,7 @@ These wrappers are compatibility helpers, not endorsements by the tool vendors. 
 
 ### Other IDEs (copy-paste snippet)
 
-`entroly wrap <agent>` prints the exact file path and field name. Paste once, restart, done.
+`entroly wrap <agent>` prints a best-effort endpoint/config hint. If your installed tool supports custom OpenAI-compatible endpoints, paste the shown URL into that tool's documented base URL / endpoint field and restart. These print-only helpers are not vendor certifications.
 
 | Agent | Slug |
 |---|---|

@@ -21,11 +21,51 @@ check("SDK: compress works", lambda: f"{len(__import__('entroly').compress('hell
 
 # === CLI: wrap ===
 from entroly.cli import _WRAP_AGENTS
+from pathlib import Path
+
+README_TEXT = Path("README.md").read_text(encoding="utf-8")
+COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
+
 check("wrap claude", lambda: "claude" in _WRAP_AGENTS and "OK")
 check("wrap codex", lambda: "codex" in _WRAP_AGENTS and "OK")
 check("wrap aider", lambda: "aider" in _WRAP_AGENTS and "OK")
 check("wrap cursor", lambda: "cursor" in _WRAP_AGENTS and "OK")
 check("wrap copilot", lambda: "copilot" in _WRAP_AGENTS and "OK" or (_ for _ in ()).throw(Exception("MISSING")))
+
+README_WRAP_SLUGS = [
+    "claude", "cursor", "codex", "aider", "gemini", "qwen", "opencode",
+    "crush", "hermes", "pi", "ollama", "windsurf", "vscode",
+    "claude-desktop", "claude-code", "zed", "cline", "roo", "continue",
+    "cody", "amp", "kiro", "qoder", "trae", "antigravity", "amazonq",
+    "verdent", "jetbrains", "helix", "tabby", "twinny", "sublime",
+    "emacs", "neovim", "fittencode", "tabnine", "supermaven",
+]
+check(
+    "wrap README slug coverage",
+    lambda: (
+        not [slug for slug in README_WRAP_SLUGS if slug not in _WRAP_AGENTS]
+        and f"{len(README_WRAP_SLUGS)} slugs"
+    ) or (_ for _ in ()).throw(Exception("README lists missing wrapper slug")),
+)
+check(
+    "README print-only wording",
+    lambda: (
+        "Paste once, restart, done" not in README_TEXT
+        and "prints the exact file path and field name" not in README_TEXT
+        and "best-effort endpoint/config hint" in README_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("README overpromises print-only wrappers")),
+)
+check(
+    "Gemini base URL env spelling",
+    lambda: (
+        "export GEMINI_BASE_URL" not in README_TEXT
+        and "export GEMINI_BASE_URL" not in COOKBOOK_TEXT
+        and "GOOGLE_GEMINI_BASE_URL" in README_TEXT
+        and "GOOGLE_GEMINI_BASE_URL" in COOKBOOK_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("Use GOOGLE_GEMINI_BASE_URL in docs")),
+)
 
 # === Proxy ===
 check("Proxy: PromptCompilerProxy", lambda: __import__("entroly.proxy", fromlist=["PromptCompilerProxy"]).PromptCompilerProxy and "OK")

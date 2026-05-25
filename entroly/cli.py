@@ -1405,9 +1405,9 @@ def _check_codebase() -> bool:
 #   "cli"  — set env var, exec the binary (zero friction; works today).
 #   "mcp"  — write/merge an MCP server entry into the tool's mcp.json
 #            (zero friction; user just restarts the IDE).
-#   "print"— print a copy-paste-ready snippet with the exact file path and
-#            the exact key to set. Used when the schema varies by version
-#            or the config lives somewhere we shouldn't auto-mutate.
+#   "print"— print a best-effort endpoint/config hint. Used when the schema
+#            varies by version or the config lives somewhere we shouldn't
+#            auto-mutate.
 #
 # Path tokens: {cwd} {home} {appdata} {port} are substituted at use time.
 _WRAP_AGENTS = {
@@ -1724,7 +1724,7 @@ def _wrap_via_mcp(spec: dict, port: int) -> bool:
 
 
 def _wrap_via_print(spec: dict, port: int) -> None:
-    """Print a copy-paste-ready config snippet. Proxy is already running."""
+    """Print a best-effort config hint. Proxy is already running."""
     url = spec.get("url", "http://localhost:{port}/v1").format(port=port)
     label = spec.get("config_label", "your IDE settings")
     key_path = spec.get("key_path", "Base URL")
@@ -1747,7 +1747,10 @@ def _wrap_via_print(spec: dict, port: int) -> None:
             for line in snippet.replace("{port}", str(port)).splitlines():
                 print(f"      {line}")
 
-    print(f"\n  {C.GRAY}Once configured, every {spec['name']} request flows through Entroly.{C.RESET}\n")
+    print(
+        f"\n  {C.GRAY}If your installed {spec['name']} supports this custom endpoint, "
+        f"requests sent through that endpoint should route through Entroly.{C.RESET}\n"
+    )
 
 
 def _start_proxy_if_needed(port: int) -> bool:
