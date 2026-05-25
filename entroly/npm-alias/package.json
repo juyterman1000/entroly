@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Compatibility alias for Entroly's Node/WASM runtime. Installs and delegates to entroly-wasm.",
   "main": "index.js",
   "bin": {
@@ -12,7 +12,7 @@
     "README.md"
   ],
   "dependencies": {
-    "entroly-wasm": "1.0.4"
+    "entroly-wasm": "1.0.5"
   },
   "repository": {
     "type": "git",
