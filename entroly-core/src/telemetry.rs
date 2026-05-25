@@ -93,7 +93,7 @@ mod tests {
         let new = serde_json::json!({"ts": now + 10.0, "summary": "new"});
         fs::write(
             &path,
-            format!("{}\n{}\nnot-json\n", old.to_string(), new.to_string()),
+            format!("{old}\n{new}\nnot-json\n"),
         )
         .unwrap();
 
