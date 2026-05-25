@@ -94,6 +94,8 @@ def test_learning_stats_include_next_cadence_reason():
 
     assert stats["learning_loop"]["next_interval_s"] == 10.0
     assert stats["learning_loop"]["interval_reason"] == "new_feedback"
+    assert stats["learning_loop"]["wakeups"] == 0
+    assert stats["learning_loop"]["last_wake_reason"] is None
     assert stats["learning_loop"]["journal_callback"] == {
         "attempts": 0,
         "failures": 0,
@@ -285,6 +287,32 @@ def test_daemon_learning_callback_resets_idle_before_logging(tmp_path):
     assert callback["failures"] == 0
     assert callback["last_status"] == "ok"
     assert callback["last_error"] is None
+
+    loop = daemon.get_learning_stats()["learning_loop"]
+    assert loop["wakeups"] == 1
+    assert loop["last_wake_reason"] == "feedback"
+    assert daemon._learning_wake.is_set()
+
+
+def test_daemon_learning_controls_wake_worker():
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+
+    daemon.set_learning_enabled(False)
+
+    loop = daemon.get_learning_stats()["learning_loop"]
+    assert daemon.state.learning_enabled is False
+    assert loop["wakeups"] == 1
+    assert loop["last_wake_reason"] == "learning_disabled"
+    assert daemon._learning_wake.is_set()
+
+    daemon._learning_wake.clear()
+    daemon.trigger_autotune()
+
+    loop = daemon.get_learning_stats()["learning_loop"]
+    assert daemon.state.autotune_enabled is True
+    assert loop["wakeups"] == 2
+    assert loop["last_wake_reason"] == "autotune"
+    assert daemon._learning_wake.is_set()
 
 
 def test_daemon_learning_callback_reports_journal_failures():

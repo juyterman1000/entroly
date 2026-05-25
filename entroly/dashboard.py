@@ -1244,7 +1244,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             status_code = 200
         elif self.path == "/api/control/learning/enable":
             enabled = body.get("enabled", True)
-            daemon.state.learning_enabled = enabled
+            if hasattr(daemon, "set_learning_enabled"):
+                daemon.set_learning_enabled(enabled)
+            else:
+                daemon.state.learning_enabled = enabled
             result = {"ok": True, "learning_enabled": enabled}
             status_code = 200
         elif self.path == "/api/control/learning/reset":
@@ -1252,7 +1255,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = {"ok": True, "weights_reset": True}
             status_code = 200
         elif self.path == "/api/control/learning/autotune":
-            daemon.state.autotune_enabled = True
+            if hasattr(daemon, "trigger_autotune"):
+                daemon.trigger_autotune()
+            else:
+                daemon.state.autotune_enabled = True
             result = {"ok": True, "autotune": "triggered"}
             status_code = 200
         elif self.path == "/api/control/federation/enable":

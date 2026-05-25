@@ -179,6 +179,7 @@ class EntrolyDaemon:
         self._workers: dict[str, threading.Thread] = {}
         self._proxy_config: Any = None  # live ProxyConfig ref for quality toggle
         self._shutdown = threading.Event()
+        self._learning_wake = threading.Event()
         self._lock = threading.Lock()
         self._learning_interval_s = 30.0
         self._learning_last_tick_at: float | None = None
@@ -193,6 +194,9 @@ class EntrolyDaemon:
         self._learning_journal_log_failures = 0
         self._learning_last_journal_log_status = "not_started"
         self._learning_last_journal_log_error: str | None = None
+        self._learning_wakeups = 0
+        self._learning_last_wake_at: float | None = None
+        self._learning_last_wake_reason: str | None = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -251,6 +255,7 @@ class EntrolyDaemon:
         self.state.status = "stopping"
         logger.info("Entroly daemon stopping...")
         self._shutdown.set()
+        self._learning_wake.set()
 
         # Stop proxy
         if self._proxy_server:
@@ -528,7 +533,9 @@ class EntrolyDaemon:
 
                 while not self._shutdown.is_set():
                     self._learning_interval_s = interval_s
-                    self._shutdown.wait(timeout=interval_s)
+                    woke_early = self._learning_wake.wait(timeout=interval_s)
+                    if woke_early:
+                        self._learning_wake.clear()
                     if self._shutdown.is_set():
                         break
 
@@ -744,6 +751,7 @@ class EntrolyDaemon:
             journal.log(**episode)
             self._learning_last_journal_log_status = "ok"
             self._learning_last_journal_log_error = None
+            self._wake_learning_loop("feedback")
         except Exception as e:
             self._learning_journal_log_failures = int(
                 getattr(self, "_learning_journal_log_failures", 0) or 0
@@ -780,6 +788,22 @@ class EntrolyDaemon:
         if self._proxy_config is not None:
             self._proxy_config._apply_quality_dial(quality_val)
             logger.info("Quality dial applied: %s → %.2f", mode, quality_val)
+
+    def set_learning_enabled(self, enabled: bool):
+        self.state.learning_enabled = bool(enabled)
+        self._wake_learning_loop(
+            "learning_enabled" if self.state.learning_enabled else "learning_disabled"
+        )
+
+    def trigger_autotune(self):
+        self.state.autotune_enabled = True
+        self._wake_learning_loop("autotune")
+
+    def _wake_learning_loop(self, reason: str):
+        self._learning_wakeups = int(getattr(self, "_learning_wakeups", 0) or 0) + 1
+        self._learning_last_wake_at = time.time()
+        self._learning_last_wake_reason = reason
+        self._learning_wake.set()
 
     def get_learning_weights(self) -> dict:
         """Get current PRISM 5D weights + OnlinePrism state.
@@ -880,6 +904,9 @@ class EntrolyDaemon:
             "interval_reason": getattr(
                 self, "_learning_last_interval_reason", "unknown"
             ),
+            "wakeups": int(getattr(self, "_learning_wakeups", 0) or 0),
+            "last_wake_at": getattr(self, "_learning_last_wake_at", None),
+            "last_wake_reason": getattr(self, "_learning_last_wake_reason", None),
             "last_tick": {
                 "saw_new_feedback": getattr(
                     self, "_learning_last_tick_saw_new_feedback", None
