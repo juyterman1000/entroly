@@ -61,3 +61,20 @@ try:
     from .esg import ESGAnalyzer, compute_tension  # noqa: F401
 except ImportError:
     pass
+
+# STAVE — Semantic Triplet Alignment Via Extraction.
+# Binary-relational hallucination verifier. Novel: checks whether the
+# *relationship* between entities in the answer matches knowledge, not
+# just whether individual tokens appear. Wrong-slot gate: 100% precision.
+# Already wired into WitnessAnalyzer (use_stave=True by default).
+try:
+    from .verifiers.stave import stave_verify, stave_risk  # noqa: F401
+except ImportError:
+    pass
+
+# Local NLI — zero-API entailment using DeBERTa-v3-small (~80MB).
+# Enable: WitnessAnalyzer(use_local_nli=True) or ENTROLY_LOCAL_NLI=1.
+try:
+    from .verifiers.local_nli import nli_score, is_available as nli_available  # noqa: F401
+except ImportError:
+    pass

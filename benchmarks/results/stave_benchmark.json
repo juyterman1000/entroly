@@ -1,0 +1,16 @@
+{
+  "n_items": 2000,
+  "n_decisions": 2000,
+  "ms_per_decision": 3.303,
+  "stave_coverage_pct": 34.9,
+  "witness_auroc": 0.7967,
+  "fusion_auroc": 0.8416,
+  "stave_auroc": 0.829,
+  "stave_fusion_auroc": 0.8444,
+  "auroc_delta": 0.0028,
+  "witness_acc": 0.8465,
+  "fusion_acc": 0.8465,
+  "stave_acc": 0.8345,
+  "stave_fusion_acc": 0.858,
+  "acc_delta_pp": 1.15
+}

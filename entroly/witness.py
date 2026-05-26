@@ -554,6 +554,8 @@ class WitnessAnalyzer:
         self,
         *,
         use_nli: bool = False,
+        use_local_nli: bool | None = None,
+        use_stave: bool = True,
         model: str = "gpt-4o-mini",
         profile: str = "auto",
         support_threshold: float = 0.62,
@@ -565,6 +567,16 @@ class WitnessAnalyzer:
         thresholds: "ThresholdSet | None" = None,  # noqa: F821
     ) -> None:
         self.use_nli = use_nli
+        # Local NLI: default = env var ENTROLY_LOCAL_NLI, else False.
+        # Set True to use DeBERTa-v3-small (~80 MB) for zero-API entailment.
+        if use_local_nli is None:
+            self.use_local_nli = os.getenv("ENTROLY_LOCAL_NLI", "").lower() in ("1", "true", "yes")
+        else:
+            self.use_local_nli = use_local_nli
+        # STAVE: binary-relational slot verifier. Default on; disable with
+        # ENTROLY_STAVE=0 or use_stave=False.
+        _stave_env = os.getenv("ENTROLY_STAVE", "1").lower()
+        self.use_stave = use_stave and _stave_env not in ("0", "false", "no")
         self.model = model
         self.profile = profile
         self.support_threshold = support_threshold
@@ -616,6 +628,31 @@ class WitnessAnalyzer:
             summary_score = 1.0 - sum(cert.risk for cert in certificates) / len(certificates)
         else:
             summary_score = 1.0
+
+        # ── STAVE enhancement ────────────────────────────────────────────
+        # Blend Relational Slot Fidelity into summary_score when STAVE
+        # has a non-neutral signal (coverage ~35% of QA decisions).
+        # Wrong-slot gate (sr==0.0) = hard penalise; partial mismatch =
+        # soft blend weighted 25%.
+        # Disable with use_stave=False or ENTROLY_STAVE=0.
+        if self.use_stave:
+            try:
+                from .verifiers.stave import stave_risk as _stave_risk
+                # Extract knowledge-only (strip trailing "Question: ...")
+                _knowledge = (
+                    evidence_context.split("\n\nQuestion:")[0].strip()
+                    if "\n\nQuestion:" in evidence_context
+                    else evidence_context
+                )
+                _sr = _stave_risk(output, _knowledge)
+                if _sr != 0.5:  # STAVE has relational signal
+                    if _sr == 0.0:  # wrong-slot gate fired: hard cap
+                        summary_score = min(summary_score, 0.10)
+                    else:  # soft blend: 75% WITNESS + 25% STAVE
+                        summary_score = 0.75 * summary_score + 0.25 * (1.0 - _sr)
+            except Exception as _e:
+                logger.debug("STAVE blend failed: %s", _e)
+
         return WitnessResult(
             output=output,
             certificates=certificates,
@@ -816,6 +853,18 @@ class WitnessAnalyzer:
             nli = nli_verdict
         elif self.use_nli and os.getenv("OPENAI_API_KEY"):
             nli = _openai_nli_check(context, claim.text, windows, adequacy, self.model)
+        elif self.use_local_nli:
+            # Local DeBERTa-v3-small NLI — zero API cost, ~30-80ms/claim on CPU.
+            # Only run when local_pav verdict is uncertain (neutral) to keep
+            # the average latency overhead acceptable.
+            try:
+                from .verifiers.local_nli import nli_score as _local_nli_score
+                _evidence = "\n".join(w.text for w in windows) if windows else context[:1000]
+                _label, _conf = _local_nli_score(_evidence, claim.text)
+                nli = NLIVerdict(_label, _conf, _evidence[:180], adequacy)
+            except Exception as _nli_e:
+                logger.debug("Local NLI failed: %s", _nli_e)
+                nli = None
         else:
             nli = None
         if nli is not None:
