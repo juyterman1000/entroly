@@ -23,7 +23,7 @@
   <a href="https://github.com/juyterman1000/entroly-cost-check-"><img src="https://img.shields.io/badge/GitHub_Action-Cost_Check-purple?style=for-the-badge&logo=githubactions" alt="GitHub Action"></a>
 </p>
 
-<h1 align="center">Entroly — Context Compression and Evidence Checks for AI to save your AI bills</h1>
+<h1 align="center">E Entroly — Reduce LLM API Costs by 80% with Context Compression and Hallucination Detectio to save your AI bills</h1>
 
 <h3 align="center">Audit AI answers against supplied evidence. Cut large-repo context 70-95% in release checks when retrieval has room to work and save tokens<br/>Set up in about 30 seconds.</h3>
 
