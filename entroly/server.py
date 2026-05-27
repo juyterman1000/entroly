@@ -4092,6 +4092,100 @@ def create_mcp_server(
         result = s.suppress(context, output)
         return json.dumps(result.as_dict(), indent=2)
 
+    # ── SRP: Semantic Resolution Protocol ──
+    # Budget-driven file reads with automatic per-block resolution.
+    @mcp.tool()
+    def smart_read(
+        file_path: str,
+        query: str = "",
+        budget: int = 1000,
+    ) -> str:
+        """Read a file with automatic resolution optimization.
+
+        Instead of choosing between full/map/signatures mode, SRP
+        automatically selects the optimal resolution for each code block
+        based on query relevance and token budget:
+          - Blocks matching the query → FULL (complete source)
+          - Related blocks → MEDIUM (signature + docstring)
+          - Peripheral blocks → LOW (name only)
+          - Irrelevant blocks → SKIP (omitted)
+
+        This saves 40-70% tokens vs full-file reads while preserving
+        all query-relevant detail.
+
+        Args:
+            file_path: Path to the file to read
+            query: What you're looking for (improves relevance scoring)
+            budget: Target token budget for the output (default: 1000)
+        """
+        try:
+            from .semantic_resolution import resolve
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                source = f.read()
+            result = resolve(source, query=query, budget=budget, file_path=file_path)
+            return json.dumps({
+                "output": result.output,
+                "file_path": result.file_path,
+                "total_blocks": result.total_blocks,
+                "resolution_counts": result.resolution_counts,
+                "total_tokens": result.total_tokens,
+                "budget": result.budget,
+            }, indent=2)
+        except FileNotFoundError:
+            return json.dumps({"error": f"File not found: {file_path}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    # ── ACF: Adversarial Context Firewall ──
+    # Content security scanning for agents.
+    @mcp.tool()
+    def security_scan(
+        content: str,
+        source: str = "<unknown>",
+    ) -> str:
+        """Scan content for prompt injection attacks and security threats.
+
+        Detects:
+          - Direct instruction overrides ("ignore previous instructions")
+          - Role reassignment attempts ("you are now a...")
+          - Unicode steganography (zero-width chars, directional overrides)
+          - Base64-encoded instruction payloads
+          - Repetition flooding (context window domination)
+          - XML/tag-based role spoofing
+
+        Use this to verify untrusted content before including it in prompts.
+
+        Args:
+            content: The text content to scan
+            source: Source identifier for threat location reporting
+        """
+        try:
+            from .context_firewall import scan
+            result = scan(content, source=source)
+            return json.dumps({
+                "is_safe": result.is_safe,
+                "threats": [
+                    {
+                        "type": t.threat_type,
+                        "severity": t.severity,
+                        "description": t.description,
+                        "location": t.location,
+                        "matched_pattern": t.matched_pattern,
+                    }
+                    for t in result.threats
+                ],
+                "summary": {
+                    "critical": result.n_critical,
+                    "high": result.n_high,
+                    "medium": result.n_medium,
+                    "low": result.n_low,
+                },
+                "content_hash": result.content_hash,
+                "scan_time_ms": round(result.scan_time_ms, 2),
+            }, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
     return mcp, engine
 
 

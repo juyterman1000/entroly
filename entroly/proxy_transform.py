@@ -943,7 +943,20 @@ def compress_tool_output(content: str) -> tuple[str, str, float]:
             if savings > 0.10:  # Only apply if >10% savings
                 return result, name, savings
 
+    # ── ESC fallback: universal entropic compression ──
+    # When no specialized compressor matches, ESC uses information-theoretic
+    # line scoring (Shannon entropy + structural classification + SimHash dedup)
+    # to compress ANY tool output.  One algorithm, all tools.
+    try:
+        from .shell_codec import esc_compress
+        esc_result = esc_compress(content, budget=1000)
+        if esc_result.compression_ratio > 0.10:
+            return esc_result.compressed, "esc_universal", esc_result.compression_ratio
+    except Exception:
+        pass  # graceful degradation — return uncompressed
+
     return content, "none", 0.0
+
 
 
 def _compress_test_output(content: str) -> str | None:

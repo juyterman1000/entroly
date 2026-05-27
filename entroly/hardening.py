@@ -369,6 +369,26 @@ def sanitize_injected_context(
                 matches.append(label)
                 seen.add(label)
 
+    # ── ACF extended scanning ──
+    # Complements the above patterns with base64-encoded payload detection
+    # and repetition flooding detection from the context firewall module.
+    try:
+        from .context_firewall import scan as acf_scan
+        acf_result = acf_scan(
+            cleaned, source="injected_context",
+            check_unicode=False,      # already stripped above
+            check_injection=False,     # already scanned above
+            check_repetition=True,     # NEW: detect context flooding
+            check_encoded=True,        # NEW: detect base64 payloads
+        )
+        for threat in acf_result.threats:
+            label = f"acf_{threat.threat_type}"
+            if label not in seen:
+                matches.append(label)
+                seen.add(label)
+    except Exception:
+        pass  # graceful degradation
+
     if matches and fence:
         warn = (
             "[entroly:injection-scan] potential prompt-injection patterns "

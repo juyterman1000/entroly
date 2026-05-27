@@ -99,14 +99,8 @@ try:
 except ImportError:
     pass
 
-# CMWP — Causal Memory with WITNESS Provenance.
-# Session memory where every fact carries a WITNESS certificate.
-# Auto-invalidates when source files change.  Prevents hallucination
-# propagation across sessions.
-try:
-    from .causal_memory import CausalMemoryStore, CausalFact  # noqa: F401
-except ImportError:
-    pass
+# CMWP — Causal Memory is handled by hippocampus LTM + Ebbinghaus decay.
+# See entroly/long_term_memory.py and entroly/checkpoint.py.
 
 # WVH — Witness-Verified Handoff.
 # Multi-agent handoff protocol with built-in hallucination filtering.
