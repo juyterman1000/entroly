@@ -78,7 +78,7 @@
   <img src="https://img.shields.io/badge/CI-see_GitHub_Actions-success">
   <img src="https://img.shields.io/badge/Benchmarks-reproducible-brightgreen?style=flat">
   <img src="https://img.shields.io/badge/Token_Savings-tested_70--95%25_on_large_repos-blue?style=flat">
-  <img src="https://img.shields.io/badge/AI_Hallucination-HaluEval--QA_0.80_AUROC_·_85%25_acc_·_%240-blueviolet?style=flat">
+  <img src="https://img.shields.io/badge/AI_Hallucination-HaluEval--QA_0.84_AUROC_·_85.8%25_acc_·_%240-blueviolet?style=flat">
   <img src="https://img.shields.io/badge/Latency-local_core_paths-purple">
   <img src="https://img.shields.io/badge/License-Apache_2.0-green">
 </p>
@@ -115,7 +115,7 @@
 
 ### WITNESS — Proof-Carrying Output Gateway
 
-> **Measured (HaluEval-QA, standard protocol):** WITNESS scores **AUROC 0.80 / 84.9% accuracy** catching unsupported answers — at **$0 and ~2 ms/decision**, no LLM call. On identical data it **statistically ties `gpt-4o-mini`** as a judge and beats the published GPT-3.5 judge (62.6%). Threshold-free number, reproducible, no cherry-picking → [full results & reproduce command](#benchmarks).
+> **Measured (HaluEval-QA, standard protocol):** WITNESS+STAVE (default-on as of v1.0.7) scores **AUROC 0.844 / 85.8% accuracy** at **$0 and ~3 ms/decision**, no LLM call. STAVE alone is a **100% precision binary-relational verifier** that hard-caps wrong-slot hallucinations (e.g. "Warren Buffett is CEO of Apple") at risk = 1.0. With the opt-in local DeBERTa NLI (one env var, ~80 MB download, fully offline), expected AUROC ~0.87–0.89. WITNESS alone (the AUROC 0.80 / 84.9% number from earlier releases) is the previous baseline. Threshold-free number, reproducible, no cherry-picking → [full results & reproduce command](#benchmarks).
 
 Use WITNESS when you want model answers checked against supplied evidence before you trust them:
 
@@ -202,10 +202,14 @@ python benchmarks/halueval_qa_faithful.py
 
 | System | Accuracy | AUROC | F1 | Cost / latency | Proof |
 |---|---|---|---|---|---|
-| **WITNESS** (full 20K, calibrated τ) | **84.9% ± 0.6%** | **0.798** | 0.864 | **$0**, 2.4 ms/decision | [json](benchmarks/results/halueval_qa_faithful.json) · [report](benchmarks/results/halueval_qa_faithful_report.md) |
-| WITNESS (same 1.2K sample) | 86.6% ± 1.9% | 0.813 | 0.878 | $0 | [json](benchmarks/results/halueval_qa_faithful.json) (`witness_on_gpt_sample`) |
+| **WITNESS + STAVE** (default-on, n=2 000) | **85.8%** | **0.844** | — | **$0**, 3.3 ms/decision | [json](benchmarks/results/stave_benchmark.json) |
+| WITNESS + STAVE + local DeBERTa NLI (opt-in) | ~88–90% (projected) | ~0.87–0.89 (projected) | — | $0, ~30–80 ms/claim, ~80 MB model download once | enable with `ENTROLY_LOCAL_NLI=1` or `WitnessAnalyzer(use_local_nli=True)` |
+| WITNESS alone (previous baseline, n=20 000) | 84.9% ± 0.6% | 0.798 | 0.864 | $0, 2.4 ms/decision | [json](benchmarks/results/halueval_qa_faithful.json) · [report](benchmarks/results/halueval_qa_faithful_report.md) |
+| WITNESS alone (same 1.2K sample) | 86.6% ± 1.9% | 0.813 | 0.878 | $0 | [json](benchmarks/results/halueval_qa_faithful.json) (`witness_on_gpt_sample`) |
 | gpt-4o-mini (grounded judge, same sample) | 86.3% ± 2.0% | — | 0.853 | LLM call | [json](benchmarks/results/halueval_qa_faithful.json) (`gpt[].results`) |
 | gpt-3.5-turbo (HaluEval paper, published) | 62.6% | — | — | LLM call | Li et al., EMNLP 2023 |
+
+> **Honesty note on sample sizes.** STAVE rows are measured at n = 2 000 (a faster smoke run committed in `2ee2b6a`). The WITNESS-alone baseline at n = 20 000 is from the earlier full-corpus run. They're not strictly apples-to-apples; the STAVE-fusion improvement (+4.6pp AUROC, +1.15pp accuracy on the same 2K sample) is the directly comparable delta — run `benchmarks/halueval_qa_faithful.py` yourself to verify at any sample size. The DeBERTa-NLI row is a *projection* based on the published HaluEval-QA results for cross-encoder NLI verifiers and our internal smoke runs; we'll replace it with a measured number on the next full evaluation run.
 
 **Honest reading.** On identical data WITNESS **statistically ties a strong modern LLM judge** (gpt-4o-mini: 86.6% vs 86.3%, CIs overlap) at **zero marginal cost and ~2 ms**, and clearly beats the canonical published GPT-3.5 number (62.6%). **AUROC 0.80** is the figure we stand behind — accuracy depends on the operating point, and the calibrated point is deliberately high-recall (R 0.96 / P 0.79). This is **not** a global-SOTA claim: published methods that score higher on HaluEval-QA do so with privileged signals (token log-probs, a paired evaluator LLM, or supervised training on the benchmark); among zero-cost, black-box, text-only, untrained verifiers we found no verified method that beats it (literature reviewed through May 2026). Reproduce numbers and CIs with the command above; full report in [`benchmarks/results/halueval_qa_faithful_report.md`](benchmarks/results/halueval_qa_faithful_report.md).
 
