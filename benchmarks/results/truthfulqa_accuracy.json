@@ -3,19 +3,31 @@
     "benchmark": "truthfulqa",
     "retention": 1.0,
     "token_savings_pct": 0.0,
-    "cost_savings_pct": 0.0,
-    "baseline_accuracy": 0.95,
+    "baseline_accuracy": 0.9,
     "baseline_ci_95": [
-      0.7639,
-      0.9911
+      0.699,
+      0.9721
     ],
-    "entroly_accuracy": 0.95,
+    "entroly_accuracy": 0.9,
     "entroly_ci_95": [
-      0.7639,
-      0.9911
+      0.699,
+      0.9721
     ],
     "baseline_avg_tokens": 85.6,
     "entroly_avg_tokens": 85.6,
-    "samples": 20
+    "samples": 20,
+    "provenance": {
+      "model": "gpt-4o-mini",
+      "seed": 42,
+      "budget": 50000,
+      "timestamp_utc": "2026-05-24T01:37:48.738623+00:00",
+      "git_sha": "0a54982698ee",
+      "elapsed_s": 25.4,
+      "audit_jsonl": "truthfulqa_audit.jsonl",
+      "audit_record_count": 20,
+      "scoring": "bench.accuracy._check_answer (benchmark='truthfulqa')",
+      "compressor": "entroly.qccr.select (via bench.accuracy._compress_messages_modal mode='entroly')",
+      "dataset_loader": "_load_truthfulqa"
+    }
   }
 ]

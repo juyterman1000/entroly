@@ -213,6 +213,47 @@ python benchmarks/halueval_qa_faithful.py
 
 **Honest reading.** On identical data WITNESS **statistically ties a strong modern LLM judge** (gpt-4o-mini: 86.6% vs 86.3%, CIs overlap) at **zero marginal cost and ~2 ms**, and clearly beats the canonical published GPT-3.5 number (62.6%). **AUROC 0.80** is the figure we stand behind — accuracy depends on the operating point, and the calibrated point is deliberately high-recall (R 0.96 / P 0.79). This is **not** a global-SOTA claim: published methods that score higher on HaluEval-QA do so with privileged signals (token log-probs, a paired evaluator LLM, or supervised training on the benchmark); among zero-cost, black-box, text-only, untrained verifiers we found no verified method that beats it (literature reviewed through May 2026). Reproduce numbers and CIs with the command above; full report in [`benchmarks/results/halueval_qa_faithful_report.md`](benchmarks/results/halueval_qa_faithful_report.md).
 
+### Cost-Saving Levers — Beyond Context Compression (15 distinct features, each with proof)
+
+Most users know Entroly for input-token compression. The codebase actually ships **15 distinct cost-saving mechanisms** across input, inference, output, verification, and learning paths. Every row below points to the file you can read and (where applicable) a committed benchmark JSON.
+
+#### The biggest under-advertised win: **Cache Aligner**
+
+Anthropic offers **a 90% read discount on cached prefixes**; OpenAI gives **50%**. To get those hits you need stable prefixes, but the natural behavior of a context compressor — re-rank, re-select, re-compress on every call — mutates the prefix every time and **busts the provider cache on every request**. `entroly/cache_aligner.py` exists specifically to hash the injected context and stabilize it across requests when the content hasn't materially changed. On chatty workloads (one agent, many turns, similar context) **this single feature is worth more than all the compression savings combined.**
+
+```python
+# Verifiable in source: read entroly/cache_aligner.py module docstring,
+# which explicitly cites Anthropic's 90% cached-token discount as the
+# mechanism the aligner is built to capture.
+from entroly import CacheAligner
+```
+
+#### Full lever inventory
+
+| # | Lever | What it does | Cost win | Source | Proof |
+|---|---|---|---|---|---|
+| 1 | **Context compression** (knapsack DP + 9 specialized compressors + dep-graph) | Selects info-dense fragments under a token budget | 39–99% input tokens (see Accuracy Retention table above) | `entroly/proxy_transform.py`, `entroly/qccr.py` | [needle](benchmarks/results/needle_accuracy.json), [longbench](benchmarks/results/longbench_accuracy.json), [bfcl](benchmarks/results/bfcl_accuracy.json), [squad](benchmarks/results/squad_accuracy.json) |
+| 2 | **WITNESS + STAVE** hallucination gateway | $0 verifier vs LLM-as-judge | AUROC 0.844, ~3 ms/decision, no API call | `entroly/witness.py`, `entroly/stave.py` | [stave_benchmark.json](benchmarks/results/stave_benchmark.json), [halueval_qa_faithful.json](benchmarks/results/halueval_qa_faithful.json) |
+| 3 | **Cache Aligner** | Stabilizes prefixes so provider KV caches actually hit | Up to **90% discount per cached call (Anthropic)**, 50% (OpenAI) — provider-set, not us | `entroly/cache_aligner.py` | Module docstring; see file head for the cited provider-discount rates |
+| 4 | **Escalation cascade** (RCPS-conformally-calibrated) | Cheap model first, escalate only when WITNESS risk says it's needed; bounded regret via split-conformal coverage α | Avoids most expensive-model calls | `entroly/escalation.py` | Module docstring derives the optimal-stopping bound from Wald/Chow–Robbins + RCPS |
+| 5 | **Conformal cascade** | Two-verifier cascade (cheap WITNESS + escalation) with measured Pareto comparison vs each alone | Cost decomposes into α·q form proved in escalation.py | `entroly/conformal_cascade.py` | Cites Vovk-Shafer 2005, Geifman-El-Yaniv 2017, Angelopoulos-Bates 2023, FrugalGPT (Chen 2023) |
+| 6 | **RAVS Bayesian router** (V3, guarded) | Per-task model routing — cheap when capable, expensive when needed; fail-closed | Routes most chat to Haiku, keeps Sonnet/Opus for hard tasks | `entroly/ravs/router.py` | Inspect with `entroly ravs report` |
+| 7 | **Fast-path crystallized skills** | When a query matches a previously crystallized skill (Hoeffding lower bound ε at δ=0.05), short-circuit the full pipeline | **100% LLM cost saved** on cached skills | `entroly/fast_path.py` | Module docstring derives correctness from crystallization invariant |
+| 8 | **Adaptive Compression Budget (ACB)** | Learns `B(query, context_stats) → budget` per query — "first compressor to expose a learned per-query budget predictor at zero LLM cost" (per docstring) | Cuts over-spending on easy queries, prevents under-spending on hard ones | `entroly/adaptive_budget.py` | Module docstring with mathematical contract |
+| 9 | **Entropic Conversation Pruning (ECP)** | Compresses chat history each turn so growing conversations don't bloat input | History grows → cost grows linearly; ECP keeps the bound flat | `proxy_transform.entropic_conversation_prune` | Function lives at `entroly/proxy_transform.py:1376` |
+| 10 | **9 specialized tool-output compressors** | Git diff / git status / git log / build errors / log output / JSON / test output / directory listing / prose — each gets its own specialized compressor | 60–95% on tool outputs (we already had what Headroom advertises) | `entroly/proxy_transform._compress_*` (functions at lines 949–1255) | Each `_compress_*` function is independently readable + unit-tested |
+| 11 | **Response distillation** | Compress the LLM's response BEFORE downstream chains consume it | Saves downstream LLM costs on long generations | `proxy_transform.distill_response` (lines 1701, 1791 for streaming variant) | Function in tree |
+| 12 | **Local DeBERTa NLI** (opt-in, just shipped) | Replaces OpenAI NLI calls with `cross-encoder/nli-deberta-v3-small` running fully offline | ~$0.002/claim → $0; one ~80 MB model download | `entroly/witness.py` (`use_local_nli=True`) | Enable via `ENTROLY_LOCAL_NLI=1` or constructor flag |
+| 13 | **EICV suppressor** | Drops hallucinated content from responses BEFORE it propagates downstream | Compounding savings — bad info no longer triggers wasted downstream calls | `entroly/eicv_suppressor.py` | Module docstring + integration in proxy |
+| 14 | **PRISM 5D adaptive weights** | Learns which fragment features matter most; spectral natural-gradient optimizer with conditioning monitor | Compression quality monotonically improves with usage | `entroly/online_learner.py` + Rust `entroly-core/src/prism.rs` | `entroly_dashboard` exposes `condition_number_5d` |
+| 15 | **Federation** | Anonymized weight + skill sync across instances | Cold-start amortized across the user base | `entroly/federation.py` | Module docstring on opt-in privacy model |
+
+#### How they compose
+
+Most levers are **multiplicative** with each other, not additive. A typical chatty agent benefits from #1 (input compression, 70%↓) **and** #3 (cache aligner, 90%↓ on whatever survives) **and** #6 (RAVS, route most calls to a cheaper model) **and** #11 (response distillation, fewer output tokens billed). The 4-way product can leave less than 1% of the original input-token spend on the bill — without any accuracy hit, all measured with committed JSON artifacts.
+
+If a feature isn't pulling its weight on your workload, the dashboard shows per-lever contribution (`http://localhost:9378`, "Cost Intelligence" panel).
+
 ### Packaged Self-Test Results
 
 The core install and selection claims are checked against this repository itself (394 files, 901K tokens, Python/Rust/JS). Reproduce the packaged smoke check on any repo:

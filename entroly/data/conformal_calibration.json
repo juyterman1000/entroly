@@ -1,7 +1,7 @@
 {
   "spec_version": "c3-mondrian-conformal-v1",
-  "calibrated_at": "2026-05-26T05:17:03.815034+00:00",
-  "git_sha": "ea7b7b2d43b4",
+  "calibrated_at": "2026-05-26T14:14:27.590173+00:00",
+  "git_sha": "ac4b5c77ddb3",
   "alphas": [
     0.05,
     0.1,
