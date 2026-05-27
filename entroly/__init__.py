@@ -78,3 +78,50 @@ try:
     from .verifiers.local_nli import nli_score, is_available as nli_available  # noqa: F401
 except ImportError:
     pass
+
+# ── Breakthrough Inventions ──────────────────────────────────────────
+
+# ESC — Entropic Shell Codec.
+# Universal shell compressor: one algorithm replaces 95+ per-tool regex
+# patterns.  Uses Shannon entropy scoring + structural classification +
+# SimHash dedup + knapsack DP selection.  Works on ANY CLI tool output.
+try:
+    from .shell_codec import esc_compress, ESCResult  # noqa: F401
+except ImportError:
+    pass
+
+# SRP — Semantic Resolution Protocol.
+# Information-optimal file reads: automatically selects per-block resolution
+# (FULL/MEDIUM/LOW/SKIP) based on query relevance and token budget.
+# Replaces fixed read modes with budget-driven optimization.
+try:
+    from .semantic_resolution import resolve as srp_resolve, SRPResult  # noqa: F401
+except ImportError:
+    pass
+
+# CMWP — Causal Memory with WITNESS Provenance.
+# Session memory where every fact carries a WITNESS certificate.
+# Auto-invalidates when source files change.  Prevents hallucination
+# propagation across sessions.
+try:
+    from .causal_memory import CausalMemoryStore, CausalFact  # noqa: F401
+except ImportError:
+    pass
+
+# WVH — Witness-Verified Handoff.
+# Multi-agent handoff protocol with built-in hallucination filtering.
+# Strips contradicted claims before they propagate to downstream agents.
+try:
+    from .verified_handoff import handoff as wvh_handoff, HandoffBundle  # noqa: F401
+except ImportError:
+    pass
+
+# ACF — Adversarial Context Firewall.
+# End-to-end content security: prompt injection detection (20+ patterns),
+# Unicode steganography detection, base64 payload detection, repetition
+# flooding detection, cryptographic pipeline integrity verification.
+try:
+    from .context_firewall import scan as acf_scan, sanitize as acf_sanitize  # noqa: F401
+    from .context_firewall import IntegrityChain  # noqa: F401
+except ImportError:
+    pass
