@@ -2,7 +2,7 @@
 name = "entroly-wasm"
 version = "1.0.9"
 edition = "2021"
-description = "WebAssembly build of Entroly - information-theoretic context optimization for JavaScript/TypeScript"
+description = "WebAssembly build of Entroly — cut Claude / OpenAI / Gemini bills 70%+ from JavaScript / TypeScript with no Python dependency"
 
 [lib]
 name = "entroly_wasm"

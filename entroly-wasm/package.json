@@ -1,7 +1,7 @@
 {
   "name": "entroly-wasm",
   "version": "1.0.9",
-  "description": "Information-theoretic context optimization for AI coding agents. Zero-friction, pure WebAssembly - no Python dependency.",
+  "description": "Local proxy that cuts your Claude / OpenAI / Gemini bill 70%+. Drop-in for Cursor, Claude Code, Codex, Aider — 30 seconds, no code changes. Pure WebAssembly, no Python dependency.",
   "main": "index.js",
   "types": "pkg/entroly_wasm.d.ts",
   "bin": {
