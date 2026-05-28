@@ -39,8 +39,15 @@ Resolution levels
 -----------------
     FULL   — complete source code (highest cost, highest fidelity)
     MEDIUM — signature + docstring + first line of body
+    DIFF   — signature + unified diff vs ``previous_source`` (1-line context)
     LOW    — name + type annotation only
     SKIP   — omitted entirely (0 tokens)
+
+DIFF is enabled per-block when the caller passes ``previous_source``
+to ``resolve()`` — typically a change-driven flow (post-commit /
+post-edit) where the agent needs to see *what changed* without
+re-paying for unchanged code. Modified blocks become eligible for
+DIFF; unchanged blocks fall through to the standard ladder.
 """
 from __future__ import annotations
 
@@ -60,13 +67,17 @@ logger = logging.getLogger(__name__)
 class Resolution:
     FULL = "full"
     MEDIUM = "medium"
+    DIFF = "diff"
     LOW = "low"
     SKIP = "skip"
 
-    # Cost multipliers relative to full source
+    # Cost multipliers relative to full source. DIFF sits between LOW and
+    # MEDIUM: it's cheaper than emitting the whole signature+docstring,
+    # but slightly richer than a stub because it conveys the *delta*.
     COST = {
         "full": 1.0,
         "medium": 0.25,
+        "diff": 0.15,
         "low": 0.08,
         "skip": 0.0,
     }
@@ -86,6 +97,10 @@ class CodeBlock:
     docstring: str           # docstring if present, else ""
     indent: int              # indentation level
     token_estimate: int      # approximate token count for full source
+    # Optional previous version of this block's source. Populated by
+    # ``resolve(..., previous_source=...)`` when SRP is invoked in a
+    # change-driven flow. Used to render the DIFF resolution.
+    previous_source: str = ""
 
     @property
     def summary(self) -> str:
@@ -99,6 +114,37 @@ class CodeBlock:
     def stub(self) -> str:
         """LOW resolution: just the signature with ellipsis."""
         return f"{self.signature}  ..."
+
+    @property
+    def diff(self) -> str:
+        """DIFF resolution: signature + compact unified diff vs previous_source.
+
+        Returns an empty string when no previous version is attached or
+        when the block is unchanged — callers should fall back to a
+        sibling resolution in that case (`_render_block` handles it).
+
+        Diff context is intentionally tight (n=1) because the agent reads
+        DIFF blocks to learn *what changed*, not to re-derive structure
+        from surrounding context — SRP already provides structure via
+        the signature line prepended to the diff.
+        """
+        if not self.previous_source or self.previous_source == self.source:
+            return ""
+        import difflib
+        diff_lines = list(difflib.unified_diff(
+            self.previous_source.splitlines(),
+            self.source.splitlines(),
+            lineterm="",
+            n=1,
+            fromfile=f"{self.name}~",
+            tofile=self.name,
+        ))
+        return "\n".join(diff_lines)
+
+    @property
+    def is_modified(self) -> bool:
+        """True iff a previous_source is attached and differs from current."""
+        return bool(self.previous_source) and self.previous_source != self.source
 
 
 @dataclass
@@ -404,18 +450,33 @@ def _assign_resolution(
     """Assign a resolution level based on relevance and budget pressure.
 
     budget_pressure ∈ [0, 1] where 0 = unlimited budget, 1 = very tight.
+
+    Modified blocks (``block.is_modified``) are eligible for the DIFF
+    level: it captures the change-driven signal without paying for the
+    unchanged portion of the block. For high-relevance blocks we still
+    prefer FULL — the agent wants the entire function when it's the
+    one being edited. DIFF is most valuable for the *contextual*
+    blocks around the change.
     """
+    has_diff = block.is_modified
+
     if relevance > 0.5:
         return Resolution.FULL
     if relevance > 0.25:
         if budget_pressure < 0.5:
             return Resolution.FULL
+        if has_diff and budget_pressure < 0.7:
+            return Resolution.DIFF
         return Resolution.MEDIUM
     if relevance > 0.10:
+        if has_diff:
+            return Resolution.DIFF
         if budget_pressure < 0.3:
             return Resolution.MEDIUM
         return Resolution.LOW
     if relevance > 0.02:
+        if has_diff:
+            return Resolution.DIFF
         return Resolution.LOW
     return Resolution.SKIP
 
@@ -426,6 +487,15 @@ def _render_block(block: CodeBlock, resolution: str) -> str:
         return block.source
     if resolution == Resolution.MEDIUM:
         return block.summary
+    if resolution == Resolution.DIFF:
+        diff_text = block.diff
+        if not diff_text:
+            # Diff unavailable (no previous_source attached, or unchanged).
+            # Fall back to LOW so the block still contributes a stub.
+            return block.stub
+        # Prepend the signature so the LLM has a structural anchor for
+        # the diff lines (which only carry +/- without context type).
+        return f"{block.signature}\n{diff_text}"
     if resolution == Resolution.LOW:
         return block.stub
     return ""  # SKIP
@@ -436,6 +506,7 @@ def resolve(
     query: str = "",
     budget: int = 1000,
     file_path: str = "",
+    previous_source: str = "",
 ) -> SRPResult:
     """Produce an information-optimal file representation at the given budget.
 
@@ -453,6 +524,15 @@ def resolve(
         Target token budget for the output.
     file_path : str
         Path to the file (used for language detection and headers).
+    previous_source : str
+        Optional previous version of the file. When provided, SRP
+        enables the DIFF resolution: modified blocks render as a
+        compact unified diff (signature + n=1 unified hunks) instead
+        of full source or signature-only. Ideal for change-driven
+        flows (post-commit, post-edit, agent revision loops) where
+        the agent must learn *what changed* without re-reading the
+        unchanged portion. Unmodified blocks fall through to the
+        standard FULL / MEDIUM / LOW / SKIP ladder.
 
     Returns
     -------
@@ -460,6 +540,20 @@ def resolve(
         Mixed-resolution file representation with metadata.
     """
     blocks = extract_blocks(source, file_path)
+
+    # Attach previous_source per-block for DIFF eligibility. Match by
+    # (name, kind) — handles re-ordering, additions, and deletions
+    # gracefully. Blocks that exist only in the new version stay
+    # unmatched and render at standard resolutions (no diff to show).
+    if previous_source:
+        prev_blocks = extract_blocks(previous_source, file_path)
+        prev_by_key: dict[tuple[str, str], str] = {}
+        for pb in prev_blocks:
+            prev_by_key[(pb.name, pb.kind)] = pb.source
+        for blk in blocks:
+            prev = prev_by_key.get((blk.name, blk.kind))
+            if prev is not None:
+                blk.previous_source = prev
 
     if not blocks:
         return SRPResult(
@@ -509,9 +603,15 @@ def resolve(
             r = resolved[idx]
             old_tokens = r.tokens
 
+            has_diff = r.block.is_modified
             if r.resolution == Resolution.FULL:
-                new_res = Resolution.MEDIUM
+                # Modified blocks prefer DIFF on the first demotion step:
+                # captures the change-driven signal at a fraction of the
+                # cost. Unmodified blocks demote to MEDIUM as before.
+                new_res = Resolution.DIFF if has_diff else Resolution.MEDIUM
             elif r.resolution == Resolution.MEDIUM:
+                new_res = Resolution.DIFF if has_diff else Resolution.LOW
+            elif r.resolution == Resolution.DIFF:
                 new_res = Resolution.LOW
             elif r.resolution == Resolution.LOW:
                 new_res = Resolution.SKIP
