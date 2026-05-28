@@ -74,8 +74,24 @@ SKIP_PATTERNS = frozenset({
     ".DS_Store", "thumbs.db",
 })
 
-# Max file size to ingest (50 KB — larger files are usually generated)
-MAX_FILE_BYTES = 50 * 1024
+# Max file size to ingest. Default 50 KB filters out generated artifacts
+# (lockfiles, minified JS, large generated specs). Override with
+# ENTROLY_MAX_FILE_BYTES — useful on documentation/list-style repos where
+# the single most-important file (e.g. a long README) exceeds the default
+# and would otherwise be silently dropped from the index. Capped at the
+# hard ceiling below so callers can't accidentally pull in multi-MB blobs.
+def _resolve_max_file_bytes() -> int:
+    raw = os.environ.get("ENTROLY_MAX_FILE_BYTES")
+    if not raw:
+        return 50 * 1024
+    try:
+        v = int(raw)
+        return max(1024, min(v, 500 * 1024))
+    except ValueError:
+        return 50 * 1024
+
+
+MAX_FILE_BYTES = _resolve_max_file_bytes()
 
 # Hard ceiling for massive files (500 KB) — never even attempt to read
 ABSOLUTE_MAX_BYTES = 500 * 1024
@@ -434,22 +450,22 @@ def auto_index(
         try:
             size = os.path.getsize(abs_path)
             if size > ABSOLUTE_MAX_BYTES:
-                return ("skip_size",)
+                return ("skip_size", rel_path, size)
             if size > MAX_FILE_BYTES or size == 0:
-                return ("skip_size",) if size > MAX_FILE_BYTES else None
+                return ("skip_size", rel_path, size) if size > MAX_FILE_BYTES else None
         except OSError:
             return None
         try:
             with open(abs_path, "rb") as fb:
                 if b"\x00" in fb.read(8192):
-                    return ("skip_read",)
+                    return ("skip_read", rel_path, 0)
         except OSError:
-            return ("skip_read",)
+            return ("skip_read", rel_path, 0)
         try:
             with open(abs_path, encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except (OSError, UnicodeDecodeError):
-            return ("skip_read",)
+            return ("skip_read", rel_path, 0)
         if not content.strip():
             return None
         return (content, rel_path, _estimate_tokens(content))
@@ -457,6 +473,10 @@ def auto_index(
     batch: list[tuple[str, str, int]] = []
     skipped_size = 0
     skipped_read = 0
+    # Track the largest skipped files by name so the operator can see
+    # WHICH file got dropped, not just "1 too large". Cap at 5 to keep
+    # the log line readable on chatty repos.
+    skipped_size_paths: list[tuple[str, int]] = []
 
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
@@ -468,6 +488,8 @@ def auto_index(
                 continue
             if data[0] == "skip_size":
                 skipped_size += 1
+                if len(data) >= 3:
+                    skipped_size_paths.append((data[1], data[2]))
                 continue
             if data[0] == "skip_read":
                 skipped_read += 1
@@ -529,6 +551,19 @@ def auto_index(
         f"[read={read_s:.1f}s ingest={ingest_s:.1f}s "
         f"skipped: {skipped_size} too large, {skipped_read} unreadable]"
     )
+    # Name the largest skipped files so the user can see WHICH artifact
+    # was dropped. Use WARNING level (not info) so it surfaces under
+    # default logging — silent drops of the user's main file is the
+    # exact issue this guards against. Limit to top 5 by size.
+    if skipped_size_paths:
+        top = sorted(skipped_size_paths, key=lambda x: -x[1])[:5]
+        items = ", ".join(f"{p} ({s/1024:.0f} KiB)" for p, s in top)
+        more = f" (+{len(skipped_size_paths) - len(top)} more)" if len(skipped_size_paths) > len(top) else ""
+        logger.warning(
+            f"Skipped {skipped_size} file(s) over {MAX_FILE_BYTES // 1024} KiB: "
+            f"{items}{more}. "
+            f"Raise the limit with ENTROLY_MAX_FILE_BYTES=<bytes> (capped at 500 KiB)."
+        )
 
     # ── Vault Belief Bridge: attach pre-compiled beliefs to fragments ──
     # After batch ingest, scan vault/beliefs/*.md and match to fragments
