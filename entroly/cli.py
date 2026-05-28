@@ -3804,6 +3804,13 @@ def cmd_docs(args):
 
     target = args.directory or os.getcwd()
     max_files = args.max_files
+    # CLI documents --max-files 0 as "unlimited", but the Rust
+    # CogOpsEngine.compile_docs does `Vec::truncate(max_files)` which
+    # empties the list when max_files == 0. Translate the documented
+    # sentinel into a high cap here so `entroly docs .` (no args)
+    # actually finds the README on a real repo.
+    if max_files is None or max_files <= 0:
+        max_files = 1_000_000
     vault_base = os.environ.get(
         "ENTROLY_VAULT",
         os.path.join(os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly")), "vault"),
