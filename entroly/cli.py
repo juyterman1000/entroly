@@ -25,6 +25,7 @@ Commands:
     entroly completions Generate shell completion scripts
     entroly ravs        RAVS offline evaluation (report)
     entroly witness     Verify or suppress hallucinated factual claims
+    entroly cache       Inspect EGSC persistent cache (cross-session)
 """
 
 from __future__ import annotations
@@ -3917,6 +3918,87 @@ def cmd_witness(args):
         print(format_witness_report(result))
 
 
+def cmd_cache(args):
+    """entroly cache stats — Inspect the EGSC persistent cache.
+
+    Surfaces the cross-session cache that already ships:
+      EgscCache → CacheSnapshot → engine state → ~/.entroly/checkpoints/.
+    Reports current entries, hit rate, tokens saved, the warm-start
+    restore count, and the on-disk checkpoint footprint.
+    """
+    action = getattr(args, "cache_action", "stats") or "stats"
+    if action != "stats":
+        print(f"  {C.YELLOW}Usage: entroly cache stats{C.RESET}")
+        return
+
+    import time as _time
+    try:
+        from entroly.config import _project_checkpoint_dir
+        ckpt_dir = _project_checkpoint_dir()
+    except Exception:
+        ckpt_dir = Path.home() / ".entroly" / "checkpoints"
+
+    # On-disk footprint + freshness of the latest checkpoint
+    ckpts: list[Path] = []
+    if ckpt_dir.exists():
+        ckpts = sorted(ckpt_dir.glob("ckpt_*.json.gz"))
+    latest_mtime = max((p.stat().st_mtime for p in ckpts), default=0.0)
+    total_bytes = sum((p.stat().st_size for p in ckpts), 0)
+    if (ckpt_dir / "index.json.gz").exists():
+        total_bytes += (ckpt_dir / "index.json.gz").stat().st_size
+
+    # Live cache stats — construct the same engine wrapper the proxy uses
+    # and call resume() to load the latest checkpoint (which folds the
+    # CacheSnapshot back into EgscCache via engine.import_state).
+    cache_stats: dict = {}
+    warm_restored = 0
+    try:
+        from entroly.server import EntrolyEngine
+        engine = EntrolyEngine()
+        try:
+            engine.resume()
+        except Exception:
+            pass
+        rust = getattr(engine, "_rust", None)
+        stats = rust.stats() if rust is not None and hasattr(rust, "stats") else {}
+        cache_stats = stats.get("cache", {}) if isinstance(stats, dict) else {}
+        warm_restored = int(cache_stats.get("entries", 0))
+    except Exception as e:
+        print(f"  {C.GRAY}(live engine stats unavailable: {e}){C.RESET}")
+
+    age_s = (_time.time() - latest_mtime) if latest_mtime else 0.0
+    age_str = (
+        f"{int(age_s)}s" if age_s < 90
+        else f"{age_s/60:.1f}m" if age_s < 3600
+        else f"{age_s/3600:.1f}h"
+    )
+
+    print(f"  {C.BOLD}EGSC Persistent Cache{C.RESET}")
+    print(f"  {C.GRAY}checkpoint dir:{C.RESET} {ckpt_dir}")
+    print(f"  {C.GRAY}checkpoint files:{C.RESET} {len(ckpts)}  "
+          f"({total_bytes/1024:.1f} KiB on disk)")
+    print(f"  {C.GRAY}latest checkpoint age:{C.RESET} "
+          f"{age_str if latest_mtime else 'never'}")
+    print()
+    print(f"  {C.BOLD}Live cache{C.RESET}")
+    if cache_stats:
+        print(f"  {C.GRAY}entries:{C.RESET}          {cache_stats.get('entries', 0)}")
+        print(f"  {C.GRAY}warm-restored:{C.RESET}    {warm_restored}")
+        print(f"  {C.GRAY}lookups:{C.RESET}          {cache_stats.get('lookups', 0)}")
+        print(f"  {C.GRAY}hit rate:{C.RESET}         "
+              f"{float(cache_stats.get('hit_rate', 0.0))*100:.1f}%")
+        print(f"  {C.GRAY}exact hits:{C.RESET}       {cache_stats.get('exact_hits', 0)}")
+        print(f"  {C.GRAY}semantic hits:{C.RESET}    {cache_stats.get('semantic_hits', 0)}")
+        print(f"  {C.GRAY}misses:{C.RESET}           {cache_stats.get('misses', 0)}")
+        print(f"  {C.GRAY}tokens saved:{C.RESET}     {cache_stats.get('tokens_saved', 0)}")
+        print(f"  {C.GRAY}admissions:{C.RESET}       {cache_stats.get('admissions', 0)}")
+        print(f"  {C.GRAY}rejections:{C.RESET}       {cache_stats.get('rejections', 0)}")
+        print(f"  {C.GRAY}evictions:{C.RESET}        {cache_stats.get('evictions', 0)}")
+    else:
+        print(f"  {C.GRAY}(engine not yet initialized — run "
+              f"`entroly proxy` or `entroly serve` first){C.RESET}")
+
+
 def cmd_ravs(args):
     """entroly ravs — RAVS offline evaluation + passive capture tools.
 
@@ -4680,6 +4762,13 @@ def main():
     )
 
     # ── daemon command ─────────────────────────────────────────────
+    cache_parser = subparsers.add_parser(
+        "cache",
+        help="Inspect EGSC persistent cache (entries, hit rate, on-disk size)",
+    )
+    cache_subparsers = cache_parser.add_subparsers(dest="cache_action")
+    cache_subparsers.add_parser("stats", help="Show persistent cache statistics")
+
     daemon_parser = subparsers.add_parser(
         "daemon",
         help="Start unified supervisor (proxy + dashboard + MCP + learning)",
@@ -4739,6 +4828,7 @@ def main():
         "learn": cmd_learn,
         "share": cmd_share,
         "ravs": cmd_ravs,
+        "cache": cmd_cache,
         "daemon": cmd_daemon,
     }
 

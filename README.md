@@ -258,6 +258,61 @@ Most levers are **multiplicative** with each other, not additive. A typical chat
 
 If a feature isn't pulling its weight on your workload, the dashboard shows per-lever contribution (`http://localhost:9378`, "Cost Intelligence" panel).
 
+#### Persistent Cross-Session Cache (EGSC)
+
+Most "context cache" projects keep their decisions in process memory and start cold every time the agent restarts. Entroly's **Entropy-Gated Submodular Cache (EGSC)** survives restarts, cold starts, and brand-new sessions — the same admitted entries are reused across runs without rebuilding.
+
+How it persists (no new code; all of this already ships):
+
+```
+EgscCache (entroly-core/src/cache.rs)
+   ├── CacheSnapshot { entries, stats, config, schema_version }
+   ├── export_cache() → JSON
+   ├── import_cache(JSON)
+       ▼ folded into the engine's full state
+EntrolyEngine.export_state() includes cache_snapshot   (lib.rs)
+EntrolyEngine.import_state(state) restores it on init  (lib.rs)
+       ▼ driven by Python checkpoint/resume
+engine.checkpoint() → ~/.entroly/checkpoints/<project_hash>/ckpt_*.json.gz
+engine.resume()    ← latest checkpoint                  (entroly/server.py)
+```
+
+On every engine boot you'll see the warm-start line:
+
+```
+[entroly] Warm-start: restored 6 EGSC cache entries
+```
+
+Inspect the live cache + on-disk footprint anywhere the engine has run:
+
+```bash
+$ entroly cache stats
+EGSC Persistent Cache
+  checkpoint dir:        ~/.entroly/checkpoints/<project>/
+  checkpoint files:      71  (54.3 MiB on disk)
+  latest checkpoint age: 19.1h
+
+Live cache
+  entries:        6
+  warm-restored:  6
+  hit rate:       16.7%
+  tokens saved:   102,272
+```
+
+Every proxied response also exposes the cache state on the wire (no extra setup):
+
+| Header | Meaning |
+|---|---|
+| `X-Entroly-Cache-Entries` | Current live entry count |
+| `X-Entroly-Cache-Hit-Rate` | Fraction in [0,1] |
+| `X-Entroly-Cache-Hits-Exact` / `-Semantic` | Hits by lookup path (FNV-1a vs SimHash LSH) |
+| `X-Entroly-Cache-Tokens-Saved` | Cumulative tokens served from cache |
+| `X-Entroly-Cache-Warm-Restored` | Entries loaded from disk at process boot |
+| `X-Entroly-Cache-Warm-Age-S` | Seconds since the warm-start restore |
+| `X-Entroly-Cache-Source` | `persistent` / `mixed` / `session` |
+
+Most context tools restart cold on every agent session. Entroly continues where the last session left off — including the bandit gate's posterior, the SimHash LSH index, and the cost-aware admission state.
+
 ### Packaged Self-Test Results
 
 The core install and selection claims are checked against this repository itself (394 files, 901K tokens, Python/Rust/JS). Reproduce the packaged smoke check on any repo:

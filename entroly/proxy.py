@@ -784,6 +784,24 @@ class PromptCompilerProxy:
             logger.debug("Vault coupling unavailable: %s", e)
             self._vault = None
 
+        # ── EGSC persistent-cache warm-start snapshot ─────────────────────
+        # Capture cache state at proxy startup so we can report how many
+        # entries were restored from disk (cross-session reuse) vs admitted
+        # in the current session. This surfaces a feature that already ships
+        # (EgscCache → CacheSnapshot → engine state → ~/.entroly/checkpoints/)
+        # but had no visibility on the wire. See README "Persistent
+        # Cross-Session Cache" for the chain.
+        self._cache_warm_restored: int = 0
+        self._cache_warm_started_at: float = time.time()
+        try:
+            _stats0 = self.engine.stats() if hasattr(self.engine, "stats") else None
+            if isinstance(_stats0, dict):
+                self._cache_warm_restored = int(
+                    _stats0.get("cache", {}).get("entries", 0)
+                )
+        except Exception:
+            pass
+
         # Thread-safe stats
         self._stats_lock = threading.Lock()
         self._requests_total: int = 0
@@ -2005,6 +2023,7 @@ class PromptCompilerProxy:
             "X-Entroly-Witness-Suppressed": str(getattr(rewrite, "suppressed_count", 0)),
             "X-Entroly-Witness-Warned": str(getattr(rewrite, "warned_count", 0)),
         }
+        resp_headers.update(self._cache_headers())
         # Escalation telemetry headers
         if escalation_attempted and self._escalation_last:
             resp_headers["X-Entroly-Escalated"] = "true"
@@ -2264,12 +2283,48 @@ class PromptCompilerProxy:
                     resp_headers["X-Entroly-Belief-Info-Factor"] = f"{self.engine.get_belief_info_factor():.4f}"
             except Exception:
                 pass
+            resp_headers.update(self._cache_headers())
 
         return StreamingResponse(
             event_generator(),
             media_type="text/event-stream",
             headers=resp_headers,
         )
+
+    def _cache_headers(self) -> dict[str, str]:
+        """Surface EGSC persistent-cache state on every response.
+
+        The cache is already persisted across sessions via the
+        EngineState.cache_snapshot path (see entroly-core/src/lib.rs).
+        These headers expose what was warm-restored from disk on this
+        process vs admitted live, so callers can tell when a hit came
+        from a previous session rather than the current one.
+        """
+        out: dict[str, str] = {}
+        try:
+            stats = self.engine.stats() if hasattr(self.engine, "stats") else None
+            cs = stats.get("cache", {}) if isinstance(stats, dict) else {}
+            entries = int(cs.get("entries", 0))
+            out["X-Entroly-Cache-Entries"] = str(entries)
+            out["X-Entroly-Cache-Hit-Rate"] = f"{float(cs.get('hit_rate', 0.0)):.4f}"
+            out["X-Entroly-Cache-Hits-Exact"] = str(int(cs.get("exact_hits", 0)))
+            out["X-Entroly-Cache-Hits-Semantic"] = str(int(cs.get("semantic_hits", 0)))
+            out["X-Entroly-Cache-Tokens-Saved"] = str(int(cs.get("tokens_saved", 0)))
+            out["X-Entroly-Cache-Warm-Restored"] = str(self._cache_warm_restored)
+            age_s = max(0.0, time.time() - self._cache_warm_started_at)
+            out["X-Entroly-Cache-Warm-Age-S"] = f"{age_s:.0f}"
+            # Cache source classification — quick "where did the hits come from"
+            # signal. If warm_restored == entries, no admissions happened yet
+            # in this session, so any hit is necessarily cross-session.
+            if self._cache_warm_restored > 0 and entries <= self._cache_warm_restored:
+                out["X-Entroly-Cache-Source"] = "persistent"
+            elif self._cache_warm_restored > 0:
+                out["X-Entroly-Cache-Source"] = "mixed"
+            else:
+                out["X-Entroly-Cache-Source"] = "session"
+        except Exception:
+            pass
+        return out
 
     def _extract_response_text(self, content: dict[str, Any]) -> str:
         """Extract assistant text from OpenAI, Anthropic, or Gemini JSON."""
