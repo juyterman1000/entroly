@@ -23,17 +23,30 @@
   <a href="https://github.com/juyterman1000/entroly-cost-check-"><img src="https://img.shields.io/badge/GitHub_Action-Cost_Check-purple?style=for-the-badge&logo=githubactions" alt="GitHub Action"></a>
 </p>
 
-<h1 align="center">Entroly — Reduce LLM API Costs by 80% with Context Compression and Hallucination Detection to save your AI bills</h1>
+<h1 align="center">Cut your Claude / OpenAI / Gemini bill 70%+ with one proxy.</h1>
 
-<h3 align="center">Audit AI answers against supplied evidence. Cut large-repo context 70-95% in release checks when retrieval has room to work and save tokens<br/>Set up in about 30 seconds.</h3>
+<h3 align="center">Drop-in. 30 seconds. No code changes.<br/><sub>Powered by knapsack-optimal context selection, prefix-stable cache hits, $0 hallucination guard, and 16 other levers — all on by default.</sub></h3>
 
-<p align="center"><strong>🛡️ Local context selection plus proof-carrying output checks.</strong><br/><sub>Entroly checks factual claims against supplied evidence, flags unsupported claims, and selects plus compresses large-repo context for AI coding tools so you can inspect what was sent and why.</sub></p>
+<p align="center"><sub><strong>One motto: cut AI bills.</strong> 19 mechanisms working together — context compression, provider-cache alignment, hallucination suppression, model routing, response distillation, persistent cross-session cache, and more. You install once; every mechanism runs locally.</sub></p>
 
 <p align="center">
-  <strong>💰 Lower input-token waste</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <strong>🎯 Evidence-backed answers</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>💰 70%+ input-token reduction</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>🛡️ $0 hallucination guard</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
   <strong>⚡ 30-second install</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <strong>🔌 Works with Claude, Cursor, Codex, Aider</strong>
+  <strong>🔌 Claude · Cursor · Codex · Aider · 33 more</strong>
+</p>
+
+<a id="install"></a>
+
+<p align="center">
+  <code><b>pip install entroly && cd /your/repo && entroly go</b></code>
+</p>
+
+<p align="center">
+  <sub>
+    Auto-opens the dashboard. Auto-wraps Claude / Cursor / Codex / Aider.<br/>
+    Also: <code>brew tap juyterman1000/entroly && brew install entroly</code> · <code>npm i -g entroly</code>
+  </sub>
 </p>
 
 <p align="center">
@@ -43,33 +56,15 @@
 
 <p align="center">
   <sub>
-    <strong>Don't trust the claims? Paste your own code into the live demo</strong> →
-    watch entroly shrink large-repo context and show which files and snippets it selected. 60 seconds. No install.
+    <strong>Don't trust the claims?</strong> Paste your own code into the live demo — watch entroly shrink large-repo context and show which files and snippets it selected. 60 seconds. No install.
   </sub>
 </p>
 
 <p align="center">
-  <a href="#install"><b>Install</b></a> ·
   <a href="cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="#benchmarks"><b>Benchmarks</b></a> ·
-  <a href="#works-with-your-stack"><b>37 wrap targets</b></a>
-</p>
-
-<a id="install"></a>
-
-<p align="center">
-  <code><b>pip install entroly</b></code>
-</p>
-
-<p align="center">
-  <sub>
-    Then <code>cd /your/repo && entroly go</code> — auto-opens the dashboard in your browser.
-    <br/>
-    Or: <code>brew tap juyterman1000/entroly && brew install entroly</code> · <code>npm i -g entroly</code>
-    <br/>
-    See the <a href="cookbook/README.md"><b>Cookbook</b></a> for 10 concrete recipes,
-    or pick your stack from the <a href="#works-with-your-stack">37 wrap targets</a>.
-  </sub>
+  <a href="#works-with-your-stack"><b>37 wrap targets</b></a> ·
+  <a href="docs/DETAILS.md"><b>Architecture</b></a>
 </p>
 
 <p align="center">
