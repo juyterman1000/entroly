@@ -1,14 +1,14 @@
 <p align="center">
-  <a href="docs/i18n/README.zh-CN.md">🇨🇳 中文</a> •
-  <a href="docs/i18n/README.ja.md">🇯🇵 日本語</a> •
-  <a href="docs/i18n/README.ko.md">🇰🇷 한국어</a> •
-  <a href="docs/i18n/README.pt-BR.md">🇧🇷 Português</a> •
-  <a href="docs/i18n/README.es.md">🇪🇸 Español</a> •
-  <a href="docs/i18n/README.de.md">🇩🇪 Deutsch</a> •
-  <a href="docs/i18n/README.fr.md">🇫🇷 Français</a> •
-  <a href="docs/i18n/README.ru.md">🇷🇺 Русский</a> •
-  <a href="docs/i18n/README.hi.md">🇮🇳 हिन्दी</a> •
-  <a href="docs/i18n/README.tr.md">🇹🇷 Türkçe</a>
+  <a href="docs/i18n/README.zh-CN.md">中文</a> •
+  <a href="docs/i18n/README.ja.md">日本語</a> •
+  <a href="docs/i18n/README.ko.md">한국어</a> •
+  <a href="docs/i18n/README.pt-BR.md">Português</a> •
+  <a href="docs/i18n/README.es.md">Español</a> •
+  <a href="docs/i18n/README.de.md">Deutsch</a> •
+  <a href="docs/i18n/README.fr.md">Français</a> •
+  <a href="docs/i18n/README.ru.md">Русский</a> •
+  <a href="docs/i18n/README.hi.md">हिन्दी</a> •
+  <a href="docs/i18n/README.tr.md">Türkçe</a>
 </p>
 
 <p align="center">
@@ -30,10 +30,10 @@
 <p align="center"><sub><strong>One motto: cut AI bills.</strong> 19 mechanisms working together — context compression, provider-cache alignment, hallucination suppression, model routing, response distillation, persistent cross-session cache, and more. You install once; every mechanism runs locally.</sub></p>
 
 <p align="center">
-  <strong>💰 70%+ input-token reduction</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <strong>🛡️ $0 hallucination guard</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <strong>⚡ 30-second install</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
-  <strong>🔌 Claude · Cursor · Codex · Aider · 33 more</strong>
+  <strong>70%+ input-token reduction</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>$0 hallucination guard</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>30-second install</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>Claude · Cursor · Codex · Aider · 33 more</strong>
 </p>
 
 <a id="install"></a>
@@ -51,7 +51,7 @@
 
 <p align="center">
   <a href="https://huggingface.co/spaces/entroly/entroly-context-compression"><img src="https://img.shields.io/badge/▶_Try_It_Live-No_Install_Needed-FF4B4B?style=for-the-badge&logo=huggingface&logoColor=white" height="42" alt="Try the live demo on Hugging Face"></a>&nbsp;&nbsp;
-  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><img src="https://img.shields.io/badge/📊_See_The_Dashboard-Live-2EA44F?style=for-the-badge" height="42" alt="See the live dashboard"></a>
+  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><img src="https://img.shields.io/badge/See_The_Dashboard-Live-2EA44F?style=for-the-badge" height="42" alt="See the live dashboard"></a>
 </p>
 
 <p align="center">
@@ -154,7 +154,7 @@ Example trace from this repo's local development vault:
 [synthesize] StructuralSynthesizer ($0, deterministic, no LLM)
 [benchmark]  skill=ddb2e2969bb0 → fitness 1.0 (1 pass / 0 fail, 338 ms)
 [promote]    status: draft → promoted
-[spend]      $0.0000 — invariant C_spent ≤ τ·S(t) holds
+[spend] $0.0000 — invariant C_spent ≤ τ·S(t) holds
 ```
 
 ### Accuracy Retention
@@ -319,18 +319,18 @@ entroly verify-claims
 
 | Claim | README | Verified | Status |
 |---|---|---|---|
-| **Indexing speed** | local, no API call | **0.66s** (394 files, release run) | ✅ Verified |
-| **Token savings (32K budget)** | large-codebase selection should reduce context heavily | **96.7%** on this repo | ✅ Verified for this workload |
-| **Token savings (8K budget)** | tighter budgets should reduce more | **99.1%** on this repo | ✅ Verified for this workload |
-| **Token savings (average)** | workload-dependent | **87.0%** on this repo | ✅ Verified for this workload |
-| **Optimization smoke latency** | local execution, benchmark separately for strict timing | emitted by `entroly verify-claims` and stored in `.entroly_verification.json` | ✅ Verified |
-| **Multi-language coverage** | 10+ project types | **9 file types** (py/rs/js/md/yml/json/toml/sh) | ✅ Verified |
-| **Entropy scoring** | Non-trivial | **0.07–0.90 range** | ✅ Verified |
-| **Source-type prioritization** | Code > config | **Code 133 vs Config 12** | ✅ Verified |
-| **SimHash deduplication** | No duplicates | **154/154 unique** | ✅ Verified |
-| **Rust engine** | Rust + WASM | **entroly_core loaded** | ✅ Verified |
-| **Local-only** | No API keys | **All ops offline** | ✅ Verified |
-| **SDK** | 2-line import | **compress importable** | ✅ Verified |
+| **Indexing speed** | local, no API call | **0.66s** (394 files, release run) | Verified |
+| **Token savings (32K budget)** | large-codebase selection should reduce context heavily | **96.7%** on this repo | Verified for this workload |
+| **Token savings (8K budget)** | tighter budgets should reduce more | **99.1%** on this repo | Verified for this workload |
+| **Token savings (average)** | workload-dependent | **87.0%** on this repo | Verified for this workload |
+| **Optimization smoke latency** | local execution, benchmark separately for strict timing | emitted by `entroly verify-claims` and stored in `.entroly_verification.json` | Verified |
+| **Multi-language coverage** | 10+ project types | **9 file types** (py/rs/js/md/yml/json/toml/sh) | Verified |
+| **Entropy scoring** | Non-trivial | **0.07–0.90 range** | Verified |
+| **Source-type prioritization** | Code > config | **Code 133 vs Config 12** | Verified |
+| **SimHash deduplication** | No duplicates | **154/154 unique** | Verified |
+| **Rust engine** | Rust + WASM | **entroly_core loaded** | Verified |
+| **Local-only** | No API keys | **All ops offline** | Verified |
+| **SDK** | 2-line import | **compress importable** | Verified |
 
 > The packaged verifier generates a machine-readable `.entroly_verification.json` report. Results depend on repo size, language mix, and token budget; tiny repos and short-context workloads have less room to compress.
 
@@ -344,11 +344,11 @@ python bench/trust_bench.py
 
 | Test | What It Proves | Result |
 |---|---|---|
-| **A. Compression** | Real token reduction on source files | **50% savings** ✅ |
-| **B. Classifier** | RAVS archetype accuracy (40 labeled prompts) | **100% accuracy** ✅ |
-| **C. Hook Coverage** | Tool pattern coverage (50 commands) | **100% coverage** ✅ |
-| **D. Router Logic** | Bayesian gate correctness (5 cases) | **5/5 correct** ✅ |
-| **E. Determinism** | Same input → identical output (SHA-256) | **Bit-identical** ✅ |
+| **A. Compression** | Real token reduction on source files | **50% savings** |
+| **B. Classifier** | RAVS archetype accuracy (40 labeled prompts) | **100% accuracy** |
+| **C. Hook Coverage** | Tool pattern coverage (50 commands) | **100% coverage** |
+| **D. Router Logic** | Bayesian gate correctness (5 cases) | **5/5 correct** |
+| **E. Determinism** | Same input → identical output (SHA-256) | **Bit-identical** |
 
 ### Code Retrieval — [CodeSearchNet](https://huggingface.co/datasets/code_search_net) (Established IR Benchmark)
 
@@ -874,14 +874,13 @@ Python is the reference CLI/runtime. The Node.js WASM package exposes the Rust e
 
 | Capability | Python | Node.js (WASM) |
 |---|---|---|
-| Context compression | ✅ | ✅ |
-| Self-evolution | ✅ | ✅ |
-| Dreaming loop | ✅ | ✅ |
-| Federation | ✅ | ✅ |
-| Response distillation | ✅ | ✅ |
-| Chat gateways | ✅ | ✅ |
-| agentskills.io export | ✅ | ✅ |
-
+| Context compression | Yes | Yes |
+| Self-evolution | Yes | Yes |
+| Dreaming loop | Yes | Yes |
+| Federation | Yes | Yes |
+| Response distillation | Yes | Yes |
+| Chat gateways | Yes | Yes |
+| agentskills.io export | Yes | Yes |
 ---
 
 ## Deep Dive
