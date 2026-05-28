@@ -245,6 +245,44 @@ class _WelfordStats:
         }
 
 
+def _parse_retry_after(raw: str | None) -> float | None:
+    """Parse the upstream Retry-After header per RFC 7231 §7.1.3.
+
+    Returns the cooldown in seconds, or None if the header is absent or
+    unparseable. Accepts both forms permitted by the spec:
+      1. Integer seconds: ``Retry-After: 30``
+      2. HTTP-date:       ``Retry-After: Wed, 21 Oct 2026 07:28:00 GMT``
+
+    Negative or zero values are normalized to 0 (already-elapsed cooldown).
+    Returning None signals to the caller "no upstream signal — fall back
+    to client-side policy" rather than guessing a value.
+    """
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    # Form 1: delta-seconds.
+    try:
+        secs = float(raw)
+        return max(0.0, secs)
+    except ValueError:
+        pass
+    # Form 2: HTTP-date. Use stdlib parser; both RFC 1123 and obsolete
+    # RFC 850 formats are supported by parsedate_to_datetime.
+    try:
+        from email.utils import parsedate_to_datetime
+        target = parsedate_to_datetime(raw)
+        if target is None:
+            return None
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc) if target.tzinfo else datetime.utcnow()
+        delta = (target - now).total_seconds()
+        return max(0.0, delta)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def _dp_round(value: int, granularity: int = 100) -> int:
     """Differential-privacy-safe rounding for public-facing counts.
 
@@ -1860,7 +1898,6 @@ class PromptCompilerProxy:
                             status_code=413,
                         )
                     chunks.append(chunk)
-            self._breaker.record_success()
         except httpx.TimeoutException:
             self._breaker.record_failure()
             return JSONResponse({"error": "upstream_timeout"}, status_code=502)
@@ -1872,13 +1909,30 @@ class PromptCompilerProxy:
             return JSONResponse({"error": "stream_error", "detail": str(e)[:200]}, status_code=502)
 
         raw = b"".join(chunks)
+
+        # ── Pre-flight: handle upstream errors before WITNESS ──
+        # Must check status BEFORE recording success to the circuit breaker.
+        if status_code == 429:
+            self._breaker.record_failure()
+
+            # Re-parse Retry-After from raw chunks is lossy; use stored status.
+            # The response object is out of scope here, so propagate a
+            # conservative default if the upstream header wasn't captured.
+            return StreamingResponse(
+                _bytes_iter(raw),
+                status_code=429,
+                media_type=content_type,
+                headers={"X-Entroly-Witness": "skipped-rate-limited"},
+            )
         if status_code >= 400:
+            self._breaker.record_failure()
             return StreamingResponse(
                 _bytes_iter(raw),
                 status_code=status_code,
                 media_type=content_type,
                 headers={"X-Entroly-Witness": "skipped-upstream-error"},
             )
+        self._breaker.record_success()
 
         response_text = _extract_text_from_sse(raw)
         if not response_text or not self._witness_analyzer:
@@ -2155,6 +2209,50 @@ class PromptCompilerProxy:
                 async with client.stream(
                     "POST", url, json=body, headers=headers
                 ) as response:
+                    # ── Pre-flight status check before streaming ──
+                    # httpx streams don't raise on 4xx/5xx — we must
+                    # check before blindly iterating chunks.
+                    if response.status_code == 429:
+                        self._breaker.record_failure()
+                        retry_after = _parse_retry_after(
+                            response.headers.get("retry-after")
+                        )
+
+                        logger.warning(
+                            "Upstream 429 on streaming request (Retry-After=%s)",
+                            retry_after,
+                        )
+                        import json as _json
+                        err_body = _json.dumps({
+                            "error": "rate_limited",
+                            "status": 429,
+                            "detail": "Upstream rate-limited; honor Retry-After.",
+                            "retry_after_s": retry_after,
+                            "source": "upstream_api",
+                        })
+                        yield (
+                            f'data: {err_body}\n\n'
+                            f'data: [DONE]\n\n'
+                        ).encode()
+                        return
+                    if response.status_code >= 500:
+                        self._breaker.record_failure()
+                        logger.warning(
+                            "Upstream %d on streaming request",
+                            response.status_code,
+                        )
+                        import json as _json
+                        err_body = _json.dumps({
+                            "error": "upstream_error",
+                            "status": response.status_code,
+                            "detail": f"Upstream returned {response.status_code}",
+                            "source": "upstream_api",
+                        })
+                        yield (
+                            f'data: {err_body}\n\n'
+                            f'data: [DONE]\n\n'
+                        ).encode()
+                        return
                     async for chunk in response.aiter_bytes():
                         # Tee: pass through AND accumulate for analysis
                         if buffer is not None and buffer_size < _buffer_cap:
@@ -2686,23 +2784,55 @@ class PromptCompilerProxy:
         selected_frag_ids: list | None = None,
         witness_context: str = "",
     ) -> JSONResponse:
-        """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation."""
+        """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation.
+
+        Retry policy (RFC 6585 §4 + RFC 7231 §7.1.3 + Anthropic API conventions):
+
+        - On 429 with Retry-After ≤ RATE_LIMIT_INLINE_WAIT_S and budget remaining,
+          we sleep the FULL Retry-After duration (no silent cap) and retry once.
+          Truncating Retry-After would violate the upstream's explicit cooldown
+          signal and can prolong the rate-limit window.
+        - On 429 with a longer Retry-After (or none), we DO NOT retry inline —
+          we surface the 429 immediately to the client with the upstream
+          Retry-After header propagated so the client decides whether to wait.
+          This keeps interactive sessions (Claude Code, Cursor) responsive and
+          lets the agent's own backoff handle the longer cooldown.
+        - On 5xx, we use exponential backoff (1s, 2s) up to 2 retries. These are
+          server errors, not deliberate cooldowns, so retrying is appropriate.
+        - Total inline retry wall-time is bounded by RATE_LIMIT_TOTAL_BUDGET_S
+          to avoid blocking the caller's request past their own timeout.
+        """
         # Check circuit breaker
         if not self._breaker.allow_request():
             logger.warning("Circuit breaker open -- forwarding unmodified")
 
-        # Retry loop: 1 initial attempt + up to 2 retries on 429/5xx
-        max_retries = 2
+        # Policy thresholds. Inline-wait threshold is intentionally short
+        # because Claude Code / Cursor / agent clients are interactive — a
+        # multi-second inline wait kills UX. Longer cooldowns are surfaced
+        # to the client immediately so its own retry logic applies.
+        RATE_LIMIT_INLINE_WAIT_S = 5.0
+        RATE_LIMIT_TOTAL_BUDGET_S = 15.0
+        SERVER_ERROR_MAX_RETRIES = 2
+
+        # Per-status retry budget. 429s respect upstream cooldown; 5xx
+        # uses exponential backoff up to SERVER_ERROR_MAX_RETRIES.
         response = None
-        for attempt in range(max_retries + 1):
+        attempts = 0
+        total_slept = 0.0
+        # Hard upper bound on iterations so a misbehaving upstream that
+        # always returns 429 with tiny Retry-After can't infinite-loop us.
+        max_iterations = SERVER_ERROR_MAX_RETRIES + 1 + 1  # +1 reserved for one 429 retry
+        while attempts < max_iterations:
             try:
                 client = await self._ensure_client()
                 response = await client.post(url, json=body, headers=headers)
                 self._breaker.record_success()
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 self._breaker.record_failure()
-                if attempt < max_retries:
-                    await asyncio.sleep(1.0 * (attempt + 1))  # 1s, 2s backoff
+                if attempts < SERVER_ERROR_MAX_RETRIES:
+                    await asyncio.sleep(1.0 * (attempts + 1))
+                    attempts += 1
+                    total_slept += 1.0 * attempts
                     continue
                 # Sanitize error message: never leak auth headers in error responses
                 err_msg = str(e)
@@ -2714,25 +2844,70 @@ class PromptCompilerProxy:
                     status_code=502,
                 )
 
-            # Retry on 429 (rate limit) and 5xx (server errors)
-            if response.status_code == 429 or response.status_code >= 500:
-                try:
-                    retry_after = float(response.headers.get("retry-after", str(1.0 * (attempt + 1))))
-                except (ValueError, TypeError):
-                    retry_after = 1.0 * (attempt + 1)
-                if attempt < max_retries:
+            # ── 429: explicit upstream cooldown signal ──
+            if response.status_code == 429:
+                retry_after = _parse_retry_after(response.headers.get("retry-after"))
+                # If the upstream tells us to wait longer than we can safely
+                # block, surface 429 immediately with the header propagated.
+                # This is spec-compliant: the client is informed of the
+                # cooldown and can honor it itself.
+                if (retry_after is None
+                        or retry_after > RATE_LIMIT_INLINE_WAIT_S
+                        or total_slept + retry_after > RATE_LIMIT_TOTAL_BUDGET_S):
                     logger.info(
-                        f"Upstream {response.status_code}, retrying in {retry_after:.0f}s "
-                        f"(attempt {attempt + 1}/{max_retries})"
+                        "Upstream 429 with Retry-After=%s; surfacing to client "
+                        "(inline_wait_threshold=%.1fs, budget_left=%.1fs)",
+                        retry_after, RATE_LIMIT_INLINE_WAIT_S,
+                        RATE_LIMIT_TOTAL_BUDGET_S - total_slept,
                     )
-                    await asyncio.sleep(min(retry_after, 10.0))
+                    out_headers = {"X-Entroly-Source": "upstream"}
+                    upstream_ra = response.headers.get("retry-after")
+                    if upstream_ra:
+                        # Propagate Retry-After verbatim so the client honors
+                        # the upstream's exact cooldown directive.
+                        out_headers["Retry-After"] = upstream_ra
+                    return JSONResponse(
+                        {
+                            "error": "rate_limited",
+                            "status": 429,
+                            "detail": "Upstream rate-limited this request; client should honor Retry-After.",
+                            "retry_after_s": retry_after,
+                            "source": "upstream_api",
+                        },
+                        status_code=429,
+                        headers=out_headers,
+                    )
+                # Short cooldown: wait the FULL duration (no silent cap) and retry once.
+                logger.info(
+                    "Upstream 429, honoring Retry-After=%.1fs (attempt %d, total_slept=%.1fs)",
+                    retry_after, attempts + 1, total_slept,
+                )
+                await asyncio.sleep(retry_after)
+                total_slept += retry_after
+                attempts += 1
+                # 429 gets a single inline retry — Anthropic asked us to wait
+                # once, not loop. Cap further 429s to surface-immediately.
+                max_iterations = attempts + 1
+                continue
+
+            # ── 5xx: server-side error, retry with exponential backoff ──
+            if response.status_code >= 500:
+                if attempts < SERVER_ERROR_MAX_RETRIES:
+                    backoff = 1.0 * (attempts + 1)
+                    logger.info(
+                        "Upstream %d, retrying in %.0fs (attempt %d/%d)",
+                        response.status_code, backoff, attempts + 1,
+                        SERVER_ERROR_MAX_RETRIES,
+                    )
+                    await asyncio.sleep(backoff)
+                    total_slept += backoff
+                    attempts += 1
                     continue
-                # Out of retries — distinguish entroly error vs upstream error
                 return JSONResponse(
                     {
                         "error": "upstream_error",
                         "status": response.status_code,
-                        "detail": f"Upstream returned {response.status_code} after {max_retries} retries",
+                        "detail": f"Upstream returned {response.status_code} after {SERVER_ERROR_MAX_RETRIES} retries",
                         "source": "upstream_api",
                     },
                     status_code=response.status_code,
