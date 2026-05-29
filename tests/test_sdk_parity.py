@@ -113,3 +113,72 @@ def test_optimize_and_compress_still_work():
     assert "context_text" in o
     long_text = "The quick brown fox jumped over the lazy dog. " * 100
     assert len(compress(long_text, budget=50)) <= len(long_text)
+
+
+# ── Non-annihilation invariant ───────────────────────────────────────────
+# Root cause shipped in production: tfidf_extractive_summarize used a
+# `best_gain <= 0` stop in its greedy submodular loop. On near-identical
+# segments every term has df = n_docs, so idf = log(n_docs/n_docs) = 0, every
+# marginal gain is 0, and the loop broke before selecting a single sentence —
+# returning "". compress() then handed the caller an EMPTY prompt. Empty
+# output also masquerades as savings = 1.0, so it sailed past every ratio
+# check (and made one README test green for the wrong reason).
+
+# 50 identical functions with a comment + leading blank line. This exact
+# shape returned 0 chars before the fix.
+_REPEATED_CODE = (
+    "\ndef authenticate(user, password):\n"
+    "    # check credentials against database\n"
+    "    hashed = hash_password(password)\n"
+    "    return db.verify(user, hashed)\n"
+) * 50
+
+
+@pytest.mark.parametrize("budget", [50, 200, 1000])
+def test_compress_never_annihilates_repetitive_code(budget):
+    """Non-empty input + positive budget must yield non-empty output."""
+    out = compress(_REPEATED_CODE, budget=budget)
+    assert out.strip(), f"compress() annihilated input at budget={budget}"
+    assert len(out) <= len(_REPEATED_CODE)
+
+
+def test_compress_never_annihilates_degenerate_prose():
+    """Identical sentences (degenerate IDF) must still compress, not vanish."""
+    prose = "This is the Langfuse observability platform. " * 200
+    out = compress(prose, budget=40)
+    assert out.strip(), "compress() annihilated degenerate prose"
+    # Still a real compression, not a passthrough.
+    assert len(out) < len(prose) * 0.5
+
+
+def test_universal_compress_floor_on_identical_segments():
+    from entroly.universal_compress import (
+        tfidf_extractive_summarize,
+        universal_compress,
+    )
+
+    prose = "Exactly the same clause repeated verbatim, again and again. " * 120
+    assert tfidf_extractive_summarize(prose, 0.2).strip()
+    out, _, _ = universal_compress(prose, 0.2, "prose")
+    assert out.strip()
+
+
+def test_compress_preserves_empty_and_whitespace_input():
+    """The floor must NOT fabricate content from genuinely empty input."""
+    assert compress("", budget=10) == ""
+    assert compress("   \n  ", budget=10).strip() == ""
+
+
+def test_compress_is_deterministic():
+    """Sorted-index tie-breaking makes selection bit-identical across runs —
+    the determinism property the engine advertises."""
+    import hashlib
+
+    text = "\n".join(
+        f"def func_{i}(a, b):\n    return a * {i} + b\n" for i in range(60)
+    )
+    hashes = {
+        hashlib.sha256(compress(text, budget=80).encode()).hexdigest()
+        for _ in range(5)
+    }
+    assert len(hashes) == 1, "compress() output is nondeterministic"

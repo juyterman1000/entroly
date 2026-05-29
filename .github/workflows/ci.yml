@@ -129,3 +129,62 @@ jobs:
         run: |
           .venv/bin/python entroly-core/tests/test_integration.py
           .venv/bin/python entroly-core/tests/test_brutal.py
+
+  python-fallback:
+    # The 'integration' job always builds the Rust wheel, so it only ever
+    # exercises the native path. But `pip install entroly` (no extras) ships
+    # the PURE-PYTHON fallback — and that is what most users actually run.
+    # That surface was untested in CI, which is exactly how an empty-output
+    # bug in the Python compressor (tfidf IDF-degeneracy → "" → annihilated
+    # prompt) shipped while every native-path test stayed green. This job
+    # pins the base-install surface so that class of regression can't recur.
+    name: Pure-Python Fallback (base `pip install entroly`, no Rust engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install entroly WITHOUT the native engine
+        run: |
+          # Deliberately no maturin / no entroly-core. Install the base
+          # package plus the proxy extra (a real `pip install entroly[proxy]`
+          # config) and the test tooling — nothing that pulls in Rust.
+          pip install --timeout 120 --retries 5 -e . \
+            "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil \
+            pytest pytest-timeout
+
+      - name: Assert the Rust engine is genuinely absent
+        run: |
+          # If entroly_core leaks in, this job would silently test the wrong
+          # surface. Fail loudly instead.
+          python - <<'PY'
+          import importlib.util, sys
+          if importlib.util.find_spec("entroly_core") is not None:
+              sys.exit("entroly_core is importable — this job must test the "
+                       "pure-Python fallback, not the native engine.")
+          from entroly.server import EntrolyEngine
+          assert EntrolyEngine()._use_rust is False, "engine claims Rust is active"
+          print("confirmed: pure-Python fallback surface")
+          PY
+
+      - name: Run the pure-Python test surface
+        run: |
+          # Tests that hard-require the native engine (import entroly_core at
+          # module load, or assert Rust-exact numerics/result shapes) are
+          # excluded — they belong to the 'integration' job. Everything else,
+          # including the compress()/universal_compress non-annihilation
+          # contract, MUST pass on the base install.
+          pytest tests/ -v --tb=short --timeout=60 -p no:cacheprovider \
+            --ignore=tests/functional_test.py \
+            --ignore=tests/test_e2e.py \
+            --ignore=tests/test_ios.py \
+            --ignore=tests/test_rust_cogops.py \
+            --ignore=tests/test_deep_functional.py \
+            --ignore=tests/test_engine_isolation.py \
+            --ignore=tests/test_localization.py \
+            --ignore=tests/test_benchmark_harness.py

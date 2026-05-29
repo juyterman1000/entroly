@@ -205,6 +205,18 @@ def tfidf_extractive_summarize(
         else:
             position_boost[i] = 1.0
 
+    # Non-annihilation floor. Extractive summarization must never reduce a
+    # non-empty document to nothing. When the IDF model degenerates — e.g.
+    # near-identical segments, where every term has df = n_docs so
+    # idf = log(n_docs/n_docs) = 0 and *every* marginal gain is 0 — the
+    # submodular stop rule `best_gain <= 0` would otherwise break before
+    # selecting a single sentence and return "". An all-zero gain is a
+    # property of the scoring model on this input, NOT evidence the text
+    # carries no information; emitting nothing is strictly dominated by
+    # emitting the position-priority lead. So we honor the submodular stop
+    # only after the floor is met, and fall back to position priority below.
+    floor = min(min_sentences, n_docs)
+
     for _ in range(target_count):
         if not available:
             break
@@ -212,7 +224,12 @@ def tfidf_extractive_summarize(
         best_idx = -1
         best_gain = -1.0
 
-        for j in available:
+        # Deterministic scan order: iterate sorted indices so gain ties
+        # resolve to the lowest index. This makes the selection (and thus
+        # compress() output) bit-identical across runs — the determinism
+        # property the engine advertises — instead of depending on set
+        # iteration order.
+        for j in sorted(available):
             # Marginal gain: new information j adds beyond what's covered
             gain = 0.0
             for term, weight in sentence_vectors[j].items():
@@ -226,8 +243,20 @@ def tfidf_extractive_summarize(
                 best_gain = gain
                 best_idx = j
 
-        if best_idx < 0 or best_gain <= 0:
+        if best_idx < 0:
             break
+
+        if best_gain <= 0.0:
+            # Submodular coverage exhausted (or degenerate IDF). Stop only
+            # once the floor is satisfied; otherwise keep the highest
+            # position-priority sentence so the output is non-empty,
+            # representative, and deterministic (tie-break on lowest index).
+            if len(selected_indices) >= floor:
+                break
+            best_idx = min(
+                available,
+                key=lambda idx: (-position_boost.get(idx, 1.0), idx),
+            )
 
         selected_indices.append(best_idx)
         available.discard(best_idx)
@@ -419,6 +448,14 @@ def universal_compress(
 
     compressor = _DISPATCH.get(ctype, _DISPATCH["prose"])
     compressed = compressor(content, target_ratio)
+
+    # Non-annihilation invariant. A structural compressor must never reduce
+    # substantial input to nothing. Empty output masquerades as "perfect"
+    # compression (savings → 1.0) and would sail past the savings check
+    # below, silently destroying content — so guard it explicitly first.
+    # tfidf_extractive_summarize is itself floored to stay non-empty.
+    if not compressed or not compressed.strip():
+        compressed = tfidf_extractive_summarize(content, target_ratio)
 
     savings = 1.0 - len(compressed) / max(len(content), 1)
     if savings < 0.05:

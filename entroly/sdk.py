@@ -55,6 +55,48 @@ def _track_savings(before_tokens: int, after_tokens: int, label: str) -> None:
         pass
 
 
+def _ensure_non_empty(
+    out: str,
+    original: str,
+    budget: int | None,
+    target_ratio: float,
+) -> str:
+    """Public contract: compress() never annihilates non-empty input.
+
+    A compressor is a map C: (text, budget) -> text. For non-empty input and
+    a positive budget, emitting nothing is strictly dominated by emitting any
+    in-budget slice of the original — so an empty/whitespace result is always
+    a bug, never a valid compression. This is the final safety net beneath the
+    fixes in universal_compress/tfidf: it also covers the native Rust path
+    (py_compress_block), which can skeletonize an input down to nothing.
+
+    On violation, fall back to a deterministic, budget-respecting head that
+    preserves whole lines for readability.
+    """
+    if out and out.strip():
+        return out
+    if not original or not original.strip():
+        return original
+
+    # Character budget (4 chars ≈ 1 token), with a sane floor so the rescue
+    # slice is actually useful rather than a token or two.
+    if budget is not None:
+        char_budget = max(200, budget * 4)
+    else:
+        char_budget = max(200, int(len(original) * max(0.05, target_ratio)))
+
+    if len(original) <= char_budget:
+        return original
+
+    head = original[:char_budget]
+    # Snap to the last line boundary in the back half so we don't cut a line
+    # mid-token; only if that still leaves a substantial slice.
+    nl = head.rfind("\n")
+    if nl > char_budget // 2:
+        head = head[:nl]
+    return head.rstrip() + "\n…[truncated]"
+
+
 def compress(
     content: str,
     budget: int | None = None,
@@ -100,12 +142,14 @@ def compress(
     if content_type == "code" or (content_type is None and _looks_like_code(content)):
         try:
             out = _compress_code(content, target_ratio)
+            out = _ensure_non_empty(out, content, budget, target_ratio)
             _track_savings(current_tokens, len(out) // 4, "compress(code)")
             return out
         except Exception:
             pass  # Fall through to universal compressor
 
     compressed, _, _ = universal_compress(content, target_ratio, content_type)
+    compressed = _ensure_non_empty(compressed, content, budget, target_ratio)
     _track_savings(current_tokens, len(compressed) // 4, "compress")
     return compressed
 
