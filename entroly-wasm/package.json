@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Local proxy that cuts your Claude / OpenAI / Gemini bill 70%+. Drop-in for Cursor, Claude Code, Codex, Aider — 30 seconds, no code changes. Pure WebAssembly, no Python dependency.",
   "main": "index.js",
   "types": "pkg/entroly_wasm.d.ts",
