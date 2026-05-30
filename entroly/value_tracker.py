@@ -29,36 +29,54 @@ from typing import Any
 
 logger = logging.getLogger("entroly.value_tracker")
 
-# ── Per-model cost estimates (USD per 1K tokens, input pricing) ──────────
+# ── Per-model pricing (USD per 1K tokens, input + output) ────────────────
+#
+# Output-aware: input and output tokens are priced separately (output is
+# typically 3–5× input). Context-compression savings are input-priced;
+# response-distillation savings are output-priced — pass
+# estimate_cost(..., kind="output") for the latter.
+#
+# LIVE / overridable: these bundled rates are a dated snapshot. Refresh them —
+# or set your negotiated rates — WITHOUT a code release by providing a local
+# JSON via ENTROLY_PRICING_FILE or ~/.entroly/pricing.json:
+#     {"as_of": "2026-06",
+#      "default": {"input": 0.003, "output": 0.009},
+#      "models": {"gpt-4o": {"input": 0.0025, "output": 0.01}}}
+# Loading is local-only (no network) and fail-open to these defaults.
+_PRICING_AS_OF = "2026-05"
 
-_MODEL_COSTS_PER_1K = {
+_MODEL_PRICING: dict[str, dict[str, float]] = {
     # OpenAI
-    "gpt-4o": 0.0025,
-    "gpt-4o-mini": 0.00015,
-    "gpt-4-turbo": 0.01,
-    "gpt-4": 0.03,
-    "gpt-3.5-turbo": 0.0005,
-    "o1": 0.015,
-    "o1-mini": 0.003,
-    "o1-pro": 0.015,
-    "o3": 0.01,
-    "o3-mini": 0.0011,
-    "o4-mini": 0.0011,
+    "gpt-4o": {"input": 0.0025, "output": 0.01},
+    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+    "gpt-4": {"input": 0.03, "output": 0.06},
+    "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+    "o1": {"input": 0.015, "output": 0.06},
+    "o1-mini": {"input": 0.003, "output": 0.012},
+    "o1-pro": {"input": 0.015, "output": 0.06},
+    "o3": {"input": 0.01, "output": 0.04},
+    "o3-mini": {"input": 0.0011, "output": 0.0044},
+    "o4-mini": {"input": 0.0011, "output": 0.0044},
     # Anthropic
-    "claude-opus-4": 0.015,
-    "claude-sonnet-4": 0.003,
-    "claude-haiku-4": 0.0008,
-    "claude-3-5-sonnet": 0.003,
-    "claude-3-5-haiku": 0.0008,
+    "claude-opus-4": {"input": 0.015, "output": 0.075},
+    "claude-sonnet-4": {"input": 0.003, "output": 0.015},
+    "claude-haiku-4": {"input": 0.0008, "output": 0.004},
+    "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
+    "claude-3-5-haiku": {"input": 0.0008, "output": 0.004},
     # Google
-    "gemini-2.5-pro": 0.00125,
-    "gemini-2.5-flash": 0.000075,
-    "gemini-2.0-flash": 0.0001,
-    "gemini-1.5-pro": 0.00125,
-    "gemini-1.5-flash": 0.000075,
+    "gemini-2.5-pro": {"input": 0.00125, "output": 0.005},
+    "gemini-2.5-flash": {"input": 0.000075, "output": 0.0003},
+    "gemini-2.0-flash": {"input": 0.0001, "output": 0.0004},
+    "gemini-1.5-pro": {"input": 0.00125, "output": 0.005},
+    "gemini-1.5-flash": {"input": 0.000075, "output": 0.0003},
 }
 
-_DEFAULT_COST_PER_1K = 0.003  # Conservative default
+_DEFAULT_PRICING = {"input": 0.003, "output": 0.009}  # conservative fallback
+
+# Backward-compat: input-only view for any legacy reader / test.
+_MODEL_COSTS_PER_1K = {k: v["input"] for k, v in _MODEL_PRICING.items()}
+_DEFAULT_COST_PER_1K = _DEFAULT_PRICING["input"]
 
 # Aliases so old/new Anthropic names map to the same rate as the JS runtime.
 _MODEL_ALIASES = {
@@ -75,14 +93,71 @@ _MODEL_ALIASES = {
 EVOLUTION_TAX_RATE = 0.05  # 5% of lifetime savings
 
 
-def estimate_cost(tokens_saved: int, model: str = "") -> float:
-    """Estimate USD saved for a given number of tokens and model.
+_PRICING_CACHE: dict[str, Any] | None = None
 
-    Longest-prefix match to avoid 'gpt-4o' eating 'gpt-4o-mini'. Aliases let
-    both old ('claude-3-opus') and new ('claude-opus-4') naming hit the same
-    rate. Unknown models log a warning so the budget invariant stays honest.
+
+def _pricing() -> dict[str, Any]:
+    """Merged pricing: bundled defaults overlaid with an optional local override
+    file (``ENTROLY_PRICING_FILE`` or ``~/.entroly/pricing.json``). Lets rates be
+    refreshed or set to negotiated prices without a code release. Local-only (no
+    network); fail-open to bundled defaults. Cached after first load."""
+    global _PRICING_CACHE
+    if _PRICING_CACHE is not None:
+        return _PRICING_CACHE
+    merged: dict[str, Any] = {
+        "as_of": _PRICING_AS_OF,
+        "source": "bundled",
+        "default": dict(_DEFAULT_PRICING),
+        "models": {k: dict(v) for k, v in _MODEL_PRICING.items()},
+    }
+    path = os.environ.get("ENTROLY_PRICING_FILE") or str(
+        Path.home() / ".entroly" / "pricing.json"
+    )
+    try:
+        p = Path(path)
+        if p.is_file():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            for m, rates in (data.get("models") or {}).items():
+                if isinstance(rates, dict):
+                    merged["models"].setdefault(str(m), {}).update(
+                        {k: float(rates[k]) for k in ("input", "output") if k in rates}
+                    )
+            if isinstance(data.get("default"), dict):
+                merged["default"].update(
+                    {k: float(data["default"][k]) for k in ("input", "output") if k in data["default"]}
+                )
+            if data.get("as_of"):
+                merged["as_of"] = str(data["as_of"])
+            merged["source"] = str(p)
+    except Exception as e:  # noqa: BLE001 — pricing override is best-effort
+        logger.debug("pricing override load failed (%s); using bundled defaults", e)
+    _PRICING_CACHE = merged
+    return merged
+
+
+def reset_pricing_cache() -> None:
+    """Drop the cached merged pricing (e.g. after writing a new override file)."""
+    global _PRICING_CACHE
+    _PRICING_CACHE = None
+
+
+def pricing_provenance() -> dict[str, str]:
+    """Where the active rates come from — for audit/report surfaces."""
+    p = _pricing()
+    return {"as_of": str(p.get("as_of", _PRICING_AS_OF)), "source": str(p.get("source", "bundled"))}
+
+
+def estimate_cost(tokens_saved: int, model: str = "", kind: str = "input") -> float:
+    """Estimate USD saved for ``tokens_saved`` tokens of a model.
+
+    ``kind`` selects the rate: ``"input"`` (default — context-compression
+    savings) or ``"output"`` (response-distillation savings). Longest-prefix
+    match avoids 'gpt-4o' eating 'gpt-4o-mini'; aliases map old/new names to one
+    rate. Rates come from :func:`_pricing` (bundled defaults + optional local
+    override). Unknown models log a warning so the budget invariant stays honest.
     """
-    cost = _DEFAULT_COST_PER_1K
+    pricing = _pricing()
+    rates = dict(pricing["default"])
     matched = False
     if model:
         m = model.lower()
@@ -91,14 +166,17 @@ def estimate_cost(tokens_saved: int, model: str = "") -> float:
                 m = canonical + m[len(alias):]
                 break
         # Longest prefix wins.
-        for prefix in sorted(_MODEL_COSTS_PER_1K.keys(), key=len, reverse=True):
+        for prefix in sorted(pricing["models"].keys(), key=len, reverse=True):
             if m.startswith(prefix):
-                cost = _MODEL_COSTS_PER_1K[prefix]
+                rates = pricing["models"][prefix]
                 matched = True
                 break
         if not matched:
-            logger.warning("unknown model %r; falling back to default $%s/1K", model, _DEFAULT_COST_PER_1K)
-    return (tokens_saved / 1000.0) * cost
+            logger.warning("unknown model %r; falling back to default pricing", model)
+    rate = rates.get(kind)
+    if rate is None:
+        rate = rates.get("input", _DEFAULT_PRICING["input"])
+    return (tokens_saved / 1000.0) * float(rate)
 
 
 def _day_key(ts: float | None = None) -> str:
