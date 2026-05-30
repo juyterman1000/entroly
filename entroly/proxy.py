@@ -1692,13 +1692,15 @@ class PromptCompilerProxy:
 
         # ── System 2 → System 1 coupling (opt-in: ENTROLY_VAULT_COUPLING=1) ──
         # Project verified vault beliefs into the engine as fragment candidates
-        # so the knapsack weighs them against IDE-supplied fragments under a
-        # single objective. See entroly/coupling.py for the math.
+        # (so the knapsack weighs them against IDE-supplied fragments) AND
+        # discount candidate fragments that merely restate those beliefs
+        # (belief-conditioned compression). Both directions share one belief
+        # projection. See entroly/coupling.py for the math.
         injected_claim_ids: list[str] = []
         if self._vault is not None:
             try:
                 from . import coupling
-                injected_claim_ids = coupling.inject_vault_beliefs(
+                injected_claim_ids = coupling.couple_beliefs(
                     self.engine, self._vault, user_message,
                 )
             except Exception as e:

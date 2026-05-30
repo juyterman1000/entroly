@@ -1828,6 +1828,7 @@ def create_mcp_server(
     _task_profiles.optimize_all()  # warm from existing journal
     _last_opt_ctx = {}  # tracks last optimization for feedback attribution
     _vault_beliefs_loaded = False  # lazy: load vault beliefs on first optimize
+    _mcp_belief_vault = [None]  # lazy VaultManager cell for belief-conditioning
 
     # P2.2: Wire implicit-reward → FeedbackJournal so TaskProfileOptimizer
     # and DreamingLoop get signal from every optimize_context() call,
@@ -1986,6 +1987,35 @@ def create_mcp_server(
                 except Exception as e:
                     logger.debug(f"Vault belief loading failed: {e}")
             _vault_beliefs_loaded = True
+
+        # ── Belief-conditioned compression (opt-in: ENTROLY_VAULT_COUPLING=1) ──
+        # Discount candidate fragments that merely restate high-confidence vault
+        # beliefs, so novel content wins the knapsack. Same mechanism the HTTP
+        # proxy uses (coupling.couple_beliefs); here we drive it per-optimize for
+        # the long-lived MCP engine. The Rust pass is idempotent (discounts from a
+        # pristine baseline), so re-running it every call is safe.
+        if engine._use_rust and hasattr(engine._rust, "apply_belief_conditioning"):
+            try:
+                from . import coupling
+                if coupling.is_enabled():
+                    if _mcp_belief_vault[0] is None:
+                        from .vault import VaultConfig, VaultManager
+                        _mcp_belief_vault[0] = VaultManager(VaultConfig())
+                    beliefs = coupling.project_beliefs(_mcp_belief_vault[0], query)
+                    if beliefs:
+                        engine._rust.set_belief_corpus(
+                            [(b.body, float(b.confidence)) for b in beliefs]
+                        )
+                        adjusted = engine._rust.apply_belief_conditioning()
+                        if adjusted:
+                            logger.info(
+                                "Belief conditioning: discounted %d candidate fragments",
+                                adjusted,
+                            )
+                    else:
+                        engine._rust.clear_belief_corpus()
+            except Exception as e:
+                logger.debug("Belief conditioning skipped: %s", e)
 
         # Apply task-conditioned weights before optimization
         task_type, task_confidence = _task_profiles.apply_to_engine(engine, query)

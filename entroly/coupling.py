@@ -238,6 +238,21 @@ def inject_vault_beliefs(
         max_age_days=max_age_days,
         top_k=top_k,
     )
+    return _inject_projected(engine, beliefs, min_confidence=min_confidence)
+
+
+def _inject_projected(
+    engine: Any,
+    beliefs: list[ProjectedBelief],
+    *,
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+) -> list[str]:
+    """Ingest an already-projected belief list as engine fragments.
+
+    Split out from inject_vault_beliefs so couple_beliefs() can reuse a single
+    project_beliefs() call for both injection and belief-conditioned discounting
+    (one vault read per request).
+    """
     if not beliefs:
         return []
 
@@ -273,6 +288,55 @@ def inject_vault_beliefs(
             beliefs[0].score if beliefs else 0.0,
             min_confidence,
         )
+
+    return injected
+
+
+def couple_beliefs(
+    engine: Any,
+    vault: Any,
+    query: str,
+    *,
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+    max_age_days: float = DEFAULT_MAX_AGE_DAYS,
+    top_k: int = DEFAULT_TOP_K,
+) -> list[str]:
+    """Apply both coupling directions from a single belief projection:
+
+      1. Inject   — verified beliefs enter the engine as pinned candidates
+                    (S2 → S1, existing behaviour).
+      2. Discount — candidate fragments that merely restate those beliefs have
+                    their stored score discounted via belief-conditioned
+                    compression (H(X | beliefs)). Novel content is preserved;
+                    vault-sourced fragments are skipped so beliefs do not
+                    discount themselves.
+
+    Returns the injected claim_ids (for outcome attribution). The discounting
+    step is strictly best-effort and never affects the injected set, so a
+    missing/older engine binding degrades gracefully to injection-only.
+    """
+    beliefs = project_beliefs(
+        vault, query,
+        min_confidence=min_confidence,
+        max_age_days=max_age_days,
+        top_k=top_k,
+    )
+    if not beliefs:
+        return []
+
+    injected = _inject_projected(engine, beliefs, min_confidence=min_confidence)
+
+    try:
+        if hasattr(engine, "set_belief_corpus") and hasattr(engine, "apply_belief_conditioning"):
+            corpus = [(b.body, float(b.confidence)) for b in beliefs]
+            engine.set_belief_corpus(corpus)
+            adjusted = engine.apply_belief_conditioning()
+            if adjusted:
+                logger.info(
+                    "Belief conditioning: discounted %d candidate fragments", adjusted
+                )
+    except Exception as e:
+        logger.debug("Belief conditioning skipped: %s", e)
 
     return injected
 

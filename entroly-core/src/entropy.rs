@@ -684,6 +684,81 @@ pub fn information_score(text: &str, other_fragments: &[&str]) -> f64 {
     score.clamp(0.0, 1.0)
 }
 
+/// Floor value retained by content that restates a fully-known, high-confidence
+/// belief. Confirmations are not worthless — they reinforce the agent's state —
+/// so known content keeps this fraction of its intrinsic density rather than
+/// dropping to zero.
+const KNOWN_VALUE_FLOOR: f64 = 0.15;
+
+/// Belief-conditioned novelty: how much *new* information a fragment carries
+/// given what the agent already knows.
+///
+/// This generalizes [`cross_fragment_redundancy`] from "other fragments in the
+/// current request" to "the agent's persisted beliefs". Where Shannon entropy
+/// measures surprise in a vacuum (`H(X)`), this measures surprise conditioned on
+/// the belief state (`H(X | beliefs)`): a fragment that restates a high-confidence
+/// belief carries little new information; restating a low-confidence belief is
+/// still partly informative; genuinely novel content is fully informative.
+///
+/// `beliefs` is a slice of `(text, confidence)` pairs with confidence in `[0,1]`.
+/// Returns a novelty factor in `[0,1]`: `1.0` = fully novel, `0.0` = fully known.
+///
+/// Known-mass is taken as the single best-matching belief's redundancy scaled by
+/// its confidence (a max, not a sum) so that many weakly-related beliefs cannot
+/// spuriously mark a fragment as already known.
+pub fn belief_conditioned_novelty(fragment: &str, beliefs: &[(&str, f64)]) -> f64 {
+    if fragment.trim().is_empty() || beliefs.is_empty() {
+        return 1.0;
+    }
+
+    let mut known_mass = 0.0f64;
+    for &(belief_text, conf) in beliefs {
+        if belief_text.trim().is_empty() {
+            continue;
+        }
+        let conf = conf.clamp(0.0, 1.0);
+        let redundancy = cross_fragment_redundancy(fragment, &[belief_text]);
+        known_mass = known_mass.max(redundancy * conf);
+    }
+
+    (1.0 - known_mass).clamp(0.0, 1.0)
+}
+
+/// Information density conditioned on the agent's belief state — the
+/// belief-aware counterpart to [`information_score`].
+///
+/// Combines the standard intrinsic density (entropy + boilerplate penalty +
+/// intra-request uniqueness) with the belief-novelty factor from
+/// [`belief_conditioned_novelty`]. Content that restates high-confidence beliefs
+/// is discounted toward [`KNOWN_VALUE_FLOOR`] so confirmations retain some value,
+/// while novel content keeps full value. With an empty belief corpus this is
+/// exactly `information_score`, so the belief-aware path is a strict superset
+/// that degrades gracefully to existing behaviour.
+pub fn conditional_information_score(
+    text: &str,
+    other_fragments: &[&str],
+    beliefs: &[(&str, f64)],
+) -> f64 {
+    let base = information_score(text, other_fragments);
+    (base * belief_conditioning_factor(text, beliefs)).clamp(0.0, 1.0)
+}
+
+/// Multiplicative discount in `[KNOWN_VALUE_FLOOR, 1.0]` applied to a fragment's
+/// intrinsic value given the belief corpus. `1.0` = fully novel (no discount),
+/// `KNOWN_VALUE_FLOOR` = restates a fully-known, max-confidence belief.
+///
+/// Exposed separately from [`conditional_information_score`] so callers that
+/// already hold a precomputed value (e.g. the engine's stored `entropy_score`,
+/// which folds in source-type and mass corrections) can apply the belief
+/// discount without recomputing the base density. Empty corpus ⇒ `1.0`.
+pub fn belief_conditioning_factor(fragment: &str, beliefs: &[(&str, f64)]) -> f64 {
+    if beliefs.is_empty() {
+        return 1.0;
+    }
+    let novelty = belief_conditioned_novelty(fragment, beliefs);
+    KNOWN_VALUE_FLOOR + (1.0 - KNOWN_VALUE_FLOOR) * novelty
+}
+
 /// Source-type importance multiplier for knapsack value scoring.
 ///
 /// Source code files carry implementation logic — the primary signal an AI
@@ -969,6 +1044,99 @@ mod tests {
         assert!(
             score_code >= score_noise * 0.8,
             "Code should score well relative to noise: code={score_code:.3} noise={score_noise:.3}"
+        );
+    }
+
+    // ── belief-conditioned compression: H(X | beliefs) ──────────────────────
+
+    #[test]
+    fn test_belief_novelty_empty_corpus_is_fully_novel() {
+        let frag = "fn authenticate(token) verify hmac compare_digest secret";
+        assert_eq!(belief_conditioned_novelty(frag, &[]), 1.0);
+    }
+
+    #[test]
+    fn test_belief_novelty_known_high_confidence_drops() {
+        // Fragment restates an already-held, high-confidence belief → low novelty.
+        let frag = "the rate limiter uses a sliding window of requests per key";
+        let beliefs = [("the rate limiter uses a sliding window of requests per key", 0.95)];
+        let novelty = belief_conditioned_novelty(frag, &beliefs);
+        assert!(
+            novelty < 0.2,
+            "restating a high-confidence belief should be near-known, got {novelty:.3}"
+        );
+    }
+
+    #[test]
+    fn test_belief_novelty_low_confidence_stays_informative() {
+        // Same restatement, but the belief is barely held → still informative.
+        let frag = "the rate limiter uses a sliding window of requests per key";
+        let high = [("the rate limiter uses a sliding window of requests per key", 0.95)];
+        let low = [("the rate limiter uses a sliding window of requests per key", 0.2)];
+        let n_high = belief_conditioned_novelty(frag, &high);
+        let n_low = belief_conditioned_novelty(frag, &low);
+        assert!(
+            n_low > n_high,
+            "low-confidence belief must discount less: low={n_low:.3} high={n_high:.3}"
+        );
+    }
+
+    #[test]
+    fn test_belief_novelty_unrelated_belief_stays_novel() {
+        // Fragment unrelated to held beliefs → essentially fully novel.
+        let frag = "fn parse_json(input) tokenize lexer build syntax tree";
+        let beliefs = [("the payment processor charges via the stripe gateway", 0.9)];
+        let novelty = belief_conditioned_novelty(frag, &beliefs);
+        assert!(
+            novelty > 0.8,
+            "unrelated content should stay novel, got {novelty:.3}"
+        );
+    }
+
+    #[test]
+    fn test_conditional_score_empty_beliefs_equals_information_score() {
+        // Strict-superset contract: no beliefs ⇒ identical to information_score.
+        let frag = "def compute_tax(income, rate):\n    return income * rate";
+        let others = ["def validate_user(email): return check(email)"];
+        let base = information_score(frag, &others);
+        let cond = conditional_information_score(frag, &others, &[]);
+        assert_eq!(base, cond);
+    }
+
+    #[test]
+    fn test_conditional_score_known_content_discounted_to_floor() {
+        // Known high-confidence content scores strictly below its intrinsic
+        // density, but never below the KNOWN_VALUE_FLOOR fraction of it.
+        let frag = "the rate limiter uses a sliding window of requests per key counts";
+        let beliefs = [(
+            "the rate limiter uses a sliding window of requests per key counts",
+            1.0,
+        )];
+        let base = information_score(frag, &[]);
+        let cond = conditional_information_score(frag, &[], &beliefs);
+        assert!(cond < base, "known content must be discounted: cond={cond:.3} base={base:.3}");
+        assert!(
+            cond >= base * KNOWN_VALUE_FLOOR - 1e-9,
+            "discount must not fall below the floor: cond={cond:.3} floor={:.3}",
+            base * KNOWN_VALUE_FLOOR
+        );
+    }
+
+    #[test]
+    fn test_conditional_score_novel_beats_known() {
+        // Two fragments of comparable intrinsic density; the one the agent
+        // already believes should be ranked below the genuinely novel one.
+        let known = "the payment processor charges an amount in a currency via gateway";
+        let novel = "the websocket reconnect uses exponential backoff with jitter cap";
+        let beliefs = [(
+            "the payment processor charges an amount in a currency via gateway",
+            0.9,
+        )];
+        let s_known = conditional_information_score(known, &[], &beliefs);
+        let s_novel = conditional_information_score(novel, &[], &beliefs);
+        assert!(
+            s_novel > s_known,
+            "novel content must outrank already-known content: novel={s_novel:.3} known={s_known:.3}"
         );
     }
 }

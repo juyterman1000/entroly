@@ -69,8 +69,8 @@ use causal::CausalContextGraph;
 use dedup::{hamming_distance, simhash, DedupIndex};
 use depgraph::{extract_identifiers, DepGraph};
 use entropy::{
-    boilerplate_ratio, entropy_divergence, information_score, normalized_entropy, renyi_entropy_2,
-    shannon_entropy,
+    boilerplate_ratio, conditional_information_score, entropy_divergence, information_score,
+    normalized_entropy, renyi_entropy_2, shannon_entropy,
 };
 use fragment::{compute_relevance, ContextFragment};
 use guardrails::{
@@ -270,6 +270,12 @@ pub struct EntrolyEngine {
     /// Updated by the closed-loop EMA feedback — converges to the optimal
     /// belief density for the specific codebase via online gradient descent.
     base_belief_info_factor: f64,
+
+    // ── Belief-conditioned compression (H(X | beliefs)) ──
+    /// Corpus of (belief_text, confidence) the agent already holds. When set
+    /// (via the opt-in coupling layer), `apply_belief_conditioning` discounts
+    /// candidate fragments that merely restate these beliefs. Empty ⇒ disabled.
+    belief_corpus: Vec<(String, f64)>,
 }
 
 /// Snapshot of the last optimization for explainability.
@@ -417,7 +423,57 @@ impl EntrolyEngine {
             belief_util_ema: 0.5, // neutral start
             full_util_ema: 0.5,   // neutral start
             base_belief_info_factor: ios_belief_info_factor.clamp(0.01, 0.99),
+            // Belief-conditioned compression corpus (opt-in via coupling layer)
+            belief_corpus: Vec::new(),
         }
+    }
+
+    /// Set the belief-conditioning corpus: `(belief_text, confidence)` pairs
+    /// used by [`apply_belief_conditioning`] to discount fragments that restate
+    /// already-known beliefs. Opt-in — has no effect until that method is called.
+    /// An empty corpus disables conditioning (strict superset of prior behaviour).
+    pub fn set_belief_corpus(&mut self, beliefs: Vec<(String, f64)>) {
+        self.belief_corpus = beliefs;
+    }
+
+    /// Clear the belief-conditioning corpus.
+    pub fn clear_belief_corpus(&mut self) {
+        self.belief_corpus.clear();
+    }
+
+    /// Discount stored fragment scores by belief-conditioned novelty.
+    ///
+    /// For every non-vault-sourced fragment, multiplies `entropy_score` by
+    /// `belief_conditioning_factor(content, corpus)` so content restating a
+    /// high-confidence belief loses value while novel content is preserved.
+    /// Fragments whose source begins with `vault://` are skipped so injected
+    /// beliefs never discount themselves. No-op when the corpus is empty.
+    /// Returns the number of fragments adjusted.
+    pub fn apply_belief_conditioning(&mut self) -> usize {
+        if self.belief_corpus.is_empty() {
+            return 0;
+        }
+        let belief_refs: Vec<(&str, f64)> = self
+            .belief_corpus
+            .iter()
+            .map(|(t, c)| (t.as_str(), *c))
+            .collect();
+        let mut adjusted = 0;
+        for frag in self.fragments.values_mut() {
+            if frag.source.starts_with("vault://") {
+                continue;
+            }
+            let factor = crate::entropy::belief_conditioning_factor(&frag.content, &belief_refs);
+            // Idempotent: discount from the pristine pre-belief baseline so that
+            // repeated optimize() calls on a persistent engine (proxy/MCP) — and
+            // a changing belief corpus — never compound the discount.
+            let base = *frag.entropy_pre_belief.get_or_insert(frag.entropy_score);
+            frag.entropy_score = (base * factor).clamp(0.0, 1.0);
+            if factor < 1.0 {
+                adjusted += 1;
+            }
+        }
+        adjusted
     }
 
     /// Advance the turn counter and apply Ebbinghaus decay.
@@ -5370,6 +5426,23 @@ fn py_information_score(text: &str, other_fragments: Vec<String>) -> f64 {
     information_score(text, &refs)
 }
 
+/// Compute belief-conditioned information density [0, 1].
+///
+/// Like `py_information_score`, but discounts fragments that restate content the
+/// agent already holds as a belief. `beliefs` is a list of `(text, confidence)`
+/// pairs (confidence in [0, 1]). An empty belief list returns exactly the
+/// `py_information_score` result, so this is a strict superset.
+#[pyfunction]
+fn py_conditional_information_score(
+    text: &str,
+    other_fragments: Vec<String>,
+    beliefs: Vec<(String, f64)>,
+) -> f64 {
+    let refs: Vec<&str> = other_fragments.iter().map(|s| s.as_str()).collect();
+    let belief_refs: Vec<(&str, f64)> = beliefs.iter().map(|(t, c)| (t.as_str(), *c)).collect();
+    conditional_information_score(text, &refs, &belief_refs)
+}
+
 /// Scan content for security vulnerabilities — returns JSON-encoded SastReport.
 #[pyfunction]
 fn py_scan_content(content: &str, source: &str) -> String {
@@ -5976,6 +6049,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_simhash, m)?)?;
     m.add_function(wrap_pyfunction!(py_hamming_distance, m)?)?;
     m.add_function(wrap_pyfunction!(py_information_score, m)?)?;
+    m.add_function(wrap_pyfunction!(py_conditional_information_score, m)?)?;
     // ── Knapsack / Ebbinghaus
     m.add_function(wrap_pyfunction!(py_knapsack_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(py_apply_ebbinghaus_decay, m)?)?;

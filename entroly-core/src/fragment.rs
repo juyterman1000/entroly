@@ -85,6 +85,14 @@ pub struct ContextFragment {
     // Fragments selected in recent requests receive attenuated reward.
     #[serde(default)]
     pub eligibility_trace: f64,
+
+    /// Pristine `entropy_score` captured before the first belief-conditioning
+    /// discount. Makes `apply_belief_conditioning` idempotent on a persistent
+    /// engine: every pass re-discounts from this baseline instead of compounding,
+    /// and a changed belief corpus correctly restores then re-discounts.
+    /// `None` until conditioning first touches the fragment.
+    #[serde(default)]
+    pub entropy_pre_belief: Option<f64>,
 }
 
 #[pymethods]
@@ -118,6 +126,7 @@ impl ContextFragment {
             belief_token_count: None,
             language: String::new(),
             eligibility_trace: 0.0,
+            entropy_pre_belief: None,
         }
     }
 }
