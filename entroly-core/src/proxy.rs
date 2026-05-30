@@ -18,7 +18,7 @@
 //! responses stream straight back. Fail-open everywhere; byte-exact passthrough
 //! when nothing is compressed (keeps the provider prefix cache).
 
-use crate::compress::{est_tokens, knapsack_select, score_blocks, split_blocks};
+use crate::compress::{compress_text, est_tokens, knapsack_select, score_blocks, split_blocks};
 use serde_json::Value;
 
 /// Upstream API a request targets.
@@ -163,7 +163,12 @@ fn collect_slots(v: &Value, provider: Provider) -> Vec<Vec<Seg>> {
 /// budget, preserving JSON structure. Returns `(rewritten_body, before, after)`
 /// in total tokens. Non-JSON bodies and within-budget requests are returned
 /// verbatim (fail-open / byte-exact).
-pub fn compress_request_body(body: &str, total_budget: usize, provider: Provider) -> (String, usize, usize) {
+pub fn compress_request_body(
+    body: &str,
+    total_budget: usize,
+    provider: Provider,
+    cache_aligned: bool,
+) -> (String, usize, usize) {
     let mut v: Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(_) => return (body.to_string(), 0, 0),
@@ -183,6 +188,33 @@ pub fn compress_request_body(body: &str, total_budget: usize, provider: Provider
     if slots.is_empty() || before_total <= total_budget {
         return (body.to_string(), 0, 0);
     }
+
+    // CACHE-ALIGNED (default for the proxy): compress each text field
+    // INDEPENDENTLY — its output depends only on its own content, so unchanged
+    // prefix fields (system, earlier turns) produce byte-identical bytes across
+    // requests → the provider's prefix cache (Anthropic 90% / OpenAI 50%) keeps
+    // hitting. Trades a little global optimality for cache stability, which
+    // usually dominates on chatty/proxy workloads. Byte-exact passthrough if
+    // nothing actually changed.
+    if cache_aligned {
+        let mut after_total = 0usize;
+        let mut changed = false;
+        for (path, text) in &slots {
+            let c = compress_text(text, total_budget);
+            after_total += est_tokens(&c);
+            if c != *text {
+                set_str(&mut v, path, c);
+                changed = true;
+            }
+        }
+        if !changed {
+            return (body.to_string(), 0, 0);
+        }
+        let out = serde_json::to_string(&v).unwrap_or_else(|_| body.to_string());
+        return (out, before_total, after_total);
+    }
+
+    // GLOBAL total-budget knapsack (one-shot large contexts; not prefix-stable).
 
     // Flatten all blocks across all slots into one global pool, then run a
     // single 0/1 knapsack over the total budget.
@@ -250,7 +282,7 @@ const MAX_BODY_BYTES: u64 = 64 * 1024 * 1024;
 /// Run the proxy: listen on `127.0.0.1:port`, compress provider message context
 /// under `total_budget`, and forward to `upstream`. Concurrent worker pool.
 #[cfg(feature = "proxy")]
-pub fn run(port: u16, upstream: &str, total_budget: usize) -> std::io::Result<()> {
+pub fn run(port: u16, upstream: &str, total_budget: usize, cache_aligned: bool) -> std::io::Result<()> {
     use std::sync::Arc;
     use tiny_http::Server;
 
@@ -272,7 +304,7 @@ pub fn run(port: u16, upstream: &str, total_budget: usize) -> std::io::Result<()
         let upstream = Arc::clone(&upstream);
         handles.push(std::thread::spawn(move || {
             for req in server.incoming_requests() {
-                handle(req, &upstream, total_budget);
+                handle(req, &upstream, total_budget, cache_aligned);
             }
         }));
     }
@@ -283,7 +315,7 @@ pub fn run(port: u16, upstream: &str, total_budget: usize) -> std::io::Result<()
 }
 
 #[cfg(feature = "proxy")]
-fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize) {
+fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize, cache_aligned: bool) {
     use std::io::Read;
     use tiny_http::{Header, Method, Response, StatusCode};
 
@@ -312,7 +344,7 @@ fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize) {
     let _ = req.as_reader().take(MAX_BODY_BYTES).read_to_string(&mut body);
 
     let (new_body, before, after) = match detect_provider(&url) {
-        Some(p) => compress_request_body(&body, total_budget, p),
+        Some(p) => compress_request_body(&body, total_budget, p, cache_aligned),
         None => (body, 0, 0),
     };
     if before > 0 {
@@ -393,7 +425,7 @@ mod tests {
             serde_json::to_string(&big(200)).unwrap(),
             serde_json::to_string(&big(200)).unwrap()
         );
-        let (out, before, after) = compress_request_body(&body, 60, Provider::Anthropic);
+        let (out, before, after) = compress_request_body(&body, 60, Provider::Anthropic, true);
         assert!(before > 0 && after < before);
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["messages"][0]["content"].is_string());
@@ -407,7 +439,7 @@ mod tests {
             serde_json::to_string(&big(200)).unwrap(),
             serde_json::to_string(&big(200)).unwrap()
         );
-        let (out, before, after) = compress_request_body(&body, 60, Provider::OpenAI);
+        let (out, before, after) = compress_request_body(&body, 60, Provider::OpenAI, true);
         assert!(before > 0 && after < before, "openai should compress: {before}->{after}");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["messages"][0]["role"], "system");
@@ -421,7 +453,7 @@ mod tests {
             serde_json::to_string(&big(200)).unwrap(),
             serde_json::to_string(&big(200)).unwrap()
         );
-        let (out, before, after) = compress_request_body(&body, 60, Provider::Gemini);
+        let (out, before, after) = compress_request_body(&body, 60, Provider::Gemini, true);
         assert!(before > 0 && after < before, "gemini should compress: {before}->{after}");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["contents"][0]["parts"][0]["text"].is_string());
@@ -435,21 +467,52 @@ mod tests {
             serde_json::to_string(&big(300)).unwrap(),
             serde_json::to_string(&big(300)).unwrap()
         );
-        let (_, before, after) = compress_request_body(&body, 80, Provider::OpenAI);
+        // Global mode (cache_aligned=false): one budget shared across fields.
+        let (_, before, after) = compress_request_body(&body, 80, Provider::OpenAI, false);
         assert!(before > 0 && after <= 130, "shared total budget ~80: {after}");
+    }
+
+    #[test]
+    fn test_cache_aligned_prefix_is_stable_across_turns() {
+        // The whole point of cache alignment: appending a new turn must NOT
+        // change the compressed bytes of the prefix (system + earlier turn),
+        // so the provider's prefix cache keeps hitting.
+        let sys = big(300);
+        let m1 = big(300);
+        let m2 = big(60);
+        let req1 = format!(
+            r#"{{"system":{},"messages":[{{"role":"user","content":{}}}]}}"#,
+            serde_json::to_string(&sys).unwrap(),
+            serde_json::to_string(&m1).unwrap()
+        );
+        let req2 = format!(
+            r#"{{"system":{},"messages":[{{"role":"user","content":{}}},{{"role":"assistant","content":{}}}]}}"#,
+            serde_json::to_string(&sys).unwrap(),
+            serde_json::to_string(&m1).unwrap(),
+            serde_json::to_string(&m2).unwrap()
+        );
+        let (o1, _, _) = compress_request_body(&req1, 60, Provider::Anthropic, true);
+        let (o2, _, _) = compress_request_body(&req2, 60, Provider::Anthropic, true);
+        let v1: Value = serde_json::from_str(&o1).unwrap();
+        let v2: Value = serde_json::from_str(&o2).unwrap();
+        assert_eq!(v1["system"], v2["system"], "system prefix must stay byte-stable");
+        assert_eq!(
+            v1["messages"][0]["content"], v2["messages"][0]["content"],
+            "earlier turn must stay byte-stable"
+        );
     }
 
     #[test]
     fn test_small_content_byte_exact() {
         let body = r#"{"messages":[{"role":"user","content":"hi there"}]}"#;
-        let (out, before, _) = compress_request_body(body, 2000, Provider::OpenAI);
+        let (out, before, _) = compress_request_body(body, 2000, Provider::OpenAI, true);
         assert_eq!(before, 0);
         assert_eq!(out, body);
     }
 
     #[test]
     fn test_non_json_failopen() {
-        let (out, before, _) = compress_request_body("not json", 50, Provider::Anthropic);
+        let (out, before, _) = compress_request_body("not json", 50, Provider::Anthropic, true);
         assert_eq!(before, 0);
         assert_eq!(out, "not json");
     }

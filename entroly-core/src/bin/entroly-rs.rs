@@ -31,8 +31,10 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("  entroly-rs compress [--budget N] [FILE]   compress FILE (or stdin) to ~N tokens");
-    println!("  entroly-rs proxy [--port P] [--upstream URL] [--budget N]");
-    println!("                                            run the compressing proxy (needs `proxy` feature)");
+    println!("  entroly-rs proxy [--port P] [--upstream URL] [--budget N] [--no-cache-align]");
+    println!("                                            run the compressing proxy (needs `proxy` feature).");
+    println!("                                            Cache-aligned by default (prefix-stable for provider");
+    println!("                                            caches); --no-cache-align uses a global token budget.");
     println!("  entroly-rs --version");
     println!("  entroly-rs --help");
     println!();
@@ -102,9 +104,11 @@ fn cmd_proxy(args: &[String]) {
     let mut port: u16 = 9377;
     let mut upstream = "https://api.anthropic.com".to_string();
     let mut budget: usize = 4000;
+    let mut cache_aligned = true;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--no-cache-align" => cache_aligned = false,
             "--port" | "-p" => {
                 i += 1;
                 match args.get(i).and_then(|v| v.parse::<u16>().ok()) {
@@ -142,7 +146,7 @@ fn cmd_proxy(args: &[String]) {
         }
         i += 1;
     }
-    if let Err(e) = entroly_core::proxy::run(port, &upstream, budget) {
+    if let Err(e) = entroly_core::proxy::run(port, &upstream, budget, cache_aligned) {
         eprintln!("entroly-rs proxy: {e}");
         std::process::exit(1);
     }
