@@ -18,6 +18,8 @@ mod causal;
 mod channel;
 mod cognitive_bus;
 pub mod cogops;
+/// Pure-Rust text compression entry point for the standalone binary.
+pub mod compress;
 mod conversation_pruner;
 mod dedup;
 mod depgraph;
