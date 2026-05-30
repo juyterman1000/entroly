@@ -33,7 +33,7 @@ class Mock(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(n)
-        recv["len"] = len(body)
+        recv[self.path] = len(body)
         compact = body.replace(b" ", b"")
         if b'"stream":true' in compact:
             self.send_response(200)
@@ -78,23 +78,45 @@ def main():
         print("health OK")
 
         big = "\n".join(f"Line {i}: real content about module {i} edge cases." for i in range(300))
-        payload = json.dumps({"messages": [
+
+        def post(path, obj):
+            data = json.dumps(obj).encode()
+            r = urllib.request.urlopen(
+                urllib.request.Request(
+                    f"http://127.0.0.1:{PROXY}{path}", data=data,
+                    headers={"Content-Type": "application/json", "x-api-key": "t"},
+                ),
+                timeout=10,
+            )
+            return data, r
+
+        # Anthropic — total budget across two messages + gzip decode + header fwd.
+        payload, r = post("/v1/messages", {"messages": [
             {"role": "user", "content": big},
             {"role": "user", "content": big},
-        ]}).encode()
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{PROXY}/v1/messages", data=payload,
-            headers={"Content-Type": "application/json", "x-api-key": "t"},
-        )
-        r = urllib.request.urlopen(req, timeout=10)
+        ]})
         assert r.headers.get("x-request-id") == "req-123", "response header must be forwarded"
-        assert recv["len"] < len(payload), "proxy must compress (total budget)"
-        # gzip-from-upstream must come back as clean decoded JSON (no corruption,
-        # no hang from a stale compressed content-length).
-        parsed = json.loads(r.read().decode())
-        assert parsed.get("ok") is True, "gzipped upstream response must decode cleanly"
+        assert recv["/v1/messages"] < len(payload), "anthropic must compress (total budget)"
+        assert json.loads(r.read().decode()).get("ok") is True, "gzip response must decode cleanly"
         assert r.headers.get("Content-Encoding") is None, "content-encoding must be stripped"
-        print(f"total-budget compress: sent {len(payload)} -> upstream {recv['len']}; gzip response decoded; header forwarded OK")
+        print(f"anthropic: {len(payload)} -> {recv['/v1/messages']} (gzip decoded + header fwd) OK")
+
+        # OpenAI — /chat/completions (string + text-part content).
+        op, _ = post("/v1/chat/completions", {"model": "gpt-4o", "messages": [
+            {"role": "system", "content": big},
+            {"role": "user", "content": [{"type": "text", "text": big}]},
+        ]})
+        assert recv["/v1/chat/completions"] < len(op), "openai must compress"
+        print(f"openai: {len(op)} -> {recv['/v1/chat/completions']} OK")
+
+        # Gemini — generateContent (contents.parts + systemInstruction).
+        gpath = "/v1beta/models/gemini-2.5-pro:generateContent"
+        gp, _ = post(gpath, {
+            "contents": [{"role": "user", "parts": [{"text": big}]}],
+            "systemInstruction": {"parts": [{"text": big}]},
+        })
+        assert recv[gpath] < len(gp), "gemini must compress"
+        print(f"gemini: {len(gp)} -> {recv[gpath]} OK")
 
         # SSE streaming passthrough
         spayload = json.dumps({"stream": True, "messages": [{"role": "user", "content": big}]}).encode()
