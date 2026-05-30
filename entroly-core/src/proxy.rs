@@ -1,0 +1,456 @@
+//! Single-binary HTTP proxy for `entroly-rs` (Phase 2 — multi-provider).
+//!
+//! The request-body transform ([`compress_request_body`]) is **pure**
+//! (`serde_json` + [`crate::compress`]) and always compiled + unit-tested. Only
+//! the server ([`run`]) is gated behind the `proxy` feature, so its deps
+//! (`tiny_http`, `ureq`) never enter the Python wheel.
+//!
+//! Providers (auto-detected from the request path):
+//!   * **Anthropic** `/v1/messages` — `messages[].content` (string or text
+//!     blocks) + top-level `system`.
+//!   * **OpenAI** `/chat/completions` — `messages[].content` (string or text
+//!     parts). (System is just a `role:"system"` message, handled by the loop.)
+//!   * **Gemini** `…:generateContent` / `…:streamGenerateContent` —
+//!     `contents[].parts[].text` + `systemInstruction.parts[].text`.
+//!
+//! All providers share ONE total-budget 0/1 knapsack over every text block.
+//! Streaming is response-side: the request body always compresses; SSE/chunked
+//! responses stream straight back. Fail-open everywhere; byte-exact passthrough
+//! when nothing is compressed (keeps the provider prefix cache).
+
+use crate::compress::{est_tokens, knapsack_select, score_blocks, split_blocks};
+use serde_json::Value;
+
+/// Upstream API a request targets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Provider {
+    Anthropic,
+    OpenAI,
+    Gemini,
+}
+
+/// Detect the provider from the request path, or `None` (→ forward untouched).
+pub fn detect_provider(url: &str) -> Option<Provider> {
+    // Lowercase for matching: Gemini's `streamGenerateContent` has a capital G,
+    // so a case-sensitive substring check would miss the streaming variant.
+    let u = url.to_ascii_lowercase();
+    if u.contains("/v1/messages") {
+        Some(Provider::Anthropic)
+    } else if u.contains("/chat/completions") {
+        Some(Provider::OpenAI)
+    } else if u.contains("generatecontent") {
+        // covers both generateContent and streamGenerateContent
+        Some(Provider::Gemini)
+    } else {
+        None
+    }
+}
+
+/// A JSON path segment for locating a text field generically.
+#[derive(Clone)]
+enum Seg {
+    Key(&'static str),
+    Idx(usize),
+}
+
+fn get_str<'a>(v: &'a Value, path: &[Seg]) -> Option<&'a str> {
+    let mut cur = v;
+    for seg in path {
+        cur = match seg {
+            Seg::Key(k) => cur.get(k)?,
+            Seg::Idx(i) => cur.get(i)?,
+        };
+    }
+    cur.as_str()
+}
+
+fn set_str(v: &mut Value, path: &[Seg], s: String) {
+    let mut cur = v;
+    for seg in path {
+        cur = match seg {
+            Seg::Key(k) => match cur.get_mut(k) {
+                Some(x) => x,
+                None => return,
+            },
+            Seg::Idx(i) => match cur.get_mut(*i) {
+                Some(x) => x,
+                None => return,
+            },
+        };
+    }
+    *cur = Value::String(s);
+}
+
+/// Append paths to every text field inside an OpenAI/Anthropic `content` value
+/// (string content, or an array of `{"type":"text","text":...}` parts).
+fn collect_content(content: Option<&Value>, base: Vec<Seg>, out: &mut Vec<Vec<Seg>>) {
+    match content {
+        Some(Value::String(_)) => out.push(base),
+        Some(Value::Array(blks)) => {
+            for (j, b) in blks.iter().enumerate() {
+                if b.get("type").and_then(Value::as_str) == Some("text")
+                    && b.get("text").and_then(Value::as_str).is_some()
+                {
+                    let mut p = base.clone();
+                    p.push(Seg::Idx(j));
+                    p.push(Seg::Key("text"));
+                    out.push(p);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Enumerate JSON paths to every compressible text field for the given provider.
+fn collect_slots(v: &Value, provider: Provider) -> Vec<Vec<Seg>> {
+    let mut out = Vec::new();
+    match provider {
+        Provider::Anthropic | Provider::OpenAI => {
+            if let Some(msgs) = v.get("messages").and_then(Value::as_array) {
+                for (i, m) in msgs.iter().enumerate() {
+                    collect_content(
+                        m.get("content"),
+                        vec![Seg::Key("messages"), Seg::Idx(i), Seg::Key("content")],
+                        &mut out,
+                    );
+                }
+            }
+            if provider == Provider::Anthropic {
+                collect_content(v.get("system"), vec![Seg::Key("system")], &mut out);
+            }
+        }
+        Provider::Gemini => {
+            if let Some(contents) = v.get("contents").and_then(Value::as_array) {
+                for (i, c) in contents.iter().enumerate() {
+                    if let Some(parts) = c.get("parts").and_then(Value::as_array) {
+                        for (j, p) in parts.iter().enumerate() {
+                            if p.get("text").and_then(Value::as_str).is_some() {
+                                out.push(vec![
+                                    Seg::Key("contents"),
+                                    Seg::Idx(i),
+                                    Seg::Key("parts"),
+                                    Seg::Idx(j),
+                                    Seg::Key("text"),
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(parts) = v
+                .get("systemInstruction")
+                .and_then(|s| s.get("parts"))
+                .and_then(Value::as_array)
+            {
+                for (j, p) in parts.iter().enumerate() {
+                    if p.get("text").and_then(Value::as_str).is_some() {
+                        out.push(vec![
+                            Seg::Key("systemInstruction"),
+                            Seg::Key("parts"),
+                            Seg::Idx(j),
+                            Seg::Key("text"),
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compress the text payloads of a request under a single **total** token
+/// budget, preserving JSON structure. Returns `(rewritten_body, before, after)`
+/// in total tokens. Non-JSON bodies and within-budget requests are returned
+/// verbatim (fail-open / byte-exact).
+pub fn compress_request_body(body: &str, total_budget: usize, provider: Provider) -> (String, usize, usize) {
+    let mut v: Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_string(), 0, 0),
+    };
+
+    let paths = collect_slots(&v, provider);
+    // Read texts aligned to paths (collect_slots only emits paths that resolve).
+    let mut slots: Vec<(Vec<Seg>, String)> = Vec::with_capacity(paths.len());
+    for p in paths {
+        if let Some(s) = get_str(&v, &p) {
+            let s = s.to_string();
+            slots.push((p, s));
+        }
+    }
+
+    let before_total: usize = slots.iter().map(|(_, s)| est_tokens(s)).sum();
+    if slots.is_empty() || before_total <= total_budget {
+        return (body.to_string(), 0, 0);
+    }
+
+    // Flatten all blocks across all slots into one global pool, then run a
+    // single 0/1 knapsack over the total budget.
+    let slot_blocks: Vec<Vec<String>> = slots
+        .iter()
+        .map(|(_, s)| split_blocks(s).iter().map(|b| b.to_string()).collect())
+        .collect();
+    let mut pool_refs: Vec<(usize, usize)> = Vec::new();
+    let mut pool_text: Vec<&str> = Vec::new();
+    for (si, blocks) in slot_blocks.iter().enumerate() {
+        for (bi, b) in blocks.iter().enumerate() {
+            pool_refs.push((si, bi));
+            pool_text.push(b.as_str());
+        }
+    }
+    let values = score_blocks(&pool_text);
+    let weights: Vec<usize> = pool_text.iter().map(|b| est_tokens(b)).collect();
+    let keep = knapsack_select(&values, &weights, total_budget);
+
+    let mut keep_per_slot: Vec<Vec<bool>> =
+        slot_blocks.iter().map(|b| vec![false; b.len()]).collect();
+    for (p, &(si, bi)) in pool_refs.iter().enumerate() {
+        keep_per_slot[si][bi] = keep[p];
+    }
+    if !keep.iter().any(|&k| k) && !pool_refs.is_empty() {
+        let best = values
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        let (si, bi) = pool_refs[best];
+        keep_per_slot[si][bi] = true;
+    }
+
+    let new_texts: Vec<String> = slot_blocks
+        .iter()
+        .enumerate()
+        .map(|(si, blocks)| {
+            blocks
+                .iter()
+                .enumerate()
+                .filter(|(bi, _)| keep_per_slot[si][*bi])
+                .map(|(_, b)| b.clone())
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        })
+        .collect();
+    let after_total: usize = new_texts.iter().map(|s| est_tokens(s)).sum();
+
+    for ((path, _), new_text) in slots.iter().zip(new_texts) {
+        set_str(&mut v, path, new_text);
+    }
+
+    let out = serde_json::to_string(&v).unwrap_or_else(|_| body.to_string());
+    (out, before_total, after_total)
+}
+
+// ── HTTP server (feature-gated; deps never enter the Python wheel) ──────────
+
+/// Max request body we will buffer (bounds memory against abusive clients).
+#[cfg(feature = "proxy")]
+const MAX_BODY_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Run the proxy: listen on `127.0.0.1:port`, compress provider message context
+/// under `total_budget`, and forward to `upstream`. Concurrent worker pool.
+#[cfg(feature = "proxy")]
+pub fn run(port: u16, upstream: &str, total_budget: usize) -> std::io::Result<()> {
+    use std::sync::Arc;
+    use tiny_http::Server;
+
+    let addr = format!("127.0.0.1:{port}");
+    let server = Arc::new(
+        Server::http(&addr).map_err(|e| std::io::Error::other(format!("bind {addr}: {e}")))?,
+    );
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(2, 16);
+    eprintln!("entroly-rs proxy on http://{addr}  ->  {upstream}  ({workers} workers)");
+    eprintln!("  Anthropic/OpenAI/Gemini auto-detected by path; point your client's base URL here.");
+
+    let upstream: Arc<str> = Arc::from(upstream);
+    let mut handles = Vec::new();
+    for _ in 0..workers {
+        let server = Arc::clone(&server);
+        let upstream = Arc::clone(&upstream);
+        handles.push(std::thread::spawn(move || {
+            for req in server.incoming_requests() {
+                handle(req, &upstream, total_budget);
+            }
+        }));
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+    Ok(())
+}
+
+#[cfg(feature = "proxy")]
+fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize) {
+    use std::io::Read;
+    use tiny_http::{Header, Method, Response, StatusCode};
+
+    let is_get = *req.method() == Method::Get;
+    let url = req.url().to_string();
+    let fwd_headers: Vec<(String, String)> = req
+        .headers()
+        .iter()
+        .filter(|h| {
+            matches!(
+                h.field.as_str().as_str().to_ascii_lowercase().as_str(),
+                "x-api-key" | "authorization" | "anthropic-version" | "anthropic-beta"
+                    | "openai-organization" | "openai-beta" | "x-goog-api-key"
+                    | "content-type" | "accept"
+            )
+        })
+        .map(|h| (h.field.as_str().as_str().to_string(), h.value.as_str().to_string()))
+        .collect();
+
+    if is_get && (url == "/" || url == "/health") {
+        let _ = req.respond(Response::from_string("entroly-rs proxy ok"));
+        return;
+    }
+
+    let mut body = String::new();
+    let _ = req.as_reader().take(MAX_BODY_BYTES).read_to_string(&mut body);
+
+    let (new_body, before, after) = match detect_provider(&url) {
+        Some(p) => compress_request_body(&body, total_budget, p),
+        None => (body, 0, 0),
+    };
+    if before > 0 {
+        let pct = before.saturating_sub(after) as f64 / before as f64 * 100.0;
+        eprintln!("entroly-rs: request ~{before} -> ~{after} tokens ({pct:.1}% saved)");
+    }
+
+    let target = format!("{}{}", upstream.trim_end_matches('/'), url);
+    let mut up = ureq::post(&target);
+    for (k, val) in &fwd_headers {
+        up = up.set(k, val);
+    }
+
+    let resp = match up.send_string(&new_body) {
+        Ok(r) | Err(ureq::Error::Status(_, r)) => r,
+        Err(e) => {
+            let _ = req.respond(
+                Response::from_string(format!("entroly-rs upstream error: {e}"))
+                    .with_status_code(502),
+            );
+            return;
+        }
+    };
+
+    let status = resp.status();
+    let mut out_headers: Vec<Header> = Vec::new();
+    for name in resp.headers_names() {
+        // ureq already decoded content-encoding; never re-forward length/encoding
+        // headers (would mis-frame or double-decode). tiny_http frames the
+        // decoded stream itself (chunked).
+        if matches!(
+            name.to_ascii_lowercase().as_str(),
+            "content-length" | "transfer-encoding" | "connection" | "content-encoding"
+        ) {
+            continue;
+        }
+        if let Some(val) = resp.header(&name) {
+            if let Ok(h) = Header::from_bytes(name.as_bytes(), val.as_bytes()) {
+                out_headers.push(h);
+            }
+        }
+    }
+    let reader = resp.into_reader();
+    let response = Response::new(StatusCode(status), out_headers, reader, None, None);
+    let _ = req.respond(response);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn big(n: usize) -> String {
+        (0..n)
+            .map(|i| format!("Line {i}: genuine content about module {i} behavior and edge cases."))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn test_detect_provider() {
+        assert_eq!(detect_provider("/v1/messages"), Some(Provider::Anthropic));
+        assert_eq!(detect_provider("/v1/chat/completions"), Some(Provider::OpenAI));
+        assert_eq!(
+            detect_provider("/v1beta/models/gemini-2.5-pro:generateContent"),
+            Some(Provider::Gemini)
+        );
+        assert_eq!(
+            detect_provider("/v1beta/models/gemini-2.5-flash:streamGenerateContent"),
+            Some(Provider::Gemini)
+        );
+        assert_eq!(detect_provider("/v1/embeddings"), None);
+    }
+
+    #[test]
+    fn test_anthropic_string_and_system() {
+        let body = format!(
+            r#"{{"messages":[{{"role":"user","content":{}}}],"system":{}}}"#,
+            serde_json::to_string(&big(200)).unwrap(),
+            serde_json::to_string(&big(200)).unwrap()
+        );
+        let (out, before, after) = compress_request_body(&body, 60, Provider::Anthropic);
+        assert!(before > 0 && after < before);
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert!(v["messages"][0]["content"].is_string());
+        assert!(v["system"].is_string());
+    }
+
+    #[test]
+    fn test_openai_chat_completions() {
+        let body = format!(
+            r#"{{"model":"gpt-4o","messages":[{{"role":"system","content":{}}},{{"role":"user","content":[{{"type":"text","text":{}}}]}}]}}"#,
+            serde_json::to_string(&big(200)).unwrap(),
+            serde_json::to_string(&big(200)).unwrap()
+        );
+        let (out, before, after) = compress_request_body(&body, 60, Provider::OpenAI);
+        assert!(before > 0 && after < before, "openai should compress: {before}->{after}");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["messages"][0]["role"], "system");
+        assert_eq!(v["messages"][1]["content"][0]["type"], "text");
+    }
+
+    #[test]
+    fn test_gemini_contents_and_system_instruction() {
+        let body = format!(
+            r#"{{"contents":[{{"role":"user","parts":[{{"text":{}}}]}}],"systemInstruction":{{"parts":[{{"text":{}}}]}}}}"#,
+            serde_json::to_string(&big(200)).unwrap(),
+            serde_json::to_string(&big(200)).unwrap()
+        );
+        let (out, before, after) = compress_request_body(&body, 60, Provider::Gemini);
+        assert!(before > 0 && after < before, "gemini should compress: {before}->{after}");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert!(v["contents"][0]["parts"][0]["text"].is_string());
+        assert!(v["systemInstruction"]["parts"][0]["text"].is_string());
+    }
+
+    #[test]
+    fn test_total_budget_shared_across_providers_fields() {
+        let body = format!(
+            r#"{{"messages":[{{"role":"user","content":{}}},{{"role":"user","content":{}}}]}}"#,
+            serde_json::to_string(&big(300)).unwrap(),
+            serde_json::to_string(&big(300)).unwrap()
+        );
+        let (_, before, after) = compress_request_body(&body, 80, Provider::OpenAI);
+        assert!(before > 0 && after <= 130, "shared total budget ~80: {after}");
+    }
+
+    #[test]
+    fn test_small_content_byte_exact() {
+        let body = r#"{"messages":[{"role":"user","content":"hi there"}]}"#;
+        let (out, before, _) = compress_request_body(body, 2000, Provider::OpenAI);
+        assert_eq!(before, 0);
+        assert_eq!(out, body);
+    }
+
+    #[test]
+    fn test_non_json_failopen() {
+        let (out, before, _) = compress_request_body("not json", 50, Provider::Anthropic);
+        assert_eq!(before, 0);
+        assert_eq!(out, "not json");
+    }
+}
