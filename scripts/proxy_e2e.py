@@ -15,6 +15,7 @@ Requires the binary built with:  cargo build --release --bin entroly-rs --featur
 Exit code 0 = pass.
 """
 import concurrent.futures
+import gzip
 import json
 import subprocess
 import sys
@@ -44,13 +45,19 @@ class Mock(BaseHTTPRequestHandler):
                 self.wfile.flush()
                 time.sleep(0.03)
         else:
-            resp = json.dumps({"ok": True, "received_bytes": len(body)}).encode()
+            # GZIP the response, like real Anthropic. ureq decompresses it; the
+            # proxy must re-serve clean decoded JSON (no content-encoding, no
+            # stale compressed content-length) — this catches the gzip framing
+            # bug a plain-text mock would miss.
+            raw = json.dumps({"ok": True, "received_bytes": len(body)}).encode()
+            gz = gzip.compress(raw)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Encoding", "gzip")
             self.send_header("x-request-id", "req-123")
-            self.send_header("Content-Length", str(len(resp)))
+            self.send_header("Content-Length", str(len(gz)))
             self.end_headers()
-            self.wfile.write(resp)
+            self.wfile.write(gz)
 
     def log_message(self, *a):
         pass
@@ -82,7 +89,12 @@ def main():
         r = urllib.request.urlopen(req, timeout=10)
         assert r.headers.get("x-request-id") == "req-123", "response header must be forwarded"
         assert recv["len"] < len(payload), "proxy must compress (total budget)"
-        print(f"total-budget compress: sent {len(payload)} -> upstream {recv['len']}; header forwarded OK")
+        # gzip-from-upstream must come back as clean decoded JSON (no corruption,
+        # no hang from a stale compressed content-length).
+        parsed = json.loads(r.read().decode())
+        assert parsed.get("ok") is True, "gzipped upstream response must decode cleanly"
+        assert r.headers.get("Content-Encoding") is None, "content-encoding must be stripped"
+        print(f"total-budget compress: sent {len(payload)} -> upstream {recv['len']}; gzip response decoded; header forwarded OK")
 
         # SSE streaming passthrough
         spayload = json.dumps({"stream": True, "messages": [{"role": "user", "content": big}]}).encode()

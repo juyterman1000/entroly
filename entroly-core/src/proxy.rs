@@ -276,14 +276,18 @@ fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize) {
     // Forward status + response headers, and STREAM the body (no buffering) so
     // SSE / large responses pass straight through.
     let status = resp.status();
-    let len: Option<usize> = resp
-        .header("content-length")
-        .and_then(|v| v.parse::<usize>().ok());
     let mut out_headers: Vec<Header> = Vec::new();
     for name in resp.headers_names() {
         let lname = name.to_ascii_lowercase();
-        // Skip hop-by-hop / length headers tiny_http manages itself.
-        if matches!(lname.as_str(), "content-length" | "transfer-encoding" | "connection") {
+        // Skip hop-by-hop, length, and encoding headers: ureq has ALREADY
+        // decoded any content-encoding (gzip), so the reader yields decoded
+        // bytes. Forwarding the upstream content-length (compressed size) or
+        // content-encoding would frame/decode the body wrong and corrupt it.
+        // tiny_http frames the decoded stream itself (chunked).
+        if matches!(
+            lname.as_str(),
+            "content-length" | "transfer-encoding" | "connection" | "content-encoding"
+        ) {
             continue;
         }
         if let Some(val) = resp.header(&name) {
@@ -293,7 +297,9 @@ fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize) {
         }
     }
     let reader = resp.into_reader();
-    let response = Response::new(StatusCode(status), out_headers, reader, len, None);
+    // data_length = None: stream the (decoded) body to EOF as chunked. Never
+    // trust the upstream content-length here — it describes the compressed body.
+    let response = Response::new(StatusCode(status), out_headers, reader, None, None);
     let _ = req.respond(response);
 }
 

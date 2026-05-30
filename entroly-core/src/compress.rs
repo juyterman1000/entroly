@@ -58,25 +58,29 @@ pub fn knapsack_select(values: &[f64], weights: &[usize], capacity: usize) -> Ve
 
     let vals: Vec<u64> = values.iter().map(|&v| (v.max(0.0) * 1000.0).round() as u64).collect();
     let cap = capacity;
-    let mut dp = vec![vec![0u64; cap + 1]; n + 1];
-    for i in 1..=n {
-        let (wi, vi) = (w[i - 1], vals[i - 1]);
-        for c in 0..=cap {
-            dp[i][c] = dp[i - 1][c];
-            if wi <= c {
-                let cand = dp[i - 1][c - wi] + vi;
-                if cand > dp[i][c] {
-                    dp[i][c] = cand;
-                }
+    // Memory-efficient 0/1 knapsack: a 1D value row (O(cap)) plus a flat
+    // boolean decision grid (O(n·cap) BYTES, not u64) for reconstruction — ~8×
+    // less memory than a 2D u64 table, which matters under the worker pool.
+    let mut dp = vec![0u64; cap + 1];
+    let row = cap + 1;
+    let mut took = vec![false; n * row];
+    for i in 0..n {
+        let (wi, vi) = (w[i], vals[i]);
+        // Descending c preserves 0/1 (each item used at most once).
+        for c in (wi..=cap).rev() {
+            let cand = dp[c - wi] + vi;
+            if cand > dp[c] {
+                dp[c] = cand;
+                took[i * row + c] = true;
             }
         }
     }
-    // Backtrack: item i taken iff it changed the optimum at the current cap.
+    // Backtrack: if item i was taken at the current capacity, include it.
     let mut c = cap;
-    for i in (1..=n).rev() {
-        if dp[i][c] != dp[i - 1][c] {
-            keep[i - 1] = true;
-            c -= w[i - 1];
+    for i in (0..n).rev() {
+        if took[i * row + c] {
+            keep[i] = true;
+            c -= w[i];
         }
     }
     keep
