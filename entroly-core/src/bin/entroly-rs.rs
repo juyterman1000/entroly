@@ -15,6 +15,7 @@ fn main() {
             println!("entroly-rs {}", env!("CARGO_PKG_VERSION"));
         }
         Some("compress") => cmd_compress(&args[1..]),
+        Some("proxy") => cmd_proxy(&args[1..]),
         Some("--help") | Some("-h") | None => print_help(),
         Some(other) => {
             eprintln!("entroly-rs: unknown command '{other}'. Try `entroly-rs --help`.");
@@ -30,6 +31,8 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("  entroly-rs compress [--budget N] [FILE]   compress FILE (or stdin) to ~N tokens");
+    println!("  entroly-rs proxy [--port P] [--upstream URL] [--budget N]");
+    println!("                                            run the compressing proxy (needs `proxy` feature)");
     println!("  entroly-rs --version");
     println!("  entroly-rs --help");
     println!();
@@ -92,4 +95,62 @@ fn cmd_compress(args: &[String]) {
     print!("{out}");
     let _ = std::io::stdout().flush();
     eprintln!("entroly-rs: ~{before} -> ~{after} tokens ({pct:.1}% saved, budget {budget})");
+}
+
+#[cfg(feature = "proxy")]
+fn cmd_proxy(args: &[String]) {
+    let mut port: u16 = 9377;
+    let mut upstream = "https://api.anthropic.com".to_string();
+    let mut budget: usize = 4000;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--port" | "-p" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<u16>().ok()) {
+                    Some(p) => port = p,
+                    None => {
+                        eprintln!("entroly-rs proxy: --port needs a valid port number");
+                        std::process::exit(64);
+                    }
+                }
+            }
+            "--upstream" | "-u" => {
+                i += 1;
+                match args.get(i) {
+                    Some(u) => upstream = u.clone(),
+                    None => {
+                        eprintln!("entroly-rs proxy: --upstream needs a URL");
+                        std::process::exit(64);
+                    }
+                }
+            }
+            "--budget" | "-b" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<usize>().ok()) {
+                    Some(b) if b > 0 => budget = b,
+                    _ => {
+                        eprintln!("entroly-rs proxy: --budget needs a positive integer");
+                        std::process::exit(64);
+                    }
+                }
+            }
+            other => {
+                eprintln!("entroly-rs proxy: unknown flag '{other}'");
+                std::process::exit(64);
+            }
+        }
+        i += 1;
+    }
+    if let Err(e) = entroly_core::proxy::run(port, &upstream, budget) {
+        eprintln!("entroly-rs proxy: {e}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(not(feature = "proxy"))]
+fn cmd_proxy(_args: &[String]) {
+    eprintln!("entroly-rs: this binary was built without the proxy.");
+    eprintln!("Rebuild with:  cargo build --release --bin entroly-rs --features proxy");
+    std::process::exit(64);
 }

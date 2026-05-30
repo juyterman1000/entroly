@@ -14,6 +14,11 @@ default = []
 # builds skip linking libpython — Python loads the .so at runtime. Left off
 # for `cargo test` so the test binary links libpython normally.
 extension-module = ["pyo3/extension-module"]
+# Single-binary proxy (entroly-rs proxy). Pulls a sync HTTP server + client.
+# OFF by default so the Python wheel (maturin, default features) never links
+# these — pip users are completely unaffected. Build the binary with
+# `cargo build --bin entroly-rs --features proxy`.
+proxy = ["dep:tiny_http", "dep:ureq"]
 
 [dependencies]
 # PyO3 0.25 adds native Python 3.14 support. The `abi3-py310` feature builds
@@ -40,6 +45,13 @@ rayon = "1.12"
 # Randomness — needed by memory/kanerva.rs (Sparse Distributed Memory)
 # vendored from juyterman1000/AgentOS for cross-agent memory IPC.
 rand = "0.8"
+
+# ── Proxy-only (optional, behind the `proxy` feature) ──
+# Sync HTTP server + client for the standalone `entroly-rs proxy`. Both are
+# sync (no async runtime) to preserve fast startup, and optional so they never
+# enter the Python wheel.
+tiny_http = { version = "0.12", optional = true }
+ureq = { version = "2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.12"
