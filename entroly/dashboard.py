@@ -1059,6 +1059,7 @@ function renderValueTrends(d){
     '<div class="trends-kpi"><div class="trends-kpi-label">Daily Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.requests_optimized||0)+' reqs optimized Â· '+(lt.duplicates_caught||0)+' dedup</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Hallucinations Blocked</div><div class="trends-kpi-val hv-rose">'+fmt(lt.hallucinations_blocked||0)+'</div><div class="trends-kpi-sub">unsupported claims stopped by WITNESS</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Model-Routing Saved</div><div class="trends-kpi-val hv-violet">$'+(lt.routing_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+(lt.routing_decisions||0)+' RAVS routing decisions</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Beliefs Conditioned</div><div class="trends-kpi-val hv-violet">'+fmt(lt.beliefs_conditioned_fragments||0)+'</div><div class="trends-kpi-sub">restated-belief fragments discounted Â· '+(lt.belief_conditioning_passes||0)+' passes</div></div>'+
     '</div>'+
     '<div class="trends-tabs">'+
     '<div class="trends-tab'+(trendsView==='daily'?' active':'')+'" onclick="trendsView=\'daily\'">Daily</div>'+

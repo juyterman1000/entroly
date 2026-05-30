@@ -335,6 +335,11 @@ def couple_beliefs(
                 logger.info(
                     "Belief conditioning: discounted %d candidate fragments", adjusted
                 )
+                try:
+                    from .value_tracker import get_tracker
+                    get_tracker().record_belief_conditioning(adjusted, source="proxy")
+                except Exception:  # noqa: BLE001 — telemetry is best-effort
+                    pass
     except Exception as e:
         logger.debug("Belief conditioning skipped: %s", e)
 

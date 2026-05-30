@@ -2012,6 +2012,13 @@ def create_mcp_server(
                                 "Belief conditioning: discounted %d candidate fragments",
                                 adjusted,
                             )
+                            try:
+                                from .value_tracker import get_tracker
+                                get_tracker().record_belief_conditioning(
+                                    adjusted, source="mcp"
+                                )
+                            except Exception:  # noqa: BLE001 — best-effort telemetry
+                                pass
                     else:
                         engine._rust.clear_belief_corpus()
             except Exception as e:

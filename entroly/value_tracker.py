@@ -223,6 +223,9 @@ class ValueTracker:
                 "hallucinations_blocked": 0,
                 "routing_saved_usd": 0.0,
                 "routing_decisions": 0,
+                # Belief-conditioned compression (H(X | beliefs))
+                "beliefs_conditioned_fragments": 0,
+                "belief_conditioning_passes": 0,
             },
             "daily": {},    # "YYYY-MM-DD" -> {tokens_saved, cost_saved, requests}
             "weekly": {},   # "YYYY-WNN" -> {tokens_saved, cost_saved, requests}
@@ -427,6 +430,32 @@ class ValueTracker:
             )
         except Exception as e:  # noqa: BLE001
             logger.debug("record_routing_saving failed: %s", e)
+
+    def record_belief_conditioning(
+        self, n_fragments: int, *, source: str = "", detail: str = ""
+    ) -> None:
+        """Belief-conditioned compression discounted `n_fragments` candidate
+        fragments that merely restated already-known vault beliefs
+        (H(X | beliefs)), freeing budget for novel content. Fail-open."""
+        try:
+            if n_fragments <= 0:
+                return
+            with self._lock:
+                lt = self._data["lifetime"]
+                lt["beliefs_conditioned_fragments"] = (
+                    lt.get("beliefs_conditioned_fragments", 0) + int(n_fragments)
+                )
+                lt["belief_conditioning_passes"] = (
+                    lt.get("belief_conditioning_passes", 0) + 1
+                )
+                self._save()
+            self.record_event(
+                "belief_conditioning",
+                detail or f"Discounted {n_fragments} fragment(s) restating known beliefs",
+                source=source, fragments_discounted=int(n_fragments),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("record_belief_conditioning failed: %s", e)
 
     def get_activity(self, last_n: int = 50) -> list[dict[str, Any]]:
         """Most-recent-first slice of the cross-process activity feed."""
