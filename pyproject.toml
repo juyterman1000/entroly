@@ -34,12 +34,16 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.6.0,<2",
-    # NOTE: entroly-core (the native Rust engine) is intentionally NOT a base
-    # dependency. `pip install entroly` is a pure-Python surface (SDK + MCP
-    # fallback); the engine is opt-in via the `native` or `full` extras. This
-    # contract is asserted by the "Pure-Python Fallback" CI job and documented
-    # in CLAUDE.md (`.[full]` installs the engine). Adding it here silently
-    # breaks that job once an entroly-core wheel is available on PyPI.
+    # Native Rust engine — kept as a base dependency so `pip install entroly`
+    # gives users the fast engine by default. publish-core-wheels.yml ships
+    # abi3 wheels for linux x86_64/aarch64, macOS universal2, and Windows, so
+    # this resolves on all mainstream platforms. The pure-Python fallback
+    # surface (SDK/MCP with the engine absent) is still supported and CI-tested
+    # by installing with `pip install --no-deps` — see the "Pure-Python
+    # Fallback" job in .github/workflows/ci.yml. Do not remove this without
+    # updating that job; removing it silently downgrades every default install
+    # to pure-Python.
+    "entroly-core>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]

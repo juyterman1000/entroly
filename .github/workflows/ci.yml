@@ -151,10 +151,15 @@ jobs:
 
       - name: Install entroly WITHOUT the native engine
         run: |
-          # Deliberately no maturin / no entroly-core. Install the base
-          # package plus the proxy extra (a real `pip install entroly[proxy]`
-          # config) and the test tooling — nothing that pulls in Rust.
-          pip install --timeout 120 --retries 5 -e . \
+          # entroly-core IS a base dependency (users get the Rust engine by
+          # default), so a plain `pip install -e .` pulls the engine once an
+          # entroly-core wheel exists on PyPI — and this job would then test the
+          # wrong surface. Install with --no-deps to genuinely exclude the
+          # engine, then add exactly the runtime deps a real
+          # `pip install entroly[proxy]` resolves (minus the native core).
+          # Do NOT drop --no-deps.
+          pip install --no-deps --timeout 120 --retries 5 -e .
+          pip install --timeout 120 --retries 5 \
             "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil \
             pytest pytest-timeout
 
