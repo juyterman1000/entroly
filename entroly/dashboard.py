@@ -124,6 +124,10 @@ def _get_full_snapshot() -> dict:
         tracker.reload_if_changed()
         snap["value_trends"] = tracker.get_trends()
         snap["value_confidence"] = tracker.get_confidence()
+        # Pricing provenance so the Cost Intelligence panel can cite where its
+        # dollar figures come from (rates as-of + bundled/override source).
+        from entroly.value_tracker import pricing_provenance
+        snap["pricing"] = pricing_provenance()
         # Persistent, cross-process activity feed. Merge any same-process
         # proxy in-memory rows (richer) ahead of the disk feed, dedup by
         # (ts, summary) so we never double-count an event.
@@ -1075,7 +1079,9 @@ function renderValueTrends(d){
     ciSig('Hallucinations blocked',fmt(lt.hallucinations_blocked||0),'$0 WITNESS guard')+
     ciSig('Beliefs conditioned',fmt(lt.beliefs_conditioned_fragments||0),(lt.belief_conditioning_passes||0)+' passes')+
     ciSig('Requests optimized',fmt(lt.requests_optimized||0),'of '+fmt(lt.requests_total||0)+' total')+
-    '</div></div></div>';
+    '</div>'+
+    '<div style="font-size:10px;color:var(--dim);margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">Rates as of '+((d.pricing||{}).as_of||'—')+' · '+(((d.pricing||{}).source||'bundled')==='bundled'?'bundled defaults':'local override')+' · set ENTROLY_PRICING_FILE for your negotiated rates</div>'+
+    '</div></div>';
 
   el.innerHTML='<div class="trends-panel"><div class="trends-header"><h2>Lifetime Value</h2>'+
     '<span class="badge" style="background:rgba(52,211,153,0.1);color:'+statusColor+';"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:'+statusColor+';margin-right:6px;'+(status==='active'?'box-shadow:0 0 8px var(--emerald);':'')+'"></span>'+status+'</span></div>'+
