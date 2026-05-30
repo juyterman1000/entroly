@@ -1,0 +1,67 @@
+name: Release Binary (entroly-rs)
+
+# Builds the standalone single-binary proxy for each platform and attaches the
+# artifacts to the GitHub Release for the tag. Triggered by the same
+# `entroly-v*` tags as the PyPI/npm publish (or manually).
+#
+# Native builds only: entroly-core links pyo3, which needs libpython at build
+# time, so cross-compilation is impractical. Each target is built on a matching
+# native runner with Python set up. (linux-aarch64 is a documented follow-on.)
+
+on:
+  push:
+    tags:
+      - 'entroly-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: "" }
+          - { os: macos-13,      target: x86_64-apple-darwin,      ext: "" }
+          - { os: macos-14,      target: aarch64-apple-darwin,     ext: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,  ext: ".exe" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Set up Python
+        # pyo3 needs libpython at link time for the binary (extension-module
+        # feature is off here).
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build entroly-rs (--features proxy)
+        working-directory: entroly-core
+        run: cargo build --release --bin entroly-rs --features proxy --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          bin="entroly-core/target/${{ matrix.target }}/release/entroly-rs${{ matrix.ext }}"
+          name="entroly-rs-${{ matrix.target }}"
+          mkdir -p dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "dist/${name}.zip" "$bin"
+          else
+            tar -czf "dist/${name}.tar.gz" -C "entroly-core/target/${{ matrix.target }}/release" "entroly-rs"
+          fi
+          ls -la dist
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
