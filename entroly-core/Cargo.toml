@@ -1,6 +1,6 @@
 [package]
 name = "entroly-core"
-version = "1.0.10"
+version = "1.0.11"
 edition = "2021"
 description = "Rust core for Entroly — the local proxy that cuts Claude / OpenAI / Gemini bills 70%+ via knapsack-optimal context selection"
 

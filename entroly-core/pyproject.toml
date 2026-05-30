@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "entroly-core"
-version = "1.0.6"
+version = "1.0.11"
 description = "Rust core for Entroly — information-theoretic context optimization (knapsack, entropy, dedup, SAST, query analysis)"
 readme = "README.md"
 license = "Apache-2.0"

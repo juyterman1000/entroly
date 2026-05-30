@@ -1,6 +1,6 @@
 {
   "name": "entroly-mcp",
-  "version": "1.0.6",
+  "version": "1.0.11",
   "description": "Information-theoretic context optimization MCP server with deterministic hallucination detection and suppression for AI coding agents.",
   "main": "index.js",
   "bin": {
