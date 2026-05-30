@@ -70,6 +70,48 @@ jobs:
       - name: Run Rust tests
         run: cargo test --lib
 
+  proxy-binary:
+    name: Single-Binary Proxy (--features proxy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            entroly-core/target
+          key: ${{ runner.os }}-cargo-proxy-${{ hashFiles('entroly-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # The proxy server is behind the `proxy` feature, so the default
+      # rust-tests job never compiles it. Build + lint + e2e it here so the
+      # feature-gated code path cannot rot silently.
+      - name: Clippy (proxy feature)
+        working-directory: entroly-core
+        run: cargo clippy --bin entroly-rs --features proxy -- -D warnings
+
+      - name: Build proxy binary
+        working-directory: entroly-core
+        run: cargo build --release --bin entroly-rs --features proxy
+
+      - name: Proxy end-to-end (compress + headers + SSE + concurrency)
+        run: python scripts/proxy_e2e.py entroly-core/target/release/entroly-rs
+
   integration:
     name: Build Wheel + Functional Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
