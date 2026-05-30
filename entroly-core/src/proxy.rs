@@ -233,7 +233,7 @@ pub fn compress_request_body(body: &str, total_budget: usize, provider: Provider
         .collect();
     let after_total: usize = new_texts.iter().map(|s| est_tokens(s)).sum();
 
-    for ((path, _), new_text) in slots.iter().zip(new_texts.into_iter()) {
+    for ((path, _), new_text) in slots.iter().zip(new_texts) {
         set_str(&mut v, path, new_text);
     }
 
