@@ -1049,6 +1049,34 @@ function renderValueTrends(d){
     return '<div class="tbar cost" style="height:'+h+'px;" data-tip="'+label+': '+fmt(d.tokens_saved||0)+' tokens / $'+(d.cost_saved||0).toFixed(4)+'"></div>';
   }).join('');
 
+  // ── Cost Intelligence — honest per-lever attribution ──
+  // Dollars are shown ONLY for levers we actually price: token reduction
+  // (cost_saved_usd) and model routing (routing_saved_usd). Every other lever
+  // is shown as a volume/quality signal — never an invented dollar figure.
+  const ciComp=lt.cost_saved_usd||0, ciRoute=lt.routing_saved_usd||0, ciTotal=ciComp+ciRoute;
+  const ciPct=v=>ciTotal>0?Math.round(v/ciTotal*100):0;
+  const ciW=v=>ciTotal>0?Math.max(2,v/ciTotal*100):0;
+  const ciRow=(name,usd,sub,col)=>'<div style="margin-bottom:10px;">'+
+    '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">'+
+    '<span style="font-weight:600;">'+name+'</span>'+
+    '<span style="font-feature-settings:tnum;">$'+usd.toFixed(2)+' <span style="color:var(--dim);font-size:11px;">('+ciPct(usd)+'%)</span></span></div>'+
+    '<div style="background:var(--glass);border-radius:4px;height:8px;overflow:hidden;"><span style="display:block;height:8px;border-radius:4px;background:'+col+';width:'+ciW(usd)+'%;"></span></div>'+
+    '<div style="font-size:11px;color:var(--dim);margin-top:3px;">'+sub+'</div></div>';
+  const ciSig=(name,val,sub)=>'<div class="trends-kpi"><div class="trends-kpi-label">'+name+'</div>'+
+    '<div class="trends-kpi-val" style="font-size:18px;">'+val+'</div><div class="trends-kpi-sub">'+sub+'</div></div>';
+  const ciPanel='<div class="trends-panel" style="margin-top:20px;"><div class="trends-header"><h2>Cost Intelligence</h2>'+
+    '<span class="badge" style="background:rgba(52,211,153,0.1);color:var(--emerald);">$'+ciTotal.toFixed(2)+' attributed</span></div>'+
+    '<div class="trends-body">'+
+    '<div style="font-size:11px;color:var(--dim);margin-bottom:14px;">Where your savings come from. Dollars are shown for measured levers; counts are shown where value is not yet dollar-priced (no invented figures).</div>'+
+    ciRow('Context + token reduction',ciComp,fmt(lt.tokens_saved||0)+' tokens reduced Â· '+(lt.duplicates_caught||0)+' duplicates collapsed','#34d399')+
+    ciRow('Model routing (RAVS)',ciRoute,(lt.routing_decisions||0)+' routing decisions to cheaper capable models','#a78bfa')+
+    '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px;">Value signals (not yet dollar-priced)</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">'+
+    ciSig('Hallucinations blocked',fmt(lt.hallucinations_blocked||0),'$0 WITNESS guard')+
+    ciSig('Beliefs conditioned',fmt(lt.beliefs_conditioned_fragments||0),(lt.belief_conditioning_passes||0)+' passes')+
+    ciSig('Requests optimized',fmt(lt.requests_optimized||0),'of '+fmt(lt.requests_total||0)+' total')+
+    '</div></div></div>';
+
   el.innerHTML='<div class="trends-panel"><div class="trends-header"><h2>Lifetime Value</h2>'+
     '<span class="badge" style="background:rgba(52,211,153,0.1);color:'+statusColor+';"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:'+statusColor+';margin-right:6px;'+(status==='active'?'box-shadow:0 0 8px var(--emerald);':'')+'"></span>'+status+'</span></div>'+
     '<div class="trends-body">'+
@@ -1066,7 +1094,7 @@ function renderValueTrends(d){
     '<div class="trends-tab'+(trendsView==='weekly'?' active':'')+'" onclick="trendsView=\'weekly\'">Weekly</div>'+
     '<div class="trends-tab'+(trendsView==='monthly'?' active':'')+'" onclick="trendsView=\'monthly\'">Monthly</div></div>'+
     '<div class="trends-chart">'+bars+'</div>'+
-    '</div></div>';
+    '</div></div>'+ciPanel;
 }
 
 function renderCogops(d){
