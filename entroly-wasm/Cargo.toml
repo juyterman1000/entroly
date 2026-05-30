@@ -1,6 +1,6 @@
 [package]
 name = "entroly-wasm"
-version = "1.0.10"
+version = "1.0.11"
 edition = "2021"
 description = "WebAssembly build of Entroly — cut Claude / OpenAI / Gemini bills 70%+ from JavaScript / TypeScript with no Python dependency"
 
