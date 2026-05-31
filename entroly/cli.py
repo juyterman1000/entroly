@@ -16,7 +16,7 @@ Commands:
     entroly status      Check if server/proxy is running
     entroly config      Show current configuration
     entroly clean       Clear cached state (checkpoints, index, pull cache)
-    entroly telemetry   Manage anonymous usage statistics (opt-in)
+    entroly telemetry   Manage the local telemetry preference
     entroly demo        Before/after demo showing token savings
     entroly doctor      Diagnose common issues
     entroly digest      Weekly summary of value delivered
@@ -140,6 +140,9 @@ def _check_for_update() -> None:
     Prints a one-line notice if a newer version exists. Fails silently
     on network errors — never blocks CLI startup.
     """
+    if os.environ.get("ENTROLY_DISABLE_UPDATE_CHECK", "0") == "1":
+        return
+
     cache_file = _ENTROLY_DIR / ".update_check"
     now = __import__("time").time()
 
@@ -605,6 +608,11 @@ def cmd_autotune(args):
         subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), '..', 'bench', 'autotune.py'), '--iterations', str(args.iterations)])
 
 
+def _should_check_upstream() -> bool:
+    """Return whether startup may contact provider hosts for diagnostics."""
+    return os.environ.get("ENTROLY_CHECK_UPSTREAM", "0") == "1"
+
+
 def _check_upstream(config) -> None:
     """Quick connectivity test against upstream LLM APIs.
 
@@ -715,8 +723,10 @@ def cmd_proxy(args):
         print(f"  {C.GRAY}Stop the existing service before starting `entroly proxy`.{C.RESET}")
         return
 
-    # Upstream connectivity check — fast-fail if the LLM API is unreachable
-    _check_upstream(config)
+    # Opt-in connectivity probe — useful for diagnosing DNS/firewall/VPN
+    # failures without contacting provider hosts during a default startup.
+    if _should_check_upstream():
+        _check_upstream(config)
 
     # Create the ASGI app (this also starts the dashboard on :9378)
     app = create_proxy_app(engine, config)
@@ -960,19 +970,19 @@ def cmd_config(args):
 
 
 def cmd_telemetry(args):
-    """entroly telemetry — manage anonymous usage statistics."""
+    """entroly telemetry — manage the local telemetry preference."""
     telemetry_file = _ENTROLY_DIR / "telemetry.json"
 
     if args.action == "on":
         _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
         telemetry_file.write_text(json.dumps({"enabled": True, "opted_in_at": __import__("time").time()}))
-        print(f"  {C.GREEN}Telemetry enabled.{C.RESET} Anonymous usage stats will be collected.")
-        print(f"  {C.GRAY}No personal data, API keys, or code content is ever sent.{C.RESET}")
+        print(f"  {C.GREEN}Local telemetry preference enabled.{C.RESET}")
+        print(f"  {C.GRAY}No outbound telemetry uploader is included in this release.{C.RESET}")
         print(f"  {C.GRAY}To disable: entroly telemetry off{C.RESET}")
     elif args.action == "off":
         if telemetry_file.exists():
             telemetry_file.write_text(json.dumps({"enabled": False}))
-        print(f"  {C.GREEN}Telemetry disabled.{C.RESET} No data will be collected.")
+        print(f"  {C.GREEN}Local telemetry preference disabled.{C.RESET}")
     elif args.action == "status":
         enabled = False
         if telemetry_file.exists():
@@ -982,13 +992,8 @@ def cmd_telemetry(args):
             except (json.JSONDecodeError, OSError):
                 pass
         status = f"{C.GREEN}enabled{C.RESET}" if enabled else f"{C.GRAY}disabled (default){C.RESET}"
-        print(f"  Telemetry: {status}")
-        print(f"  {C.GRAY}If enabled, only anonymous aggregates are sent:{C.RESET}")
-        print(f"  {C.GRAY}  - Proxy vs MCP mode usage{C.RESET}")
-        print(f"  {C.GRAY}  - Median codebase size (file count bucket){C.RESET}")
-        print(f"  {C.GRAY}  - Feature flags enabled{C.RESET}")
-        print(f"  {C.GRAY}  - p95 pipeline latency{C.RESET}")
-        print(f"  {C.GRAY}  - OS + Python version{C.RESET}")
+        print(f"  Local telemetry preference: {status}")
+        print(f"  {C.GRAY}No outbound telemetry uploader is included in this release.{C.RESET}")
 
 
 def is_telemetry_enabled() -> bool:
@@ -2574,7 +2579,6 @@ def _generate_report_html(
 <meta name="twitter:title" content="{project_name} — Context Score {context_score}/100 | Entroly">
 <meta name="twitter:description" content="Context Score {context_score}/100 (stability·coverage·respect)^⅓. ~{avg_tokens_used:,} tokens/query from {files:,} files.">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:24px}}
 .card{{background:#18181b;border:1px solid #27272a;border-radius:20px;max-width:560px;width:100%;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,0.5)}}
@@ -4298,11 +4302,11 @@ def main():
     # entroly telemetry
     telem_parser = subparsers.add_parser(
         "telemetry",
-        help="Manage anonymous usage statistics (opt-in, disabled by default)",
+        help="Manage the local telemetry preference (no outbound uploader)",
     )
     telem_parser.add_argument(
         "action", choices=["on", "off", "status"], nargs="?", default="status",
-        help="Enable, disable, or check telemetry status (default: status)",
+        help="Manage the local telemetry preference (default: status)",
     )
 
     # entroly clean

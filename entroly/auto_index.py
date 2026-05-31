@@ -121,6 +121,18 @@ BINARY_EXTENSIONS = frozenset({
 MAX_FILES = int(os.environ.get("ENTROLY_MAX_FILES", "5000"))
 
 
+def _resolve_project_file(project_dir: str, rel_path: str) -> str | None:
+    """Resolve a project file without following links outside the project."""
+    root = os.path.realpath(project_dir)
+    candidate = os.path.realpath(os.path.join(root, rel_path))
+    try:
+        if os.path.commonpath([root, candidate]) != root:
+            return None
+    except ValueError:
+        return None
+    return candidate
+
+
 def _git_ls_files(project_dir: str) -> list[str]:
     """Get all git-tracked files, respecting .gitignore."""
     try:
@@ -159,8 +171,8 @@ def _walk_fallback(project_dir: str) -> list[str]:
 
 def _load_entrolyignore(project_dir: str) -> list[str]:
     """Load .entrolyignore patterns (one glob per line, like .gitignore)."""
-    ignore_path = os.path.join(project_dir, ".entrolyignore")
-    if not os.path.isfile(ignore_path):
+    ignore_path = _resolve_project_file(project_dir, ".entrolyignore")
+    if ignore_path is None or not os.path.isfile(ignore_path):
         return []
     try:
         with open(ignore_path) as f:
@@ -446,7 +458,9 @@ def auto_index(
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def _read_file(rel_path: str) -> tuple | None:
-        abs_path = os.path.join(project_dir, rel_path)
+        abs_path = _resolve_project_file(project_dir, rel_path)
+        if abs_path is None:
+            return ("skip_read", rel_path, 0)
         try:
             size = os.path.getsize(abs_path)
             if size > ABSOLUTE_MAX_BYTES:
@@ -623,7 +637,9 @@ def start_incremental_watcher(
         """Capture mtimes of all currently indexed files."""
         files = _git_ls_files(project_dir) or []
         for rel_path in files:
-            abs_path = os.path.join(project_dir, rel_path)
+            abs_path = _resolve_project_file(project_dir, rel_path)
+            if abs_path is None:
+                continue
             try:
                 _indexed_mtimes[rel_path] = os.path.getmtime(abs_path)
             except OSError:
@@ -645,7 +661,9 @@ def start_incremental_watcher(
         for rel_path in files:
             if not _should_index(rel_path):
                 continue
-            abs_path = os.path.join(project_dir, rel_path)
+            abs_path = _resolve_project_file(project_dir, rel_path)
+            if abs_path is None:
+                continue
             try:
                 mtime = os.path.getmtime(abs_path)
             except OSError:
@@ -660,7 +678,9 @@ def start_incremental_watcher(
 
         count = 0
         for rel_path in new_or_modified[:100]:  # cap per scan
-            abs_path = os.path.join(project_dir, rel_path)
+            abs_path = _resolve_project_file(project_dir, rel_path)
+            if abs_path is None:
+                continue
             try:
                 size = os.path.getsize(abs_path)
                 if size > MAX_FILE_BYTES or size == 0:

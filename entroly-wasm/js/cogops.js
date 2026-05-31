@@ -190,6 +190,18 @@ function extractEntities(content, ext) {
   return entities;
 }
 
+function resolveFileWithin(root, candidate) {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const resolved = fs.realpathSync(candidate);
+    const relative = path.relative(realRoot, resolved);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
 class BeliefCompiler {
   constructor(vault) { this._vault = vault; }
 
@@ -199,7 +211,9 @@ class BeliefCompiler {
     const errors = [];
     for (const fp of sourceFiles) {
       try {
-        const content = fs.readFileSync(fp, 'utf-8');
+        const safePath = resolveFileWithin(directory, fp);
+        if (!safePath) continue;
+        const content = fs.readFileSync(safePath, 'utf-8');
         const ext = path.extname(fp).slice(1);
         const entities = extractEntities(content, ext);
         const relPath = path.relative(directory, fp).replace(/\\/g, '/');
@@ -235,7 +249,7 @@ class BeliefCompiler {
         if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '__pycache__' || e.name === 'target' || e.name === '.git') continue;
         const full = path.join(d, e.name);
         if (e.isDirectory()) walk(full);
-        else if (SOURCE_EXTS.has(path.extname(e.name))) results.push(full);
+        else if (SOURCE_EXTS.has(path.extname(e.name)) && resolveFileWithin(dir, full)) results.push(full);
       }
     };
     walk(dir);
@@ -508,6 +522,6 @@ function exportTrainingData(vault, outputPath = 'training_data.jsonl') {
 module.exports = {
   EpistemicRouter, BeliefCompiler, VerificationEngine, ChangePipeline, FlowOrchestrator,
   classifyIntent, assessRisk, extractEntityKey, parseDiff, classifyDiffIntent, reviewDiff,
-  compileDocs, exportTrainingData,
+  compileDocs, exportTrainingData, resolveFileWithin,
   INTENTS, FLOWS,
 };

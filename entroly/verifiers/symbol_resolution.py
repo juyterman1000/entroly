@@ -67,6 +67,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from ..path_safety import resolve_file_within
 from .ngram_model import CharNGramModel, quick_train_from_paths
 
 logger = logging.getLogger("entroly.verifiers.symbol_resolution")
@@ -235,7 +236,7 @@ def _collect_repo_symbols(
 ) -> set[str]:
     """Walk repo_root, extract top-level Python definitions via AST."""
     out: set[str] = set()
-    root = Path(repo_root)
+    root = Path(repo_root).resolve()
     if not root.exists():
         return out
 
@@ -254,6 +255,9 @@ def _collect_repo_symbols(
         if path.suffix not in extensions:
             continue
         if any(part in skip_dirs for part in path.relative_to(root).parts):
+            continue
+        path = resolve_file_within(root, path)
+        if path is None:
             continue
         files_seen += 1
         _extract_python_top_level(path, out)
@@ -684,18 +688,23 @@ def verify_code(
     Returns:
         SymbolVerifierResult.
     """
-    root = repo_root or os.getcwd()
+    root = str(Path(repo_root or os.getcwd()).resolve())
 
     manifest = SymbolManifest.build_from_codebase(root)
 
     if ngram_path_glob is None:
-        files = [
-            str(p) for p in Path(root).rglob("*.py")
-            if all(seg not in p.relative_to(root).parts for seg in {
+        files = []
+        for candidate in Path(root).rglob("*.py"):
+            if any(seg in candidate.relative_to(root).parts for seg in {
                 "__pycache__", ".git", ".venv", "venv",
                 "node_modules", "target", "dist", "build",
-            })
-        ][:2000]
+            }):
+                continue
+            path = resolve_file_within(root, candidate)
+            if path is not None:
+                files.append(str(path))
+            if len(files) >= 2000:
+                break
     else:
         files = list(ngram_path_glob)
 

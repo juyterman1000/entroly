@@ -8,7 +8,7 @@ version = "1.0.11"
 description = "Rust core for Entroly — information-theoretic context optimization (knapsack, entropy, dedup, SAST, query analysis)"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 authors = [
     { name = "entroly", email = "fastrunner10090@gmail.com" },

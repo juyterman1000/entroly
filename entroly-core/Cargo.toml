@@ -2,6 +2,8 @@
 name = "entroly-core"
 version = "1.0.11"
 edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/juyterman1000/entroly"
 description = "Rust core for Entroly — the local proxy that cuts Claude / OpenAI / Gemini bills 70%+ via knapsack-optimal context selection"
 
 [lib]

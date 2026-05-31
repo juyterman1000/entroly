@@ -102,7 +102,8 @@ function walkFallback(projectDir) {
 }
 
 function loadEntrolyIgnore(projectDir) {
-  const ignorePath = path.join(projectDir, '.entrolyignore');
+  const ignorePath = resolveProjectFile(projectDir, '.entrolyignore');
+  if (!ignorePath) return [];
   try {
     const content = fs.readFileSync(ignorePath, 'utf-8');
     return content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
@@ -139,6 +140,20 @@ function estimateTokens(content) {
   return Math.max(1, Math.floor(content.length / 4));
 }
 
+function resolveProjectFile(projectDir, relPath) {
+  try {
+    const root = fs.realpathSync(projectDir);
+    const candidate = fs.realpathSync(path.join(root, relPath));
+    const relative = path.relative(root, candidate);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return null;
+    }
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Auto-index a project's codebase into the Entroly wasm engine.
  * @param {WasmEntrolyEngine} engine
@@ -171,7 +186,8 @@ function autoIndex(engine, projectDir, force = false) {
   let indexed = 0, totalTokens = 0, skippedSize = 0, skippedRead = 0;
 
   for (const relPath of indexable) {
-    const absPath = path.join(projectDir, relPath);
+    const absPath = resolveProjectFile(projectDir, relPath);
+    if (!absPath) { skippedRead++; continue; }
     let stat;
     try { stat = fs.statSync(absPath); } catch { continue; }
 
@@ -227,7 +243,9 @@ function startIncrementalWatcher(engine, projectDir, intervalMs = 120000) {
   // Initial snapshot
   const files = gitLsFiles(projectDir);
   for (const rel of files) {
-    try { indexedMtimes[rel] = fs.statSync(path.join(projectDir, rel)).mtimeMs; } catch {}
+    const abs = resolveProjectFile(projectDir, rel);
+    if (!abs) continue;
+    try { indexedMtimes[rel] = fs.statSync(abs).mtimeMs; } catch {}
   }
 
   return setInterval(() => {
@@ -236,7 +254,8 @@ function startIncrementalWatcher(engine, projectDir, intervalMs = 120000) {
       let count = 0;
       for (const rel of files) {
         if (!shouldIndex(rel)) continue;
-        const abs = path.join(projectDir, rel);
+        const abs = resolveProjectFile(projectDir, rel);
+        if (!abs) continue;
         let mtime;
         try { mtime = fs.statSync(abs).mtimeMs; } catch { continue; }
         if (indexedMtimes[rel] === undefined || mtime > indexedMtimes[rel]) {
@@ -259,4 +278,4 @@ function startIncrementalWatcher(engine, projectDir, intervalMs = 120000) {
   }, intervalMs);
 }
 
-module.exports = { autoIndex, startIncrementalWatcher, estimateTokens };
+module.exports = { autoIndex, startIncrementalWatcher, estimateTokens, resolveProjectFile };

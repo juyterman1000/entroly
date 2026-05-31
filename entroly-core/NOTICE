@@ -1,0 +1,17 @@
+Entroly — Context Engineering Engine
+Copyright 2026 Entroly
+
+This product includes software developed by Entroly
+(https://github.com/juyterman1000/entroly).
+
+This software implements original algorithms for context optimization,
+including but not limited to:
+  - PRISM 5D Reinforcement Learning Engine
+  - Differentiable Soft Bisection Knapsack Optimizer
+  - SimHash LSH Deduplication Index
+  - Hierarchical Bayesian Context Compression
+  - Adaptive Dual Gap Temperature (ADGT) Scheduling
+
+If you use, modify, or redistribute this software (in whole or in part),
+you must retain this NOTICE file and all copyright attributions as required
+by the Apache License, Version 2.0.

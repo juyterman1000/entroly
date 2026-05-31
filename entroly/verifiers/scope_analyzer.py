@@ -53,6 +53,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..path_safety import resolve_file_within
 
 logger = logging.getLogger("entroly.verifiers.scope_analyzer")
 
@@ -121,6 +122,9 @@ def build_reverse_index(
         if path.suffix not in extensions:
             continue
         if any(p in skip for p in path.parts):
+            continue
+        path = resolve_file_within(root, path)
+        if path is None:
             continue
         files_seen += 1
 

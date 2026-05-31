@@ -58,7 +58,7 @@ from .provenance import build_provenance
 from .proxy_transform import calibrated_token_count as _calibrated_token_count
 from .query_refiner import QueryRefiner
 from .repo_map import build_repo_map, render_repo_map_markdown
-from .skill_engine import SkillEngine
+from .skill_engine import SkillEngine, promoted_skill_execution_enabled
 from .value_tracker import ValueTracker, get_tracker
 from .vault import (
     BeliefArtifact,
@@ -1641,7 +1641,7 @@ class EntrolyEngine:
         """Python fallback for optimize."""
         self._total_optimizations += 1
 
-        if query:
+        if query and promoted_skill_execution_enabled():
             query_hash = _py_simhash(query)
             for frag in self._fragments.values():
                 dist = _py_hamming_distance(query_hash, frag.simhash)

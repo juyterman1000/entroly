@@ -9,6 +9,18 @@ const fs = require('fs');
 const path = require('path');
 const { SOURCE_EXTS } = require('./vault');
 
+function resolveFileWithin(root, candidate) {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const resolved = fs.realpathSync(candidate);
+    const relative = path.relative(realRoot, resolved);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
 class WorkspaceChangeListener {
   constructor(vault, compiler, verifier, changePipe, projectDir) {
     this._vault = vault;
@@ -34,7 +46,9 @@ class WorkspaceChangeListener {
         if (e.isDirectory()) { walk(full, depth + 1); continue; }
         if (!SOURCE_EXTS.has(path.extname(e.name))) continue;
         try {
-          const stat = fs.statSync(full);
+          const safePath = resolveFileWithin(this._projectDir, full);
+          if (!safePath) continue;
+          const stat = fs.statSync(safePath);
           const mtime = stat.mtimeMs;
           const rel = path.relative(this._projectDir, full).replace(/\\/g, '/');
           currentFiles[rel] = mtime;
@@ -61,8 +75,8 @@ class WorkspaceChangeListener {
       // Recompile changed files
       for (const rel of allChanged.slice(0, 20)) {
         try {
-          const fp = path.join(this._projectDir, rel);
-          if (fs.existsSync(fp)) {
+          const fp = resolveFileWithin(this._projectDir, path.join(this._projectDir, rel));
+          if (fp) {
             const dir = path.dirname(fp);
             const result = this._compiler.compileDirectory(dir, 1);
             beliefsRecompiled += result.beliefs_written;
@@ -113,4 +127,4 @@ class WorkspaceChangeListener {
   }
 }
 
-module.exports = { WorkspaceChangeListener };
+module.exports = { WorkspaceChangeListener, resolveFileWithin };

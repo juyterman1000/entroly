@@ -164,6 +164,17 @@ class CharNGramModel:
                 self.ngrams[order_idx][ctx].update(char_counts)
         self._denom_cache = None
 
+    def to_dict(self) -> dict:
+        """Return a JSON-safe cache representation."""
+        return self.__getstate__()
+
+    @classmethod
+    def from_dict(cls, state: dict) -> CharNGramModel:
+        """Rebuild a model from a JSON cache without executable deserialization."""
+        model = cls(n=int(state["n"]))
+        model.__setstate__(state)
+        return model
+
     # ── Scoring ──────────────────────────────────────────────────────
 
     def _log_p_char(self, char: str, context: str) -> float:

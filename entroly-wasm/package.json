@@ -8,6 +8,8 @@
     "entroly-wasm": "./bin/entroly-wasm.js"
   },
   "files": [
+    "LICENSE",
+    "NOTICE",
     "index.js",
     "pkg/entroly_wasm_bg.wasm",
     "pkg/entroly_wasm.js",

@@ -7,6 +7,7 @@ import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,6 +53,33 @@ def test_proxy_identity_probe_requires_entroly_service():
         server.shutdown()
         server.server_close()
         thread.join(timeout=1)
+
+
+def test_update_check_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("ENTROLY_DISABLE_UPDATE_CHECK", "1")
+
+    def fail_if_started(*args, **kwargs):
+        raise AssertionError("disabled update check must not start a network thread")
+
+    monkeypatch.setattr(threading, "Thread", fail_if_started)
+    cli._check_for_update()
+
+
+def test_upstream_probe_is_opt_in(monkeypatch):
+    monkeypatch.delenv("ENTROLY_CHECK_UPSTREAM", raising=False)
+    assert cli._should_check_upstream() is False
+
+    monkeypatch.setenv("ENTROLY_CHECK_UPSTREAM", "1")
+    assert cli._should_check_upstream() is True
+
+
+def test_telemetry_command_describes_local_preference(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    cli.cmd_telemetry(SimpleNamespace(action="on"))
+
+    output = capsys.readouterr().out
+    assert "Local telemetry preference enabled." in output
+    assert "No outbound telemetry uploader is included in this release." in output
 
 
 @pytest.fixture

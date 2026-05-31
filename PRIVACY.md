@@ -46,6 +46,15 @@ or customer data.
 - No Entroly usage tracking is sent anywhere.
 - `grep -r "entroly\.(com|io|dev|cloud)" entroly/` returns zero matches.
 
+The CLI performs a best-effort version check against PyPI at most once every
+24 hours. This is a normal HTTPS request to PyPI, not to an Entroly-operated
+server. Failures are ignored. Set `ENTROLY_DISABLE_UPDATE_CHECK=1` to disable
+the request. The proxy does not probe LLM provider hosts at startup unless you
+explicitly set `ENTROLY_CHECK_UPSTREAM=1`.
+
+`entroly telemetry on` stores a local preference only. No outbound telemetry
+uploader is included in this release.
+
 ## Optional Features (OFF by Default)
 
 ### WITNESS NLI (`--witness-nli` or `ENTROLY_WITNESS_NLI=1`)
@@ -63,15 +72,28 @@ data-handling semantics.
 
 ### Federation (`ENTROLY_FEDERATION=1`)
 
-Shares **only** differential-privacy-noised weight vectors (numerical arrays)
-with other Entroly users via file exchange or GitHub Issues. **Never shares
-prompts, code, file paths, or any identifiable information.** Protected by
-Renyi Differential Privacy (epsilon=1.0) with a finite privacy budget.
+Shares differential-privacy-noised weight vectors (numerical arrays) with other
+Entroly users via file exchange or GitHub Issues. Contribution payloads do not
+include prompts, code, or file paths. They include a random persisted client ID
+and the noised weights. GitHub transport requests are visible to GitHub. If you
+use the `ENTROLY_GITHUB_TOKEN` personal-token fallback instead of a shared
+`ENTROLY_FEDERATION_BOT`, the posting GitHub account is visible on the issue.
+Protected by Renyi Differential Privacy (epsilon=1.0) with a finite privacy
+budget.
 
 ### Integration Gateways (Slack/Discord/Telegram)
 
-User-configured webhooks for alerts. Only sends messages you explicitly
-configure. Disabled unless you set webhook URLs.
+Slack and Discord use user-configured webhooks for alerts. Telegram uses the
+Telegram Bot API for outbound notifications and bot-command interactions.
+These integrations are disabled unless you configure the corresponding
+webhook URL or Telegram bot token and chat ID.
+
+### Promoted Skill Execution (`ENTROLY_EXECUTE_PROMOTED_SKILLS=1`)
+
+Generated skill tools are stored in the local writable vault. Entroly does not
+execute promoted `tool.py` files automatically unless you explicitly enable
+this setting. Enabled tools run as local subprocesses with a timeout; treat the
+vault as executable local state and review imported or manually edited tools.
 
 ## Local Storage
 

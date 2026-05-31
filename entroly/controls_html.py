@@ -6,7 +6,6 @@ CONTROLS_HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entroly — Control Panel</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#050508;--bg2:#0a0b10;--card:rgba(14,17,24,0.85);--glass:rgba(255,255,255,0.03);
 --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);--text:#e8ecf4;--dim:#6b7280;

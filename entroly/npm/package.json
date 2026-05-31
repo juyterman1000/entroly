@@ -6,6 +6,13 @@
   "bin": {
     "entroly-mcp": "./bin/entroly-mcp.js"
   },
+  "files": [
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "index.js",
+    "bin/entroly-mcp.js"
+  ],
   "scripts": {
     "test": "echo \"No JS tests yet\""
   },

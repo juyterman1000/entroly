@@ -44,6 +44,7 @@ COPY bench/ /app/bench/
 
 COPY pyproject.toml /app/
 COPY README.md /app/
+COPY LICENSE NOTICE /app/
 
 # Make the entroly package importable
 ENV PYTHONPATH=/app

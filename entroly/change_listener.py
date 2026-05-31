@@ -25,6 +25,7 @@ from typing import Any
 
 from .belief_compiler import BeliefCompiler
 from .change_pipeline import ChangePipeline
+from .path_safety import resolve_file_within
 from .vault import VaultManager
 from .verification_engine import VerificationEngine
 
@@ -118,7 +119,9 @@ class WorkspaceChangeListener:
             result.refresh_result = self._change_pipe.refresh_docs(refresh_targets)
 
         for rel_path in result.changed_files:
-            abs_path = self._project_dir / rel_path
+            abs_path = resolve_file_within(self._project_dir, rel_path)
+            if abs_path is None:
+                continue
             try:
                 content = abs_path.read_text(encoding="utf-8", errors="replace")
                 if not content.strip():
@@ -197,7 +200,8 @@ class WorkspaceChangeListener:
     def _discover_source_files(self) -> list[Path]:
         files: list[Path] = []
         for path in self._project_dir.rglob("*"):
-            if not path.is_file():
+            path = resolve_file_within(self._project_dir, path)
+            if path is None:
                 continue
             if any(part in _SKIP_DIRS for part in path.relative_to(self._project_dir).parts):
                 continue

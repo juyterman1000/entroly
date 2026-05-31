@@ -23,6 +23,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger("entroly.dashboard")
 
@@ -467,7 +468,6 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entroly â€” Intelligence Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg: #050508; --bg2: #0a0b10; --card: rgba(14,17,24,0.85);
@@ -1151,6 +1151,8 @@ refresh();setInterval(refresh,3000);
 class DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler for the dashboard."""
 
+    _MAX_CONTROL_BODY_BYTES = 64 * 1024
+
     def log_message(self, format, *args):
         pass  # Suppress access logs
 
@@ -1161,8 +1163,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy",
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "font-src 'self'; "
             "connect-src 'self'; "
             "img-src 'self' data:"
         )
@@ -1215,13 +1217,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle Control API POST requests."""
+        if not self._is_trusted_write_origin():
+            self._send_json(403, {
+                "ok": False,
+                "error": "cross-origin control request rejected",
+            }, cors=False)
+            return
+
         from entroly.daemon import get_daemon
         daemon = get_daemon()
 
         # Read POST body. Reject malformed JSON loudly â€” silent fallback to
         # `{}` lets bad payloads enable features by accident (every handler
         # below uses `body.get("enabled", True)` style defaults).
-        content_length = int(self.headers.get("Content-Length", 0))
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_json(400, {"ok": False, "error": "invalid Content-Length"}, cors=False)
+            return
+        if content_length < 0 or content_length > self._MAX_CONTROL_BODY_BYTES:
+            self._send_json(413, {"ok": False, "error": "request body too large"}, cors=False)
+            return
         body: dict = {}
         if content_length > 0:
             raw = self.rfile.read(content_length)
@@ -1274,9 +1290,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 status_code = 400
         elif self.path == "/api/control/repos/reindex":
             path = body.get("path")
-            daemon.reindex_repo(path)
-            result = {"ok": True, "reindexed": path or "all"}
-            status_code = 200
+            if daemon.reindex_repo(path):
+                result = {"ok": True, "reindexed": path or "all"}
+                status_code = 200
+            else:
+                result = {"ok": False, "error": "reindex failed or repo is not registered"}
+                status_code = 400
         elif self.path == "/api/control/learning/enable":
             enabled = body.get("enabled", True)
             if hasattr(daemon, "set_learning_enabled"):
@@ -1297,15 +1316,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = {"ok": True, "autotune": "triggered"}
             status_code = 200
         elif self.path == "/api/control/federation/enable":
-            daemon.state.federation_enabled = True
-            daemon.state.federation_mode = body.get("mode", "anonymous")
-            result = {"ok": True, "federation": daemon.state.federation_mode}
-            status_code = 200
+            try:
+                daemon.set_federation_enabled(True)
+                result = {"ok": True, "federation": daemon.state.federation_mode}
+                status_code = 200
+            except RuntimeError as e:
+                result = {"ok": False, "error": str(e)}
+                status_code = 409
         elif self.path == "/api/control/federation/disable":
-            daemon.state.federation_enabled = False
-            daemon.state.federation_mode = "off"
-            result = {"ok": True, "federation": "off"}
-            status_code = 200
+            try:
+                daemon.set_federation_enabled(False)
+                result = {"ok": True, "federation": "off"}
+                status_code = 200
+            except RuntimeError as e:
+                result = {"ok": False, "error": str(e)}
+                status_code = 409
         elif self.path == "/api/control/stop":
             result = {"ok": True, "status": "stopping"}
             status_code = 200
@@ -1319,6 +1344,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             ).start()
 
         self._send_json(status_code, result)
+
+    def _is_trusted_write_origin(self) -> bool:
+        """Allow same-dashboard browser writes and origin-less local clients."""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        try:
+            parsed = urlparse(origin)
+            return (
+                parsed.scheme == "http"
+                and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+                and parsed.port == self.server.server_port
+            )
+        except ValueError:
+            return False
 
     def _respond(
         self,

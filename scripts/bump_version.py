@@ -12,9 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 TARGETS = [
     ("pyproject.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
-    ("pyproject.toml", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+,<1', 'entroly-core>={v},<1'),
+    ("pyproject.toml", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+,<2', 'entroly-core>={v},<2'),
     ("entroly/pyproject.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
-    ("entroly/pyproject.toml", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+,<1', 'entroly-core>={v},<1'),
+    ("entroly/pyproject.toml", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+,<2', 'entroly-core>={v},<2'),
     ("entroly-core/pyproject.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
     ("entroly-core/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
     ("entroly-core/Cargo.lock",
@@ -51,17 +51,26 @@ def main(argv: list[str]) -> int:
         print("usage: bump_version.py <semver>", file=sys.stderr)
         return 2
     new = argv[1]
+    pending: dict[Path, str] = {}
+    changed: list[str] = []
     for rel, pattern, template in TARGETS:
         path = ROOT / rel
         if not path.exists():
             print(f"  {rel} missing; skipping generated artifact")
             continue
-        text = path.read_text(encoding="utf-8")
+        text = pending.get(path)
+        if text is None:
+            text = path.read_text(encoding="utf-8")
         updated, n = re.subn(pattern, template.format(v=new), text, flags=re.MULTILINE)
         if n == 0:
             print(f"!! no match in {rel}", file=sys.stderr)
             return 1
+        pending[path] = updated
+        changed.append(rel)
+
+    for path, updated in pending.items():
         path.write_text(updated, encoding="utf-8")
+    for rel in changed:
         print(f"  {rel} -> {new}")
     print(f"bumped {len(TARGETS)} files to {new}")
     return 0

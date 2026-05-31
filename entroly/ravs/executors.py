@@ -3,7 +3,7 @@ RAVS v2 — Node Executors
 
 Each executor handles one node type. All executors:
   1. Accept an input string and return (result_str, succeeded: bool)
-  2. Are sandboxed — no network, no filesystem writes, bounded CPU
+  2. Validate inputs before local execution; subprocess test runs use timeouts
   3. Fail closed — on any exception, return (error_msg, False)
   4. Are stateless — no side effects between calls
 
@@ -118,9 +118,33 @@ class SymPyExecutor:
 
         # Replace common notation
         cleaned = cleaned.replace('^', '**')
+        if len(cleaned) > 512:
+            raise ValueError("expression too long")
+        if "__" in cleaned or not re.fullmatch(r"[A-Za-z0-9_+\-*/().,\s]+", cleaned):
+            raise ValueError("expression contains unsupported characters")
+        if re.search(r"[A-Za-z_)]\s*\.", cleaned) or re.search(r"\.\s*[A-Za-z_]", cleaned):
+            raise ValueError("attribute access is not allowed")
+        if re.search(r"\*\*\s*\d{4,}", cleaned):
+            raise ValueError("exponent too large")
+
+        function_names = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", cleaned))
+        allowed_functions = {
+            "sin", "cos", "tan", "sqrt", "log", "exp", "abs",
+            "factor", "expand", "simplify",
+        }
+        if not function_names <= allowed_functions:
+            raise ValueError("function is not allowed")
+
+        names = set(re.findall(r"\b[A-Za-z_]\w*\b", cleaned))
+        local_dict = {
+            name: getattr(sympy, name)
+            for name in function_names
+        }
+        for name in names - function_names:
+            local_dict[name] = sympy.Symbol(name)
 
         # Try to parse and evaluate
-        expr = sympy.sympify(cleaned)
+        expr = sympy.sympify(cleaned, locals=local_dict)
 
         # If it's a relational/equation, solve it
         if isinstance(expr, (sympy.Eq, sympy.Rel)):
@@ -165,6 +189,17 @@ class PythonExecutor:
         "gcd": math.gcd,
     }
 
+    _MAX_EXPRESSION_CHARS = 512
+    _MAX_AST_NODES = 128
+    _MAX_ABS_LITERAL = 1_000_000_000_000
+    _MAX_EXPONENT = 1000
+    _ALLOWED_AST_NODES = (
+        ast.Expression, ast.Constant, ast.Name, ast.Load, ast.Call,
+        ast.BinOp, ast.UnaryOp,
+        ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+        ast.UAdd, ast.USub,
+    )
+
     def execute(self, input_text: str) -> ExecutorResult:
         t0 = time.perf_counter()
         try:
@@ -175,19 +210,8 @@ class PythonExecutor:
                 '', input_text.strip(), flags=re.I,
             ).strip()
             cleaned = cleaned.replace('^', '**')
-
-            # Try literal_eval first (safest)
-            try:
-                result = ast.literal_eval(cleaned)
-                elapsed = (time.perf_counter() - t0) * 1000
-                return ExecutorResult(
-                    result=str(result),
-                    succeeded=True,
-                    execution_time_ms=round(elapsed, 2),
-                    executor_name="python_safe",
-                )
-            except (ValueError, SyntaxError):
-                pass
+            if len(cleaned) > self._MAX_EXPRESSION_CHARS:
+                raise ValueError("expression too long")
 
             # Restricted eval with math-only namespace
             # Validate AST first — no calls except allowlisted
@@ -216,19 +240,35 @@ class PythonExecutor:
 
     def _validate_ast(self, tree: ast.AST) -> None:
         """Walk AST and reject dangerous nodes."""
-        for node in ast.walk(tree):
+        nodes = list(ast.walk(tree))
+        if len(nodes) > self._MAX_AST_NODES:
+            raise ValueError("expression too complex")
+        for node in nodes:
+            if not isinstance(node, self._ALLOWED_AST_NODES):
+                raise ValueError(f"Node '{type(node).__name__}' not allowed")
+            if isinstance(node, ast.Constant):
+                if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+                    raise ValueError("Only numeric literals are allowed")
+                if abs(node.value) > self._MAX_ABS_LITERAL:
+                    raise ValueError("Numeric literal too large")
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name):
                     if node.func.id not in self._SAFE_NAMES:
                         raise ValueError(
                             f"Function '{node.func.id}' not in allowlist"
                         )
-                elif isinstance(node.func, ast.Attribute):
-                    raise ValueError("Attribute access not allowed")
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                raise ValueError("Imports not allowed")
-            elif isinstance(node, ast.Attribute):
-                raise ValueError("Attribute access not allowed")
+                else:
+                    raise ValueError("Only direct function calls are allowed")
+                if node.func.id == "pow":
+                    self._validate_exponent(node.args[1] if len(node.args) > 1 else None)
+            elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+                self._validate_exponent(node.right)
+
+    def _validate_exponent(self, node: ast.AST | None) -> None:
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, (int, float)):
+            raise ValueError("Exponent must be a numeric literal")
+        if abs(node.value) > self._MAX_EXPONENT:
+            raise ValueError("Exponent too large")
 
 
 # ── AST Executor ───────────────────────────────────────────────────────
@@ -346,7 +386,7 @@ class ASTExecutor:
 
 
 class TestRunnerExecutor:
-    """Sandboxed test execution via subprocess.
+    """Test execution via subprocess.
 
     Runs test commands (pytest, cargo test, npm test, go test) in a
     subprocess with:
@@ -357,9 +397,9 @@ class TestRunnerExecutor:
 
     Parses output to extract pass/fail counts where possible.
 
-    Security: uses subprocess with shell=False. No user-controlled
-    command injection — the test framework is selected by pattern
-    matching on the input, not passed through.
+    Security: uses subprocess with shell=False. Test files still execute code
+    from the selected workspace, so callers must treat this as an explicit
+    local-code execution feature rather than a security sandbox.
     """
 
     # Supported test frameworks and their commands

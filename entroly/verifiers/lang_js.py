@@ -56,6 +56,9 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
+
+from ..path_safety import resolve_file_within
 
 logger = logging.getLogger("entroly.verifiers.lang_js")
 
@@ -264,13 +267,12 @@ def collect_js_repo_symbols(
 
     Used as the `repo` layer of a JS/TS SymbolManifest.
     """
-    from pathlib import Path
     skip = {"node_modules", "dist", "build", ".git", "out", ".next",
             "coverage", ".cache", ".parcel-cache"}
 
     out: set[str] = set()
     files_seen = 0
-    root = Path(repo_root)
+    root = Path(repo_root).resolve()
     for path in root.rglob("*"):
         if files_seen >= max_files:
             break
@@ -279,6 +281,9 @@ def collect_js_repo_symbols(
         if path.suffix not in extensions:
             continue
         if any(p in skip for p in path.relative_to(root).parts):
+            continue
+        path = resolve_file_within(root, path)
+        if path is None:
             continue
         files_seen += 1
         try:
@@ -296,12 +301,13 @@ def collect_js_installed_packages(repo_root: str) -> set[str]:
     packages — just list which ones are *declared*.
     """
     import json
-    from pathlib import Path
-
     out: set[str] = set()
-    root = Path(repo_root)
+    root = Path(repo_root).resolve()
     for pkg_json in root.rglob("package.json"):
         if "node_modules" in pkg_json.relative_to(root).parts:
+            continue
+        pkg_json = resolve_file_within(root, pkg_json)
+        if pkg_json is None:
             continue
         try:
             data = json.loads(pkg_json.read_text(encoding="utf-8"))

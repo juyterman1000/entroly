@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .path_safety import resolve_file_within
 from .vault import BeliefArtifact, VaultManager
 
 logger = logging.getLogger(__name__)
@@ -443,7 +444,7 @@ class BeliefCompiler:
     ) -> CompilationResult:
         """Compile all source files in a directory into beliefs."""
         result = CompilationResult()
-        root = Path(directory)
+        root = Path(directory).resolve()
 
         if not root.is_dir():
             result.errors.append(f"Not a directory: {directory}")
@@ -458,7 +459,7 @@ class BeliefCompiler:
         relative_paths: list[str],
     ) -> CompilationResult:
         """Compile a targeted set of relative paths inside a source tree."""
-        root = Path(root_dir)
+        root = Path(root_dir).resolve()
         result = CompilationResult()
         if not root.is_dir():
             result.errors.append(f"Not a directory: {root_dir}")
@@ -467,12 +468,12 @@ class BeliefCompiler:
         selected: list[Path] = []
         seen: set[Path] = set()
         for rel in relative_paths:
-            candidate = (root / rel).resolve()
+            candidate = resolve_file_within(root, rel)
+            if candidate is None:
+                continue
             if candidate in seen:
                 continue
             seen.add(candidate)
-            if not candidate.exists() or not candidate.is_file():
-                continue
             if candidate.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
                 continue
             selected.append(candidate)
@@ -695,7 +696,10 @@ class BeliefCompiler:
             dirnames[:] = [d for d in dirnames if d not in self.SKIP_DIRS]
             for fn in filenames:
                 if Path(fn).suffix.lower() in self.SUPPORTED_EXTENSIONS:
-                    files.append(Path(dirpath) / fn)
+                    candidate = resolve_file_within(root, Path(dirpath) / fn)
+                    if candidate is None:
+                        continue
+                    files.append(candidate)
                     if not unlimited and len(files) >= max_files:
                         return files
         return files

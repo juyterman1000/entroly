@@ -13,7 +13,7 @@ Layout:
     .entroly/verifiers_cache/
         <hash>/
             manifest.json
-            ngram.pkl
+            ngram.json
             meta.json
 """
 
@@ -23,11 +23,11 @@ import hashlib
 import json
 import logging
 import os
-import pickle
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..path_safety import resolve_file_within
 from .ngram_model import CharNGramModel, quick_train_from_paths
 from .symbol_resolution import SymbolManifest, SymbolVerifier, DEFAULT_LAMBDA
 
@@ -35,7 +35,7 @@ logger = logging.getLogger("entroly.verifiers.cache")
 
 
 CACHE_DIR_NAME = "verifiers_cache"
-META_VERSION = 1
+META_VERSION = 2
 
 
 @dataclass
@@ -60,7 +60,8 @@ def _enumerate_files(repo_root: str, extensions: tuple[str, ...] = (".py",)) -> 
     out: list[Path] = []
     root = Path(repo_root)
     for path in root.rglob("*"):
-        if path.is_dir():
+        path = resolve_file_within(root, path)
+        if path is None:
             continue
         if path.suffix not in extensions:
             continue
@@ -103,7 +104,7 @@ def load_or_build_verifier(
     cache_dir = _entroly_cache_dir(repo_root) / file_hash
     meta_path = cache_dir / "meta.json"
     manifest_path = cache_dir / "manifest.json"
-    ngram_path = cache_dir / "ngram.pkl"
+    ngram_path = cache_dir / "ngram.json"
 
     if not force_rebuild and meta_path.exists() and manifest_path.exists() and ngram_path.exists():
         try:
@@ -135,8 +136,8 @@ def _load_from_cache(
         builtins=set(m_d.get("builtins", [])),
     )
 
-    with open(cache_dir / "ngram.pkl", "rb") as f:
-        ngram = pickle.load(f)
+    with open(cache_dir / "ngram.json", "r", encoding="utf-8") as f:
+        ngram = CharNGramModel.from_dict(json.load(f))
 
     verifier = SymbolVerifier(
         manifest=manifest,
@@ -180,10 +181,10 @@ def _build_and_persist(
         }, f)
     os.replace(tmp, cache_dir / "manifest.json")
 
-    tmp = cache_dir / "ngram.pkl.tmp"
-    with open(tmp, "wb") as f:
-        pickle.dump(ngram, f, protocol=pickle.HIGHEST_PROTOCOL)
-    os.replace(tmp, cache_dir / "ngram.pkl")
+    tmp = cache_dir / "ngram.json.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(ngram.to_dict(), f)
+    os.replace(tmp, cache_dir / "ngram.json")
 
     with open(cache_dir / "meta.json", "w") as f:
         json.dump(meta.__dict__, f, indent=2)

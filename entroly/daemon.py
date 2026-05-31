@@ -29,6 +29,7 @@ import signal
 import threading
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("entroly.daemon")
@@ -167,6 +168,10 @@ class EntrolyDaemon:
         self.state.dashboard.port = dashboard_port
         self.state.mcp.port = mcp_port
         self.state.quality_mode = quality
+        self.state.federation_enabled = os.environ.get("ENTROLY_FEDERATION", "0") == "1"
+        self.state.federation_mode = (
+            "anonymous" if self.state.federation_enabled else "off"
+        )
 
         self._host = host
         self._enable_proxy = enable_proxy
@@ -304,8 +309,8 @@ class EntrolyDaemon:
         from entroly.auto_index import auto_index
 
         for repo_path in self._repo_paths:
+            old_cwd = os.getcwd()
             try:
-                old_cwd = os.getcwd()
                 os.chdir(repo_path)
                 result = auto_index(self._engine)
                 repo = RepoState(
@@ -316,7 +321,6 @@ class EntrolyDaemon:
                     last_sync=time.time(),
                 )
                 self.state.repos.append(repo)
-                os.chdir(old_cwd)
                 logger.info(
                     f"Indexed {repo.indexed_files} files from {repo_path}"
                 )
@@ -325,6 +329,8 @@ class EntrolyDaemon:
                 self.state.repos.append(
                     RepoState(path=repo_path, watching=False)
                 )
+            finally:
+                os.chdir(old_cwd)
 
         # Warm up engine subsystems
         try:
@@ -805,6 +811,17 @@ class EntrolyDaemon:
         self._learning_last_wake_reason = reason
         self._learning_wake.set()
 
+    def set_federation_enabled(self, enabled: bool) -> None:
+        """Reflect startup federation state; live reconfiguration is unsupported."""
+        active = os.environ.get("ENTROLY_FEDERATION", "0") == "1"
+        self.state.federation_enabled = active
+        self.state.federation_mode = "anonymous" if active else "off"
+        if enabled != active:
+            desired = "with ENTROLY_FEDERATION=1" if enabled else "without ENTROLY_FEDERATION=1"
+            raise RuntimeError(
+                f"Live federation changes are unsupported; restart the daemon {desired}"
+            )
+
     def get_learning_weights(self) -> dict:
         """Get current PRISM 5D weights + OnlinePrism state.
 
@@ -1008,17 +1025,29 @@ class EntrolyDaemon:
         if dreaming:
             dreaming.record_activity()
 
-    def reindex_repo(self, path: str | None = None):
+    def reindex_repo(self, path: str | None = None) -> bool:
         """Re-index a specific repo or all repos."""
         from entroly.auto_index import auto_index
 
-        targets = [path] if path else [r.path for r in self.state.repos]
+        registered = {
+            str(Path(repo.path).resolve()): repo.path
+            for repo in self.state.repos
+        }
+        if path:
+            resolved = str(Path(path).resolve())
+            if resolved not in registered:
+                logger.warning("Rejected reindex request for unregistered repo: %s", path)
+                return False
+            targets = [registered[resolved]]
+        else:
+            targets = list(registered.values())
+
+        succeeded = True
         for rpath in targets:
+            old_cwd = os.getcwd()
             try:
-                old_cwd = os.getcwd()
                 os.chdir(rpath)
                 result = auto_index(self._engine, force=True)
-                os.chdir(old_cwd)
 
                 # Update state
                 for r in self.state.repos:
@@ -1029,6 +1058,10 @@ class EntrolyDaemon:
                         break
             except Exception as e:
                 logger.error(f"Reindex failed for {rpath}: {e}")
+                succeeded = False
+            finally:
+                os.chdir(old_cwd)
+        return succeeded
 
     def get_last_context(self) -> dict:
         """Get the last injected context (knapsack explain)."""

@@ -7,6 +7,8 @@
     "entroly": "./bin/entroly.js"
   },
   "files": [
+    "LICENSE",
+    "NOTICE",
     "index.js",
     "bin/entroly.js",
     "README.md"
