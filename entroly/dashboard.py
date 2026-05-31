@@ -1195,7 +1195,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._safe_tracker_call("get_confidence"))
         elif self.path == "/health":
             # Health probe â€” no CORS, kept tight for internal liveness checks.
-            self._respond(200, "application/json", b'{"status":"ok"}')
+            self._respond(200, "application/json", b'{"status":"ok","service":"entroly-dashboard"}')
         # Control API reads
         elif self.path in self._CONTROL_GET_ROUTES:
             self._handle_control_get(self._CONTROL_GET_ROUTES[self.path])

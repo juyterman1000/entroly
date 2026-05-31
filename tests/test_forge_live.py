@@ -17,8 +17,12 @@ import textwrap
 
 import pytest
 pytest.importorskip("openai", reason="openai required for live FORGE test")
+_RUN_LIVE_TESTS = (
+    os.environ.get("ENTROLY_RUN_LIVE_TESTS") == "1" or __name__ == "__main__"
+) and bool(os.environ.get("OPENAI_API_KEY"))
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
+    not _RUN_LIVE_TESTS,
+    reason="set ENTROLY_RUN_LIVE_TESTS=1 and OPENAI_API_KEY to run live evals",
 )
 
 from openai import OpenAI
@@ -29,11 +33,12 @@ from entroly.verifiers.repair_loop import (
 )
 from entroly.verifiers.symbol_resolution import SymbolManifest
 
-client = OpenAI()
+client = OpenAI() if _RUN_LIVE_TESTS else None
 MODEL = "gpt-4o-mini"
 
 
 def llm_generate(system: str, user: str) -> str:
+    assert client is not None
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[

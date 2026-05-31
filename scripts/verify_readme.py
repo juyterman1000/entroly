@@ -25,6 +25,7 @@ from pathlib import Path
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
+FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 
 check("wrap claude", lambda: "claude" in _WRAP_AGENTS and "OK")
 check("wrap codex", lambda: "codex" in _WRAP_AGENTS and "OK")
@@ -65,6 +66,35 @@ check(
         and "GOOGLE_GEMINI_BASE_URL" in COOKBOOK_TEXT
         and "OK"
     ) or (_ for _ in ()).throw(Exception("Use GOOGLE_GEMINI_BASE_URL in docs")),
+)
+check(
+    "team brief telemetry wording",
+    lambda: (
+        "no telemetry by default" not in README_TEXT.lower()
+        and "no telemetry by default" not in FOR_TEAMS_TEXT.lower()
+        and "no outbound analytics by default" in README_TEXT.lower()
+        and "no outbound analytics by default" in FOR_TEAMS_TEXT.lower()
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("Distinguish local metrics from outbound analytics")),
+)
+check(
+    "team brief verify-claims scope",
+    lambda: (
+        "Measure *your* number in 60 seconds" not in FOR_TEAMS_TEXT
+        and "hand to finance" not in FOR_TEAMS_TEXT
+        and "bounded install smoke test" in FOR_TEAMS_TEXT
+        and "representative proxy pilot" in FOR_TEAMS_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("verify-claims is a bounded smoke test, not an ROI receipt")),
+)
+check(
+    "team brief determinism scope",
+    lambda: (
+        "bit-identical output" not in FOR_TEAMS_TEXT
+        and "Auditable local core" in FOR_TEAMS_TEXT
+        and "Evaluate stateful learning, exploration, routing" in FOR_TEAMS_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("Scope determinism claims to the tested local paths")),
 )
 
 # === Proxy ===

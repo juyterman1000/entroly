@@ -51,7 +51,7 @@
 
 <p align="center">
   <sub>
-    <strong>Local-first</strong> — your code is indexed & selected on-device, never sent anywhere for analysis · <strong>Apache-2.0</strong> · <strong>no telemetry by default</strong><br/>
+    <strong>Local-first</strong> — your code is indexed & selected on-device, never sent anywhere for analysis · <strong>Apache-2.0</strong> · <strong>no outbound analytics by default</strong><br/>
     Evaluating for a team? → <a href="docs/for-teams.md"><b>ROI, security & deployment one-pager</b></a>
   </sub>
 </p>
@@ -358,7 +358,7 @@ python bench/trust_bench.py
 | **D. Router Logic** | Bayesian gate correctness (5 cases) | **5/5 correct** |
 | **E. Determinism** | Same input → identical output (SHA-256) | **Bit-identical** |
 
-### Code Retrieval — [CodeSearchNet](https://huggingface.co/datasets/code_search_net) (Established IR Benchmark)
+### Code Retrieval — [CodeSearchNet](https://huggingface.co/datasets/code-search-net/code_search_net) (Established IR Benchmark)
 
 "Given a docstring, find the correct function from 200 candidates." Public dataset, reproducible, no API key.
 
@@ -392,7 +392,7 @@ Apples-to-apples comparison at **identical 1,500 token budget**. Same LLM (gpt-4
 
 Reproduce locally: `python bench/looGLE_compare.py --samples 30 --budget 1500`
 
-### Code Retrieval — Entroly vs BM25 ([CodeSearchNet](https://huggingface.co/datasets/code_search_net))
+### Code Retrieval — Entroly vs BM25 ([CodeSearchNet](https://huggingface.co/datasets/code-search-net/code_search_net))
 
 Pure retrieval quality — no LLM calls, no API key, $0 cost. "Given a docstring, find the correct function from 500 candidates."
 

@@ -3,11 +3,55 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
 
 from entroly import cli
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    payload = b'{"status":"ok"}'
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(self.payload)
+
+    def log_message(self, format, *args):
+        pass
+
+
+def test_free_port_does_not_terminate_existing_listener():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+
+        assert cli._free_port(port) is False
+
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            pass
+
+
+def test_proxy_identity_probe_requires_entroly_service():
+    server = HTTPServer(("127.0.0.1", 0), _HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+
+    try:
+        assert cli._is_entroly_proxy_running(port) is False
+        _HealthHandler.payload = b'{"status":"ok","service":"entroly-proxy"}'
+        assert cli._is_entroly_proxy_running(port) is True
+    finally:
+        _HealthHandler.payload = b'{"status":"ok"}'
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
 
 
 @pytest.fixture

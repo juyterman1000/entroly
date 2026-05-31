@@ -13,11 +13,15 @@ from entroly.verifiers.repair_loop import forge_loop, SimpleContextStore
 from entroly.verifiers.symbol_resolution import SymbolManifest
 from entroly.verifiers.semantic_entropy import prove_verify
 
+_RUN_LIVE_TESTS = (
+    os.environ.get("ENTROLY_RUN_LIVE_TESTS") == "1" or __name__ == "__main__"
+) and bool(os.environ.get("OPENAI_API_KEY"))
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
+    not _RUN_LIVE_TESTS,
+    reason="set ENTROLY_RUN_LIVE_TESTS=1 and OPENAI_API_KEY to run live evals",
 )
 
-client = OpenAI()
+client = OpenAI() if _RUN_LIVE_TESTS else None
 MODEL = "gpt-4o-mini"
 PASS = "[PASS]"
 FAIL = "[FAIL]"
@@ -25,6 +29,7 @@ INFO = "[INFO]"
 results_log = []
 
 def llm(system: str, user: str) -> str:
+    assert client is not None
     r = client.chat.completions.create(
         model=MODEL, temperature=0.7, max_tokens=800,
         messages=[{"role":"system","content":system},{"role":"user","content":user}])

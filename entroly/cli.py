@@ -75,90 +75,27 @@ _FIRST_RUN_MARKER = _ENTROLY_DIR / ".welcome_shown"
 
 
 def _free_port(port: int) -> bool:
-    """Kill any stale entroly process occupying *port*. Returns True if the port is now free."""
-    import signal
+    """Return whether *port* is available without terminating its current owner."""
     import socket
-    import time as _time
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.3)
-        if s.connect_ex(("127.0.0.1", port)) != 0:
-            return True  # port is free
-
-    killed = False
-
-    # ── POSIX: use fuser ─────────────────────────────────────────────────
-    if os.name != "nt":
-        try:
-            result = subprocess.run(
-                ["fuser", f"{port}/tcp"],
-                capture_output=True, text=True, timeout=3,
-            )
-            pids = result.stdout.strip().split()
-            for pid_str in pids:
-                pid_str = pid_str.strip()
-                if pid_str.isdigit():
-                    pid = int(pid_str)
-                    if pid == os.getpid():
-                        continue
-                    try:
-                        os.kill(pid, signal.SIGTERM)
-                        killed = True
-                    except ProcessLookupError:
-                        pass
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-
-        if killed:
-            _time.sleep(0.3)
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.3)
-                if s.connect_ex(("127.0.0.1", port)) != 0:
-                    return True
-            try:
-                subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True, timeout=3)
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
-            _time.sleep(0.3)
-
-    # ── Windows: use netstat + taskkill ──────────────────────────────────
-    else:
-        try:
-            result = subprocess.run(
-                ["netstat", "-ano"],
-                capture_output=True, text=True, timeout=5,
-            )
-            for line in result.stdout.splitlines():
-                # Look for "  TCP  0.0.0.0:<port>  ...  LISTENING  <PID>"
-                parts = line.split()
-                if len(parts) < 5:
-                    continue
-                if f":{port}" not in parts[1]:
-                    continue
-                if "LISTENING" not in line.upper():
-                    continue
-                pid_str = parts[-1]
-                if pid_str.isdigit():
-                    pid = int(pid_str)
-                    if pid == os.getpid():
-                        continue
-                    try:
-                        subprocess.run(
-                            ["taskkill", "/F", "/PID", str(pid)],
-                            capture_output=True, timeout=3,
-                        )
-                        killed = True
-                    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                        pass
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-
-        if killed:
-            _time.sleep(0.5)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.3)
         return s.connect_ex(("127.0.0.1", port)) != 0
+
+
+def _is_entroly_service_running(url: str, expected_service: str) -> bool:
+    """Return whether *url* exposes the expected Entroly health identity."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            data = json.loads(resp.read())
+        return resp.status == 200 and data.get("status") == "ok" and data.get("service") == expected_service
+    except Exception:
+        return False
+
+
+def _is_entroly_proxy_running(port: int) -> bool:
+    return _is_entroly_service_running(f"http://127.0.0.1:{port}/health", "entroly-proxy")
 
 
 def _check_first_run() -> None:
@@ -538,9 +475,9 @@ def cmd_dashboard(args):
     # Run an optimize to populate all engine subsystems
     engine.optimize_context(token_budget=128000, query="project overview")
 
-    # Free dashboard port from any stale process
+    # Refuse to interfere with an existing service on the dashboard port.
     if not _free_port(args.port):
-        print(f"  {C.RED}Port {args.port} is in use and could not be freed.{C.RESET}")
+        print(f"  {C.RED}Port {args.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly dashboard --port <other-port>{C.RESET}")
         return
 
@@ -768,12 +705,15 @@ def cmd_proxy(args):
     # Run a warm-up optimize to populate all engine subsystems
     engine.optimize_context(token_budget=128000, query="project overview")
 
-    # Free ports from any stale entroly processes
+    # Refuse to interfere with existing services on the proxy or dashboard ports.
     if not _free_port(config.port):
-        print(f"  {C.RED}Port {config.port} is in use and could not be freed.{C.RESET}")
+        print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly proxy --port <other-port>{C.RESET}")
         return
-    _free_port(9378)  # dashboard port
+    if not _free_port(9378):
+        print(f"  {C.RED}Dashboard port 9378 is already in use.{C.RESET}")
+        print(f"  {C.GRAY}Stop the existing service before starting `entroly proxy`.{C.RESET}")
+        return
 
     # Upstream connectivity check — fast-fail if the LLM API is unreachable
     _check_upstream(config)
@@ -919,21 +859,23 @@ def cmd_status(args):
 
     port = args.port or 9377
     endpoints = [
-        ("Proxy", f"http://127.0.0.1:{port}/health"),
-        ("Dashboard", "http://127.0.0.1:9378/health"),
+        ("Proxy", f"http://127.0.0.1:{port}/health", "entroly-proxy"),
+        ("Dashboard", "http://127.0.0.1:9378/health", "entroly-dashboard"),
     ]
 
-    for name, url in endpoints:
-        try:
-            resp = urllib.request.urlopen(url, timeout=2)
-            data = json.loads(resp.read())
-            status_text = data.get("status", "up")
-            print(f"  {C.GREEN}[OK]{C.RESET} {name}: {url} -- {status_text}")
-        except Exception:
+    proxy_running = False
+    for name, url, expected_service in endpoints:
+        if _is_entroly_service_running(url, expected_service):
+            print(f"  {C.GREEN}[OK]{C.RESET} {name}: {url} -- ok")
+            if name == "Proxy":
+                proxy_running = True
+        else:
             print(f"  {C.RED}[--]{C.RESET} {name}: not running")
 
     # Show stats if proxy is up
     try:
+        if not proxy_running:
+            raise RuntimeError("proxy not running")
         resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/stats", timeout=2)
         stats = json.loads(resp.read())
         total = stats.get("requests_total", 0)
@@ -1756,13 +1698,13 @@ def _wrap_via_print(spec: dict, port: int) -> None:
 
 def _start_proxy_if_needed(port: int) -> bool:
     """Start the proxy daemon if it isn't already listening on `port`."""
-    import socket as _socket
-    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-        s.settimeout(0.3)
-        running = s.connect_ex(("127.0.0.1", port)) == 0
-    if running:
+    if _is_entroly_proxy_running(port):
         print(f"  {C.GREEN}Proxy already running at http://localhost:{port}{C.RESET}")
         return True
+    if not _free_port(port):
+        print(f"  {C.RED}Port {port} is occupied by a non-Entroly service.{C.RESET}")
+        print(f"  {C.GRAY}Choose another port with: entroly wrap <agent> --port <other-port>{C.RESET}\n")
+        return False
 
     print(f"  {C.GRAY}Starting proxy on port {port}...{C.RESET}")
     proxy_cmd = [sys.executable, "-m", "entroly.cli", "proxy", "--port", str(port)]
@@ -1772,11 +1714,9 @@ def _start_proxy_if_needed(port: int) -> bool:
     # uvicorn binds the port — on machines with large indexes this can take 10–15s.
     for _ in range(150):
         _time.sleep(0.2)
-        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-            s.settimeout(0.3)
-            if s.connect_ex(("127.0.0.1", port)) == 0:
-                print(f"  {C.GREEN}Proxy running at http://localhost:{port}{C.RESET}")
-                return True
+        if _is_entroly_proxy_running(port):
+            print(f"  {C.GREEN}Proxy running at http://localhost:{port}{C.RESET}")
+            return True
     print(f"  {C.RED}Proxy failed to start on port {port} within 30s.{C.RESET}")
     print(f"  {C.GRAY}Try: entroly proxy --port {port} in another terminal to see the error.{C.RESET}\n")
     return False
@@ -2261,11 +2201,15 @@ def cmd_go(args):
     # Warm up engine
     engine.optimize_context(token_budget=128000, query="project overview")
 
-    # Free ports from any stale entroly processes
+    # Refuse to interfere with existing services on the proxy or dashboard ports.
     if not _free_port(config.port):
-        print(f"  {C.RED}Port {config.port} is in use and could not be freed.{C.RESET}")
+        print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
+        print(f"  {C.GRAY}Try: entroly go --port <other-port>{C.RESET}")
         return
-    _free_port(9378)  # dashboard port
+    if not _free_port(9378):
+        print(f"  {C.RED}Dashboard port 9378 is already in use.{C.RESET}")
+        print(f"  {C.GRAY}Stop the existing service before starting `entroly go`.{C.RESET}")
+        return
 
     # Start proxy + dashboard
     app = create_proxy_app(engine, config)
@@ -2796,15 +2740,10 @@ def cmd_doctor(args):
     # 4. Check proxy reachability
     checks_total += 1
     port = getattr(args, "port", None) or 9377
-    try:
-        import urllib.request
-        resp = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=2)
-        if resp.status == 200:
-            print(f"  {C.GREEN}+{C.RESET} Proxy reachable at localhost:{port}")
-            checks_passed += 1
-        else:
-            print(f"  {C.YELLOW}!{C.RESET} Proxy responded with status {resp.status}")
-    except Exception:
+    if _is_entroly_proxy_running(port):
+        print(f"  {C.GREEN}+{C.RESET} Proxy reachable at localhost:{port}")
+        checks_passed += 1
+    else:
         print(f"  {C.GRAY}-{C.RESET} Proxy not running (localhost:{port})")
         checks_passed += 1  # not running is OK for doctor
 

@@ -57,7 +57,7 @@ def _registered_subcommands() -> set[str]:
 
 
 _CMD_PATTERN = re.compile(
-    r"\bentroly\s+([a-z][a-z0-9\-]*)(?=[\s`<\-])"
+    r"(?<![/\\])\bentroly\s+([a-z][a-z0-9\-]*)(?=[\s`<\-])"
 )
 
 # Token strings that look like commands but aren't (verbs in prose etc.).
