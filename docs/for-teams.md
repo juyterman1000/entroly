@@ -1,8 +1,8 @@
-# Entroly for Engineering Leaders
+# Entroly for Teams — the business case
 
 **Cut your team's AI coding bill 70%+ — locally, with proof that accuracy didn't drop.**
 
-A one-page brief for the people who own the budget, the architecture, and the risk. Devs adopt Entroly bottom-up (a 30-second proxy or one Rust binary); this page is the part you take to finance, security, and your VP.
+A one-page brief for whoever owns the budget, the architecture, and the risk. Devs adopt Entroly bottom-up (a 30-second proxy or one Rust binary); this is the page they forward up the chain to get it greenlit — the spend, the security posture, and the deployment story in one place.
 
 ---
 
@@ -59,12 +59,11 @@ monthly_savings ≈ monthly_input_token_spend × input_token_reduction
 | **Python SDK** | `from entroly import compress` inside your own pipeline. |
 | **Single Rust binary** (`entroly-rs`) | No Python runtime; frictionless / locked-down hosts. |
 
-## Per-role summary
+## Why it clears the bar
 
-- **CIO** — recurring AI spend down, measurable and exportable; local-first + Apache-2.0 + no telemetry clears the privacy/procurement bar.
-- **CTO** — provider-neutral layer (no single-vendor lock-in), deterministic, local compute; complements your stack rather than replacing it.
-- **VP Eng** — drop-in (30-sec proxy / one command), 30+ agent integrations, no workflow change; impact is visible on the dashboard from day one.
-- **Devs** — install once, agents get a broader project map in a smaller context; nothing to re-learn.
+- **Spend** — recurring AI cost down, measured locally and exportable to finance. No "trust us" — a receipt.
+- **Risk** — local-first, provider-neutral (no single-vendor lock-in), deterministic, Apache-2.0, no telemetry. Clears privacy and procurement review.
+- **Adoption** — drop-in (30-second proxy or one command), 30+ agent integrations, no workflow change. Impact is visible on the dashboard from day one.
 
 ## Evaluate it
 
