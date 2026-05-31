@@ -59,6 +59,15 @@ class Mock(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(gz)
 
+    def do_GET(self):
+        recv["get:" + self.path] = "GET"
+        resp = json.dumps({"ok": True, "method": "GET"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
+
     def log_message(self, *a):
         pass
 
@@ -117,6 +126,17 @@ def main():
         })
         assert recv[gpath] < len(gp), "gemini must compress"
         print(f"gemini: {len(gp)} -> {recv[gpath]} OK")
+
+        # Method preservation — a GET must forward as GET, not become a POST.
+        gr = urllib.request.urlopen(
+            urllib.request.Request(
+                f"http://127.0.0.1:{PROXY}/v1/models", headers={"x-api-key": "t"}
+            ),
+            timeout=10,
+        )
+        assert json.loads(gr.read().decode()).get("method") == "GET", "GET must stay GET"
+        assert "get:/v1/models" in recv, "upstream must receive a GET"
+        print("method preservation: GET /v1/models forwarded as GET OK")
 
         # SSE streaming passthrough
         spayload = json.dumps({"stream": True, "messages": [{"role": "user", "content": big}]}).encode()

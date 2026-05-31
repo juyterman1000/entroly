@@ -298,13 +298,28 @@ pub fn run(port: u16, upstream: &str, total_budget: usize, cache_aligned: bool) 
     eprintln!("  Anthropic/OpenAI/Gemini auto-detected by path; point your client's base URL here.");
 
     let upstream: Arc<str> = Arc::from(upstream);
+    // Shared agent (connection pooling) with a connect timeout so an
+    // unreachable upstream can never hang a worker forever. No read timeout —
+    // streaming (SSE) responses are long-lived by design.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(10))
+        .build();
     let mut handles = Vec::new();
     for _ in 0..workers {
         let server = Arc::clone(&server);
         let upstream = Arc::clone(&upstream);
+        let agent = agent.clone();
         handles.push(std::thread::spawn(move || {
             for req in server.incoming_requests() {
-                handle(req, &upstream, total_budget, cache_aligned);
+                // Per-request panic isolation: a malformed request can never
+                // kill the worker (which would permanently shrink the pool).
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    handle(&agent, req, &upstream, total_budget, cache_aligned)
+                }))
+                .is_err()
+                {
+                    eprintln!("entroly-rs: recovered from a request panic");
+                }
             }
         }));
     }
@@ -315,11 +330,18 @@ pub fn run(port: u16, upstream: &str, total_budget: usize, cache_aligned: bool) 
 }
 
 #[cfg(feature = "proxy")]
-fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize, cache_aligned: bool) {
+fn handle(
+    agent: &ureq::Agent,
+    mut req: tiny_http::Request,
+    upstream: &str,
+    total_budget: usize,
+    cache_aligned: bool,
+) {
     use std::io::Read;
-    use tiny_http::{Header, Method, Response, StatusCode};
+    use tiny_http::{Header, Response, StatusCode};
 
-    let is_get = *req.method() == Method::Get;
+    let method = req.method().as_str().to_uppercase();
+    let is_get = method == "GET";
     let url = req.url().to_string();
     let fwd_headers: Vec<(String, String)> = req
         .headers()
@@ -353,12 +375,19 @@ fn handle(mut req: tiny_http::Request, upstream: &str, total_budget: usize, cach
     }
 
     let target = format!("{}{}", upstream.trim_end_matches('/'), url);
-    let mut up = ureq::post(&target);
+    // Preserve the client's HTTP method (GET /v1/models must not become a POST).
+    let mut up = agent.request(&method, &target);
     for (k, val) in &fwd_headers {
         up = up.set(k, val);
     }
 
-    let resp = match up.send_string(&new_body) {
+    // Bodyless methods (GET/HEAD/DELETE) use .call(); methods with a body send it.
+    let sent = if new_body.is_empty() {
+        up.call()
+    } else {
+        up.send_string(&new_body)
+    };
+    let resp = match sent {
         Ok(r) | Err(ureq::Error::Status(_, r)) => r,
         Err(e) => {
             let _ = req.respond(
