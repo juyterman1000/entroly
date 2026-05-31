@@ -883,6 +883,37 @@ Python is the reference CLI/runtime. The Node.js WASM package exposes the Rust e
 | agentskills.io export | Yes | Yes |
 ---
 
+## Single Binary — `entroly-rs` (no Python)
+
+A standalone, zero-dependency Rust binary that runs the context-compressing proxy with **no Python runtime** — the frictionless drop-in for cutting input tokens. It auto-detects **Anthropic, OpenAI, and Gemini** by request path, compresses the request context, and streams responses straight back. Compression is **cache-aligned** by default (each field compressed independently so unchanged prefixes stay byte-stable → the provider's prefix cache keeps hitting), with concurrency, gzip-correct streaming, an upstream connect timeout, and per-request panic isolation.
+
+> **Scope:** this is the lightweight proxy slice. For the full product — WITNESS hallucination guard, RAVS model routing, the learning engine, vault, MCP tools, dashboard — use the Python package: `pip install entroly[full]`.
+
+**Build & run (works today):**
+
+```bash
+git clone https://github.com/juyterman1000/entroly
+cd entroly/entroly-core
+cargo build --release --bin entroly-rs --features proxy
+
+# Point your agent at it (Anthropic shown; OpenAI/Gemini auto-detected too):
+./target/release/entroly-rs proxy --upstream https://api.anthropic.com
+ANTHROPIC_BASE_URL=http://localhost:9377  your-agent
+```
+
+**Compress a file or stdin (no proxy, no Python):**
+
+```bash
+./target/release/entroly-rs compress --budget 4000 path/to/file
+cat path/to/file | ./target/release/entroly-rs compress --budget 4000
+```
+
+**Proxy flags:** `--port` (default 9377) · `--upstream` · `--budget` (default 4000) · `--no-cache-align` (use a single global token budget instead of the prefix-stable default).
+
+> Prebuilt binaries and a one-line `curl | sh` installer ship with the next tagged release (`scripts/proxy_e2e.py` and `install.sh` are already in the repo).
+
+---
+
 ## Deep Dive
 
 Architecture, Rust modules, 3-resolution compression, provenance model, RAG comparison, CLI reference, Python SDK, LangChain integration → **[docs/DETAILS.md](docs/DETAILS.md)**
