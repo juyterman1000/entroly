@@ -72,7 +72,7 @@
   <a href="#benchmarks"><b>Benchmarks</b></a> ·
   <a href="#works-with-your-stack"><b>37 wrap targets</b></a> ·
   <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
-  <a href="docs/for-teams.md"><b>For teams / leaders</b></a>
+  <a href="docs/for-teams.md"><b>For teams</b></a>
 </p>
 
 <p align="center">
