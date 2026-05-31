@@ -531,6 +531,17 @@ compressed = compress(api_response, budget=2000)
 messages = compress_messages(messages, budget=30000)
 ```
 
+Or run the **single binary** — no Python runtime at all (zero-dependency Rust proxy, Anthropic/OpenAI/Gemini auto-detected, cache-aligned so the provider prefix cache keeps hitting):
+
+```bash
+git clone https://github.com/juyterman1000/entroly && cd entroly/entroly-core
+cargo build --release --bin entroly-rs --features proxy
+./target/release/entroly-rs proxy --upstream https://api.anthropic.com
+ANTHROPIC_BASE_URL=http://localhost:9377  your-agent
+```
+
+> The binary is the lightweight proxy slice. For the **full product** — WITNESS hallucination guard, RAVS model routing, the learning engine, vault, MCP tools, dashboard — use `pip install entroly[full]`. (Prebuilt binaries + `curl | sh` ship with the next tagged release; see [Single Binary](#single-binary--entroly-rs-no-python).)
+
 **Here's what entroly actually does, in plain English:**
 
 1. **Reads your codebase locally** — every supported source file, config file, and document that passes the file filters.
