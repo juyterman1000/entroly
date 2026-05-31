@@ -50,6 +50,13 @@
 </p>
 
 <p align="center">
+  <sub>
+    <strong>Local-first</strong> — your code is indexed & selected on-device, never sent anywhere for analysis · <strong>Apache-2.0</strong> · <strong>no telemetry by default</strong><br/>
+    Evaluating for a team? → <a href="docs/for-teams.md"><b>ROI, security & deployment one-pager</b></a>
+  </sub>
+</p>
+
+<p align="center">
   <a href="https://huggingface.co/spaces/entroly/entroly-context-compression"><img src="https://img.shields.io/badge/▶_Try_It_Live-No_Install_Needed-FF4B4B?style=for-the-badge&logo=huggingface&logoColor=white" height="42" alt="Try the live demo on Hugging Face"></a>&nbsp;&nbsp;
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><img src="https://img.shields.io/badge/See_The_Dashboard-Live-2EA44F?style=for-the-badge" height="42" alt="See the live dashboard"></a>
 </p>
@@ -64,7 +71,8 @@
   <a href="cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="#benchmarks"><b>Benchmarks</b></a> ·
   <a href="#works-with-your-stack"><b>37 wrap targets</b></a> ·
-  <a href="docs/DETAILS.md"><b>Architecture</b></a>
+  <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
+  <a href="docs/for-teams.md"><b>For teams / leaders</b></a>
 </p>
 
 <p align="center">
