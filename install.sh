@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/juyterman1000/entroly/main/install.sh | sh
 #
-# Zero dependencies, no Python. For Windows, download the .zip from the
+# Standalone binary, no Python runtime. For Windows, download the .zip from the
 # GitHub Releases page. For platforms without a prebuilt binary, build from
 # source:
 #   git clone --depth 1 https://github.com/juyterman1000/entroly

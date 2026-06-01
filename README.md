@@ -539,7 +539,7 @@ compressed = compress(api_response, budget=2000)
 messages = compress_messages(messages, budget=30000)
 ```
 
-Or run the **single binary** — no Python runtime at all (zero-dependency Rust proxy, Anthropic/OpenAI/Gemini auto-detected, cache-aligned so the provider prefix cache keeps hitting):
+Or run the **single binary** — no Python runtime at all (standalone Rust proxy, Anthropic/OpenAI/Gemini auto-detected, cache-aligned so the provider prefix cache keeps hitting):
 
 ```bash
 git clone https://github.com/juyterman1000/entroly && cd entroly/entroly-core
@@ -904,7 +904,7 @@ Python is the reference CLI/runtime. The Node.js WASM package exposes the Rust e
 
 ## Single Binary — `entroly-rs` (no Python)
 
-A standalone, zero-dependency Rust binary that runs the context-compressing proxy with **no Python runtime** — the frictionless drop-in for cutting input tokens. It auto-detects **Anthropic, OpenAI, and Gemini** by request path, compresses the request context, and streams responses straight back. Compression is **cache-aligned** by default (each field compressed independently so unchanged prefixes stay byte-stable → the provider's prefix cache keeps hitting), with concurrency, gzip-correct streaming, an upstream connect timeout, and per-request panic isolation.
+A standalone Rust binary that runs the context-compressing proxy with **no Python runtime** — the frictionless drop-in for cutting input tokens. It auto-detects **Anthropic, OpenAI, and Gemini** by request path, compresses the request context, and streams responses straight back. Compression is **cache-aligned** by default (each field compressed independently so unchanged prefixes stay byte-stable → the provider's prefix cache keeps hitting), with concurrency, gzip-correct streaming, an upstream connect timeout, and per-request panic isolation.
 
 > **Scope:** this is the lightweight proxy slice. For the full product — WITNESS hallucination guard, RAVS model routing, the learning engine, vault, MCP tools, dashboard — use the Python package: `pip install entroly[full]`.
 

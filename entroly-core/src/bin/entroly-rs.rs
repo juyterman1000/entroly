@@ -1,4 +1,4 @@
-//! `entroly-rs` — the standalone, zero-dependency single-binary distribution.
+//! `entroly-rs` — the standalone single-binary distribution.
 //!
 //! Phase 1: the core CLI (context compression) wired directly to the pure-Rust
 //! `entroly_core` engine — no Python runtime required. The Python (`pip`) and
@@ -27,7 +27,7 @@ fn main() {
 fn print_help() {
     println!("entroly-rs {}", env!("CARGO_PKG_VERSION"));
     println!();
-    println!("Single-binary context compressor — zero dependencies, no Python runtime.");
+    println!("Single-binary context compressor — no Python runtime required.");
     println!();
     println!("USAGE:");
     println!("  entroly-rs compress [--budget N] [FILE]   compress FILE (or stdin) to ~N tokens");
