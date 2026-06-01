@@ -69,7 +69,7 @@ class EntrolyDaemonState:
     The dashboard polls it via /api/control/status.
     """
     status: str = "stopped"  # stopped | starting | running | stopping
-    version: str = "1.0.12"
+    version: str = "1.0.13"
     started_at: float | None = None
 
     # Feature flags
@@ -402,8 +402,9 @@ class EntrolyDaemon:
                 server.run()
             except Exception as e:
                 self.state.proxy.error = str(e)
-                self.state.proxy.running = False
                 logger.exception("Proxy failed: %s", e)
+            finally:
+                self.state.proxy.running = False
 
         t = threading.Thread(target=_run_proxy, daemon=True, name="entroly-proxy")
         t.start()
@@ -444,8 +445,9 @@ class EntrolyDaemon:
                     mcp.run()
             except Exception as e:
                 self.state.mcp.error = str(e)
-                self.state.mcp.running = False
                 logger.exception("MCP server failed: %s", e)
+            finally:
+                self.state.mcp.running = False
 
         t = threading.Thread(target=_run_mcp, daemon=True, name="entroly-mcp")
         t.start()

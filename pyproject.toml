@@ -1,10 +1,13 @@
 [build-system]
-requires = ["hatchling"]
+# Pin: hatchling >=1.28 emits Metadata-Version 2.5, which PyPI's upload
+# validator (twine/pkginfo in gh-action-pypi-publish) rejects as invalid.
+# 1.27.x emits the accepted 2.4 (PEP 639 license-expression metadata).
+requires = ["hatchling>=1.27,<1.28"]
 build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.12"
+version = "1.0.13"
 
 description = "Local proxy that cuts your Claude / OpenAI / Gemini bill 70%+. Drop-in for Cursor, Claude Code, Codex, Aider — 30 seconds, no code changes."
 readme = "README.md"

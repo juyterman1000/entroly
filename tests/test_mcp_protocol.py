@@ -36,22 +36,39 @@ def _send_jsonrpc(proc, method, params=None, id=1):
         pass  # Server may have already exited
 
 
-def _read_response(proc, timeout=10):
+def _read_response(proc, timeout=30):
     """Read a newline-delimited JSON-RPC response.
 
     Uses a background thread to prevent blocking forever if the server
     doesn't respond (the previous implementation's readline() could block
     indefinitely in the kernel, making the Python-level timeout useless).
+
+    Reads lines until a JSON-RPC message arrives, skipping any non-JSON
+    output (e.g. a startup banner that leaked to stdout). The longer default
+    timeout absorbs slow cold-starts on loaded CI runners: the server's
+    import graph plus Rust-engine load can take well over 10s there, even
+    though it responds in ~3s on a warm machine.
     """
     result = [None]
 
     def _reader():
         try:
-            line = proc.stdout.readline()
-            if line:
-                result[0] = json.loads(line)
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    return  # EOF — server exited
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    continue  # non-JSON line (banner/log) — keep reading
+                if isinstance(msg, dict) and ("result" in msg or "error" in msg):
+                    result[0] = msg
+                    return
         except Exception:
-            pass  # Any parse/read error → return None
+            pass  # Any read error → return None
 
     t = threading.Thread(target=_reader, daemon=True)
     t.start()
