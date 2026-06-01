@@ -20,6 +20,7 @@ entroly-wasm/pkg/** linguist-generated
 
 # Shell files are install/test helpers, not implementation language.
 daemon.sh text eol=lf
+install.sh text eol=lf
 scripts/*.sh linguist-vendored
 bench/*.sh linguist-vendored
 .githooks/** linguist-vendored

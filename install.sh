@@ -5,8 +5,9 @@
 #
 # Zero dependencies, no Python. For Windows, download the .zip from the
 # GitHub Releases page. For platforms without a prebuilt binary, build from
-# source:  cargo install --git https://github.com/juyterman1000/entroly \
-#            --bin entroly-rs --features proxy
+# source:
+#   git clone --depth 1 https://github.com/juyterman1000/entroly
+#   cargo install --path entroly/entroly-core --bin entroly-rs --features proxy
 set -eu
 
 REPO="juyterman1000/entroly"
@@ -37,6 +38,7 @@ esac
 
 asset="${BIN}-${target}.tar.gz"
 url="https://github.com/${REPO}/releases/latest/download/${asset}"
+checksum_url="${url}.sha256"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -45,6 +47,30 @@ echo "Downloading ${asset} ..."
 if ! curl -fsSL "$url" -o "${tmp}/${asset}"; then
   echo "entroly-rs: download failed ($url). Check the latest release has this asset."
   exit 1
+fi
+if curl -fsSL "$checksum_url" -o "${tmp}/${asset}.sha256" 2>/dev/null; then
+  expected="$(awk 'NR == 1 { print $1 }' "${tmp}/${asset}.sha256")"
+  if [ -z "$expected" ]; then
+    echo "entroly-rs: checksum asset is malformed (${checksum_url})."
+    exit 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "${tmp}/${asset}" | awk '{ print $1 }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "${tmp}/${asset}" | awk '{ print $1 }')"
+  else
+    actual=""
+    echo "entroly-rs: warning: SHA-256 tool unavailable; skipping checksum verification."
+  fi
+  if [ -n "$actual" ] && [ "$actual" != "$expected" ]; then
+    echo "entroly-rs: checksum verification failed for ${asset}."
+    exit 1
+  fi
+  if [ -n "$actual" ]; then
+    echo "Verified SHA-256 checksum."
+  fi
+else
+  echo "entroly-rs: warning: this release has no checksum asset; continuing with HTTPS download."
 fi
 tar -xzf "${tmp}/${asset}" -C "$tmp"
 

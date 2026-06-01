@@ -59,7 +59,13 @@ fn cmd_compress(args: &[String]) {
                     }
                 }
             }
-            other if !other.starts_with('-') => file = Some(other),
+            other if !other.starts_with('-') => {
+                if file.is_some() {
+                    eprintln!("entroly-rs compress: expected at most one input file");
+                    std::process::exit(64);
+                }
+                file = Some(other);
+            }
             other => {
                 eprintln!("entroly-rs compress: unknown flag '{other}'");
                 std::process::exit(64);

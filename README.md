@@ -548,7 +548,7 @@ cargo build --release --bin entroly-rs --features proxy
 ANTHROPIC_BASE_URL=http://localhost:9377  your-agent
 ```
 
-> The binary is the lightweight proxy slice. For the **full product** — WITNESS hallucination guard, RAVS model routing, the learning engine, vault, MCP tools, dashboard — use `pip install entroly[full]`. (Prebuilt binaries + `curl | sh` ship with the next tagged release; see [Single Binary](#single-binary--entroly-rs-no-python).)
+> The binary is the lightweight proxy slice. For the **full product** — WITNESS hallucination guard, RAVS model routing, the learning engine, vault, MCP tools, dashboard — use `pip install entroly[full]`. Prebuilt binaries and install instructions are in [Single Binary](#single-binary--entroly-rs-no-python).
 
 **Here's what entroly actually does, in plain English:**
 
@@ -920,6 +920,15 @@ cargo build --release --bin entroly-rs --features proxy
 ANTHROPIC_BASE_URL=http://localhost:9377  your-agent
 ```
 
+**Install a tagged prebuilt binary:**
+
+```bash
+# Linux x64 or macOS:
+curl -fsSL https://raw.githubusercontent.com/juyterman1000/entroly/main/install.sh | sh
+```
+
+Windows x64 users can download the `.zip` from [GitHub Releases](https://github.com/juyterman1000/entroly/releases). Platforms without a published archive can use the source build above. Release archives include SHA-256 checksum assets from the next tagged release onward; the installer verifies them when present.
+
 **Compress a file or stdin (no proxy, no Python):**
 
 ```bash
@@ -928,8 +937,6 @@ cat path/to/file | ./target/release/entroly-rs compress --budget 4000
 ```
 
 **Proxy flags:** `--port` (default 9377) · `--upstream` · `--budget` (default 4000) · `--no-cache-align` (use a single global token budget instead of the prefix-stable default).
-
-> Prebuilt binaries and a one-line `curl | sh` installer ship with the next tagged release (`scripts/proxy_e2e.py` and `install.sh` are already in the repo).
 
 ---
 

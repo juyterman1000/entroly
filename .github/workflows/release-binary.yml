@@ -13,6 +13,11 @@ on:
     tags:
       - 'entroly-v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag to attach binaries to
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -26,7 +31,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: "" }
-          - { os: macos-13,      target: x86_64-apple-darwin,      ext: "" }
+          - { os: macos-15-intel, target: x86_64-apple-darwin,     ext: "" }
           - { os: macos-14,      target: aarch64-apple-darwin,     ext: "" }
           - { os: windows-latest, target: x86_64-pc-windows-msvc,  ext: ".exe" }
     steps:
@@ -48,6 +53,9 @@ jobs:
         working-directory: entroly-core
         run: cargo build --release --bin entroly-rs --features proxy --target ${{ matrix.target }}
 
+      - name: Smoke test entroly-rs CLI
+        run: python scripts/binary_cli_smoke.py "entroly-core/target/${{ matrix.target }}/release/entroly-rs${{ matrix.ext }}"
+
       - name: Package
         shell: bash
         run: |
@@ -55,13 +63,23 @@ jobs:
           name="entroly-rs-${{ matrix.target }}"
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "dist/${name}.zip" "$bin"
+            cp "$bin" "dist/entroly-rs.exe"
+            (cd dist && 7z a "${name}.zip" "entroly-rs.exe")
+            rm "dist/entroly-rs.exe"
+            archive="dist/${name}.zip"
           else
             tar -czf "dist/${name}.tar.gz" -C "entroly-core/target/${{ matrix.target }}/release" "entroly-rs"
+            archive="dist/${name}.tar.gz"
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$archive" > "${archive}.sha256"
+          else
+            shasum -a 256 "$archive" > "${archive}.sha256"
           fi
           ls -la dist
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           files: dist/*

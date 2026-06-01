@@ -109,6 +109,9 @@ jobs:
         working-directory: entroly-core
         run: cargo build --release --bin entroly-rs --features proxy
 
+      - name: CLI smoke test
+        run: python scripts/binary_cli_smoke.py entroly-core/target/release/entroly-rs
+
       - name: Proxy end-to-end (compress + headers + SSE + concurrency)
         run: python scripts/proxy_e2e.py entroly-core/target/release/entroly-rs
 
