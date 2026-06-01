@@ -663,6 +663,223 @@
       opacity: 1;
       transform: translateY(0);
     }
+
+    /* ===== Levers showcase ===== */
+    .section-header p {
+      color: var(--muted);
+      max-width: 720px;
+      margin-top: 16px;
+      font-size: 1.05rem;
+    }
+
+    .lever-highlights {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 56px;
+    }
+
+    @media(max-width: 900px) {
+      .lever-highlights { grid-template-columns: 1fr; }
+    }
+
+    .lever-hi {
+      position: relative;
+      border-radius: 20px;
+      padding: 32px;
+      background: linear-gradient(160deg, rgba(129, 140, 248, 0.10), rgba(192, 132, 252, 0.04));
+      border: 1px solid rgba(129, 140, 248, 0.22);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+    }
+
+    .lever-hi::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 3px;
+      background: linear-gradient(to right, var(--accent), var(--purple));
+    }
+
+    .lever-hi .kicker {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .lever-hi h3 { font-size: 20px; margin-bottom: 10px; }
+    .lever-hi p { font-size: 14px; color: var(--muted); }
+
+    .lever-hi .metric {
+      margin-top: 18px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 28px;
+      background: linear-gradient(to right, var(--accent), var(--purple));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .lever-hi .src {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .lever-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+      gap: 16px;
+    }
+
+    .lever {
+      position: relative;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      transition: border-color .25s, transform .25s, background .25s;
+    }
+
+    .lever:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      background: rgba(129, 140, 248, 0.05);
+    }
+
+    .lever .num {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 13px;
+      color: var(--accent);
+      opacity: .7;
+      margin-bottom: 8px;
+    }
+
+    .lever h4 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .lever p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+    .lever .src {
+      display: inline-block;
+      margin-top: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--green);
+      opacity: .85;
+    }
+
+    .compose-note {
+      margin-top: 40px;
+      padding: 28px 32px;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .compose-note b { color: var(--text); }
+
+    .vs-band {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 24px;
+      margin: 48px 0 8px;
+    }
+
+    @media(max-width: 768px) {
+      .vs-band { grid-template-columns: 1fr; }
+      .vs-x { display: none; }
+    }
+
+    .vs-cell {
+      text-align: center;
+      padding: 28px 24px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .vs-cell .big {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 52px;
+      line-height: 1;
+    }
+
+    .vs-cell.them .big { color: var(--muted); }
+
+    .vs-cell.us {
+      border-color: rgba(129, 140, 248, 0.3);
+    }
+
+    .vs-cell.us .big {
+      background: linear-gradient(to right, var(--accent), var(--purple));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .vs-cell .cap { font-size: 13px; color: var(--muted); margin-top: 12px; }
+    .vs-x { font-size: 20px; color: var(--muted); font-weight: 700; text-align: center; }
+
+    /* ===== Benchmarks ===== */
+    .bench-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+
+    table.bench {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 640px;
+    }
+
+    table.bench th,
+    table.bench td {
+      padding: 14px 18px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    table.bench th {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    table.bench td.num { font-family: 'JetBrains Mono', monospace; }
+    table.bench td .ok { color: var(--green); font-weight: 600; }
+    table.bench tr:last-child td { border-bottom: 0; }
+    table.bench a { color: var(--accent); text-decoration: none; }
+    table.bench a:hover { text-decoration: underline; }
+
+    .bench-foot { margin-top: 16px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+
+    .repro {
+      margin-top: 28px;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 22px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+    }
+
+    .repro .c { color: var(--green); }
+    .repro .o { color: var(--muted); display: block; margin-top: 10px; font-size: 12.5px; line-height: 1.6; }
   </style>
 </head>
 
@@ -678,7 +895,8 @@
       </div>
       <div class="links">
         <a href="#why">Why Entroly</a>
-        <a href="#how">How it works</a>
+        <a href="#levers">19 Levers</a>
+        <a href="#benchmarks">Benchmarks</a>
         <a href="https://github.com/juyterman1000/entroly">GitHub</a>
         <a href="#install" class="btn btn-primary" style="padding: 6px 16px;">Install</a>
       </div>
@@ -704,6 +922,11 @@
       Works with <b>Cursor</b> · <b>Claude Code</b> · <b>Windsurf</b> · <b>Cline</b>
     </div>
 
+    <div style="margin-top: 12px; font-size: 13px; color: var(--muted); max-width: 620px;">
+      Then the <b style="color:var(--accent)">Cache Aligner</b> holds your prefix stable so provider caches actually hit —
+      <b style="color:var(--text)">90% off</b> cached reads on Anthropic, <b style="color:var(--text)">50% off</b> on OpenAI (provider-set rates).
+    </div>
+
     <div class="preview" role="button" tabindex="0" aria-label="Play Entroly demo video"
          onclick="openDemo()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDemo();}">
       <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg"
@@ -717,7 +940,8 @@
       </div>
     </div>
     <p class="video-caption">
-      See Entroly cut <b>up to 95%</b> of tokens while your AI sees <b>100%</b> of the code.
+      See Entroly cut up to <b>99.5%</b> of tokens — a figure <b>measured</b> on the needle-in-a-haystack
+      benchmark with accuracy fully retained — while your AI sees <b>100%</b> of the code.
     </p>
     <div class="social-row">
       <a href="https://github.com/juyterman1000/entroly" aria-label="Star Entroly on GitHub">
@@ -851,6 +1075,161 @@
         <h3>Agent Native</h3>
         <p>First-class support for Multi-Agent systems. Nash bargaining for token budgets between sub-agents.</p>
       </div>
+    </div>
+  </section>
+
+  <section id="levers" class="levers">
+    <div class="section-header">
+      <span class="tag">Why it compounds</span>
+      <h2>19 cost-saving levers. One install.</h2>
+      <p>
+        Most context tools optimize a <b style="color:var(--text)">single</b> lever — input compression.
+        Entroly ships <b style="color:var(--text)">19 distinct mechanisms</b> across input, inference, output,
+        verification, and learning. Most are <b style="color:var(--text)">multiplicative</b>, not additive — and
+        every one reads from a real source file you can open and audit.
+      </p>
+    </div>
+
+    <div class="lever-highlights">
+      <div class="lever-hi" data-reveal>
+        <div class="kicker">The under-advertised win</div>
+        <h3>Cache Aligner</h3>
+        <p>Compressors re-rank context on every call, which busts the provider's KV cache. The aligner hashes the
+          injected context and holds the prefix stable so cache hits actually land.</p>
+        <div class="metric">90% / 50%</div>
+        <div class="src">Anthropic cached-read · OpenAI · entroly/cache_aligner.py</div>
+      </div>
+      <div class="lever-hi" data-reveal>
+        <div class="kicker">$0 hallucination guard</div>
+        <h3>WITNESS + STAVE</h3>
+        <p>Deterministic faithfulness verifier — no second LLM, no API call. Statistically ties a modern LLM judge on
+          HaluEval-QA at zero marginal cost.</p>
+        <div class="metric">AUROC 0.84</div>
+        <div class="src">~3 ms/decision · entroly/witness.py · stave.py</div>
+      </div>
+      <div class="lever-hi" data-reveal>
+        <div class="kicker">Pay for the model you need</div>
+        <h3>RAVS Model Routing</h3>
+        <p>A Bayesian per-task router sends easy work to cheap models and escalates only when verifier risk says so.
+          Fail-closed: when uncertain, it routes to the strongest model.</p>
+        <div class="metric">Haiku → Opus</div>
+        <div class="src">entroly/ravs/router.py</div>
+      </div>
+    </div>
+
+    <div class="lever-grid">
+      <div class="lever" data-reveal><div class="num">01</div><h4>Context compression</h4><p>Knapsack DP + 9 specialized compressors + a dep-graph pick the most information-dense fragments that fit your budget.</p><span class="src">proxy_transform.py</span></div>
+      <div class="lever" data-reveal><div class="num">02</div><h4>WITNESS + STAVE</h4><p>Deterministic $0 faithfulness verifier — no second LLM, no API call.</p><span class="src">witness.py · stave.py</span></div>
+      <div class="lever" data-reveal><div class="num">03</div><h4>Cache Aligner</h4><p>Holds the prefix stable so Anthropic's 90% / OpenAI's 50% cached-read discount actually lands.</p><span class="src">cache_aligner.py</span></div>
+      <div class="lever" data-reveal><div class="num">04</div><h4>Escalation cascade</h4><p>Cheap model first; escalate only when verifier risk demands it. Bounded regret via split-conformal coverage.</p><span class="src">escalation.py</span></div>
+      <div class="lever" data-reveal><div class="num">05</div><h4>Conformal cascade</h4><p>Two-verifier cascade with a measured Pareto frontier vs. either verifier alone.</p><span class="src">conformal_cascade.py</span></div>
+      <div class="lever" data-reveal><div class="num">06</div><h4>RAVS Bayesian router</h4><p>Per-task model routing — cheap when capable, strong when needed. Fail-closed.</p><span class="src">ravs/router.py</span></div>
+      <div class="lever" data-reveal><div class="num">07</div><h4>Fast-path skills</h4><p>Queries that match a proven crystallized skill short-circuit the whole pipeline — 100% LLM cost saved.</p><span class="src">fast_path.py</span></div>
+      <div class="lever" data-reveal><div class="num">08</div><h4>Adaptive Compression Budget</h4><p>Learns the right token budget per query so easy questions don't overspend.</p><span class="src">adaptive_budget.py</span></div>
+      <div class="lever" data-reveal><div class="num">09</div><h4>Entropic Conversation Pruning</h4><p>Compresses chat history each turn so long conversations don't bloat the input.</p><span class="src">proxy_transform.py</span></div>
+      <div class="lever" data-reveal><div class="num">10</div><h4>Shell-output compression</h4><p>Targeted fast paths for git, builds, logs, JSON, and test output — 60–95% smaller.</p><span class="src">proxy_transform.py</span></div>
+      <div class="lever" data-reveal><div class="num">11</div><h4>Response distillation</h4><p>Compresses the model's response before downstream chains consume it.</p><span class="src">proxy_transform.py</span></div>
+      <div class="lever" data-reveal><div class="num">12</div><h4>Local DeBERTa NLI</h4><p>Runs faithfulness NLI fully offline — ~$0.002/claim drops to $0.</p><span class="src">witness.py</span></div>
+      <div class="lever" data-reveal><div class="num">13</div><h4>EICV suppressor</h4><p>Drops hallucinated content from responses before it propagates downstream.</p><span class="src">eicv_suppressor.py</span></div>
+      <div class="lever" data-reveal><div class="num">14</div><h4>PRISM 5D weights</h4><p>Learns which fragment features matter, with a spectral natural-gradient optimizer.</p><span class="src">online_learner.py · prism.rs</span></div>
+      <div class="lever" data-reveal><div class="num">15</div><h4>Federation</h4><p>Anonymized weight + skill sync across instances amortizes cold-start across the user base.</p><span class="src">federation.py</span></div>
+      <div class="lever" data-reveal><div class="num">16</div><h4>Entropic Shell Codec</h4><p>Universal entropy + SimHash compressor for any tool output — even ones it has never seen.</p><span class="src">shell_codec.py</span></div>
+      <div class="lever" data-reveal><div class="num">17</div><h4>Semantic Resolution Protocol</h4><p>Budget-driven file reads — full, signature-only, or diff-only, chosen per block.</p><span class="src">semantic_resolution.py</span></div>
+      <div class="lever" data-reveal><div class="num">18</div><h4>Adversarial Context Firewall</h4><p>Blocks prompt-injection and context poisoning that bypass regex-only scanners.</p><span class="src">context_firewall.py</span></div>
+      <div class="lever" data-reveal><div class="num">19</div><h4>Witness-Verified Handoff</h4><p>Scans agent output for hallucination before passing it to the next agent.</p><span class="src">verified_handoff.py</span></div>
+    </div>
+
+    <div class="compose-note" data-reveal>
+      <b>How they compose.</b> A chatty agent benefits from input compression (#1) <b>and</b> the cache aligner
+      (#3, on whatever survives) <b>and</b> model routing (#6) <b>and</b> response distillation (#11) <b>and</b>
+      universal tool-output compression (#16). Because the wins multiply, the product can leave
+      <b>well under 1% of the original input-token spend</b> on the bill — and every figure is backed by a committed
+      JSON artifact, not a slide.
+    </div>
+
+    <div class="vs-band">
+      <div class="vs-cell them" data-reveal>
+        <div class="big">1</div>
+        <div class="cap">Typical context tool — input compression only</div>
+      </div>
+      <div class="vs-x">vs</div>
+      <div class="vs-cell us" data-reveal>
+        <div class="big">19</div>
+        <div class="cap">Entroly levers across input · inference · output · verification · learning</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="benchmarks">
+    <div class="section-header">
+      <span class="tag">Reproducible</span>
+      <h2>Numbers you can re-run.</h2>
+      <p>
+        Every figure links to a committed JSON with sample counts, 95% confidence intervals, and model provenance.
+        Clone the repo and reproduce them — or run the packaged smoke verifier on your own code in seconds.
+      </p>
+    </div>
+
+    <div class="bench-table-wrap" data-reveal>
+      <table class="bench">
+        <thead>
+          <tr>
+            <th>Benchmark</th>
+            <th>Token savings</th>
+            <th>Accuracy retained</th>
+            <th>Samples</th>
+            <th>Artifact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Needle-in-a-haystack</td>
+            <td class="num"><span class="ok">99.5%</span></td>
+            <td class="num">100%</td>
+            <td class="num">20</td>
+            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/needle_accuracy.json">needle_accuracy.json</a></td>
+          </tr>
+          <tr>
+            <td>LongBench</td>
+            <td class="num"><span class="ok">85.3%</span></td>
+            <td class="num">103% <span style="color:var(--muted)">(↑)</span></td>
+            <td class="num">50</td>
+            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/longbench_accuracy.json">longbench_accuracy.json</a></td>
+          </tr>
+          <tr>
+            <td>BFCL (function calling)</td>
+            <td class="num"><span class="ok">79.3%</span></td>
+            <td class="num">100%</td>
+            <td class="num">50</td>
+            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/bfcl_accuracy.json">bfcl_accuracy.json</a></td>
+          </tr>
+          <tr>
+            <td>SQuAD</td>
+            <td class="num"><span class="ok">43.8%</span></td>
+            <td class="num">90%</td>
+            <td class="num">50</td>
+            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/squad_accuracy.json">squad_accuracy.json</a></td>
+          </tr>
+          <tr>
+            <td>WITNESS+STAVE hallucination (HaluEval-QA)</td>
+            <td class="num">AUROC 0.84</td>
+            <td class="num">~3 ms · $0/call</td>
+            <td class="num">2,000</td>
+            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/stave_benchmark.json">stave_benchmark.json</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="bench-foot">
+      SQuAD is shown unfiltered — it's the one benchmark here where a tighter budget trades a little accuracy
+      (0.80 → 0.72) for savings. We include it because cherry-picking benchmarks is how marketing claims get caught.
+      Numbers measured with <code>gpt-4o-mini</code>; see each JSON for the full confidence intervals.
+    </p>
+
+    <div class="repro" data-reveal>
+      <span style="color:var(--muted)">$</span> <span class="c">entroly verify-claims</span>
+      <span class="o">→ runs locally, no API key required. On Entroly's own 92-file repo: 326,361 tokens → 7,969
+        (97.6% reduction), 9/9 checks pass — written to <b>.entroly_verification.json</b> so you can diff it yourself.</span>
     </div>
   </section>
 
