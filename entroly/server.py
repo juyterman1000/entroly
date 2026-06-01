@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -4365,6 +4366,42 @@ def _start_autotune_daemon(engine: EntrolyEngine) -> None:
     logger.info("Autotune: daemon thread launched (tid=%d)", t.ident or 0)
 
 
+def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
+    """Initialize project services without delaying MCP transport readiness."""
+
+    def _initialize():
+        # Index before starting the watcher so its initial mtime snapshot
+        # reflects the files already ingested by the first pass.
+        try:
+            from entroly.auto_index import auto_index, start_incremental_watcher
+
+            result = auto_index(engine)
+            if result["status"] == "indexed":
+                logger.info(
+                    f"Auto-indexed {result['files_indexed']} files "
+                    f"({result['total_tokens']:,} tokens) in {result['duration_s']}s"
+                )
+            start_incremental_watcher(engine)
+        except Exception as e:
+            logger.warning(f"Auto-index failed (non-fatal): {e}")
+
+        # Keep the previous ordering: autotune starts after the initial index
+        # pass, but neither operation blocks the MCP stdio handshake.
+        try:
+            _start_autotune_daemon(engine)
+        except Exception as e:
+            logger.warning("Autotune: failed to start daemon: %s", e)
+
+    t = threading.Thread(
+        target=_initialize,
+        name="entroly-startup",
+        daemon=True,
+    )
+    t.start()
+    logger.info("Background project initialization launched")
+    return t
+
+
 def main():
     """Entry point for the entroly MCP server."""
     engine_type = "Rust" if _RUST_AVAILABLE else "Python"
@@ -4396,27 +4433,9 @@ def main():
     except (OSError, AttributeError):
         pass  # SIGTERM not available on Windows
 
-    # Auto-index the project on startup (zero config)
-    try:
-        from entroly.auto_index import auto_index, start_incremental_watcher
-        result = auto_index(engine)
-        if result["status"] == "indexed":
-            logger.info(
-                f"Auto-indexed {result['files_indexed']} files "
-                f"({result['total_tokens']:,} tokens) in {result['duration_s']}s"
-            )
-        # Start background watcher: re-scans for new/modified files every 120s
-        start_incremental_watcher(engine)
-    except Exception as e:
-        logger.warning(f"Auto-index failed (non-fatal): {e}")
-
-    # Start the autotune daemon in the background — zero config needed.
-    # It reads/writes only tuning_config.json and runs at nice+10 priority.
-    try:
-        _start_autotune_daemon(engine)
-    except Exception as e:
-        logger.warning("Autotune: failed to start daemon: %s", e)
-
+    # Startup services run concurrently so MCP clients are not blocked by
+    # the pure-Python fallback's initial project indexing pass.
+    _start_background_services(engine)
 
     # Multi-client support: SSE transport enables multiple IDE connections
     transport = os.environ.get("ENTROLY_MCP_TRANSPORT", "stdio")

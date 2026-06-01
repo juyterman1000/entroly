@@ -25,7 +25,7 @@ from pathlib import Path
 EVOLUTION_TAX_RATE = 0.05  # must match value_tracker.py
 
 
-def test_budget_invariant_end_to_end():
+def _run_budget_invariant_end_to_end():
     from entroly.value_tracker import ValueTracker
 
     with tempfile.TemporaryDirectory() as d:
@@ -73,7 +73,7 @@ def test_budget_invariant_end_to_end():
         }
 
 
-def test_dreaming_loop_end_to_end():
+def _run_dreaming_loop_end_to_end():
     from entroly.autotune import DreamingLoop, FeedbackJournal
 
     with tempfile.TemporaryDirectory() as d:
@@ -139,9 +139,17 @@ def test_dreaming_loop_end_to_end():
         }
 
 
+def test_budget_invariant_end_to_end():
+    _run_budget_invariant_end_to_end()
+
+
+def test_dreaming_loop_end_to_end():
+    _run_dreaming_loop_end_to_end()
+
+
 if __name__ == "__main__":
-    budget_result = test_budget_invariant_end_to_end()
-    dream_result = test_dreaming_loop_end_to_end()
+    budget_result = _run_budget_invariant_end_to_end()
+    dream_result = _run_dreaming_loop_end_to_end()
     print(json.dumps({
         "budget_invariant": budget_result,
         "dreaming_loop": dream_result,
