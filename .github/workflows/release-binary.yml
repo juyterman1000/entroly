@@ -35,7 +35,7 @@ jobs:
           - { os: macos-14,      target: aarch64-apple-darwin,     ext: "" }
           - { os: windows-latest, target: x86_64-pc-windows-msvc,  ext: ".exe" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +45,7 @@ jobs:
       - name: Set up Python
         # pyo3 needs libpython at link time for the binary (extension-module
         # feature is off here).
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
