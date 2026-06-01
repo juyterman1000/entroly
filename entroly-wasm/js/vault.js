@@ -24,6 +24,31 @@ function safeFilename(s) {
 function nowISO() { return new Date().toISOString(); }
 function timestamp() { return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z/, ''); }
 
+function resolveFileWithin(root, candidate) {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const resolved = fs.realpathSync(candidate);
+    const relative = path.relative(realRoot, resolved);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    return fs.statSync(resolved).isFile() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveOutputWithin(root, candidate) {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const parent = fs.realpathSync(path.dirname(candidate));
+    const relative = path.relative(realRoot, parent);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    if (!fs.existsSync(candidate)) return candidate;
+    return resolveFileWithin(realRoot, candidate);
+  } catch {
+    return null;
+  }
+}
+
 function parseFrontmatter(content) {
   if (!content.startsWith('---')) return null;
   const end = content.indexOf('---', 3);
@@ -99,8 +124,10 @@ class VaultManager {
     this.ensureStructure();
     const safe = safeFilename(artifact.entity || artifact.claim_id);
     const fp = path.join(this._base, 'beliefs', `${safe}.md`);
-    fs.writeFileSync(fp, beliefToMarkdown(artifact), 'utf-8');
-    return { status: 'written', directory: 'beliefs', path: fp, claim_id: artifact.claim_id, entity: artifact.entity };
+    const output = resolveOutputWithin(this._base, fp);
+    if (!output) throw new Error(`Refusing to write outside vault: ${fp}`);
+    fs.writeFileSync(output, beliefToMarkdown(artifact), 'utf-8');
+    return { status: 'written', directory: 'beliefs', path: output, claim_id: artifact.claim_id, entity: artifact.entity };
   }
 
   readBelief(entity) {
@@ -114,8 +141,10 @@ class VaultManager {
       if (!match) return null;
       fp = match;
     }
-    const content = fs.readFileSync(fp, 'utf-8');
-    return { path: fp, frontmatter: parseFrontmatter(content) || {}, body: extractBody(content) };
+    const safePath = resolveFileWithin(beliefsDir, fp);
+    if (!safePath) return null;
+    const content = fs.readFileSync(safePath, 'utf-8');
+    return { path: safePath, frontmatter: parseFrontmatter(content) || {}, body: extractBody(content) };
   }
 
   listBeliefs() {
@@ -152,12 +181,14 @@ class VaultManager {
     const ts = timestamp();
     const safe = safeFilename(artifact.title || artifact.challenges || 'check');
     const fp = path.join(this._base, 'verification', `${ts}_${safe}.md`);
+    const output = resolveOutputWithin(this._base, fp);
+    if (!output) throw new Error(`Refusing to write outside vault: ${fp}`);
     const md = `---\nchallenges: ${artifact.challenges}\nresult: ${artifact.result}\nconfidence_delta: ${artifact.confidence_delta >= 0 ? '+' : ''}${artifact.confidence_delta.toFixed(2)}\nchecked_at: ${artifact.checked_at || nowISO()}\nmethod: ${artifact.method || ''}\n---\n\n# ${artifact.title || ''}\n\n${artifact.body || ''}\n`;
-    fs.writeFileSync(fp, md, 'utf-8');
+    fs.writeFileSync(output, md, 'utf-8');
     if (artifact.result === 'confirmed' && artifact.challenges) {
       this._updateBeliefConfidence(artifact.challenges, artifact.confidence_delta);
     }
-    return { status: 'written', directory: 'verification', path: fp, challenges: artifact.challenges, result: artifact.result };
+    return { status: 'written', directory: 'verification', path: output, challenges: artifact.challenges, result: artifact.result };
   }
 
   writeAction(title, content, actionType = 'report') {
@@ -165,8 +196,10 @@ class VaultManager {
     const ts = timestamp();
     const safe = safeFilename(title);
     const fp = path.join(this._base, 'actions', `${ts}_${safe}.md`);
-    fs.writeFileSync(fp, `---\ntype: ${actionType}\ntimestamp: ${ts}\n---\n\n# ${title}\n\n${content}\n`, 'utf-8');
-    return { status: 'written', directory: 'actions', path: fp, type: actionType };
+    const output = resolveOutputWithin(this._base, fp);
+    if (!output) throw new Error(`Refusing to write outside vault: ${fp}`);
+    fs.writeFileSync(output, `---\ntype: ${actionType}\ntimestamp: ${ts}\n---\n\n# ${title}\n\n${content}\n`, 'utf-8');
+    return { status: 'written', directory: 'actions', path: output, type: actionType };
   }
 
   markBeliefsStaleForFiles(changedFiles) {
@@ -224,8 +257,9 @@ class VaultManager {
     const results = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) results.push(...this._rglob(full, ext));
-      else if (entry.name.endsWith(ext)) results.push(full);
+      else if (entry.name.endsWith(ext) && resolveFileWithin(dir, full)) results.push(full);
     }
     return results.sort();
   }
@@ -233,5 +267,5 @@ class VaultManager {
 
 module.exports = {
   VaultManager, safeFilename, parseFrontmatter, extractSources, extractBody,
-  beliefToMarkdown, nowISO, timestamp, SOURCE_EXTS,
+  beliefToMarkdown, nowISO, timestamp, SOURCE_EXTS, resolveFileWithin, resolveOutputWithin,
 };

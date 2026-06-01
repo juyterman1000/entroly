@@ -10,6 +10,18 @@ const path = require('path');
 
 const SKIP_DIRS = new Set(['.git', '.venv', '__pycache__', '.pytest_cache', '.ruff_cache', 'target', 'node_modules', '.tmp']);
 
+function resolveFileWithin(root, candidate) {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const resolved = fs.realpathSync(candidate);
+    const relative = path.relative(realRoot, resolved);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    return fs.statSync(resolved).isFile() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
 const PY_ROLES = {
   'server.py': ['primary Python MCP server and product shell', 'python-runtime'],
   'cli.py': ['primary CLI and operator surface', 'python-runtime'],
@@ -62,7 +74,9 @@ function buildRepoMap(rootDir) {
       if (SKIP_DIRS.has(e.name)) continue;
       const full = path.join(dir, e.name);
       if (e.isDirectory()) { walk(full); continue; }
-      const rel = path.relative(root, full).replace(/\\/g, '/');
+      const safePath = resolveFileWithin(root, full);
+      if (!safePath) continue;
+      const rel = path.relative(root, safePath).replace(/\\/g, '/');
       const parts = rel.split('/');
       const name = path.basename(rel);
       let repo = 'other', role = 'support file', category = 'support';

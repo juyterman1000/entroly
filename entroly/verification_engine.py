@@ -16,12 +16,14 @@ Components:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .path_safety import resolve_file_within, resolve_file_within_resolved
 from .vault import VaultManager, VerificationArtifact, _extract_body, _parse_frontmatter
 
 logger = logging.getLogger(__name__)
@@ -269,15 +271,20 @@ class VerificationEngine:
                 known.add(Path(src.split(":")[0]).stem.lower())
 
         skip = {"__pycache__", "node_modules", ".git", "target", "dist", "build", "venv", ".venv"}
-        root = Path(source_dir)
-        for fpath in root.rglob("*"):
-            if fpath.is_file() and fpath.suffix.lower() in (".py", ".rs", ".ts", ".js"):
-                if any(p in str(fpath) for p in skip):
+        root = Path(source_dir).resolve()
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in skip]
+            for filename in filenames:
+                fpath = Path(dirpath) / filename
+                if fpath.suffix.lower() not in (".py", ".rs", ".ts", ".js"):
                     continue
-                stem = fpath.stem.lower()
+                safe_path = resolve_file_within_resolved(root, fpath)
+                if safe_path is None:
+                    continue
+                stem = safe_path.stem.lower()
                 if stem not in known and stem not in ("__init__", "mod", "lib", "main", "index"):
                     gaps.append(CoverageGap(
-                        file_path=str(fpath.relative_to(root)),
+                        file_path=str(safe_path.relative_to(root)),
                         reason="no_belief_artifact",
                         suggested_entity=stem,
                     ))
@@ -294,7 +301,10 @@ class VerificationEngine:
 
         for md in beliefs_dir.rglob("*.md"):
             try:
-                content = md.read_text(encoding="utf-8", errors="replace")
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content)
                 if not fm:
                     continue
@@ -317,7 +327,7 @@ class VerificationEngine:
                     **fm,
                     "confidence": float(fm.get("confidence", 0)),
                     "body": body,
-                    "file": str(md),
+                    "file": str(safe_path),
                     "sources_list": sources_list,
                 })
             except Exception as e:

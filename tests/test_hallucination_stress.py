@@ -46,7 +46,7 @@ def check(condition: bool, msg: str) -> bool:
 # TEST 1 — Phantom API Trap
 # ═══════════════════════════════════════════════════════════════════════
 
-def test1_phantom_api():
+def _run_test1_phantom_api():
     banner(1, "Phantom API Trap")
 
     context = textwrap.dedent("""\
@@ -78,10 +78,6 @@ def test1_phantom_api():
     r_bad = trace_provenance(bad_output, context)
     # "fetch_user_profile" has partial provenance ("fetch_user" matches)
     # but the full identifier doesn't match
-    invented_bad = [t for t in r_bad.traces
-                    if t.identifier.name == "fetch_user_profile"
-                    or "profile" in t.identifier.name]
-
     # BIPT check: good output
     r_good = trace_provenance(good_output, context)
 
@@ -105,7 +101,7 @@ def test1_phantom_api():
 # TEST 2 — Cross-File Dependency Grounding
 # ═══════════════════════════════════════════════════════════════════════
 
-def test2_cross_file():
+def _run_test2_cross_file():
     banner(2, "Cross-File Dependency Grounding")
 
     context = textwrap.dedent("""\
@@ -157,8 +153,6 @@ def test2_cross_file():
 
     # Check that invented fields are flagged
     bad_names = {t.identifier.name for t in r_bad.traces if t.verdict == "invented"}
-    good_names = {t.identifier.name for t in r_good.traces if t.verdict == "invented"}
-
     p1 = check("device_id" in bad_names or "session_key" in bad_names,
                f"Invented fields flagged: {bad_names & {'device_id', 'session_key'}}")
     p2 = check(r_bad.ipd > r_good.ipd,
@@ -171,7 +165,7 @@ def test2_cross_file():
 # TEST 3 — Semantic Hallucination (df.merge axis=1)
 # ═══════════════════════════════════════════════════════════════════════
 
-def test3_semantic():
+def _run_test3_semantic():
     banner(3, "Semantic Hallucination (merge vs concat)")
 
     # PROVE: prose says "merge horizontally" but code does df.merge(axis=1)
@@ -204,7 +198,7 @@ def test3_semantic():
 # TEST 4 — Near-Neighbor API Confusion
 # ═══════════════════════════════════════════════════════════════════════
 
-def test4_near_neighbor():
+def _run_test4_near_neighbor():
     banner(4, "Near-Neighbor API Confusion")
 
     context = textwrap.dedent("""\
@@ -256,7 +250,7 @@ def test4_near_neighbor():
 # TEST 5 — Missing Context Discipline
 # ═══════════════════════════════════════════════════════════════════════
 
-def test5_missing_context():
+def _run_test5_missing_context():
     banner(5, "Missing Context Discipline")
 
     # Only the function signature is provided — no schema
@@ -297,7 +291,7 @@ def test5_missing_context():
 # TEST 6 — Installed Package Verification
 # ═══════════════════════════════════════════════════════════════════════
 
-def test6_package_verification():
+def _run_test6_package_verification():
     banner(6, "Installed Package Verification")
 
     # Context: only installed packages mentioned
@@ -339,7 +333,7 @@ def test6_package_verification():
 # TEST 7 — Long-Range Symbol Resolution
 # ═══════════════════════════════════════════════════════════════════════
 
-def test7_long_range():
+def _run_test7_long_range():
     banner(7, "Long-Range Symbol Resolution")
 
     context = textwrap.dedent("""\
@@ -393,7 +387,7 @@ def test7_long_range():
 # TEST 8 — Hallucination Calibration (Kafka)
 # ═══════════════════════════════════════════════════════════════════════
 
-def test8_calibration():
+def _run_test8_calibration():
     banner(8, "Hallucination Calibration (Kafka)")
 
     # No Kafka context provided at all
@@ -437,6 +431,38 @@ def test8_calibration():
 # Runner
 # ═══════════════════════════════════════════════════════════════════════
 
+def test1_phantom_api():
+    assert _run_test1_phantom_api()
+
+
+def test2_cross_file():
+    assert _run_test2_cross_file()
+
+
+def test3_semantic():
+    assert _run_test3_semantic()
+
+
+def test4_near_neighbor():
+    assert _run_test4_near_neighbor()
+
+
+def test5_missing_context():
+    assert _run_test5_missing_context()
+
+
+def test6_package_verification():
+    assert _run_test6_package_verification()
+
+
+def test7_long_range():
+    assert _run_test7_long_range()
+
+
+def test8_calibration():
+    assert _run_test8_calibration()
+
+
 def main():
     print("\n" + "=" * 60)
     print(" ENTROLY HALLUCINATION STRESS TEST SUITE")
@@ -444,14 +470,14 @@ def main():
     print("=" * 60)
 
     tests = [
-        test1_phantom_api,
-        test2_cross_file,
-        test3_semantic,
-        test4_near_neighbor,
-        test5_missing_context,
-        test6_package_verification,
-        test7_long_range,
-        test8_calibration,
+        _run_test1_phantom_api,
+        _run_test2_cross_file,
+        _run_test3_semantic,
+        _run_test4_near_neighbor,
+        _run_test5_missing_context,
+        _run_test6_package_verification,
+        _run_test7_long_range,
+        _run_test8_calibration,
     ]
 
     results = []

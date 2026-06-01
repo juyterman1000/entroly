@@ -7,8 +7,11 @@ assigning each file a practical ownership role so product and engineering stay a
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from .path_safety import resolve_file_within_resolved
 
 _SKIP_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "target", "node_modules", ".tmp"}
 
@@ -142,14 +145,16 @@ def build_repo_map(root: str | Path) -> dict[str, list[FileMapEntry]]:
         "other": [],
     }
 
-    for path in sorted(root_path.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(root_path).as_posix()
-        if any(part in _SKIP_DIRS for part in path.parts):
-            continue
-        entry = _entry_for(rel)
-        grouped[entry.repo].append(entry)
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+        for filename in sorted(filenames):
+            path = Path(dirpath) / filename
+            safe_path = resolve_file_within_resolved(root_path, path)
+            if safe_path is None:
+                continue
+            rel = safe_path.relative_to(root_path).as_posix()
+            entry = _entry_for(rel)
+            grouped[entry.repo].append(entry)
 
     return grouped
 

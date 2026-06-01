@@ -14,13 +14,15 @@ from entroly.belief_compiler import BeliefCompiler
 from entroly.daemon import EntrolyDaemon
 from entroly.dashboard import DashboardHandler
 from entroly.fast_path import FastPathRouter
-from entroly.path_safety import resolve_file_within
-from entroly.ravs.executors import PythonExecutor, SymPyExecutor
+from entroly.path_safety import resolve_dir_within, resolve_file_within, resolve_output_within
+from entroly.ravs.executors import PythonExecutor, SymPyExecutor, TestRunnerExecutor as _TestRunnerExecutor
 from entroly.skill_engine import (
+    SkillEngine,
     SkillSynthesizer,
     StructuralSynthesizer,
     promoted_skill_execution_enabled,
 )
+from entroly.vault import VaultConfig, VaultManager
 from entroly.verifiers.cache import CacheMeta, _load_from_cache
 from entroly.verifiers.ngram_model import CharNGramModel
 
@@ -162,6 +164,56 @@ def test_repository_scoped_reads_reject_outside_symlinks(tmp_path):
     assert _resolve_project_file(str(project), "linked.py") is None
 
 
+def test_project_scope_helpers_reject_parent_traversal(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "nested").mkdir()
+
+    assert resolve_dir_within(project, "nested") == (project / "nested").resolve()
+    assert resolve_dir_within(project, "..") is None
+    assert resolve_output_within(project, "training.jsonl") == project / "training.jsonl"
+    assert resolve_output_within(project, "../training.jsonl") is None
+
+
+def test_skill_benchmark_rejects_parent_traversal(tmp_path):
+    vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+    vault.ensure_structure()
+    outside = tmp_path / "outside"
+    (outside / "tests").mkdir(parents=True)
+    marker = tmp_path / "executed"
+    (outside / "tool.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('owned')\n"
+        "def execute(query, context): return {'status': 'ok'}\n",
+        encoding="utf-8",
+    )
+    (outside / "tests" / "test_cases.json").write_text(
+        json.dumps([{"input": "run"}]),
+        encoding="utf-8",
+    )
+    (outside / "metrics.json").write_text("{}", encoding="utf-8")
+
+    result = SkillEngine(vault).benchmark_skill("../../outside")
+
+    assert result["status"] == "invalid_skill_id"
+    assert not marker.exists()
+
+
+def test_vault_belief_readers_ignore_outside_symlinks(tmp_path):
+    vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+    vault.ensure_structure()
+    outside = tmp_path / "secret.md"
+    outside.write_text("---\nentity: secret\nstatus: verified\nconfidence: 1\n---\nleak\n", encoding="utf-8")
+    link = vault.config.path / "beliefs" / "secret.md"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    assert vault.read_belief("secret") is None
+    assert vault.list_beliefs() == []
+
+
 def test_targeted_belief_compile_rejects_parent_traversal(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
@@ -246,3 +298,17 @@ def test_sympy_executor_rejects_dynamic_python():
     if not executor.available:
         pytest.skip("sympy not installed")
     assert executor.execute("__import__('os').system('echo unsafe')").succeeded is False
+
+
+def test_test_runner_blocks_recursive_full_suite(monkeypatch):
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "security regression")
+    result = _TestRunnerExecutor().execute("run tests")
+    assert result.succeeded is False
+    assert "ambiguous full-suite" in result.error
+
+
+def test_test_runner_blocks_nested_execution(monkeypatch):
+    monkeypatch.setenv("ENTROLY_TEST_RUNNER_ACTIVE", "1")
+    result = _TestRunnerExecutor().execute("pytest tests/test_auth.py")
+    assert result.succeeded is False
+    assert "nested test execution" in result.error

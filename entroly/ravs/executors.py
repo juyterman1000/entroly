@@ -455,6 +455,15 @@ class TestRunnerExecutor:
         if file_match:
             cmd.append(file_match.group(0))
 
+        if os.environ.get("ENTROLY_TEST_RUNNER_ACTIVE") == "1":
+            return self._blocked_result(t0, "nested test execution blocked")
+
+        if "PYTEST_CURRENT_TEST" in os.environ and file_match is None:
+            return self._blocked_result(
+                t0,
+                "ambiguous full-suite test execution blocked from inside pytest",
+            )
+
         try:
             proc = subprocess.run(
                 cmd,
@@ -462,7 +471,11 @@ class TestRunnerExecutor:
                 text=True,
                 timeout=self._timeout,
                 cwd=self._cwd or os.getcwd(),
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                env={
+                    **os.environ,
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "ENTROLY_TEST_RUNNER_ACTIVE": "1",
+                },
             )
 
             # Parse results
@@ -505,6 +518,22 @@ class TestRunnerExecutor:
                 execution_time_ms=round(elapsed, 2),
                 executor_name="test_runner",
             )
+
+    @staticmethod
+    def _blocked_result(t0: float, error: str) -> ExecutorResult:
+        elapsed = (time.perf_counter() - t0) * 1000
+        return ExecutorResult(
+            result=json.dumps({
+                "exit_code": -1,
+                "error": error,
+                "passed": 0,
+                "failed": 0,
+            }),
+            succeeded=False,
+            error=error,
+            execution_time_ms=round(elapsed, 2),
+            executor_name="test_runner",
+        )
 
     def _parse_results(self, output: str, exit_code: int) -> dict[str, Any]:
         """Extract structured test results from raw output."""

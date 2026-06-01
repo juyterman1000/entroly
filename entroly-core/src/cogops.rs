@@ -791,6 +791,13 @@ fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
+            if entry
+                .file_type()
+                .map(|kind| kind.is_symlink())
+                .unwrap_or(true)
+            {
+                continue;
+            }
             if path.is_dir() {
                 collect_markdown_files(&path, out);
             } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
@@ -995,20 +1002,27 @@ fn compile_source_paths(
     let mut errors = Vec::new();
 
     for fpath in source_paths {
-        let path_key = normalize_rel_path(&fpath.to_string_lossy());
-        if !seen.insert(path_key) || !fpath.is_file() {
+        let Some(safe_path) = resolve_file_within(root, fpath) else {
+            continue;
+        };
+        let path_key = normalize_rel_path(&safe_path.to_string_lossy());
+        if !seen.insert(path_key) {
             continue;
         }
 
         files_processed += 1;
-        match fs::read_to_string(fpath) {
+        match fs::read_to_string(&safe_path) {
             Ok(content) => {
-                if let Some((artifact, entity_count)) = build_belief_artifact(root, fpath, &content)
+                if let Some((artifact, entity_count)) =
+                    build_belief_artifact(root, &safe_path, &content)
                 {
                     entities_extracted += entity_count as u32;
                     if let Err(err) = write_belief_artifact(vault_path, &artifact) {
                         let rel = normalize_rel_path(
-                            &fpath.strip_prefix(root).unwrap_or(fpath).to_string_lossy(),
+                            &safe_path
+                                .strip_prefix(root)
+                                .unwrap_or(&safe_path)
+                                .to_string_lossy(),
                         );
                         errors.push(format!("{}: {}", rel, err));
                     } else {
@@ -1816,12 +1830,19 @@ impl CogOpsEngine {
             let list = PyList::empty(py);
             if let Ok(entries) = fs::read_dir(&skills_dir) {
                 for entry in entries.flatten() {
-                    if entry.path().is_dir() {
+                    let skill_id = entry.file_name().to_string_lossy().to_string();
+                    if !is_valid_skill_id(&skill_id) {
+                        continue;
+                    }
+                    let Some(skill_dir) = resolve_dir_within(&skills_dir, &entry.path()) else {
+                        continue;
+                    };
+                    if skill_dir.is_dir() {
                         let d = PyDict::new(py);
-                        d.set_item("skill_id", entry.file_name().to_string_lossy().as_ref())?;
-                        d.set_item("path", entry.path().to_string_lossy().as_ref())?;
+                        d.set_item("skill_id", &skill_id)?;
+                        d.set_item("path", skill_dir.to_string_lossy().as_ref())?;
                         // Read SKILL.md frontmatter for status/name
-                        if let Ok(skill_md) = fs::read_to_string(entry.path().join("SKILL.md")) {
+                        if let Ok(skill_md) = fs::read_to_string(skill_dir.join("SKILL.md")) {
                             if let Some(status) = extract_fm_value(&skill_md, "status") {
                                 d.set_item("status", status)?;
                             }
@@ -1829,7 +1850,7 @@ impl CogOpsEngine {
                                 d.set_item("name", name)?;
                             }
                         }
-                        if let Ok(metrics) = fs::read_to_string(entry.path().join("metrics.json")) {
+                        if let Ok(metrics) = fs::read_to_string(skill_dir.join("metrics.json")) {
                             if let Ok(m) = serde_json::from_str::<serde_json::Value>(&metrics) {
                                 d.set_item(
                                     "fitness",
@@ -1986,13 +2007,20 @@ impl CogOpsEngine {
     /// Benchmark a skill by running its test cases in a subprocess.
     pub fn benchmark_skill(&self, skill_id: &str) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let skill_dir = self.vault_path.join("evolution/skills").join(skill_id);
-            if !skill_dir.exists() {
+            if !is_valid_skill_id(skill_id) {
+                let r = PyDict::new(py);
+                r.set_item("status", "invalid_skill_id")?;
+                r.set_item("skill_id", skill_id)?;
+                return Ok(r.into());
+            }
+            let skills_dir = self.vault_path.join("evolution/skills");
+            let Some(skill_dir) = resolve_dir_within(&skills_dir, &skills_dir.join(skill_id))
+            else {
                 let r = PyDict::new(py);
                 r.set_item("status", "not_found")?;
                 r.set_item("skill_id", skill_id)?;
                 return Ok(r.into());
-            }
+            };
 
             let tool_path = skill_dir.join("tool.py");
             let tests_path = skill_dir.join("tests/test_cases.json");
@@ -2093,12 +2121,19 @@ impl CogOpsEngine {
     /// Promote or prune a skill based on fitness score.
     pub fn promote_skill(&self, skill_id: &str) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let skill_dir = self.vault_path.join("evolution/skills").join(skill_id);
-            if !skill_dir.exists() {
+            if !is_valid_skill_id(skill_id) {
+                let r = PyDict::new(py);
+                r.set_item("status", "invalid_skill_id")?;
+                r.set_item("skill_id", skill_id)?;
+                return Ok(r.into());
+            }
+            let skills_dir = self.vault_path.join("evolution/skills");
+            let Some(skill_dir) = resolve_dir_within(&skills_dir, &skills_dir.join(skill_id))
+            else {
                 let r = PyDict::new(py);
                 r.set_item("status", "not_found")?;
                 return Ok(r.into());
-            }
+            };
 
             // Read fitness from metrics
             let metrics_path = skill_dir.join("metrics.json");
@@ -2582,6 +2617,13 @@ impl CogOpsEngine {
             if let Ok(entries) = fs::read_dir(root) {
                 for entry in entries.flatten() {
                     let path = entry.path();
+                    if entry
+                        .file_type()
+                        .map(|kind| kind.is_symlink())
+                        .unwrap_or(true)
+                    {
+                        continue;
+                    }
                     if path.is_file() {
                         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                             if ext.eq_ignore_ascii_case("md") {
@@ -2842,6 +2884,34 @@ fn extract_fm_value(content: &str, key: &str) -> Option<String> {
     None
 }
 
+fn is_valid_skill_id(skill_id: &str) -> bool {
+    !skill_id.is_empty()
+        && skill_id.len() <= 128
+        && skill_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn resolve_file_within(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let root = root.canonicalize().ok()?;
+    let candidate = candidate.canonicalize().ok()?;
+    if candidate.starts_with(&root) && candidate.is_file() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn resolve_dir_within(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let root = root.canonicalize().ok()?;
+    let candidate = candidate.canonicalize().ok()?;
+    if candidate.starts_with(&root) && candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 fn collect_source_files(
     dir: &Path,
     skip: &HashSet<&str>,
@@ -2855,6 +2925,13 @@ fn collect_source_files(
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
+            if entry
+                .file_type()
+                .map(|kind| kind.is_symlink())
+                .unwrap_or(true)
+            {
+                continue;
+            }
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if !skip.contains(name) {
@@ -2945,6 +3022,13 @@ fn collect_doc_md_files(dir: &Path, skip: &HashSet<&str>, out: &mut Vec<PathBuf>
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
+            if entry
+                .file_type()
+                .map(|kind| kind.is_symlink())
+                .unwrap_or(true)
+            {
+                continue;
+            }
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if !skip.contains(name) {
@@ -3099,5 +3183,13 @@ mod tests {
         let body = "Uses [[ spaced_link ]] here.";
         let links = extract_wiki_links(body);
         assert_eq!(links, vec!["spaced_link"]); // trimmed
+    }
+
+    #[test]
+    fn test_skill_id_rejects_path_traversal() {
+        assert!(is_valid_skill_id("skill_auth_123"));
+        assert!(!is_valid_skill_id("../../outside"));
+        assert!(!is_valid_skill_id("nested/skill"));
+        assert!(!is_valid_skill_id(""));
     }
 }

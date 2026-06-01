@@ -21,14 +21,17 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from .path_safety import resolve_dir_within
 from .vault import VaultManager
 
 if TYPE_CHECKING:
     from .reward_crystallizer import CrystallizationEvent
 
 logger = logging.getLogger(__name__)
+_SKILL_ID_RE = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
 
 def promoted_skill_execution_enabled() -> bool:
@@ -931,6 +934,8 @@ class SkillEngine:
 
     def benchmark_skill(self, skill_id: str) -> dict[str, Any]:
         """Benchmark a skill and update its metrics."""
+        if not self._valid_skill_id(skill_id):
+            return {"status": "invalid_skill_id", "skill_id": skill_id}
         spec = self._load_skill(skill_id)
         if not spec:
             return {"status": "not_found", "skill_id": skill_id}
@@ -952,6 +957,8 @@ class SkillEngine:
 
     def promote_or_prune(self, skill_id: str) -> dict[str, Any]:
         """Evaluate a skill for promotion or pruning."""
+        if not self._valid_skill_id(skill_id):
+            return {"status": "invalid_skill_id", "skill_id": skill_id}
         spec = self._load_skill(skill_id)
         if not spec:
             return {"status": "not_found"}
@@ -969,7 +976,9 @@ class SkillEngine:
             spec.status = "testing"
 
         # Update skill status
-        skill_dir = self._vault.config.path / "evolution" / "skills" / skill_id
+        skill_dir = self._skill_dir(skill_id)
+        if skill_dir is None:
+            return {"status": "not_found", "skill_id": skill_id}
         skill_md = skill_dir / "SKILL.md"
         if skill_md.exists():
             content = skill_md.read_text(encoding="utf-8")
@@ -994,12 +1003,13 @@ class SkillEngine:
         results = []
 
         for skill_dir in sorted(skills_dir.iterdir()) if skills_dir.exists() else []:
-            if not skill_dir.is_dir():
+            safe_dir = self._skill_dir(skill_dir.name)
+            if safe_dir is None:
                 continue
-            metrics_file = skill_dir / "metrics.json"
-            skill_md = skill_dir / "SKILL.md"
+            metrics_file = safe_dir / "metrics.json"
+            skill_md = safe_dir / "SKILL.md"
 
-            info = {"skill_id": skill_dir.name, "path": str(skill_dir)}
+            info = {"skill_id": safe_dir.name, "path": str(safe_dir)}
             if metrics_file.exists():
                 try:
                     info["metrics"] = json.loads(metrics_file.read_text(encoding="utf-8"))
@@ -1022,8 +1032,8 @@ class SkillEngine:
 
     def _load_skill(self, skill_id: str) -> SkillSpec | None:
         """Load a skill spec from the vault."""
-        skill_dir = self._vault.config.path / "evolution" / "skills" / skill_id
-        if not skill_dir.exists():
+        skill_dir = self._skill_dir(skill_id)
+        if skill_dir is None:
             return None
 
         spec = SkillSpec(skill_id=skill_id)
@@ -1062,9 +1072,10 @@ class SkillEngine:
         return spec
 
     def _update_metrics(self, skill_id: str, result: BenchmarkResult) -> None:
-        metrics_file = (
-            self._vault.config.path / "evolution" / "skills" / skill_id / "metrics.json"
-        )
+        skill_dir = self._skill_dir(skill_id)
+        if skill_dir is None:
+            return
+        metrics_file = skill_dir / "metrics.json"
         if metrics_file.exists():
             try:
                 data = json.loads(metrics_file.read_text(encoding="utf-8"))
@@ -1081,6 +1092,16 @@ class SkillEngine:
         data["last_duration_ms"] = result.duration_ms
 
         metrics_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _valid_skill_id(skill_id: str) -> bool:
+        return bool(_SKILL_ID_RE.fullmatch(skill_id))
+
+    def _skill_dir(self, skill_id: str) -> Path | None:
+        if not self._valid_skill_id(skill_id):
+            return None
+        skills_dir = self._vault.config.path / "evolution" / "skills"
+        return resolve_dir_within(skills_dir, skill_id)
 
     def _update_registry(self, spec: SkillSpec, action: str) -> None:
         """Update the registry.md index."""

@@ -47,6 +47,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .path_safety import resolve_file_within_resolved
+
 logger = logging.getLogger("entroly.archetype_optimizer")
 
 
@@ -144,6 +146,7 @@ def scan_codebase(root: Path, max_files: int = 5000) -> CodebaseStats:
 
     files_scanned = 0
     top_level_dirs: set[str] = set()
+    resolved_root = root.resolve()
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Skip hidden and vendor directories
@@ -162,6 +165,9 @@ def scan_codebase(root: Path, max_files: int = 5000) -> CodebaseStats:
                 break
 
             fpath = os.path.join(dirpath, fname)
+            safe_path = resolve_file_within_resolved(resolved_root, fpath)
+            if safe_path is None:
+                continue
             ext = os.path.splitext(fname)[1].lower()
 
             # Language classification
@@ -188,7 +194,7 @@ def scan_codebase(root: Path, max_files: int = 5000) -> CodebaseStats:
 
             # Quick content scan (first 100 lines for speed)
             try:
-                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                with safe_path.open("r", encoding="utf-8", errors="replace") as f:
                     lines = []
                     for i, line in enumerate(f):
                         if i >= 100:

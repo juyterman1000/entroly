@@ -19,6 +19,35 @@ const { ingestDiff, ingestDiagram, ingestVoice } = require('./multimodal');
 const path = require('path');
 const fs = require('fs');
 
+function resolveProjectDirectory(root, candidate = '.') {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const resolved = fs.realpathSync(path.isAbsolute(candidate) ? candidate : path.join(realRoot, candidate));
+    const relative = path.relative(realRoot, resolved);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    return fs.statSync(resolved).isDirectory() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveProjectOutput(root, candidate) {
+  try {
+    const realRoot = fs.realpathSync(root);
+    const output = path.isAbsolute(candidate) ? candidate : path.join(realRoot, candidate);
+    const parent = fs.realpathSync(path.dirname(output));
+    const relative = path.relative(realRoot, parent);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    if (!fs.existsSync(output)) return output;
+    const resolved = fs.realpathSync(output);
+    const outputRelative = path.relative(realRoot, resolved);
+    if (outputRelative === '..' || outputRelative.startsWith(`..${path.sep}`) || path.isAbsolute(outputRelative)) return null;
+    return fs.statSync(resolved).isFile() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── MCP Protocol Implementation (stdio JSON-RPC 2.0) ──
 
 class EntrolyMCPServer {
@@ -56,7 +85,7 @@ class EntrolyMCPServer {
     this.verifier = new VerificationEngine(this.vault, { freshnessHours: 24, minConfidence: 0.5 });
     this.changePipe = new ChangePipeline(this.vault, this.verifier);
     this.skillEngine = new SkillEngine(this.vault);
-    this.sourceDir = process.env.ENTROLY_SOURCE || process.cwd();
+    this.sourceDir = fs.realpathSync(process.env.ENTROLY_SOURCE || process.cwd());
     this.flowOrchestrator = new FlowOrchestrator(this.vault, this.epistemicRouter, this.beliefCompiler, this.verifier, this.changePipe, this.sourceDir);
     this.workspaceListener = new WorkspaceChangeListener(this.vault, this.beliefCompiler, this.verifier, this.changePipe, this.sourceDir);
 
@@ -71,6 +100,18 @@ class EntrolyMCPServer {
   }
 
   _log(msg) { process.stderr.write(`${new Date().toISOString()} [entroly] ${msg}\n`); }
+
+  _projectDir(candidate = '') {
+    const resolved = resolveProjectDirectory(this.sourceDir, candidate || '.');
+    if (!resolved) throw new Error(`Path must remain within project root: ${candidate}`);
+    return resolved;
+  }
+
+  _projectOutput(candidate) {
+    const resolved = resolveProjectOutput(this.sourceDir, candidate);
+    if (!resolved) throw new Error(`Path must remain within project root: ${candidate}`);
+    return resolved;
+  }
 
   // ── MCP Tool Definitions (36 tools — full parity with pip) ──
   get tools() {
@@ -274,7 +315,7 @@ class EntrolyMCPServer {
       }
 
       case 'compile_beliefs':
-        return this.beliefCompiler.compileDirectory(args.directory || this.sourceDir, args.max_files || 200);
+        return this.beliefCompiler.compileDirectory(this._projectDir(args.directory), args.max_files || 200);
 
       case 'verify_beliefs':
         return this.verifier.fullVerificationPass();
@@ -286,7 +327,7 @@ class EntrolyMCPServer {
       }
 
       case 'coverage_gaps':
-        return this.verifier.coverageGaps(args.directory || this.sourceDir);
+        return this.verifier.coverageGaps(this._projectDir(args.directory));
 
       case 'process_change':
         return this.changePipe.processDiff(args.diff_text, args.commit_message || '', args.pr_title || '');
@@ -300,10 +341,13 @@ class EntrolyMCPServer {
       }
 
       case 'compile_docs':
-        return compileDocs(this.vault, args.directory || this.sourceDir, args.max_files || 50);
+        return compileDocs(this.vault, this._projectDir(args.directory), args.max_files || 50);
 
-      case 'export_training_data':
-        return exportTrainingData(this.vault, args.output_path || 'training_data.jsonl');
+      case 'export_training_data': {
+        const format = args.format || 'jsonl';
+        if (format !== 'jsonl') return { error: `Unsupported export format: ${format}` };
+        return exportTrainingData(this.vault, this._projectOutput(args.output_path || 'training_data.jsonl'));
+      }
 
       // ── Ingestion Tools ──
       case 'ingest_diff': {
@@ -320,12 +364,14 @@ class EntrolyMCPServer {
 
       // ── Workspace Tools ──
       case 'sync_workspace_changes': {
-        const listener = args.directory ? new WorkspaceChangeListener(this.vault, this.beliefCompiler, this.verifier, this.changePipe, args.directory) : this.workspaceListener;
+        const target = this._projectDir(args.directory);
+        const listener = target === this.sourceDir ? this.workspaceListener : new WorkspaceChangeListener(this.vault, this.beliefCompiler, this.verifier, this.changePipe, target);
         return listener.scanOnce(args.force || false, args.max_files || 100);
       }
 
       case 'start_workspace_listener': {
-        const listener = args.directory ? new WorkspaceChangeListener(this.vault, this.beliefCompiler, this.verifier, this.changePipe, args.directory) : this.workspaceListener;
+        const target = this._projectDir(args.directory);
+        const listener = target === this.sourceDir ? this.workspaceListener : new WorkspaceChangeListener(this.vault, this.beliefCompiler, this.verifier, this.changePipe, target);
         return listener.start(args.interval_s || 120, args.max_files || 100, args.force_initial || false);
       }
 
@@ -346,8 +392,7 @@ class EntrolyMCPServer {
 
       // ── Analysis Tools ──
       case 'repo_file_map': {
-        const rootDir = path.resolve(this.sourceDir, '..');
-        const grouped = buildRepoMap(rootDir);
+        const grouped = buildRepoMap(this.sourceDir);
         if ((args.format || '').toLowerCase() === 'json') return grouped;
         return renderRepoMapMarkdown(grouped);
       }
@@ -563,4 +608,4 @@ if (require.main === module) {
   server.run();
 }
 
-module.exports = { EntrolyMCPServer };
+module.exports = { EntrolyMCPServer, resolveProjectDirectory, resolveProjectOutput };

@@ -10,6 +10,10 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { nowISO, safeFilename } = require('./vault');
 
+function isValidSkillId(skillId) {
+  return typeof skillId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(skillId);
+}
+
 class SkillEngine {
   constructor(vault) {
     this._vault = vault;
@@ -19,6 +23,7 @@ class SkillEngine {
   createSkill(entityKey, failingQueries, intent = '') {
     this._vault.ensureStructure();
     const skillId = `skill_${safeFilename(entityKey)}_${Date.now().toString(36)}`;
+    if (!isValidSkillId(skillId)) return { status: 'invalid_skill_id', skill_id: skillId };
     const skillDir = path.join(this._skillsDir, skillId);
     fs.mkdirSync(skillDir, { recursive: true });
     fs.mkdirSync(path.join(skillDir, 'tests'), { recursive: true });
@@ -74,7 +79,9 @@ class SkillEngine {
     if (!fs.existsSync(this._skillsDir)) return [];
     const skills = [];
     for (const name of fs.readdirSync(this._skillsDir)) {
-      const metricsPath = path.join(this._skillsDir, name, 'metrics.json');
+      const skillDir = this._skillDir(name);
+      if (!skillDir) continue;
+      const metricsPath = path.join(skillDir, 'metrics.json');
       if (!fs.existsSync(metricsPath)) continue;
       try {
         const m = JSON.parse(fs.readFileSync(metricsPath, 'utf-8'));
@@ -85,8 +92,11 @@ class SkillEngine {
   }
 
   benchmarkSkill(skillId) {
-    const metricsPath = path.join(this._skillsDir, skillId, 'metrics.json');
-    const testsPath = path.join(this._skillsDir, skillId, 'tests', 'test_cases.json');
+    if (!isValidSkillId(skillId)) return { status: 'invalid_skill_id', skill_id: skillId };
+    const skillDir = this._skillDir(skillId);
+    if (!skillDir) return { error: `Skill '${skillId}' not found` };
+    const metricsPath = path.join(skillDir, 'metrics.json');
+    const testsPath = path.join(skillDir, 'tests', 'test_cases.json');
     if (!fs.existsSync(metricsPath)) return { error: `Skill '${skillId}' not found` };
     const metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf-8'));
     let cases = [];
@@ -103,7 +113,10 @@ class SkillEngine {
   }
 
   promoteOrPrune(skillId) {
-    const metricsPath = path.join(this._skillsDir, skillId, 'metrics.json');
+    if (!isValidSkillId(skillId)) return { status: 'invalid_skill_id', skill_id: skillId };
+    const skillDir = this._skillDir(skillId);
+    if (!skillDir) return { error: `Skill '${skillId}' not found` };
+    const metricsPath = path.join(skillDir, 'metrics.json');
     if (!fs.existsSync(metricsPath)) return { error: `Skill '${skillId}' not found` };
     const metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf-8'));
     let action;
@@ -119,6 +132,19 @@ class SkillEngine {
     fs.writeFileSync(metricsPath, JSON.stringify(metrics, null, 2), 'utf-8');
     return { skill_id: skillId, action, fitness: metrics.fitness, new_status: metrics.status, engine: 'javascript' };
   }
+
+  _skillDir(skillId) {
+    if (!isValidSkillId(skillId)) return null;
+    try {
+      const root = fs.realpathSync(this._skillsDir);
+      const candidate = fs.realpathSync(path.join(root, skillId));
+      const relative = path.relative(root, candidate);
+      if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+      return fs.statSync(candidate).isDirectory() ? candidate : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
-module.exports = { SkillEngine };
+module.exports = { SkillEngine, isValidSkillId };

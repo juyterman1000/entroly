@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .path_safety import resolve_file_within, resolve_output_within
+
 logger = logging.getLogger(__name__)
 
 
@@ -200,13 +202,16 @@ class VaultManager:
         safe_name = _safe_filename(artifact.entity or artifact.claim_id)
         file_path = self._base / "beliefs" / f"{safe_name}.md"
 
-        file_path.write_text(artifact.to_markdown(), encoding="utf-8")
+        safe_path = resolve_output_within(self._base, file_path)
+        if safe_path is None:
+            raise ValueError(f"Refusing to write outside vault: {file_path}")
+        safe_path.write_text(artifact.to_markdown(), encoding="utf-8")
 
         logger.info(f"Vault: wrote belief '{artifact.entity}' -> {file_path}")
         return {
             "status": "written",
             "directory": "beliefs",
-            "path": str(file_path),
+            "path": str(safe_path),
             "claim_id": artifact.claim_id,
             "entity": artifact.entity,
         }
@@ -228,12 +233,15 @@ class VaultManager:
             else:
                 return None
 
-        content = file_path.read_text(encoding="utf-8", errors="replace")
+        safe_path = resolve_file_within(beliefs_dir, file_path)
+        if safe_path is None:
+            return None
+        content = safe_path.read_text(encoding="utf-8", errors="replace")
         frontmatter = _parse_frontmatter(content)
         body = _extract_body(content)
 
         return {
-            "path": str(file_path),
+            "path": str(safe_path),
             "frontmatter": frontmatter or {},
             "body": body,
         }
@@ -246,10 +254,13 @@ class VaultManager:
 
         for md in sorted(beliefs_dir.rglob("*.md")):
             try:
-                content = md.read_text(encoding="utf-8", errors="replace")
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content)
                 results.append({
-                    "file": str(md.relative_to(beliefs_dir)),
+                    "file": str(safe_path.relative_to(beliefs_dir.resolve())),
                     "entity": fm.get("entity", md.stem) if fm else md.stem,
                     "status": fm.get("status", "unknown") if fm else "unknown",
                     "confidence": float(fm.get("confidence", 0)) if fm else 0,
@@ -270,7 +281,10 @@ class VaultManager:
         safe_title = _safe_filename(artifact.title or artifact.challenges)
         file_path = self._base / "verification" / f"{timestamp}_{safe_title}.md"
 
-        file_path.write_text(artifact.to_markdown(), encoding="utf-8")
+        safe_path = resolve_output_within(self._base, file_path)
+        if safe_path is None:
+            raise ValueError(f"Refusing to write outside vault: {file_path}")
+        safe_path.write_text(artifact.to_markdown(), encoding="utf-8")
 
         # If verification confirmed, update the belief's confidence
         if artifact.result == "confirmed" and artifact.challenges:
@@ -283,7 +297,7 @@ class VaultManager:
         return {
             "status": "written",
             "directory": "verification",
-            "path": str(file_path),
+            "path": str(safe_path),
             "challenges": artifact.challenges,
             "result": artifact.result,
         }
@@ -303,7 +317,10 @@ class VaultManager:
         safe_title = _safe_filename(title)
         file_path = self._base / "actions" / f"{timestamp}_{safe_title}.md"
 
-        file_path.write_text(
+        safe_path = resolve_output_within(self._base, file_path)
+        if safe_path is None:
+            raise ValueError(f"Refusing to write outside vault: {file_path}")
+        safe_path.write_text(
             f"---\ntype: {action_type}\ntimestamp: {timestamp}\n---\n\n"
             f"# {title}\n\n{content}\n",
             encoding="utf-8",
@@ -313,7 +330,7 @@ class VaultManager:
         return {
             "status": "written",
             "directory": "actions",
-            "path": str(file_path),
+            "path": str(safe_path),
             "type": action_type,
         }
 
@@ -361,7 +378,10 @@ class VaultManager:
         beliefs_dir = self._base / "beliefs"
         for md in beliefs_dir.rglob("*.md"):
             try:
-                content = md.read_text(encoding="utf-8", errors="replace")
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content)
                 if not fm:
                     continue
@@ -393,9 +413,9 @@ class VaultManager:
                 if "status:" in updated:
                     import re
                     updated = re.sub(r"^status:\s+.+$", "status: stale", updated, count=1, flags=re.M)
-                md.write_text(updated, encoding="utf-8")
+                safe_path.write_text(updated, encoding="utf-8")
                 updated_entities.append(entity)
-                updated_files.append(str(md))
+                updated_files.append(str(safe_path))
             except Exception as e:
                 logger.debug(f"Vault: failed to mark stale for {md}: {e}")
 
@@ -416,7 +436,10 @@ class VaultManager:
         beliefs_dir = self._base / "beliefs"
         for md in beliefs_dir.rglob("*.md"):
             try:
-                content = md.read_text(encoding="utf-8", errors="replace")
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content)
                 if fm and fm.get("claim_id") == claim_id:
                     old_conf = float(fm.get("confidence", 0.5))
@@ -440,7 +463,7 @@ class VaultManager:
                             f"last_checked: {now}",
                             updated,
                         )
-                    md.write_text(updated, encoding="utf-8")
+                    safe_path.write_text(updated, encoding="utf-8")
                     logger.info(
                         f"Vault: updated belief {claim_id} confidence "
                         f"{old_conf:.2f} â†' {new_conf:.2f}"

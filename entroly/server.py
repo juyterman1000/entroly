@@ -38,6 +38,7 @@ from typing import Any
 from .adaptive_pruner import EntrolyPruner, FragmentGuard
 from .autotune import ComponentFeedbackBus, DreamingLoop, FeedbackJournal, TaskProfileOptimizer
 from .online_learner import OnlinePrism, compute_implicit_reward, compute_contributions
+from .path_safety import resolve_dir_within, resolve_file_within, resolve_output_within
 from .cache_aligner import CacheAligner
 from .belief_compiler import BeliefCompiler
 from .change_listener import WorkspaceChangeListener
@@ -3263,7 +3264,20 @@ def create_mcp_server(
     #   Evolution → create_skill, manage_skills, refresh_beliefs (skills, promotion)
     # ══════════════════════════════════════════════════════════════════
 
-    _source_dir = os.environ.get("ENTROLY_SOURCE", os.getcwd())
+    _source_dir = str(Path(os.environ.get("ENTROLY_SOURCE", os.getcwd())).resolve())
+    _project_root = Path(_source_dir)
+
+    def _project_directory(raw_path: str = "") -> Path | None:
+        return resolve_dir_within(_project_root, raw_path or ".")
+
+    def _project_output(raw_path: str) -> Path | None:
+        return resolve_output_within(_project_root, raw_path)
+
+    def _project_path_error(raw_path: str) -> str:
+        return json.dumps({
+            "error": f"Path must remain within project root: {raw_path}",
+            "project_root": str(_project_root),
+        }, indent=2)
 
     try:
         from entroly_core import CogOpsEngine as _RustCogOps
@@ -3385,7 +3399,10 @@ def create_mcp_server(
             directory: Path to scan. Defaults to the project root.
             max_files: Maximum files to process (default: 200)
         """
-        target = directory or _source_dir
+        target_path = _project_directory(directory)
+        if target_path is None:
+            return _project_path_error(directory)
+        target = str(target_path)
         if _COGOPS_RUST:
             return json.dumps(_cogops.compile_beliefs(target, max_files), indent=2)
         result = _py_compiler.compile_directory(target, max_files)
@@ -3574,7 +3591,10 @@ def create_mcp_server(
         Args:
             directory: Path to scan. Defaults to the project root.
         """
-        target = directory or _source_dir
+        target_path = _project_directory(directory)
+        if target_path is None:
+            return _project_path_error(directory)
+        target = str(target_path)
         if _COGOPS_RUST:
             return json.dumps(_cogops.coverage_gaps(target), indent=2)
         gaps = _py_verifier.coverage_gaps(target)
@@ -3615,14 +3635,17 @@ def create_mcp_server(
         recompiles changed files into fresh beliefs, runs a verification pass, and writes
         a sync report into actions/.
         """
+        target_path = _project_directory(directory)
+        if target_path is None:
+            return _project_path_error(directory)
         listener = _py_workspace_listener
-        if directory:
+        if target_path != _project_root:
             listener = WorkspaceChangeListener(
                 vault=_vault_mgr,
                 compiler=_py_compiler,
                 verifier=_py_verifier,
                 change_pipe=_py_change_pipe,
-                project_dir=directory,
+                project_dir=str(target_path),
             )
         result = listener.scan_once(force=force, max_files=max_files)
         payload = result.to_dict()
@@ -3638,7 +3661,7 @@ def create_mcp_server(
         Use this to understand ownership boundaries and where logic currently lives.
         Supported formats: markdown, json.
         """
-        grouped = build_repo_map(Path(_source_dir).resolve().parents[0])
+        grouped = build_repo_map(_project_root)
         if format.lower() == "json":
             serializable = {
                 repo: [entry.__dict__ for entry in entries]
@@ -3658,14 +3681,17 @@ def create_mcp_server(
 
         This is the long-running change-driven bridge from repo activity into Belief CI.
         """
+        target_path = _project_directory(directory)
+        if target_path is None:
+            return _project_path_error(directory)
         listener = _py_workspace_listener
-        if directory:
+        if target_path != _project_root:
             listener = WorkspaceChangeListener(
                 vault=_vault_mgr,
                 compiler=_py_compiler,
                 verifier=_py_verifier,
                 change_pipe=_py_change_pipe,
-                project_dir=directory,
+                project_dir=str(target_path),
             )
         result = listener.start(interval_s=interval_s, max_files=max_files, force_initial=force_initial)
         result["engine"] = "python"
@@ -3695,7 +3721,10 @@ def create_mcp_server(
         matches = []
         for md in sorted(beliefs_dir.rglob("*.md")):
             try:
-                content = md.read_text(encoding="utf-8", errors="replace")
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
                 if query_lower in content.lower():
                     from .vault import _parse_frontmatter
                     fm = _parse_frontmatter(content) or {}
@@ -3723,7 +3752,10 @@ def create_mcp_server(
             directory: Project root to scan. Defaults to the project root.
             max_files: Maximum doc files to process (default: 50)
         """
-        target = directory or _source_dir
+        target_path = _project_directory(directory)
+        if target_path is None:
+            return _project_path_error(directory)
+        target = str(target_path)
         if _COGOPS_RUST:
             return json.dumps(_cogops.compile_docs(target, max_files), indent=2)
         # Python fallback: basic README ingest
@@ -3757,8 +3789,13 @@ def create_mcp_server(
             output_path: Path to write JSONL file (default: training_data.jsonl)
             format: Output format, currently only 'jsonl' supported
         """
+        if format != "jsonl":
+            return json.dumps({"error": f"Unsupported export format: {format}"}, indent=2)
+        safe_output = _project_output(output_path)
+        if safe_output is None:
+            return _project_path_error(output_path)
         if _COGOPS_RUST:
-            return json.dumps(_cogops.export_training_data(output_path, format), indent=2)
+            return json.dumps(_cogops.export_training_data(str(safe_output), format), indent=2)
         # Python fallback
         beliefs_dir = _vault_mgr.config.path / "beliefs"
         from .vault import _extract_body, _parse_frontmatter
@@ -3766,7 +3803,10 @@ def create_mcp_server(
         skipped = 0
         for md in sorted(beliefs_dir.rglob("*.md")):
             try:
-                content = md.read_text(encoding="utf-8", errors="replace")
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content) or {}
                 body = _extract_body(content)
                 conf = float(fm.get("confidence", 0))
@@ -3783,9 +3823,9 @@ def create_mcp_server(
                 lines.append(entry)
             except Exception:
                 pass
-        Path(output_path).write_text("\n".join(lines), encoding="utf-8")
+        safe_output.write_text("\n".join(lines), encoding="utf-8")
         return json.dumps({
-            "status": "exported", "output_path": output_path, "format": format,
+            "status": "exported", "output_path": str(safe_output), "format": format,
             "beliefs_used": len(lines), "beliefs_skipped": skipped,
             "training_pairs": len(lines), "engine": "python",
         }, indent=2)
@@ -4157,9 +4197,12 @@ def create_mcp_server(
         """
         try:
             from .semantic_resolution import resolve
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            safe_path = resolve_file_within(_project_root, file_path)
+            if safe_path is None:
+                return _project_path_error(file_path)
+            with safe_path.open("r", encoding="utf-8", errors="replace") as f:
                 source = f.read()
-            result = resolve(source, query=query, budget=budget, file_path=file_path)
+            result = resolve(source, query=query, budget=budget, file_path=str(safe_path))
             return json.dumps({
                 "output": result.output,
                 "file_path": result.file_path,

@@ -476,7 +476,9 @@ function compileDocs(vault, directory, maxFiles = 50) {
       const stem = e.name.replace(/\.md$/i, '').toUpperCase();
       if (!docPatterns.some(p => stem.startsWith(p)) && dir === root) continue;
       try {
-        const content = fs.readFileSync(full, 'utf-8');
+        const safePath = resolveFileWithin(root, full);
+        if (!safePath) continue;
+        const content = fs.readFileSync(safePath, 'utf-8');
         const entity = `doc/${e.name.replace(/\.md$/i, '').toLowerCase()}`;
         vault.writeBelief({
           claim_id: randomUUID(),
