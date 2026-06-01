@@ -11,8 +11,10 @@ Uses non-blocking I/O with threading to prevent CI hangs.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import pytest
@@ -78,13 +80,23 @@ def _read_response(proc, timeout=30):
 
 @pytest.fixture(scope="module")
 def mcp_server():
-    """Start the MCP server as a subprocess."""
+    """Start the MCP server as a subprocess.
+
+    Launched in an empty scratch directory, not the repo root.
+    ``create_mcp_server()`` scans its working directory at startup, so
+    starting in a large tree (the repo, or a CI checkout) makes cold-start
+    scale with file count — measured ~1.6s in an empty dir vs ~9s+ in this
+    repo, enough to blow past the response window on a loaded CI runner.
+    This is a protocol test; it must not depend on the cwd's size.
+    """
+    scratch = tempfile.mkdtemp(prefix="entroly-mcp-test-")
     proc = subprocess.Popen(
         [sys.executable, "-m", "entroly.server"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        cwd=scratch,
         env={
             **os.environ,
             "ENTROLY_NO_DOCKER": "1",
@@ -95,6 +107,7 @@ def mcp_server():
     # Check it didn't crash
     if proc.poll() is not None:
         stderr = proc.stderr.read()
+        shutil.rmtree(scratch, ignore_errors=True)
         pytest.skip(f"MCP server failed to start: {stderr[:500]}")
 
     yield proc
@@ -105,6 +118,7 @@ def mcp_server():
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait(timeout=2)
+    shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_mcp_server_starts(mcp_server):
