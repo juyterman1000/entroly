@@ -69,7 +69,7 @@ class EntrolyDaemonState:
     The dashboard polls it via /api/control/status.
     """
     status: str = "stopped"  # stopped | starting | running | stopping
-    version: str = "1.0.13"
+    version: str = "1.0.14"
     started_at: float | None = None
 
     # Feature flags
@@ -199,9 +199,19 @@ class EntrolyDaemon:
         self._learning_journal_log_failures = 0
         self._learning_last_journal_log_status = "not_started"
         self._learning_last_journal_log_error: str | None = None
+        self._learning_journal_prune_attempts = 0
+        self._learning_journal_prune_failures = 0
+        self._learning_last_journal_prune_status = "not_started"
+        self._learning_last_journal_prune_error: str | None = None
+        self._learning_last_journal_prune_attempt_at: float | None = None
+        self._learning_last_journal_prune_at: float | None = None
         self._learning_wakeups = 0
         self._learning_last_wake_at: float | None = None
         self._learning_last_wake_reason: str | None = None
+        self._learning_worker_running = False
+        self._learning_worker_started_at: float | None = None
+        self._learning_worker_stopped_at: float | None = None
+        self._learning_worker_exit_reason: str | None = "not_started"
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -503,7 +513,7 @@ class EntrolyDaemon:
 
                 days = retention_days()
                 if days > 0:
-                    self._feedback_journal.prune(max_age=days * 24 * 60 * 60)
+                    self._prune_feedback_journal(max_age=days * 24 * 60 * 60)
             except Exception:
                 pass
 
@@ -537,7 +547,6 @@ class EntrolyDaemon:
                 self._last_profile_optimize_at = None
                 self._profile_optimize_runs = 0
                 self._learning_interval_s = interval_s
-                self._last_retention_prune_at = None
 
                 while not self._shutdown.is_set():
                     self._learning_interval_s = interval_s
@@ -564,10 +573,11 @@ class EntrolyDaemon:
                             days = retention_days()
                             if days > 0:
                                 now = time.time()
-                                last = self._last_retention_prune_at
+                                last = self._learning_last_journal_prune_attempt_at
                                 if last is None or (now - float(last)) >= 3600.0:
-                                    self._feedback_journal.prune(max_age=days * 24 * 60 * 60)
-                                    self._last_retention_prune_at = now
+                                    self._prune_feedback_journal(
+                                        max_age=days * 24 * 60 * 60
+                                    )
                         except Exception:
                             pass
                         # 0. Detect new feedback since last loop
@@ -632,8 +642,28 @@ class EntrolyDaemon:
                         self._learning_next_interval_s = interval_s
                         self._learning_last_interval_reason = "error_backoff"
 
+            def _run_learning_worker():
+                self._learning_worker_running = True
+                self._learning_worker_started_at = time.time()
+                self._learning_worker_stopped_at = None
+                self._learning_worker_exit_reason = None
+                try:
+                    _learning_worker()
+                except Exception as e:
+                    self._learning_last_tick_status = "error"
+                    self._learning_last_error = str(e)
+                    self._learning_worker_exit_reason = "error"
+                    logger.exception("Learning worker stopped unexpectedly: %s", e)
+                else:
+                    self._learning_worker_exit_reason = (
+                        "shutdown" if self._shutdown.is_set() else "returned"
+                    )
+                finally:
+                    self._learning_worker_running = False
+                    self._learning_worker_stopped_at = time.time()
+
             t = threading.Thread(
-                target=_learning_worker,
+                target=_run_learning_worker,
                 daemon=True,
                 name="entroly-learning",
             )
@@ -648,6 +678,9 @@ class EntrolyDaemon:
 
         except Exception as e:
             logger.warning(f"Learning loop failed to start: {e}")
+            self._learning_last_tick_status = "error"
+            self._learning_last_error = str(e)
+            self._learning_worker_exit_reason = "start_error"
             self._feedback_journal = None
             self._task_profiles = None
             self._dreaming_loop = None
@@ -756,7 +789,8 @@ class EntrolyDaemon:
             return
 
         try:
-            journal.log(**episode)
+            if journal.log(**episode) is False:
+                raise RuntimeError("feedback journal write failed")
             self._learning_last_journal_log_status = "ok"
             self._learning_last_journal_log_error = None
             self._wake_learning_loop("feedback")
@@ -767,6 +801,35 @@ class EntrolyDaemon:
             self._learning_last_journal_log_status = "error"
             self._learning_last_journal_log_error = str(e)
             logger.debug("Learning episode journal log failed: %s", e)
+
+    def _prune_feedback_journal(self, *, max_age: float) -> bool:
+        """Prune retained feedback and expose failures to the control API."""
+        self._learning_journal_prune_attempts = int(
+            getattr(self, "_learning_journal_prune_attempts", 0) or 0
+        ) + 1
+        attempted_at = time.time()
+        self._learning_last_journal_prune_attempt_at = attempted_at
+        journal = getattr(self, "_feedback_journal", None)
+        if not journal:
+            self._learning_last_journal_prune_status = "skipped_no_journal"
+            self._learning_last_journal_prune_error = None
+            return False
+
+        try:
+            if journal.prune(max_age=max_age) is False:
+                raise RuntimeError("feedback journal prune failed")
+            self._learning_last_journal_prune_status = "ok"
+            self._learning_last_journal_prune_error = None
+            self._learning_last_journal_prune_at = attempted_at
+            return True
+        except Exception as e:
+            self._learning_journal_prune_failures = int(
+                getattr(self, "_learning_journal_prune_failures", 0) or 0
+            ) + 1
+            self._learning_last_journal_prune_status = "error"
+            self._learning_last_journal_prune_error = str(e)
+            logger.debug("Feedback journal prune failed: %s", e)
+            return False
 
     def set_optimization(self, enabled: bool):
         self.state.optimization_enabled = enabled
@@ -926,6 +989,20 @@ class EntrolyDaemon:
             "wakeups": int(getattr(self, "_learning_wakeups", 0) or 0),
             "last_wake_at": getattr(self, "_learning_last_wake_at", None),
             "last_wake_reason": getattr(self, "_learning_last_wake_reason", None),
+            "worker": {
+                "running": bool(
+                    getattr(self, "_learning_worker_running", False)
+                ),
+                "started_at": getattr(
+                    self, "_learning_worker_started_at", None
+                ),
+                "stopped_at": getattr(
+                    self, "_learning_worker_stopped_at", None
+                ),
+                "exit_reason": getattr(
+                    self, "_learning_worker_exit_reason", "not_started"
+                ),
+            },
             "last_tick": {
                 "saw_new_feedback": getattr(
                     self, "_learning_last_tick_saw_new_feedback", None
@@ -947,6 +1024,26 @@ class EntrolyDaemon:
                 ),
                 "last_error": getattr(
                     self, "_learning_last_journal_log_error", None
+                ),
+            },
+            "journal_retention": {
+                "attempts": int(
+                    getattr(self, "_learning_journal_prune_attempts", 0) or 0
+                ),
+                "failures": int(
+                    getattr(self, "_learning_journal_prune_failures", 0) or 0
+                ),
+                "last_status": getattr(
+                    self, "_learning_last_journal_prune_status", "unknown"
+                ),
+                "last_error": getattr(
+                    self, "_learning_last_journal_prune_error", None
+                ),
+                "last_attempt_at": getattr(
+                    self, "_learning_last_journal_prune_attempt_at", None
+                ),
+                "last_success_at": getattr(
+                    self, "_learning_last_journal_prune_at", None
                 ),
             },
         }
@@ -974,20 +1071,26 @@ class EntrolyDaemon:
         # DreamingLoop
         dreaming = getattr(self, "_dreaming_loop", None)
         if dreaming:
-            stats["dreaming"] = dreaming.stats()
+            try:
+                stats["dreaming"] = dreaming.stats()
+            except Exception as e:
+                stats["dreaming"] = {"status": "error", "error": str(e)}
         else:
             stats["dreaming"] = {"status": "not_initialized"}
 
         # TaskProfileOptimizer
         profiles = getattr(self, "_task_profiles", None)
         if profiles:
-            profile_data = {}
-            for task_type, profile in profiles._profiles.items():
-                profile_data[task_type] = {
-                    "confidence": profile.get("confidence", 0),
-                    "episodes": profile.get("episodes", 0),
-                }
-            stats["task_profiles"] = profile_data
+            try:
+                profile_data = {}
+                for task_type, profile in profiles._profiles.items():
+                    profile_data[task_type] = {
+                        "confidence": profile.get("confidence", 0),
+                        "episodes": profile.get("episodes", 0),
+                    }
+                stats["task_profiles"] = profile_data
+            except Exception as e:
+                stats["task_profiles"] = {"status": "error", "error": str(e)}
         else:
             stats["task_profiles"] = {}
 

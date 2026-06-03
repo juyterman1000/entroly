@@ -34,6 +34,8 @@ import math
 import random
 import re
 import sys
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -696,11 +698,12 @@ class FeedbackJournal:
         self.journal_dir.mkdir(parents=True, exist_ok=True)
         self.journal_path = self.journal_dir / "feedback_journal.jsonl"
         self._cache: list | None = None
+        self._lock = threading.RLock()
 
     def log(self, *, weights: dict[str, float], reward: float,
             selected_count: int = 0, query: str = "",
             selected_sources: list[str] | None = None,
-            token_budget: int = 0, turn: int = 0) -> None:
+            token_budget: int = 0, turn: int = 0) -> bool:
         """Log a feedback episode."""
         entry = {
             "t": time.time(),
@@ -712,47 +715,66 @@ class FeedbackJournal:
             "turn": turn,
             "bgt": token_budget,
         }
-        try:
-            with open(self.journal_path, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-            self._cache = None
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                with open(self.journal_path, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
+                self._cache = None
+                return True
+            except Exception:
+                return False
 
     def load(self, max_age: float = JOURNAL_MAX_AGE_S) -> list[dict]:
         """Load episodes filtered by max age."""
-        if self._cache is not None:
-            return self._cache
-        cutoff = time.time() - max_age
-        episodes = []
-        try:
-            with open(self.journal_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ep = json.loads(line)
-                        if ep and ep.get("t", 0) >= cutoff and ep.get("w"):
-                            episodes.append(ep)
-                    except Exception:
-                        pass
-        except FileNotFoundError:
-            pass
-        self._cache = episodes
-        return episodes
+        with self._lock:
+            if self._cache is not None:
+                return self._cache
+            cutoff = time.time() - max_age
+            episodes = []
+            try:
+                with open(self.journal_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            ep = json.loads(line)
+                            if ep and ep.get("t", 0) >= cutoff and ep.get("w"):
+                                episodes.append(ep)
+                        except Exception:
+                            pass
+            except FileNotFoundError:
+                pass
+            self._cache = episodes
+            return episodes
 
-    def prune(self, max_age: float = JOURNAL_MAX_AGE_S) -> None:
-        """Remove episodes older than max_age."""
-        self._cache = None
-        kept = self.load(max_age)
-        self._cache = None
-        try:
-            with open(self.journal_path, "w") as f:
-                for ep in kept:
-                    f.write(json.dumps(ep) + "\n")
-        except Exception:
-            pass
+    def prune(self, max_age: float = JOURNAL_MAX_AGE_S) -> bool:
+        """Atomically remove episodes older than max_age."""
+        with self._lock:
+            self._cache = None
+            kept = self.load(max_age)
+            self._cache = None
+            temp_path: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    "w",
+                    dir=self.journal_dir,
+                    prefix=f".{self.journal_path.name}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as f:
+                    temp_path = Path(f.name)
+                    for ep in kept:
+                        f.write(json.dumps(ep) + "\n")
+                temp_path.replace(self.journal_path)
+                return True
+            except Exception:
+                if temp_path is not None:
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                return False
 
     def count(self) -> int:
         return len(self.load())

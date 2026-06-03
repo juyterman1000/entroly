@@ -70,21 +70,20 @@ def _ensure_non_empty(
     fixes in universal_compress/tfidf: it also covers the native Rust path
     (py_compress_block), which can skeletonize an input down to nothing.
 
-    On violation, fall back to a deterministic, budget-respecting head that
-    preserves whole lines for readability.
+    On violation, fall back to a deterministic head that preserves whole lines
+    for readability.
     """
     if out and out.strip():
         return out
     if not original or not original.strip():
         return original
 
+    if budget is not None:
+        return _budget_bounded_head(original, budget)
+
     # Character budget (4 chars ≈ 1 token), with a sane floor so the rescue
     # slice is actually useful rather than a token or two.
-    if budget is not None:
-        char_budget = max(200, budget * 4)
-    else:
-        char_budget = max(200, int(len(original) * max(0.05, target_ratio)))
-
+    char_budget = max(200, int(len(original) * max(0.05, target_ratio)))
     if len(original) <= char_budget:
         return original
 
@@ -97,24 +96,57 @@ def _ensure_non_empty(
     return head.rstrip() + "\n…[truncated]"
 
 
+def _budget_bounded_head(content: str, budget: int) -> str:
+    """Return a deterministic non-empty prefix within the SDK token estimate."""
+    char_budget = max(1, budget * 4)
+    if len(content) <= char_budget:
+        return content
+
+    suffix = "\n...[truncated]"
+    if char_budget <= len(suffix):
+        return content[:char_budget]
+
+    head = content[:char_budget - len(suffix)]
+    nl = head.rfind("\n")
+    if nl > len(head) // 2:
+        head = head[:nl]
+    return head.rstrip() + suffix
+
+
+def _enforce_budget(out: str, budget: int | None) -> str:
+    """Apply the SDK's explicit estimated-token ceiling.
+
+    Query-agnostic compression cannot know which omitted fact a future query
+    will need. Structural compactors get the first pass; if they stop above an
+    explicit budget, finish with deterministic truncation rather than another
+    heuristic selector that implies answer preservation.
+    """
+    if budget is None or len(out) <= budget * 4:
+        return out
+    return _budget_bounded_head(out, budget)
+
+
 def compress(
     content: str,
     budget: int | None = None,
     content_type: str | None = None,
     target_ratio: float = 0.3,
 ) -> str:
-    """Compress any content to fit within a token budget.
+    """Compact content without a task query.
 
-    This is the simplest possible API — one function, one import.
+    This is the lightweight, query-agnostic API. It is useful for structural
+    compaction and bounded truncation, but it cannot promise to retain the
+    answer to an unknown future question. Use ``optimize(..., query=...)`` for
+    high-ratio task-conditioned context selection.
 
     Args:
         content: Any text content (code, prose, JSON, logs, emails, etc.)
-        budget: Target token count. If set, overrides target_ratio.
+        budget: Estimated token upper bound. If set, overrides target_ratio.
         content_type: Optional hint ("json", "code", "prose", "log", etc.)
         target_ratio: Compression ratio if budget not specified (0.3 = keep 30%)
 
     Returns:
-        Compressed text that preserves the most important information.
+        Structurally compacted text within the requested estimated budget.
 
     Example::
 
@@ -129,35 +161,38 @@ def compress(
     if not content:
         return content
 
-    # Estimate current token count (4 chars ≈ 1 token)
+    # Token estimate (4 chars ≈ 1 token) and target ratio.
     current_tokens = len(content) // 4
+    if budget is not None:
+        if current_tokens <= budget:
+            return content  # Already within budget — nothing to do.
+        ratio = max(0.05, budget / max(current_tokens, 1))
+    else:
+        ratio = max(0.05, target_ratio)
 
-    # If budget specified, compute target ratio from it
-    if budget is not None and current_tokens > budget:
-        target_ratio = max(0.05, budget / max(current_tokens, 1))
-    elif budget is not None and current_tokens <= budget:
-        return content  # Already within budget
-
-    # Handle code content with the Rust engine if available
+    # Code can use the native skeletonizer. Other formats keep the existing
+    # content-aware structural compactors. Neither path is query-conditioned.
     if content_type == "code" or (content_type is None and _looks_like_code(content)):
         try:
-            out = _compress_code(content, target_ratio)
-            out = _ensure_non_empty(out, content, budget, target_ratio)
-            _track_savings(current_tokens, len(out) // 4, "compress(code)")
-            return out
+            out = _compress_code(content, ratio)
         except Exception:
-            pass  # Fall through to universal compressor
+            out, _, _ = universal_compress(content, ratio, content_type)
+    else:
+        out, _, _ = universal_compress(content, ratio, content_type)
 
-    compressed, _, _ = universal_compress(content, target_ratio, content_type)
-    compressed = _ensure_non_empty(compressed, content, budget, target_ratio)
-    _track_savings(current_tokens, len(compressed) // 4, "compress")
-    return compressed
+    out = _ensure_non_empty(out, content, budget, ratio)
+    out = _enforce_budget(out, budget)
+    _track_savings(current_tokens, len(out) // 4, "compress")
+    return out
 
 
 def compress_messages(
     messages: list[dict[str, Any]],
     budget: int = 50_000,
     preserve_last_n: int = 4,
+    model: str | None = None,
+    client_key: str | None = None,
+    distill: bool = True,
 ) -> list[dict[str, Any]]:
     """Compress a conversation message list to fit within a token budget.
 
@@ -168,6 +203,9 @@ def compress_messages(
         messages: List of message dicts with 'role' and 'content' keys
         budget: Target total token count for all messages
         preserve_last_n: Number of most recent messages to keep verbatim
+        model: Optional provider model name used to cap the context budget
+        client_key: Optional stable key for reusing nearly-identical older context
+        distill: Strip filler from older assistant responses before compression
 
     Returns:
         Compressed message list.
@@ -186,6 +224,18 @@ def compress_messages(
     """
     if not messages:
         return messages
+
+    # ── Provider-aware budget ──
+    # When a model is named, cap the budget to its context window (leaving
+    # ~20% headroom for the response) so the request stays provider-correct.
+    if model:
+        try:
+            from .proxy_config import context_window_for_model
+            window = context_window_for_model(model)
+            if window and window > 0:
+                budget = min(budget, int(window * 0.8))
+        except Exception:
+            pass  # Unknown model — keep the caller's budget.
 
     # Pre-pass: collapse aged tool outputs to one-line digests. This is
     # near-free and orthogonal to the budget-driven compression below
@@ -219,7 +269,7 @@ def compress_messages(
         len(m.get("content", "")) // 4
         for m in recent if isinstance(m.get("content"), str)
     )
-    remaining_budget = max(budget - recent_tokens, 500)
+    remaining_budget = max(budget - recent_tokens, 1)
 
     # If recent alone busts budget, compress even recent messages
     # (except the very last user message)
@@ -245,16 +295,64 @@ def compress_messages(
             continue
 
         role = msg.get("role", "")
-        # Tool results get more aggressive compression
+
+        # ── Distillation ── strip filler from assistant responses before
+        # budget compression (code blocks + technical content preserved).
+        if distill and role == "assistant":
+            try:
+                from .proxy_transform import distill_response
+                content, _, _ = distill_response(content, mode="full")
+            except Exception:
+                pass
+
+        # Tool results get more aggressive compression.
         msg_ratio = ratio * 0.5 if role in ("tool", "function") else ratio
 
-        compressed_content = compress(content, target_ratio=msg_ratio)
+        msg_budget = max(1, int((len(content) // 4) * msg_ratio))
+        compressed_content = compress(content, budget=msg_budget)
         new_msg = dict(msg)
         new_msg["content"] = compressed_content
         result.append(new_msg)
 
+    # ── Cache-aligned reuse ── stabilize the compressed older-context across
+    # calls for the same client so provider prefix caches can keep hitting on
+    # minor turn-to-turn changes instead of busting on every recompression.
+    if client_key:
+        result = _cache_align_older(client_key, result)
+
     result.extend(recent)
     return result
+
+
+# Module-level cache-alignment state (bounded; mirrors the proxy's
+# CacheAligner so SDK users get prefix-stable context across calls).
+_cache_aligner: Any = None
+_cache_align_prev: dict[str, list[dict[str, Any]]] = {}
+
+
+def _cache_align_older(
+    client_key: str, older_msgs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Reuse the previous compressed older-context when the new one is
+    >~90% similar, preserving the provider's cached prefix. Fail-open."""
+    global _cache_aligner
+    try:
+        if _cache_aligner is None:
+            from .cache_aligner import CacheAligner
+            _cache_aligner = CacheAligner()
+        text = "\n".join(
+            m.get("content", "") for m in older_msgs
+            if isinstance(m.get("content"), str)
+        )
+        _, hit = _cache_aligner.align(client_key, text)
+        if hit and client_key in _cache_align_prev:
+            return _cache_align_prev[client_key]
+        _cache_align_prev[client_key] = older_msgs
+        if len(_cache_align_prev) > 100:
+            _cache_align_prev.pop(next(iter(_cache_align_prev)))
+        return older_msgs
+    except Exception:
+        return older_msgs  # Cache-align is best-effort; never block output.
 
 
 def _compress_all_messages(
@@ -292,7 +390,8 @@ def _compress_all_messages(
         role = msg.get("role", "")
         msg_ratio = ratio * 0.3 if role in ("tool", "function") else ratio
 
-        compressed_content = compress(content, target_ratio=msg_ratio)
+        msg_budget = max(1, int((len(content) // 4) * msg_ratio))
+        compressed_content = compress(content, budget=msg_budget)
         new_msg = dict(msg)
         new_msg["content"] = compressed_content
         result.append(new_msg)
@@ -572,10 +671,11 @@ def optimize(
     budget: int = 128000,
     query: str = "",
 ) -> dict[str, Any]:
-    """Select the optimal context subset using PRISM 5D + knapsack DP.
+    """Select a task-conditioned context subset using the full engine.
 
-    Same algorithm as MCP optimize_context and proxy context injection,
-    exposed as a simple function call for pip users.
+    This is the high-ratio API: the query is preserved and routed through the
+    same BM25/PRISM budgeted selection path as MCP ``optimize_context`` and
+    proxy context injection. Use ``compress()`` only when no task query exists.
 
     Args:
         fragments: List of dicts with keys:

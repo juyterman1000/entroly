@@ -333,3 +333,76 @@ def test_daemon_learning_callback_reports_journal_failures():
     assert callback["last_error"] == "disk full"
     assert stats["journal"]["status"] == "error"
     assert daemon.state.last_feedback_at is not None
+
+
+def test_daemon_learning_callback_reports_real_journal_write_failures(tmp_path):
+    journal = FeedbackJournal(str(tmp_path))
+    journal.journal_path = tmp_path
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._feedback_journal = journal
+
+    daemon._log_learning_episode(weights=_weights(), reward=0.2)
+
+    callback = daemon.get_learning_stats()["learning_loop"]["journal_callback"]
+    assert callback["attempts"] == 1
+    assert callback["failures"] == 1
+    assert callback["last_status"] == "error"
+    assert callback["last_error"] == "feedback journal write failed"
+    assert not daemon._learning_wake.is_set()
+
+
+def test_daemon_learning_stats_report_journal_prune_failures():
+    class BrokenJournal:
+        def prune(self, **_kwargs):
+            return False
+
+        def stats(self):
+            return {"episodes": 0}
+
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._feedback_journal = BrokenJournal()
+
+    assert daemon._prune_feedback_journal(max_age=60) is False
+
+    retention = daemon.get_learning_stats()["learning_loop"]["journal_retention"]
+    assert retention["attempts"] == 1
+    assert retention["failures"] == 1
+    assert retention["last_status"] == "error"
+    assert retention["last_error"] == "feedback journal prune failed"
+    assert retention["last_attempt_at"] is not None
+    assert retention["last_success_at"] is None
+
+
+def test_daemon_learning_stats_isolate_dreaming_stats_failures():
+    class BrokenDreamingLoop:
+        def stats(self):
+            raise RuntimeError("dream telemetry unavailable")
+
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._dreaming_loop = BrokenDreamingLoop()
+
+    stats = daemon.get_learning_stats()
+
+    assert stats["learning_loop"]["status"] == "not_started"
+    assert stats["dreaming"] == {
+        "status": "error",
+        "error": "dream telemetry unavailable",
+    }
+
+
+def test_daemon_learning_stats_isolate_task_profile_failures():
+    class BrokenTaskProfiles:
+        @property
+        def _profiles(self):
+            raise RuntimeError("profile telemetry unavailable")
+
+    daemon = EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon._task_profiles = BrokenTaskProfiles()
+
+    stats = daemon.get_learning_stats()
+
+    assert stats["learning_loop"]["status"] == "not_started"
+    assert stats["task_profiles"] == {
+        "status": "error",
+        "error": "profile telemetry unavailable",
+    }

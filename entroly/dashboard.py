@@ -58,17 +58,39 @@ def _safe_json(obj: Any) -> Any:
 
 def _control_learning_snapshot(daemon: Any) -> dict:
     """Control API payload for /api/control/learning."""
+    errors = []
     if hasattr(daemon, "get_learning_stats"):
         try:
             return _safe_json(daemon.get_learning_stats())
-        except Exception:
-            pass
+        except Exception as e:
+            errors.append({
+                "section": "learning_stats",
+                "type": type(e).__name__,
+                "message": str(e) or repr(e),
+            })
     state = getattr(daemon, "state", None)
-    return _safe_json({
+    try:
+        weights = (
+            daemon.get_learning_weights()
+            if hasattr(daemon, "get_learning_weights")
+            else {}
+        )
+    except Exception as e:
+        errors.append({
+            "section": "learning_weights",
+            "type": type(e).__name__,
+            "message": str(e) or repr(e),
+        })
+        weights = {"status": "error", "error": str(e) or repr(e)}
+    snap = {
         "local_enabled": getattr(state, "learning_enabled", True),
         "autotune_enabled": getattr(state, "autotune_enabled", True),
-        "weights": daemon.get_learning_weights() if hasattr(daemon, "get_learning_weights") else {},
-    })
+        "weights": weights,
+    }
+    if errors:
+        snap["status"] = "degraded"
+        snap["errors"] = errors
+    return _safe_json(snap)
 
 def _record_section_error(snap: dict, section: str, exc: BaseException) -> None:
     """Append a structured error so the dashboard JS can render a banner.

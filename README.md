@@ -527,17 +527,25 @@ GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta  your-app
 > Environment variable names are client-specific; use the base-url setting
 > your SDK or CLI actually documents.
 
-Drop it into your own code — two lines:
+Drop it into your own code:
 
 ```python
-from entroly import compress, compress_messages
+from entroly import compress, compress_messages, optimize
 
-# Compress any content (code, JSON, logs, prose)
+# Lightweight query-agnostic compaction (code, JSON, logs, prose)
 compressed = compress(api_response, budget=2000)
 
 # Or compress a full LLM conversation
 messages = compress_messages(messages, budget=30000)
+
+# For high-ratio task-conditioned selection, keep the query signal
+context = optimize(fragments, budget=8000, query="fix the login bug")
 ```
+
+`compress()` is useful when no task query exists. For aggressive compression
+that prioritizes answer-relevant context for a known task, use
+`optimize(..., query=...)`; that path applies the full query-conditioned
+retrieval and selection engine.
 
 Or run the **single binary** — no Python runtime at all (standalone Rust proxy, Anthropic/OpenAI/Gemini auto-detected, cache-aligned so the provider prefix cache keeps hitting):
 
@@ -831,7 +839,7 @@ Entroly's proxy (`localhost:9377`) works with tools that let you override their 
 | Use case | One-liner |
 |---|---|
 | **LLM APIs with compatible base-URL configuration** | `entroly proxy` → HTTP proxy on `localhost:9377` |
-| **LangChain / LlamaIndex / your code** | `from entroly import compress, compress_messages` |
+| **LangChain / LlamaIndex / your code** | `from entroly import compress, compress_messages, optimize` |
 | **Nous Hermes (Local/ChatML)** | `from entroly.integrations.hermes import safe_compress_hermes` |
 | **CI / token-budget gate** | `entroly batch --budget 8000 --fail-over-budget` |
 
