@@ -40,6 +40,15 @@ def test_selected_fragments_keep_engine_contract_fields():
     assert frag["relevance_score"] == frag["relevance"]
 
 
+def test_short_fragments_are_not_dropped_by_query_fallback():
+    frags = [
+        {"source": "a.py", "content": "def a(): return 1", "token_count": 8},
+        {"source": "b.py", "content": "def b(): return 2", "token_count": 8},
+    ]
+    result = select(frags, token_budget=1000, query="fix a")
+    assert [frag["source"] for frag in result] == ["b.py", "a.py"]
+
+
 def test_budget_respected():
     frags = [
         {"source": f"f{i}.py", "content": "def func(): return 1\n" * 50, "token_count": 200}

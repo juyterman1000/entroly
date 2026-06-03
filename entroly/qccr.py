@@ -349,6 +349,8 @@ def select(
         if budget_left <= 0:
             break
         sentences = _split_sentences(text)
+        if not sentences and text.strip():
+            sentences = [text.strip()]
         if not sentences:
             continue
         s_tf, s_lens, s_df, s_avg = _bm25_corpus(sentences)
