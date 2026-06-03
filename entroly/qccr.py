@@ -60,6 +60,7 @@ _BM25_B = 0.75
 _MMR_LAMBDA = 0.7           # relevance-diversity tradeoff (70% relevance)
 _MIN_SENTENCE_CHARS = 20    # skip shorter "sentences" (whitespace artifacts)
 _MAX_FILES_CONSIDERED = 12  # top-K files per query
+_MAX_MMR_SENTENCE_CANDIDATES = 512  # bound pairwise MMR cost on huge files
 _CHARS_PER_TOKEN = 4        # approximation for token-budget accounting
 _ENTITY_BOOST = 1.5         # multiplicative weight for query-entity overlap
 
@@ -184,6 +185,20 @@ def _mmr_select(
     if n == 0:
         return []
 
+    index_map = list(range(n))
+    if n > _MAX_MMR_SENTENCE_CANDIDATES:
+        ranked = sorted(
+            range(n),
+            key=lambda i: (rel[i], len(tf_list[i]), len(sentences[i])),
+            reverse=True,
+        )[:_MAX_MMR_SENTENCE_CANDIDATES]
+        ranked.sort()
+        index_map = ranked
+        sentences = [sentences[i] for i in ranked]
+        tf_list = [tf_list[i] for i in ranked]
+        rel = [rel[i] for i in ranked]
+        n = len(sentences)
+
     selected: list[int] = []
     remaining: list[int] = [i for i in range(n) if rel[i] > 0.0]
     if not remaining:
@@ -205,7 +220,7 @@ def _mmr_select(
             used += cost
             if used >= budget_tokens:
                 break
-        return sorted(out)
+        return sorted(index_map[i] for i in out)
     # token sets per sentence for Jaccard
     sets = [frozenset(tf_list[i].keys()) for i in range(n)]
     budget_used = 0
@@ -238,7 +253,7 @@ def _mmr_select(
         remaining.remove(best)
         budget_used += cost
 
-    return sorted(selected)
+    return sorted(index_map[i] for i in selected)
 
 
 # ── Public entry ─────────────────────────────────────────────────────────
@@ -356,12 +371,17 @@ def select(
             continue
         excerpt = "\n".join(sentences[i] for i in chosen)
         tokens_used = _approx_tokens(excerpt)
+        fragment_id = f"qccr::{src}"
+        relevance = round(float(score), 4)
         # Emit as a synthetic fragment preserving source attribution.
         output.append({
-            "fragment_id": f"qccr::{src}",
+            "id": fragment_id,
+            "fragment_id": fragment_id,
             "source": src,
             "content": excerpt,
             "token_count": tokens_used,
+            "relevance": relevance,
+            "relevance_score": relevance,
         })
         budget_left -= tokens_used
 

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 from types import SimpleNamespace
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -202,7 +203,8 @@ def test_capture_ranked_recovery_candidates_keeps_other_chunk_from_selected_sour
 
 
 def test_native_hierarchical_result_exposes_rendered_level2_recovery_candidates():
-    from entroly_core import EntrolyEngine
+    entroly_core = pytest.importorskip("entroly_core")
+    EntrolyEngine = entroly_core.EntrolyEngine
 
     engine = EntrolyEngine()
     fragments = [
@@ -259,7 +261,8 @@ def test_native_hierarchical_result_exposes_rendered_level2_recovery_candidates(
 
 
 def test_native_hierarchical_result_prefers_explicit_query_conditioned_seeds():
-    from entroly_core import EntrolyEngine
+    entroly_core = pytest.importorskip("entroly_core")
+    EntrolyEngine = entroly_core.EntrolyEngine
 
     engine = EntrolyEngine()
     auth = engine.ingest(

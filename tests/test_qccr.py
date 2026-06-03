@@ -25,6 +25,21 @@ def test_selects_query_relevant_file():
     assert "relevant.py" in sources, f"qccr did not pick the jaccard file: {sources}"
 
 
+def test_selected_fragments_keep_engine_contract_fields():
+    frags = [{
+        "source": "relevant.py",
+        "content": "def jaccard_similarity(a, b):\n    return len(a & b) / len(a | b)",
+        "token_count": 15,
+    }]
+    result = select(frags, token_budget=512, query="What is jaccard similarity?")
+    assert result
+    frag = result[0]
+    assert frag["id"] == "qccr::relevant.py"
+    assert frag["fragment_id"] == frag["id"]
+    assert isinstance(frag["relevance"], float)
+    assert frag["relevance_score"] == frag["relevance"]
+
+
 def test_budget_respected():
     frags = [
         {"source": f"f{i}.py", "content": "def func(): return 1\n" * 50, "token_count": 200}
