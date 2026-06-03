@@ -87,7 +87,7 @@ The system has two layers: a **Python orchestration layer** (`entroly/`) and a *
 | `depgraph.rs` | Cross-file import/dependency resolution |
 | `prism.rs` | Reinforcement loop — learns fragment→outcome mappings |
 | `cogops.rs` | Unified engine combining all of the above |
-| `sast.rs` | Static security scanning (55 rules) |
+| `sast.rs` | Static security scanning (151 rules) |
 | `archetype.rs` | Role-based context presets |
 
 ### Knowledge Vault (`vault.py`)

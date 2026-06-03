@@ -34,7 +34,7 @@
   <img src="https://img.shields.io/badge/Rust_Engine-50--100x_faster-orange?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
-  <img src="https://img.shields.io/badge/Tests-484_Passing-success" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1293_Passing-success" alt="Tests">
   <img src="https://img.shields.io/badge/Latency-<10ms-purple" alt="Latency">
 </p>
 
@@ -209,8 +209,8 @@ docker run --rm -p 9377:9377 -p 9378:9378 -v .:/workspace:ro ghcr.io/juyterman10
 - **Low config** — `entroly go` handles the common local setup path. No embeddings API is required.
 - **Instant results** — See the difference on your first request. No training period.
 - **Privacy-first** — Local indexing and selection. Your code is not sent to Entroly's servers.
-- **Tested** — 436 tests, crash recovery, connection auto-reconnect, cross-platform file locking.
-- **Built-in security** — 55 SAST rules catch hardcoded secrets, SQL injection, command injection across 8 CWE categories.
+- **Tested** — 1,293 passing tests, crash recovery, connection auto-reconnect, cross-platform file locking.
+- **Built-in security** — 151 SAST rules catch hardcoded secrets, SQL injection, command injection across 38 CWE IDs.
 - **Codebase health grades** — Clone detection, dead code finder, god file detection. Get an A-F grade.
 
 ---
@@ -223,7 +223,7 @@ When developers search for **"token saving proxy"** or **"context compression"**
 |---|---|---|
 | **Setup** | Zero-config (`entroly go`) | Requires YAML/embedding setup |
 | **Codebase Intelligence** | Deep (dead code, god files) | Proxy transport only |
-| **Security** | 55 SAST rules (catches hardcoded secrets) | None builtin |
+| **Security** | 151 SAST rules (catches hardcoded secrets) | None builtin |
 | **Savings Strategy** | Information-theoretic Knapsack (retains 100% visibility) | Standard reduction techniques |
 | **Primary Use Case** | Context compression for AI agents | Basic token reduction |
 
@@ -612,7 +612,7 @@ While Entroly was built for codebases, its core relies on **Shannon Entropy and 
 | `entroly wrap cursor` | Start proxy + print Cursor config |
 | `entroly demo` | Before/after comparison with dollar savings on YOUR project |
 | `entroly dashboard` | Live metrics: savings trends, health grade, PRISM weights |
-| `entroly doctor` | 7 diagnostic checks — finds problems before you do |
+| `entroly doctor` | 8 diagnostic checks — finds problems before you do |
 | `entroly health` | Codebase health grade (A-F): clones, dead code, god files |
 | `entroly benchmark` | Competitive benchmark: Entroly vs raw context vs top-K |
 | `entroly role` | Weight presets: `frontend`, `backend`, `sre`, `data`, `fullstack` |
@@ -774,7 +774,7 @@ entroly proxy --quality 0.7         # any float 0.0-1.0
 ## Need Help?
 
 ```bash
-entroly doctor    # runs 7 diagnostic checks
+entroly doctor    # runs 8 diagnostic checks
 entroly --help    # all commands
 ```
 
@@ -861,7 +861,7 @@ Hybrid Rust + Python. Math-heavy core paths use Rust via PyO3 where available; M
 | **skeleton.rs** | Code skeletons | Preserves signatures, strips bodies (60-80% reduction) |
 | **dedup.rs** | Duplicate detection | 64-bit SimHash, Hamming threshold 3 |
 | **lsh.rs** | Semantic recall | 12-table multi-probe LSH, ~3μs over 100K fragments |
-| **sast.rs** | Security scanning | 55 rules, 8 CWE categories, taint analysis |
+| **sast.rs** | Security scanning | 151 rules, 38 CWE IDs, taint analysis |
 | **health.rs** | Codebase health | Clones, dead symbols, god files, arch violations |
 | **guardrails.rs** | Safety-critical pinning | Criticality levels + task-aware budget multipliers |
 | **query.rs** | Query analysis | Vagueness scoring, keyword extraction, intent |

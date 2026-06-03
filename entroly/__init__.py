@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.14"
+__version__ = "1.0.15"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -117,5 +117,14 @@ except ImportError:
 try:
     from .context_firewall import scan as acf_scan, sanitize as acf_sanitize  # noqa: F401
     from .context_firewall import IntegrityChain  # noqa: F401
+except ImportError:
+    pass
+
+# Cache Aligner — provider KV-cache prefix stabilizer (lever #3).
+# Hashes injected context and stabilizes it across requests so Anthropic's
+# 90% / OpenAI's 50% cached-prefix discounts actually hit. Documented in the
+# README as `from entroly import CacheAligner`.
+try:
+    from .cache_aligner import CacheAligner  # noqa: F401
 except ImportError:
     pass

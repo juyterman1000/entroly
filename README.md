@@ -188,12 +188,12 @@ python benchmarks/run_readme_benchmarks.py needle     # one at a time
 | Benchmark | n | Budget | Baseline (95% CI) | With Entroly (95% CI) | Retention | Token Savings | Proof |
 |---|---|---|---|---|---|---|---|
 | NeedleInAHaystack | 20 | 2K | 100% [83.9-100%] | 100% [83.9-100%] | **100.0%** | **99.5%** | [json](benchmarks/results/needle_accuracy.json) |
-| LongBench (HotpotQA) | 50 | 2K | 64.0% [50.1-75.9%] | 68.0% [54.2-79.2%] | **106.2%** | **85.3%** | [json](benchmarks/results/longbench_accuracy.json) |
-| Berkeley Function Calling | 50 | 500 | 100% [92.9-100%] | 100% [92.9-100%] | **100.0%** | **79.1%** | [json](benchmarks/results/bfcl_accuracy.json) |
-| SQuAD 2.0 | 50 | 100 | 76.0% [62.6-85.7%] | 70.0% [56.1-81.0%] | **92.1%** | **37.7%** | [json](benchmarks/results/squad_accuracy.json)² |
-| GSM8K | 20 | 50K | 90.0% [69.9-97.2%] | 90.0% [69.9-97.2%] | **100.0%** | pass-through¹ | [json](benchmarks/results/gsm8k_accuracy.json)³ |
-| MMLU | 20 | 50K | 85.0% [64.0-94.8%] | 80.0% [58.4-91.9%] | **94.1%** | pass-through¹ | [json](benchmarks/results/mmlu_accuracy.json)³ |
-| TruthfulQA (MC1) | 20 | 50K | 95.0% [76.4-99.1%] | 95.0% [76.4-99.1%] | **100.0%** | pass-through¹ | [json](benchmarks/results/truthfulqa_accuracy.json)³ |
+| LongBench (HotpotQA) | 50 | 2K | 64.0% [50.1-75.9%] | 66.0% [52.1-77.6%] | **103.1%** | **85.3%** | [json](benchmarks/results/longbench_accuracy.json) |
+| Berkeley Function Calling | 50 | 500 | 100% [92.9-100%] | 100% [92.9-100%] | **100.0%** | **79.3%** | [json](benchmarks/results/bfcl_accuracy.json) |
+| SQuAD 2.0 | 50 | 100 | 80.0% [67.0-88.8%] | 72.0% [58.3-82.5%] | **90.0%** | **43.8%** | [json](benchmarks/results/squad_accuracy.json)² |
+| GSM8K | 20 | 50K | 85.0% [64.0-94.8%] | 85.0% [64.0-94.8%] | **100.0%** | pass-through¹ | [json](benchmarks/results/gsm8k_accuracy.json)³ |
+| MMLU | 20 | 50K | 85.0% [64.0-94.8%] | 85.0% [64.0-94.8%] | **100.0%** | pass-through¹ | [json](benchmarks/results/mmlu_accuracy.json)³ |
+| TruthfulQA (MC1) | 20 | 50K | 90.0% [69.9-97.2%] | 90.0% [69.9-97.2%] | **100.0%** | pass-through¹ | [json](benchmarks/results/truthfulqa_accuracy.json)³ |
 
 > ¹ **pass-through**: Context already fits within budget, so Entroly leaves it unchanged. Results vary by model, dataset, prompt shape, and token budget.
 >
@@ -361,8 +361,8 @@ python bench/trust_bench.py
 | Test | What It Proves | Result |
 |---|---|---|
 | **A. Compression** | Real token reduction on source files | **50% savings** |
-| **B. Classifier** | RAVS archetype accuracy (40 labeled prompts) | **100% accuracy** |
-| **C. Hook Coverage** | Tool pattern coverage (50 commands) | **100% coverage** |
+| **B. Classifier** | RAVS archetype accuracy (45 labeled prompts) | **100% accuracy** |
+| **C. Hook Coverage** | Tool pattern coverage (55 commands) | **100% coverage** |
 | **D. Router Logic** | Bayesian gate correctness (5 cases) | **5/5 correct** |
 | **E. Determinism** | Same input → identical output (SHA-256) | **Bit-identical** |
 
