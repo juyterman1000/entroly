@@ -57,7 +57,7 @@ class PromotionGate:
 
     def evaluate_promotion(self) -> dict[str, float] | None:
         """Evaluate if the shadow policy should be promoted to live.
-        
+
         Returns the new weights if promoted, None otherwise.
         """
         with self._lock:
