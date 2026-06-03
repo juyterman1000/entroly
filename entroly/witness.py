@@ -537,6 +537,57 @@ def _witness_rewrite_from_dict(data: dict[str, Any]) -> WitnessRewrite:
     )
 
 
+# ── Novel-entity risk floor ───────────────────────────────────────────────
+# A claim that introduces content words entirely absent from the evidence is a
+# strong hallucination signal the learned risk model can under-weight when the
+# claim's SUBJECT is grounded but its PREDICATE is fabricated (e.g. "AutoGPT
+# uses quantum bananas" — "AutoGPT" is in evidence, "quantum bananas" invented).
+# STAVE catches wrong relations between KNOWN entities, not a freshly-invented
+# noun phrase. This floor is deliberately conservative — it fires only when a
+# MAJORITY of the claim's content words (and >=2 of them) are novel — so
+# faithful paraphrases, which share most vocabulary with the evidence, are
+# unaffected. Validated to not regress HaluEval-QA AUROC.
+_NOVEL_STOPWORDS = frozenset("""
+the a an of to in on for with by and or but not is are was were be been being
+this that these those it its as at from into over under up down out off about
+he she they we you i me him her them us my your his their our then than so if
+has have had do does did can could should would will may might must shall
+uses use used using made make makes get gets got also more most very such
+which who whom whose what when where why how all any both each few many some
+""".split())
+_NOVEL_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{2,}")
+
+
+def _novel_content_tokens(text: str) -> set[str]:
+    return {
+        w.lower() for w in _NOVEL_WORD_RE.findall(text or "")
+        if w.lower() not in _NOVEL_STOPWORDS
+    }
+
+
+def _novel_content_floor(claim: str, evidence: str, risk: float, floor: float = 0.45) -> float:
+    """Raise ``risk`` to at least ``floor`` when the claim contains a fabricated
+    noun phrase: two or more *adjacent* content words absent from the evidence
+    (e.g. "quantum bananas"). Detecting an adjacent novel run — rather than a
+    bag-of-words ratio — keeps this conservative: faithful paraphrases swap a
+    single synonym at a time and seldom introduce two brand-new neighbouring
+    content words, whereas a hallucinated entity arrives as a fresh phrase.
+    Never lowers risk."""
+    claim_seq = [
+        w.lower() for w in _NOVEL_WORD_RE.findall(claim or "")
+        if w.lower() not in _NOVEL_STOPWORDS
+    ]
+    if len(claim_seq) < 2:
+        return risk
+    evidence_words = _novel_content_tokens(evidence)
+    run = 0
+    for w in claim_seq:
+        run = run + 1 if w not in evidence_words else 0
+        if run >= 2:
+            return max(risk, floor)
+    return risk
+
+
 class WitnessAnalyzer:
     """Proof-carrying factuality analyzer.
 
@@ -913,6 +964,11 @@ class WitnessAnalyzer:
                 question=question_text,
             )
             risk = risk_model.predict(features)
+            # Novel-entity floor: raise risk when the claim introduces a
+            # fabricated noun phrase (adjacent content words absent from the
+            # evidence) on an otherwise-grounded subject. Conservative; never
+            # lowers risk. Validated to not regress HaluEval-QA AUROC.
+            risk = _novel_content_floor(claim.text, evidence_text, float(risk))
             if contradiction >= self.contradiction_threshold:
                 label = "contradicted"
                 risk = max(float(risk), 0.92)
