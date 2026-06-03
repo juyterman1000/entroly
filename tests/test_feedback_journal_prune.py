@@ -29,6 +29,7 @@ def test_prune_preserves_journal_when_atomic_replace_fails(tmp_path, monkeypatch
 def test_prune_serializes_append_with_atomic_replace(tmp_path, monkeypatch):
     journal = FeedbackJournal(str(tmp_path))
     assert journal.log(weights=_weights(), reward=0.7)
+    time.sleep(0.05)
     replace_started = threading.Event()
     allow_replace = threading.Event()
     real_replace = Path.replace
