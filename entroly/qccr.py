@@ -223,6 +223,7 @@ def _mmr_select(
         return sorted(index_map[i] for i in out)
     # token sets per sentence for Jaccard
     sets = [frozenset(tf_list[i].keys()) for i in range(n)]
+    max_sim = [0.0] * n
     budget_used = 0
 
     while remaining and budget_used < budget_tokens:
@@ -230,17 +231,7 @@ def _mmr_select(
             best = max(remaining, key=lambda i: rel[i])
         else:
             def mmr_score(i: int) -> float:
-                sim = 0.0
-                for j in selected:
-                    a, b = sets[i], sets[j]
-                    if not a or not b:
-                        continue
-                    inter = len(a & b)
-                    union = len(a | b)
-                    if union == 0:
-                        continue
-                    sim = max(sim, inter / union)
-                return lam * rel[i] - (1.0 - lam) * sim
+                return lam * rel[i] - (1.0 - lam) * max_sim[i]
             best = max(remaining, key=mmr_score)
 
         if rel[best] <= 0.0:
@@ -252,6 +243,19 @@ def _mmr_select(
         selected.append(best)
         remaining.remove(best)
         budget_used += cost
+        b = sets[best]
+        if b:
+            for i in remaining:
+                a = sets[i]
+                if not a:
+                    continue
+                inter = len(a & b)
+                union = len(a | b)
+                if union == 0:
+                    continue
+                sim = inter / union
+                if sim > max_sim[i]:
+                    max_sim[i] = sim
 
     return sorted(index_map[i] for i in selected)
 
