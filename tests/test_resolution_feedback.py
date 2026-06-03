@@ -1,4 +1,7 @@
-from entroly_core import EntrolyEngine
+import pytest
+
+entroly_core = pytest.importorskip("entroly_core", reason="Rust path not installed")
+EntrolyEngine = entroly_core.EntrolyEngine
 
 
 def _engine():
