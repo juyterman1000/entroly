@@ -273,18 +273,25 @@ def _extract_triplets(text: str) -> list[Triplet]:
             verb_canon = _PRED_CANON.get(verb_raw.lower(), verb_raw.lower())
             v_start, v_end = vm.start(), vm.end()
 
-            # Subject: rightmost NP before the verb
+            # Subject: rightmost *content-bearing* NP before the verb.
             left_text = sent[:v_start]
             subject = ""
             for nm in _NP_PATTERN.finditer(left_text):
-                subject = nm.group(0).strip()  # keep last (rightmost)
+                cand = nm.group(0).strip()
+                if _token_set(cand):  # has at least one content token
+                    subject = cand   # keep last (rightmost) content NP
 
-            # Object: leftmost NP after the verb
+            # Object: leftmost *content-bearing* NP after the verb. Skip bare
+            # determiners/stopwords (e.g. "the" in "is the CEO of Apple") which
+            # otherwise yield an empty token set and spuriously trip the
+            # wrong-slot gate (o_fid collapses to 0 against any knowledge).
             right_text = sent[v_end:]
             object_ = ""
-            om = _NP_PATTERN.search(right_text)
-            if om:
-                object_ = om.group(0).strip()
+            for om in _NP_PATTERN.finditer(right_text):
+                cand = om.group(0).strip()
+                if _token_set(cand):
+                    object_ = cand
+                    break
 
             # Skip if either slot is empty or trivially short
             if len(subject) < 2 or len(object_) < 2:

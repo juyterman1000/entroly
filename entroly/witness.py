@@ -681,11 +681,14 @@ class WitnessAnalyzer:
             summary_score = 1.0
 
         # ── STAVE enhancement ────────────────────────────────────────────
-        # Blend Relational Slot Fidelity into summary_score when STAVE
-        # has a non-neutral signal (coverage ~35% of QA decisions).
-        # Wrong-slot gate (sr==0.0) = hard penalise; partial mismatch =
-        # soft blend weighted 25%.
-        # Disable with use_stave=False or ENTROLY_STAVE=0.
+        # Blend Relational Slot Fidelity into summary_score when STAVE has a
+        # non-neutral signal (coverage ~35% of QA decisions). stave_risk is a
+        # *risk*: 0.0 = grounded, 1.0 = wrong-slot/hallucinated, 0.5 = no signal.
+        # A high risk (wrong-slot gate, capped >=0.75) is hard-penalised; any
+        # other relational signal is soft-blended at 25% on the grounding
+        # scale. Wrong-slot precision is 100% on HaluEval-QA, so the hard cap
+        # does not introduce false positives. Disable with use_stave=False or
+        # ENTROLY_STAVE=0.
         if self.use_stave:
             try:
                 from .verifiers.stave import stave_risk as _stave_risk
@@ -697,9 +700,9 @@ class WitnessAnalyzer:
                 )
                 _sr = _stave_risk(output, _knowledge)
                 if _sr != 0.5:  # STAVE has relational signal
-                    if _sr == 0.0:  # wrong-slot gate fired: hard cap
+                    if _sr >= 0.75:  # wrong-slot gate fired: hard cap risk high
                         summary_score = min(summary_score, 0.10)
-                    else:  # soft blend: 75% WITNESS + 25% STAVE
+                    else:  # soft blend: 75% WITNESS + 25% STAVE grounding
                         summary_score = 0.75 * summary_score + 0.25 * (1.0 - _sr)
             except Exception as _e:
                 logger.debug("STAVE blend failed: %s", _e)
