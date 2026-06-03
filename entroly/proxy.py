@@ -29,6 +29,7 @@ import re
 import sys
 import threading
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -1232,6 +1233,7 @@ class PromptCompilerProxy:
         _recoverable_fragments: list[dict[str, Any]] = []
         user_message = ""
         witness_context = ""
+        request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
 
         # Run the optimization pipeline (synchronous Rust, off the event loop)
         try:
@@ -1239,7 +1241,7 @@ class PromptCompilerProxy:
             witness_context = user_message
             if user_message:
                 pipeline_result = await asyncio.to_thread(
-                    self._run_pipeline, user_message, body, path
+                    self._run_pipeline, user_message, body, path, request_id
                 )
                 context_text = pipeline_result["context"]
                 pipeline_ms = pipeline_result["elapsed_ms"]
@@ -1609,15 +1611,15 @@ class PromptCompilerProxy:
         if is_streaming:
             return await self._stream_response(
                 target_url, forward_headers, body, _selected_frag_ids,
-                witness_context, provider, _recoverable_fragments
+                witness_context, provider, _recoverable_fragments, request_id
             )
         else:
             return await self._forward_response(
                 target_url, forward_headers, body, _selected_frag_ids,
-                witness_context, provider, _recoverable_fragments
+                witness_context, provider, _recoverable_fragments, request_id
             )
 
-    def _run_pipeline(self, user_message: str, body: dict[str, Any], path: str = "") -> dict[str, Any]:
+    def _run_pipeline(self, user_message: str, body: dict[str, Any], path: str = "", request_id: str = "") -> dict[str, Any]:
         """Run the synchronous optimization pipeline. Called via asyncio.to_thread.
 
         Returns dict with keys: context and elapsed_ms.
@@ -1719,6 +1721,19 @@ class PromptCompilerProxy:
         self._last_injected_claim_ids = injected_claim_ids
 
         result = self.engine.optimize_context(token_budget, user_message)
+
+        if "online_prism" in result and hasattr(self.engine, "_outcome_bridge") and self.engine._outcome_bridge is not None and request_id:
+            op = result["online_prism"]
+            try:
+                self.engine._outcome_bridge.cache_observation(
+                    request_id=request_id,
+                    implicit_reward=op.get("reward", 0.0),
+                    implicit_advantage=op.get("implicit_advantage", 0.0),
+                    contributions=op.get("contributions", {}),
+                    weights=op.get("weights", {}),
+                )
+            except Exception as e:
+                logger.debug("OutcomeBridge caching failed: %s", e)
 
         selected = result.get("selected_fragments", [])
         # Render the hierarchy from the query-conditioned BM25+PRISM selection.
@@ -1985,6 +2000,7 @@ class PromptCompilerProxy:
         provider: str = "openai",
         recoverable_fragments: list[dict[str, Any]] | None = None,
         recovery_depth: int = 0,
+        request_id: str = "",
     ) -> StreamingResponse | JSONResponse:
         """Buffer a streaming upstream response so WITNESS can enforce before display."""
         if not self._breaker.allow_request():
@@ -2091,6 +2107,7 @@ class PromptCompilerProxy:
                 provider=provider,
                 recoverable_fragments=[],
                 recovery_depth=recovery_depth + 1,
+                request_id=request_id,
             )
             recovered_ok = (
                 recovered.status_code < 400
@@ -2100,6 +2117,7 @@ class PromptCompilerProxy:
                 recovered_sources=recovered_sources,
                 success=recovered_ok,
                 trigger="verification",
+                request_id=request_id,
             )
             if recovered_ok:
                 self._mark_auto_recovery_headers(recovered, recovered_sources)
@@ -2109,6 +2127,16 @@ class PromptCompilerProxy:
 
         structured_output = _looks_like_structured_text(response_text)
         self._record_witness_result(result, changed=rewrite.changed and not structured_output)
+        if request_id and hasattr(self.engine, "_outcome_bridge") and self.engine._outcome_bridge is not None:
+            try:
+                self.engine._outcome_bridge.on_honest_outcome(
+                    request_id=request_id,
+                    event_type="verification_result",
+                    value="failed" if result.flagged() else "passed",
+                    strength="strong"
+                )
+            except Exception as e:
+                logger.debug("OutcomeBridge verification outcome failed: %s", e)
         witness_id = self._store_witness_certificate(result, rewrite)
 
         # P0+P2: Post-response ECE + conformal cascade (buffered path)
@@ -2772,6 +2800,7 @@ class PromptCompilerProxy:
         recovered_sources: list[str],
         success: bool,
         trigger: str,
+        request_id: str = "",
     ) -> None:
         with self._stats_lock:
             self._auto_recovery_attempted += 1
@@ -2786,6 +2815,17 @@ class PromptCompilerProxy:
                 "coverage_risk": getattr(self, "_last_coverage_risk", "unknown"),
                 "timestamp": time.time(),
             }
+        
+        if request_id and hasattr(self.engine, "_outcome_bridge") and self.engine._outcome_bridge is not None:
+            try:
+                self.engine._outcome_bridge.on_honest_outcome(
+                    request_id=request_id,
+                    event_type="recovery_event",
+                    value="success" if success else "failure",
+                    strength="strong"
+                )
+            except Exception as e:
+                logger.debug("OutcomeBridge recovery outcome failed: %s", e)
 
     def _record_resolution_feedback(
         self,
@@ -3167,6 +3207,7 @@ class PromptCompilerProxy:
         provider: str = "openai",
         recoverable_fragments: list[dict[str, Any]] | None = None,
         recovery_depth: int = 0,
+        request_id: str = "",
     ) -> JSONResponse:
         """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation.
 
@@ -3402,6 +3443,7 @@ class PromptCompilerProxy:
                             provider=provider,
                             recoverable_fragments=[],
                             recovery_depth=recovery_depth + 1,
+                            request_id=request_id,
                         )
                         recovered_ok = (
                             recovered.status_code < 400
@@ -3411,6 +3453,7 @@ class PromptCompilerProxy:
                             recovered_sources=recovered_sources,
                             success=recovered_ok,
                             trigger="verification",
+                            request_id=request_id,
                         )
                         if recovered_ok:
                             self._mark_auto_recovery_headers(

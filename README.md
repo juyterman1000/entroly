@@ -23,14 +23,14 @@
   <a href="https://github.com/juyterman1000/entroly-cost-check-"><img src="https://img.shields.io/badge/GitHub_Action-Cost_Check-purple?style=for-the-badge&logo=githubactions" alt="GitHub Action"></a>
 </p>
 
-<h1 align="center">Cut your Claude / OpenAI / Gemini bill 70%+ with one proxy.</h1>
+<h1 align="center">Entroly: The Verified Closed-Loop Controller for AI Coding Agents.</h1>
 
-<h3 align="center">Drop-in. 30 seconds. No code changes.<br/><sub>Powered by knapsack-optimal context selection, prefix-stable cache hits, $0 hallucination guard, and 16 other levers — all on by default.</sub></h3>
+<h3 align="center">Optimize outcomes, not just tokens.<br/><sub>Maximize verified coding tasks per dollar via closed-loop feedback, PRISM learning, and auto-recovery.</sub></h3>
 
 <p align="center"><sub><strong>One motto: cut AI bills.</strong> 19 mechanisms working together — context compression, provider-cache alignment, hallucination suppression, model routing, response distillation, persistent cross-session cache, and more. You install once; every mechanism runs locally.</sub></p>
 
 <p align="center">
-  <strong>70%+ input-token reduction</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong>Maximize verified tasks/dollar</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
   <strong>$0 hallucination guard</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
   <strong>30-second install</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
   <strong>Claude · Cursor · Codex · Aider · 33 more</strong>
@@ -152,6 +152,14 @@ The live dashboard also shows recent WITNESS certificates, flagged claims, proof
 Current scope: non-streaming responses can be rewritten before return. In `strict` or `annotate` streaming mode, Entroly buffers the upstream stream, verifies it, then emits a verified SSE response; `audit` streaming mode remains pass-through and records certificates after completion. Optional NLI verification is batched with a latency budget and falls back to deterministic local PAV if the provider call fails.
 
 ## Benchmarks
+
+## The North Star Metric
+
+We optimize for one thing:
+**minimize expected dollars + latency + recovery cost subject to P(verified task success) >= baseline - epsilon**
+
+The headline metric is **Verified Coding Tasks Completed per Dollar (`verified_tasks_per_dollar`)**. A 3x improvement here is more valuable than a synthetic 100x compression ratio. See [benchmarks/results/README.md](benchmarks/results/README.md) for the end-to-end coding benchmark.
+
 
 ### Example Evolution Trace
 

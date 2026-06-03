@@ -458,8 +458,8 @@ def enqueue_reverification(
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def is_enabled() -> bool:
-    """Feature gate: ENTROLY_VAULT_COUPLING=1 to enable in proxy."""
-    return os.environ.get("ENTROLY_VAULT_COUPLING", "0") == "1"
+    """Feature gate: ENTROLY_VAULT_COUPLING=0 to disable in proxy."""
+    return os.environ.get("ENTROLY_VAULT_COUPLING", "1") == "1"
 
 
 def _tokenize(text: str) -> set[str]:

@@ -150,6 +150,28 @@ class OnlinePrism:
         w = self.weights()
         return tuple(w[d] for d in self._dims)
 
+    def propose_weights(self) -> dict[str, float]:
+        """Return candidate weights based on the current posterior for shadow evaluation."""
+        return self.weights()
+
+    def accept_promotion(self, weights: dict[str, float]) -> None:
+        """Called when a shadow policy is promoted to live."""
+        with self._lock:
+            # Re-center prior around the promoted weights (keeping strength)
+            total = sum(self._alphas.values())
+            self._last_weights = dict(self._alphas)  # save for rollback
+            for d in self._dims:
+                self._alphas[d] = total * weights.get(d, 1.0 / len(self._dims))
+            logger.info("OnlinePrism: Accepted promotion of shadow weights.")
+
+    def rollback(self) -> None:
+        """Rollback to the previous live weights."""
+        with self._lock:
+            if self._last_weights:
+                self._alphas = dict(self._last_weights)
+                self._last_weights.clear()
+                logger.warning("OnlinePrism: Rolled back weights.")
+
     def observe(
         self,
         reward: float,

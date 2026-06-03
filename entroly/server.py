@@ -2692,6 +2692,33 @@ def create_mcp_server(
         )
 
     @mcp.tool()
+    def record_edit_outcome(
+        request_id: str,
+        outcome: str,
+        files_modified: int = 0,
+    ) -> str:
+        """Record whether the user accepted, reverted, or retried an AI edit.
+
+        STRONG signal: user behavior directly indicates whether the generated
+        code was successful.
+
+        Args:
+            request_id: the trace_id from the optimize_context call
+            outcome: "accepted", "reverted", or "retried"
+            files_modified: number of files touched by the edit
+        """
+        if outcome not in ("accepted", "reverted", "retried"):
+            return json.dumps({"status": "error", "reason": f"invalid outcome: {outcome}"})
+            
+        return _record_honest(
+            request_id=request_id,
+            event_type="edit_outcome",
+            value=outcome,
+            source="mcp_record_edit_outcome",
+            metadata={"files_modified": int(files_modified)},
+        )
+
+    @mcp.tool()
     def explain_context() -> str:
         """Explain why each fragment was included or excluded in the last optimization.
 

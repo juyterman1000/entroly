@@ -25,6 +25,7 @@ Usage::
 from __future__ import annotations
 
 from typing import Any
+from .profiles import get_profile
 
 from .universal_compress import (
     detect_content_type,
@@ -131,6 +132,7 @@ def compress(
     budget: int | None = None,
     content_type: str | None = None,
     target_ratio: float = 0.3,
+    profile: str | None = None,
 ) -> str:
     """Compact content without a task query.
 
@@ -160,6 +162,10 @@ def compress(
     """
     if not content:
         return content
+
+    if profile:
+        prof_cfg = get_profile(profile)
+        target_ratio = prof_cfg.get("compression_ratio", target_ratio)
 
     # Token estimate (4 chars ≈ 1 token) and target ratio.
     current_tokens = len(content) // 4
@@ -193,6 +199,7 @@ def compress_messages(
     model: str | None = None,
     client_key: str | None = None,
     distill: bool = True,
+    profile: str = "balanced",
 ) -> list[dict[str, Any]]:
     """Compress a conversation message list to fit within a token budget.
 

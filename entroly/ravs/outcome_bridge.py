@@ -114,6 +114,15 @@ _OUTCOME_REWARD: dict[tuple[str, str], float] = {
     ("command_exit", "failure"):     0.1,   # exit code ≠ 0 ≠ total failure
     ("user_acceptance", "accepted"): 1.0,
     ("user_acceptance", "rejected"): 0.0,
+    ("recovery_event", "success"):   0.9,
+    ("recovery_event", "failure"):   0.0,
+    ("verification_result", "passed"): 1.0,
+    ("verification_result", "failed"): 0.0,
+    ("edit_outcome", "accepted"):    1.0,
+    ("edit_outcome", "reverted"):    0.0,
+    ("edit_outcome", "retried"):     0.2,
+    ("compiler_exit", "success"):    1.0,
+    ("compiler_exit", "failure"):    0.0,
     # Medium: behavioral inference
     ("retry_event", "failure"):      0.2,   # rephrase suggests prior was wrong
     ("topic_change", "success"):     0.8,   # moved on suggests prior was ok
