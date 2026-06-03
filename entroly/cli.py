@@ -43,7 +43,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.14"
+    __version__ = "1.0.15"
 
 # ── Force UTF-8 output on Windows ──
 # Windows terminals default to cp1252 which can't encode ✓/✗/─/⚡.
@@ -580,7 +580,7 @@ def cmd_autotune(args):
         print(f"\n{C.CYAN}{C.BOLD}  Entroly Autotune -- Rollback{C.RESET}\n")
         try:
             from bench.autotune import rollback_config
-            config_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
+            config_path = Path(os.path.dirname(__file__)).parent / "bench" / "tuning_config.json"
             result = rollback_config(config_path)
             if result["status"] == "no_backup_found":
                 print(f"  {C.RED}No backup found -- nothing to roll back.{C.RESET}\n")
@@ -603,7 +603,7 @@ def cmd_autotune(args):
         # on bench/cases.json. Range [0, 1]; higher is better.
         print(f"\n  {C.GREEN}{C.BOLD}Best composite score: {result.get('final_score', 0):.4f} / 1.0{C.RESET}")
         print(f"  {C.GRAY}= 0.50·recall + 0.25·precision + 0.25·efficiency on bench/cases.json{C.RESET}")
-        print(f"  {C.GRAY}Config saved to tuning_config.json{C.RESET}")
+        print(f"  {C.GRAY}Config saved to bench/tuning_config.json{C.RESET}")
         print(f"  {C.GRAY}To undo: entroly autotune --rollback{C.RESET}\n")
     except ImportError:
         # The bench/ harness (autotune.py, cases.json) is a development tool and

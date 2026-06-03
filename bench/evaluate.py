@@ -31,6 +31,61 @@ from typing import Any
 # Fixed evaluation constants (DO NOT CHANGE — this is the fixed metric)
 MAX_LATENCY_MS = 500  # any optimize() call exceeding this fails the case
 
+# Canonical default tuning config. Mirrors the EntrolyEngine constructor
+# defaults in entroly-core/src/lib.rs (w_recency=0.30, w_frequency=0.25,
+# w_semantic=0.25, w_entropy=0.20, decay_half_life=15, min_relevance=0.05,
+# hamming_threshold=3, exploration_rate=0.1) plus the IOS defaults used by
+# create_engine_from_config. Used as the autotune baseline when no
+# tuning_config.json exists yet, so `entroly autotune` works on a fresh repo
+# instead of crashing with FileNotFoundError.
+DEFAULT_TUNING_CONFIG: dict = {
+    "weights": {
+        "recency": 0.30,
+        "frequency": 0.25,
+        "semantic_sim": 0.25,
+        "entropy": 0.20,
+    },
+    "decay": {
+        "half_life_turns": 15,
+        "min_relevance_threshold": 0.05,
+    },
+    "knapsack": {
+        "exploration_rate": 0.1,
+    },
+    "dedup": {
+        "hamming_threshold": 3,
+    },
+    "sliding_window": {
+        "long_window_fraction": 0.30,
+    },
+    "prism": {
+        "learning_rate": 0.01,
+        "beta": 0.90,
+    },
+    "egtc": {
+        "alpha": 1.0,
+        "gamma": 1.0,
+        "epsilon": 0.5,
+        "fisher_scale": 0.5,
+        "trajectory_c_min": 0.6,
+        "trajectory_lambda": 0.05,
+    },
+    "ios": {
+        "skeleton_info_factor": 0.70,
+        "reference_info_factor": 0.15,
+        "diversity_floor": 0.10,
+    },
+    "ecdb": {
+        "min_budget": 500,
+        "max_fraction": 0.30,
+        "sigmoid_steepness": 3.0,
+        "sigmoid_base": 0.5,
+        "sigmoid_range": 1.5,
+        "codebase_divisor": 200,
+        "codebase_cap": 2.0,
+    },
+}
+
 
 def load_cases(path: Path | None = None) -> list[dict]:
     if path is None:
@@ -99,15 +154,39 @@ def validate_tuning_config(config: dict) -> list[str]:
 
 
 def load_tuning_config(path: Path | None = None) -> dict:
+    """Load the tuning config, falling back to canonical defaults.
+
+    The config lives alongside the harness at ``bench/tuning_config.json``.
+    If it is missing or unparseable we return a deep copy of
+    ``DEFAULT_TUNING_CONFIG`` (with a warning) rather than crashing — this is
+    what lets ``entroly autotune`` run on a fresh checkout that has never been
+    tuned before.
+    """
+    import copy
+    import logging
+
+    log = logging.getLogger("entroly")
+
     if path is None:
-        path = Path(__file__).parent.parent / "tuning_config.json"
-    with open(path) as f:
-        config = json.load(f)
+        path = Path(__file__).parent / "tuning_config.json"
+
+    try:
+        with open(path) as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        log.warning(
+            "tuning_config not found at %s — using built-in defaults", path
+        )
+        return copy.deepcopy(DEFAULT_TUNING_CONFIG)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning(
+            "tuning_config at %s is unreadable (%s) — using built-in defaults",
+            path, exc,
+        )
+        return copy.deepcopy(DEFAULT_TUNING_CONFIG)
 
     errors = validate_tuning_config(config)
     if errors:
-        import logging
-        log = logging.getLogger("entroly")
         for err in errors:
             log.warning(f"tuning_config validation: {err}")
 

@@ -186,7 +186,7 @@ def rollback_config(config_path: Path) -> dict[str, Any]:
     Returns dict with status, restored_from path, and the restored config.
     """
     if config_path is None:
-        config_path = Path(__file__).parent.parent / "tuning_config.json"
+        config_path = Path(__file__).parent / "tuning_config.json"
 
     # Find all backups: tuning_config.*.bak.json
     parent = config_path.parent
@@ -221,7 +221,7 @@ def autotune(
 ) -> dict[str, Any]:
     """Run the autonomous self-tuning loop."""
     if config_path is None:
-        config_path = Path(__file__).parent.parent / "tuning_config.json"
+        config_path = Path(__file__).parent / "tuning_config.json"
 
     rng = random.Random(seed)
 
@@ -354,7 +354,7 @@ def main():
     args = parser.parse_args()
 
     if args.rollback:
-        cfg_path = args.config or (Path(__file__).parent.parent / "tuning_config.json")
+        cfg_path = args.config or (Path(__file__).parent / "tuning_config.json")
         result = rollback_config(cfg_path)
         if result["status"] == "no_backup_found":
             print("No backup found — nothing to roll back.")
