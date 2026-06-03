@@ -1,0 +1,38 @@
+{
+  "squad": {
+    "metric_scope": "offline_extractable_evidence_survival",
+    "trigger": "oracle_answer_span_miss_upper_bound",
+    "total": 200,
+    "token_budget": 100,
+    "recovery_token_budget": 1200,
+    "first_pass_survived": 181,
+    "recovered": 19,
+    "unresolved": 0,
+    "first_pass_survival": 0.905,
+    "bounded_recovery_survival": 1.0,
+    "retry_rate": 0.095,
+    "avg_original_tokens": 157.73,
+    "avg_compressed_tokens": 70.05,
+    "avg_retry_expansion_tokens": 16.27,
+    "first_pass_token_savings_pct": 55.59,
+    "effective_token_savings_pct": 45.27
+  },
+  "longbench": {
+    "metric_scope": "offline_extractable_evidence_survival",
+    "trigger": "oracle_answer_span_miss_upper_bound",
+    "total": 200,
+    "token_budget": 2000,
+    "recovery_token_budget": 1200,
+    "first_pass_survived": 148,
+    "recovered": 7,
+    "unresolved": 45,
+    "first_pass_survival": 0.74,
+    "bounded_recovery_survival": 0.775,
+    "retry_rate": 0.26,
+    "avg_original_tokens": 14200.53,
+    "avg_compressed_tokens": 1954.1,
+    "avg_retry_expansion_tokens": 314.04,
+    "first_pass_token_savings_pct": 86.24,
+    "effective_token_savings_pct": 84.03
+  }
+}

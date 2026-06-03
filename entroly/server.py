@@ -1246,6 +1246,19 @@ class EntrolyEngine:
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, reward)
 
+    def record_resolution_outcome(
+        self,
+        resolutions: list[str],
+        success: bool,
+    ) -> None:
+        """Teach IOS whether lower-resolution context was sufficient."""
+        if (
+            self._use_rust
+            and hasattr(self._rust, "record_resolution_outcome")
+            and resolutions
+        ):
+            self._rust.record_resolution_outcome(resolutions, success)
+
     def set_model(self, model_name: str) -> None:
         """Auto-configure cache cost model from model name.
 
@@ -2077,6 +2090,17 @@ def create_mcp_server(
 
         result = engine.optimize_context(token_budget, query)
 
+        # CCR: compressed IOS variants must remain exactly recoverable.
+        # Attach content-addressed handles before serializing the MCP result.
+        try:
+            from .ccr import capture_recoverable_fragments
+            _recoverable = (
+                result.get("selected_fragments") or result.get("selected") or []
+            )
+            capture_recoverable_fragments(_recoverable, engine._get_fragment)
+        except Exception as _ccr_err:
+            logger.debug("CCR capture skipped: %s", _ccr_err)
+
         # ── Record savings to ValueTracker (funds evolution budget) ──
         tokens_saved = result.get("tokens_saved", 0)
         if tokens_saved > 0:
@@ -2280,6 +2304,47 @@ def create_mcp_server(
             pass  # never fail optimize_context on sanitization
 
         return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def entroly_retrieve(
+        source_or_handle: str = "",
+    ) -> str:
+        """Retrieve exact source content omitted by compressed context.
+
+        Use the retrieval handle attached to a skeleton/reference fragment for
+        exact historical recovery. A visible source path also works and lazily
+        resolves the latest ingested version. With no argument, lists currently
+        materialized CCR entries without returning their content.
+
+        Args:
+            source_or_handle: Source path or content-addressed ``ccr:...`` handle.
+        """
+        from .ccr import get_ccr_store
+        store = get_ccr_store()
+        if not source_or_handle:
+            available = store.list_available()
+            return json.dumps({
+                "available": available,
+                "count": len(available),
+                "stats": store.stats(),
+            }, indent=2)
+
+        entry = store.retrieve_or_materialize(source_or_handle, engine._get_fragment)
+        if entry is None:
+            return json.dumps({
+                "error": f"Source or handle '{source_or_handle}' not found in CCR store",
+                "hint": "Call entroly_retrieve() with no argument to list materialized entries.",
+            }, indent=2)
+        return json.dumps({
+            "source": entry["source"],
+            "retrieval_handle": entry["retrieval_handle"],
+            "content_sha256": entry["content_sha256"],
+            "resolution": entry["resolution"],
+            "original_tokens": entry["original_tokens"],
+            "compressed_tokens": entry["compressed_tokens"],
+            "tokens_recovered": entry["original_tokens"] - entry["compressed_tokens"],
+            "original_content": entry["original"],
+        }, indent=2)
 
     @mcp.tool()
     def recall_relevant(

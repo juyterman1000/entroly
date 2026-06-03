@@ -154,3 +154,32 @@ def test_mcp_list_tools(mcp_server):
         assert "remember_fragment" in tool_names or "optimize_context" in tool_names, (
             f"Expected core tools, got: {tool_names}"
         )
+        assert "entroly_retrieve" in tool_names, (
+            f"Expected reversible CCR tool, got: {tool_names}"
+        )
+
+
+def test_mcp_retrieve_round_trip(mcp_server):
+    """Store through MCP and lazily retrieve the exact original source."""
+    original = "def login(token):\n    return validate(token)\n"
+    _send_jsonrpc(mcp_server, "tools/call", {
+        "name": "remember_fragment",
+        "arguments": {
+            "content": original,
+            "source": "file:auth.py",
+        },
+    }, id=3)
+    stored = _read_response(mcp_server)
+    assert stored is not None and "result" in stored
+
+    _send_jsonrpc(mcp_server, "tools/call", {
+        "name": "entroly_retrieve",
+        "arguments": {
+            "source_or_handle": "file:auth.py",
+        },
+    }, id=4)
+    retrieved = _read_response(mcp_server)
+    assert retrieved is not None and "result" in retrieved
+    payload = json.loads(retrieved["result"]["content"][0]["text"])
+    assert payload["retrieval_handle"].startswith("ccr:")
+    assert payload["original_content"] == original

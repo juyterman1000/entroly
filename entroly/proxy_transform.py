@@ -590,6 +590,12 @@ def format_context_block(
     belief_frags = [f for f in fragments if f.get("variant") == "belief"]
     skel_frags = [f for f in fragments if f.get("variant") == "skeleton"]
     ref_frags = [f for f in fragments if f.get("variant") == "reference"]
+    if belief_frags or skel_frags or ref_frags:
+        parts.append(
+            "[Recover omitted detail with entroly_retrieve(source_or_handle) "
+            "or GET /retrieve?source=<source_or_handle>.]"
+        )
+        parts.append("")
 
     for frag in full_frags:
         source = frag.get("source", "unknown")
@@ -612,7 +618,8 @@ def format_context_block(
             source = frag.get("source", "unknown")
             tokens = frag.get("token_count", 0)
             content = frag.get("content", frag.get("preview", ""))
-            parts.append(f"### {source} ({tokens} tokens)")
+            handle = frag.get("retrieval_handle", source)
+            parts.append(f"### {source} ({tokens} tokens; retrieve: {handle})")
             parts.append(content.rstrip())
             parts.append("")
 
@@ -623,8 +630,9 @@ def format_context_block(
             source = frag.get("source", "unknown")
             tokens = frag.get("token_count", 0)
             content = frag.get("content", frag.get("preview", ""))
+            handle = frag.get("retrieval_handle", source)
             lang = _infer_language(source)
-            parts.append(f"### {source} ({tokens} tokens)")
+            parts.append(f"### {source} ({tokens} tokens; retrieve: {handle})")
             parts.append(f"```{lang}")
             parts.append(content.rstrip())
             parts.append("```")
@@ -633,7 +641,11 @@ def format_context_block(
     # Reference fragments (file existence awareness, minimal tokens)
     if ref_frags:
         parts.append("## Also relevant (not shown in full)")
-        ref_lines = [f"- {f.get('source', 'unknown')}" for f in ref_frags]
+        ref_lines = [
+            f"- {f.get('source', 'unknown')} "
+            f"[retrieve: {f.get('retrieval_handle', f.get('source', 'unknown'))}]"
+            for f in ref_frags
+        ]
         parts.extend(ref_lines)
         parts.append("")
 
@@ -690,6 +702,11 @@ def format_hierarchical_context(
 
     parts: list[str] = []
     parts.append("--- Relevant Code Context (auto-selected by entroly) ---")
+    parts.append("")
+    parts.append(
+        "[This is a variable-resolution view. Recover any visible source with "
+        "entroly_retrieve(source) or GET /retrieve?source=<source>.]"
+    )
     parts.append("")
 
     # Task-aware preamble (conditional — only when signals warrant it)

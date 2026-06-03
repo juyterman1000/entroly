@@ -4173,6 +4173,41 @@ impl EntrolyEngine {
         }
     }
 
+    /// Learn whether lower-resolution context was sufficient for a request.
+    ///
+    /// A clean verified answer permits a small compression increase. A
+    /// verification-triggered recovery applies a stronger decrease because
+    /// omitted detail has a much higher cost than a few extra input tokens.
+    ///
+    /// This is projected online gradient descent on a rate-distortion
+    /// Lagrangian with an asymmetric distortion penalty.
+    pub fn record_resolution_outcome(&mut self, resolutions: Vec<String>, success: bool) {
+        let delta = if success { 0.005 } else { -0.040 };
+        let mut seen: HashSet<String> = HashSet::new();
+        for resolution in resolutions {
+            if !seen.insert(resolution.clone()) {
+                continue;
+            }
+            match resolution.as_str() {
+                "skeleton" => {
+                    self.ios_skeleton_info_factor =
+                        (self.ios_skeleton_info_factor + delta).clamp(0.15, 0.95);
+                }
+                "reference" => {
+                    self.ios_reference_info_factor =
+                        (self.ios_reference_info_factor + delta).clamp(0.03, 0.50);
+                }
+                "belief" => {
+                    self.base_belief_info_factor =
+                        (self.base_belief_info_factor + delta).clamp(0.15, 0.90);
+                    self.ios_belief_info_factor =
+                        (self.ios_belief_info_factor + delta).clamp(0.15, 0.90);
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Get current belief utilization EMA (for diagnostics/logging).
     pub fn get_belief_util_ema(&self) -> f64 {
         self.belief_util_ema
@@ -4184,6 +4219,14 @@ impl EntrolyEngine {
     /// Get the current query-adaptive belief info factor (for diagnostics/logging).
     pub fn get_belief_info_factor(&self) -> f64 {
         self.ios_belief_info_factor
+    }
+    /// Get the current skeleton information factor.
+    pub fn get_skeleton_info_factor(&self) -> f64 {
+        self.ios_skeleton_info_factor
+    }
+    /// Get the current reference information factor.
+    pub fn get_reference_info_factor(&self) -> f64 {
+        self.ios_reference_info_factor
     }
 
     // ── EGSC Cache Management API ──
@@ -4409,7 +4452,13 @@ impl EntrolyEngine {
     /// Level 3: Full content of most relevant fragments (~70%)
     ///
     /// Novel: symbol-reachability slicing + submodular diversity + PageRank.
-    pub fn hierarchical_compress(&self, token_budget: u32, query: String) -> PyResult<PyObject> {
+    #[pyo3(signature = (token_budget, query, seed_ids=None))]
+    pub fn hierarchical_compress(
+        &self,
+        token_budget: u32,
+        query: String,
+        seed_ids: Option<Vec<String>>,
+    ) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             // Collect all fragments in a stable order
             let mut frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
@@ -4437,13 +4486,26 @@ impl EntrolyEngine {
                 .collect();
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-            // Top-K most relevant fragment IDs (seed for cluster expansion)
-            let top_k = scored
-                .iter()
-                .take(10)
-                .filter(|(_, sim)| *sim > 0.1)
-                .map(|(i, _)| frags[*i].fragment_id.clone())
-                .collect::<Vec<_>>();
+            // Top-K most relevant fragment IDs (seed for cluster expansion).
+            // Proxy callers pass BM25+PRISM optimized seeds. Standalone callers
+            // retain the local SimHash fallback for backwards compatibility.
+            let known_ids: HashSet<&str> =
+                frags.iter().map(|f| f.fragment_id.as_str()).collect();
+            let provided_seeds = seed_ids.unwrap_or_default();
+            let top_k = if provided_seeds.is_empty() {
+                scored
+                    .iter()
+                    .take(10)
+                    .filter(|(_, sim)| *sim > 0.1)
+                    .map(|(i, _)| frags[*i].fragment_id.clone())
+                    .collect::<Vec<_>>()
+            } else {
+                provided_seeds
+                    .into_iter()
+                    .filter(|id| known_ids.contains(id.as_str()))
+                    .take(10)
+                    .collect::<Vec<_>>()
+            };
 
             // Mean entropy for budget allocation
             let mean_entropy =
@@ -4508,6 +4570,46 @@ impl EntrolyEngine {
                 l3_list.append(d)?;
             }
             result.set_item("level3_fragments", l3_list)?;
+
+            // Expose the rendered L2 skeletons so the Python proxy can attach
+            // exact CCR recovery handles to the compressed context actually
+            // sent upstream. L1 overview entries stay lazily recoverable by
+            // visible source path; L3 fragments are already full resolution.
+            let l3_ids: HashSet<&str> = hcc
+                .level3_indices
+                .iter()
+                .map(|idx| frags[*idx].fragment_id.as_str())
+                .collect();
+            let l2_list = pyo3::types::PyList::empty(py);
+            for (rank, id) in hcc.cluster_ids.iter().enumerate() {
+                if l3_ids.contains(id.as_str()) {
+                    continue;
+                }
+                let Some(f) = frags.iter().find(|frag| frag.fragment_id == *id) else {
+                    continue;
+                };
+                let Some(skeleton) = &f.skeleton_content else {
+                    continue;
+                };
+                if !hcc.level2_cluster.contains(&format!("## {}", f.source)) {
+                    continue;
+                }
+                let d = PyDict::new(py);
+                d.set_item("id", &f.fragment_id)?;
+                d.set_item("source", &f.source)?;
+                d.set_item(
+                    "token_count",
+                    f.skeleton_token_count
+                        .unwrap_or_else(|| (skeleton.len() as u32 / 4).max(1)),
+                )?;
+                d.set_item("content", skeleton)?;
+                d.set_item("preview", skeleton)?;
+                d.set_item("variant", "skeleton")?;
+                d.set_item("relevance", 1.0 / (rank + 1) as f64)?;
+                d.set_item("entropy_score", f.entropy_score)?;
+                l2_list.append(d)?;
+            }
+            result.set_item("level2_fragments", l2_list)?;
 
             // Cluster IDs for debugging
             result.set_item("cluster_ids", hcc.cluster_ids)?;

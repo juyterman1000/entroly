@@ -984,6 +984,23 @@ class PromptCompilerProxy:
         self._witness_store_max = int(os.environ.get("ENTROLY_WITNESS_STORE_MAX", "500"))
         self._witness_feedback: dict[str, int] = collections.Counter()
 
+        # If verification rejects an answer produced from compressed context,
+        # retrieve exact CCR originals and retry once with a bounded expansion.
+        self._auto_recovery_enabled = os.environ.get("ENTROLY_AUTO_RECOVERY", "1") != "0"
+        self._auto_recovery_max_fragments = int(
+            os.environ.get("ENTROLY_AUTO_RECOVERY_MAX_FRAGMENTS", "6")
+        )
+        self._auto_recovery_max_candidates = int(
+            os.environ.get("ENTROLY_AUTO_RECOVERY_MAX_CANDIDATES", "8")
+        )
+        self._auto_recovery_max_tokens = int(
+            os.environ.get("ENTROLY_AUTO_RECOVERY_MAX_TOKENS", "12000")
+        )
+        self._auto_recovery_attempted = 0
+        self._auto_recovery_succeeded = 0
+        self._auto_recovery_failed = 0
+        self._auto_recovery_last: dict[str, Any] | None = None
+
         # P2: Conformal cascade observability counters
         # Track post-response WITNESS→ECE→escalation.py decisions
         self._cascade_total = 0
@@ -1211,6 +1228,8 @@ class PromptCompilerProxy:
 
         # Track selected fragment IDs for passive feedback attribution
         _selected_frag_ids: list = []
+        _selected_fragments: list[dict[str, Any]] = []
+        _recoverable_fragments: list[dict[str, Any]] = []
         user_message = ""
         witness_context = ""
 
@@ -1240,6 +1259,10 @@ class PromptCompilerProxy:
                     # entropy scores are too low (context quality is poor)
                     avg_entropy = 0.0
                     selected_frags = pipeline_result.get("selected_fragments", [])
+                    _selected_fragments = selected_frags
+                    _recoverable_fragments = pipeline_result.get(
+                        "recoverable_fragments", selected_frags
+                    )
                     if selected_frags:
                         avg_entropy = sum(
                             f.get("entropy_score", 0.5) for f in selected_frags
@@ -1585,11 +1608,13 @@ class PromptCompilerProxy:
 
         if is_streaming:
             return await self._stream_response(
-                target_url, forward_headers, body, _selected_frag_ids, witness_context, provider
+                target_url, forward_headers, body, _selected_frag_ids,
+                witness_context, provider, _recoverable_fragments
             )
         else:
             return await self._forward_response(
-                target_url, forward_headers, body, _selected_frag_ids, witness_context
+                target_url, forward_headers, body, _selected_frag_ids,
+                witness_context, provider, _recoverable_fragments
             )
 
     def _run_pipeline(self, user_message: str, body: dict[str, Any], path: str = "") -> dict[str, Any]:
@@ -1665,21 +1690,6 @@ class PromptCompilerProxy:
                     )
                 except Exception:
                     pass
-        # Try 3-level hierarchical compression first if enabled.
-        # Falls back to flat optimize_context if hierarchical_compress
-        # is not available (e.g., older Rust engine version).
-        hcc_result = None
-        if self.config.enable_hierarchical_compression:
-            try:
-                hcc_result = self.engine._rust.hierarchical_compress(
-                    token_budget, user_message
-                )
-                if hcc_result.get("status") == "empty":
-                    hcc_result = None  # Fall through to flat path
-            except (AttributeError, Exception) as e:
-                logger.debug(f"HCC unavailable, falling back to flat: {e}")
-                hcc_result = None
-
         # ── Flat optimization path (original) ──
         # optimize_context already does:
         #   1. Query refinement (py_analyze_query + py_refine_heuristic)
@@ -1711,7 +1721,107 @@ class PromptCompilerProxy:
         result = self.engine.optimize_context(token_budget, user_message)
 
         selected = result.get("selected_fragments", [])
+        # Render the hierarchy from the query-conditioned BM25+PRISM selection.
+        # The old path seeded HCC independently with SimHash similarity, which
+        # discarded the stronger optimizer signal already computed here.
+        hcc_result = None
+        if self.config.enable_hierarchical_compression:
+            try:
+                hcc_seed_ids = [
+                    fragment.get("id", fragment.get("fragment_id", ""))
+                    for fragment in selected
+                    if fragment.get("id") or fragment.get("fragment_id")
+                ]
+                hcc_result = self.engine._rust.hierarchical_compress(
+                    token_budget, user_message, hcc_seed_ids
+                )
+                if hcc_result.get("status") == "empty":
+                    hcc_result = None
+            except (AttributeError, Exception) as e:
+                logger.debug(f"HCC unavailable, falling back to flat: {e}")
+                hcc_result = None
+        if hcc_result is not None:
+            # HCC renders its own query-conditioned hierarchy. Use the
+            # fragments from that rendered hierarchy for recovery, feedback,
+            # scaffolding, and security scanning so exact replay expands what
+            # the model actually saw instead of a parallel flat selection.
+            from .ccr import hierarchical_context_fragments
+            selected = hierarchical_context_fragments(hcc_result)
         refinement = result.get("query_refinement")
+
+        # CCR: keep exact originals behind content-addressed handles whenever
+        # IOS selects a compressed resolution. This turns skeleton/reference
+        # output into recoverable context instead of silent truncation.
+        try:
+            from .ccr import capture_recoverable_fragments
+            capture_recoverable_fragments(selected, self.engine._get_fragment)
+        except Exception as e:
+            logger.debug("CCR capture skipped: %s", e)
+
+        # Standby exact replay for selection misses. These omitted candidates
+        # are never rendered into the first prompt; they become eligible only
+        # after verification rejects the first answer.
+        recovery_candidates: list[dict[str, Any]] = []
+        try:
+            from .ccr import capture_ranked_recovery_candidates
+
+            def fragment_key(fragment: dict[str, Any]) -> str:
+                return (
+                    fragment.get("id")
+                    or fragment.get("fragment_id")
+                    or fragment.get("retrieval_handle")
+                    or fragment.get("source", "")
+                )
+
+            selected_keys = {
+                key for fragment in selected
+                if (key := fragment_key(fragment))
+            }
+            recall_hits = self.engine._rust.recall_auto(
+                user_message,
+                self._auto_recovery_max_candidates,
+            )
+            recalled = [
+                {
+                    "id": hit.get("id", hit.get("fragment_id", "")),
+                    "source": hit.get("source", ""),
+                    "scores": {
+                        "semantic": hit.get("relevance", 0.0),
+                        "composite": hit.get("relevance", 0.0),
+                    },
+                }
+                for hit in recall_hits
+            ]
+            recovery_candidates = capture_ranked_recovery_candidates(
+                recalled,
+                self.engine._get_fragment,
+                selected_keys=selected_keys,
+                max_candidates=self._auto_recovery_max_candidates,
+            )
+        except Exception as e:
+            logger.debug("CCR native recall capture skipped: %s", e)
+        try:
+            from .ccr import capture_ranked_recovery_candidates
+            explanation = self.engine.explain_selection()
+            captured_keys = {
+                key for fragment in [*selected, *recovery_candidates]
+                if (key := (
+                    fragment.get("id")
+                    or fragment.get("fragment_id")
+                    or fragment.get("retrieval_handle")
+                    or fragment.get("source", "")
+                ))
+            }
+            recovery_candidates.extend(capture_ranked_recovery_candidates(
+                explanation.get("excluded", []),
+                self.engine._get_fragment,
+                selected_keys=captured_keys,
+                max_candidates=(
+                    self._auto_recovery_max_candidates - len(recovery_candidates)
+                ),
+            ))
+        except Exception as e:
+            logger.debug("CCR optimizer-omission capture skipped: %s", e)
 
         # ── Context Resonance + Coverage Estimator metrics ──
         # These come from the Rust engine's optimize() and are forwarded
@@ -1861,6 +1971,7 @@ class PromptCompilerProxy:
             "context": context_text,
             "elapsed_ms": elapsed_ms,
             "selected_fragments": selected,
+            "recoverable_fragments": [*selected, *recovery_candidates],
         }
 
     async def _buffered_witness_stream_response(
@@ -1872,6 +1983,8 @@ class PromptCompilerProxy:
         selected_frag_ids: list | None = None,
         witness_context: str = "",
         provider: str = "openai",
+        recoverable_fragments: list[dict[str, Any]] | None = None,
+        recovery_depth: int = 0,
     ) -> StreamingResponse | JSONResponse:
         """Buffer a streaming upstream response so WITNESS can enforce before display."""
         if not self._breaker.allow_request():
@@ -1950,6 +2063,50 @@ class PromptCompilerProxy:
             response_text,
             mode=self._witness_mode,
         )
+        self._record_resolution_feedback(
+            recoverable_fragments or [],
+            success=not bool(result.flagged()),
+        )
+        failed_recovery_sources: list[str] = []
+        retry = self._prepare_auto_recovery_retry(
+            body,
+            provider,
+            witness_context,
+            recoverable_fragments or [],
+            result,
+            recovery_depth=recovery_depth,
+        )
+        if retry is not None:
+            retry_body, retry_context, recovered_sources = retry
+            logger.info(
+                "Auto-recovery retry: %d exact fragment(s), buffered stream",
+                len(recovered_sources),
+            )
+            recovered = await self._buffered_witness_stream_response(
+                url,
+                headers,
+                retry_body,
+                selected_frag_ids=selected_frag_ids,
+                witness_context=retry_context,
+                provider=provider,
+                recoverable_fragments=[],
+                recovery_depth=recovery_depth + 1,
+            )
+            recovered_ok = (
+                recovered.status_code < 400
+                and recovered.headers.get("X-Entroly-Witness") == "pass"
+            )
+            self._record_auto_recovery(
+                recovered_sources=recovered_sources,
+                success=recovered_ok,
+                trigger="verification",
+            )
+            if recovered_ok:
+                self._mark_auto_recovery_headers(recovered, recovered_sources)
+                return recovered
+            failed_recovery_sources = recovered_sources
+            logger.warning("Auto-recovery retry failed; serving first buffered response")
+
         structured_output = _looks_like_structured_text(response_text)
         self._record_witness_result(result, changed=rewrite.changed and not structured_output)
         witness_id = self._store_witness_certificate(result, rewrite)
@@ -2079,6 +2236,10 @@ class PromptCompilerProxy:
             "X-Entroly-Witness-Suppressed": str(getattr(rewrite, "suppressed_count", 0)),
             "X-Entroly-Witness-Warned": str(getattr(rewrite, "warned_count", 0)),
         }
+        if failed_recovery_sources:
+            self._mark_auto_recovery_failed_headers(
+                resp_headers, failed_recovery_sources
+            )
         resp_headers.update(self._cache_headers())
         # Escalation telemetry headers
         if escalation_attempted and self._escalation_last:
@@ -2168,6 +2329,8 @@ class PromptCompilerProxy:
         selected_frag_ids: list | None = None,
         witness_context: str = "",
         provider: str = "openai",
+        recoverable_fragments: list[dict[str, Any]] | None = None,
+        recovery_depth: int = 0,
     ) -> StreamingResponse:
         """Forward a streaming request and proxy the SSE response.
 
@@ -2183,6 +2346,8 @@ class PromptCompilerProxy:
                 selected_frag_ids=selected_frag_ids,
                 witness_context=witness_context,
                 provider=provider,
+                recoverable_fragments=recoverable_fragments,
+                recovery_depth=recovery_depth,
             )
 
         # Check circuit breaker
@@ -2458,8 +2623,222 @@ class PromptCompilerProxy:
             for part in cand.get("content", {}).get("parts", []):
                 if isinstance(part.get("text"), str):
                     part["text"] = new_text
-                    return True
+                return True
         return False
+
+    def _build_recovery_context(
+        self,
+        fragments: list[dict[str, Any]],
+        query: str = "",
+    ) -> tuple[str, list[str]]:
+        """Materialize exact originals or marked exact excerpts within a cap."""
+        try:
+            from .ccr import get_ccr_store, slice_recovery_content
+            store = get_ccr_store()
+        except Exception:
+            return "", []
+
+        fragment_lookup = getattr(self.engine, "_get_fragment", None)
+        candidates = [
+            fragment for fragment in fragments
+            if fragment.get("variant", "full") != "full"
+        ]
+        # Recover omitted detail from rendered selections first. Query-ranked
+        # standby fragments repair a different failure class and may consume
+        # only residual capacity, so they can add recall without displacing
+        # the exact selected-source replay path.
+        candidates.sort(
+            key=lambda fragment: (
+                bool(fragment.get("recovery_candidate")),
+                -float(fragment.get("relevance", 0.0) or 0.0),
+            ),
+        )
+
+        parts = ["--- Exact Recovery Context ---", ""]
+        recovered_sources: list[str] = []
+        recovered_keys: set[str] = set()
+        recovered_tokens = 0
+        for fragment in candidates:
+            if len(recovered_sources) >= self._auto_recovery_max_fragments:
+                break
+            source = fragment.get("source", "")
+            key = fragment.get("retrieval_handle") or source
+            if not key or key in recovered_keys:
+                continue
+            entry = store.retrieve_or_materialize(key, fragment_lookup)
+            if not entry:
+                continue
+            original = entry.get("original", "")
+            if not original:
+                continue
+            remaining_tokens = self._auto_recovery_max_tokens - recovered_tokens
+            if remaining_tokens <= 0:
+                break
+            original_tokens = max(
+                int(entry.get("original_tokens", 0) or 0),
+                max(1, (len(original) + 3) // 4),
+            )
+            recovered_content = original
+            sliced = False
+            if original_tokens > remaining_tokens:
+                recovered_content, sliced = slice_recovery_content(
+                    original,
+                    query,
+                    remaining_tokens,
+                )
+            if not recovered_content:
+                continue
+            tokens = max(1, (len(recovered_content) + 3) // 4)
+
+            recovered_sources.append(entry["source"])
+            recovered_keys.add(key)
+            recovered_tokens += tokens
+            if sliced:
+                parts.append(
+                    f"## {entry['source']} "
+                    "(exact bounded excerpts; omitted gaps marked; "
+                    f"full_sha256={entry['content_sha256']}; "
+                    f"retrieve={entry['retrieval_handle']})"
+                )
+            else:
+                parts.append(
+                    f"## {entry['source']} "
+                    f"(exact original; sha256={entry['content_sha256']})"
+                )
+            parts.append(recovered_content.rstrip())
+            parts.append("")
+
+        if not recovered_sources:
+            return "", []
+        parts.append("--- End Exact Recovery Context ---")
+        return "\n".join(parts), recovered_sources
+
+    def _prepare_auto_recovery_retry(
+        self,
+        body: dict[str, Any],
+        provider: str,
+        witness_context: str,
+        fragments: list[dict[str, Any]],
+        witness_result: Any,
+        *,
+        recovery_depth: int,
+    ) -> tuple[dict[str, Any], str, list[str]] | None:
+        """Build a single bounded retry request after verification rejects output."""
+        if (
+            not self._auto_recovery_enabled
+            or recovery_depth > 0
+            or not self._witness_enabled
+            or not self._witness_analyzer
+            or not witness_result
+            or not witness_result.flagged()
+        ):
+            return None
+
+        recovery_query = getattr(self, "_last_query", "") or witness_context
+        recovery_context, recovered_sources = self._build_recovery_context(
+            fragments,
+            query=recovery_query,
+        )
+        if not recovery_context:
+            return None
+
+        if getattr(self.config, "enable_context_sanitizer", True):
+            try:
+                from .hardening import sanitize_injected_context
+                recovery_context, _ = sanitize_injected_context(
+                    recovery_context, fence=True
+                )
+            except Exception:
+                pass
+
+        if provider == "gemini":
+            retry_body = inject_context_gemini(body, recovery_context)
+        elif provider == "anthropic":
+            retry_body = inject_context_anthropic(body, recovery_context)
+        elif "input" in body and "messages" not in body:
+            retry_body = inject_context_responses(body, recovery_context)
+        else:
+            retry_body = inject_context_openai(body, recovery_context)
+
+        expanded_witness_context = (
+            f"{witness_context}\n\n{recovery_context}"
+            if witness_context else recovery_context
+        )
+        return retry_body, expanded_witness_context, recovered_sources
+
+    def _record_auto_recovery(
+        self,
+        *,
+        recovered_sources: list[str],
+        success: bool,
+        trigger: str,
+    ) -> None:
+        with self._stats_lock:
+            self._auto_recovery_attempted += 1
+            if success:
+                self._auto_recovery_succeeded += 1
+            else:
+                self._auto_recovery_failed += 1
+            self._auto_recovery_last = {
+                "success": success,
+                "trigger": trigger,
+                "sources": recovered_sources,
+                "coverage_risk": getattr(self, "_last_coverage_risk", "unknown"),
+                "timestamp": time.time(),
+            }
+
+    def _record_resolution_feedback(
+        self,
+        fragments: list[dict[str, Any]],
+        *,
+        success: bool,
+    ) -> None:
+        """Teach IOS whether the selected compressed resolutions were sufficient."""
+        resolutions = sorted({
+            fragment.get("variant", "full")
+            for fragment in fragments
+            if (
+                fragment.get("variant", "full") != "full"
+                and not fragment.get("recovery_candidate")
+            )
+        })
+        if not resolutions:
+            return
+        try:
+            if hasattr(self.engine, "record_resolution_outcome"):
+                self.engine.record_resolution_outcome(resolutions, success)
+            elif hasattr(self.engine, "_rust") and hasattr(
+                self.engine._rust, "record_resolution_outcome"
+            ):
+                self.engine._rust.record_resolution_outcome(resolutions, success)
+        except Exception:
+            logger.debug("Resolution feedback skipped", exc_info=True)
+
+    @staticmethod
+    def _mark_auto_recovery_headers(
+        response: StreamingResponse | JSONResponse,
+        recovered_sources: list[str],
+    ) -> None:
+        response.headers["X-Entroly-Recovery-Attempted"] = "true"
+        response.headers["X-Entroly-Recovery-Verified"] = "true"
+        response.headers["X-Entroly-Recovery-Fragments"] = str(
+            len(recovered_sources)
+        )
+        response.headers["X-Entroly-Recovered"] = "true"
+        response.headers["X-Entroly-Recovered-Fragments"] = str(
+            len(recovered_sources)
+        )
+        response.headers["X-Entroly-Recovery-Trigger"] = "verification"
+
+    @staticmethod
+    def _mark_auto_recovery_failed_headers(
+        headers: dict[str, str],
+        recovered_sources: list[str],
+    ) -> None:
+        headers["X-Entroly-Recovery-Attempted"] = "true"
+        headers["X-Entroly-Recovery-Verified"] = "false"
+        headers["X-Entroly-Recovery-Fragments"] = str(len(recovered_sources))
+        headers["X-Entroly-Recovery-Trigger"] = "verification"
 
     def _apply_witness_gateway(
         self,
@@ -2785,6 +3164,9 @@ class PromptCompilerProxy:
         self, url: str, headers: dict[str, str], body: dict[str, Any],
         selected_frag_ids: list | None = None,
         witness_context: str = "",
+        provider: str = "openai",
+        recoverable_fragments: list[dict[str, Any]] | None = None,
+        recovery_depth: int = 0,
     ) -> JSONResponse:
         """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation.
 
@@ -2979,6 +3361,69 @@ class PromptCompilerProxy:
             }
 
         # ── Signal 1: Assess non-streaming response for implicit feedback ──
+        # If verification rejects an answer produced from compressed context,
+        # retry once with exact CCR originals before the answer escapes.
+        failed_recovery_sources: list[str] = []
+        if (
+            isinstance(content, dict)
+            and self._witness_enabled
+            and self._witness_analyzer
+        ):
+            try:
+                response_text = self._extract_response_text(content)
+                if response_text:
+                    witness_probe = self._witness_analyzer.analyze(
+                        witness_context, response_text
+                    )
+                    self._record_resolution_feedback(
+                        recoverable_fragments or [],
+                        success=not bool(witness_probe.flagged()),
+                    )
+                    retry = self._prepare_auto_recovery_retry(
+                        body,
+                        provider,
+                        witness_context,
+                        recoverable_fragments or [],
+                        witness_probe,
+                        recovery_depth=recovery_depth,
+                    )
+                    if retry is not None:
+                        retry_body, retry_context, recovered_sources = retry
+                        logger.info(
+                            "Auto-recovery retry: %d exact fragment(s), non-streaming",
+                            len(recovered_sources),
+                        )
+                        recovered = await self._forward_response(
+                            url,
+                            headers,
+                            retry_body,
+                            selected_frag_ids=selected_frag_ids,
+                            witness_context=retry_context,
+                            provider=provider,
+                            recoverable_fragments=[],
+                            recovery_depth=recovery_depth + 1,
+                        )
+                        recovered_ok = (
+                            recovered.status_code < 400
+                            and recovered.headers.get("X-Entroly-Witness") == "pass"
+                        )
+                        self._record_auto_recovery(
+                            recovered_sources=recovered_sources,
+                            success=recovered_ok,
+                            trigger="verification",
+                        )
+                        if recovered_ok:
+                            self._mark_auto_recovery_headers(
+                                recovered, recovered_sources
+                            )
+                            return recovered
+                        failed_recovery_sources = recovered_sources
+                        logger.warning(
+                            "Auto-recovery retry failed; serving first response"
+                        )
+            except Exception as e:
+                logger.debug("Auto-recovery skipped: %s", e, exc_info=True)
+
         if self._enable_passive_feedback and selected_frag_ids and isinstance(content, dict):
             try:
                 # Extract assistant text from response JSON
@@ -3092,6 +3537,10 @@ class PromptCompilerProxy:
             if self._waste_ratios:
                 avg_waste = sum(self._waste_ratios) / len(self._waste_ratios)
                 resp_headers["X-Entroly-Context-Waste-Pct"] = f"{avg_waste * 100:.1f}"
+        if failed_recovery_sources:
+            self._mark_auto_recovery_failed_headers(
+                resp_headers, failed_recovery_sources
+            )
 
         return JSONResponse(
             content=content,
@@ -3475,7 +3924,9 @@ async def _context_retrieve(request: Request) -> JSONResponse:
             "usage": 'GET /retrieve?source=file:src/auth.py to retrieve full content',
         })
 
-    entry = store.retrieve(source)
+    proxy = request.app.state.proxy
+    fragment_lookup = getattr(proxy.engine, "_get_fragment", None)
+    entry = store.retrieve_or_materialize(source, fragment_lookup)
     if entry is None:
         return JSONResponse(
             {"error": f"Source '{source}' not found in CCR store", "hint": "GET /retrieve to list available"},
@@ -3483,7 +3934,9 @@ async def _context_retrieve(request: Request) -> JSONResponse:
         )
 
     return JSONResponse({
-        "source": source,
+        "source": entry["source"],
+        "retrieval_handle": entry["retrieval_handle"],
+        "content_sha256": entry["content_sha256"],
         "resolution": entry["resolution"],
         "original_tokens": entry["original_tokens"],
         "compressed_tokens": entry["compressed_tokens"],
@@ -3645,6 +4098,16 @@ async def _proxy_stats(request: Request) -> JSONResponse:
                     else {}
                 ),
                 "last": proxy._witness_last,
+            },
+            "auto_recovery": {
+                "enabled": proxy._auto_recovery_enabled,
+                "attempted": proxy._auto_recovery_attempted,
+                "succeeded": proxy._auto_recovery_succeeded,
+                "failed": proxy._auto_recovery_failed,
+                "max_fragments": proxy._auto_recovery_max_fragments,
+                "max_candidates": proxy._auto_recovery_max_candidates,
+                "max_tokens": proxy._auto_recovery_max_tokens,
+                "last": proxy._auto_recovery_last,
             },
         }
         # Passive RL feedback stats
