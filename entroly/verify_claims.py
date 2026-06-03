@@ -15,6 +15,11 @@ from typing import Any
 
 from entroly import __version__, compress, compress_messages
 import entroly.auto_index as _auto_index
+from entroly.ccr import (
+    CompressedContextStore,
+    capture_recoverable_fragments,
+    slice_recovery_content,
+)
 from entroly.config import EntrolyConfig
 from entroly.server import EntrolyEngine
 
@@ -98,7 +103,76 @@ def run(output: str | None = None, max_files: int = 120) -> int:
         f"{optimize_ms:.1f}ms / {smoke_budget_ms:.0f}ms",
     )
 
-    print("\n[4] Engine mode")
+    print("\n[4] Exact recovery")
+    print("-" * 40)
+    recovery_store = CompressedContextStore(max_entries=8)
+    recovery_original = (
+        "def validate_token(token):\n"
+        "    return token == 'known-session-token'\n\n"
+        "def authorize(request):\n"
+        "    return validate_token(request.token)\n"
+    )
+    recovery_fragment = {
+        "id": "probe-auth-fragment",
+        "source": "probe://auth.py",
+        "content": recovery_original,
+        "token_count": max(1, len(recovery_original) // 4),
+        "entropy_score": 0.5,
+    }
+    compressed_fragment = {
+        "id": "probe-auth-fragment",
+        "source": "probe://auth.py",
+        "content": "[skeleton] validate_token(token) -> bool",
+        "token_count": 10,
+        "variant": "skeleton",
+        "relevance": 1.0,
+    }
+
+    def recovery_lookup(key: str) -> dict[str, Any] | None:
+        if key in {"probe-auth-fragment", "probe://auth.py"}:
+            return recovery_fragment
+        return None
+
+    handles = capture_recoverable_fragments(
+        [compressed_fragment],
+        recovery_lookup,
+        store=recovery_store,
+    )
+    recovered = recovery_store.retrieve(handles[0]) if handles else None
+    check(
+        "CCR-1",
+        "Compressed fragment receives retrieval handle",
+        bool(handles and compressed_fragment.get("recoverable")),
+        handles[0] if handles else "no handle",
+    )
+    check(
+        "CCR-2",
+        "Retrieval restores exact original content",
+        bool(recovered and recovered.get("original") == recovery_original),
+        recovered.get("retrieval_handle", "") if recovered else "not recovered",
+    )
+
+    oversized = (
+        "Module overview.\n"
+        + ("background details\n" * 80)
+        + "validate_token checks the known-session-token before authorization.\n"
+        + ("trailing details\n" * 80)
+    )
+    recovery_budget = 96
+    sliced, was_sliced = slice_recovery_content(
+        oversized,
+        "how does validate_token authorize the request",
+        recovery_budget,
+    )
+    sliced_tokens = max(1, (len(sliced) + 3) // 4) if sliced else 0
+    check(
+        "CCR-3",
+        "Oversized recovery excerpt stays within budget",
+        bool(was_sliced and sliced_tokens <= recovery_budget and "validate_token" in sliced),
+        f"{sliced_tokens}/{recovery_budget} tokens",
+    )
+
+    print("\n[5] Engine mode")
     print("-" * 40)
     native = bool(getattr(engine, "_use_rust", False))
     check(
@@ -125,6 +199,12 @@ def run(output: str | None = None, max_files: int = 120) -> int:
         "tokens_used": used,
         "savings_pct": round(savings, 1),
         "optimize_latency_ms": round(optimize_ms, 1),
+        "recovery": {
+            "retrieval_handles": len(handles),
+            "retrieved_exact": bool(recovered and recovered.get("original") == recovery_original),
+            "slice_tokens": sliced_tokens,
+            "slice_budget": recovery_budget,
+        },
         "engine": "rust" if native else "python",
         "passed": passed,
         "failed": failed,
