@@ -391,4 +391,27 @@ def select(
         })
         budget_left -= tokens_used
 
+    # ── Hard budget ceiling ───────────────────────────────────────────────
+    # Per-file _approx_tokens plus the newline joins between sentences can
+    # drift a few tokens over the requested budget. Callers treat token_budget
+    # as a HARD cap (e.g. `entroly optimize --budget N` must not report
+    # tokens_used > N). Trim trailing excerpts — emitted last because they came
+    # from the lowest-ranked files — dropping the trailing sentence of the
+    # final excerpt (least-relevant content of the least-relevant file), then
+    # whole excerpts, until the emitted total fits.
+    def _frag_tokens(frag: dict) -> int:
+        return frag.get("token_count") or _approx_tokens(frag.get("content", "") or "")
+
+    total = sum(_frag_tokens(f) for f in output)
+    while output and total > token_budget:
+        last = output[-1]
+        lines = (last.get("content") or "").split("\n")
+        if len(lines) > 1:
+            lines.pop()
+            last["content"] = "\n".join(lines)
+            last["token_count"] = _approx_tokens(last["content"])
+        else:
+            output.pop()
+        total = sum(_frag_tokens(f) for f in output)
+
     return output

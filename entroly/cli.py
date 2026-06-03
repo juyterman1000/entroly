@@ -584,12 +584,14 @@ def cmd_autotune(args):
             result = rollback_config(config_path)
             if result["status"] == "no_backup_found":
                 print(f"  {C.RED}No backup found -- nothing to roll back.{C.RESET}\n")
-                return
+                return 1
             print(f"  {C.GREEN}Restored from:{C.RESET} {result['restored_from']}")
             print(f"  {C.GREEN}{C.BOLD}Rollback complete.{C.RESET} Previous config is now active.\n")
+            return 0
         except ImportError:
-            print(f"  {C.RED}bench.autotune not available{C.RESET}")
-        return
+            print(f"  {C.RED}bench.autotune not available{C.RESET} — autotune requires a "
+                  f"source checkout (the bench/ harness is not in the published package).")
+            return 1
 
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Autotune{C.RESET}\n")
     print(f"  {C.GRAY}Running {args.iterations} iterations of mutation-based optimization...{C.RESET}\n")
@@ -604,8 +606,17 @@ def cmd_autotune(args):
         print(f"  {C.GRAY}Config saved to tuning_config.json{C.RESET}")
         print(f"  {C.GRAY}To undo: entroly autotune --rollback{C.RESET}\n")
     except ImportError:
-        # Fallback: run the script directly
-        subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), '..', 'bench', 'autotune.py'), '--iterations', str(args.iterations)])
+        # The bench/ harness (autotune.py, cases.json) is a development tool and
+        # is NOT shipped in the published pip/npm package — so there is no script
+        # to fall back to. The old fallback pointed at site-packages/entroly/../
+        # bench/autotune.py, printed "can't open file", and still exited 0.
+        # Report clearly and fail instead.
+        print(
+            f"  {C.RED}autotune is unavailable in this install.{C.RESET} The bench/ "
+            f"harness is not included in the published package; clone the repository "
+            f"and run autotune from a source checkout."
+        )
+        return 1
 
 
 def _should_check_upstream() -> bool:
@@ -1200,7 +1211,7 @@ def cmd_profile(args):
         tuning_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
         if not tuning_path.exists():
             print(f"  {C.RED}No tuning_config.json to save.{C.RESET}")
-            return
+            return 1
         profiles_dir.mkdir(parents=True, exist_ok=True)
         name = args.name or hashlib.sha256(os.getcwd().encode()).hexdigest()[:8]
         profile_path = profiles_dir / f"{name}.json"
@@ -1211,11 +1222,11 @@ def cmd_profile(args):
     elif args.profile_action == "load":
         if not args.name:
             print(f"  {C.RED}Specify a profile name: entroly profile load <name>{C.RESET}")
-            return
+            return 1
         profile_path = profiles_dir / f"{args.name}.json"
         if not profile_path.exists():
             print(f"  {C.RED}Profile '{args.name}' not found.{C.RESET}")
-            return
+            return 1
         tuning_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
         import shutil
         shutil.copy2(str(profile_path), str(tuning_path))
@@ -1232,6 +1243,7 @@ def cmd_profile(args):
 
     else:
         print("  Usage: entroly profile {save|load|list} [name]")
+        return 1
 
 
 def cmd_batch(args):
@@ -1638,11 +1650,12 @@ def _resolve_agent_config_path(spec: dict) -> str | None:
     )
 
 
-def _wrap_via_mcp(spec: dict, port: int) -> bool:
+def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
     """Auto-merge an entroly MCP server entry into the IDE's mcp.json.
 
     Returns True on success. The proxy is NOT started — MCP integration uses
-    `entroly serve` (stdio), which the IDE spawns itself.
+    `entroly serve` (stdio), which the IDE spawns itself. With dry_run=True,
+    prints the merged config that WOULD be written and makes no changes.
     """
     config_path = _resolve_agent_config_path(spec)
     if not config_path:
@@ -1653,6 +1666,18 @@ def _wrap_via_mcp(spec: dict, port: int) -> bool:
         "config_path": config_path,
         "config_key": spec.get("config_key", "mcpServers"),
     }
+
+    if dry_run:
+        try:
+            preview = _write_config(tool, dry_run=True)
+        except (OSError, PermissionError) as e:
+            print(f"  {C.RED}Could not read {config_path}: {e}{C.RESET}")
+            return False
+        print(f"  {C.YELLOW}[dry-run]{C.RESET} would write {config_path}:")
+        for ln in preview.splitlines():
+            print(f"    {ln}")
+        print()
+        return True
 
     try:
         written = _write_config(tool)
@@ -1953,23 +1978,40 @@ def cmd_wrap(args):
                 pass
     port = port or 9377
 
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Wrap — {spec['name']}{C.RESET}\n")
+    # --dry-run can be swallowed by agent_args (argparse.REMAINDER), exactly
+    # like --port above. Recover it from either source.
+    dry_run = bool(getattr(args, "dry_run", False))
+    if "--dry-run" in args.agent_args:
+        dry_run = True
+        args.agent_args.remove("--dry-run")
+
+    suffix = f"  {C.YELLOW}[dry-run]{C.RESET}" if dry_run else ""
+    print(f"\n{C.CYAN}{C.BOLD}  Entroly Wrap — {spec['name']}{C.RESET}{suffix}\n")
 
     # ── kind=mcp ───────────────────────────────────────────────────────
     if kind == "mcp":
-        _wrap_via_mcp(spec, port)
-        return
+        return 0 if _wrap_via_mcp(spec, port, dry_run=dry_run) else 1
 
     # ── kind=print ─────────────────────────────────────────────────────
     if kind == "print":
+        if dry_run:
+            print(f"  {C.GRAY}[dry-run] would start the proxy on :{port} and print "
+                  f"{spec['name']} setup instructions. No changes made.{C.RESET}\n")
+            return 0
         if not _start_proxy_if_needed(port):
-            return
+            return 1
         _wrap_via_print(spec, port)
-        return
+        return 0
 
     # ── kind=cli (default) ─────────────────────────────────────────────
+    if dry_run:
+        launch = " ".join(spec["cmd"] + (args.agent_args or []))
+        print(f"  {C.GRAY}[dry-run] would start the proxy on :{port}, set "
+              f"{spec['env_key']}={spec['env_val'].format(port=port)}, and launch "
+              f"`{launch}`. No changes made.{C.RESET}\n")
+        return 0
     if not _start_proxy_if_needed(port):
-        return
+        return 1
 
     env = os.environ.copy()
     env[spec["env_key"]] = spec["env_val"].format(port=port)
@@ -2012,13 +2054,33 @@ def cmd_wrap(args):
             raise FileNotFoundError()
 
         agent_cmd[0] = executable
-        subprocess.run(agent_cmd, env=env)
+        try:
+            subprocess.run(agent_cmd, env=env)
+        except OSError:
+            # Windows: npm/global CLIs are .cmd/.ps1 shims that can raise
+            # [WinError 5] (PermissionError, an OSError) when exec'd via their
+            # resolved path. Retry through the shell so cmd.exe resolves the
+            # shim. Re-raise on non-Windows (handled below).
+            if os.name == "nt":
+                subprocess.run(subprocess.list2cmdline(agent_cmd), env=env, shell=True)
+            else:
+                raise
     except FileNotFoundError:
         print(f"\n  {C.RED}{spec['name']} not found.{C.RESET}")
         print(f"  {C.GRAY}Install it first, then run: entroly wrap {agent}{C.RESET}\n")
-        return
+        return 1
     except KeyboardInterrupt:
         print(f"\n  {C.GRAY}{spec['name']} stopped.{C.RESET}")
+    except OSError as e:
+        # Launch failed even via the shell (permissions, bad shim, etc.). The
+        # proxy is already running, so guide the user to finish manually
+        # instead of crashing with a raw [WinError 5].
+        print(f"\n  {C.RED}Could not launch {spec['name']}:{C.RESET} {e}")
+        print(
+            f"  {C.GRAY}The proxy is running on :{port}. Launch {spec['name']} "
+            f"manually with {spec['env_key']}={spec['env_val'].format(port=port)}{C.RESET}\n"
+        )
+        return 1
 
     # Empirical check: did the agent actually route through the proxy?
     _wrap_watchdog_report(agent, spec, port, req_before)
@@ -2949,25 +3011,31 @@ def cmd_doctor(args):
             print(f"  {C.GREEN}+{C.RESET} No local data stored yet (.entroly/ not created)")
         privacy_passed += 1
 
-        # 8. Verify PRIVACY.md exists
-        privacy_total += 1
+        # 8. Verify PRIVACY.md exists. This is a SOURCE-repo document that is
+        # not shipped in the pip/npm package, so when it's absent (the normal
+        # case for an installed package) the check is SKIPPED — not counted as
+        # passed. Counting a missing file as a pass produced the contradictory
+        # "PRIVACY.md not found ... VERIFIED 9/9".
         privacy_md = Path(__file__).parent.parent / "PRIVACY.md"
         if privacy_md.exists():
+            privacy_total += 1
             print(f"  {C.GREEN}+{C.RESET} PRIVACY.md present in repository")
             privacy_passed += 1
         else:
-            print(f"  {C.YELLOW}!{C.RESET} PRIVACY.md not found in repository root")
-            privacy_passed += 1
+            print(f"  {C.GRAY}-{C.RESET} PRIVACY.md not in this install "
+                  f"(expected for the pip/npm package; see the source repo) — skipped")
 
         # Summary
         if privacy_passed == privacy_total:
             print(f"\n  {C.GREEN}{C.BOLD}PRIVACY VERIFIED: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
             print(f"  {C.GREEN}No Entroly-owned phone-home path detected.{C.RESET}")
             print(f"  {C.GRAY}Configured cloud LLM providers still receive optimized prompt content sent through the proxy.{C.RESET}")
-        else:
-            print(f"\n  {C.YELLOW}{C.BOLD}PRIVACY: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
-            print(f"  {C.YELLOW}Review the warnings above.{C.RESET}")
+            print()
+            return 0
+        print(f"\n  {C.YELLOW}{C.BOLD}PRIVACY: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
+        print(f"  {C.YELLOW}Review the warnings above.{C.RESET}")
         print()
+        return 1
 
 
 
@@ -3847,7 +3915,7 @@ def cmd_witness(args):
             f"{C.RED}Error:{C.RESET} provide model output via --output, --output-file, or stdin",
             file=sys.stderr,
         )
-        return
+        return 1
 
     analyzer = WitnessAnalyzer(use_nli=args.nli, profile=args.profile)
     result, rewrite = analyzer.analyze_and_rewrite(context, output, mode=args.mode)
@@ -4405,6 +4473,10 @@ def main():
         help="Proxy port (default: 9377)",
     )
     wrap_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview actions (config writes / proxy start / agent launch) without performing them",
+    )
+    wrap_parser.add_argument(
         "agent_args", nargs=argparse.REMAINDER,
         help="Additional arguments passed to the agent",
     )
@@ -4786,7 +4858,13 @@ def main():
     rc = 0
     if handler:
         try:
-            handler(args)
+            ret = handler(args)
+            # Commands signal failure by returning a non-zero int. Returning
+            # None (the common success path) keeps rc=0. This is what lets
+            # `profile`/`autotune`/`doctor` exit non-zero when they print a
+            # failure, instead of silently exiting 0.
+            if isinstance(ret, int):
+                rc = ret
         except KeyboardInterrupt:
             print(f"\n  {C.GRAY}Interrupted.{C.RESET}")
             rc = 130
