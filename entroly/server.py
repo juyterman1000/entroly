@@ -2709,7 +2709,7 @@ def create_mcp_server(
         """
         if outcome not in ("accepted", "reverted", "retried"):
             return json.dumps({"status": "error", "reason": f"invalid outcome: {outcome}"})
-            
+
         return _record_honest(
             request_id=request_id,
             event_type="edit_outcome",

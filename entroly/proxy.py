@@ -2815,7 +2815,7 @@ class PromptCompilerProxy:
                 "coverage_risk": getattr(self, "_last_coverage_risk", "unknown"),
                 "timestamp": time.time(),
             }
-        
+
         if request_id and hasattr(self.engine, "_outcome_bridge") and self.engine._outcome_bridge is not None:
             try:
                 self.engine._outcome_bridge.on_honest_outcome(

@@ -24,14 +24,14 @@ class PromotionGate:
         self.holdout_window = holdout_window
         self.epsilon = epsilon
         self.delta = delta
-        
+
         self._lock = threading.Lock()
-        
+
         # State
         self._live_outcomes = collections.deque(maxlen=self.holdout_window)
         self._shadow_outcomes = collections.deque(maxlen=self.holdout_window)
         self._post_promotion_outcomes = collections.deque(maxlen=20)
-        
+
         self._shadow_weights: dict[str, float] | None = None
         self._previous_live_weights: dict[str, float] | None = None
 
@@ -68,10 +68,10 @@ class PromotionGate:
 
             live_success = sum(1 for o in self._live_outcomes if o[0]) / self.holdout_window
             shadow_success = sum(1 for o in self._shadow_outcomes if o[0]) / self.holdout_window
-            
+
             live_repair = sum(o[1] for o in self._live_outcomes) / self.holdout_window
             shadow_repair = sum(o[1] for o in self._shadow_outcomes) / self.holdout_window
-            
+
             live_retry = sum(o[2] for o in self._live_outcomes) / self.holdout_window
             shadow_retry = sum(o[2] for o in self._shadow_outcomes) / self.holdout_window
 
@@ -96,7 +96,7 @@ class PromotionGate:
             self._shadow_weights = None
             self._shadow_outcomes.clear()
             self._post_promotion_outcomes.clear()
-            
+
             logger.info("PromotionGate: Shadow policy promoted to Live.")
             return promoted_weights
 
@@ -105,11 +105,11 @@ class PromotionGate:
         with self._lock:
             if not self._previous_live_weights or len(self._post_promotion_outcomes) < 20:
                 return None
-                
+
             post_repair = sum(o[1] for o in self._post_promotion_outcomes) / 20.0
             post_retry = sum(o[2] for o in self._post_promotion_outcomes) / 20.0
             post_success = sum(1 for o in self._post_promotion_outcomes if o[0]) / 20.0
-            
+
             # If repair/retry rates explode, or success plummets
             if post_repair > 1.5 or post_retry > 1.5 or post_success < 0.5:
                 logger.warning(f"PromotionGate: Auto-rollback triggered. repair={post_repair:.2f}, retry={post_retry:.2f}, success={post_success:.2f}")
@@ -117,7 +117,7 @@ class PromotionGate:
                 self._previous_live_weights = None
                 self._post_promotion_outcomes.clear()
                 return rollback
-                
+
             return None
 
     def commit_promotion(self, live_weights: dict[str, float]):
