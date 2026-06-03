@@ -713,7 +713,41 @@ class EntrolyEngine:
         # GC freeze: disable during hot Rust dispatch + final result assembly.
         gc.disable()
         try:
-            if self._use_rust:
+            if self._use_rust and refined_query.strip():
+                # ── Query-conditioned selection via QCCR ──────────────────
+                # qccr.select (sentence-level BM25 + MMR + entity boost +
+                # anchor fallback) is the compressor validated by EVERY
+                # committed accuracy benchmark (needle/longbench/squad/bfcl/
+                # mmlu/gsm8k/truthfulqa). Routing the engine's query path
+                # through it makes the SHIPPED behaviour identical to the
+                # MEASURED behaviour across the SDK, MCP, and proxy — not just
+                # the CLI. Any failure falls back to the native knapsack so
+                # optimize_context never breaks.
+                try:
+                    from .qccr import select as qccr_select
+                    candidates = [dict(f) for f in self._rust.export_fragments()]
+                    selected = qccr_select(
+                        candidates, token_budget=token_budget, query=refined_query,
+                    )
+                    result = {
+                        "selected_fragments": selected,
+                        "selected": selected,
+                        "tokens_used": sum(
+                            (f.get("token_count") or (len(f.get("content", "")) // 4))
+                            for f in selected if isinstance(f, dict)
+                        ),
+                        "total_fragments": len(candidates),
+                        "selector": "qccr",
+                    }
+                except Exception:
+                    result = dict(self._rust.optimize(token_budget, refined_query))
+                    if "selected" in result and "selected_fragments" not in result:
+                        result["selected_fragments"] = result["selected"]
+                if refinement_info:
+                    result["query_refinement"] = refinement_info
+                if query_analysis:
+                    result["query_analysis"] = query_analysis
+            elif self._use_rust:
                 result = self._rust.optimize(token_budget, refined_query)
                 result = dict(result)
                 # Normalize key: Rust returns "selected", Python uses "selected_fragments"
