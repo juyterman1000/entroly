@@ -15,8 +15,6 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly</h1>
-
 <p align="center"><b>Cut your AI coding bill — without losing answer quality.</b></p>
 
 <p align="center">
