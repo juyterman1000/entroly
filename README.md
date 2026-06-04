@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="160" alt="Entroly">
+  <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
 <h1 align="center">Entroly</h1>

@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="300" viewBox="0 0 1040 300" role="img" aria-labelledby="title desc">
+  <title id="title">Entroly</title>
+  <desc id="desc">Animated neon green pixel-built Entroly wordmark with modern glitch and terminal-style on/off flicker.</desc>
+
+  <defs>
+    <path id="E" d="M0 0h18v18h-18z M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M0 40h18v18h-18z M0 60h18v18h-18z M20 60h18v18h-18z M40 60h18v18h-18z M60 60h18v18h-18z M0 80h18v18h-18z M0 100h18v18h-18z M0 120h18v18h-18z M20 120h18v18h-18z M40 120h18v18h-18z M60 120h18v18h-18z M80 120h18v18h-18z"/>
+    <path id="N" d="M0 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M20 20h18v18h-18z M80 20h18v18h-18z M0 40h18v18h-18z M40 40h18v18h-18z M80 40h18v18h-18z M0 60h18v18h-18z M60 60h18v18h-18z M80 60h18v18h-18z M0 80h18v18h-18z M80 80h18v18h-18z M0 100h18v18h-18z M80 100h18v18h-18z M0 120h18v18h-18z M80 120h18v18h-18z"/>
+    <path id="T" d="M0 0h18v18h-18z M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M80 0h18v18h-18z M40 20h18v18h-18z M40 40h18v18h-18z M40 60h18v18h-18z M40 80h18v18h-18z M40 100h18v18h-18z M40 120h18v18h-18z"/>
+    <path id="R" d="M0 0h18v18h-18z M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M0 20h18v18h-18z M80 20h18v18h-18z M0 40h18v18h-18z M80 40h18v18h-18z M0 60h18v18h-18z M20 60h18v18h-18z M40 60h18v18h-18z M60 60h18v18h-18z M0 80h18v18h-18z M40 80h18v18h-18z M0 100h18v18h-18z M60 100h18v18h-18z M0 120h18v18h-18z M80 120h18v18h-18z"/>
+    <path id="O" d="M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M0 20h18v18h-18z M80 20h18v18h-18z M0 40h18v18h-18z M80 40h18v18h-18z M0 60h18v18h-18z M80 60h18v18h-18z M0 80h18v18h-18z M80 80h18v18h-18z M0 100h18v18h-18z M80 100h18v18h-18z M20 120h18v18h-18z M40 120h18v18h-18z M60 120h18v18h-18z"/>
+    <path id="L" d="M0 0h18v18h-18z M0 20h18v18h-18z M0 40h18v18h-18z M0 60h18v18h-18z M0 80h18v18h-18z M0 100h18v18h-18z M0 120h18v18h-18z M20 120h18v18h-18z M40 120h18v18h-18z M60 120h18v18h-18z M80 120h18v18h-18z"/>
+    <path id="Y" d="M0 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M80 20h18v18h-18z M20 40h18v18h-18z M60 40h18v18h-18z M40 60h18v18h-18z M40 80h18v18h-18z M40 100h18v18h-18z M40 120h18v18h-18z"/>
+
+    <g id="word" transform="translate(100 92)">
+      <use href="#E" x="0"/>
+      <use href="#N" x="122"/>
+      <use href="#T" x="244"/>
+      <use href="#R" x="366"/>
+      <use href="#O" x="488"/>
+      <use href="#L" x="610"/>
+      <use href="#Y" x="732"/>
+    </g>
+
+    <linearGradient id="mainGreen" x1="0" y1="92" x2="0" y2="238" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d9ffd8"/>
+      <stop offset="0.11" stop-color="#8cff7d"/>
+      <stop offset="0.52" stop-color="#39ff14"/>
+      <stop offset="1" stop-color="#16a34a"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1720"/>
+      <stop offset="0.58" stop-color="#0b1117"/>
+      <stop offset="1" stop-color="#07130d"/>
+    </linearGradient>
+    <linearGradient id="warmPanelLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.12"/>
+      <stop offset="0.35" stop-color="#22d3ee" stop-opacity="0.05"/>
+      <stop offset="0.72" stop-color="#f472b6" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="22" height="22" patternUnits="userSpaceOnUse">
+      <path d="M22 0H0V22" fill="none" stroke="#12311d" stroke-width="1" opacity="0.28"/>
+    </pattern>
+    <filter id="neon" x="-8%" y="-24%" width="116%" height="160%">
+      <feGaussianBlur stdDeviation="3.2" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.16 0 0 0 0 1 0 0 0 0 0.18 0 0 0 .85 0" result="greenGlow"/>
+      <feMerge>
+        <feMergeNode in="greenGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="lowerBand">
+      <rect x="0" y="172" width="1040" height="96"/>
+    </clipPath>
+    <clipPath id="glitchTop">
+      <rect x="0" y="92" width="1040" height="38"/>
+    </clipPath>
+    <clipPath id="glitchMid">
+      <rect x="0" y="146" width="1040" height="30"/>
+    </clipPath>
+    <clipPath id="glitchLow">
+      <rect x="0" y="194" width="1040" height="28"/>
+    </clipPath>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0"/>
+      <stop offset="0.48" stop-color="#d9ffd8" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#d9ffd8" stop-opacity="0.8"/>
+      <stop offset="0.52" stop-color="#d9ffd8" stop-opacity="0"/>
+      <stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1040" height="300" fill="#090d13"/>
+  <rect x="24" y="24" width="992" height="252" fill="url(#panel)" stroke="#254030" stroke-width="1">
+    <animate attributeName="stroke" dur="5.2s" repeatCount="indefinite" values="#254030;#2dd4bf;#254030;#86efac;#254030" keyTimes="0;.18;.35;.74;1"/>
+  </rect>
+  <path d="M24 24h992v252H24z" fill="url(#warmPanelLight)" opacity="0.82"/>
+  <rect x="24" y="24" width="992" height="252" fill="url(#grid)" opacity="0.9"/>
+  <path d="M42 18H164" stroke="#86efac" stroke-width="4"/>
+  <path d="M42 277H998" stroke="#16351f" stroke-width="2"/>
+
+  <g opacity="0.82">
+    <rect x="42" y="42" width="118" height="2" fill="#39ff14"/>
+    <rect x="176" y="42" width="44" height="2" fill="#22d3ee"/>
+    <rect x="234" y="42" width="26" height="2" fill="#f472b6"/>
+    <rect x="886" y="42" width="72" height="2" fill="#39ff14"/>
+    <rect x="970" y="37" width="10" height="10" fill="#39ff14">
+      <animate attributeName="opacity" dur="1.6s" repeatCount="indefinite" values="1;.22;1;1" keyTimes="0;.42;.58;1"/>
+    </rect>
+  </g>
+
+  <g opacity="0.82">
+    <circle cx="62" cy="82" r="3" fill="#39ff14"/>
+    <circle cx="978" cy="248" r="3" fill="#39ff14"/>
+    <path d="M62 82h44v16h38" fill="none" stroke="#14532d" stroke-width="2"/>
+    <path d="M978 248h-52v-18h-36" fill="none" stroke="#14532d" stroke-width="2"/>
+  </g>
+  <g>
+    <circle cx="958" cy="82" r="5" fill="#39ff14">
+      <animate attributeName="opacity" dur="2.8s" repeatCount="indefinite" values="1;1;.18;1;.4;1;1" keyTimes="0;.72;.76;.8;.84;.88;1"/>
+    </circle>
+    <circle cx="978" cy="82" r="5" fill="#14532d">
+      <animate attributeName="fill" dur="2.8s" repeatCount="indefinite" values="#14532d;#14532d;#39ff14;#14532d;#14532d" keyTimes="0;.74;.78;.84;1"/>
+    </circle>
+  </g>
+
+  <g opacity="0.72">
+    <path d="M794 74h6v-10h6v10h10v6h-10v10h-6V80h-10z" fill="#bbf7d0">
+      <animate attributeName="opacity" dur="3.8s" repeatCount="indefinite" values=".2;.92;.2;.2" keyTimes="0;.22;.44;1"/>
+    </path>
+    <path d="M842 224h5v-8h5v8h8v5h-8v8h-5v-8h-8v-5z" fill="#22d3ee">
+      <animate attributeName="opacity" dur="4.4s" repeatCount="indefinite" values=".15;.15;.78;.15" keyTimes="0;.48;.68;1"/>
+    </path>
+    <path d="M520 72h4v-7h4v7h7v4h-7v7h-4v-7h-7v-4z" fill="#f472b6">
+      <animate attributeName="opacity" dur="5.1s" repeatCount="indefinite" values=".12;.12;.7;.12" keyTimes="0;.64;.78;1"/>
+    </path>
+  </g>
+
+  <use href="#word" transform="translate(18 22)" fill="#03190c" opacity="0.95"/>
+  <use href="#word" transform="translate(12 15)" fill="#064e1f" opacity="0.82"/>
+  <use href="#word" transform="translate(7 8)" fill="#15803d" opacity="0.62"/>
+  <g opacity="0">
+    <animate attributeName="opacity" dur="4.6s" repeatCount="indefinite" values="0;0;.75;0;0;.45;0" keyTimes="0;.68;.705;.74;.82;.86;1"/>
+    <use href="#word" transform="translate(-9 1)" fill="#22d3ee" clip-path="url(#glitchTop)"/>
+    <use href="#word" transform="translate(11 -1)" fill="#f472b6" clip-path="url(#glitchMid)"/>
+    <use href="#word" transform="translate(-7 2)" fill="#a78bfa" clip-path="url(#glitchLow)"/>
+  </g>
+  <g>
+    <animate attributeName="opacity" dur="4.6s" repeatCount="indefinite" values="1;1;.22;1;.08;.96;1;.72;1;1" keyTimes="0;.66;.69;.72;.755;.79;.83;.86;.9;1"/>
+    <use href="#word" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.25" filter="url(#neon)"/>
+    <use href="#word" fill="#15803d" opacity="0.43" clip-path="url(#lowerBand)"/>
+  </g>
+
+  <g opacity="0.34">
+    <animateTransform attributeName="transform" type="translate" dur="3.4s" repeatCount="indefinite" values="-1040 0;1040 0" keyTimes="0;1"/>
+    <rect x="0" y="24" width="1040" height="252" fill="url(#sweep)"/>
+  </g>
+  <use href="#word" fill="none" stroke="#03190c" stroke-width="1.2" opacity="0.55"/>
+
+  <rect x="88" y="258" width="864" height="1" fill="#39ff14" opacity="0.32"/>
+  <rect x="88" y="261" width="214" height="2" fill="#39ff14" opacity="0.75">
+    <animate attributeName="width" dur="4.6s" repeatCount="indefinite" values="214;214;64;318;214;214" keyTimes="0;.68;.73;.82;.9;1"/>
+    <animate attributeName="opacity" dur="4.6s" repeatCount="indefinite" values=".75;.75;.18;.95;.75;.75" keyTimes="0;.68;.73;.82;.9;1"/>
+  </rect>
+  <rect x="318" y="256" width="12" height="9" fill="#bbf7d0">
+    <animate attributeName="opacity" dur="1s" repeatCount="indefinite" values="1;1;0;0;1" keyTimes="0;.48;.5;.9;1"/>
+  </rect>
+</svg>
