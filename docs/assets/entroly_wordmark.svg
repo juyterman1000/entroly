@@ -57,13 +57,11 @@
     <!-- ── The mark: a distillation funnel (noise → signal) in a chip ──── -->
     <g id="mark">
       <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#chip)" stroke="#2f6a45" stroke-width="2"/>
-      <g filter="url(#neon)">
-        <rect x="26" y="34"  width="88" height="13" rx="2" fill="#19a23a"/>
-        <rect x="40" y="55"  width="60" height="13" rx="2" fill="#2ee03e"/>
-        <rect x="52" y="76"  width="36" height="13" rx="2" fill="#7dff66"/>
-        <rect x="61" y="97"  width="18" height="13" rx="2" fill="#eaffe6">
-          <animate attributeName="opacity" dur="3.2s" repeatCount="indefinite" values="0.55;1;0.55" keyTimes="0;.5;1"/>
-        </rect>
+      <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#backlight)"/>
+      <g transform="translate(38 24) scale(0.68)">
+        <use href="#E" transform="translate(6 8)" fill="#04200e" opacity="0.9"/>
+        <use href="#E" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.6" filter="url(#neon)"/>
+        <use href="#E" fill="url(#sheen)"/>
       </g>
       <rect x="2" y="2" width="136" height="136" rx="28" fill="none" stroke="#bbf7d0" stroke-width="1" opacity="0.18"/>
     </g>
