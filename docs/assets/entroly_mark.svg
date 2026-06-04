@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-labelledby="t d">
+  <title id="t">Entroly</title>
+  <desc id="d">Entroly mark: a distillation funnel compressing noisy input (wide, dim bars) down to one bright block of pure signal.</desc>
+  <defs>
+    <linearGradient id="chip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0e2018"/><stop offset="1" stop-color="#05100b"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="50%" cy="42%" r="60%">
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.22"/><stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="g" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.4" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.2  0 0 0 0 1  0 0 0 0 0.25  0 0 0 0.85 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="10" y="10" width="140" height="140" rx="34" fill="url(#chip)" stroke="#2f6a45" stroke-width="2.5"/>
+  <rect x="10" y="10" width="140" height="140" rx="34" fill="url(#bg)"/>
+  <g filter="url(#g)">
+    <rect x="38" y="44"  width="84" height="14" rx="2.5" fill="#19a23a"/>
+    <rect x="52" y="67"  width="56" height="14" rx="2.5" fill="#2ee03e"/>
+    <rect x="64" y="90"  width="32" height="14" rx="2.5" fill="#7dff66"/>
+    <rect x="72" y="113" width="16" height="14" rx="2.5" fill="#eaffe6">
+      <animate attributeName="opacity" dur="3.2s" repeatCount="indefinite" values="0.55;1;0.55" keyTimes="0;.5;1"/>
+    </rect>
+  </g>
+  <rect x="10" y="10" width="140" height="140" rx="34" fill="none" stroke="#bbf7d0" stroke-width="1" opacity="0.16"/>
+</svg>

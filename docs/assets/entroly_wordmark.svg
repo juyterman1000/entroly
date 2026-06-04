@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="300" viewBox="0 0 1040 300" role="img" aria-labelledby="title desc">
   <title id="title">Entroly</title>
-  <desc id="desc">Neon-green pixel-built Entroly wordmark with a soft backlight, glossy sheen and a gentle light sweep across the letters.</desc>
+  <desc id="desc">The Entroly logo: a distillation mark — a funnel of bars compressing from a wide, dim input to one bright block of pure signal — locked up with the neon-green pixel ENTROLY wordmark.</desc>
 
   <defs>
-    <!-- ── Glyphs: 18px blocks on a 20px pitch ─────────────────────────── -->
+    <!-- ── Glyphs: 18px blocks on a 20px pitch, origin at 0,0 ──────────── -->
     <path id="E" d="M0 0h18v18h-18z M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M0 40h18v18h-18z M0 60h18v18h-18z M20 60h18v18h-18z M40 60h18v18h-18z M60 60h18v18h-18z M0 80h18v18h-18z M0 100h18v18h-18z M0 120h18v18h-18z M20 120h18v18h-18z M40 120h18v18h-18z M60 120h18v18h-18z M80 120h18v18h-18z"/>
     <path id="N" d="M0 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M20 20h18v18h-18z M80 20h18v18h-18z M0 40h18v18h-18z M40 40h18v18h-18z M80 40h18v18h-18z M0 60h18v18h-18z M60 60h18v18h-18z M80 60h18v18h-18z M0 80h18v18h-18z M80 80h18v18h-18z M0 100h18v18h-18z M80 100h18v18h-18z M0 120h18v18h-18z M80 120h18v18h-18z"/>
     <path id="T" d="M0 0h18v18h-18z M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M80 0h18v18h-18z M40 20h18v18h-18z M40 40h18v18h-18z M40 60h18v18h-18z M40 80h18v18h-18z M40 100h18v18h-18z M40 120h18v18h-18z"/>
@@ -12,100 +12,96 @@
     <path id="L" d="M0 0h18v18h-18z M0 20h18v18h-18z M0 40h18v18h-18z M0 60h18v18h-18z M0 80h18v18h-18z M0 100h18v18h-18z M0 120h18v18h-18z M20 120h18v18h-18z M40 120h18v18h-18z M60 120h18v18h-18z M80 120h18v18h-18z"/>
     <path id="Y" d="M0 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M80 20h18v18h-18z M20 40h18v18h-18z M60 40h18v18h-18z M40 60h18v18h-18z M40 80h18v18h-18z M40 100h18v18h-18z M40 120h18v18h-18z"/>
 
-    <g id="word" transform="translate(105 84)">
-      <use href="#E" x="0"/>
-      <use href="#N" x="122"/>
-      <use href="#T" x="244"/>
-      <use href="#R" x="366"/>
-      <use href="#O" x="488"/>
-      <use href="#L" x="610"/>
-      <use href="#Y" x="732"/>
+    <g id="word">
+      <use href="#E" x="0"/><use href="#N" x="122"/><use href="#T" x="244"/><use href="#R" x="366"/><use href="#O" x="488"/><use href="#L" x="610"/><use href="#Y" x="732"/>
     </g>
 
-    <linearGradient id="mainGreen" x1="0" y1="84" x2="0" y2="222" gradientUnits="userSpaceOnUse">
+    <linearGradient id="mainGreen" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#eaffe6"/>
-      <stop offset="0.14" stop-color="#9bff86"/>
-      <stop offset="0.50" stop-color="#3dff1a"/>
-      <stop offset="0.82" stop-color="#1fbf3f"/>
+      <stop offset="0.16" stop-color="#9bff86"/>
+      <stop offset="0.52" stop-color="#3dff1a"/>
+      <stop offset="0.84" stop-color="#1fbf3f"/>
       <stop offset="1" stop-color="#0e7a34"/>
     </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="84" x2="0" y2="222" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.60"/>
-      <stop offset="0.30" stop-color="#ffffff" stop-opacity="0"/>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.58"/>
+      <stop offset="0.32" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
     <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f1a23"/>
-      <stop offset="0.55" stop-color="#0a1118"/>
-      <stop offset="1" stop-color="#06120d"/>
+      <stop offset="0" stop-color="#0f1a23"/><stop offset="0.55" stop-color="#0a1118"/><stop offset="1" stop-color="#06120d"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0e2018"/><stop offset="1" stop-color="#06120c"/>
     </linearGradient>
     <radialGradient id="backlight" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#39ff14" stop-opacity="0.30"/>
-      <stop offset="0.55" stop-color="#19b83f" stop-opacity="0.07"/>
-      <stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.28"/><stop offset="0.55" stop-color="#19b83f" stop-opacity="0.07"/><stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="floor" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#39ff14" stop-opacity="0.30"/>
-      <stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.28"/><stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="vignette" cx="50%" cy="48%" r="72%">
-      <stop offset="0.52" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0.5"/>
+      <stop offset="0.52" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.5"/>
     </radialGradient>
     <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/>
-      <stop offset="0.50" stop-color="#ffffff" stop-opacity="0.7"/>
-      <stop offset="0.58" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/><stop offset="0.5" stop-color="#ffffff" stop-opacity="0.7"/><stop offset="0.58" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
 
-    <!-- Layered neon: wide soft halo + tight bright core -->
     <filter id="neon" x="-25%" y="-70%" width="150%" height="240%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="b1"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="b1"/>
       <feColorMatrix in="b1" type="matrix" values="0 0 0 0 0.18  0 0 0 0 1  0 0 0 0 0.22  0 0 0 0.5 0" result="halo"/>
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2.4" result="b2"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2.2" result="b2"/>
       <feColorMatrix in="b2" type="matrix" values="0 0 0 0 0.62  0 0 0 0 1  0 0 0 0 0.55  0 0 0 0.95 0" result="core"/>
-      <feMerge>
-        <feMergeNode in="halo"/>
-        <feMergeNode in="core"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+      <feMerge><feMergeNode in="halo"/><feMergeNode in="core"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
 
+    <!-- ── The mark: a distillation funnel (noise → signal) in a chip ──── -->
+    <g id="mark">
+      <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#chip)" stroke="#2f6a45" stroke-width="2"/>
+      <g filter="url(#neon)">
+        <rect x="26" y="34"  width="88" height="13" rx="2" fill="#19a23a"/>
+        <rect x="40" y="55"  width="60" height="13" rx="2" fill="#2ee03e"/>
+        <rect x="52" y="76"  width="36" height="13" rx="2" fill="#7dff66"/>
+        <rect x="61" y="97"  width="18" height="13" rx="2" fill="#eaffe6">
+          <animate attributeName="opacity" dur="3.2s" repeatCount="indefinite" values="0.55;1;0.55" keyTimes="0;.5;1"/>
+        </rect>
+      </g>
+      <rect x="2" y="2" width="136" height="136" rx="28" fill="none" stroke="#bbf7d0" stroke-width="1" opacity="0.18"/>
+    </g>
+
     <clipPath id="wordClip"><use href="#word"/></clipPath>
-    <clipPath id="lowerBand"><rect x="0" y="168" width="1040" height="60"/></clipPath>
+    <clipPath id="lowerBand"><rect x="0" y="84" width="830" height="54"/></clipPath>
   </defs>
 
   <!-- ── Stage ───────────────────────────────────────────────────────────── -->
   <rect width="1040" height="300" fill="#060a0e"/>
   <rect x="24" y="24" width="992" height="252" rx="14" fill="url(#panel)"/>
-
-  <!-- soft backlight behind the word -->
-  <ellipse cx="520" cy="150" rx="450" ry="128" fill="url(#backlight)">
+  <ellipse cx="540" cy="150" rx="450" ry="128" fill="url(#backlight)">
     <animate attributeName="opacity" dur="6s" repeatCount="indefinite" values="0.85;1;0.85" keyTimes="0;.5;1"/>
   </ellipse>
   <rect x="24" y="24" width="992" height="252" rx="14" fill="url(#vignette)"/>
   <rect x="24" y="24" width="992" height="252" rx="14" fill="none" stroke="#1c3a28" stroke-width="1.25"/>
 
-  <!-- floor glow that grounds the word -->
-  <ellipse cx="520" cy="228" rx="340" ry="16" fill="url(#floor)" opacity="0.55"/>
+  <!-- ── Mark (also exportable as a standalone favicon: viewBox 96 80 140 140) ── -->
+  <use href="#mark" transform="translate(96 80)"/>
 
-  <!-- 3D extrude shadow -->
-  <use href="#word" transform="translate(13 17)" fill="#041a0c" opacity="0.92"/>
-  <use href="#word" transform="translate(8 11)" fill="#063e1a" opacity="0.8"/>
-  <use href="#word" transform="translate(4 5)" fill="#0d6b2f" opacity="0.6"/>
-
-  <!-- main wordmark: glow + gradient + lower shading + glossy sheen -->
-  <use href="#word" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.1" filter="url(#neon)"/>
-  <use href="#word" fill="#0a5a26" opacity="0.38" clip-path="url(#lowerBand)"/>
-  <use href="#word" fill="url(#sheen)"/>
-
-  <!-- gentle light sweep, clipped to the letters -->
-  <g clip-path="url(#wordClip)">
-    <g>
-      <animateTransform attributeName="transform" type="translate" dur="6s" repeatCount="indefinite" values="-1040 0;-1040 0;1040 0" keyTimes="0;.35;1"/>
-      <rect x="0" y="70" width="1040" height="170" fill="url(#sweep)"/>
+  <!-- ── Wordmark lockup ─────────────────────────────────────────────────── -->
+  <ellipse cx="632" cy="210" rx="300" ry="14" fill="url(#floor)" opacity="0.5"/>
+  <g transform="translate(300 95) scale(0.80)">
+    <!-- 3D extrude -->
+    <use href="#word" transform="translate(13 17)" fill="#041a0c" opacity="0.92"/>
+    <use href="#word" transform="translate(8 11)" fill="#063e1a" opacity="0.8"/>
+    <use href="#word" transform="translate(4 5)" fill="#0d6b2f" opacity="0.6"/>
+    <!-- face -->
+    <use href="#word" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.3" filter="url(#neon)"/>
+    <use href="#word" fill="#0a5a26" opacity="0.38" clip-path="url(#lowerBand)"/>
+    <use href="#word" fill="url(#sheen)"/>
+    <!-- gentle sweep, clipped to the letters (rests off-screen most of the cycle) -->
+    <g clip-path="url(#wordClip)">
+      <g>
+        <animateTransform attributeName="transform" type="translate" dur="6s" repeatCount="indefinite" values="-900 0;-900 0;900 0" keyTimes="0;.35;1"/>
+        <rect x="0" y="-20" width="900" height="180" fill="url(#sweep)"/>
+      </g>
     </g>
+    <use href="#word" fill="none" stroke="#03190c" stroke-width="1.1" opacity="0.45"/>
   </g>
-
-  <!-- crisp dark keyline for definition -->
-  <use href="#word" fill="none" stroke="#03190c" stroke-width="1" opacity="0.45"/>
 </svg>
