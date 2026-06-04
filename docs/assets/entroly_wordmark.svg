@@ -16,8 +16,16 @@
       <use href="#E" x="0"/><use href="#N" x="122"/><use href="#T" x="244"/><use href="#R" x="366"/><use href="#O" x="488"/><use href="#L" x="610"/><use href="#Y" x="732"/>
     </g>
 
-    <!-- "bill goes down" arrow -->
-    <path id="arrow" d="M58 32 H82 V66 H104 L70 110 L36 66 H58 Z"/>
+    <!-- savings: a stack of coins -->
+    <g id="coins">
+      <ellipse cx="70" cy="96" rx="33" ry="9" fill="#0c5f29"/>
+      <ellipse cx="70" cy="92" rx="33" ry="9" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.2"/>
+      <ellipse cx="70" cy="78" rx="33" ry="9" fill="#0c5f29"/>
+      <ellipse cx="70" cy="74" rx="33" ry="9" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.2"/>
+      <ellipse cx="70" cy="60" rx="33" ry="9" fill="#0c5f29"/>
+      <ellipse cx="70" cy="56" rx="33" ry="9" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.2"/>
+    </g>
+    <path id="spark" d="M0 -11 L2.6 -2.6 L11 0 L2.6 2.6 L0 11 L-2.6 2.6 L-11 0 L-2.6 -2.6 Z"/>
 
     <linearGradient id="mainGreen" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#eaffe6"/>
@@ -61,9 +69,10 @@
     <g id="mark">
       <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#chip)" stroke="#2f6a45" stroke-width="2"/>
       <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#backlight)"/>
-      <use href="#arrow" transform="translate(5 6)" fill="#04200e" opacity="0.9"/>
-      <use href="#arrow" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.4" filter="url(#neon)"/>
-      <use href="#arrow" fill="url(#sheen)"/>
+      <use href="#coins" filter="url(#neon)"/>
+      <use href="#spark" transform="translate(108 44)" fill="#eaffe6">
+        <animate attributeName="opacity" dur="2.8s" repeatCount="indefinite" values="0.3;1;0.3;0.3" keyTimes="0;.2;.4;1"/>
+      </use>
       <rect x="2" y="2" width="136" height="136" rx="28" fill="none" stroke="#bbf7d0" stroke-width="1" opacity="0.18"/>
     </g>
 
