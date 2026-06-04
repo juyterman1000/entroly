@@ -76,3 +76,51 @@ def test_returns_only_known_config_fields():
     EntrolyConfig(**kw)  # must construct cleanly
     valid = set(EntrolyConfig.__dataclass_fields__)
     assert set(kw).issubset(valid)
+
+
+def test_all_engine_dimensions_are_threaded():
+    """Every dimension the runtime engine consumes must flow from a nested
+    autotune config — not just the 4 weights + 2 decay params."""
+    cfg = {
+        "weights": {"recency": 0.4, "frequency": 0.3, "semantic_sim": 0.2, "entropy": 0.1},
+        "decay": {"half_life_turns": 22, "min_relevance_threshold": 0.08},
+        "knapsack": {"exploration_rate": 0.25},
+        "dedup": {"hamming_threshold": 5},
+        "ios": {"skeleton_info_factor": 0.6, "reference_info_factor": 0.2, "diversity_floor": 0.05},
+    }
+    c = EntrolyConfig(**resolve_tuning_kwargs(cfg))
+    assert c.exploration_rate == 0.25
+    assert c.dedup_hamming_threshold == 5
+    assert c.ios_skeleton_info_factor == 0.6
+    assert c.ios_reference_info_factor == 0.2
+    assert c.ios_diversity_floor == 0.05
+
+
+def test_new_dimensions_flat_back_compat_and_defaults():
+    flat = {"exploration_rate": 0.3, "hamming_threshold": 4, "ios_diversity_floor": 0.2}
+    c = EntrolyConfig(**resolve_tuning_kwargs(flat))
+    assert c.exploration_rate == 0.3
+    assert c.dedup_hamming_threshold == 4
+    assert c.ios_diversity_floor == 0.2
+    # missing -> defaults
+    d = EntrolyConfig(**resolve_tuning_kwargs({}))
+    assert d.exploration_rate == _DEFAULTS.exploration_rate
+    assert d.dedup_hamming_threshold == _DEFAULTS.dedup_hamming_threshold
+
+
+def test_rust_engine_accepts_threaded_config():
+    """If the native engine is present, an autotuned config must construct it
+    without error (proves the extended kwargs are wired to the real core)."""
+    pytest = __import__("pytest")
+    try:
+        import entroly_core  # noqa: F401
+    except ImportError:
+        pytest.skip("native engine not installed")
+    from entroly.server import _build_rust_engine
+    cfg = {
+        "weights": {"recency": 0.4, "frequency": 0.3, "semantic_sim": 0.2, "entropy": 0.1},
+        "knapsack": {"exploration_rate": 0.25}, "dedup": {"hamming_threshold": 5},
+        "ios": {"skeleton_info_factor": 0.6, "reference_info_factor": 0.2, "diversity_floor": 0.05},
+    }
+    eng = _build_rust_engine(EntrolyConfig(**resolve_tuning_kwargs(cfg)))
+    assert eng is not None

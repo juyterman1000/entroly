@@ -62,6 +62,10 @@ class EntrolyConfig:
     weight_entropy: float = 0.20
     """How much to weight information density (Shannon entropy)."""
 
+    exploration_rate: float = 0.10
+    """Knapsack exploration rate — fraction of budget spent exploring
+    lower-ranked fragments (epsilon-greedy). Tuned by `entroly autotune`."""
+
     # ── Ebbinghaus Decay ────────────────────────────────────────────────
     decay_half_life_turns: int = 15
     """Number of turns for a fragment's relevance to halve."""
@@ -72,6 +76,22 @@ class EntrolyConfig:
     # ── Deduplication ───────────────────────────────────────────────────
     dedup_similarity_threshold: float = 0.92
     """SimHash Jaccard threshold above which fragments are considered duplicates."""
+
+    dedup_hamming_threshold: int = 3
+    """SimHash Hamming-distance threshold used by the engine's dedup index
+    (max bit-difference to treat two fragments as duplicates). Tuned by
+    `entroly autotune`. Distinct from the Jaccard threshold above."""
+
+    # ── Information-Optimal Selection (IOS) ─────────────────────────────
+    ios_skeleton_info_factor: float = 0.70
+    """Information retained when a fragment is compressed to its skeleton
+    (signatures + docstrings). Tuned by `entroly autotune`."""
+
+    ios_reference_info_factor: float = 0.15
+    """Information retained when a fragment is reduced to a reference."""
+
+    ios_diversity_floor: float = 0.10
+    """Minimum submodular-diversity weight in IOS selection."""
 
     # ── Predictive Pre-fetch ────────────────────────────────────────────
     prefetch_depth: int = 2
@@ -131,16 +151,14 @@ def resolve_tuning_kwargs(cfg: dict) -> dict:
     # checkpoint-dir mkdir side effect — this is a pure dict→dict mapper).
     _f = EntrolyConfig.__dataclass_fields__
 
-    class _D:
-        weight_recency = _f["weight_recency"].default
-        weight_frequency = _f["weight_frequency"].default
-        weight_semantic_sim = _f["weight_semantic_sim"].default
-        weight_entropy = _f["weight_entropy"].default
-        decay_half_life_turns = _f["decay_half_life_turns"].default
-        min_relevance_threshold = _f["min_relevance_threshold"].default
-    defaults = _D
+    def _d(name):
+        return _f[name].default
+
     weights = cfg.get("weights") if isinstance(cfg.get("weights"), dict) else {}
     decay = cfg.get("decay") if isinstance(cfg.get("decay"), dict) else {}
+    knapsack = cfg.get("knapsack") if isinstance(cfg.get("knapsack"), dict) else {}
+    dedup = cfg.get("dedup") if isinstance(cfg.get("dedup"), dict) else {}
+    ios = cfg.get("ios") if isinstance(cfg.get("ios"), dict) else {}
 
     def pick(nested, flat_key, default, cast, lo, hi):
         # Prefer the nested autotune key, then the legacy flat key, then default.
@@ -158,16 +176,31 @@ def resolve_tuning_kwargs(cfg: dict) -> dict:
         return val
 
     return {
+        # ── knapsack scoring weights ──
         "weight_recency": pick(
-            weights.get("recency"), "weight_recency", defaults.weight_recency, float, 0.0, 1.0),
+            weights.get("recency"), "weight_recency", _d("weight_recency"), float, 0.0, 1.0),
         "weight_frequency": pick(
-            weights.get("frequency"), "weight_frequency", defaults.weight_frequency, float, 0.0, 1.0),
+            weights.get("frequency"), "weight_frequency", _d("weight_frequency"), float, 0.0, 1.0),
         "weight_semantic_sim": pick(
-            weights.get("semantic_sim"), "weight_semantic_sim", defaults.weight_semantic_sim, float, 0.0, 1.0),
+            weights.get("semantic_sim"), "weight_semantic_sim", _d("weight_semantic_sim"), float, 0.0, 1.0),
         "weight_entropy": pick(
-            weights.get("entropy"), "weight_entropy", defaults.weight_entropy, float, 0.0, 1.0),
+            weights.get("entropy"), "weight_entropy", _d("weight_entropy"), float, 0.0, 1.0),
+        # ── decay ──
         "decay_half_life_turns": pick(
-            decay.get("half_life_turns"), "decay_half_life_turns", defaults.decay_half_life_turns, int, 1, 1000),
+            decay.get("half_life_turns"), "decay_half_life_turns", _d("decay_half_life_turns"), int, 1, 1000),
         "min_relevance_threshold": pick(
-            decay.get("min_relevance_threshold"), "min_relevance_threshold", defaults.min_relevance_threshold, float, 0.0, 1.0),
+            decay.get("min_relevance_threshold"), "min_relevance_threshold", _d("min_relevance_threshold"), float, 0.0, 1.0),
+        # ── knapsack exploration ──
+        "exploration_rate": pick(
+            knapsack.get("exploration_rate"), "exploration_rate", _d("exploration_rate"), float, 0.0, 1.0),
+        # ── dedup (Hamming distance, int) ──
+        "dedup_hamming_threshold": pick(
+            dedup.get("hamming_threshold"), "hamming_threshold", _d("dedup_hamming_threshold"), int, 0, 64),
+        # ── IOS resolution factors ──
+        "ios_skeleton_info_factor": pick(
+            ios.get("skeleton_info_factor"), "ios_skeleton_info_factor", _d("ios_skeleton_info_factor"), float, 0.0, 1.0),
+        "ios_reference_info_factor": pick(
+            ios.get("reference_info_factor"), "ios_reference_info_factor", _d("ios_reference_info_factor"), float, 0.0, 1.0),
+        "ios_diversity_floor": pick(
+            ios.get("diversity_floor"), "ios_diversity_floor", _d("ios_diversity_floor"), float, 0.0, 1.0),
     }

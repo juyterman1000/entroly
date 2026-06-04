@@ -423,6 +423,37 @@ class _WilsonFeedbackTracker:
         return max(0.5, min(2.0, raw))  # Clamp to documented [0.5, 2.0] range
 
 
+def _build_rust_engine(config: EntrolyConfig):
+    """Construct the Rust engine from an EntrolyConfig, threading every
+    autotuned dimension the engine consumes (weights, decay, dedup Hamming,
+    knapsack exploration, IOS resolution factors).
+
+    Falls back to the core six parameters if the installed ``entroly_core``
+    predates the extended constructor kwargs — so an older native wheel never
+    breaks engine construction.
+    """
+    base = dict(
+        w_recency=config.weight_recency,
+        w_frequency=config.weight_frequency,
+        w_semantic=config.weight_semantic_sim,
+        w_entropy=config.weight_entropy,
+        decay_half_life=config.decay_half_life_turns,
+        min_relevance=config.min_relevance_threshold,
+    )
+    extra = dict(
+        hamming_threshold=getattr(config, "dedup_hamming_threshold", 3),
+        exploration_rate=getattr(config, "exploration_rate", 0.10),
+        ios_skeleton_info_factor=getattr(config, "ios_skeleton_info_factor", 0.70),
+        ios_reference_info_factor=getattr(config, "ios_reference_info_factor", 0.15),
+        ios_diversity_floor=getattr(config, "ios_diversity_floor", 0.10),
+    )
+    try:
+        return RustEngine(**base, **extra)
+    except TypeError:
+        # Older entroly-core without the extended kwargs — core six still work.
+        return RustEngine(**base)
+
+
 class EntrolyEngine:
     """
     Orchestrates all subsystems. Delegates math to Rust when available.
@@ -436,14 +467,7 @@ class EntrolyEngine:
         self._use_rust = _RUST_AVAILABLE
 
         if self._use_rust:
-            self._rust = RustEngine(
-                w_recency=self.config.weight_recency,
-                w_frequency=self.config.weight_frequency,
-                w_semantic=self.config.weight_semantic_sim,
-                w_entropy=self.config.weight_entropy,
-                decay_half_life=self.config.decay_half_life_turns,
-                min_relevance=self.config.min_relevance_threshold,
-            )
+            self._rust = _build_rust_engine(self.config)
             logger.info("Using Rust engine (entroly_core)")
         else:
             # Python fallback state
@@ -452,7 +476,9 @@ class EntrolyEngine:
             from collections import Counter
             self._global_token_counts: Counter = Counter()
             self._total_token_count: int = 0
-            self._dedup = _PyDedupIndex(hamming_threshold=3)
+            self._dedup = _PyDedupIndex(
+                hamming_threshold=getattr(self.config, "dedup_hamming_threshold", 3)
+            )
             self._total_tokens_saved: int = 0
             self._total_optimizations: int = 0
             self._total_fragments_ingested: int = 0
@@ -1387,14 +1413,7 @@ class EntrolyEngine:
                 self._rust.import_state(engine_state)
             else:
                 # Fallback: re-create engine and re-ingest fragments
-                self._rust = RustEngine(
-                    w_recency=self.config.weight_recency,
-                    w_frequency=self.config.weight_frequency,
-                    w_semantic=self.config.weight_semantic_sim,
-                    w_entropy=self.config.weight_entropy,
-                    decay_half_life=self.config.decay_half_life_turns,
-                    min_relevance=self.config.min_relevance_threshold,
-                )
+                self._rust = _build_rust_engine(self.config)
                 for frag_data in ckpt.fragments:
                     self._rust.ingest(
                         frag_data["content"],
@@ -1406,7 +1425,9 @@ class EntrolyEngine:
             self._fragments.clear()
             for frag in self._checkpoint_mgr.restore_fragments(ckpt):
                 self._fragments[frag.fragment_id] = frag
-            self._dedup = _PyDedupIndex(hamming_threshold=3)
+            self._dedup = _PyDedupIndex(
+                hamming_threshold=getattr(self.config, "dedup_hamming_threshold", 3)
+            )
             for fid, fp in ckpt.dedup_fingerprints.items():
                 self._dedup._fingerprints[fid] = fp
             self._current_turn = ckpt.current_turn
@@ -1866,10 +1887,14 @@ def create_mcp_server(
     if _tuning_cfg:
         logger.info(
             "Applied autotuned config: w_recency=%.3f w_frequency=%.3f "
-            "w_semantic=%.3f w_entropy=%.3f half_life=%d min_relevance=%.3f",
+            "w_semantic=%.3f w_entropy=%.3f half_life=%d min_relevance=%.3f "
+            "exploration=%.3f hamming=%d ios_skeleton=%.3f ios_reference=%.3f ios_diversity=%.3f",
             _tuning_kwargs["weight_recency"], _tuning_kwargs["weight_frequency"],
             _tuning_kwargs["weight_semantic_sim"], _tuning_kwargs["weight_entropy"],
             _tuning_kwargs["decay_half_life_turns"], _tuning_kwargs["min_relevance_threshold"],
+            _tuning_kwargs["exploration_rate"], _tuning_kwargs["dedup_hamming_threshold"],
+            _tuning_kwargs["ios_skeleton_info_factor"], _tuning_kwargs["ios_reference_info_factor"],
+            _tuning_kwargs["ios_diversity_floor"],
         )
     _config = EntrolyConfig(**_tuning_kwargs)
     if engine is None:
