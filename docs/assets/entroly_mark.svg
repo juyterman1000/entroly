@@ -1,23 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-labelledby="t d">
   <title id="t">Entroly</title>
-  <desc id="d">Entroly mark: the pixel-built letter E from the Entroly wordmark, glowing neon green in a rounded chip.</desc>
+  <desc id="d">Entroly mark: a compression core — concentric square rings collapsing from a dim outer ring (raw context) to one bright block of distilled signal.</desc>
   <defs>
-    <path id="E" d="M0 0h18v18h-18z M20 0h18v18h-18z M40 0h18v18h-18z M60 0h18v18h-18z M80 0h18v18h-18z M0 20h18v18h-18z M0 40h18v18h-18z M0 60h18v18h-18z M20 60h18v18h-18z M40 60h18v18h-18z M60 60h18v18h-18z M0 80h18v18h-18z M0 100h18v18h-18z M0 120h18v18h-18z M20 120h18v18h-18z M40 120h18v18h-18z M60 120h18v18h-18z M80 120h18v18h-18z"/>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#eaffe6"/><stop offset="0.16" stop-color="#9bff86"/><stop offset="0.52" stop-color="#3dff1a"/><stop offset="0.84" stop-color="#1fbf3f"/><stop offset="1" stop-color="#0e7a34"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="0.32" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
     <linearGradient id="chip" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0e2018"/><stop offset="1" stop-color="#05100b"/>
     </linearGradient>
-    <radialGradient id="bg" cx="50%" cy="42%" r="62%">
-      <stop offset="0" stop-color="#39ff14" stop-opacity="0.22"/><stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+    <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.24"/><stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
     </radialGradient>
     <filter id="neon" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b1"/>
-      <feColorMatrix in="b1" type="matrix" values="0 0 0 0 0.18  0 0 0 0 1  0 0 0 0 0.22  0 0 0 0.6 0" result="halo"/>
+      <feColorMatrix in="b1" type="matrix" values="0 0 0 0 0.18  0 0 0 0 1  0 0 0 0 0.22  0 0 0 0.65 0" result="halo"/>
       <feGaussianBlur in="SourceAlpha" stdDeviation="1.4" result="b2"/>
       <feColorMatrix in="b2" type="matrix" values="0 0 0 0 0.62  0 0 0 0 1  0 0 0 0 0.55  0 0 0 0.95 0" result="core"/>
       <feMerge><feMergeNode in="halo"/><feMergeNode in="core"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -26,10 +19,12 @@
 
   <rect x="10" y="10" width="140" height="140" rx="34" fill="url(#chip)" stroke="#2f6a45" stroke-width="2.5"/>
   <rect x="10" y="10" width="140" height="140" rx="34" fill="url(#bg)"/>
-  <g transform="translate(42 27) scale(0.77)">
-    <use href="#E" transform="translate(6 8)" fill="#04200e" opacity="0.9"/>
-    <use href="#E" fill="url(#g)" stroke="#d9ffd8" stroke-width="1.6" filter="url(#neon)"/>
-    <use href="#E" fill="url(#sheen)"/>
+  <g filter="url(#neon)">
+    <rect x="40" y="40" width="80" height="80" rx="12" fill="none" stroke="#1aa23a" stroke-width="8"/>
+    <rect x="60" y="60" width="40" height="40" rx="9" fill="none" stroke="#37e83a" stroke-width="8"/>
+    <rect x="70" y="70" width="20" height="20" rx="5" fill="#eaffe6">
+      <animate attributeName="opacity" dur="3s" repeatCount="indefinite" values="0.55;1;0.55" keyTimes="0;.5;1"/>
+    </rect>
   </g>
   <rect x="10" y="10" width="140" height="140" rx="34" fill="none" stroke="#bbf7d0" stroke-width="1" opacity="0.16"/>
 </svg>

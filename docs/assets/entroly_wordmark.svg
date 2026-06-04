@@ -58,10 +58,12 @@
     <g id="mark">
       <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#chip)" stroke="#2f6a45" stroke-width="2"/>
       <rect x="2" y="2" width="136" height="136" rx="28" fill="url(#backlight)"/>
-      <g transform="translate(38 24) scale(0.68)">
-        <use href="#E" transform="translate(6 8)" fill="#04200e" opacity="0.9"/>
-        <use href="#E" fill="url(#mainGreen)" stroke="#d9ffd8" stroke-width="1.6" filter="url(#neon)"/>
-        <use href="#E" fill="url(#sheen)"/>
+      <g filter="url(#neon)">
+        <rect x="31" y="31" width="78" height="78" rx="11" fill="none" stroke="#1aa23a" stroke-width="7"/>
+        <rect x="50" y="50" width="40" height="40" rx="8" fill="none" stroke="#37e83a" stroke-width="7"/>
+        <rect x="60" y="60" width="20" height="20" rx="4" fill="#eaffe6">
+          <animate attributeName="opacity" dur="3s" repeatCount="indefinite" values="0.55;1;0.55" keyTimes="0;.5;1"/>
+        </rect>
       </g>
       <rect x="2" y="2" width="136" height="136" rx="28" fill="none" stroke="#bbf7d0" stroke-width="1" opacity="0.18"/>
     </g>
