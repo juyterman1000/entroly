@@ -107,3 +107,67 @@ class EntrolyConfig:
     server_version: str = field(
         default_factory=lambda: __import__("entroly", fromlist=["__version__"]).__version__
     )
+
+
+def resolve_tuning_kwargs(cfg: dict) -> dict:
+    """Map a ``tuning_config`` dict to ``EntrolyConfig`` keyword arguments.
+
+    `entroly autotune` writes the **nested** schema produced by
+    ``bench/evaluate.py`` (``{"weights": {"recency": ...}, "decay": {...}}``).
+    Earlier builds of the runtime loader read **flat** keys
+    (``weight_recency``), so autotuned values were silently dropped and the
+    engine always fell back to defaults. This bridges both: nested wins, flat
+    is honoured for back-compat, and any missing / non-numeric / out-of-range
+    value falls back to the ``EntrolyConfig`` default (never raises).
+
+    Only the six fields the runtime engine actually consumes are mapped (the
+    four knapsack weights + the two Ebbinghaus-decay params). ``knapsack`` /
+    ``ios`` / ``dedup`` tuning keys have no corresponding runtime-engine wiring
+    yet, so they are intentionally ignored here rather than mis-mapped.
+    """
+    if not isinstance(cfg, dict):
+        cfg = {}
+    # Read field defaults without instantiating EntrolyConfig (avoids the
+    # checkpoint-dir mkdir side effect — this is a pure dict→dict mapper).
+    _f = EntrolyConfig.__dataclass_fields__
+
+    class _D:
+        weight_recency = _f["weight_recency"].default
+        weight_frequency = _f["weight_frequency"].default
+        weight_semantic_sim = _f["weight_semantic_sim"].default
+        weight_entropy = _f["weight_entropy"].default
+        decay_half_life_turns = _f["decay_half_life_turns"].default
+        min_relevance_threshold = _f["min_relevance_threshold"].default
+    defaults = _D
+    weights = cfg.get("weights") if isinstance(cfg.get("weights"), dict) else {}
+    decay = cfg.get("decay") if isinstance(cfg.get("decay"), dict) else {}
+
+    def pick(nested, flat_key, default, cast, lo, hi):
+        # Prefer the nested autotune key, then the legacy flat key, then default.
+        val = nested
+        if val is None:
+            val = cfg.get(flat_key)
+        if val is None:
+            return default
+        try:
+            val = cast(val)
+        except (TypeError, ValueError):
+            return default
+        if val < lo or val > hi:
+            return default
+        return val
+
+    return {
+        "weight_recency": pick(
+            weights.get("recency"), "weight_recency", defaults.weight_recency, float, 0.0, 1.0),
+        "weight_frequency": pick(
+            weights.get("frequency"), "weight_frequency", defaults.weight_frequency, float, 0.0, 1.0),
+        "weight_semantic_sim": pick(
+            weights.get("semantic_sim"), "weight_semantic_sim", defaults.weight_semantic_sim, float, 0.0, 1.0),
+        "weight_entropy": pick(
+            weights.get("entropy"), "weight_entropy", defaults.weight_entropy, float, 0.0, 1.0),
+        "decay_half_life_turns": pick(
+            decay.get("half_life_turns"), "decay_half_life_turns", defaults.decay_half_life_turns, int, 1, 1000),
+        "min_relevance_threshold": pick(
+            decay.get("min_relevance_threshold"), "min_relevance_threshold", defaults.min_relevance_threshold, float, 0.0, 1.0),
+    }

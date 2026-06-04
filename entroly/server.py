@@ -45,7 +45,7 @@ from .belief_compiler import BeliefCompiler
 from .change_listener import WorkspaceChangeListener
 from .change_pipeline import ChangePipeline
 from .checkpoint import CheckpointManager, ContextFragment
-from .config import EntrolyConfig
+from .config import EntrolyConfig, resolve_tuning_kwargs
 from .epistemic_router import (
     EpistemicRouter,
 )
@@ -1849,24 +1849,29 @@ def create_mcp_server(
         ),
     )
 
-    # Shared engine instance — load autotuned weights if available
+    # Shared engine instance — apply autotuned weights if available.
+    # autotune writes the nested schema (weights.recency, decay.half_life_turns,
+    # ...); resolve_tuning_kwargs bridges nested + legacy-flat keys and falls
+    # back to defaults for anything missing/invalid, so an autotuned config
+    # actually reaches the live engine instead of being silently dropped.
     _tuning_cfg = {}
     _tuning_path = Path(__file__).parent.parent / "bench" / "tuning_config.json"
     if _tuning_path.exists():
         try:
             _tuning_cfg = json.loads(_tuning_path.read_text())
-            logger.info(f"Loaded autotuned config from {_tuning_path}")
         except Exception as e:
             logger.warning(f"Failed to load tuning_config.json: {e}")
 
-    _config = EntrolyConfig(
-        weight_recency=_tuning_cfg.get("weight_recency", 0.30),
-        weight_frequency=_tuning_cfg.get("weight_frequency", 0.25),
-        weight_semantic_sim=_tuning_cfg.get("weight_semantic_sim", 0.25),
-        weight_entropy=_tuning_cfg.get("weight_entropy", 0.20),
-        decay_half_life_turns=_tuning_cfg.get("decay_half_life_turns", 15),
-        min_relevance_threshold=_tuning_cfg.get("min_relevance_threshold", 0.05),
-    )
+    _tuning_kwargs = resolve_tuning_kwargs(_tuning_cfg)
+    if _tuning_cfg:
+        logger.info(
+            "Applied autotuned config: w_recency=%.3f w_frequency=%.3f "
+            "w_semantic=%.3f w_entropy=%.3f half_life=%d min_relevance=%.3f",
+            _tuning_kwargs["weight_recency"], _tuning_kwargs["weight_frequency"],
+            _tuning_kwargs["weight_semantic_sim"], _tuning_kwargs["weight_entropy"],
+            _tuning_kwargs["decay_half_life_turns"], _tuning_kwargs["min_relevance_threshold"],
+        )
+    _config = EntrolyConfig(**_tuning_kwargs)
     if engine is None:
         engine = EntrolyEngine(config=_config)
 
