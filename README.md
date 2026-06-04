@@ -292,6 +292,27 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 
 ## Docs & community
 
+<details>
+<summary><b>Command reference</b></summary>
+
+| Command | What it does |
+|---|---|
+| `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
+| `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
+| `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
+| `entroly serve` | Start the MCP server |
+| `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
+| `entroly dashboard` | Open the live metrics dashboard |
+| `entroly demo` | Before/after token + cost estimate on your repo |
+| `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
+| `entroly health` | Codebase health grade (A–F) |
+| `entroly cache stats` | Persistent cross-session cache stats |
+| `entroly ravs report` | Model-routing cost-savings report |
+| `entroly witness` | Check an answer against supplied evidence |
+| `entroly verify-claims` | Run the packaged self-test → JSON report |
+
+</details>
+
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
 - **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
 - **[Cookbook](cookbook/README.md)** — copy-paste recipes for common workflows.
