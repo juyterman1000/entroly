@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.16"
+__version__ = "1.0.17"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -126,5 +126,16 @@ except ImportError:
 # README as `from entroly import CacheAligner`.
 try:
     from .cache_aligner import CacheAligner  # noqa: F401
+except ImportError:
+    pass
+
+# Control plane -- read-only request planning and transform compliance audit.
+try:
+    from .control_plane import (  # noqa: F401
+        ControlAudit,
+        ControlPlaneDecision,
+        audit_request_transform,
+        plan_request,
+    )
 except ImportError:
     pass
