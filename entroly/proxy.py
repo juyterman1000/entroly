@@ -55,6 +55,7 @@ from .proxy_transform import (
     inject_context_responses,
     strip_anthropic_unsupported_params,
 )
+from .cache_aligner import CacheAligner
 from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
@@ -862,6 +863,18 @@ class PromptCompilerProxy:
         self._total_output_original_tokens: int = 0
         self._total_output_compressed_tokens: int = 0
 
+        # ── Cache Aligner ──
+        # Stabilizes Entroly's injected CONTEXT block across turns of the same
+        # conversation so the provider's prefix/KV cache keeps hitting
+        # (Anthropic 90% / OpenAI 50% read discount) on chatty, stable-context
+        # sessions — the dominant cost on large repos. Context-only: it does
+        # not alter the model, generation params, tools, or the user's messages.
+        # Provider terms and data-handling rules still apply to whatever the
+        # user sends through their configured provider. Disable with
+        # ENTROLY_CACHE_ALIGN=0. Fail-open.
+        self._cache_align_enabled = os.environ.get("ENTROLY_CACHE_ALIGN", "1") != "0"
+        self._cache_aligner = CacheAligner() if self._cache_align_enabled else None
+
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
         self._last_excluded_fragments: list = []  # Top rejected candidates for /explain
@@ -1619,6 +1632,28 @@ class PromptCompilerProxy:
                 witness_context, provider, _recoverable_fragments, request_id
             )
 
+    @staticmethod
+    def _conversation_key(body: dict[str, Any]) -> str:
+        """Stable per-conversation key for cache-alignment, derived from the
+        request's anchor (model + first system/user message). Read-only: used
+        solely to scope reuse of Entroly's injected context block; it never
+        affects the outbound request. Returns "" when no anchor is available
+        (which disables alignment for that request — fail-open)."""
+        if not isinstance(body, dict):
+            return ""
+        msgs = body.get("messages")
+        if not isinstance(msgs, list):
+            return ""
+        model = str(body.get("model", ""))
+        for m in msgs:
+            if isinstance(m, dict) and m.get("role") in ("system", "user"):
+                c = m.get("content")
+                if isinstance(c, str) and c.strip():
+                    return hashlib.sha256(
+                        (model + "\x00" + c[:2000]).encode("utf-8", "ignore")
+                    ).hexdigest()[:24]
+        return ""
+
     def _run_pipeline(self, user_message: str, body: dict[str, Any], path: str = "", request_id: str = "") -> dict[str, Any]:
         """Run the synchronous optimization pipeline. Called via asyncio.to_thread.
 
@@ -1981,6 +2016,23 @@ class PromptCompilerProxy:
                 f"{len(selected)} fragments [{res_str}], "
                 f"{total_tokens} tokens{ios_str}"
             )
+
+        # ── Cache-aligned context reuse (provider prefix-cache hits) ──
+        # When this turn's injected context block is >=90% similar to the
+        # previous one for the same conversation, reuse the previous block
+        # verbatim so the provider's cached prefix keeps hitting (Anthropic 90%
+        # / OpenAI 50% read discount) — the dominant cost on chatty large-repo
+        # sessions. This rewrites ONLY Entroly's own injected context string;
+        # it never mutates the model, generation params, tools, or the user's
+        # messages. Provider terms and data-handling rules still apply.
+        # Fail-open: on any error the freshly optimized context is used.
+        if context_text and self._cache_aligner is not None:
+            try:
+                _ckey = self._conversation_key(body)
+                if _ckey:
+                    context_text, _ = self._cache_aligner.align(_ckey, context_text)
+            except Exception as e:
+                logger.debug("Context cache-align skipped: %s", e)
 
         return {
             "context": context_text,
