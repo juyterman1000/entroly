@@ -13,6 +13,8 @@ Commands:
     entroly health      Analyze codebase health (A-F grade)
     entroly autotune    Optimize hyperparameters
     entroly benchmark   Run competitive comparison
+    entroly simulate    Estimate local token savings without LLM calls
+    entroly perf        Measure local optimizer savings/latency without LLM calls
     entroly status      Check if server/proxy is running
     entroly config      Show current configuration
     entroly clean       Clear cached state (checkpoints, index, pull cache)
@@ -38,6 +40,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -2413,6 +2416,159 @@ def cmd_demo(args):
 """)
 
 
+def _simulation_queries(args) -> list[str]:
+    queries = getattr(args, "query", None) or []
+    if isinstance(queries, str):
+        queries = [queries]
+    cleaned = [q.strip() for q in queries if q and q.strip()]
+    if cleaned:
+        return cleaned
+    return [
+        "How does the authentication flow work?",
+        "Find and fix potential SQL injection vulnerabilities",
+        "Explain the module structure and dependency graph",
+    ]
+
+
+def _load_local_simulation_engine():
+    from entroly.auto_index import auto_index
+    from entroly.server import EntrolyEngine
+
+    engine = EntrolyEngine()
+    index = auto_index(engine)
+    if index["status"] == "indexed":
+        return engine, index["files_indexed"], index["total_tokens"], index["status"]
+    if index["status"] == "skipped":
+        files_indexed = index.get("existing_fragments", 0)
+        if getattr(engine, "_use_rust", False):
+            stats = engine._rust.stats()
+            total_tokens = stats.get("session", {}).get("total_tokens_tracked", 0)
+        else:
+            total_tokens = getattr(engine, "_total_token_count", 0)
+        return engine, files_indexed, total_tokens, index["status"]
+    return engine, 0, 0, index["status"]
+
+
+def _run_local_simulation(args) -> dict:
+    engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine()
+    budget = int(getattr(args, "budget", 4096) or 4096)
+    queries = _simulation_queries(args)
+    baseline = int(getattr(args, "baseline", 0) or 0)
+    if baseline <= 0:
+        baseline = min(total_tokens, 32_000)
+
+    rows = []
+    total_saved = 0
+    latencies_ms: list[float] = []
+    for query in queries:
+        engine.advance_turn()
+        t0 = time.perf_counter()
+        result = engine.optimize_context(token_budget=budget, query=query)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        selected = result.get("selected_fragments", [])
+        selected_tokens = sum(int(f.get("token_count", 0) or 0) for f in selected)
+        saved = max(0, baseline - selected_tokens)
+        total_saved += saved
+        latencies_ms.append(elapsed_ms)
+        rows.append(
+            {
+                "query": query,
+                "selected_fragments": len(selected),
+                "selected_tokens": selected_tokens,
+                "baseline_tokens": baseline,
+                "tokens_saved": saved,
+                "reduction_pct": round(saved * 100 / max(baseline, 1), 2),
+                "latency_ms": round(elapsed_ms, 2),
+                "top_sources": [
+                    str(f.get("source", f.get("id", "?"))) for f in selected[:5]
+                ],
+            }
+        )
+
+    latencies_sorted = sorted(latencies_ms)
+    p95_idx = min(len(latencies_sorted) - 1, int(len(latencies_sorted) * 0.95)) if latencies_sorted else 0
+    return {
+        "mode": "local_no_llm",
+        "index_status": index_status,
+        "files_indexed": files_indexed,
+        "repo_tokens_indexed": total_tokens,
+        "budget": budget,
+        "baseline_tokens_per_query": baseline,
+        "queries": rows,
+        "total_tokens_saved": total_saved,
+        "average_reduction_pct": round(
+            total_saved * 100 / max(baseline * len(rows), 1), 2
+        ),
+        "latency_ms": {
+            "min": round(min(latencies_ms), 2) if latencies_ms else 0.0,
+            "p95": round(latencies_sorted[p95_idx], 2) if latencies_sorted else 0.0,
+            "max": round(max(latencies_ms), 2) if latencies_ms else 0.0,
+        },
+        "limitations": [
+            "No LLM call was made; quality is not judged here.",
+            "Savings are estimated against the stated local baseline, not your provider bill.",
+            "Provider cache discounts, output tokens, and retries are excluded.",
+        ],
+    }
+
+
+def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> None:
+    print(f"\n{C.CYAN}{C.BOLD}  {title}{C.RESET} -- local, no LLM calls\n")
+    if report["files_indexed"] == 0:
+        print(f"  {C.YELLOW}No files found to index. Run this inside a project directory.{C.RESET}\n")
+        return
+    print(
+        f"  {C.GREEN}Indexed {report['files_indexed']} files "
+        f"({report['repo_tokens_indexed']:,} estimated tokens){C.RESET}"
+    )
+    print(
+        f"  {C.BOLD}Baseline:{C.RESET} {report['baseline_tokens_per_query']:,} "
+        f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens\n"
+    )
+    for row in report["queries"]:
+        print(f"    {C.CYAN}Q:{C.RESET} {row['query'][:80]}")
+        print(
+            f"       {row['selected_fragments']} fragments, "
+            f"{row['selected_tokens']:,} tokens "
+            f"({row['reduction_pct']:.1f}% fewer; "
+            f"{row['tokens_saved']:,} tokens saved)"
+        )
+        if include_perf:
+            print(f"       latency: {row['latency_ms']:.2f} ms")
+        top = ", ".join(Path(s).name for s in row["top_sources"][:3]) or "none"
+        print(f"       {C.GRAY}top: {top}{C.RESET}\n")
+
+    print(
+        f"  {C.GREEN}{C.BOLD}Average reduction: "
+        f"{report['average_reduction_pct']:.1f}%{C.RESET}"
+    )
+    if include_perf:
+        lat = report["latency_ms"]
+        print(
+            f"  {C.BOLD}Local optimize latency:{C.RESET} "
+            f"min {lat['min']:.2f} ms, p95 {lat['p95']:.2f} ms, max {lat['max']:.2f} ms"
+        )
+    print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
+
+
+def cmd_simulate(args):
+    """entroly simulate -- local no-LLM savings estimate for this repo."""
+    report = _run_local_simulation(args)
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+        return
+    _print_local_simulation(report, title="Entroly Simulate", include_perf=False)
+
+
+def cmd_perf(args):
+    """entroly perf -- local no-LLM savings and optimizer latency."""
+    report = _run_local_simulation(args)
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+        return
+    _print_local_simulation(report, title="Entroly Perf", include_perf=True)
+
+
 
 def cmd_share(args):
     """entroly share — generate a shareable Context Report Card."""
@@ -3265,7 +3421,7 @@ def cmd_completions(args):
     shell = args.shell
     commands = [
         "init", "go", "serve", "proxy", "dashboard", "health",
-        "autotune", "benchmark", "status", "config", "clean",
+        "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
         "batch", "wrap", "learn", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
@@ -4351,6 +4507,36 @@ def main():
         help="Print the explicit baseline comparison used for the benchmark table",
     )
 
+    def _add_local_measure_args(p):
+        p.add_argument(
+            "--budget", type=int, default=4096,
+            help="Token budget per query (default: 4096)",
+        )
+        p.add_argument(
+            "--baseline", type=int, default=0,
+            help="Baseline tokens/query; default is min(indexed tokens, 32000)",
+        )
+        p.add_argument(
+            "--query", action="append", default=[],
+            help="Query to simulate. Repeat for multiple queries.",
+        )
+        p.add_argument(
+            "--json", action="store_true",
+            help="Emit machine-readable JSON",
+        )
+
+    simulate_parser = subparsers.add_parser(
+        "simulate",
+        help="Estimate local token savings without calling an LLM",
+    )
+    _add_local_measure_args(simulate_parser)
+
+    perf_parser = subparsers.add_parser(
+        "perf",
+        help="Measure local optimizer savings and latency without calling an LLM",
+    )
+    _add_local_measure_args(perf_parser)
+
     # entroly status
     status_parser = subparsers.add_parser(
         "status",
@@ -4822,6 +5008,8 @@ def main():
         "autotune": cmd_autotune,
         "proxy": cmd_proxy,
         "benchmark": cmd_benchmark,
+        "simulate": cmd_simulate,
+        "perf": cmd_perf,
         "status": cmd_status,
         "config": cmd_config,
         "clean": cmd_clean,

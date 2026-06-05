@@ -1334,6 +1334,79 @@ def _human_size(size_bytes: int) -> str:
         return f"{size_bytes // (1024 * 1024)}MB"
 
 
+def _compress_tool_text(text: str) -> tuple[str, int]:
+    """Compress one tool-output string and return approximate tokens saved."""
+    if len(text) < _TOOL_COMPRESS_MIN_CHARS:
+        return text, 0
+
+    compressed, _comp_type, savings = compress_tool_output(text)
+    if savings <= 0.10:
+        return text, 0
+
+    tokens_saved = max(0, (len(text) - len(compressed)) // 4)
+    return compressed, tokens_saved
+
+
+def _compress_tool_result_block(block: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Compress an Anthropic-style tool_result content block."""
+    inner = block.get("content", "")
+    total_saved = 0
+
+    if isinstance(inner, str):
+        compressed, saved = _compress_tool_text(inner)
+        if saved <= 0:
+            return block, 0
+        new_block = dict(block)
+        new_block["content"] = compressed
+        return new_block, saved
+
+    if isinstance(inner, list):
+        changed = False
+        new_inner: list[Any] = []
+        for item in inner:
+            if isinstance(item, str):
+                compressed, saved = _compress_tool_text(item)
+                total_saved += saved
+                changed = changed or saved > 0
+                new_inner.append(compressed)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                compressed, saved = _compress_tool_text(item["text"])
+                total_saved += saved
+                if saved > 0:
+                    new_item = dict(item)
+                    new_item["text"] = compressed
+                    new_inner.append(new_item)
+                    changed = True
+                else:
+                    new_inner.append(item)
+            else:
+                new_inner.append(item)
+        if changed:
+            new_block = dict(block)
+            new_block["content"] = new_inner
+            return new_block, total_saved
+
+    return block, 0
+
+
+def _compress_tool_blocks(blocks: list[Any]) -> tuple[list[Any], int]:
+    """Compress provider-native tool_result blocks without changing other blocks."""
+    total_saved = 0
+    changed = False
+    new_blocks: list[Any] = []
+
+    for block in blocks:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            new_block, saved = _compress_tool_result_block(block)
+            total_saved += saved
+            changed = changed or saved > 0
+            new_blocks.append(new_block)
+        else:
+            new_blocks.append(block)
+
+    return (new_blocks if changed else blocks), total_saved
+
+
 def compress_tool_messages(messages: list[dict]) -> tuple[list[dict], int]:
     """Compress tool/MCP call results in a conversation message list.
 
@@ -1365,10 +1438,18 @@ def compress_tool_messages(messages: list[dict]) -> tuple[list[dict], int]:
                 for b in content
             )
 
-        if (is_tool or is_tool_block) and isinstance(content, str) and len(content) >= _TOOL_COMPRESS_MIN_CHARS:
-            compressed, comp_type, savings = compress_tool_output(content)
-            if savings > 0.10:
-                tokens_saved = (len(content) - len(compressed)) // 4
+        if is_tool_block and isinstance(content, list):
+            new_blocks, tokens_saved = _compress_tool_blocks(content)
+            if tokens_saved > 0:
+                total_saved += tokens_saved
+                new_msg = dict(msg)
+                new_msg["content"] = new_blocks
+                result.append(new_msg)
+                continue
+
+        if (is_tool or is_tool_block) and isinstance(content, str):
+            compressed, tokens_saved = _compress_tool_text(content)
+            if tokens_saved > 0:
                 total_saved += tokens_saved
                 new_msg = dict(msg)
                 new_msg["content"] = compressed

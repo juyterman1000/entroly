@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import copy
 import hashlib
 import json
 import logging
@@ -56,6 +57,13 @@ from .proxy_transform import (
     strip_anthropic_unsupported_params,
 )
 from .cache_aligner import CacheAligner
+from .control_plane import (
+    ControlAudit,
+    ControlPlaneDecision,
+    audit_request_transform,
+    plan_request,
+    stable_request_fingerprint,
+)
 from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
@@ -126,6 +134,18 @@ def _content_to_text(content: Any) -> str:
             return _content_to_text(parts)
         return ""
     return str(content)
+
+
+def _entroly_tags_to_headers(tags: dict[str, str]) -> dict[str, str]:
+    """Convert safe control-plane tags to bounded response headers."""
+    headers: dict[str, str] = {}
+    for key, value in tags.items():
+        if not key.startswith("entroly_"):
+            continue
+        name = "X-Entroly-" + key.removeprefix("entroly_").replace("_", "-").title()
+        safe = str(value).replace("\r", " ").replace("\n", " ").strip()
+        headers[name] = safe[:512]
+    return headers
 
 
 def _estimate_message_tokens(messages: Any) -> int:
@@ -1154,6 +1174,44 @@ class PromptCompilerProxy:
         except Exception as e:
             logger.warning(f"Checkpoint on shutdown failed: {e}")
 
+    def _control_token_budget(self, body: dict[str, Any], path: str) -> int | None:
+        try:
+            model = extract_model(body, path)
+            return compute_token_budget(model, self.config)
+        except Exception:
+            window = getattr(self.config, "context_window", None)
+            return int(window) if isinstance(window, int) and window > 0 else None
+
+    def _control_headers(
+        self,
+        decision: ControlPlaneDecision | None,
+        audit: ControlAudit | None = None,
+        *,
+        body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        provider: str = "unknown",
+        path: str = "",
+        outcome: str = "received",
+    ) -> dict[str, str]:
+        tags: dict[str, str] = {"entroly_outcome": outcome}
+        if decision is not None:
+            tags.update(decision.to_tags())
+        if audit is not None:
+            tags.update(audit.to_tags())
+        if body is not None:
+            try:
+                tags.update(
+                    stable_request_fingerprint(
+                        body,
+                        headers=headers,
+                        provider=provider,  # type: ignore[arg-type]
+                        path=path,
+                    )
+                )
+            except Exception:
+                pass
+        return _entroly_tags_to_headers(tags)
+
     async def handle_proxy(self, request: Request) -> StreamingResponse | JSONResponse:
         """Main proxy handler — intercept, optimize, forward.
 
@@ -1184,6 +1242,29 @@ class PromptCompilerProxy:
         path = request.url.path
         headers = {k: v for k, v in request.headers.items()}
         provider = detect_provider(path, headers, body)
+        control_before = copy.deepcopy(body)
+        control_decision: ControlPlaneDecision | None = None
+        control_headers: dict[str, str] = {}
+        try:
+            control_decision = plan_request(
+                control_before,
+                headers=headers,
+                provider=provider,  # type: ignore[arg-type]
+                path=path,
+                token_budget=self._control_token_budget(control_before, path),
+                compression_enabled=not self._bypass,
+                cache_alignment_enabled=bool(self._cache_aligner),
+            )
+            control_headers = self._control_headers(
+                control_decision,
+                body=control_before,
+                headers=headers,
+                provider=provider,
+                path=path,
+                outcome="received",
+            )
+        except Exception as e:
+            logger.debug("Control-plane planning skipped: %s", e)
 
         if "messages" in body:
             from .proxy_transform import compress_tool_messages
@@ -1223,9 +1304,25 @@ class PromptCompilerProxy:
             is_streaming = body.get("stream", False)
             if not is_streaming and "streamGenerateContent" in path:
                 is_streaming = True
+            bypass_headers = {
+                **control_headers,
+                "X-Entroly-Optimized": "false",
+                "X-Entroly-Outcome": "passthrough",
+            }
             if is_streaming:
-                return await self._stream_response(target_url, forward_headers, body, provider=provider)
-            return await self._forward_response(target_url, forward_headers, body)
+                return await self._stream_response(
+                    target_url,
+                    forward_headers,
+                    body,
+                    provider=provider,
+                    extra_headers=bypass_headers,
+                )
+            return await self._forward_response(
+                target_url,
+                forward_headers,
+                body,
+                extra_headers=bypass_headers,
+            )
 
         # ── Pipelined: warmup connection while Rust pipeline runs ──
         # Start HTTP connection pool warmup concurrently with the
@@ -1614,6 +1711,34 @@ class PromptCompilerProxy:
         if provider == "anthropic":
             body = strip_anthropic_unsupported_params(body)
 
+        try:
+            control_audit = audit_request_transform(
+                control_before,
+                body,
+                provider=provider,  # type: ignore[arg-type]
+                path=path,
+                headers=headers,
+            )
+            control_outcome = "optimized" if body != control_before else "observed"
+            control_headers = self._control_headers(
+                control_decision,
+                control_audit,
+                body=body,
+                headers=headers,
+                provider=provider,
+                path=path,
+                outcome=control_outcome,
+            )
+            if not control_audit.compliant:
+                logger.warning(
+                    "Control-plane audit violation: provider=%s controls=%d tools=%d",
+                    provider,
+                    len(control_audit.provider_control_violations),
+                    len(control_audit.tool_contract_violations),
+                )
+        except Exception as e:
+            logger.debug("Control-plane audit skipped: %s", e)
+
         forward_headers = self._build_headers(headers, provider)
         is_streaming = body.get("stream", False)
         # Gemini: streaming is determined by URL path, not a body field.
@@ -1624,12 +1749,14 @@ class PromptCompilerProxy:
         if is_streaming:
             return await self._stream_response(
                 target_url, forward_headers, body, _selected_frag_ids,
-                witness_context, provider, _recoverable_fragments, request_id
+                witness_context, provider, _recoverable_fragments, request_id,
+                extra_headers=control_headers,
             )
         else:
             return await self._forward_response(
                 target_url, forward_headers, body, _selected_frag_ids,
-                witness_context, provider, _recoverable_fragments, request_id
+                witness_context, provider, _recoverable_fragments, request_id,
+                extra_headers=control_headers,
             )
 
     @staticmethod
@@ -1714,6 +1841,26 @@ class PromptCompilerProxy:
         # (3) Static fallback
         if token_budget is None:
             token_budget = compute_token_budget(model, self.config)
+
+        # (4) Cost Cortex: price-aware clamp on Entroly's injected-context
+        # budget. A cheap long-context model can otherwise permit a runaway
+        # injection (e.g. ~629K tokens); clamp by a hard token cap
+        # (ENTROLY_MAX_CONTEXT_TOKENS, default 256K) and an optional dollar
+        # ceiling (ENTROLY_MAX_CONTEXT_USD), priced from the single
+        # value_tracker source. This only ever LOWERS the budget for Entroly's
+        # OWN injected context — it never touches the user's request, model, or
+        # generation params.
+        try:
+            from .cost_cortex import clamp_injected_budget
+            _clamped, _why = clamp_injected_budget(model or "", int(token_budget))
+            if _clamped < token_budget:
+                logger.info(
+                    "Cost Cortex: clamped injected-context budget %d -> %d (%s)",
+                    token_budget, _clamped, _why,
+                )
+                token_budget = _clamped
+        except Exception as e:
+            logger.debug("Cost Cortex clamp skipped: %s", e)
 
         # Rate-Distortion self-correction: shift IOS toward full-resolution
         # fragments when quality declines (budget stays unchanged).
@@ -2053,6 +2200,7 @@ class PromptCompilerProxy:
         recoverable_fragments: list[dict[str, Any]] | None = None,
         recovery_depth: int = 0,
         request_id: str = "",
+        extra_headers: dict[str, str] | None = None,
     ) -> StreamingResponse | JSONResponse:
         """Buffer a streaming upstream response so WITNESS can enforce before display."""
         if not self._breaker.allow_request():
@@ -2160,6 +2308,7 @@ class PromptCompilerProxy:
                 recoverable_fragments=[],
                 recovery_depth=recovery_depth + 1,
                 request_id=request_id,
+                extra_headers=extra_headers,
             )
             recovered_ok = (
                 recovered.status_code < 400
@@ -2316,6 +2465,7 @@ class PromptCompilerProxy:
             "X-Entroly-Witness-Suppressed": str(getattr(rewrite, "suppressed_count", 0)),
             "X-Entroly-Witness-Warned": str(getattr(rewrite, "warned_count", 0)),
         }
+        resp_headers.update(extra_headers or {})
         if failed_recovery_sources:
             self._mark_auto_recovery_failed_headers(
                 resp_headers, failed_recovery_sources
@@ -2410,7 +2560,9 @@ class PromptCompilerProxy:
         witness_context: str = "",
         provider: str = "openai",
         recoverable_fragments: list[dict[str, Any]] | None = None,
+        request_id: str = "",
         recovery_depth: int = 0,
+        extra_headers: dict[str, str] | None = None,
     ) -> StreamingResponse:
         """Forward a streaming request and proxy the SSE response.
 
@@ -2428,6 +2580,8 @@ class PromptCompilerProxy:
                 provider=provider,
                 recoverable_fragments=recoverable_fragments,
                 recovery_depth=recovery_depth,
+                request_id=request_id,
+                extra_headers=extra_headers,
             )
 
         # Check circuit breaker
@@ -2583,6 +2737,7 @@ class PromptCompilerProxy:
             "Connection": "keep-alive",
             "X-Entroly-Optimized": "true",
         }
+        resp_headers.update(extra_headers or {})
         with self._stats_lock:
             if self._witness_enabled:
                 resp_headers["X-Entroly-Witness"] = "streaming-audit"
@@ -3258,8 +3413,9 @@ class PromptCompilerProxy:
         witness_context: str = "",
         provider: str = "openai",
         recoverable_fragments: list[dict[str, Any]] | None = None,
-        recovery_depth: int = 0,
         request_id: str = "",
+        recovery_depth: int = 0,
+        extra_headers: dict[str, str] | None = None,
     ) -> JSONResponse:
         """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation.
 
@@ -3316,9 +3472,11 @@ class PromptCompilerProxy:
                 for key_header in ("authorization", "x-api-key"):
                     if key_header in headers:
                         err_msg = err_msg.replace(headers[key_header], "[REDACTED]")
+                out_headers = dict(extra_headers or {})
                 return JSONResponse(
                     {"error": "upstream_unavailable", "detail": err_msg},
                     status_code=502,
+                    headers=out_headers,
                 )
 
             # ── 429: explicit upstream cooldown signal ──
@@ -3338,6 +3496,7 @@ class PromptCompilerProxy:
                         RATE_LIMIT_TOTAL_BUDGET_S - total_slept,
                     )
                     out_headers = {"X-Entroly-Source": "upstream"}
+                    out_headers.update(extra_headers or {})
                     upstream_ra = response.headers.get("retry-after")
                     if upstream_ra:
                         # Propagate Retry-After verbatim so the client honors
@@ -3380,6 +3539,8 @@ class PromptCompilerProxy:
                     total_slept += backoff
                     attempts += 1
                     continue
+                out_headers = {"X-Entroly-Source": "upstream"}
+                out_headers.update(extra_headers or {})
                 return JSONResponse(
                     {
                         "error": "upstream_error",
@@ -3388,13 +3549,14 @@ class PromptCompilerProxy:
                         "source": "upstream_api",
                     },
                     status_code=response.status_code,
-                    headers={"X-Entroly-Source": "upstream"},
+                    headers=out_headers,
                 )
 
             # Success — break out of retry loop
             break
 
         resp_headers: dict[str, str] = {"X-Entroly-Optimized": "true"}
+        resp_headers.update(extra_headers or {})
         with self._stats_lock:
             # Use getattr so this is robust to call paths that didn't go
             # through optimization (and so didn't set the attribute) —

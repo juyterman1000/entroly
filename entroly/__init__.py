@@ -134,8 +134,38 @@ try:
     from .control_plane import (  # noqa: F401
         ControlAudit,
         ControlPlaneDecision,
+        EntrolyCompressionDecision,
         audit_request_transform,
+        canonical_json_dumps,
         plan_request,
+        stable_request_fingerprint,
+    )
+except ImportError:
+    pass
+
+try:
+    from .image_optimizer import (  # noqa: F401
+        ImageOptimizationDecision,
+        ImageTokenEstimate,
+        estimate_image_tokens,
+        estimate_image_tokens_from_dimensions,
+        optimize_image_bytes,
+        plan_image_optimization,
+    )
+except ImportError:
+    pass
+
+# Cost Cortex — price-aware budget clamp + recoverability ledger (the
+# control-plane cost organ). Available to SDK/pip users directly:
+#   from entroly import clamp_injected_budget, ProviderPrice, ContextLedger
+try:
+    from .cost_cortex import (  # noqa: F401
+        ContextDecision,
+        ContextLedger,
+        CostBudget,
+        Decision,
+        ProviderPrice,
+        clamp_injected_budget,
     )
 except ImportError:
     pass
