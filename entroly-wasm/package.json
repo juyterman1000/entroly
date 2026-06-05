@@ -11,6 +11,7 @@
     "LICENSE",
     "NOTICE",
     "index.js",
+    "data/tuning_defaults.json",
     "pkg/entroly_wasm_bg.wasm",
     "pkg/entroly_wasm.js",
     "pkg/entroly_wasm.d.ts",

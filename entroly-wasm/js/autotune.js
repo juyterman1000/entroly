@@ -312,6 +312,7 @@ function findConfigPath() {
     path.join(process.cwd(), 'tuning_config.json'),
     path.join(process.cwd(), 'bench', 'tuning_config.json'),
     path.join(__dirname, '..', '..', 'bench', 'tuning_config.json'),
+    path.join(__dirname, '..', 'data', 'tuning_defaults.json'),  // packaged baseline (ships with the npm package)
   ]) { try { if (fs.existsSync(p)) return p; } catch {} }
   return null;
 }

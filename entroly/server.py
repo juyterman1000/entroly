@@ -1875,13 +1875,22 @@ def create_mcp_server(
     # ...); resolve_tuning_kwargs bridges nested + legacy-flat keys and falls
     # back to defaults for anything missing/invalid, so an autotuned config
     # actually reaches the live engine instead of being silently dropped.
+    # Search order: a dev/source autotune result (bench/) overrides the
+    # packaged baseline (entroly/data/), which ships in the wheel so pip & MCP
+    # end users get the curated config too (bench/ is not packaged). Falls back
+    # to engine defaults if neither is present/parseable.
     _tuning_cfg = {}
-    _tuning_path = Path(__file__).parent.parent / "bench" / "tuning_config.json"
-    if _tuning_path.exists():
-        try:
-            _tuning_cfg = json.loads(_tuning_path.read_text())
-        except Exception as e:
-            logger.warning(f"Failed to load tuning_config.json: {e}")
+    _here = Path(__file__).resolve().parent
+    for _tuning_path in (
+        _here.parent / "bench" / "tuning_config.json",   # source checkout / autotuned (gitignored)
+        _here / "data" / "tuning_defaults.json",         # packaged baseline (ships in the wheel)
+    ):
+        if _tuning_path.exists():
+            try:
+                _tuning_cfg = json.loads(_tuning_path.read_text(encoding="utf-8"))
+                break
+            except Exception as e:
+                logger.warning(f"Failed to load {_tuning_path.name}: {e}")
 
     _tuning_kwargs = resolve_tuning_kwargs(_tuning_cfg)
     if _tuning_cfg:
