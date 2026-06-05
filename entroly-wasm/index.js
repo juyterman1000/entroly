@@ -65,6 +65,18 @@ const { ValueTracker, EVOLUTION_TAX_RATE, estimateCost } = require('./js/value_t
 const { exportPromoted: exportAgentSkills } = require('./js/agentskills_export');
 const { TelegramGateway, DiscordGateway, SlackGateway } = require('./js/gateways');
 const { VaultObserver } = require('./js/vault_observer');
+const {
+  createEntrolyMiddleware,
+  optimizeAnthropicParams,
+  optimizeGeminiParams,
+  optimizeMessages,
+  optimizeOpenAIParams,
+  optimizeRequestParams,
+  stableStringify,
+  wrapAnthropic,
+  wrapGemini,
+  wrapOpenAI,
+} = require('./js/app_sdk');
 
 function classifyQueryTransition(...args) {
   if (!classifyQueryTransitionRust) {
@@ -141,4 +153,16 @@ module.exports = {
   // Observe the shared vault — works with skills promoted by the
   // Python daemon OR any node-side orchestrator. No daemon required.
   VaultObserver,
+
+  // App SDK: middleware shape plus native provider wrappers.
+  createEntrolyMiddleware,
+  optimizeAnthropicParams,
+  optimizeGeminiParams,
+  optimizeMessages,
+  optimizeOpenAIParams,
+  optimizeRequestParams,
+  stableStringify,
+  wrapAnthropic,
+  wrapGemini,
+  wrapOpenAI,
 };

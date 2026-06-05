@@ -3,6 +3,7 @@
   "version": "1.0.17",
   "description": "Compatibility alias for Entroly's Node/WASM runtime. Installs and delegates to entroly-wasm.",
   "main": "index.js",
+  "types": "index.d.ts",
   "bin": {
     "entroly": "./bin/entroly.js"
   },
@@ -10,6 +11,7 @@
     "LICENSE",
     "NOTICE",
     "index.js",
+    "index.d.ts",
     "bin/entroly.js",
     "README.md"
   ],

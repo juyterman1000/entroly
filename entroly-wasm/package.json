@@ -3,7 +3,7 @@
   "version": "1.0.17",
   "description": "Local proxy that cuts your Claude / OpenAI / Gemini bill 70%+. Drop-in for Cursor, Claude Code, Codex, Aider — 30 seconds, no code changes. Pure WebAssembly, no Python dependency.",
   "main": "index.js",
-  "types": "pkg/entroly_wasm.d.ts",
+  "types": "index.d.ts",
   "bin": {
     "entroly-wasm": "./bin/entroly-wasm.js"
   },
@@ -11,6 +11,7 @@
     "LICENSE",
     "NOTICE",
     "index.js",
+    "index.d.ts",
     "data/tuning_defaults.json",
     "pkg/entroly_wasm_bg.wasm",
     "pkg/entroly_wasm.js",
@@ -29,6 +30,7 @@
     "js/skills.js",
     "js/multimodal.js",
     "js/value_tracker.js",
+    "js/app_sdk.js",
     "js/agentskills_export.js",
     "js/gateways.js",
     "js/vault_observer.js",
