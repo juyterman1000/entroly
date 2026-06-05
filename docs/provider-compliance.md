@@ -44,6 +44,14 @@ availability, or safety policy.
 - Privacy guardrails: no Entroly-owned backend, no analytics SDKs, local storage
   in `.entroly/`, secret redaction for internal logs.
 
+## Image Inputs
+
+Image optimization must stay opt-in. Entroly may estimate provider image tokens
+from published formulas and recommend safer dimensions, but provider usage
+metadata or token-count APIs remain the billing source of truth. Do not claim
+exact image billing unless it comes from the provider response or official
+token-count endpoint. See `docs/limitations.md`.
+
 ## Release Checklist
 
 1. Run `entroly doctor --privacy`.

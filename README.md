@@ -40,7 +40,8 @@
   <a href="#works-with-your-stack"><b>Integrations</b></a> ·
   <a href="#whats-inside"><b>What's inside</b></a> ·
   <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
-  <a href="docs/for-teams.md"><b>For teams</b></a>
+  <a href="docs/for-teams.md"><b>For teams</b></a> ·
+  <a href="docs/limitations.md"><b>Limitations</b></a>
 </p>
 
 <p align="center">
@@ -113,6 +114,8 @@ OPENAI_BASE_URL=http://localhost:9377/v1     your-app
 
 ```bash
 entroly demo            # before/after token + cost estimate
+entroly simulate        # local no-LLM savings estimate
+entroly perf            # local no-LLM savings + optimizer latency
 entroly verify-claims   # runs the packaged self-test, writes a JSON report
 ```
 
@@ -304,6 +307,8 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 | `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
 | `entroly dashboard` | Open the live metrics dashboard |
 | `entroly demo` | Before/after token + cost estimate on your repo |
+| `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
+| `entroly perf` | Local no-LLM savings and optimizer latency |
 | `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
 | `entroly health` | Codebase health grade (A–F) |
 | `entroly cache stats` | Persistent cross-session cache stats |
@@ -315,6 +320,7 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
 - **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
+- **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, and what it does not guarantee.
 - **[Cookbook](cookbook/README.md)** — copy-paste recipes for common workflows.
 - **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
