@@ -1,0 +1,233 @@
+{
+  "compression_ratio": {
+    "reduction_pct": 50.0,
+    "selected_to_source_ratio": 0.5,
+    "selected_tokens": 39,
+    "source_to_selected_ratio": 2.0,
+    "source_tokens": 78,
+    "tokens_saved": 39
+  },
+  "dependency_links": [
+    {
+      "evidence": "change of control",
+      "relation_type": "defined_term",
+      "resolved": true,
+      "source_chunk_id": "chk_c69fe14d7aae",
+      "source_document_id": "doc_7c2273b13d83",
+      "target_chunk_id": "chk_2c47a62f27b9",
+      "target_document_id": "doc_fad86b9bf546",
+      "warning": null
+    },
+    {
+      "evidence": "Section 1",
+      "relation_type": "pursuant_to",
+      "resolved": true,
+      "source_chunk_id": "chk_c69fe14d7aae",
+      "source_document_id": "doc_7c2273b13d83",
+      "target_chunk_id": "chk_2c47a62f27b9",
+      "target_document_id": "doc_fad86b9bf546",
+      "warning": null
+    },
+    {
+      "evidence": "Schedule A.",
+      "relation_type": "see_reference",
+      "resolved": true,
+      "source_chunk_id": "chk_c69fe14d7aae",
+      "source_document_id": "doc_7c2273b13d83",
+      "target_chunk_id": "chk_3edf66e42227",
+      "target_document_id": "doc_ee463458956b",
+      "warning": null
+    },
+    {
+      "evidence": "Addendum A",
+      "relation_type": "structural_reference",
+      "resolved": false,
+      "source_chunk_id": "chk_c69fe14d7aae",
+      "source_document_id": "doc_7c2273b13d83",
+      "target_chunk_id": null,
+      "target_document_id": null,
+      "warning": "Unresolved reference: Addendum A"
+    },
+    {
+      "evidence": "Section 1",
+      "relation_type": "structural_reference",
+      "resolved": true,
+      "source_chunk_id": "chk_c69fe14d7aae",
+      "source_document_id": "doc_7c2273b13d83",
+      "target_chunk_id": "chk_2c47a62f27b9",
+      "target_document_id": "doc_fad86b9bf546",
+      "warning": null
+    },
+    {
+      "evidence": "Schedule A.",
+      "relation_type": "structural_reference",
+      "resolved": true,
+      "source_chunk_id": "chk_c69fe14d7aae",
+      "source_document_id": "doc_7c2273b13d83",
+      "target_chunk_id": "chk_3edf66e42227",
+      "target_document_id": "doc_ee463458956b",
+      "warning": null
+    },
+    {
+      "evidence": "Section 1",
+      "relation_type": "structural_reference",
+      "resolved": true,
+      "source_chunk_id": "chk_2c47a62f27b9",
+      "source_document_id": "doc_fad86b9bf546",
+      "target_chunk_id": "chk_c69fe14d7aae",
+      "target_document_id": "doc_7c2273b13d83",
+      "warning": null
+    },
+    {
+      "evidence": "Section 2",
+      "relation_type": "structural_reference",
+      "resolved": false,
+      "source_chunk_id": "chk_2c47a62f27b9",
+      "source_document_id": "doc_fad86b9bf546",
+      "target_chunk_id": null,
+      "target_document_id": null,
+      "warning": "Unresolved reference: Section 2"
+    },
+    {
+      "evidence": "change of control",
+      "relation_type": "defined_term",
+      "resolved": true,
+      "source_chunk_id": "chk_3edf66e42227",
+      "source_document_id": "doc_ee463458956b",
+      "target_chunk_id": "chk_2c47a62f27b9",
+      "target_document_id": "doc_fad86b9bf546",
+      "warning": null
+    },
+    {
+      "evidence": "Schedule A",
+      "relation_type": "structural_reference",
+      "resolved": true,
+      "source_chunk_id": "chk_3edf66e42227",
+      "source_document_id": "doc_ee463458956b",
+      "target_chunk_id": "chk_c69fe14d7aae",
+      "target_document_id": "doc_7c2273b13d83",
+      "warning": null
+    }
+  ],
+  "omitted_context": [
+    {
+      "chunk_id": "chk_2c47a62f27b9",
+      "fingerprint": "sha256:da5168b22eac42b9556b04693c16ca294650880f73b4029107d369ffc639e772",
+      "omission_reason": "dependency_not_included_due_to_budget",
+      "page_number": null,
+      "reasons": [
+        "lexical match: change, control, of"
+      ],
+      "score": 0.727797,
+      "section_heading": "Section 1 Definitions",
+      "source_path": "docs/examples/context_receipt_sources/master.md",
+      "text_preview": "# Section 1 Definitions \"Change of Control\" means a merger, sale of substantially all assets, or replacement of control. # Section 2 Assignment Neither party may assign this Agreement without prior written consent.",
+      "token_count": 39
+    }
+  ],
+  "outcome_links": [],
+  "query": "Does this contract have a change-of-control clause?",
+  "ranking_reasons": {
+    "chk_2c47a62f27b9": [
+      "lexical match: change, control, of"
+    ],
+    "chk_3edf66e42227": [
+      "lexical match: change, control, of"
+    ],
+    "chk_c69fe14d7aae": [
+      "lexical match: change, control, of",
+      "contains explicit dependency/reference language"
+    ]
+  },
+  "receipt_id": "cr_049a1d7b4ffb",
+  "reproducibility_hash": "049a1d7b4ffb61fccae5d001cf662aed269b78b5fc55c8b18f0e7cbf36079642",
+  "risk_summary": {
+    "chunk_coverage": 0.666667,
+    "controls": {
+      "dependency_closure": "partial",
+      "local_no_llm_judgment": true,
+      "omitted_evidence_pressure": "medium",
+      "replayable_fingerprints": true
+    },
+    "coverage_score": 0.598333,
+    "missing_dependency_warning_count": 1,
+    "omitted_relevant_chunks": 1,
+    "review_level": "medium",
+    "selected_chunks": 2,
+    "token_coverage": 0.5,
+    "total_chunks": 3,
+    "unresolved_dependency_count": 2
+  },
+  "schema_version": "context-receipt.v1",
+  "selected_context": [
+    {
+      "byte_end": 92,
+      "byte_start": 0,
+      "chunk_id": "chk_3edf66e42227",
+      "dependencies_included": [
+        "chk_c69fe14d7aae"
+      ],
+      "dependencies_missing": [
+        "chk_2c47a62f27b9"
+      ],
+      "fingerprint": "sha256:b076f577efa5447333dc56e47d9dc2b89d3ac6fe16bef9e3d5dfe1c186c9c292",
+      "page_number": null,
+      "reasons": [
+        "lexical match: change, control, of"
+      ],
+      "score": 0.753595,
+      "section_heading": "Schedule A",
+      "source_path": "docs/examples/context_receipt_sources/schedule-a.md",
+      "text": "# Schedule A\n\nThe reporting covenant applies after a Change of Control notice is delivered.",
+      "token_count": 16,
+      "token_end": 16,
+      "token_start": 0
+    },
+    {
+      "byte_end": 119,
+      "byte_start": 0,
+      "chunk_id": "chk_c69fe14d7aae",
+      "dependencies_included": [
+        "chk_3edf66e42227",
+        "chk_3edf66e42227"
+      ],
+      "dependencies_missing": [
+        "chk_2c47a62f27b9",
+        "chk_2c47a62f27b9",
+        "Addendum A",
+        "chk_2c47a62f27b9"
+      ],
+      "fingerprint": "sha256:d66a9e964fcd979abb29d5d660d7015bef4ccc74269e674b6c62563d73be4c7f",
+      "page_number": null,
+      "reasons": [
+        "lexical match: change, control, of",
+        "contains explicit dependency/reference language"
+      ],
+      "score": 0.695681,
+      "section_heading": "Addendum A",
+      "source_path": "docs/examples/context_receipt_sources/addendum.md",
+      "text": "# Addendum A\n\nPursuant to Section 1, the Change of Control provision is modified for public offerings. See Schedule A.",
+      "token_count": 23,
+      "token_end": 23,
+      "token_start": 0
+    }
+  ],
+  "source_fingerprints": {
+    "chunks": {
+      "chk_2c47a62f27b9": "sha256:da5168b22eac42b9556b04693c16ca294650880f73b4029107d369ffc639e772",
+      "chk_3edf66e42227": "sha256:b076f577efa5447333dc56e47d9dc2b89d3ac6fe16bef9e3d5dfe1c186c9c292",
+      "chk_c69fe14d7aae": "sha256:d66a9e964fcd979abb29d5d660d7015bef4ccc74269e674b6c62563d73be4c7f"
+    },
+    "documents": {
+      "docs/examples/context_receipt_sources/addendum.md": "sha256:461a5372e023a5d2982da111d2f152588c4fdcaebb1140f665d8ecb742ebbf04",
+      "docs/examples/context_receipt_sources/master.md": "sha256:1f10c40eab666808ffd4a0b397b4df92924e574b916d28e35f8f843dd1861d9e",
+      "docs/examples/context_receipt_sources/schedule-a.md": "sha256:e95b3889cada3fc9585e1122098233c605e8b144039ad99615a6418beb329c4a"
+    }
+  },
+  "token_budget": 45,
+  "warnings": [
+    "Dependency not included due to budget: chk_3edf66e42227 -> chk_2c47a62f27b9 (defined_term)",
+    "2 dependency reference(s) could not be resolved to an ingested chunk.",
+    "1 relevant chunk(s) were omitted; inspect omitted_context."
+  ]
+}

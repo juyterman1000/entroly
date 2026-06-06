@@ -4,7 +4,7 @@ version = "1.0.19"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/juyterman1000/entroly"
-description = "Rust core for Entroly — the local proxy that cuts Claude / OpenAI / Gemini bills 70%+ via knapsack-optimal context selection"
+description = "Rust core for Entroly: Context Receipts, deterministic ingestion/ranking, dependency audits, and local context optimization"
 
 [lib]
 name = "entroly_core"
@@ -37,6 +37,7 @@ regex = "1.11"
 
 # Hashing
 md-5 = "0.11"
+sha2 = "0.10"
 
 # Compression (checkpoint)
 flate2 = "1.0"

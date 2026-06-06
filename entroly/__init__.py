@@ -30,6 +30,12 @@ try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
     from .sdk import detect_hallucination, optimize  # noqa: F401
     from .sdk import eicv_verify, eicv_suppress  # noqa: F401
+    from .sdk import (  # noqa: F401
+        context_receipt_from_path,
+        create_context_receipt,
+        explain_receipt_omission,
+        render_context_receipt,
+    )
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 

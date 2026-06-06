@@ -157,6 +157,15 @@ def test_mcp_list_tools(mcp_server):
         assert "entroly_retrieve" in tool_names, (
             f"Expected reversible CCR tool, got: {tool_names}"
         )
+        for receipt_tool in (
+            "create_context_receipt",
+            "create_context_receipt_from_path",
+            "render_context_receipt",
+            "explain_receipt_omission",
+        ):
+            assert receipt_tool in tool_names, (
+                f"Expected Context Receipt tool {receipt_tool}, got: {tool_names}"
+            )
 
 
 def test_mcp_retrieve_round_trip(mcp_server):

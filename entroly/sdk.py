@@ -744,6 +744,92 @@ def optimize(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Context Receipts: auditable context selection for hard multi-document tasks.
+
+def _normalize_receipt_documents(documents: Any) -> list[tuple[str, str]]:
+    """Normalize SDK/MCP receipt inputs into ``[(source_path, text), ...]``."""
+    if isinstance(documents, dict):
+        return [(str(path), str(text)) for path, text in documents.items()]
+
+    normalized: list[tuple[str, str]] = []
+    for idx, item in enumerate(documents or []):
+        if isinstance(item, dict):
+            source = item.get("source_path") or item.get("source") or item.get("path") or f"document_{idx}.txt"
+            text = item.get("text") if "text" in item else item.get("content", "")
+            normalized.append((str(source), str(text)))
+        else:
+            source, text = item
+            normalized.append((str(source), str(text)))
+    return normalized
+
+
+def create_context_receipt(
+    documents: Any,
+    query: str,
+    budget: int = 8000,
+    chunk_tokens: int = 360,
+    overlap_tokens: int = 32,
+    prefer_rust: bool = True,
+) -> dict[str, Any]:
+    """Create an auditable Context Receipt from in-memory documents.
+
+    ``documents`` may be a mapping of ``path -> text``, a list of
+    ``(path, text)`` tuples, or a list of dicts with ``source_path``/``text``
+    keys. The result records selected context, omitted context, dependency
+    links, fingerprints, warnings, and deterministic risk controls.
+    """
+    from .context_receipts import run_receipt_pipeline
+
+    return run_receipt_pipeline(
+        _normalize_receipt_documents(documents),
+        query=query,
+        token_budget=budget,
+        chunk_tokens=chunk_tokens,
+        overlap_tokens=overlap_tokens,
+        prefer_rust=prefer_rust,
+    )
+
+
+def context_receipt_from_path(
+    path: str,
+    query: str,
+    budget: int = 8000,
+    chunk_tokens: int = 360,
+    overlap_tokens: int = 32,
+    prefer_rust: bool = True,
+) -> dict[str, Any]:
+    """Create a Context Receipt from a local document file or directory."""
+    from .context_receipts import run_receipt_pipeline
+    from .context_receipts.ingest import read_documents_from_path
+
+    return run_receipt_pipeline(
+        read_documents_from_path(path),
+        query=query,
+        token_budget=budget,
+        chunk_tokens=chunk_tokens,
+        overlap_tokens=overlap_tokens,
+        prefer_rust=prefer_rust,
+    )
+
+
+def render_context_receipt(receipt: dict[str, Any], prefer_rust: bool = True) -> str:
+    """Render a Context Receipt JSON object as a Markdown audit report."""
+    from .context_receipts import markdown_report
+
+    return markdown_report(receipt, prefer_rust=prefer_rust)
+
+
+def explain_receipt_omission(
+    receipt: dict[str, Any],
+    chunk_id: str,
+    prefer_rust: bool = True,
+) -> str:
+    """Explain why ``chunk_id`` was omitted, or report that it was selected."""
+    from .context_receipts import explain_omitted
+
+    return explain_omitted(receipt, chunk_id, prefer_rust=prefer_rust)
+
+
 # EICV — Evidence-Invariant Causal Verification (Deterministic, $0)
 # ═══════════════════════════════════════════════════════════════════════════
 #

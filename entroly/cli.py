@@ -13,6 +13,10 @@ Commands:
     entroly health      Analyze codebase health (A-F grade)
     entroly autotune    Optimize hyperparameters
     entroly benchmark   Run competitive comparison
+    entroly ingest      Ingest docs for Context Receipts
+    entroly select      Select context and write a Context Receipt
+    entroly receipt     Render a Context Receipt report
+    entroly explain     Explain receipt selection/omission decisions
     entroly simulate    Estimate local token savings without LLM calls
     entroly perf        Measure local optimizer savings/latency without LLM calls
     entroly status      Check if server/proxy is running
@@ -3425,7 +3429,8 @@ def cmd_completions(args):
         "telemetry", "export", "import", "drift", "profile",
         "batch", "wrap", "learn", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
-        "optimize", "feedback", "compile", "verify", "sync",
+        "optimize", "ingest", "select", "receipt", "explain",
+        "feedback", "compile", "verify", "sync",
         "search", "docs", "finetune", "witness",
     ]
     cmd_list = " ".join(commands)
@@ -3660,6 +3665,116 @@ def cmd_optimize(args):
             }, f)
     except Exception:
         pass
+
+
+def cmd_ingest(args):
+    """entroly ingest PATH - build a local multi-document Context Receipt index."""
+    from entroly.context_receipts import ingest_documents
+    from entroly.context_receipts.ingest import read_documents_from_path
+    from entroly.context_receipts.store import DEFAULT_INDEX, write_json
+
+    docs = read_documents_from_path(args.path)
+    if not docs:
+        print(f"  {C.RED}No supported documents found.{C.RESET} Use .md, .txt, or .rst files.", file=sys.stderr)
+        return 1
+    index = ingest_documents(
+        docs,
+        chunk_tokens=args.chunk_tokens,
+        overlap_tokens=args.overlap_tokens,
+        prefer_rust=not args.python,
+    )
+    out = Path(args.out) if args.out else DEFAULT_INDEX
+    write_json(out, index)
+    print(f"  {C.GREEN}Indexed {len(index['documents'])} document(s), {len(index['chunks'])} chunk(s).{C.RESET}")
+    print(f"  Index: {out}")
+
+
+def cmd_select(args):
+    """entroly select - produce a machine-readable Context Receipt and Markdown report."""
+    from entroly.context_receipts import ingest_documents, markdown_report, select_from_index
+    from entroly.context_receipts.ingest import read_documents_from_path
+    from entroly.context_receipts.store import (
+        DEFAULT_INDEX,
+        default_receipt_path,
+        default_report_path,
+        read_json,
+        set_latest_receipt,
+        write_json,
+        write_text,
+    )
+
+    if args.docs:
+        docs = read_documents_from_path(args.docs)
+        if not docs:
+            print(f"  {C.RED}No supported documents found in {args.docs!r}.{C.RESET}", file=sys.stderr)
+            return 1
+        index = ingest_documents(
+            docs,
+            chunk_tokens=args.chunk_tokens,
+            overlap_tokens=args.overlap_tokens,
+            prefer_rust=not args.python,
+        )
+    else:
+        index_path = Path(args.index) if args.index else DEFAULT_INDEX
+        if not index_path.exists():
+            print(
+                f"  {C.RED}No Context Receipt index found at {index_path}.{C.RESET} "
+                "Run `entroly ingest ./docs` first or pass `--docs ./docs`.",
+                file=sys.stderr,
+            )
+            return 1
+        index = read_json(index_path)
+
+    receipt = select_from_index(
+        index,
+        query=args.query,
+        token_budget=args.budget,
+        prefer_rust=not args.python,
+    )
+    receipt_path = Path(args.receipt) if args.receipt else default_receipt_path(receipt["receipt_id"])
+    report_path = Path(args.report) if args.report else default_report_path(receipt["receipt_id"])
+    write_json(receipt_path, receipt)
+    write_text(report_path, markdown_report(receipt, prefer_rust=not args.python))
+    set_latest_receipt(receipt_path)
+    selected = len(receipt.get("selected_context", []))
+    omitted = len(receipt.get("omitted_context", []))
+    warnings = len(receipt.get("warnings", []))
+    print(f"  {C.GREEN}Context Receipt {receipt['receipt_id']} created.{C.RESET}")
+    print(f"  Selected: {selected} chunk(s); omitted tracked: {omitted}; warnings: {warnings}")
+    print(f"  JSON: {receipt_path}")
+    print(f"  Report: {report_path}")
+
+
+def cmd_receipt(args):
+    """entroly receipt RECEIPT_JSON - render or normalize a Context Receipt."""
+    from entroly.context_receipts import markdown_report
+    from entroly.context_receipts.store import read_json, write_text
+
+    receipt = read_json(args.receipt_path)
+    if args.json:
+        print(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False))
+        return
+    report = markdown_report(receipt, prefer_rust=not args.python)
+    if args.out:
+        write_text(args.out, report)
+        print(f"  {C.GREEN}Wrote report:{C.RESET} {args.out}")
+    else:
+        print(report, end="")
+
+
+def cmd_explain(args):
+    """entroly explain --why-omitted CHUNK_ID - explain an omitted receipt item."""
+    from entroly.context_receipts import explain_omitted
+    from entroly.context_receipts.store import latest_receipt_path, read_json
+
+    receipt_path = Path(args.receipt) if args.receipt else latest_receipt_path()
+    if receipt_path is None or not receipt_path.exists():
+        print(
+            f"  {C.RED}No receipt found.{C.RESET} Pass `--receipt receipt.json` or run `entroly select` first.",
+            file=sys.stderr,
+        )
+        return 1
+    print(explain_omitted(read_json(receipt_path), args.why_omitted, prefer_rust=not args.python))
 
 
 def cmd_feedback(args):
@@ -4474,6 +4589,51 @@ def main():
         help="Substring to exclude from the fragment source path (repeatable; dopt selector only)",
     )
 
+    # entroly ingest
+    ingest_parser = subparsers.add_parser(
+        "ingest",
+        help="Ingest documents for Context Receipts",
+    )
+    ingest_parser.add_argument("path", type=str, help="Document file or directory (.md, .txt, .rst)")
+    ingest_parser.add_argument("--out", type=str, default=None, help="Index JSON path (default: .entroly/receipts/index.json)")
+    ingest_parser.add_argument("--chunk-tokens", type=int, default=360, help="Approximate max tokens per chunk")
+    ingest_parser.add_argument("--overlap-tokens", type=int, default=32, help="Token overlap for oversized chunks")
+    ingest_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
+
+    # entroly select
+    select_parser = subparsers.add_parser(
+        "select",
+        help="Select context and write a Context Receipt",
+    )
+    select_parser.add_argument("--query", "-q", type=str, required=True, help="Question/task to select context for")
+    select_parser.add_argument("--budget", "-b", type=int, default=8000, help="Token budget (default: 8000)")
+    select_parser.add_argument("--index", type=str, default=None, help="Index JSON path (default: .entroly/receipts/index.json)")
+    select_parser.add_argument("--docs", type=str, default=None, help="Ingest this document path on the fly")
+    select_parser.add_argument("--receipt", type=str, default=None, help="Receipt JSON output path")
+    select_parser.add_argument("--report", type=str, default=None, help="Markdown report output path")
+    select_parser.add_argument("--chunk-tokens", type=int, default=360, help="Approximate max tokens per chunk when using --docs")
+    select_parser.add_argument("--overlap-tokens", type=int, default=32, help="Token overlap for oversized chunks when using --docs")
+    select_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
+
+    # entroly receipt
+    receipt_parser = subparsers.add_parser(
+        "receipt",
+        help="Render a Context Receipt as Markdown",
+    )
+    receipt_parser.add_argument("receipt_path", type=str, help="Context Receipt JSON path")
+    receipt_parser.add_argument("--out", type=str, default=None, help="Markdown output path")
+    receipt_parser.add_argument("--json", action="store_true", help="Print normalized receipt JSON instead of Markdown")
+    receipt_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
+
+    # entroly explain
+    explain_parser = subparsers.add_parser(
+        "explain",
+        help="Explain receipt decisions such as why a chunk was omitted",
+    )
+    explain_parser.add_argument("--why-omitted", required=True, help="Chunk id to explain")
+    explain_parser.add_argument("--receipt", type=str, default=None, help="Receipt JSON path (default: latest)")
+    explain_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
+
     # entroly feedback
     feedback_parser = subparsers.add_parser(
         "feedback",
@@ -5010,6 +5170,10 @@ def main():
         "benchmark": cmd_benchmark,
         "simulate": cmd_simulate,
         "perf": cmd_perf,
+        "ingest": cmd_ingest,
+        "select": cmd_select,
+        "receipt": cmd_receipt,
+        "explain": cmd_explain,
         "status": cmd_status,
         "config": cmd_config,
         "clean": cmd_clean,

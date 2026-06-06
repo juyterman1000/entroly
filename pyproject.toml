@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 name = "entroly"
 version = "1.0.19"
 
-description = "Local proxy that cuts your Claude / OpenAI / Gemini bill 70%+. Drop-in for Cursor, Claude Code, Codex, Aider — 30 seconds, no code changes."
+description = "Auditable context control plane for AI agents: Context Receipts, MCP tools, local optimization, and SDK helpers."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -19,7 +19,7 @@ authors = [
     { name = "entroly", email = "fastrunner10090@gmail.com" },
 ]
 keywords = [
-    "token-saving", "context-compression", "reduce-llm-costs", "llm-proxy",
+    "context-receipts", "context-control-plane", "token-saving", "context-compression", "reduce-llm-costs", "llm-proxy",
     "mcp", "agentic-ai", "cursor", "claude-code", "copilot", "llm",
     "knapsack", "entropy", "context-optimization", "token-reduction"
 ]

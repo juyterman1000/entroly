@@ -66,6 +66,13 @@ const { exportPromoted: exportAgentSkills } = require('./js/agentskills_export')
 const { TelegramGateway, DiscordGateway, SlackGateway } = require('./js/gateways');
 const { VaultObserver } = require('./js/vault_observer');
 const {
+  createContextReceipt,
+  explainReceiptOmission,
+  ingestReceiptDocuments,
+  renderContextReceipt,
+  selectReceiptContext,
+} = require('./js/context_receipts');
+const {
   createEntrolyMiddleware,
   optimizeAnthropicParams,
   optimizeGeminiParams,
@@ -165,4 +172,11 @@ module.exports = {
   wrapAnthropic,
   wrapGemini,
   wrapOpenAI,
+
+  // Context Receipts: auditable context selection receipts for JS users.
+  ingestReceiptDocuments,
+  selectReceiptContext,
+  createContextReceipt,
+  renderContextReceipt,
+  explainReceiptOmission,
 };

@@ -20,6 +20,7 @@ mod cognitive_bus;
 pub mod cogops;
 /// Pure-Rust text compression entry point for the standalone binary.
 pub mod compress;
+pub mod context_receipts;
 /// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
 pub mod proxy;
 mod conversation_pruner;
@@ -6192,6 +6193,11 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_progressive_thresholds, m)?)?;
     m.add_function(wrap_pyfunction!(py_compress_block, m)?)?;
     m.add_function(wrap_pyfunction!(py_classify_block, m)?)?;
+    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_ingest, m)?)?;
+    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_select, m)?)?;
+    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_run, m)?)?;
+    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_report, m)?)?;
+    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_explain_omitted, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
     m.add_class::<nkbe::NkbeAllocator>()?;
     m.add_class::<cognitive_bus::CognitiveBus>()?;

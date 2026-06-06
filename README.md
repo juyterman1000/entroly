@@ -15,10 +15,10 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<p align="center"><b>Cut your AI coding bill — without losing answer quality.</b></p>
+<p align="center"><b>Every AI answer gets a context receipt: what was used, what was omitted, why, and what risks remain.</b></p>
 
 <p align="center">
-  <sub>70–95% fewer input tokens · $0 hallucination guard · local-first · reversible · works with Claude, Cursor, Codex, Aider + 34 more</sub>
+  <sub>Auditable context control plane - local-first - Rust + WASM - reversible - token savings measured on real workloads</sub>
 </p>
 
 <p align="center">
@@ -54,13 +54,14 @@
 
 ## What it does
 
-Your AI coding agent dumps huge, repetitive context into every request. You pay for all of it, and the model still misses files it can't see. Entroly fixes both — **locally, on your machine.**
+Entroly is an auditable context control plane for AI agents. It decides what context to send, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.
 
-- **Compress** — ranks your whole repo, then sends only the answer-relevant files under a token budget. 70–95% fewer input tokens on large repos.
-- **Verify** — WITNESS checks the model's answer against the evidence it was given and flags unsupported claims. $0, ~3 ms, no extra API call.
-- **Route** — sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
-- **Cache-align** — keeps the injected prefix byte-stable so the provider's cache keeps hitting (Anthropic gives up to 90% off cached tokens).
-- **Learn** — improves which files it picks for *your* workflow from local feedback. No embeddings API, no training job.
+- **Receipts** - every selection run can explain selected chunks, omitted nearby evidence, dependency links, fingerprints, token ratio, and residual risks.
+- **Select** - ranks your repo or document set, then sends the answer-relevant context under a token budget.
+- **Verify** - WITNESS checks the model's answer against the evidence it was given and flags unsupported claims. $0, ~3 ms, no extra API call.
+- **Route** - sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
+- **Cache-align** - keeps the injected prefix byte-stable so provider prefix caches can keep hitting where terms and API shape allow it.
+- **Learn** - improves which files it picks for *your* workflow from local feedback. No embeddings API, no training job.
 
 Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in as an **MCP server**, or import the **library**.
 
@@ -73,6 +74,7 @@ your agent  ──►  Entroly (local)  ──►  LLM provider
                  │
                  ├─ rank the repo        (BM25 + entropy + dep-graph)
                  ├─ select under budget  (knapsack, reversible)
+                 ├─ emit receipt         (included, omitted, risks)
                  ├─ cache-align prefix    (keep provider cache hot)
                  └─ verify the reply      (WITNESS hallucination guard)
 ```
@@ -120,6 +122,33 @@ entroly verify-claims   # runs the packaged self-test, writes a JSON report
 ```
 
 > Local-first: your code is indexed and selected on-device, never sent anywhere for analysis. Apache-2.0. No outbound analytics by default.
+
+---
+
+## Context Receipts
+
+Entroly gives every AI answer a context receipt: what was used, what was omitted, why, and what risks remain. This is built for hard multi-document work such as contracts, policies, addenda, code reviews, and audit evidence where "top-k chunks" is not enough.
+
+```bash
+entroly ingest ./docs
+entroly select --query "Does this contract have a change-of-control clause?" --budget 8000
+entroly receipt .entroly/receipts/cr_example.json
+entroly explain --why-omitted chk_example --receipt .entroly/receipts/cr_example.json
+```
+
+The receipt JSON includes selected chunks, omitted relevant chunks, ranking reasons, dependency links, source fingerprints, token ratio, warnings, and a reproducibility hash. The Markdown report is designed for human review before a compressed context is trusted.
+
+Implementation notes:
+
+- Rust core (`entroly-core/src/context_receipts.rs`) handles deterministic ingestion, BM25-style ranking, dependency scans, selection, and hashes when the native wheel is available.
+- Python control plane (`entroly/context_receipts/`) provides CLI wiring and a pure-Python fallback for source checkouts.
+- The semantic/vector scorer and reranker are explicit extension points; the local MVP ships with lexical scoring and dependency heuristics, not a legal-accuracy guarantee.
+
+Examples:
+
+- [Example receipt JSON](docs/examples/context_receipt.json)
+- [Example Markdown report](docs/examples/context_receipt.md)
+- [Limitations](docs/limitations.md#context-receipts)
 
 ---
 
@@ -307,6 +336,10 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 | `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
 | `entroly dashboard` | Open the live metrics dashboard |
 | `entroly demo` | Before/after token + cost estimate on your repo |
+| `entroly ingest` | Ingest documents into a local Context Receipt index |
+| `entroly select` | Select context under budget and write a Context Receipt |
+| `entroly receipt` | Render a Context Receipt as a Markdown report |
+| `entroly explain` | Explain why a chunk was selected or omitted |
 | `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
 | `entroly perf` | Local no-LLM savings and optimizer latency |
 | `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |

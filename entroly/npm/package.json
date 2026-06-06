@@ -1,7 +1,7 @@
 {
   "name": "entroly-mcp",
   "version": "1.0.19",
-  "description": "Information-theoretic context optimization MCP server with deterministic hallucination detection and suppression for AI coding agents.",
+  "description": "NPX bridge for Entroly, an auditable context control plane with MCP tools, Context Receipts, and local optimization for AI agents.",
   "main": "index.js",
   "bin": {
     "entroly-mcp": "./bin/entroly-mcp.js"
@@ -22,6 +22,8 @@
   },
   "keywords": [
     "mcp",
+    "context-receipts",
+    "context-control-plane",
     "context-optimization",
     "entroly",
     "ai",

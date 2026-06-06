@@ -2817,6 +2817,88 @@ def create_mcp_server(
         return json.dumps(result, indent=2)
 
     @mcp.tool()
+    def create_context_receipt(
+        documents_json: str,
+        query: str,
+        token_budget: int = 8000,
+        chunk_tokens: int = 360,
+        overlap_tokens: int = 32,
+    ) -> str:
+        """Create a Context Receipt from supplied documents.
+
+        ``documents_json`` may be:
+        - a JSON object mapping source path to text
+        - a JSON array of ``[source_path, text]`` pairs
+        - a JSON array of objects with ``source_path``/``text`` or
+          ``source``/``content`` keys
+
+        The receipt records selected context, omitted relevant context,
+        dependency links, fingerprints, token ratio, warnings, and risk
+        controls. It does not call an LLM.
+        """
+        try:
+            from .sdk import create_context_receipt as _create_context_receipt
+
+            documents = json.loads(documents_json)
+            receipt = _create_context_receipt(
+                documents,
+                query=query,
+                budget=token_budget,
+                chunk_tokens=chunk_tokens,
+                overlap_tokens=overlap_tokens,
+            )
+            return json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
+    def create_context_receipt_from_path(
+        path: str,
+        query: str,
+        token_budget: int = 8000,
+        chunk_tokens: int = 360,
+        overlap_tokens: int = 32,
+    ) -> str:
+        """Create a Context Receipt from a local document file or directory.
+
+        Supports text-like documents currently handled by the local receipt
+        ingester (.md, .txt, .rst). The result is deterministic and local.
+        """
+        try:
+            from .sdk import context_receipt_from_path as _context_receipt_from_path
+
+            receipt = _context_receipt_from_path(
+                path,
+                query=query,
+                budget=token_budget,
+                chunk_tokens=chunk_tokens,
+                overlap_tokens=overlap_tokens,
+            )
+            return json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
+    def render_context_receipt(receipt_json: str) -> str:
+        """Render a Context Receipt JSON artifact as a Markdown report."""
+        try:
+            from .sdk import render_context_receipt as _render_context_receipt
+
+            return _render_context_receipt(json.loads(receipt_json))
+        except Exception as exc:  # noqa: BLE001 - MCP tools return text errors
+            return f"Context Receipt render error: {exc}"
+
+    @mcp.tool()
+    def explain_receipt_omission(receipt_json: str, chunk_id: str) -> str:
+        """Explain why a chunk was omitted from a Context Receipt."""
+        try:
+            from .sdk import explain_receipt_omission as _explain_receipt_omission
+
+            return _explain_receipt_omission(json.loads(receipt_json), chunk_id)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return text errors
+            return f"Context Receipt explanation error: {exc}"
+
+    @mcp.tool()
     def checkpoint_state(
         task_description: str = "",
         current_step: str = "",

@@ -54,3 +54,44 @@ export function createEntrolyMiddleware(options?: EntrolyAppSdkOptions): {
 export function wrapOpenAI<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
 export function wrapAnthropic<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
 export function wrapGemini<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
+
+export interface ContextReceiptDocument {
+  source_path?: string;
+  source?: string;
+  path?: string;
+  text?: string;
+  content?: string;
+}
+
+export type ContextReceiptInput =
+  | Record<string, string>
+  | Array<[string, string] | ContextReceiptDocument | string>;
+
+export interface ContextReceiptOptions {
+  query?: string;
+  budget?: number;
+  tokenBudget?: number;
+  token_budget?: number;
+  chunkTokens?: number;
+  chunk_tokens?: number;
+  overlapTokens?: number;
+  overlap_tokens?: number;
+}
+
+export function ingestReceiptDocuments(
+  documents: ContextReceiptInput,
+  options?: ContextReceiptOptions,
+): Record<string, unknown>;
+
+export function selectReceiptContext(
+  index: Record<string, unknown>,
+  options: ContextReceiptOptions & { query: string },
+): Record<string, unknown>;
+
+export function createContextReceipt(
+  documents: ContextReceiptInput,
+  options: ContextReceiptOptions & { query: string },
+): Record<string, unknown>;
+
+export function renderContextReceipt(receipt: Record<string, unknown>): string;
+export function explainReceiptOmission(receipt: Record<string, unknown>, chunkId: string): string;

@@ -82,6 +82,35 @@ References for current formulas and token-count behavior:
 - Anthropic vision image sizing and rough token estimate: https://docs.anthropic.com/en/docs/build-with-claude/vision
 - Gemini multimodal token counting: https://ai.google.dev/gemini-api/docs/tokens
 
+## Context Receipts
+
+Context Receipts are an audit trail for local context selection. They improve
+inspectability, but they do not prove that the selected context is complete or
+that an answer is legally, financially, medically, or operationally correct.
+Each receipt includes a deterministic `risk_summary` so these boundaries are
+visible in the artifact instead of hidden in marketing copy.
+
+- Dependency detection is heuristic. The MVP catches obvious defined terms and
+  references such as `as defined in`, `subject to`, `pursuant to`, `see
+  section`, exhibits, schedules, addenda, and clauses. It can miss implicit
+  dependencies, unusual drafting styles, scanned/OCR errors, tables, footnotes,
+  and jurisdiction-specific language.
+- BM25-style retrieval is lexical. The semantic/vector scorer and reranker are
+  extension points, but the local default does not claim embedding-level recall.
+- Page numbers are preserved only when the input text exposes page markers. PDF
+  layout reconstruction and OCR are outside this MVP path.
+- Fingerprints make a receipt reproducible for the ingested text bytes. They do
+  not certify that the source corpus was complete, authorized, or unchanged
+  outside the files Entroly saw.
+- Omitted-context warnings are conservative signals, not exhaustive proof of all
+  missing evidence.
+- `risk_summary.coverage_score` and `review_level` are local heuristics derived
+  from chunk coverage, token coverage, unresolved dependencies, and omitted
+  relevant chunks. They are triage signals, not correctness probabilities.
+- Human review is required for contracts, compliance, policy, and audit use
+  cases. Use receipts to inspect evidence and risk, not as a substitute for
+  professional review.
+
 ## Compliance Checklist
 
 Before production use:
