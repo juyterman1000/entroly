@@ -89,17 +89,65 @@ class EntrolyMCPServer {
     this.flowOrchestrator = new FlowOrchestrator(this.vault, this.epistemicRouter, this.beliefCompiler, this.verifier, this.changePipe, this.sourceDir);
     this.workspaceListener = new WorkspaceChangeListener(this.vault, this.beliefCompiler, this.verifier, this.changePipe, this.sourceDir);
 
-    // Try loading persistent index
-    if (loadIndex(this.engine, this.indexPath)) {
-      const n = this.engine.fragment_count();
-      this._log(`Loaded persistent index: ${n} fragments`);
-    }
+    // Persistent index loads LAZILY (first tool use / deferred warm-up) so
+    // construction and the MCP handshake stay instant — never block the client's
+    // ~5-10s connect window on a cold index read. npm twin of the pip/MCP fix.
+    this._indexLoaded = false;
 
     this._buffer = '';
     this._initialized = false;
   }
 
   _log(msg) { process.stderr.write(`${new Date().toISOString()} [entroly] ${msg}\n`); }
+
+  // Lazily perform the full one-time warm-up (persisted index load + auto-index
+  // + background daemons) on the calling thread. Idempotent: the FIRST tool call
+  // pays this cost; every later call is an instant no-op.
+  //
+  // Crucially this is NEVER called from the MCP handshake (initialize /
+  // tools/list) and NEVER from a timer — only from handleTool. autoIndex is a
+  // synchronous repo scan, so a setImmediate/setTimeout defer would still block
+  // the single-threaded event loop and stall the handshake (a timer can even
+  // fire before the first request arrives). Triggering strictly on the first
+  // tools/call guarantees an instant handshake for every client regardless of
+  // message ordering, with no race — the npm twin of the pip/MCP instant-start
+  // fix ("first request pays"). Node is single-threaded, so there is also no
+  // borrow race (unlike the pip background path).
+  _ensureWarm() {
+    if (this._indexLoaded) return;
+    this._indexLoaded = true; // set before work so a throw cannot cause re-entry
+
+    // 1) Restore the persisted index BEFORE auto-index — auto-index skips when
+    //    the engine already has fragments, and a later load would otherwise
+    //    overwrite freshly ingested state.
+    try {
+      if (loadIndex(this.engine, this.indexPath)) {
+        this._log(`Loaded persistent index: ${this.engine.fragment_count()} fragments`);
+      }
+    } catch (e) {
+      this._log(`Index load failed (non-fatal): ${e.message}`);
+    }
+
+    // 2) Auto-index the project (internally skips when already warm) and start
+    //    the incremental file watcher.
+    try {
+      const result = autoIndex(this.engine);
+      if (result.status === 'indexed') {
+        this._log(`Auto-indexed ${result.files_indexed} files (${result.total_tokens.toLocaleString()} tokens) in ${result.duration_s}s`);
+      }
+      startIncrementalWatcher(this.engine);
+    } catch (e) {
+      this._log(`Auto-index failed (non-fatal): ${e.message}`);
+    }
+
+    // 3) Start the autotune daemon — hot-reloads weights from tuning_config.json.
+    try {
+      const tid = startAutotuneDaemon(this.engine);
+      if (tid) this._log('Autotune daemon started (hot-reload every 30s)');
+    } catch (e) {
+      this._log(`Autotune: failed to start daemon: ${e.message}`);
+    }
+  }
 
   _projectDir(candidate = '') {
     const resolved = resolveProjectDirectory(this.sourceDir, candidate || '.');
@@ -166,6 +214,7 @@ class EntrolyMCPServer {
 
   // ── Tool Handlers (36 tools) ──
   handleTool(name, args) {
+    this._ensureWarm(); // lazy one-time index load; instant no-op once warm
     switch (name) {
       // ── Core Engine Tools ──
       case 'remember_fragment':
@@ -482,33 +531,15 @@ class EntrolyMCPServer {
   async run() {
     this._log(`Starting Entroly MCP server v${this.config.serverVersion} (Wasm engine)`);
 
-    // Auto-index on startup
-    try {
-      const result = autoIndex(this.engine);
-      if (result.status === 'indexed') {
-        this._log(`Auto-indexed ${result.files_indexed} files (${result.total_tokens.toLocaleString()} tokens) in ${result.duration_s}s`);
-      }
-      startIncrementalWatcher(this.engine);
-    } catch (e) {
-      this._log(`Auto-index failed (non-fatal): ${e.message}`);
-    }
-
-    // Start autotune daemon — reads tuning_config.json, hot-reloads weights
-    try {
-      const tid = startAutotuneDaemon(this.engine);
-      if (tid) this._log('Autotune daemon started (hot-reload every 30s)');
-    } catch (e) {
-      this._log(`Autotune: failed to start daemon: ${e.message}`);
-    }
-
-    // Graceful shutdown
-    process.on('SIGTERM', () => {
-      this._log('Shutdown — persisting state...');
-      try { persistIndex(this.engine, this.indexPath); } catch {}
-      process.exit(0);
-    });
-
-    // Read JSONRPC from stdin
+    // Attach the stdio transport and DO NOT warm up here. The MCP handshake
+    // (initialize / tools/list) is answered immediately; the heavy one-time
+    // warm-up (index load + auto-index + daemons) is deferred to the first
+    // actual tool call (handleTool -> _ensureWarm). autoIndex is a synchronous
+    // repo scan, so warming on a timer would still block the single-threaded
+    // event loop and stall the handshake (the timer can even fire before the
+    // first request arrives). Triggering strictly on the first tools/call gives
+    // an instant handshake for every client with no race — the npm twin of the
+    // pip/MCP instant-start fix (cold start ~6.5s → instant handshake).
     process.stdin.setEncoding('utf-8');
     process.stdin.on('data', (chunk) => {
       this._buffer += chunk;
@@ -516,7 +547,15 @@ class EntrolyMCPServer {
     });
     process.stdin.on('end', () => {
       this._log('stdin closed — shutting down');
-      try { persistIndex(this.engine, this.indexPath); } catch {}
+      if (this._indexLoaded) { try { persistIndex(this.engine, this.indexPath); } catch {} }
+    });
+
+    // Graceful shutdown — only persist if we actually warmed (loaded) the index,
+    // otherwise an early shutdown would overwrite the good index with empty state.
+    process.on('SIGTERM', () => {
+      this._log('Shutdown — persisting state...');
+      if (this._indexLoaded) { try { persistIndex(this.engine, this.indexPath); } catch {} }
+      process.exit(0);
     });
   }
 
