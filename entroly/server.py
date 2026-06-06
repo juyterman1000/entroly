@@ -688,6 +688,10 @@ class EntrolyEngine:
         is_pinned: bool = False,
     ) -> dict[str, Any]:
         """Ingest a new context fragment."""
+        # Lazy warm-start MUST run before the first mutation: load_index
+        # replaces the fragment set, so it has to happen before any ingest or
+        # it would wipe freshly-ingested fragments.
+        self._ensure_index_loaded()
         # GC freeze: disable the garbage collector during the tight Python→Rust
         # dispatch to prevent unpredictable GC pauses. Manually collect after
         # returning to amortize the cost at a safe boundary.
