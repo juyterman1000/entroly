@@ -7,6 +7,7 @@ All tunable parameters live here — no magic numbers buried in code.
 """
 
 import hashlib
+import json
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -36,6 +37,42 @@ def _project_checkpoint_dir() -> Path:
         fallback_dir = Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash
         fallback_dir.mkdir(parents=True, exist_ok=True)
         return fallback_dir
+
+
+def tuning_config_candidates() -> list[Path]:
+    """Return tuning config read candidates in runtime precedence order."""
+    here = Path(__file__).resolve().parent
+    candidates: list[Path] = []
+    explicit = os.environ.get("ENTROLY_TUNING_CONFIG")
+    if explicit:
+        candidates.append(Path(explicit))
+    candidates.extend([
+        _project_checkpoint_dir() / "tuning_config.json",
+        here.parent / "bench" / "tuning_config.json",
+        here / "tuning_config.json",
+        here.parent / "tuning_config.json",
+        here / "data" / "tuning_defaults.json",
+    ])
+    return candidates
+
+
+def load_active_tuning_config() -> tuple[Path, dict] | None:
+    """Load the first valid tuning config, falling back to shipped defaults."""
+    for path in tuning_config_candidates():
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            continue
+        if isinstance(data, dict):
+            return path, data
+    return None
+
+
+def writable_tuning_config_path() -> Path:
+    """Return the project-scoped tuning config target for CLI writes."""
+    return _project_checkpoint_dir() / "tuning_config.json"
 
 
 @dataclass

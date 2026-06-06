@@ -45,7 +45,7 @@ from .belief_compiler import BeliefCompiler
 from .change_listener import WorkspaceChangeListener
 from .change_pipeline import ChangePipeline
 from .checkpoint import CheckpointManager, ContextFragment
-from .config import EntrolyConfig, resolve_tuning_kwargs
+from .config import EntrolyConfig, load_active_tuning_config, resolve_tuning_kwargs
 from .epistemic_router import (
     EpistemicRouter,
 )
@@ -1918,29 +1918,22 @@ def create_mcp_server(
     # ...); resolve_tuning_kwargs bridges nested + legacy-flat keys and falls
     # back to defaults for anything missing/invalid, so an autotuned config
     # actually reaches the live engine instead of being silently dropped.
-    # Search order: a dev/source autotune result (bench/) overrides the
-    # packaged baseline (entroly/data/), which ships in the wheel so pip & MCP
-    # end users get the curated config too (bench/ is not packaged). Falls back
-    # to engine defaults if neither is present/parseable.
+    # Search order: an explicit/project-scoped config overrides a dev/source
+    # autotune result (bench/), which overrides the packaged baseline
+    # (entroly/data/). Falls back to engine defaults if none are parseable.
     _tuning_cfg = {}
-    _here = Path(__file__).resolve().parent
-    for _tuning_path in (
-        _here.parent / "bench" / "tuning_config.json",   # source checkout / autotuned (gitignored)
-        _here / "data" / "tuning_defaults.json",         # packaged baseline (ships in the wheel)
-    ):
-        if _tuning_path.exists():
-            try:
-                _tuning_cfg = json.loads(_tuning_path.read_text(encoding="utf-8"))
-                break
-            except Exception as e:
-                logger.warning(f"Failed to load {_tuning_path.name}: {e}")
+    _tuning_path = None
+    _active_tuning = load_active_tuning_config()
+    if _active_tuning is not None:
+        _tuning_path, _tuning_cfg = _active_tuning
 
     _tuning_kwargs = resolve_tuning_kwargs(_tuning_cfg)
     if _tuning_cfg:
         logger.info(
-            "Applied autotuned config: w_recency=%.3f w_frequency=%.3f "
+            "Applied tuning config from %s: w_recency=%.3f w_frequency=%.3f "
             "w_semantic=%.3f w_entropy=%.3f half_life=%d min_relevance=%.3f "
             "exploration=%.3f hamming=%d ios_skeleton=%.3f ios_reference=%.3f ios_diversity=%.3f",
+            _tuning_path,
             _tuning_kwargs["weight_recency"], _tuning_kwargs["weight_frequency"],
             _tuning_kwargs["weight_semantic_sim"], _tuning_kwargs["weight_entropy"],
             _tuning_kwargs["decay_half_life_turns"], _tuning_kwargs["min_relevance_threshold"],
@@ -4577,16 +4570,12 @@ def _start_autotune_daemon(engine: EntrolyEngine) -> None:
     """
     import threading
 
-    # Check if autotuning is enabled in tuning_config.json
-    config_path = Path(__file__).parent.parent / "bench" / "tuning_config.json"
+    # Check if autotuning is enabled in the active tuning config.
     enabled = True
-    if config_path.exists():
-        try:
-            import json as _json
-            cfg = _json.loads(config_path.read_text())
-            enabled = cfg.get("autotuner", {}).get("enabled", True)
-        except Exception:
-            pass
+    active_config = load_active_tuning_config()
+    if active_config is not None:
+        _, cfg = active_config
+        enabled = cfg.get("autotuner", {}).get("enabled", True)
 
     if not enabled:
         logger.info("Autotune: disabled via tuning_config.json")
@@ -4598,17 +4587,20 @@ def _start_autotune_daemon(engine: EntrolyEngine) -> None:
     def _hot_reload_weights():
         """Read tuning_config.json and push weights into the live engine."""
         try:
-            import json as _json
-            cfg = _json.loads(config_path.read_text())
-            w_r = cfg.get("weight_recency", 0.30)
-            w_f = cfg.get("weight_frequency", 0.25)
-            w_s = cfg.get("weight_semantic_sim", 0.25)
-            w_e = cfg.get("weight_entropy", 0.20)
+            active_config = load_active_tuning_config()
+            if active_config is None:
+                return False
+            config_path, cfg = active_config
+            weights = resolve_tuning_kwargs(cfg)
+            w_r = weights["weight_recency"]
+            w_f = weights["weight_frequency"]
+            w_s = weights["weight_semantic_sim"]
+            w_e = weights["weight_entropy"]
             if engine._use_rust:
                 with _weight_lock:
                     engine._rust.set_weights(w_r, w_f, w_s, w_e)
                 logger.info(
-                    f"Autotune: hot-reloaded weights -> "
+                    f"Autotune: hot-reloaded weights from {config_path} -> "
                     f"R={w_r:.2f} F={w_f:.2f} S={w_s:.2f} E={w_e:.2f}"
                 )
             return True
@@ -4701,7 +4693,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.18"
+        _version = "1.0.19"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

@@ -38,6 +38,33 @@ def test_explicit_budget_is_an_estimated_upper_bound(content_type):
     assert len(out) <= 120 * 4
 
 
+def test_code_compression_preserves_symbol_skeleton_under_budget():
+    filler = "\n".join(
+        f"const unrelatedWorkerHelper{i} = 'tenant project retry queue';"
+        for i in range(300)
+    )
+    content = (
+        "export class IngestionService {\n"
+        "  private async processTraceEventList(params): Promise<void> {\n"
+        "    const traceRecords = this.mapTraceEventsToRecords(params);\n"
+        "  }\n"
+        "  private mapTraceEventsToRecords(params): TraceRecordInsertType[] {\n"
+        "    return params.traceEventList.map((trace) => ({ id: trace.id }));\n"
+        "  }\n"
+        "}\n"
+        "export type TraceRecordInsertType = { id: string };\n"
+        f"{filler}\n"
+    )
+
+    out = sdk.compress(content, budget=160, content_type="code")
+
+    assert len(out) <= 160 * 4
+    assert "IngestionService" in out
+    assert "processTraceEventList" in out
+    assert "mapTraceEventsToRecords" in out
+    assert "TraceRecordInsertType" in out
+
+
 def test_optimize_preserves_query_for_full_engine(monkeypatch):
     seen: list[tuple[int, str]] = []
 

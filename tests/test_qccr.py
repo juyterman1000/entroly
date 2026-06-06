@@ -87,6 +87,124 @@ def test_mmr_selects_diverse():
     assert 2 not in chosen
 
 
+def test_architecture_query_keeps_event_record_mapper_over_generic_ingestion_files():
+    service_filler = "\n".join(
+        f"const unrelatedWorkerHelper{i} = 'tenant project queue retry backoff';"
+        for i in range(120)
+    )
+    frags = [
+        {
+            "source": "file:web/src/pages/api/public/ingestion.ts",
+            "content": (
+                "The public ingestion endpoint validates incoming request JSON with jsonSchema. "
+                "It has access to prisma and then enqueues trace events for the worker."
+            ),
+            "token_count": 45,
+        },
+        {
+            "source": "file:worker/src/queues/otelIngestionQueue.ts",
+            "content": (
+                "The OTEL worker parses each incoming observation through createIngestionEventSchema. "
+                "It then passes events to IngestionService for storage processing."
+            ),
+            "token_count": 50,
+        },
+        {
+            "source": "file:web/src/__tests__/async/traces-ui-table.servertest.ts",
+            "content": (
+                "This test creates trace JSON fixtures and asserts the UI table renders prisma-backed "
+                "trace rows with schema-shaped fields."
+            ),
+            "token_count": 40,
+        },
+        {
+            "source": "file:worker/src/services/IngestionService/index.ts",
+            "content": (
+                "export class IngestionService {\n"
+                "  private async processTraceEventList(params): Promise<void> {\n"
+                "    const traceRecords = this.mapTraceEventsToRecords(params);\n"
+                "    await this.writeEvent(traceRecords, 'trace');\n"
+                "  }\n"
+                "  private async processObservationEventList(params): Promise<void> {\n"
+                "    const observationRecords = this.mapObservationEventsToRecords(params);\n"
+                "  }\n"
+                "  private mapTraceEventsToRecords(params): TraceRecordInsertType[] {\n"
+                "    return params.traceEventList.map((trace) => ({ id: trace.id, project_id: trace.projectId }));\n"
+                "  }\n"
+                "  private mapObservationEventsToRecords(params): ObservationRecordInsertType[] {\n"
+                "    return params.observationEventList.map((obs) => ({ trace_id: obs.traceId, input: obs.body.input }));\n"
+                "  }\n"
+                "}\n"
+                f"{service_filler}\n"
+            ),
+            "token_count": 1800,
+        },
+    ]
+
+    selected = select(
+        frags,
+        token_budget=420,
+        query="How does the trace worker map incoming json to prisma schema in Langfuse?",
+    )
+    sources = [frag["source"] for frag in selected]
+    content = "\n".join(frag["content"] for frag in selected)
+
+    assert sources[0] == "file:worker/src/services/IngestionService/index.ts"
+    assert "mapTraceEventsToRecords" in content
+    assert "TraceRecordInsertType" in content
+    assert "servertest" not in sources[:2]
+
+
+def test_persistence_query_prefers_repositories_over_dataset_ui_components():
+    ui_filler = "\n".join(
+        f"const column{i} = 'dataset run item score table persisted display';"
+        for i in range(80)
+    )
+    frags = [
+        {
+            "source": "file:web/src/features/datasets/components/DatasetRunItemsByRunTable.tsx",
+            "content": (
+                "Dataset run items and scores are shown in this frontend table. "
+                "The component renders persisted scores in dataset run columns.\n"
+                f"{ui_filler}\n"
+            ),
+            "token_count": 900,
+        },
+        {
+            "source": "file:packages/shared/src/server/repositories/definitions.ts",
+            "content": (
+                "export type ScoreRecordInsertType = z.infer<typeof scoreRecordInsertSchema>;\n"
+                "export type DatasetRunItemRecordInsertType = z.infer<typeof datasetRunItemRecordInsertSchema>;\n"
+                "export const parseClickhouseScore = (record): ScoreRecordInsertType => record;\n"
+                "export const parseClickhouseDatasetRunItem = (record): DatasetRunItemRecordInsertType => record;\n"
+            ),
+            "token_count": 180,
+        },
+        {
+            "source": "file:packages/shared/src/server/repositories/scores.ts",
+            "content": (
+                "export const upsertScore = async (score: Partial<ScoreRecordReadType>) => {\n"
+                "  await upsertClickhouse({ table: 'scores', values: [score], eventBodyMapper: mapScore });\n"
+                "}\n"
+                "const datasetJoin = `JOIN dataset_run_items_rmt dri ON s.trace_id = dri.trace_id`;\n"
+            ),
+            "token_count": 180,
+        },
+    ]
+
+    selected = select(
+        frags,
+        token_budget=360,
+        query="How are dataset run items and scores persisted in Langfuse?",
+    )
+    sources = [frag["source"] for frag in selected]
+    content = "\n".join(frag["content"] for frag in selected)
+
+    assert sources[0] != "file:web/src/features/datasets/components/DatasetRunItemsByRunTable.tsx"
+    assert any("/server/repositories/" in source for source in sources[:2])
+    assert "ScoreRecordInsertType" in content or "upsertClickhouse" in content
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

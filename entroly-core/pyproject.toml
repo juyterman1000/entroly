@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "entroly-core"
-version = "1.0.18"
+version = "1.0.19"
 description = "Rust core for Entroly: Context Receipts, deterministic ingestion/ranking, dependency audits, and local context optimization"
 readme = "README.md"
 license = "Apache-2.0"

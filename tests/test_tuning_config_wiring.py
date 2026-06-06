@@ -6,7 +6,9 @@ autotuned values were silently dropped and the engine always used defaults.
 """
 from __future__ import annotations
 
-from entroly.config import EntrolyConfig, resolve_tuning_kwargs
+import json
+
+from entroly.config import EntrolyConfig, load_active_tuning_config, resolve_tuning_kwargs, writable_tuning_config_path
 
 _DEFAULTS = EntrolyConfig()
 
@@ -124,3 +126,23 @@ def test_rust_engine_accepts_threaded_config():
     }
     eng = _build_rust_engine(EntrolyConfig(**resolve_tuning_kwargs(cfg)))
     assert eng is not None
+
+
+def test_project_scoped_tuning_config_precedes_packaged_defaults(tmp_path, monkeypatch):
+    """Profile/role writes must be read by runtime startup, not just by CLI."""
+    state_dir = tmp_path / "state"
+    monkeypatch.setenv("ENTROLY_DIR", str(state_dir))
+
+    path = writable_tuning_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"weights": {"recency": 0.77, "frequency": 0.11}}),
+        encoding="utf-8",
+    )
+
+    loaded = load_active_tuning_config()
+    assert loaded is not None
+    loaded_path, cfg = loaded
+    assert loaded_path == path
+    assert cfg["weights"]["recency"] == 0.77
+    assert resolve_tuning_kwargs(cfg)["weight_recency"] == 0.77

@@ -4539,6 +4539,7 @@ async def _witness_train_route(request: Request) -> JSONResponse:
 def create_proxy_app(
     engine: Any, config: ProxyConfig | None = None,
     start_dashboard: bool = True,
+    start_autotune: bool | None = None,
 ) -> Starlette:
     """Create the Starlette ASGI app for the prompt compiler proxy."""
     proxy = PromptCompilerProxy(engine, config)
@@ -4553,15 +4554,23 @@ def create_proxy_app(
         except Exception as e:
             logger.warning(f"Dashboard failed to start: {e}")
 
-    # Start the autotune RL daemon — continuously improves weights in background.
-    # Lazy import to avoid circular dependency (server.py ↔ proxy.py).
-    try:
-        import importlib
-        _server_mod = importlib.import_module("entroly.server")
-        _server_mod._start_autotune_daemon(engine)
-        logger.info("Autotune RL daemon started (background, nice+10)")
-    except Exception as e:
-        logger.debug(f"Autotune daemon not started: {e}")
+    # Benchmark autotune is useful, but it is CPU-heavy in source checkouts.
+    # Keep proxy startup responsive by making it opt-in for this path.
+    if start_autotune is None:
+        start_autotune = os.environ.get("ENTROLY_AUTOTUNE_DAEMON", "0").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+    if start_autotune:
+        # Lazy import to avoid circular dependency (server.py ↔ proxy.py).
+        try:
+            import importlib
+            _server_mod = importlib.import_module("entroly.server")
+            _server_mod._start_autotune_daemon(engine)
+            logger.info("Autotune RL daemon started (background, nice+10)")
+        except Exception as e:
+            logger.debug(f"Autotune daemon not started: {e}")
 
     # Starlette >= 0.21 removed on_startup/on_shutdown from __init__.
     # Use lifespan context manager for forward-compatible startup/shutdown.

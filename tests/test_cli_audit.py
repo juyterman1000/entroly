@@ -18,9 +18,12 @@ README.md. No network, no model API, no real LLM calls.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -127,6 +130,31 @@ def test_entroly_help_runs():
     assert "entroly" in proc.stdout.lower()
 
 
+def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
+    """`entroly batch --json` is a CI surface, so stdout must be JSON only."""
+    env = os.environ.copy()
+    env["ENTROLY_DIR"] = str(tmp_path / "state")
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["ENTROLY_DISABLE_UPDATE_CHECK"] = "1"
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "entroly.cli", "batch", "--budget", "256", "--json"],
+        input="Where is the CLI wired?\n",
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(ROOT),
+        env=env,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert proc.stdout.lstrip().startswith("[")
+    payload = json.loads(proc.stdout)
+    assert payload[0]["query"] == "Where is the CLI wired?"
+
+
 @pytest.mark.parametrize("subcmd", [
     "wrap", "ravs", "proxy", "serve", "dashboard", "demo", "batch",
     "benchmark", "go", "daemon", "verify", "verify-code", "compile",
@@ -147,6 +175,69 @@ def test_ravs_subactions_resolve(ravs_action: str):
     assert "usage" in (proc.stdout + proc.stderr).lower(), (
         f"`entroly ravs {ravs_action} --help` did not emit a usage message"
     )
+
+
+def test_ravs_capture_command_writes_event_log(tmp_path: Path):
+    """The nested --command flag must not overwrite the top-level subcommand."""
+    log_path = tmp_path / "ravs" / "events.jsonl"
+    env = os.environ.copy()
+    env["ENTROLY_DISABLE_UPDATE_CHECK"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "entroly.cli",
+            "ravs",
+            "capture",
+            "--command",
+            "pytest tests/test_cli_audit.py",
+            "--exit-code",
+            "0",
+            "--stdout",
+            "1 passed",
+            "--log",
+            str(log_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(ROOT),
+        env=env,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "Captured" in proc.stdout
+    assert "usage: entroly [-h]" not in proc.stdout
+    events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert [event["type"] for event in events] == ["request", "outcome"]
+    assert events[1]["event_type"] == "test"
+    assert events[1]["value"] == "pass"
+
+
+def test_profile_save_load_uses_valid_defaults_when_no_local_config(tmp_path: Path, monkeypatch):
+    """Fresh projects should be able to save/load a profile from packaged defaults."""
+    from entroly import cli
+
+    state_dir = tmp_path / "state"
+    target_config = tmp_path / "runtime" / "tuning_config.json"
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", state_dir)
+    monkeypatch.setattr(cli, "_writable_tuning_config_path", lambda: target_config)
+
+    save_rc = cli.cmd_profile(SimpleNamespace(profile_action="save", name="fresh"))
+    assert save_rc is None
+
+    profile_path = state_dir / "profiles" / "fresh.json"
+    saved = json.loads(profile_path.read_text(encoding="utf-8"))
+    assert saved["weights"]["recency"] == 0.30
+
+    load_rc = cli.cmd_profile(SimpleNamespace(profile_action="load", name="fresh"))
+    assert load_rc is None
+    loaded = json.loads(target_config.read_text(encoding="utf-8"))
+    assert loaded == saved
 
 
 @pytest.mark.parametrize("agent", [

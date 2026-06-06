@@ -34,6 +34,7 @@ from pathlib import Path
 
 import pytest
 
+import entroly.auto_index as auto_index_module
 from entroly.auto_index import auto_index
 from entroly.config import EntrolyConfig
 from entroly.server import EntrolyEngine
@@ -284,3 +285,21 @@ def test_auto_index_force_overrides_skip(tmp_path: Path):
     (tmp_path / "real.py").write_text("def real(): return 42\n")
     result = auto_index(engine, project_dir=str(tmp_path), force=True)
     assert result["status"] == "indexed"  # not "skipped"
+
+
+def test_auto_index_size_cap_allows_large_hot_source_files(monkeypatch):
+    monkeypatch.delenv("ENTROLY_MAX_FILE_BYTES", raising=False)
+
+    hot_source_cap = auto_index_module._max_bytes_for_path(
+        "worker/src/services/IngestionService/index.ts"
+    )
+    generated_cap = auto_index_module._max_bytes_for_path(
+        "web/public/generated/api/openapi.yml"
+    )
+    fixture_cap = auto_index_module._max_bytes_for_path(
+        "packages/shared/scripts/seeder/utils/framework-traces/beeai.json"
+    )
+
+    assert hot_source_cap >= 60 * 1024
+    assert generated_cap == auto_index_module.MAX_FILE_BYTES
+    assert fixture_cap == auto_index_module.MAX_FILE_BYTES

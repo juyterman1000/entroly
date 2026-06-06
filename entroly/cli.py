@@ -50,7 +50,12 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.18"
+    __version__ = "1.0.19"
+
+from entroly.config import (
+    load_active_tuning_config as _load_active_tuning_config,
+    writable_tuning_config_path as _writable_tuning_config_path,
+)
 
 # ── Force UTF-8 output on Windows ──
 # Windows terminals default to cp1252 which can't encode ✓/✗/─/⚡.
@@ -747,7 +752,11 @@ def cmd_proxy(args):
         _check_upstream(config)
 
     # Create the ASGI app (this also starts the dashboard on :9378)
-    app = create_proxy_app(engine, config)
+    app = create_proxy_app(
+        engine,
+        config,
+        start_autotune=getattr(args, "autotune_daemon", False),
+    )
 
     print(f"""
   {C.GREEN}{C.BOLD}Proxy live at http://{config.host}:{config.port}{C.RESET}
@@ -1102,7 +1111,6 @@ def cmd_export(args):
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Export{C.RESET}\n")
 
     entroly_dir = Path.home() / ".entroly"
-    tuning_config = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
 
     export_data = {
         "exported_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1110,12 +1118,11 @@ def cmd_export(args):
     }
 
     # Include tuning config
-    if tuning_config.exists():
-        try:
-            export_data["tuning_config"] = json.loads(tuning_config.read_text())
-            print(f"  {C.GREEN}[+]{C.RESET} tuning_config.json")
-        except (json.JSONDecodeError, OSError):
-            pass
+    active_config = _load_active_tuning_config()
+    if active_config is not None:
+        tuning_path, tuning_config = active_config
+        export_data["tuning_config"] = tuning_config
+        print(f"  {C.GREEN}[+]{C.RESET} {tuning_path.name}")
 
     # Include telemetry prefs
     telem_file = entroly_dir / "telemetry.json"
@@ -1154,9 +1161,10 @@ def cmd_import(args):
 
     # Restore tuning config
     if "tuning_config" in data:
-        tuning_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
+        tuning_path = _writable_tuning_config_path()
+        tuning_path.parent.mkdir(parents=True, exist_ok=True)
         tuning_path.write_text(json.dumps(data["tuning_config"], indent=2) + "\n")
-        print(f"  {C.GREEN}[+]{C.RESET} tuning_config.json restored")
+        print(f"  {C.GREEN}[+]{C.RESET} tuning_config.json restored to {tuning_path}")
 
     print(f"\n  {C.GREEN}{C.BOLD}Import complete.{C.RESET} Restart proxy/serve to apply.\n")
 
@@ -1165,25 +1173,21 @@ def cmd_drift(args):
     """entroly drift — detect weight drift / staleness (Gap #30)."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Drift Detection{C.RESET}\n")
 
-    tuning_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
-    if not tuning_path.exists():
+    active_config = _load_active_tuning_config()
+    if active_config is None:
         print(f"  {C.GRAY}No tuning_config.json found -- using defaults (no drift possible).{C.RESET}\n")
         return
-
-    try:
-        config = json.loads(tuning_path.read_text())
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"  {C.RED}Cannot read tuning_config.json: {e}{C.RESET}")
-        return
+    tuning_path, config = active_config
+    print(f"  {C.GRAY}Config: {tuning_path}{C.RESET}")
 
     # Default weights for comparison. Keep keys in sync with cmd_doctor and
     # migrate defaults — mismatched keys silently report bogus drift.
-    defaults = {"recency": 0.30, "frequency": 0.25, "semantic": 0.25, "entropy": 0.20}
+    defaults = {"recency": 0.30, "frequency": 0.25, "semantic_sim": 0.25, "entropy": 0.20}
     current = config.get("weights", {})
 
     total_drift = 0.0
     for key, default_val in defaults.items():
-        cur_val = current.get(key, default_val)
+        cur_val = current.get(key, current.get("semantic", default_val) if key == "semantic_sim" else default_val)
         drift = abs(cur_val - default_val)
         total_drift += drift
         indicator = C.GREEN if drift < 0.05 else C.YELLOW if drift < 0.15 else C.RED
@@ -1215,16 +1219,17 @@ def cmd_profile(args):
 
     if args.profile_action == "save":
         # Save current tuning config as a named profile
-        tuning_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
-        if not tuning_path.exists():
-            print(f"  {C.RED}No tuning_config.json to save.{C.RESET}")
+        active_config = _load_active_tuning_config()
+        if active_config is None:
+            print(f"  {C.RED}No tuning defaults available to save.{C.RESET}")
             return 1
+        tuning_path, config = active_config
         profiles_dir.mkdir(parents=True, exist_ok=True)
         name = args.name or hashlib.sha256(os.getcwd().encode()).hexdigest()[:8]
         profile_path = profiles_dir / f"{name}.json"
-        import shutil
-        shutil.copy2(str(tuning_path), str(profile_path))
+        profile_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         print(f"  {C.GREEN}Profile '{name}' saved{C.RESET} ({profile_path})")
+        print(f"  {C.GRAY}Source: {tuning_path}{C.RESET}")
 
     elif args.profile_action == "load":
         if not args.name:
@@ -1234,10 +1239,12 @@ def cmd_profile(args):
         if not profile_path.exists():
             print(f"  {C.RED}Profile '{args.name}' not found.{C.RESET}")
             return 1
-        tuning_path = Path(os.path.dirname(__file__)).parent / "tuning_config.json"
+        tuning_path = _writable_tuning_config_path()
+        tuning_path.parent.mkdir(parents=True, exist_ok=True)
         import shutil
         shutil.copy2(str(profile_path), str(tuning_path))
         print(f"  {C.GREEN}Profile '{args.name}' loaded.{C.RESET} Restart proxy to apply.")
+        print(f"  {C.GRAY}Wrote: {tuning_path}{C.RESET}")
 
     elif args.profile_action == "list":
         if not profiles_dir.exists():
@@ -1255,7 +1262,8 @@ def cmd_profile(args):
 
 def cmd_batch(args):
     """entroly batch — headless/CI mode for batch optimization (Gap #33)."""
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Batch Mode{C.RESET}\n")
+    if not args.json_output:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Batch Mode{C.RESET}\n")
 
     from entroly.auto_index import auto_index
     from entroly.server import EntrolyEngine
@@ -1263,9 +1271,9 @@ def cmd_batch(args):
     engine = EntrolyEngine()
     result = auto_index(engine)
 
-    if result["status"] == "indexed":
+    if result["status"] == "indexed" and not args.json_output:
         print(f"  {C.GREEN}Indexed {result['files_indexed']} files{C.RESET}")
-    elif result["status"] == "skipped":
+    elif result["status"] == "skipped" and not args.json_output:
         print(f"  {C.GRAY}Using persistent index ({result.get('existing_fragments', 0)} fragments){C.RESET}")
 
     # Read queries from stdin or file
@@ -3401,21 +3409,18 @@ def cmd_role(args):
             print(f"  {C.RED}Unknown role.{C.RESET} Valid: {valid}")
             return
         role = roles[name]
-        tuning_path = Path(__file__).parent / "tuning_config.json"
-        tc = {}
-        if tuning_path.exists():
-            try:
-                with open(tuning_path) as f:
-                    tc = json.load(f)
-            except Exception:
-                pass
+        active_config = _load_active_tuning_config()
+        tc = dict(active_config[1]) if active_config is not None else {}
         tc["weights"] = role["weights"]
-        with open(tuning_path, "w") as f:
+        tuning_path = _writable_tuning_config_path()
+        tuning_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tuning_path, "w", encoding="utf-8") as f:
             json.dump(tc, f, indent=2)
         print(f"  {C.GREEN}Applied '{name}' role preset:{C.RESET}")
         w = role["weights"]
         print(f"    R={w['recency']:.2f}  F={w['frequency']:.2f}  "
               f"S={w['semantic']:.2f}  E={w['entropy']:.2f}")
+        print(f"    {C.GRAY}Wrote {tuning_path}{C.RESET}")
         print(f"    {C.GRAY}{role['note']}{C.RESET}")
         print(f"    {C.GRAY}Run {C.CYAN}entroly autotune{C.GRAY} to calibrate on your codebase.{C.RESET}\n")
 
@@ -4313,7 +4318,7 @@ def cmd_ravs(args):
         if use_stdin:
             result = capture_from_stdin(log_path=log_path)
         else:
-            command = getattr(args, "command", None)
+            command = getattr(args, "capture_command", None)
             exit_code = getattr(args, "exit_code", None)
             if command is None or exit_code is None:
                 if not quiet:
@@ -4535,6 +4540,10 @@ def main():
     proxy_parser.add_argument(
         "--debug", action="store_true",
         help="Enable debug-level logging (all subsystem details to stderr)",
+    )
+    proxy_parser.add_argument(
+        "--autotune-daemon", action="store_true",
+        help="Start the benchmark autotune daemon alongside the proxy (off by default)",
     )
     proxy_parser.add_argument(
         "--bypass", action="store_true",
@@ -5094,7 +5103,7 @@ def main():
         help="Suppress output (for hook usage)",
     )
     ravs_capture_parser.add_argument(
-        "--command", type=str, default=None,
+        "--command", dest="capture_command", type=str, default=None,
         help="Command string (used with --exit-code instead of --stdin)",
     )
     ravs_capture_parser.add_argument(

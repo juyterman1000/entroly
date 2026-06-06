@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "Auditable context control plane for AI agents: context receipts, local optimization, MCP, and app SDK helpers. Pure WebAssembly, no Python dependency.",
   "main": "index.js",
   "types": "index.d.ts",

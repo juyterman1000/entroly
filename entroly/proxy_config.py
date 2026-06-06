@@ -375,14 +375,12 @@ class ProxyConfig:
         Overlays EGTC, IOS, and ECDB params from the autotune-managed config.
         Each param falls back to the dataclass default if absent.
         """
-        tc_path = Path(__file__).parent / "tuning_config.json"
-        if not tc_path.exists():
+        from .config import load_active_tuning_config
+
+        active_config = load_active_tuning_config()
+        if active_config is None:
             return
-        try:
-            with open(tc_path) as f:
-                tc = json.load(f)
-        except Exception:
-            return  # non-critical
+        tc_path, tc = active_config
 
         if not isinstance(tc, dict):
             return  # Guard against non-object JSON (e.g. array or string)
@@ -402,7 +400,7 @@ class ProxyConfig:
             ):
                 if key in egtc:
                     setattr(self, attr, float(egtc[key]))
-            logger.debug(f"EGTC coefficients from tuning_config.json: {egtc}")
+            logger.debug(f"EGTC coefficients from {tc_path}: {egtc}")
 
         # IOS coefficients
         ios = tc.get("ios", {})
@@ -413,7 +411,7 @@ class ProxyConfig:
                 self.ios_reference_info_factor = float(ios["reference_info_factor"])
             if "diversity_floor" in ios:
                 self.ios_diversity_floor = float(ios["diversity_floor"])
-            logger.debug(f"IOS coefficients from tuning_config.json: {ios}")
+            logger.debug(f"IOS coefficients from {tc_path}: {ios}")
 
         # ECDB coefficients
         ecdb = tc.get("ecdb", {})
@@ -427,4 +425,4 @@ class ProxyConfig:
                 if key in ecdb and hasattr(self, attr):
                     val = ecdb[key]
                     setattr(self, attr, int(val) if key == "min_budget" else float(val))
-            logger.debug(f"ECDB coefficients from tuning_config.json: {ecdb}")
+            logger.debug(f"ECDB coefficients from {tc_path}: {ecdb}")

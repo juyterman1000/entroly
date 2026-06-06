@@ -44,6 +44,9 @@ def _resolve_log_path() -> str:
 def _append_event(log_path: str, event: dict) -> None:
     """Append a single JSON event to the log. Atomic-ish via append mode."""
     line = json.dumps(event, separators=(",", ":"), ensure_ascii=False)
+    parent = os.path.dirname(log_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 

@@ -24,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from .profiles import get_profile
 
@@ -127,6 +128,121 @@ def _enforce_budget(out: str, budget: int | None) -> str:
     return _budget_bounded_head(out, budget)
 
 
+_CODE_SYMBOL_KEYWORDS = frozenset({
+    "if", "for", "while", "switch", "catch", "return", "await", "function",
+    "constructor", "super", "async",
+})
+_CODE_SYMBOL_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("class", r"\b(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)"),
+    ("interface", r"\b(?:export\s+)?interface\s+([A-Za-z_][A-Za-z0-9_]*)"),
+    ("type", r"\b(?:export\s+)?type\s+([A-Za-z_][A-Za-z0-9_]*)\b"),
+    ("function", r"\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ("function", r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ("function", r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+    ("const_fn", r"\b(?:export\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\("),
+    (
+        "method",
+        r"^\s*(?:(?:public|private|protected|static|override|readonly)\s+)*(?:async\s+)?"
+        r"([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+    ),
+)
+
+
+def _code_symbol_summary(content: str, budget: int | None) -> str:
+    """Extract a bounded symbol skeleton for code compression.
+
+    Generic code compression is query-agnostic, so it cannot know which body
+    line matters. It should still preserve the map of names a later answer can
+    search for: classes, interfaces, types, functions, and methods.
+    """
+    max_chars = 1200
+    if budget is not None:
+        max_chars = max(160, min(max_chars, budget * 4 // 3))
+
+    seen: set[str] = set()
+    buckets: dict[str, list[str]] = {
+        "class": [],
+        "interface": [],
+        "type": [],
+        "function": [],
+        "const_fn": [],
+        "method": [],
+        "import": [],
+    }
+    # General PascalCase type-name suffixes (across TS / ORMs / DDD), so an
+    # imported type lands in the "type" bucket by universal convention — no
+    # project-specific identifiers.
+    type_suffixes = (
+        "Type", "Record", "Schema", "Model", "Entity", "Dto", "DTO",
+        "Interface", "Props", "Config", "Options", "Params", "Request",
+        "Response", "Payload", "Row", "Document", "Table",
+    )
+    for match in re.finditer(r"\bimport\s+(?:type\s+)?\{([^}]+)\}\s+from\b", content, re.DOTALL):
+        for part in match.group(1).split(","):
+            name = part.strip().removeprefix("type ").split(" as ", 1)[0].strip()
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+                continue
+            key = f"import:{name}"
+            if key in seen:
+                continue
+            seen.add(key)
+            looks_like_type = name[:1].isupper() and name.endswith(type_suffixes)
+            bucket = "type" if looks_like_type else "import"
+            buckets[bucket].append(name)
+
+    for kind, pattern in _CODE_SYMBOL_PATTERNS:
+        flags = re.MULTILINE
+        for match in re.finditer(pattern, content, flags):
+            name = match.group(1)
+            if name in _CODE_SYMBOL_KEYWORDS:
+                continue
+            key = f"{kind}:{name}"
+            if key in seen:
+                continue
+            seen.add(key)
+            buckets[kind].append(name)
+
+    lines = ["# Code symbols"]
+    labels = {
+        "class": "classes",
+        "interface": "interfaces",
+        "type": "types",
+        "method": "methods",
+        "function": "functions",
+        "const_fn": "const functions",
+        "import": "imports",
+    }
+    for kind, label in labels.items():
+        names = buckets[kind]
+        if not names:
+            continue
+        line = f"- {label}: " + ", ".join(names[:40])
+        if len(line) > max_chars:
+            line = line[:max_chars - 3].rstrip(", ") + "..."
+        if sum(len(x) + 1 for x in lines) + len(line) + 1 > max_chars:
+            break
+        lines.append(line)
+
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _prepend_code_symbol_summary(out: str, content: str, budget: int | None) -> str:
+    summary = _code_symbol_summary(content, budget)
+    if not summary:
+        return out
+    if all(name in out for name in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", summary)[:12]):
+        return out
+
+    combined = f"{summary}\n\n{out}" if out else summary
+    if budget is None or len(combined) <= budget * 4:
+        return combined
+    max_chars = max(1, budget * 4)
+    remaining = max_chars - len(summary) - 2
+    if remaining <= 0:
+        return summary[:max_chars]
+    return f"{summary}\n\n{out[:remaining]}"
+
+
 def compress(
     content: str,
     budget: int | None = None,
@@ -178,11 +294,13 @@ def compress(
 
     # Code can use the native skeletonizer. Other formats keep the existing
     # content-aware structural compactors. Neither path is query-conditioned.
-    if content_type == "code" or (content_type is None and _looks_like_code(content)):
+    is_code = content_type == "code" or (content_type is None and _looks_like_code(content))
+    if is_code:
         try:
             out = _compress_code(content, ratio)
         except Exception:
             out, _, _ = universal_compress(content, ratio, content_type)
+        out = _prepend_code_symbol_summary(out, content, budget)
     else:
         out, _, _ = universal_compress(content, ratio, content_type)
 

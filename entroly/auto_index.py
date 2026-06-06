@@ -92,6 +92,8 @@ def _resolve_max_file_bytes() -> int:
 
 
 MAX_FILE_BYTES = _resolve_max_file_bytes()
+SOURCE_FILE_SOFT_MAX_BYTES = int(os.environ.get("ENTROLY_MAX_SOURCE_FILE_BYTES", str(192 * 1024)))
+SOURCE_FILE_SOFT_MAX_BYTES = max(50 * 1024, min(SOURCE_FILE_SOFT_MAX_BYTES, 500 * 1024))
 
 # Hard ceiling for massive files (500 KB) — never even attempt to read
 ABSOLUTE_MAX_BYTES = 500 * 1024
@@ -116,6 +118,19 @@ BINARY_EXTENSIONS = frozenset({
     # Other binary
     ".dat", ".pak", ".map",
 })
+
+SOURCE_CODE_EXTENSIONS = frozenset({
+    ".rs", ".c", ".cpp", ".h", ".hpp", ".cc", ".hxx", ".zig",
+    ".js", ".ts", ".jsx", ".tsx", ".mjs", ".mts", ".cjs", ".cts",
+    ".vue", ".svelte", ".py", ".pyi", ".java", ".kt", ".scala",
+    ".cs", ".csx", ".fs", ".go", ".swift", ".rb", ".php", ".dart",
+    ".ex", ".exs", ".lua", ".r",
+})
+
+LOW_VALUE_LARGE_PATH_MARKERS = (
+    "/generated/", "/dist/", "/build/", "/coverage/", "/__snapshots__/",
+    "/fixtures/", "/fixture/", "/seed/", "/seeder/", "/public/generated/",
+)
 
 # Max files to index in a single pass (configurable via ENTROLY_MAX_FILES)
 MAX_FILES = int(os.environ.get("ENTROLY_MAX_FILES", "5000"))
@@ -301,6 +316,36 @@ def _priority_score(rel_path: str) -> int:
     return 50
 
 
+def _max_bytes_for_path(rel_path: str) -> int:
+    """Return the indexing size cap for one path.
+
+    Keep the global default conservative for generated artifacts, but allow
+    larger real implementation files in source/service/worker directories.
+    Skipping those files creates false economy: the optimizer saves tokens but
+    cannot select the code that actually answers the query.
+    """
+    if os.environ.get("ENTROLY_MAX_FILE_BYTES"):
+        return MAX_FILE_BYTES
+
+    p = rel_path.lower().replace("\\", "/")
+    _, ext = os.path.splitext(p.rsplit("/", 1)[-1])
+    if ext not in SOURCE_CODE_EXTENSIONS:
+        return MAX_FILE_BYTES
+    if any(marker in p for marker in LOW_VALUE_LARGE_PATH_MARKERS):
+        return MAX_FILE_BYTES
+    if (
+        "/src/" in p
+        or "/worker/" in p
+        or "/services/" in p
+        or "/server/" in p
+        or "/packages/" in p
+        or "/lib/" in p
+        or "/core/" in p
+    ):
+        return SOURCE_FILE_SOFT_MAX_BYTES
+    return MAX_FILE_BYTES
+
+
 def _source_type_token_weight(rel_path: str) -> float:
     """Source-type importance weight for knapsack efficiency correction.
 
@@ -463,10 +508,11 @@ def auto_index(
             return ("skip_read", rel_path, 0)
         try:
             size = os.path.getsize(abs_path)
+            max_bytes = _max_bytes_for_path(rel_path)
             if size > ABSOLUTE_MAX_BYTES:
-                return ("skip_size", rel_path, size)
-            if size > MAX_FILE_BYTES or size == 0:
-                return ("skip_size", rel_path, size) if size > MAX_FILE_BYTES else None
+                return ("skip_size", rel_path, size, ABSOLUTE_MAX_BYTES)
+            if size > max_bytes or size == 0:
+                return ("skip_size", rel_path, size, max_bytes) if size > max_bytes else None
         except OSError:
             return None
         try:
@@ -490,7 +536,7 @@ def auto_index(
     # Track the largest skipped files by name so the operator can see
     # WHICH file got dropped, not just "1 too large". Cap at 5 to keep
     # the log line readable on chatty repos.
-    skipped_size_paths: list[tuple[str, int]] = []
+    skipped_size_paths: list[tuple[str, int, int]] = []
 
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
@@ -502,8 +548,8 @@ def auto_index(
                 continue
             if data[0] == "skip_size":
                 skipped_size += 1
-                if len(data) >= 3:
-                    skipped_size_paths.append((data[1], data[2]))
+                if len(data) >= 4:
+                    skipped_size_paths.append((data[1], data[2], data[3]))
                 continue
             if data[0] == "skip_read":
                 skipped_read += 1
@@ -571,12 +617,13 @@ def auto_index(
     # exact issue this guards against. Limit to top 5 by size.
     if skipped_size_paths:
         top = sorted(skipped_size_paths, key=lambda x: -x[1])[:5]
-        items = ", ".join(f"{p} ({s/1024:.0f} KiB)" for p, s in top)
+        items = ", ".join(f"{p} ({s/1024:.0f} KiB > {cap/1024:.0f} KiB cap)" for p, s, cap in top)
         more = f" (+{len(skipped_size_paths) - len(top)} more)" if len(skipped_size_paths) > len(top) else ""
         logger.warning(
-            f"Skipped {skipped_size} file(s) over {MAX_FILE_BYTES // 1024} KiB: "
+            f"Skipped {skipped_size} oversized file(s): "
             f"{items}{more}. "
-            f"Raise the limit with ENTROLY_MAX_FILE_BYTES=<bytes> (capped at 500 KiB)."
+            f"Raise the limit with ENTROLY_MAX_FILE_BYTES or ENTROLY_MAX_SOURCE_FILE_BYTES "
+            f"(capped at 500 KiB)."
         )
 
     # ── Vault Belief Bridge: attach pre-compiled beliefs to fragments ──
@@ -683,7 +730,7 @@ def start_incremental_watcher(
                 continue
             try:
                 size = os.path.getsize(abs_path)
-                if size > MAX_FILE_BYTES or size == 0:
+                if size > ABSOLUTE_MAX_BYTES or size > _max_bytes_for_path(rel_path) or size == 0:
                     continue
                 with open(abs_path, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
