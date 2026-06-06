@@ -15,10 +15,15 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<p align="center"><b>Every AI answer gets a context receipt: what was used, what was omitted, why, and what risks remain.</b></p>
+<p align="center"><b>Cut your Claude / OpenAI / Gemini bill 70–95% on AI coding.</b><br>
+Compress context, keep provider caches hot, and verify every answer with a <b>$0 hallucination guard</b>.</p>
 
 <p align="center">
-  <sub>Auditable context control plane - local-first - Rust + WASM - reversible - token savings measured on real workloads</sub>
+  <sub>Drop-in for <b>Cursor, Claude Code, Codex, Aider + 34 more</b> and custom providers — 30s, no code changes.</sub>
+</p>
+
+<p align="center">
+  <sub>Auditable context control plane · every answer gets a receipt: what was used, what was omitted, why, and the risks that remain · local-first · Rust + WASM · reversible · savings measured on real workloads</sub>
 </p>
 
 <p align="center">
