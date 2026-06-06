@@ -23,15 +23,17 @@
   <a href="https://github.com/juyterman1000/entroly-cost-check-"><img src="https://img.shields.io/badge/GitHub_Action-Cost_Check-purple?style=for-the-badge&logo=githubactions" alt="GitHub Action"></a>
 </p>
 
-<h1 align="center">Entroly — AIトークンコストを70–95%削減</h1>
+<h1 align="center">AIコーディングのClaude / OpenAI / Gemini料金を70–95%削減。</h1>
 
-<h3 align="center">あなたのAIコーディングツールはコードベースの5%しか見えません。<br/>Entrolyは全体像を与えます——わずかなコストで。</h3>
+<h3 align="center">コンテキストを圧縮し、プロバイダーのキャッシュを温存し、すべての回答を$0のハルシネーション・ガードで検証。<br/>Cursor、Claude Code、Codex、Aider + 他34種類とカスタムプロバイダーにドロップイン対応 — 30秒、コード変更不要。</h3>
+
+<p align="center"><sub>監査可能なコンテキスト制御プレーン · すべての回答にレシートを発行：何を使い、何を省き、なぜか、残るリスクは何か · ローカルファースト · Rust + WASM · 可逆 · 実ワークロードで測定した削減</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>インストール</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>ベンチマーク</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ 対応エージェント</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 対応エージェント</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>ダッシュボード</b></a>
 </p>
 

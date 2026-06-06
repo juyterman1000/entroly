@@ -15,15 +15,17 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Corte Custos de Tokens IA em 70–95%</h1>
+<h1 align="center">Corte sua conta de Claude / OpenAI / Gemini em 70–95% na programação com IA.</h1>
 
-<h3 align="center">Suas ferramentas de IA só enxergam 5% do seu código.<br/>O Entroly mostra o panorama completo — por uma fração do custo.</h3>
+<h3 align="center">Comprima o contexto, mantenha os caches do provedor aquecidos e verifique cada resposta com um guardião de alucinações de $0.<br/>Pronto para usar com Cursor, Claude Code, Codex, Aider + 34 outros e provedores personalizados — 30s, sem mudanças de código.</h3>
+
+<p align="center"><sub>Plano de controle de contexto auditável · cada resposta recebe um recibo: o que foi usado, o que foi omitido, por quê e quais riscos permanecem · local-first · Rust + WASM · reversível · economia medida em cargas reais</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>Instalar</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>Benchmarks</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ agentes suportados</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 agentes suportados</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
 </p>
 

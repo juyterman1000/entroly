@@ -15,15 +15,17 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — KI-Token-Kosten um 70–95% senken</h1>
+<h1 align="center">Senke deine Claude- / OpenAI- / Gemini-Rechnung um 70–95% beim KI-Coding.</h1>
 
-<h3 align="center">Deine KI-Coding-Tools sehen nur 5% deiner Codebase.<br/>Entroly gibt ihnen das volle Bild — für einen Bruchteil der Kosten.</h3>
+<h3 align="center">Komprimiere Kontext, halte Provider-Caches warm und prüfe jede Antwort mit einem Halluzinations-Schutz für $0.<br/>Sofort einsatzbereit für Cursor, Claude Code, Codex, Aider + 34 weitere und eigene Provider — 30s, keine Code-Änderungen.</h3>
+
+<p align="center"><sub>Auditierbare Kontroll-Ebene für Kontext · jede Antwort erhält einen Beleg: was genutzt, was weggelassen wurde, warum und welche Risiken bleiben · lokal-first · Rust + WASM · reversibel · Einsparungen an echten Workloads gemessen</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>Installation</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>Benchmarks</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ unterstützte Agenten</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 unterstützte Agenten</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
 </p>
 

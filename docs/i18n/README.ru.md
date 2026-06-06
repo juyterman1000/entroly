@@ -15,15 +15,17 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Сокращение расходов на токены ИИ на 70–95%</h1>
+<h1 align="center">Сократите счёт за Claude / OpenAI / Gemini на 70–95% при ИИ-разработке.</h1>
 
-<h3 align="center">Ваши инструменты ИИ видят только 5% кодовой базы.<br/>Entroly даёт им полную картину — за малую долю стоимости.</h3>
+<h3 align="center">Сжимайте контекст, держите кэши провайдера тёплыми и проверяйте каждый ответ защитой от галлюцинаций за $0.<br/>Готов к работе с Cursor, Claude Code, Codex, Aider + ещё 34 и собственными провайдерами — 30с, без изменений кода.</h3>
+
+<p align="center"><sub>Аудируемый control plane для контекста · каждый ответ получает квитанцию: что использовано, что опущено, почему и какие риски остаются · local-first · Rust + WASM · обратимо · экономия измерена на реальных нагрузках</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>Установка</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>Бенчмарки</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ поддерживаемых агентов</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 поддерживаемых агентов</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Дашборд</b></a>
 </p>
 

@@ -15,15 +15,17 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — AI Token Maliyetlerini %70–95 Azaltın</h1>
+<h1 align="center">AI kodlamada Claude / OpenAI / Gemini faturanızı %70–95 düşürün.</h1>
 
-<h3 align="center">AI kodlama araçlarınız kod tabanınızın yalnızca küçük bir bölümünü görüyor.<br/>Entroly daha geniş bir bağlam seçimi sunar — daha az token ile.</h3>
+<h3 align="center">Bağlamı sıkıştırın, sağlayıcı önbelleklerini sıcak tutun ve her yanıtı $0 halüsinasyon korumasıyla doğrulayın.<br/>Cursor, Claude Code, Codex, Aider + 34 tanesi ve özel sağlayıcılar için hazır — 30sn, kod değişikliği yok.</h3>
+
+<p align="center"><sub>Denetlenebilir bağlam kontrol düzlemi · her yanıt bir makbuz alır: ne kullanıldı, ne atlandı, neden ve hangi riskler kalıyor · yerel öncelikli · Rust + WASM · geri alınabilir · gerçek iş yüklerinde ölçülen tasarruf</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>Kurulum</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>Kıyaslama</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ desteklenen ajan</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 desteklenen ajan</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
 </p>
 

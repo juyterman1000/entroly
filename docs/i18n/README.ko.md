@@ -15,15 +15,17 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — AI 토큰 비용을 70–95% 절감</h1>
+<h1 align="center">AI 코딩의 Claude / OpenAI / Gemini 요금을 70–95% 절감하세요.</h1>
 
-<h3 align="center">당신의 AI 코딩 도구는 코드베이스의 5%만 봅니다.<br/>Entroly는 전체 그림을 보여줍니다 — 극히 적은 비용으로.</h3>
+<h3 align="center">컨텍스트를 압축하고, 공급자 캐시를 따뜻하게 유지하며, 모든 답변을 $0 환각 가드로 검증합니다.<br/>Cursor, Claude Code, Codex, Aider + 34개 이상 및 커스텀 공급자에 드롭인 — 30초, 코드 변경 없음.</h3>
+
+<p align="center"><sub>감사 가능한 컨텍스트 제어 플레인 · 모든 답변에 영수증 제공: 무엇을 사용했고, 무엇을 생략했으며, 왜인지, 어떤 위험이 남는지 · 로컬 우선 · Rust + WASM · 되돌릴 수 있음 · 실제 워크로드에서 측정한 절감</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>설치</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>벤치마크</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ 지원 에이전트</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 지원 에이전트</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>대시보드</b></a>
 </p>
 

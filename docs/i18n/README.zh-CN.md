@@ -22,9 +22,11 @@
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+">
 </p>
 
-<h1 align="center">Entroly — 证据感知的上下文工程</h1>
+<h1 align="center">在 AI 编码中将 Claude / OpenAI / Gemini 账单削减 70–95%。</h1>
 
-<h3 align="center">审查AI答案是否有证据支持。在检索有优化空间时减少大仓库输入上下文。<br/>约30秒完成设置。</h3>
+<h3 align="center">压缩上下文，保持服务商缓存命中，并用 $0 幻觉防护验证每个回答。<br/>即插即用支持 Cursor、Claude Code、Codex、Aider 等 34+ 工具及自定义服务商 — 30 秒，无需改动代码。</h3>
+
+<p align="center"><sub>可审计的上下文控制平面 · 每个回答都附带回执：使用了什么、省略了什么、为什么、以及还剩哪些风险 · 本地优先 · Rust + WASM · 可逆 · 节省量基于真实工作负载实测</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>安装</b></a> ·

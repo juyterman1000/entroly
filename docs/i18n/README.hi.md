@@ -15,15 +15,17 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — AI Token लागत 70–95% कम करें</h1>
+<h1 align="center">AI कोडिंग पर अपना Claude / OpenAI / Gemini बिल 70–95% घटाएँ।</h1>
 
-<h3 align="center">आपके AI कोडिंग टूल्स कोडबेस का सिर्फ 5% देखते हैं।<br/>Entroly उन्हें पूरी तस्वीर देता है — बहुत कम कीमत पर।</h3>
+<h3 align="center">कॉन्टेक्स्ट कंप्रेस करें, प्रोवाइडर कैश को गर्म रखें, और हर उत्तर को $0 हैल्यूसिनेशन गार्ड से सत्यापित करें।<br/>Cursor, Claude Code, Codex, Aider + 34 और तथा कस्टम प्रोवाइडर के लिए ड्रॉप-इन — 30 सेकंड, कोई कोड बदलाव नहीं।</h3>
+
+<p align="center"><sub>ऑडिट-योग्य कॉन्टेक्स्ट कंट्रोल प्लेन · हर उत्तर को एक रसीद मिलती है: क्या इस्तेमाल हुआ, क्या छोड़ा गया, क्यों, और कौन-से जोखिम बचे · लोकल-फर्स्ट · Rust + WASM · प्रतिवर्ती · बचत वास्तविक वर्कलोड पर मापी गई</sub></p>
 
 <p align="center">
   <a href="../../README.md#install"><b>इंस्टॉल</b></a> ·
   <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
   <a href="../../README.md#benchmarks"><b>बेंचमार्क</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>65+ समर्थित एजेंट</b></a> ·
+  <a href="../../README.md#works-with-your-stack"><b>38 समर्थित एजेंट</b></a> ·
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>डैशबोर्ड</b></a>
 </p>
 
