@@ -26,6 +26,7 @@ Run:
 
 from __future__ import annotations
 
+import functools
 import gc
 import gzip
 import json
@@ -579,35 +580,36 @@ class EntrolyEngine:
         # path here and the save path in auto_checkpoint(), so test/probe
         # engines that opt out are fully ephemeral (no read, no write).
         self._index_path = str(Path(self.config.checkpoint_dir) / "index.json.gz")
+        # ── Warm-start: load the persistent index on a BACKGROUND thread ──
+        # The Rust load_index releases the GIL during its heavy decompress/
+        # deserialize, so constructing the engine — and, critically, an MCP
+        # server's startup handshake — stays instant even when a large
+        # warm-start index loads (previously this blocked startup for seconds,
+        # which reads as "broken" to Claude Desktop / Cursor on first launch).
+        # A reentrant lock serializes the one-time load against request-path
+        # engine calls so a request that arrives mid-load waits instead of
+        # racing the Rust &mut borrow; after warm the lock is uncontended.
+        self._rust_lock = threading.RLock()
+        self._warm_ready = threading.Event()
         if self._use_rust and self.config.use_persistent_index:
-            try:
-                loaded = self._rust.load_index(self._index_path)
-                if loaded:
-                    n = self._rust.fragment_count()
-                    logger.info(f"Loaded persistent index: {n} fragments from {self._index_path}")
-                    self._ensure_gzip_index(self._index_path)
-                else:
-                    logger.info("No persistent index found, starting fresh session")
-            except AttributeError:
-                loaded = self._load_index_compat(self._index_path)
-                if loaded:
-                    logger.info(f"Loaded persistent index: {loaded} fragments from {self._index_path}")
-                else:
-                    logger.debug("Rust engine does not support load_index -- skipping persistent index")
-            except OSError:
-                # Index file doesn't exist yet — normal on first run
-                logger.info("No persistent index found, starting fresh session")
-            except Exception as e:
-                try:
-                    loaded = self._load_index_compat(self._index_path)
-                    if loaded:
-                        logger.info(f"Loaded persistent index: {loaded} fragments from {self._index_path}")
-                    else:
-                        logger.warning(f"Failed to load persistent index: {e}")
-                except Exception:
-                    logger.warning(f"Failed to load persistent index: {e}")
-        elif self._use_rust:
-            logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
+            for _name in (
+                "optimize_context", "ingest_fragment", "advance_turn",
+                "recall_relevant", "record_success", "record_failure",
+                "record_retrieval_miss", "record_reward",
+                "record_resolution_outcome", "prefetch_related", "set_model",
+                "set_cache_cost_per_token", "cache_clear", "cache_len",
+                "cache_is_empty", "cache_hit_rate",
+            ):
+                _bound = getattr(self, _name, None)
+                if callable(_bound):
+                    setattr(self, _name, self._serialize_engine_call(_bound))
+            threading.Thread(
+                target=self._warm_load, name="entroly-warm-start", daemon=True
+            ).start()
+        else:
+            if self._use_rust:
+                logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
+            self._warm_ready.set()
 
         # GC freeze at startup: Python's cyclic GC causes ~500ms stalls on large
         # heaps. Freeze all existing long-lived objects and disable automatic
@@ -617,6 +619,61 @@ class EntrolyEngine:
         gc.collect()
         gc.freeze()
         gc.disable()
+
+    def _serialize_engine_call(self, fn):
+        """Wrap an engine method so it serializes against the background
+        warm-start load via the reentrant lock. Prevents a concurrent Rust
+        ``&mut`` borrow during the one-time index load; uncontended after warm.
+        """
+        @functools.wraps(fn)
+        def _wrapper(*args, **kwargs):
+            with self._rust_lock:
+                return fn(*args, **kwargs)
+        return _wrapper
+
+    def wait_until_warm(self, timeout: float | None = None) -> bool:
+        """Block until the background warm-start index load completes.
+
+        Returns True if warm (or no warm load was needed), False on timeout.
+        Most callers never need this — request-path methods already serialize
+        against the load — but it is useful for tests and deterministic flows.
+        """
+        return self._warm_ready.wait(timeout)
+
+    def _warm_load(self) -> None:
+        """Background warm-start: load the persistent index (GIL-releasing in
+        Rust) so construction/handshake stays instant. Holds the engine lock
+        for the load so request-path calls wait rather than racing the borrow.
+        """
+        try:
+            with self._rust_lock:
+                try:
+                    loaded = self._rust.load_index(self._index_path)
+                    if loaded:
+                        n = self._rust.fragment_count()
+                        logger.info(f"Warm-start: restored {n} index fragments from {self._index_path}")
+                        self._ensure_gzip_index(self._index_path)
+                    else:
+                        logger.info("No persistent index found, starting fresh session")
+                except AttributeError:
+                    loaded = self._load_index_compat(self._index_path)
+                    if loaded:
+                        logger.info(f"Warm-start: restored {loaded} index fragments from {self._index_path}")
+                    else:
+                        logger.debug("Rust engine does not support load_index -- skipping persistent index")
+                except OSError:
+                    logger.info("No persistent index found, starting fresh session")
+                except Exception as e:
+                    try:
+                        loaded = self._load_index_compat(self._index_path)
+                        if loaded:
+                            logger.info(f"Warm-start: restored {loaded} index fragments from {self._index_path}")
+                        else:
+                            logger.warning(f"Failed to load persistent index: {e}")
+                    except Exception:
+                        logger.warning(f"Failed to load persistent index: {e}")
+        finally:
+            self._warm_ready.set()
 
     def advance_turn(self) -> None:
         """Advance the turn counter and apply Ebbinghaus decay."""

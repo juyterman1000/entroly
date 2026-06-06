@@ -3918,7 +3918,7 @@ impl EntrolyEngine {
 
     /// Load a previously persisted index from disk.
     /// Returns the number of fragments restored.
-    pub fn load_index(&mut self, path: &str) -> PyResult<usize> {
+    pub fn load_index(&mut self, py: Python<'_>, path: &str) -> PyResult<usize> {
         #[derive(Deserialize)]
         struct IndexSnapshot {
             fragments: HashMap<String, ContextFragment>,
@@ -3939,26 +3939,39 @@ impl EntrolyEngine {
         fn default_gradient_temperature() -> f64 {
             2.0
         }
-        let raw =
-            std::fs::read(path).map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-        // Format detection by magic bytes: 0x1f 0x8b is gzip; '{' (0x7b) is
-        // a legacy plain-JSON index from before persist_index was fixed.
-        // Supporting both lets existing users' warm-start caches keep
-        // loading after the v0.19.1 upgrade.
-        let decoded: Vec<u8> = if raw.len() >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
-            use flate2::read::GzDecoder;
-            use std::io::Read;
-            let mut gz = GzDecoder::new(&raw[..]);
-            let mut out = Vec::with_capacity(raw.len() * 4);
-            gz.read_to_end(&mut out).map_err(|e| {
-                pyo3::exceptions::PyIOError::new_err(format!("gzip decompression failed: {}", e))
+        // Typed error so we can release the GIL for the heavy work (which must
+        // be Ungil/Send: no Python objects) and still map back to the right
+        // Python exception afterwards — `except OSError` must still catch a
+        // missing index file.
+        enum LoadErr {
+            Io(String),
+            Decode(String),
+        }
+        // Read + gzip-decompress + JSON-deserialize the warm-start index
+        // WITHOUT the GIL, so the Python interpreter (e.g. an MCP server's
+        // event loop) stays fully responsive while a large index loads on a
+        // background thread. Format detection by magic bytes: 0x1f 0x8b is
+        // gzip; '{' is a legacy plain-JSON index — both kept for back-compat.
+        let snapshot: IndexSnapshot = py
+            .allow_threads(|| -> Result<IndexSnapshot, LoadErr> {
+                let raw = std::fs::read(path).map_err(|e| LoadErr::Io(e.to_string()))?;
+                let decoded: Vec<u8> = if raw.len() >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
+                    use flate2::read::GzDecoder;
+                    use std::io::Read;
+                    let mut gz = GzDecoder::new(&raw[..]);
+                    let mut out = Vec::with_capacity(raw.len() * 4);
+                    gz.read_to_end(&mut out)
+                        .map_err(|e| LoadErr::Io(format!("gzip decompression failed: {}", e)))?;
+                    out
+                } else {
+                    raw
+                };
+                serde_json::from_slice(&decoded).map_err(|e| LoadErr::Decode(e.to_string()))
+            })
+            .map_err(|e| match e {
+                LoadErr::Io(m) => pyo3::exceptions::PyIOError::new_err(m),
+                LoadErr::Decode(m) => pyo3::exceptions::PyValueError::new_err(m),
             })?;
-            out
-        } else {
-            raw
-        };
-        let snapshot: IndexSnapshot = serde_json::from_slice(&decoded)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         let n = snapshot.fragments.len();
         self.fragments = snapshot.fragments;
         self.fragment_slot_ids = snapshot.fragment_slot_ids;
