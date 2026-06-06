@@ -196,6 +196,9 @@ def test_persistent_engine_loads_index_file(tmp_path: Path):
         use_persistent_index=True,
         checkpoint_dir=ckpt,
     ))
+    # Warm-start is now lazy (loaded on first use) so construction / the MCP
+    # handshake stays instant; trigger the one-time load before asserting.
+    b.wait_until_warm()
     assert b._rust.fragment_count() == expected_count, (
         "Engine B should warm-start from Engine A's persisted index."
     )
