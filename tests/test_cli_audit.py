@@ -132,10 +132,18 @@ def test_entroly_help_runs():
 
 def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
     """`entroly batch --json` is a CI surface, so stdout must be JSON only."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text("def cli_wiring_probe():\n    return 'ok'\n", encoding="utf-8")
+
     env = os.environ.copy()
     env["ENTROLY_DIR"] = str(tmp_path / "state")
+    env["HOME"] = str(tmp_path / "home")
+    env["USERPROFILE"] = str(tmp_path / "home")
+    env["ENTROLY_MAX_FILES"] = "8"
     env["PYTHONIOENCODING"] = "utf-8"
     env["ENTROLY_DISABLE_UPDATE_CHECK"] = "1"
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
 
     proc = subprocess.run(
         [sys.executable, "-m", "entroly.cli", "batch", "--budget", "256", "--json"],
@@ -143,7 +151,7 @@ def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
         capture_output=True,
         text=True,
         timeout=60,
-        cwd=str(ROOT),
+        cwd=str(project),
         env=env,
         encoding="utf-8",
         errors="replace",
