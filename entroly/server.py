@@ -26,7 +26,6 @@ Run:
 
 from __future__ import annotations
 
-import functools
 import gc
 import gzip
 import json
@@ -580,36 +579,20 @@ class EntrolyEngine:
         # path here and the save path in auto_checkpoint(), so test/probe
         # engines that opt out are fully ephemeral (no read, no write).
         self._index_path = str(Path(self.config.checkpoint_dir) / "index.json.gz")
-        # ── Warm-start: load the persistent index on a BACKGROUND thread ──
-        # The Rust load_index releases the GIL during its heavy decompress/
-        # deserialize, so constructing the engine — and, critically, an MCP
-        # server's startup handshake — stays instant even when a large
-        # warm-start index loads (previously this blocked startup for seconds,
-        # which reads as "broken" to Claude Desktop / Cursor on first launch).
-        # A reentrant lock serializes the one-time load against request-path
-        # engine calls so a request that arrives mid-load waits instead of
-        # racing the Rust &mut borrow; after warm the lock is uncontended.
-        self._rust_lock = threading.RLock()
-        self._warm_ready = threading.Event()
-        if self._use_rust and self.config.use_persistent_index:
-            for _name in (
-                "optimize_context", "ingest_fragment", "advance_turn",
-                "recall_relevant", "record_success", "record_failure",
-                "record_retrieval_miss", "record_reward",
-                "record_resolution_outcome", "prefetch_related", "set_model",
-                "set_cache_cost_per_token", "cache_clear", "cache_len",
-                "cache_is_empty", "cache_hit_rate",
-            ):
-                _bound = getattr(self, _name, None)
-                if callable(_bound):
-                    setattr(self, _name, self._serialize_engine_call(_bound))
-            threading.Thread(
-                target=self._warm_load, name="entroly-warm-start", daemon=True
-            ).start()
-        else:
-            if self._use_rust:
-                logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
-            self._warm_ready.set()
+        # ── Warm-start: load the persistent index LAZILY, on first use ──
+        # Previously the index loaded synchronously here, blocking engine
+        # construction (and, critically, an MCP server's startup handshake) for
+        # seconds on a large warm-start cache — which reads as "broken" to
+        # Claude Desktop / Cursor on first launch. Instead, defer the load to
+        # the first optimize/recall call (_ensure_index_loaded). Construction —
+        # and the MCP handshake — return instantly; the one-time load happens on
+        # the FIRST request, on the request thread (no background thread, so no
+        # concurrent Rust &mut borrow / "Already borrowed" race). A lock makes
+        # the one-time load idempotent under concurrent first calls.
+        self._index_load_lock = threading.Lock()
+        self._index_loaded = not (self._use_rust and self.config.use_persistent_index)
+        if self._use_rust and not self.config.use_persistent_index:
+            logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
 
         # GC freeze at startup: Python's cyclic GC causes ~500ms stalls on large
         # heaps. Freeze all existing long-lived objects and disable automatic
@@ -620,33 +603,20 @@ class EntrolyEngine:
         gc.freeze()
         gc.disable()
 
-    def _serialize_engine_call(self, fn):
-        """Wrap an engine method so it serializes against the background
-        warm-start load via the reentrant lock. Prevents a concurrent Rust
-        ``&mut`` borrow during the one-time index load; uncontended after warm.
-        """
-        @functools.wraps(fn)
-        def _wrapper(*args, **kwargs):
-            with self._rust_lock:
-                return fn(*args, **kwargs)
-        return _wrapper
+    def _ensure_index_loaded(self) -> None:
+        """Lazily load the persistent warm-start index on first use.
 
-    def wait_until_warm(self, timeout: float | None = None) -> bool:
-        """Block until the background warm-start index load completes.
-
-        Returns True if warm (or no warm load was needed), False on timeout.
-        Most callers never need this — request-path methods already serialize
-        against the load — but it is useful for tests and deterministic flows.
+        Called at the top of the request-path entry points (optimize/recall).
+        Runs on the calling thread — no background thread — so there is never a
+        concurrent Rust ``&mut`` borrow. Idempotent and lock-guarded so two
+        concurrent first calls don't both load. Cheap no-op after the first.
         """
-        return self._warm_ready.wait(timeout)
-
-    def _warm_load(self) -> None:
-        """Background warm-start: load the persistent index (GIL-releasing in
-        Rust) so construction/handshake stays instant. Holds the engine lock
-        for the load so request-path calls wait rather than racing the borrow.
-        """
-        try:
-            with self._rust_lock:
+        if self._index_loaded:
+            return
+        with self._index_load_lock:
+            if self._index_loaded:
+                return
+            try:
                 try:
                     loaded = self._rust.load_index(self._index_path)
                     if loaded:
@@ -672,8 +642,18 @@ class EntrolyEngine:
                             logger.warning(f"Failed to load persistent index: {e}")
                     except Exception:
                         logger.warning(f"Failed to load persistent index: {e}")
-        finally:
-            self._warm_ready.set()
+            finally:
+                self._index_loaded = True
+
+    def wait_until_warm(self, timeout: float | None = None) -> bool:
+        """Trigger the lazy warm-start load now and return True once loaded.
+
+        The load is synchronous (no background thread); ``timeout`` is accepted
+        for API symmetry but the call returns only after the load completes.
+        Useful for tests and deterministic flows that want the index resident.
+        """
+        self._ensure_index_loaded()
+        return True
 
     def advance_turn(self) -> None:
         """Advance the turn counter and apply Ebbinghaus decay."""
@@ -744,6 +724,7 @@ class EntrolyEngine:
         query: str = "",
     ) -> dict[str, Any]:
         """Select the mathematically optimal subset of context fragments."""
+        self._ensure_index_loaded()  # lazy warm-start on first request
         if token_budget <= 0:
             token_budget = self.config.default_token_budget
 
@@ -1243,6 +1224,7 @@ class EntrolyEngine:
         top_k: int = 5,
     ) -> list[dict[str, Any]]:
         """Semantic recall of relevant fragments."""
+        self._ensure_index_loaded()  # lazy warm-start on first request
         if self._use_rust:
             result = self._rust.recall(query, top_k)
             return [dict(r) for r in result]
