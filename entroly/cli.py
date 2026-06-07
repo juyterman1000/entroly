@@ -110,6 +110,31 @@ def _is_entroly_proxy_running(port: int) -> bool:
     return _is_entroly_service_running(f"http://127.0.0.1:{port}/health", "entroly-proxy")
 
 
+def _tail_text_file(path: Path, max_chars: int = 3000) -> str:
+    """Best-effort tail reader for diagnostics. Never raises."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if len(data) > max_chars:
+        data = data[-max_chars:]
+    return data.decode("utf-8", errors="replace").strip()
+
+
+def _stop_process_best_effort(proc: subprocess.Popen, timeout_s: float = 3.0) -> None:
+    """Terminate a child process without letting cleanup failures escape."""
+    try:
+        if proc.poll() is not None:
+            return
+        proc.terminate()
+        proc.wait(timeout=timeout_s)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _check_first_run() -> None:
     """Show a one-time welcome message on first ever invocation.
 
@@ -1753,7 +1778,29 @@ def _start_proxy_if_needed(port: int) -> bool:
 
     print(f"  {C.GRAY}Starting proxy on port {port}...{C.RESET}")
     proxy_cmd = [sys.executable, "-m", "entroly.cli", "proxy", "--port", str(port)]
-    subprocess.Popen(proxy_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log_path: Path | None = _ENTROLY_DIR / f"wrap-proxy-{port}.log"
+    try:
+        _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
+        log_fh = log_path.open("wb")
+    except OSError:
+        log_fh = subprocess.DEVNULL
+        log_path = None
+
+    try:
+        if hasattr(log_fh, "write"):
+            log_fh.write(f"\n--- entroly wrap proxy start port={port} ---\n".encode("utf-8"))
+            log_fh.flush()
+        try:
+            proc = subprocess.Popen(proxy_cmd, stdout=log_fh, stderr=subprocess.STDOUT)
+        except OSError as e:
+            print(f"  {C.RED}Could not start proxy process:{C.RESET} {e}")
+            if log_path is not None:
+                print(f"  {C.GRAY}Proxy log: {log_path}{C.RESET}")
+            print(f"  {C.GRAY}Try: entroly proxy --port {port} in another terminal to reproduce interactively.{C.RESET}\n")
+            return False
+    finally:
+        if hasattr(log_fh, "close"):
+            log_fh.close()
     import time as _time
     # Poll for up to 30s (150 × 0.2s). The proxy loads a persistent index before
     # uvicorn binds the port — on machines with large indexes this can take 10–15s.
@@ -1762,7 +1809,22 @@ def _start_proxy_if_needed(port: int) -> bool:
         if _is_entroly_proxy_running(port):
             print(f"  {C.GREEN}Proxy running at http://localhost:{port}{C.RESET}")
             return True
+        if proc.poll() is not None:
+            print(f"  {C.RED}Proxy exited before becoming healthy (exit {proc.returncode}).{C.RESET}")
+            if log_path is not None:
+                print(f"  {C.GRAY}Proxy log: {log_path}{C.RESET}")
+                tail = _tail_text_file(log_path)
+                if tail:
+                    print(f"\n{tail}\n")
+            print(f"  {C.GRAY}Try: entroly proxy --port {port} in another terminal to reproduce interactively.{C.RESET}\n")
+            return False
     print(f"  {C.RED}Proxy failed to start on port {port} within 30s.{C.RESET}")
+    if log_path is not None:
+        print(f"  {C.GRAY}Proxy log: {log_path}{C.RESET}")
+        tail = _tail_text_file(log_path)
+        if tail:
+            print(f"\n{tail}\n")
+    _stop_process_best_effort(proc)
     print(f"  {C.GRAY}Try: entroly proxy --port {port} in another terminal to see the error.{C.RESET}\n")
     return False
 

@@ -55,6 +55,159 @@ def test_proxy_identity_probe_requires_entroly_service():
         thread.join(timeout=1)
 
 
+def test_start_proxy_reports_early_child_exit(tmp_path, monkeypatch, capsys):
+    class FakeProc:
+        returncode = 7
+
+        def __init__(self, cmd, stdout=None, stderr=None):
+            self.cmd = cmd
+            if hasattr(stdout, "write"):
+                stdout.write(b"proxy boom\n")
+                stdout.flush()
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    monkeypatch.setattr(cli, "_is_entroly_proxy_running", lambda port: False)
+    monkeypatch.setattr(cli, "_free_port", lambda port: True)
+    monkeypatch.setattr(cli.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(cli.time, "sleep", lambda _s: None)
+
+    assert cli._start_proxy_if_needed(9451) is False
+
+    out = capsys.readouterr().out
+    assert "Proxy exited before becoming healthy" in out
+    assert "wrap-proxy-9451.log" in out
+    assert "proxy boom" in out
+
+
+def test_start_proxy_overwrites_stale_log(tmp_path, monkeypatch, capsys):
+    class FakeProc:
+        returncode = 8
+
+        def __init__(self, cmd, stdout=None, stderr=None):
+            if hasattr(stdout, "write"):
+                stdout.write(b"fresh failure\n")
+                stdout.flush()
+
+        def poll(self):
+            return self.returncode
+
+    (tmp_path / "wrap-proxy-9454.log").write_text("old failure\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    monkeypatch.setattr(cli, "_is_entroly_proxy_running", lambda port: False)
+    monkeypatch.setattr(cli, "_free_port", lambda port: True)
+    monkeypatch.setattr(cli.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(cli.time, "sleep", lambda _s: None)
+
+    assert cli._start_proxy_if_needed(9454) is False
+
+    out = capsys.readouterr().out
+    assert "fresh failure" in out
+    assert "old failure" not in out
+
+
+def test_start_proxy_reports_spawn_failure(tmp_path, monkeypatch, capsys):
+    def fail_popen(*_args, **_kwargs):
+        raise OSError("spawn denied")
+
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    monkeypatch.setattr(cli, "_is_entroly_proxy_running", lambda port: False)
+    monkeypatch.setattr(cli, "_free_port", lambda port: True)
+    monkeypatch.setattr(cli.subprocess, "Popen", fail_popen)
+
+    assert cli._start_proxy_if_needed(9453) is False
+
+    out = capsys.readouterr().out
+    assert "Could not start proxy process" in out
+    assert "spawn denied" in out
+    assert "wrap-proxy-9453.log" in out
+
+
+def test_start_proxy_timeout_reports_log_and_terminates(tmp_path, monkeypatch, capsys):
+    class FakeProc:
+        returncode = None
+        terminated = False
+        waited = False
+
+        def __init__(self, cmd, stdout=None, stderr=None):
+            if hasattr(stdout, "write"):
+                stdout.write(b"still loading\n")
+                stdout.flush()
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            self.waited = True
+            self.returncode = -15
+            return self.returncode
+
+    proc_box = {}
+
+    def fake_popen(*args, **kwargs):
+        proc = FakeProc(*args, **kwargs)
+        proc_box["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    monkeypatch.setattr(cli, "_is_entroly_proxy_running", lambda port: False)
+    monkeypatch.setattr(cli, "_free_port", lambda port: True)
+    monkeypatch.setattr(cli.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli.time, "sleep", lambda _s: None)
+
+    assert cli._start_proxy_if_needed(9452) is False
+
+    out = capsys.readouterr().out
+    assert "Proxy failed to start on port 9452 within 30s" in out
+    assert "wrap-proxy-9452.log" in out
+    assert "still loading" in out
+    assert proc_box["proc"].terminated is True
+    assert proc_box["proc"].waited is True
+
+
+def test_wrap_print_agents_share_proxy_start_diagnostics(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_check_codebase", lambda: True)
+    monkeypatch.setattr(cli, "_start_proxy_if_needed", lambda port: False)
+
+    args = SimpleNamespace(
+        agent="cline",
+        agent_args=[],
+        port=9461,
+        dry_run=False,
+        force=False,
+    )
+
+    assert cli.cmd_wrap(args) == 1
+
+    out = capsys.readouterr().out
+    assert "Cline" in out
+
+
+def test_wrap_cli_agents_share_proxy_start_diagnostics(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_check_codebase", lambda: True)
+    monkeypatch.setattr(cli, "_start_proxy_if_needed", lambda port: False)
+
+    args = SimpleNamespace(
+        agent="aider",
+        agent_args=[],
+        port=9462,
+        dry_run=False,
+        force=False,
+    )
+
+    assert cli.cmd_wrap(args) == 1
+
+    out = capsys.readouterr().out
+    assert "Aider" in out
+
+
 def test_update_check_can_be_disabled(monkeypatch):
     monkeypatch.setenv("ENTROLY_DISABLE_UPDATE_CHECK", "1")
 
