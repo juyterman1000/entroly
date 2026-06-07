@@ -4549,7 +4549,7 @@ def create_proxy_app(
     if start_dashboard:
         try:
             from .dashboard import start_dashboard as _start_dash
-            _start_dash(engine=engine, port=9378, daemon=True)
+            _start_dash(engine=engine, port=9378, daemon=True, proxy_runtime=proxy)
             logger.info("Value dashboard live at http://localhost:9378")
         except Exception as e:
             logger.warning(f"Dashboard failed to start: {e}")

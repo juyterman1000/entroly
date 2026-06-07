@@ -69,7 +69,7 @@ class EntrolyDaemonState:
     The dashboard polls it via /api/control/status.
     """
     status: str = "stopped"  # stopped | starting | running | stopping
-    version: str = "1.0.20"
+    version: str = "1.0.21"
     started_at: float | None = None
 
     # Feature flags
@@ -180,6 +180,7 @@ class EntrolyDaemon:
 
         self._engine: Any = None
         self._proxy_server: Any = None
+        self._proxy_runtime: Any = None  # live PromptCompilerProxy ref for runtime toggles
         self._dashboard_server: Any = None
         self._workers: dict[str, threading.Thread] = {}
         self._proxy_config: Any = None  # live ProxyConfig ref for quality toggle
@@ -396,6 +397,7 @@ class EntrolyDaemon:
                     config,
                     start_dashboard=False,
                 )
+                self._proxy_runtime = getattr(getattr(app, "state", None), "proxy", None)
                 self.state.proxy.running = True
                 self.state.proxy.started_at = time.time()
 
@@ -414,6 +416,7 @@ class EntrolyDaemon:
                 self.state.proxy.error = str(e)
                 logger.exception("Proxy failed: %s", e)
             finally:
+                self._proxy_runtime = None
                 self.state.proxy.running = False
 
         t = threading.Thread(target=_run_proxy, daemon=True, name="entroly-proxy")
@@ -831,20 +834,32 @@ class EntrolyDaemon:
             logger.debug("Feedback journal prune failed: %s", e)
             return False
 
-    def set_optimization(self, enabled: bool):
-        self.state.optimization_enabled = enabled
-        if not enabled:
-            os.environ["ENTROLY_BYPASS"] = "1"
-        else:
-            os.environ.pop("ENTROLY_BYPASS", None)
-        self.state.bypass_mode = not enabled
-
-    def set_bypass(self, enabled: bool):
+    def _apply_bypass_mode(self, enabled: bool) -> None:
+        """Apply bypass consistently to daemon state, env, and live proxy."""
+        enabled = bool(enabled)
         self.state.bypass_mode = enabled
+        self.state.optimization_enabled = not enabled
         if enabled:
             os.environ["ENTROLY_BYPASS"] = "1"
         else:
             os.environ.pop("ENTROLY_BYPASS", None)
+
+        proxy = getattr(self, "_proxy_runtime", None)
+        if proxy is not None:
+            try:
+                proxy._bypass = enabled
+                logger.info(
+                    "Live proxy bypass %s via control API",
+                    "enabled" if enabled else "disabled",
+                )
+            except Exception as e:
+                logger.debug("Live proxy bypass update failed: %s", e)
+
+    def set_optimization(self, enabled: bool):
+        self._apply_bypass_mode(not bool(enabled))
+
+    def set_bypass(self, enabled: bool):
+        self._apply_bypass_mode(bool(enabled))
 
     def set_quality(self, mode: str):
         if mode not in ("fast", "balanced", "max"):

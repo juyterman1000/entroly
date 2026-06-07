@@ -1512,7 +1512,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(status, data)
 
 
-def start_dashboard(engine: Any = None, port: int = 9378, daemon: bool = True):
+def start_dashboard(
+    engine: Any = None,
+    port: int = 9378,
+    daemon: bool = True,
+    proxy_runtime: Any | None = None,
+):
     """
     Start the dashboard HTTP server in a background thread.
 
@@ -1532,7 +1537,8 @@ def start_dashboard(engine: Any = None, port: int = 9378, daemon: bool = True):
     # (not just `entroly daemon`).
     from entroly.daemon import get_daemon, _register_control_api, EntrolyDaemon, _install_log_buffer
     _install_log_buffer()  # Ensure live logs work from any entry point
-    if get_daemon() is None:
+    existing_daemon = get_daemon()
+    if existing_daemon is None:
         _lite = EntrolyDaemon.__new__(EntrolyDaemon)
         _lite.state = __import__("entroly.daemon", fromlist=["EntrolyDaemonState"]).EntrolyDaemonState()
         _lite.state.status = "running"
@@ -1551,7 +1557,8 @@ def start_dashboard(engine: Any = None, port: int = 9378, daemon: bool = True):
         _lite._enable_proxy = True
         _lite._enable_mcp = False
         _lite._repo_paths = [__import__("os").getcwd()]
-        _lite._proxy_config = None  # will be set if proxy is running
+        _lite._proxy_runtime = proxy_runtime
+        _lite._proxy_config = getattr(proxy_runtime, "config", None)
 
         # Populate repo state from engine
         try:
@@ -1570,6 +1577,9 @@ def start_dashboard(engine: Any = None, port: int = 9378, daemon: bool = True):
             pass
 
         _register_control_api(_lite)
+    elif proxy_runtime is not None:
+        existing_daemon._proxy_runtime = proxy_runtime
+        existing_daemon._proxy_config = getattr(proxy_runtime, "config", None)
 
     class _ReuseAddrHTTPServer(HTTPServer):
         allow_reuse_address = True

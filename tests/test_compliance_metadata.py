@@ -43,6 +43,19 @@ def test_dashboard_html_is_utf8_and_not_mojibake():
         assert marker not in DASHBOARD_HTML
 
 
+def test_controls_html_is_utf8_and_surfaces_write_failures():
+    assert '<meta charset="utf-8">' in CONTROLS_HTML
+    assert "Entroly — Control Panel" in CONTROLS_HTML
+    assert "Bypass mode ON — requests forwarded raw" in CONTROLS_HTML
+    assert "Autotune triggered — weights will update" in CONTROLS_HTML
+    assert 'id="controlError"' in CONTROLS_HTML
+    assert "HTTP '+r.status+' from control API" in CONTROLS_HTML
+
+    mojibake_markers = ("â", "Â", "ð", "ï", "Î", "Ã", "\ufffd")
+    for marker in mojibake_markers:
+        assert marker not in CONTROLS_HTML
+
+
 def test_rust_packages_declare_apache_license_metadata():
     for rel in ("entroly-core/Cargo.toml", "entroly-wasm/Cargo.toml"):
         manifest = (ROOT / rel).read_text(encoding="utf-8")

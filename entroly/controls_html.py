@@ -111,6 +111,10 @@ font-size:13px;font-weight:500;transform:translateY(80px);opacity:0;transition:a
 .toast.show{transform:translateY(0);opacity:1;}
 .toast.ok{border-color:rgba(52,211,153,0.3);color:var(--emerald);}
 .toast.err{border-color:rgba(251,113,133,0.3);color:var(--rose);}
+.control-error{display:none;margin-bottom:16px;padding:12px 16px;border-radius:12px;
+background:rgba(251,113,133,0.08);border:1px solid rgba(251,113,133,0.25);
+color:var(--rose);font-size:13px;line-height:1.45;}
+.control-error.show{display:block;}
 @keyframes flash{0%{background:rgba(102,126,234,0.15)}100%{background:transparent}}
 .flash{animation:flash 1.5s ease-out;}
 /* Federation warning */
@@ -129,6 +133,7 @@ border-radius:10px;font-size:12px;color:var(--amber);line-height:1.5;margin-bott
   <div class="status-pill" id="statusPill"><div class="dot"></div><span id="statusText">Connecting...</span></div>
 </div>
 <div class="main">
+<div class="control-error" id="controlError"></div>
 
 <!-- System -->
 <div class="section">
@@ -229,11 +234,31 @@ border-radius:10px;font-size:12px;color:var(--amber);line-height:1.5;margin-bott
 <script>
 function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;
 t.className='toast show '+(ok?'ok':'err');setTimeout(()=>t.className='toast',2500);}
+function controlError(msg=''){const e=document.getElementById('controlError');if(!e)return;
+if(!msg){e.textContent='';e.className='control-error';return;}
+e.textContent=msg;e.className='control-error show';}
 
 async function ctrlPost(url,body={},msg='Done'){
-  try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const d=await r.json();if(d.ok)toast(msg);else toast(d.error||'Failed',false);refresh();}
-  catch(e){toast('Connection error',false);}}
+  try{
+    controlError('');
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    let d={};
+    try{d=await r.json();}catch(_e){d={ok:false,error:'Invalid server response'};}
+    if(r.ok&&d.ok){toast(msg);return d;}
+    const detail=d.error||('HTTP '+r.status+' from control API');
+    controlError(detail);
+    toast(detail,false);
+    return d;
+  }
+  catch(e){
+    const detail='Connection error: '+(e.message||String(e));
+    controlError(detail);
+    toast(detail,false);
+    return {ok:false,error:detail};
+  }
+  finally{
+    refresh();
+  }}
 
 function toggleOpt(el){ctrlPost(el.checked?'/api/control/optimization/enable':'/api/control/optimization/pause',{},el.checked?'Optimization enabled':'Optimization paused');}
 function toggleBypass(el){ctrlPost('/api/control/bypass',{enabled:el.checked},el.checked?'Bypass mode ON — requests forwarded raw':'Bypass mode OFF');}
