@@ -13,6 +13,7 @@
 mod anomaly;
 pub mod archetype;
 mod bm25;
+mod qccr;
 mod cache;
 mod causal;
 mod channel;
@@ -6198,6 +6199,9 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_run, m)?)?;
     m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_report, m)?)?;
     m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_explain_omitted, m)?)?;
+    // ── QCCR retrieval (Rust SSOT; shared by Python via PyO3 + npm via WASM)
+    m.add_function(wrap_pyfunction!(qccr::py_qccr_rank_files, m)?)?;
+    m.add_function(wrap_pyfunction!(qccr::py_qccr_expand_query, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
     m.add_class::<nkbe::NkbeAllocator>()?;
     m.add_class::<cognitive_bus::CognitiveBus>()?;

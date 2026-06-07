@@ -41,6 +41,12 @@ import math
 import re
 from collections import Counter
 
+# QCCR file ranking + query expansion are the Rust single source of truth
+# (entroly-core/src/qccr.rs). Python is a thin wrapper; npm gets the identical
+# logic via the WASM build. Weight DEFAULTS live in Rust.
+from entroly_core import py_qccr_expand_query as _rust_expand_query
+from entroly_core import py_qccr_rank_files as _rust_rank_files
+
 # ── Tokenization (shared with dopt_selector style) ──────────────────────
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _CAMEL_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
@@ -71,144 +77,9 @@ _ENTITY_RE = re.compile(
     r"\b[A-Z][a-z]{2,}\b|\b\d+(?:[.,]\d+)*\b|['\"]([^'\"]{2,40})['\"]"
 )
 
-# ── Ranking signal vocabulary — GENERAL code conventions only ──────────────
-# Deterministic, language-agnostic programming conventions. Deliberately NO
-# repository-specific identifiers (no table names, no project symbols): the
-# scorer must generalize to any codebase, so its only knowledge is of universal
-# naming / directory conventions. Per-repo specialization is the job of the
-# learned layer (archetype / PRISM / autotune), which can override the weights
-# below via tuning_config["qccr_rank"].
-_TEST_PATH_RE = re.compile(
-    r"(^|/)(__tests__|tests?|specs?|e2e|fixtures?|mocks?|__mocks__)(/|$)"
-    r"|[._-](test|spec|stories)\.",
-    re.I,
-)
-_GENERATED_PATH_RE = re.compile(
-    r"/(generated|gen|dist|build|out|coverage|snapshots?|__snapshots__|vendor|"
-    r"migrations?|seed(?:er)?s?)/"
-    r"|[._-](?:generated|min)\.|(?:package-lock|pnpm-lock|yarn\.lock)",
-    re.I,
-)
-_SOURCE_DIR_RE = re.compile(r"/(?:src|lib|core|pkg|internal|app)/", re.I)
-_LOGIC_DIR_RE = re.compile(
-    r"/(?:services?|repositor(?:y|ies)|models?|domain|handlers?|controllers?|"
-    r"workers?|queues?|jobs?|processors?|usecases?|adapters?|mappers?|stores?|"
-    r"dao|db|database|persistence)/",
-    re.I,
-)
-_UI_DIR_RE = re.compile(r"/(?:components?|pages?|views?|widgets?|ui|styles?)/", re.I)
-
-# Query-intent clusters: general programming vocabulary grouped by intent. A
-# query token in a cluster (a) classifies the query's intent and (b) expands the
-# query with sibling vocabulary so natural wording reaches code identifiers
-# (e.g. "map json to schema" reaches `mapEventsToRecords` / `RecordInsertType`).
-_INTENT_CLUSTERS: dict[str, frozenset[str]] = {
-    "mapping": frozenset({
-        "map", "mapping", "mapper", "transform", "convert", "converter",
-        "serialize", "deserialize", "marshal", "unmarshal", "adapt",
-        "translate", "encode", "decode", "parse", "parser",
-    }),
-    "schema": frozenset({
-        "schema", "model", "models", "type", "types", "record", "records",
-        "entity", "entities", "struct", "dto", "interface",
-    }),
-    "ingest": frozenset({
-        "incoming", "request", "payload", "event", "events", "ingest",
-        "ingestion", "consume", "consumer", "intake", "receive", "handler",
-        "queue", "worker", "processor", "stream",
-    }),
-    "persistence": frozenset({
-        "persist", "persistence", "save", "store", "stored", "write", "upsert",
-        "insert", "update", "delete", "repository", "repositories", "dao",
-        "table", "tables", "database", "migration", "query",
-    }),
-}
-# Minimal cross-cluster links: one intent implies likely-adjacent vocabulary.
-_CLUSTER_LINKS: dict[str, tuple[str, ...]] = {
-    "mapping": ("schema",),
-    "ingest": ("mapping", "persistence"),
-    "persistence": ("schema",),
-    "schema": (),
-}
-
-
-def _stem(tok: str) -> str:
-    """Conservative suffix stripper used ONLY for intent classification, so the
-    query's surface morphology (persisted/persisting/persists, maps/mapping,
-    scores, items) matches a cluster's base form. Never produces a stem shorter
-    than 3 chars; BM25 keeps the original tokens untouched."""
-    for suf in ("ings", "ing", "ied", "ies", "ed", "es", "s"):
-        if tok.endswith(suf) and len(tok) - len(suf) >= 3:
-            stem = tok[: -len(suf)]
-            return stem + "y" if suf == "ied" else stem
-    return tok
-
-
-# Stemmed view of the clusters — built once — so intent detection is morphology
-# robust without enumerating every inflected variant.
-_INTENT_CLUSTERS_STEMMED: dict[str, frozenset[str]] = {
-    name: frozenset(_stem(t) for t in vocab)
-    for name, vocab in _INTENT_CLUSTERS.items()
-}
-
-# Structural symbol conventions (general across languages / ORMs). These detect
-# *what a file does* by universal naming shape, not by any project's symbols:
-#   _RE_MAPPER       mapXToY / convertFooIntoBar / toRecordFromEvent
-#   _RE_TRANSFORM    serialize/deserialize/encode/decode/parse/normalize...
-#   _RE_PERSIST      insertX / upsertX / saveX / writeX / findX ...
-#   _RE_SCHEMA_TYPE  XInsertType / XRecord / XSchema / XModel / XEntity / XDto
-#   _RE_SQL          INSERT INTO / UPDATE..SET / SELECT..FROM / CREATE TABLE
-_RE_MAPPER = re.compile(
-    r"\b(?:map|convert|transform|to|from)[A-Za-z0-9_]*?(?:To|From|Into)[A-Z][A-Za-z0-9_]*\b"
-)
-_RE_TRANSFORM = re.compile(
-    r"\b(?:serialize|deserialize|marshal|unmarshal|encode|decode|parse|format|"
-    r"normalize|adapt)[A-Za-z0-9_]*\b",
-    re.I,
-)
-_RE_PERSIST = re.compile(
-    r"\b(?:insert|upsert|save|persist|write|store|create|update|delete|find|"
-    r"fetch|load|select)[A-Z][A-Za-z0-9_]*\b"
-)
-_RE_SCHEMA_TYPE = re.compile(
-    r"\b[A-Z][A-Za-z0-9_]*(?:InsertType|UpdateType|RecordType|Record|Schema|"
-    r"Model|Entity|Dto|DTO|Table|Row|Document)\b"
-)
-_RE_SQL = re.compile(
-    r"\b(?:INSERT\s+INTO|UPDATE\s+\w+\s+SET|SELECT\b[\s\S]{0,200}?\bFROM|"
-    r"CREATE\s+TABLE)\b",
-    re.I,
-)
-
-# ── BM25F field weights (Robertson & Zaragoza 2009, §4) ────────────────────
-# A proper two-field model: each field keeps its OWN length normalization, so a
-# short path field is not penalized for being short (the bug in concatenating a
-# repeated path "title" into the body — that inflates body length / avgdl and
-# corrupts normalization). Path is weighted above body because a query term in
-# the path is a stronger relevance signal than one buried in a long body.
-_BM25F_W_BODY = 1.0
-_BM25F_W_PATH = 2.5
-_BM25F_B_PATH = 0.5
-
-# ── Log-linear file-ranking weights ────────────────────────────────────────
-# BM25F (normalized to [0,1] across the candidate set) is the backbone; every
-# other term is a bounded ADDITIVE adjustment in the same units. This keeps the
-# combination principled (a linear scoring model / learning-to-rank), avoids the
-# multiplicative blow-up that needed a magic cap, and stays interpretable and
-# learnable. Overridable per-repo via tuning_config["qccr_rank"].
-_DEFAULT_RANK_WEIGHTS: dict[str, float] = {
-    "bm25f": 1.0,
-    "test_penalty": -0.45,        # test/spec/mock file, query did not ask for tests
-    "generated_penalty": -0.55,   # generated / vendored / lockfile / migration
-    "source_dir": 0.08,           # lives under src/lib/core/pkg/...
-    "logic_dir_intent": 0.22,     # business-logic dir aligned with a backend intent
-    "ui_penalty_for_logic": -0.30,  # UI/page file for a backend-logic query
-    "basename_hit": 0.30,         # a query term appears in the file's own name
-    "defines_mapper": 0.40,       # owns mapXToY-style mapping (intent-gated)
-    "defines_transform": 0.16,    # serialize/parse/encode-style transform
-    "defines_persistence": 0.30,  # owns insert/upsert/write or raw SQL
-    "defines_schema_type": 0.22,  # declares XRecord/XSchema/XInsertType-style types
-}
+# Ranking vocabulary, structural-feature matchers, two-field BM25F, and the
+# log-linear weight DEFAULTS now live in the Rust core (entroly-core/src/qccr.rs)
+# so Python, npm (WASM), and the CLI all rank identically.
 
 
 def _query_entities(query: str) -> frozenset[str]:
@@ -250,34 +121,9 @@ def _query_tokens(query: str) -> frozenset[str]:
     return frozenset(t for t in _tokenize(query) if len(t) > 2)
 
 
-def _query_intents(base_terms: frozenset[str]) -> frozenset[str]:
-    """Classify the query into general intent clusters (mapping / schema /
-    ingest / persistence). Computed from the ORIGINAL query tokens — never the
-    expanded set — so expansion cannot inflate which intents are active. Matches
-    on stemmed forms so 'persisted'/'maps'/'scores' reach their base vocabulary.
-    """
-    stems = {_stem(t) for t in base_terms}
-    return frozenset(
-        name for name, vocab in _INTENT_CLUSTERS_STEMMED.items() if stems & vocab
-    )
-
-
 def _expanded_query_tokens(query: str) -> frozenset[str]:
-    """Expand natural task wording into likely code vocabulary, generically.
-
-    Deterministic and corpus-agnostic: when a query token falls in an intent
-    cluster, add that cluster's sibling vocabulary (plus a minimal set of
-    linked clusters). This bridges the common gap where a user asks "how is
-    incoming JSON mapped to the schema?" while the code calls that flow
-    `mapEventsToRecords` / `RecordInsertType` — using universal programming
-    vocabulary, with no repository-specific symbols baked in.
-    """
-    terms = set(_query_tokens(query))
-    for name in _query_intents(frozenset(terms)):
-        terms |= _INTENT_CLUSTERS[name]
-        for linked in _CLUSTER_LINKS.get(name, ()):
-            terms |= _INTENT_CLUSTERS[linked]
-    return frozenset(t for t in terms if t not in _STOPWORDS and len(t) > 2)
+    """Query expansion — delegated to the Rust QCCR core (single source)."""
+    return frozenset(_rust_expand_query(query))
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -295,141 +141,20 @@ def _approx_tokens(s: str) -> int:
     return max(1, len(s) // _CHARS_PER_TOKEN)
 
 
-def _bm25f_corpus(
-    bodies: list[str], path_tokens: list[list[str]]
-) -> tuple[list[Counter], list[Counter], list[int], list[int], Counter, float, float]:
-    """Two-field BM25F corpus statistics (body + path).
-
-    Document frequency is computed over the UNION of fields (a term counts once
-    per document); each field keeps its own length series so field-length
-    normalization is independent. This is the correct BM25F formulation —
-    unlike concatenating a repeated path "title" into the body, which inflates
-    body length / avgdl and corrupts normalization.
-    """
-    body_tf: list[Counter] = []
-    path_tf: list[Counter] = []
-    body_len: list[int] = []
-    path_len: list[int] = []
-    df: Counter = Counter()
-    for body, ptoks in zip(bodies, path_tokens):
-        bt = Counter(_tokenize(body))
-        pt = Counter(ptoks)
-        body_tf.append(bt)
-        path_tf.append(pt)
-        body_len.append(sum(bt.values()))
-        path_len.append(sum(pt.values()))
-        for term in set(bt) | set(pt):
-            df[term] += 1
-    n = len(bodies)
-    avg_body = max((sum(body_len) / n) if n else 1.0, 1.0)
-    avg_path = max((sum(path_len) / n) if n else 1.0, 1.0)
-    return body_tf, path_tf, body_len, path_len, df, avg_body, avg_path
-
-
-def _bm25f_score(
-    q_terms: frozenset[str],
-    i: int,
-    body_tf: list[Counter],
-    path_tf: list[Counter],
-    body_len: list[int],
-    path_len: list[int],
-    df: Counter,
-    N: int,
-    avg_body: float,
-    avg_path: float,
-) -> float:
-    """BM25F (Robertson & Zaragoza 2009): per-field length-normalized term
-    frequencies are combined with field weights BEFORE the saturation function,
-    then weighted by IDF and summed over query terms."""
-    score = 0.0
-    bt = body_tf[i]
-    pt = path_tf[i]
-    for term in q_terms:
-        fb = bt.get(term, 0)
-        fp = pt.get(term, 0)
-        if fb == 0 and fp == 0:
-            continue
-        n = df.get(term, 0)
-        idf = math.log(1.0 + (N - n + 0.5) / (n + 0.5))
-        ntf_b = (
-            fb / (1.0 - _BM25_B + _BM25_B * (body_len[i] / avg_body))
-            if fb else 0.0
-        )
-        ntf_p = (
-            fp / (1.0 - _BM25F_B_PATH + _BM25F_B_PATH * (path_len[i] / avg_path))
-            if fp else 0.0
-        )
-        wtf = _BM25F_W_BODY * ntf_b + _BM25F_W_PATH * ntf_p
-        score += idf * (wtf * (_BM25_K1 + 1.0)) / (wtf + _BM25_K1)
-    return score
-
-
-def _rank_features(
-    source: str,
-    text: str,
-    intents: frozenset[str],
-    base_terms: frozenset[str],
-    q_terms: frozenset[str],
-    w: dict[str, float],
-) -> float:
-    """Additive (log-linear) ranking adjustment from GENERAL code conventions.
-
-    Every signal is a universal naming / directory convention — no repository
-    identifiers — and each contributes a bounded weighted term, so the ranking
-    is an interpretable linear model over features rather than a stack of
-    multiplicative magic constants. Structural features are intent-gated so a
-    file is only rewarded for owning behaviour the query actually asked about.
-    """
-    s = source.lower().replace("\\", "/")
-    adj = 0.0
-    wants_tests = bool(
-        base_terms & {"test", "tests", "spec", "assert", "fixture", "mock"}
-    )
-    backend = bool(intents & {"mapping", "ingest", "persistence", "schema"})
-
-    if not wants_tests and _TEST_PATH_RE.search(s):
-        adj += w["test_penalty"]
-    if not wants_tests and _GENERATED_PATH_RE.search(s):
-        adj += w["generated_penalty"]
-    if _SOURCE_DIR_RE.search(s):
-        adj += w["source_dir"]
-    if backend and _LOGIC_DIR_RE.search(s):
-        adj += w["logic_dir_intent"]
-    if backend and _UI_DIR_RE.search(s):
-        adj += w["ui_penalty_for_logic"]
-
-    basename = s.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    if q_terms & set(_tokenize(basename)):
-        adj += w["basename_hit"]
-
-    if (intents & {"mapping", "schema"}) and _RE_MAPPER.search(text):
-        adj += w["defines_mapper"]
-    if (intents & {"mapping", "ingest"}) and _RE_TRANSFORM.search(text):
-        adj += w["defines_transform"]
-    if (intents & {"persistence", "ingest"}) and (
-        _RE_PERSIST.search(text) or _RE_SQL.search(text)
-    ):
-        adj += w["defines_persistence"]
-    if (intents & {"schema", "mapping", "persistence"}) and _RE_SCHEMA_TYPE.search(text):
-        adj += w["defines_schema_type"]
-    return adj
-
-
 _RANK_WEIGHTS_CACHE: dict[str, float] | None = None
 
 
 def _load_rank_weights() -> dict[str, float]:
-    """Ranking weights with per-repo overrides from the learned layer.
+    """Per-repo ranking-weight OVERRIDES from the learned layer (tuning config).
 
-    Defaults are sensible and corpus-agnostic; the archetype / PRISM / autotune
-    pipeline can write a `qccr_rank` block into the active tuning config to
-    specialize ranking for a given codebase — so specialization lives in the
-    learned layer, not hardcoded in the scorer. Loaded once and cached.
+    Weight DEFAULTS live in the Rust core; this returns only the overrides
+    (possibly empty) that the archetype / PRISM / autotune pipeline wrote into
+    tuning_config["qccr_rank"], to pass through to the Rust ranker. Cached.
     """
     global _RANK_WEIGHTS_CACHE
     if _RANK_WEIGHTS_CACHE is not None:
         return _RANK_WEIGHTS_CACHE
-    weights = dict(_DEFAULT_RANK_WEIGHTS)
+    weights: dict[str, float] = {}
     try:
         from .config import load_active_tuning_config
         active = load_active_tuning_config()
@@ -438,11 +163,10 @@ def _load_rank_weights() -> dict[str, float]:
             override = cfg.get("qccr_rank")
             if isinstance(override, dict):
                 for k, v in override.items():
-                    if k in weights:
-                        try:
-                            weights[k] = float(v)
-                        except (TypeError, ValueError):
-                            continue
+                    try:
+                        weights[k] = float(v)
+                    except (TypeError, ValueError):
+                        continue
     except Exception:
         pass
     _RANK_WEIGHTS_CACHE = weights
@@ -606,13 +330,11 @@ def select(
     if not query:
         return fragments
 
-    base_terms = _query_tokens(query)
     q_terms = _expanded_query_tokens(query)
     if not q_terms:
         return fragments
     q_ents = _query_entities(query)
-    intents = _query_intents(base_terms)
-    weights = _load_rank_weights()
+    overrides = _load_rank_weights()  # per-repo overrides from the learned layer
 
     # Group by file
     by_file: dict[str, list[dict]] = {}
@@ -620,35 +342,18 @@ def select(
         src = raw.get("source", "") or ""
         by_file.setdefault(src, []).append(raw)
 
-    # ── File-level ranking: BM25F backbone + log-linear convention features ──
-    # score = w_bm25 · normalize(BM25F(body, path)) + Σ_k w_k · feature_k
-    # A proper two-field BM25F (no length-corrupting path duplication) plus a
-    # linear model over GENERAL code-convention features. BM25F is normalized to
-    # [0,1] across the candidate set so the additive feature weights stay in a
-    # comparable, bounded, interpretable scale.
+    # ── File-level ranking — Rust QCCR core (BM25F + log-linear features) ──
+    # The crown-jewel scorer is the Rust single source of truth: a two-field
+    # BM25F backbone plus a linear model over general code-convention features.
+    # Returns (index, score) best-first; weight defaults live in Rust, Python
+    # passes only per-repo overrides.
     file_sources = list(by_file.keys())
     file_texts = ["\n".join((r.get("content") or "") for r in by_file[s]) for s in file_sources]
-    path_tokens = [_tokenize(src.replace("\\", "/")) for src in file_sources]
-    body_tf, path_tf, body_len, path_len, df, avg_body, avg_path = _bm25f_corpus(
-        file_texts, path_tokens
-    )
     N = len(file_sources)
-    raw_bm25f = [
-        _bm25f_score(
-            q_terms, i, body_tf, path_tf, body_len, path_len, df, N, avg_body, avg_path
-        )
-        for i in range(N)
+    ranked = _rust_rank_files(file_sources, file_texts, query, overrides)
+    file_scores: list[tuple[float, str, str]] = [
+        (score, file_sources[i], file_texts[i]) for i, score in ranked
     ]
-    max_bm25f = max(raw_bm25f) if raw_bm25f else 0.0
-    denom = max_bm25f if max_bm25f > 0 else 1.0
-    file_scores: list[tuple[float, str, str]] = []
-    for i in range(N):
-        src = file_sources[i]
-        text = file_texts[i]
-        score = weights["bm25f"] * (raw_bm25f[i] / denom)
-        score += _rank_features(src, text, intents, base_terms, q_terms, weights)
-        file_scores.append((score, src, text))
-    file_scores.sort(reverse=True)
 
     # engine_s6 edit-target rerank — delegated to the centralized
     # service so this surface stays a thin caller and the recall-safe
