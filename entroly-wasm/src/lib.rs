@@ -24,6 +24,7 @@
 
 mod anomaly;
 mod bm25;
+mod qccr;
 mod cache;
 mod causal;
 mod channel;

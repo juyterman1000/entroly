@@ -20,6 +20,11 @@ js-sys = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Lightweight regex (qccr SSOT). regex-lite is the regex author's dependency-
+# free, much smaller engine — keeps the WASM bundle lean while sharing the same
+# ranking logic as the PyO3 build (which uses full `regex`).
+regex-lite = "0.1"
+
 # Hashing
 md-5 = "0.10"
 
