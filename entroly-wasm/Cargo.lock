@@ -59,13 +59,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "entroly-qccr"
+version = "1.0.19"
+dependencies = [
+ "regex-lite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "entroly-wasm"
 version = "1.0.23"
 dependencies = [
+ "entroly-qccr",
  "flate2",
  "js-sys",
  "md-5",
- "regex-lite",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

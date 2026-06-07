@@ -4,7 +4,7 @@
 //
 // Architecture: MCP Client → JSON-RPC (stdio) → Node.js → Wasm Engine → Results
 
-const { WasmEntrolyEngine } = require('../pkg/entroly_wasm');
+const { WasmEntrolyEngine, qccr_select } = require('../pkg/entroly_wasm');
 const { EntrolyConfig } = require('./config');
 const { CheckpointManager, persistIndex, loadIndex } = require('./checkpoint');
 const { autoIndex, startIncrementalWatcher } = require('./auto_index');
@@ -226,7 +226,35 @@ class EntrolyMCPServer {
         const budget = args.token_budget || this.config.defaultTokenBudget;
         const query = args.query || '';
         const profile = this.taskProfiles.applyToEngine(this.engine, query);
-        const result = this.engine.optimize(budget, query);
+        // ── Query-conditioned selection via QCCR (Rust SSOT) ──
+        // Routes npm's optimize_context through the SAME ranking + sentence
+        // selection as pip/MCP/SDK (the shared entroly-qccr crate). Any failure
+        // falls back to the native knapsack so optimize never breaks.
+        let result;
+        if (query.trim()) {
+          try {
+            const candidates = this.engine.export_fragments();
+            const slim = JSON.stringify(candidates.map(f => ({ source: f.source || '', content: f.content || '' })));
+            const selected = JSON.parse(qccr_select(slim, budget, query, '{}', '[]'));
+            const tok = (f) => f.token_count || Math.floor(((f.content || '').length) / 4);
+            const tokensUsed = selected.reduce((a, f) => a + tok(f), 0);
+            const totalInput = candidates.reduce((a, f) => a + tok(f), 0);
+            result = {
+              selected_fragments: selected,
+              selected,
+              selected_count: selected.length,
+              tokens_used: tokensUsed,
+              tokens_saved: Math.max(0, totalInput - tokensUsed),
+              total_fragments: candidates.length,
+              selector: 'qccr',
+            };
+          } catch (_) {
+            result = this.engine.optimize(budget, query);
+            result.selector = 'knapsack_fallback';
+          }
+        } else {
+          result = this.engine.optimize(budget, query);
+        }
         result._taskProfile = { taskType: profile.taskType, confidence: profile.confidence };
         // Record value to the shared sink (mirrors entroly/server.py).
         try {

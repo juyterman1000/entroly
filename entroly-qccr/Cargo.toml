@@ -1,0 +1,24 @@
+[package]
+name = "entroly-qccr"
+version = "1.0.19"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/juyterman1000/entroly"
+description = "Entroly QCCR — the single source of truth for query-conditioned retrieval ranking + selection. Pure logic, no bindings; entroly-core (PyO3) and entroly-wasm (wasm-bindgen) both depend on it so Python, npm and the CLI rank identically."
+
+[lib]
+name = "entroly_qccr"
+
+[features]
+# Exactly one regex backend must be selected. The PyO3 build uses full `regex`
+# (already a dep there); the WASM build uses `regex-lite` (dependency-free, much
+# smaller) to keep the bundle lean. Same source either way.
+default = ["regex-full"]
+regex-full = ["dep:regex"]
+regex-lite = ["dep:regex-lite"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = { version = "1.11", optional = true }
+regex-lite = { version = "0.1", optional = true }

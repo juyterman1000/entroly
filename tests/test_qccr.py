@@ -1,7 +1,7 @@
 """Smoke tests for Query-Conditioned Compressive Retrieval."""
 from __future__ import annotations
 
-from entroly.qccr import select, _query_tokens, _split_sentences, _mmr_select, _bm25_corpus
+from entroly.qccr import select, _expanded_query_tokens
 
 
 def test_empty_fragments_returns_empty():
@@ -59,32 +59,20 @@ def test_budget_respected():
     assert total <= 600, f"budget exceeded: {total} > 500"  # small slack for rounding
 
 
-def test_tokenization_splits_identifiers():
-    toks = _query_tokens("How does taint_flow work with CamelCase identifiers?")
+def test_query_expansion_splits_identifiers():
+    # Tokenizer + expansion are the Rust SSOT; verify identifier splitting still
+    # surfaces through the public expansion API.
+    toks = _expanded_query_tokens("How does taint_flow work with CamelCase identifiers?")
     assert "taint" in toks
     assert "flow" in toks
     assert "camel" in toks or "camelcase" in toks
     assert "case" in toks or "camelcase" in toks
 
 
-def test_sentence_split_code_breaks():
-    text = "def foo():\n    pass\n\ndef bar():\n    return 1\n"
-    sents = _split_sentences(text)
-    assert len(sents) >= 1
-
-
-def test_mmr_selects_diverse():
-    sentences = [
-        "Jaccard similarity measures set overlap.",
-        "Jaccard similarity measures set overlap completely.",  # near-duplicate
-        "The weather is sunny today.",
-    ]
-    tf, _, _, _ = _bm25_corpus(sentences)
-    rel = [2.0, 1.9, 0.0]  # first two relevant, third not
-    chosen = _mmr_select(sentences, tf, rel, budget_tokens=100)
-    # Should pick index 0 (highest rel); index 2 has rel=0 so excluded.
-    assert 0 in chosen
-    assert 2 not in chosen
+# NOTE: sentence-splitting, single-field BM25, and MMR are now the Rust single
+# source of truth (entroly-qccr) and are unit-tested there (cargo test
+# -p entroly-qccr). Their behaviour is also covered end-to-end by the select()
+# tests above and the held-out Langfuse regressions below.
 
 
 def test_architecture_query_keeps_event_record_mapper_over_generic_ingestion_files():

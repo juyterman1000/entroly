@@ -6202,6 +6202,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── QCCR retrieval (Rust SSOT; shared by Python via PyO3 + npm via WASM)
     m.add_function(wrap_pyfunction!(qccr::py_qccr_rank_files, m)?)?;
     m.add_function(wrap_pyfunction!(qccr::py_qccr_expand_query, m)?)?;
+    m.add_function(wrap_pyfunction!(qccr::py_qccr_select, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
     m.add_class::<nkbe::NkbeAllocator>()?;
     m.add_class::<cognitive_bus::CognitiveBus>()?;
