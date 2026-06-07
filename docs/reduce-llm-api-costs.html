@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reduce LLM API Costs by 70–95% — Cut Claude, OpenAI & Gemini Bills | Entroly</title>
+<meta name="description" content="Cut your Claude, OpenAI, and Gemini API bills by 70–95% without switching models. Entroly is an open-source local proxy that compresses context, keeps provider caches hot, and verifies LLM output. Works with Cursor, Claude Code, Aider, and 34 more tools. 30-second setup, no code changes.">
+<meta name="keywords" content="reduce LLM API costs, cut Claude API bill, reduce OpenAI API costs, save on Gemini API, LLM cost reduction, AI API cost savings, reduce token costs, cut AI bills, cheaper Claude, cheaper GPT-4, reduce Anthropic costs, LLM token savings, prompt compression, context compression, AI cost optimization, reduce AI spend, token budget optimization, AI coding cost, Claude Code cost, Cursor API cost">
+<meta property="og:title" content="Reduce LLM API Costs by 70–95% — Entroly">
+<meta property="og:description" content="Cut your Claude, OpenAI, and Gemini API bills by 70–95%. Open-source local proxy. 30-second setup, no code changes.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/reduce-llm-api-costs.html">
+<meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Reduce LLM API Costs by 70–95% — Entroly">
+<meta name="twitter:description" content="Cut Claude, OpenAI, Gemini bills by 70–95%. Local proxy. Zero code changes.">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/reduce-llm-api-costs.html">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Reduce LLM API Costs by 70–95% — Cut Claude, OpenAI and Gemini Bills",
+  "description": "Open-source local proxy that compresses context, keeps provider caches hot, and verifies LLM output. Cuts API bills 70–95%.",
+  "author": {"@type": "Organization", "name": "Entroly", "url": "https://github.com/juyterman1000/entroly"},
+  "datePublished": "2026-06-01",
+  "dateModified": "2026-06-07",
+  "keywords": "reduce LLM API costs, cut Claude API bill, reduce OpenAI costs, token compression, prompt compression, AI cost savings",
+  "mainEntityOfPage": {"@type": "WebPage", "@id": "https://juyterman1000.github.io/entroly/docs/reduce-llm-api-costs.html"},
+  "publisher": {"@type": "Organization", "name": "Entroly", "logo": {"@type": "ImageObject", "url": "https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png"}}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much can I save on my Claude API bill with Entroly?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It depends on your repo size and query patterns. On large repos (300+ files) with agent loops, most users see 70–90% reduction. Run entroly demo in your repo for a before/after estimate with no API calls."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Entroly work with my existing AI coding tool?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. If your tool supports a custom OPENAI_BASE_URL or ANTHROPIC_BASE_URL, it works via the proxy. Entroly also has native MCP server support for Cursor, Claude Code, VS Code, Windsurf, Zed, and Cline — 37+ tools total."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my code safe? Does Entroly send my data anywhere?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Entroly runs entirely on your machine. Context selection, compression, and the CCR store are all local. The only outbound call is the one your tool was already making to the LLM provider. No outbound analytics by default."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the difference between Entroly and other prompt compression tools?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Most compression tools shrink whatever you give them. Entroly selects first (knapsack optimizer over the full repo), then compresses. You get the right context at the right resolution. The Cache Aligner is also unique: it stabilizes the prefix to keep Anthropic 90% and OpenAI 50% cache discounts applying consistently."
+      }
+    }
+  ]
+}
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#09090b;--surface:#18181b;--border:#27272a;--text:#fafafa;--muted:#a1a1aa;--accent:#818cf8;--green:#34d399;--red:#f87171;--yellow:#fbbf24}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;line-height:1.7}
+a{color:var(--accent)}
+code{font-family:'JetBrains Mono',monospace;background:var(--surface);padding:2px 6px;border-radius:4px;font-size:14px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;margin:20px 0;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6}
+nav{position:fixed;top:0;width:100%;z-index:100;background:rgba(9,9,11,0.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+nav .logo{font-weight:800;font-size:20px;text-decoration:none;color:var(--text)}
+nav .links{display:flex;gap:20px;font-size:14px}
+nav .links a{color:var(--muted);text-decoration:none}
+nav .links a:hover{color:var(--text)}
+.cta-btn{background:var(--accent);color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block}
+.cta-btn:hover{opacity:0.9}
+article{max-width:780px;margin:0 auto;padding:100px 24px 80px}
+h1{font-size:clamp(2rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:16px}
+h2{font-size:1.5rem;font-weight:700;margin:48px 0 16px}
+h3{font-size:1.2rem;font-weight:600;margin:32px 0 12px}
+p{margin-bottom:16px;color:var(--muted)}
+ul,ol{margin:0 0 16px 24px;color:var(--muted)}
+li{margin-bottom:8px}
+strong{color:var(--text)}
+blockquote{border-left:3px solid var(--accent);padding-left:16px;margin:20px 0;color:var(--muted);font-style:italic}
+.highlight{color:var(--green)}
+.warning{color:var(--red)}
+.badge{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:13px;display:inline-block;margin:0 4px 8px 0}
+table{width:100%;border-collapse:collapse;margin:20px 0}
+th,td{text-align:left;padding:12px;border-bottom:1px solid var(--border);font-size:14px}
+th{color:var(--text);font-weight:600}
+td{color:var(--muted)}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:32px 0}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;text-align:center}
+.stat .number{font-size:2.5rem;font-weight:800;color:var(--green);display:block}
+.stat .label{font-size:13px;color:var(--muted);margin-top:4px}
+.cta-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;margin:48px 0}
+.cta-box h3{margin-top:0}
+.cta-box p{margin-bottom:20px}
+.callout{background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);border-radius:10px;padding:20px;margin:24px 0}
+footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+@media(max-width:600px){.stat-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/entroly/" class="logo">entroly</a>
+  <div class="links">
+    <a href="/entroly/">Home</a>
+    <a href="/entroly/docs/prompt-compression.html">Prompt Compression</a>
+    <a href="/entroly/docs/hallucination-guard.html">Hallucination Guard</a>
+    <a href="https://github.com/juyterman1000/entroly" class="cta-btn">GitHub</a>
+  </div>
+</nav>
+
+<article>
+
+<h1>Reduce Your LLM API Costs by 70–95%</h1>
+
+<p><strong>Last updated: June 2026</strong> &nbsp;·&nbsp; <span class="badge">Apache-2.0</span> <span class="badge">Local-first</span> <span class="badge">No code changes</span></p>
+
+<p>If you build with Claude, GPT-4, or Gemini, you're almost certainly paying 5–10× more than you need to. The problem isn't the model pricing — it's <strong>what you're sending</strong>.</p>
+
+<div class="stat-grid">
+  <div class="stat">
+    <span class="number">70–95%</span>
+    <div class="label">fewer input tokens sent</div>
+  </div>
+  <div class="stat">
+    <span class="number">$0</span>
+    <div class="label">hallucination guard cost</div>
+  </div>
+  <div class="stat">
+    <span class="number">30s</span>
+    <div class="label">setup, no code changes</div>
+  </div>
+</div>
+
+<p><a href="https://github.com/juyterman1000/entroly"><strong>Entroly</strong></a> is an open-source local proxy and context engine that cuts your Claude, OpenAI, and Gemini API bills by 70–95% through three mechanisms: smart context compression, provider cache alignment, and query-relevant file selection. It runs entirely on your machine — your code never leaves your device.</p>
+
+<div class="callout">
+<strong>Try it in 30 seconds — no API key needed:</strong><br><br>
+<code>pip install entroly &amp;&amp; entroly verify-claims</code><br><br>
+Measures token reduction on your own repo and writes a JSON report. No outbound calls.
+</div>
+
+<h2>Why Your LLM Bills Are Higher Than They Should Be</h2>
+
+<h3>1. You're Sending the Wrong Files</h3>
+<p>When a coding agent reads a repo, it often sends every file it knows about — not just the files relevant to your specific query. A 400-file codebase hitting a "fix the login bug" request sends auth.py, sure, but also 200 unrelated files. You pay for every token of every file.</p>
+
+<h3>2. Provider Cache Discounts Aren't Applying</h3>
+<p>Anthropic offers a <strong>90% discount on cached token prefixes</strong>. OpenAI offers 50%. But this only works if the prefix bytes are <em>identical</em> across requests. Most tools dynamically rebuild context on every turn — adding timestamps, session IDs, updated file contents — which breaks the prefix and busts the cache. You pay full price every time.</p>
+
+<h3>3. Compressed Context Still Contains Junk</h3>
+<p>Even if you're compressing, most compression tools shrink whatever you give them. If you gave them the wrong 200 files, you're just sending smaller versions of the wrong files. You need to <em>select</em> first, then compress.</p>
+
+<h2>How Entroly Cuts Your LLM API Bills</h2>
+
+<h3>Context Compression (Knapsack Optimizer)</h3>
+<p>Entroly's core is an information-theoretic context selector. It ranks every file and fragment in your repo by: BM25 lexical relevance to the query, Shannon entropy density (information per token), SimHash deduplication, and dependency graph proximity. Then a <strong>knapsack solver</strong> picks the mathematically optimal subset under your token budget.</p>
+<p>Critical files go in at full resolution. Supporting files become function signatures. Everything else becomes a reference path the model can ask to expand. Result: the model sees <em>broader</em> coverage of your codebase in a <em>smaller</em> prompt.</p>
+
+<h3>Cache Aligner (Prefix Stability)</h3>
+<p>Entroly's <strong>Cache Aligner</strong> tracks the injected context prefix per client. When a new request arrives and the context hasn't materially changed (Jaccard similarity &gt; 90%), it reuses the previous prefix verbatim — byte-for-byte. This means Anthropic's 90% cache discount and OpenAI's 50% discount <em>actually apply</em> consistently.</p>
+<p>On agent loops where the same files are relevant across 10+ turns, this alone can reduce costs by 80–90%.</p>
+
+<h3>Content-Compressed Retrieval (CCR — Lossless)</h3>
+<p>When fragments are compressed to skeletons, Entroly stores the full originals in a local <strong>Content-Compressed Retrieval (CCR)</strong> store. If the model needs more detail on a compressed fragment, it calls <code>entroly_retrieve</code> via MCP to get the full content back. Nothing is permanently lost — compression is fully reversible.</p>
+
+<h3>WITNESS — $0 Hallucination Guard</h3>
+<p>Every response is checked by <strong>WITNESS</strong>, a local deterministic NLI verifier that audits the model's answer against the evidence it was given. It flags unsupported claims before they reach you. Cost: $0. Latency: ~3ms. Accuracy: 0.844 AUROC on HaluEval-QA — statistically equivalent to GPT-4o-mini judge at zero marginal cost.</p>
+
+<h2>Measured Token Savings</h2>
+
+<p>All numbers below are from committed JSON artifacts in the repo — not screenshots. Reproduce them with <code>entroly verify-claims</code>.</p>
+
+<table>
+  <tr><th>Token Budget</th><th>Token Reduction</th></tr>
+  <tr><td>8K tokens</td><td class="highlight"><strong>99.1%</strong></td></tr>
+  <tr><td>32K tokens</td><td class="highlight"><strong>96.7%</strong></td></tr>
+  <tr><td>Average across workloads</td><td class="highlight"><strong>87.0%</strong></td></tr>
+</table>
+
+<h2>Accuracy Is Preserved</h2>
+
+<p>Cutting tokens is only useful if the answers stay correct. Measured with <code>gpt-4o-mini</code> on standard benchmarks:</p>
+
+<table>
+  <tr><th>Benchmark</th><th>Token Savings</th><th>Accuracy Retention</th></tr>
+  <tr><td>NeedleInAHaystack</td><td>99.5%</td><td class="highlight"><strong>100%</strong></td></tr>
+  <tr><td>LongBench (HotpotQA)</td><td>85.3%</td><td class="highlight"><strong>103%</strong> (better)</td></tr>
+  <tr><td>Berkeley Function Calling</td><td>79.3%</td><td class="highlight"><strong>100%</strong></td></tr>
+  <tr><td>SQuAD 2.0</td><td>43.8%</td><td>90%</td></tr>
+</table>
+
+<h2>Reduce Costs Across Every Provider</h2>
+
+<h3>Cut Claude / Anthropic API Bills</h3>
+<p>Entroly intercepts Anthropic API calls, compresses the context, and stabilizes the prefix so the 90% prompt caching discount applies. Works with Claude Code, Claude Sonnet, Claude Opus, and all Anthropic models.</p>
+<pre>ANTHROPIC_BASE_URL=http://localhost:9377 claude</pre>
+
+<h3>Cut OpenAI / GPT-4 API Bills</h3>
+<p>Same approach for OpenAI — context compression + prefix stability for OpenAI's 50% cached-prefix discount. Works with GPT-4o, GPT-4o-mini, and all OpenAI-compatible APIs.</p>
+<pre>OPENAI_BASE_URL=http://localhost:9377/v1 your-app</pre>
+
+<h3>Cut Gemini API Bills</h3>
+<pre>GEMINI_BASE_URL=http://localhost:9377 your-app</pre>
+
+<h3>Works With Cursor, Aider, Claude Code + 34 More</h3>
+<p>One command wraps your IDE or coding agent:</p>
+<pre>entroly wrap claude   # Claude Code
+entroly wrap cursor   # Cursor
+entroly wrap aider    # Aider
+entroly go            # auto-detect your tool</pre>
+
+<h2>Quick Start — Reduce Your Bills in 30 Seconds</h2>
+
+<pre># Install
+pip install entroly
+
+# Test savings on your own repo (no API key, no outbound calls)
+cd /your/repo && entroly verify-claims
+
+# Start the proxy
+entroly proxy                          # http://localhost:9377
+
+# Or auto-detect and wrap your coding tool
+entroly go</pre>
+
+<div class="cta-box">
+  <h3>Stop Overpaying for LLM API Calls</h3>
+  <p>Open-source. Local-first. Apache-2.0. Your code stays on your machine.</p>
+  <pre>pip install entroly &amp;&amp; entroly go</pre>
+  <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub →</a></p>
+</div>
+
+<h2>Frequently Asked Questions</h2>
+
+<h3>How much can I actually save on my Claude API bill?</h3>
+<p>It depends on your repo size and query patterns. Run <code>entroly demo</code> in your repo for a before/after estimate with no API calls. On large repos (300+ files) with agent loops, most users see 70–90% reduction. On small repos or single-file prompts, savings are lower.</p>
+
+<h3>Does it work with my existing tool?</h3>
+<p>If your tool supports a custom <code>OPENAI_BASE_URL</code> or <code>ANTHROPIC_BASE_URL</code>, it works via the proxy. Entroly also has native MCP server support for Cursor, Claude Code, VS Code, Windsurf, Zed, and Cline.</p>
+
+<h3>Is my code safe? Does it send my data anywhere?</h3>
+<p>No. Entroly runs entirely on your machine. Context selection, compression, and the CCR store are all local. The only outbound call is the one your tool was already making to the LLM provider. No outbound analytics by default.</p>
+
+<h3>What's the difference between Entroly and other compression tools?</h3>
+<p>Most compression tools shrink whatever you give them. Entroly <em>selects</em> first (knapsack optimizer over the full repo), <em>then</em> compresses. You get the right context at the right resolution — not just a smaller version of everything. The Cache Aligner is also unique: it actively stabilizes the prefix to keep provider discounts applying.</p>
+
+</article>
+
+<footer>
+  <p><a href="/entroly/">Entroly</a> — Context Intelligence, Not Compression</p>
+  <p style="margin-top:8px">
+     <a href="/entroly/docs/reduce-llm-api-costs.html">Reduce LLM API Costs</a> ·
+     <a href="/entroly/docs/prompt-compression.html">Prompt Compression</a> ·
+     <a href="/entroly/docs/hallucination-guard.html">Hallucination Guard</a> ·
+     <a href="/entroly/docs/token-optimization.html">Token Optimization</a> ·
+     <a href="/entroly/docs/context-engineering.html">Context Engineering</a> ·
+     <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a> ·
+     <a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> ·
+     <a href="/entroly/docs/mcp-server-guide.html">MCP Server</a> ·
+     <a href="/entroly/docs/dashboard.html">Live Dashboard</a> ·
+     <a href="https://github.com/juyterman1000/entroly">GitHub</a>
+  </p>
+</footer>
+</body>
+</html>

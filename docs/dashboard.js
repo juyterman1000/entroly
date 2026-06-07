@@ -222,44 +222,5 @@ function setView(v, btn) {
   drawChart();
 }
 
-// ═══ Live activity feed ═══
-const FEED_REPOS = [
-  'vscode', 'langchain', 'next.js', 'rust-analyzer', 'django',
-  'fastapi', 'prisma', 'supabase', 'turborepo', 'deno',
-  'pytorch', 'transformers', 'langfuse', 'grafana', 'terraform'
-];
-const FEED_ACTIONS = [
-  ['optimized context', 'green'], ['indexed repo', 'cyan'],
-  ['skeleton cached', 'purple'], ['batch ingested', 'green'],
-  ['PRISM updated', 'amber']
-];
-const feedContainer = document.getElementById('feed-list');
-let feedCount = 0;
 
-function addFeedItem() {
-  if (!feedContainer) return;
-  const repo = FEED_REPOS[Math.floor(Math.random() * FEED_REPOS.length)];
-  const [action, color] = FEED_ACTIONS[Math.floor(Math.random() * FEED_ACTIONS.length)];
-  const saved = Math.floor(Math.random() * 40000 + 2000);
-  const colors = { green: '#00F5A0', cyan: '#00D9F5', purple: '#A855F7', amber: '#F59E0B' };
 
-  const item = document.createElement('div');
-  item.className = 'feed-item';
-  item.innerHTML = `
-    <span class="feed-dot" style="background:${colors[color]};box-shadow:0 0 6px ${colors[color]}"></span>
-    <span><strong>${repo}</strong> — ${action}</span>
-    <span class="feed-saved">-${fmt(saved)} tokens</span>
-    <span class="feed-time">just now</span>
-  `;
-
-  feedContainer.insertBefore(item, feedContainer.firstChild);
-  if (feedContainer.children.length > 8) {
-    feedContainer.removeChild(feedContainer.lastChild);
-  }
-  feedCount++;
-}
-
-// Initial feed items
-for (let i = 0; i < 5; i++) setTimeout(() => addFeedItem(), i * 200);
-// New items every 3-6 seconds
-setInterval(addFeedItem, 3000 + Math.random() * 3000);

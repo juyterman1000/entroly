@@ -3,12 +3,96 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Entroly — Live Context Intelligence Dashboard</title>
-<meta name="description" content="Real-time Entroly savings telemetry, measured token reduction, local optimizer latency, and benchmarked quality retention.">
-<meta property="og:title" content="Entroly Dashboard — 94% Token Savings, Proven">
-<meta property="og:description" content="Watch real-time savings from information-theoretic context selection. Selection beats compression.">
+<title>Live Dashboard — Real-Time LLM Token Savings & API Cost Reduction | Entroly</title>
+<meta name="description" content="Watch real-time projected token savings and LLM API cost metrics. Entroly reduces Claude, OpenAI, and Gemini prompt costs by 70–95% via local context engineering, cache alignment, and prompt compression.">
+<meta name="keywords" content="LLM API cost savings, live token savings, prompt compression dashboard, cut Claude API cost, reduce OpenAI costs, save on Gemini API, local context compression, context engineering, ChatGPT prompt compression, Claude Code cost reduction, Cursor token optimizer, LLM cost metrics">
+<link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/dashboard.html">
+
+<!-- Open Graph / Facebook -->
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/dashboard.html">
+<meta property="og:title" content="Entroly Live Dashboard — 94% LLM Token Savings, Real-Time">
+<meta property="og:description" content="Watch live prompt token reduction and Claude, OpenAI, and Gemini API cost savings from local context engineering. Selection beats compression.">
+<meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://juyterman1000.github.io/entroly/docs/dashboard.html">
+<meta name="twitter:title" content="Entroly Live Dashboard — 94% LLM Token Savings, Real-Time">
+<meta name="twitter:description" content="Watch live prompt token reduction and Claude, OpenAI, Gemini API cost savings from local context engineering. Zero code changes.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
 <meta name="theme-color" content="#050810">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Entroly Live Context Intelligence Dashboard",
+  "description": "Projected token savings, local optimizer latency, and benchmarked quality retention metrics for Entroly context engineering proxy.",
+  "url": "https://juyterman1000.github.io/entroly/docs/dashboard.html",
+  "keywords": "LLM API cost savings, live token savings, prompt compression dashboard, cut Claude API cost"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Entroly",
+  "description": "Open-source context engineering engine for AI coding agents. Reduces LLM API costs by 70–95% through intelligent context compression, provider cache alignment, and local hallucination detection.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Entroly",
+    "url": "https://github.com/juyterman1000/entroly"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What do the live token savings metrics show?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "They show projected community savings based on measured benchmarks. The figures are extrapolated from verified token reduction rates across real-world codebases. On average, users reduce their token payload by 94.2%."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does Entroly reduce Claude and ChatGPT API bills?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Entroly runs a local Rust-based knapsack optimizer to select the most relevant files/functions for your query, then applies multi-resolution context engineering, and stabilizes the prefix so provider cache discounts (e.g. Claude Prompt Caching) remain active."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Entroly add significant latency overhead?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. The local Rust engine processes and optimizes context in under 12 milliseconds, which is negligible compared to the seconds saved in generation time and network latency by sending smaller prompt payloads."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my local data private?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, absolutely. Entroly operates entirely as a local proxy on your machine. Your code never leaves your local environment. No outbound analytics by default."
+      }
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -23,7 +107,7 @@
 
 <div class="container">
   <header>
-    <a href="/" class="logo">
+    <a href="/entroly/" class="logo">
       <div class="logo-icon">E</div>
       <span class="logo-text">entroly</span>
     </a>
@@ -33,7 +117,11 @@
     </div>
   </header>
 
+  <h1 style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0">Entroly Live Dashboard — Real-Time LLM Token Savings & API Cost Reduction</h1>
+  <p style="text-align:center;color:#64748B;font-size:12px;margin-top:8px;font-style:italic">Projected savings based on measured benchmarks · Verify on your own repo: <code style="background:rgba(15,23,42,.6);padding:2px 8px;border-radius:4px;font-size:12px;color:#00F5A0">entroly verify-claims</code></p>
+
   <!-- ═══ Hero: Community savings (ticking live) ═══ -->
+  <main>
   <section class="hero">
     <div class="hero-label">Community Savings</div>
     <div class="hero-number" id="hero-tokens">0</div>
@@ -129,11 +217,6 @@
     <canvas id="chart"></canvas>
   </section>
 
-  <!-- ═══ Live Activity Feed ═══ -->
-  <section class="feed">
-    <div class="feed-title"><span class="live-dot"></span> Live Activity</div>
-    <div id="feed-list"></div>
-  </section>
 
   <!-- ═══ Architecture Pills ═══ -->
   <div class="arch">
@@ -144,6 +227,49 @@
     <div class="arch-pill"><span class="dot" style="background:var(--amber);color:var(--amber)"></span> Rust Data Plane</div>
     <div class="arch-pill"><span class="dot" style="background:#6366F1;color:#6366F1"></span> EGSC Cache</div>
   </div>
+
+  <!-- ═══ Frequently Asked Questions ═══ -->
+  <section class="faq-section">
+    <div class="faq-title">Frequently Asked Questions</div>
+    <div class="faq-grid">
+      <div class="faq-card">
+        <div class="faq-question">
+          <span class="faq-question-icon">Q:</span>
+          <span>What do the live token savings metrics show?</span>
+        </div>
+        <div class="faq-answer">
+          They show projected community savings based on measured benchmarks. The figures are extrapolated from verified token reduction rates across real-world codebases. On average, users reduce their token payload by 94.2%.
+        </div>
+      </div>
+      <div class="faq-card">
+        <div class="faq-question">
+          <span class="faq-question-icon">Q:</span>
+          <span>How does Entroly reduce Claude and ChatGPT API bills?</span>
+        </div>
+        <div class="faq-answer">
+          Entroly runs a local Rust-based knapsack optimizer to select the most relevant files/functions for your query, then applies multi-resolution context engineering, and stabilizes the prefix so provider cache discounts (e.g. Claude Prompt Caching) remain active.
+        </div>
+      </div>
+      <div class="faq-card">
+        <div class="faq-question">
+          <span class="faq-question-icon">Q:</span>
+          <span>Does Entroly add significant latency overhead?</span>
+        </div>
+        <div class="faq-answer">
+          No. The local Rust engine processes and optimizes context in under 12 milliseconds, which is negligible compared to the seconds saved in generation time and network latency by sending smaller prompt payloads.
+        </div>
+      </div>
+      <div class="faq-card">
+        <div class="faq-question">
+          <span class="faq-question-icon">Q:</span>
+          <span>Is my local data private?</span>
+        </div>
+        <div class="faq-answer">
+          Yes, absolutely. Entroly operates entirely as a local proxy on your machine. Your code never leaves your local environment. No outbound analytics by default.
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- ═══ CTA ═══ -->
   <section class="cta">
@@ -156,8 +282,22 @@
   </section>
 
   <footer>
-    Context intelligence, not compression · Built with Rust + PyO3 · Open Source · <a href="https://github.com/juyterman1000/entroly">github.com/juyterman1000/entroly</a>
+    <p>Context intelligence, not compression · Built with Rust + PyO3 · Open Source · <a href="https://github.com/juyterman1000/entroly">github.com/juyterman1000/entroly</a></p>
+    <p style="margin-top: 16px;">
+      <a href="/entroly/">Entroly Home</a> ·
+      <a href="/entroly/docs/reduce-llm-api-costs.html">Reduce LLM API Costs</a> ·
+      <a href="/entroly/docs/prompt-compression.html">Prompt Compression</a> ·
+      <a href="/entroly/docs/hallucination-guard.html">Hallucination Guard</a> ·
+      <a href="/entroly/docs/token-optimization.html">Token Optimization</a> ·
+      <a href="/entroly/docs/context-engineering.html">Context Engineering</a> ·
+      <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a> ·
+      <a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> ·
+      <a href="/entroly/docs/mcp-server-guide.html">MCP Server</a> ·
+      <a href="/entroly/docs/dashboard.html">Live Dashboard</a> ·
+      <a href="https://github.com/juyterman1000/entroly">GitHub</a>
+    </p>
   </footer>
+</main>
 </div>
 
 <script src="dashboard.js"></script>

@@ -2,38 +2,63 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://juyterman1000.github.io/entroly/</loc>
-    <lastmod>2026-04-05</lastmod>
+    <lastmod>2026-06-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/reduce-llm-api-costs.html</loc>
+    <lastmod>2026-06-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/prompt-compression.html</loc>
+    <lastmod>2026-06-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/hallucination-guard.html</loc>
+    <lastmod>2026-06-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
     <loc>https://juyterman1000.github.io/entroly/docs/context-engineering.html</loc>
-    <lastmod>2026-04-05</lastmod>
+    <lastmod>2026-06-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html</loc>
-    <lastmod>2026-04-05</lastmod>
+    <lastmod>2026-06-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/claude-code-setup.html</loc>
-    <lastmod>2026-04-05</lastmod>
+    <lastmod>2026-06-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/token-optimization.html</loc>
-    <lastmod>2026-04-05</lastmod>
+    <lastmod>2026-06-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html</loc>
-    <lastmod>2026-04-05</lastmod>
+    <lastmod>2026-06-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/dashboard.html</loc>
+    <lastmod>2026-06-07</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
 </urlset>
+

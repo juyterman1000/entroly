@@ -11,8 +11,40 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html">
+<meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Fix Cursor's Context Window Limit — Give It Your Full Codebase">
+<meta name="twitter:description" content="Cursor only sees 5-10 files. Entroly shows it your entire codebase at variable resolution. 70-95% fewer tokens.">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"TechArticle","headline":"How to Give Cursor Your Full Codebase — Fix Context Window Limits","description":"Cursor only sees 5-10 files at a time. Learn how to give Cursor access to your entire codebase with context engineering.","author":{"@type":"Organization","name":"Entroly"},"datePublished":"2026-04-05","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html"}
+{"@context":"https://schema.org","@type":"TechArticle","headline":"How to Give Cursor Your Full Codebase — Fix Context Window Limits","description":"Cursor only sees 5-10 files at a time. Learn how to give Cursor access to your entire codebase with context engineering.","author":{"@type":"Organization","name":"Entroly"},"datePublished":"2026-04-05","dateModified":"2026-06-07","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html"}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does Entroly send my code to any external service?",
+      "acceptedAnswer": {"@type": "Answer", "text": "No. Everything runs locally on your machine. Your code never leaves your computer."}
+    },
+    {
+      "@type": "Question",
+      "name": "Does Entroly work with Cursor's free tier?",
+      "acceptedAnswer": {"@type": "Answer", "text": "Yes. Entroly works with any Cursor plan. It's even more valuable on the free tier since you have fewer requests and each one needs to count."}
+    },
+    {
+      "@type": "Question",
+      "name": "Does Entroly replace .cursorrules?",
+      "acceptedAnswer": {"@type": "Answer", "text": "No, they're complementary. .cursorrules gives Cursor instructions about your preferences. Entroly gives Cursor visibility into your actual code. Use both."}
+    },
+    {
+      "@type": "Question",
+      "name": "What programming languages does Entroly support with Cursor?",
+      "acceptedAnswer": {"@type": "Answer", "text": "All of them. Entroly works at the file/fragment level, not the AST level. It supports any text-based source code."}
+    }
+  ]
+}
 </script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -64,7 +96,7 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 <article>
 <h1>How to Give Cursor Your Full Codebase — Fix Context Window Limits</h1>
 
-<p><strong>Last updated: April 2026</strong> | Reading time: 6 min</p>
+<p><strong>Last updated: June 2026</strong> | Reading time: 6 min</p>
 
 <p>If you've used <strong>Cursor</strong> on a real project, you've experienced the frustration: Cursor hallucinates function calls, invents APIs that don't exist, and misses obvious dependencies. The root cause isn't Cursor's AI model — <strong>it's the context window limit.</strong></p>
 
@@ -172,8 +204,19 @@ entroly proxy --quality max         # full pipeline, best results</pre>
 </article>
 
 <footer>
-  <p><a href="/entroly/">Entroly</a> — Context Engineering Engine for AI Coding Agents</p>
-  <p style="margin-top:8px"><a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> · <a href="/entroly/docs/token-optimization.html">Token Optimization</a> · <a href="/entroly/docs/context-engineering.html">What is Context Engineering?</a></p>
+  <p><a href="/entroly/">Entroly</a> — Context Intelligence, Not Compression</p>
+  <p style="margin-top:8px">
+    <a href="/entroly/docs/reduce-llm-api-costs.html">Reduce LLM API Costs</a> ·
+    <a href="/entroly/docs/prompt-compression.html">Prompt Compression</a> ·
+    <a href="/entroly/docs/hallucination-guard.html">Hallucination Guard</a> ·
+    <a href="/entroly/docs/token-optimization.html">Token Optimization</a> ·
+    <a href="/entroly/docs/context-engineering.html">Context Engineering</a> ·
+    <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a> ·
+    <a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a> ·
+    <a href="/entroly/docs/mcp-server-guide.html">MCP Server</a> ·
+    <a href="/entroly/docs/dashboard.html">Live Dashboard</a> ·
+    <a href="https://github.com/juyterman1000/entroly">GitHub</a>
+  </p>
 </footer>
 </body>
 </html>

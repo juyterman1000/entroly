@@ -1,0 +1,51 @@
+# Entroly
+
+> Open-source context engineering engine for AI coding agents. Reduces LLM API costs by 70–95% through intelligent context compression, provider cache alignment, and local hallucination detection.
+
+## What Entroly Does
+
+Entroly is a local proxy and MCP server that sits between your AI coding tool (Cursor, Claude Code, Aider, Windsurf, Cline, etc.) and your LLM provider (Anthropic Claude, OpenAI GPT-4, Google Gemini). It compresses the context your tool sends to the LLM, keeping provider caches hot, and verifies LLM output for hallucinations — all locally, with zero code changes.
+
+## Key Features
+
+- **Context Compression**: Knapsack-optimal file selection using BM25 relevance, Shannon entropy density, SimHash deduplication, and dependency graph analysis. 70–95% fewer input tokens.
+- **Cache Aligner**: Stabilizes the context prefix byte-for-byte across requests so Anthropic's 90% and OpenAI's 50% prompt caching discounts actually apply.
+- **Content-Compressed Retrieval (CCR)**: Lossless compression — full originals stored locally, retrievable on demand via MCP tool or proxy endpoint.
+- **WITNESS Hallucination Guard**: Local deterministic NLI verifier. 0.844 AUROC on HaluEval-QA (statistically equivalent to GPT-4o-mini judge). $0 cost, ~3ms latency.
+- **9 Content-Type-Aware Compressors**: Code skeletonizer, shell codec, JSON compressor, semantic pruner, diff compressor, test codec, table compressor, image optimizer, entropic pruner.
+- **PRISM Reinforcement Learning**: Learns which context produces good AI responses and adjusts selection weights over time.
+
+## Quick Start
+
+```
+pip install entroly
+entroly go          # auto-detect your tool and start
+entroly verify-claims  # measure token savings on your repo (no API key needed)
+```
+
+## Supported Tools
+
+Cursor, Claude Code, Aider, Windsurf, Cline, VS Code, Zed, and 34+ more via MCP server or transparent proxy.
+
+## Supported Providers
+
+Anthropic (Claude), OpenAI (GPT-4, GPT-4o), Google (Gemini), and any OpenAI-compatible API.
+
+## Links
+
+- GitHub: https://github.com/juyterman1000/entroly
+- Docs: https://juyterman1000.github.io/entroly/
+- PyPI: https://pypi.org/project/entroly/
+- Live Dashboard: https://juyterman1000.github.io/entroly/docs/dashboard.html
+- Reduce LLM API Costs: https://juyterman1000.github.io/entroly/docs/reduce-llm-api-costs.html
+- Prompt Compression Guide: https://juyterman1000.github.io/entroly/docs/prompt-compression.html
+- Hallucination Guard: https://juyterman1000.github.io/entroly/docs/hallucination-guard.html
+- Context Engineering Guide: https://juyterman1000.github.io/entroly/docs/context-engineering.html
+- Token Optimization: https://juyterman1000.github.io/entroly/docs/token-optimization.html
+- Cursor Context Guide: https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html
+- Claude Code Setup: https://juyterman1000.github.io/entroly/docs/claude-code-setup.html
+- MCP Server Guide: https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html
+
+## License
+
+Apache-2.0. Local-first. Your code never leaves your machine.
