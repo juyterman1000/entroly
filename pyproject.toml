@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.21"
+version = "1.0.22"
 
 description = "Auditable context control plane for AI agents: Context Receipts, MCP tools, local optimization, and SDK helpers."
 readme = "README.md"
@@ -46,7 +46,7 @@ dependencies = [
     # Fallback" job in .github/workflows/ci.yml. Do not remove this without
     # updating that job; removing it silently downgrades every default install
     # to pure-Python.
-    "entroly-core>=1.0.21,<2",
+    "entroly-core>=1.0.22,<2",
 ]
 
 [project.optional-dependencies]
@@ -56,10 +56,10 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=1.0.21,<2",
+    "entroly-core>=1.0.22,<2",
 ]
 full = [
-    "entroly-core>=1.0.21,<2",
+    "entroly-core>=1.0.22,<2",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",

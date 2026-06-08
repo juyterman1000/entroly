@@ -78,19 +78,22 @@ def test_bypass_controls_update_state_env_and_live_proxy(monkeypatch):
     live_proxy = SimpleNamespace(_bypass=False)
     daemon._proxy_runtime = live_proxy
 
-    daemon.set_bypass(True)
+    try:
+        daemon.set_bypass(True)
 
-    assert daemon.state.bypass_mode is True
-    assert daemon.state.optimization_enabled is False
-    assert os.environ["ENTROLY_BYPASS"] == "1"
-    assert live_proxy._bypass is True
+        assert daemon.state.bypass_mode is True
+        assert daemon.state.optimization_enabled is False
+        assert os.environ["ENTROLY_BYPASS"] == "1"
+        assert live_proxy._bypass is True
 
-    daemon.set_optimization(True)
+        daemon.set_optimization(True)
 
-    assert daemon.state.bypass_mode is False
-    assert daemon.state.optimization_enabled is True
-    assert "ENTROLY_BYPASS" not in os.environ
-    assert live_proxy._bypass is False
+        assert daemon.state.bypass_mode is False
+        assert daemon.state.optimization_enabled is True
+        assert "ENTROLY_BYPASS" not in os.environ
+        assert live_proxy._bypass is False
+    finally:
+        os.environ.pop("ENTROLY_BYPASS", None)
 
 
 def test_standalone_dashboard_controls_attach_live_proxy(monkeypatch):
@@ -112,6 +115,7 @@ def test_standalone_dashboard_controls_attach_live_proxy(monkeypatch):
         assert daemon.state.optimization_enabled is False
         assert os.environ["ENTROLY_BYPASS"] == "1"
     finally:
+        os.environ.pop("ENTROLY_BYPASS", None)
         server.shutdown()
         _register_control_api(None)
 
