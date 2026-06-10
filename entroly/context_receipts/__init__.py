@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
+from . import store as _store
 from .ingest import ingest_documents as _py_ingest_documents
 from .models import ContextIndex, ContextReceipt
 from .receipts import build_receipt as _py_build_receipt
 from .receipts import explain_omitted as _py_explain_omitted
 from .receipts import markdown_report as _py_markdown_report
+from .recover import build_recovery_bundle as _build_recovery_bundle
+from .recover import recover_omitted as _recover_omitted
+from .recover import save_recovery_bundle as _save_recovery_bundle
 
 
 def _rust_core():
@@ -104,10 +109,67 @@ def explain_omitted(
     return _py_explain_omitted(py_receipt, chunk_id)
 
 
+def run_recoverable_pipeline(
+    documents: Iterable[tuple[str, str]],
+    *,
+    query: str,
+    token_budget: int,
+    chunk_tokens: int = 360,
+    overlap_tokens: int = 32,
+    store_dir: str | Path | None = None,
+    prefer_rust: bool = True,
+) -> dict[str, Any]:
+    """Ingest → select → persist a **recoverable** receipt.
+
+    Writes the receipt plus a project-local recovery bundle so any omitted chunk
+    can later be recovered, byte-exact and verified, from the store alone — no
+    need to keep the index around. Returns ``{receipt, receipt_path, recovery_path}``.
+    """
+    docs = list(documents)
+    index = ingest_documents(
+        docs, chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens, prefer_rust=prefer_rust
+    )
+    receipt = select_from_index(index, query=query, token_budget=token_budget, prefer_rust=prefer_rust)
+    receipt_id = str(receipt.get("receipt_id", ""))
+    receipt_path: Path | None = None
+    recovery_p: Path | None = None
+    if receipt_id:
+        base = Path(store_dir) if store_dir is not None else _store.DEFAULT_STORE
+        base.mkdir(parents=True, exist_ok=True)
+        receipt_path = _store.write_json(base / f"{receipt_id}.json", receipt)
+        recovery_p = _save_recovery_bundle(receipt_id, _build_recovery_bundle(index), store_dir)
+    return {
+        "receipt": receipt,
+        "receipt_path": str(receipt_path) if receipt_path else None,
+        "recovery_path": str(recovery_p) if recovery_p else None,
+    }
+
+
+def recover_omitted(
+    receipt: dict[str, Any] | ContextReceipt,
+    chunk_id: str | None = None,
+    *,
+    index: dict[str, Any] | None = None,
+    bundle: dict[str, Any] | None = None,
+    store_dir: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Recover the full, fingerprint-verified text of omitted chunk(s) from a receipt.
+
+    Receipts *explain* what was dropped; this *recovers* it. Pass ``chunk_id`` for
+    one chunk or omit it for all omitted chunks. Each result's ``verified`` flag is
+    True only when the returned text is provably the exact omitted content.
+    """
+    return _recover_omitted(
+        receipt, chunk_id, index=index, bundle=bundle, store_dir=store_dir
+    )
+
+
 __all__ = [
     "ingest_documents",
     "select_from_index",
     "run_receipt_pipeline",
+    "run_recoverable_pipeline",
     "markdown_report",
     "explain_omitted",
+    "recover_omitted",
 ]
