@@ -50,7 +50,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.22"
+    __version__ = "1.0.23"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -1420,18 +1420,26 @@ _WRAP_AGENTS = {
         "cmd": ["claude"],
         "env_key": "ANTHROPIC_BASE_URL",
         "env_val": "http://localhost:{port}",
+        # Proxy mode forwards the client's auth to the PUBLIC API. A pay-as-you-go
+        # ANTHROPIC_API_KEY works; a Claude Pro/Max subscription sends a first-party
+        # OAuth bearer the public API rejects (upstream 429/401). Detect the missing
+        # key up front and route to MCP, which works on subscriptions.
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "subscription_alt": "claude mcp add entroly -- entroly",
     },
     "codex": {
         "kind": "cli", "name": "OpenAI Codex CLI",
         "cmd": ["codex"],
         "env_key": "OPENAI_BASE_URL",
         "env_val": "http://localhost:{port}/v1",
+        "api_key_env": "OPENAI_API_KEY",
     },
     "aider": {
         "kind": "cli", "name": "Aider",
         "cmd": ["aider"],
         "env_key": "OPENAI_API_BASE",
         "env_val": "http://localhost:{port}/v1",
+        "api_key_env": "OPENAI_API_KEY",
     },
     "copilot": {
         "kind": "cli", "name": "GitHub Copilot CLI",
@@ -1444,6 +1452,7 @@ _WRAP_AGENTS = {
         "cmd": ["gemini"],
         "env_key": "GOOGLE_GEMINI_BASE_URL",
         "env_val": "http://localhost:{port}/v1beta",
+        "api_key_env": "GEMINI_API_KEY",
     },
     "qwen": {
         "kind": "cli", "name": "Qwen Code",
@@ -2081,6 +2090,33 @@ def cmd_wrap(args):
         return 0
 
     # ── kind=cli (default) ─────────────────────────────────────────────
+    # Proxy mode forwards the client's auth header to the provider's PUBLIC API.
+    # If the provider API key isn't in the environment, the user is almost
+    # certainly on a subscription login (e.g. Claude Pro/Max OAuth) — proxying
+    # that forwards a first-party bearer to the public API and returns a confusing
+    # upstream 429/401. Route them to a path that actually works rather than
+    # launching a doomed session. `--force` overrides for advanced setups.
+    # --force can be swallowed into agent_args by argparse.REMAINDER (like --port
+    # / --dry-run above); recover it so the escape hatch works and it isn't passed
+    # on to the wrapped agent.
+    force_flag = bool(getattr(args, "force", False))
+    if "--force" in args.agent_args:
+        force_flag = True
+        args.agent_args.remove("--force")
+    key_env = spec.get("api_key_env")
+    if key_env and not os.environ.get(key_env) and not force_flag:
+        print(f"  {C.GRAY}No {key_env} set — looks like a {spec['name']} subscription login.{C.RESET}\n")
+        alt = spec.get("subscription_alt")
+        if alt:
+            print(f"  {C.BOLD}Best setup for a subscription — the MCP integration:{C.RESET}")
+            print(f"    {C.CYAN}{alt}{C.RESET}")
+            print(f"  {C.GRAY}(Claude Code stays your client; Entroly adds its tools.){C.RESET}\n")
+        print(f"  {C.BOLD}See your savings right now — no API call needed:{C.RESET}")
+        print(f"    {C.CYAN}entroly simulate{C.RESET}\n")
+        print(f"  {C.GRAY}Prefer proxy mode? Set a pay-as-you-go key: "
+              f"`export {key_env}=...`, then re-run.{C.RESET}\n")
+        return 1
+
     if dry_run:
         launch = " ".join(spec["cmd"] + (args.agent_args or []))
         print(f"  {C.GRAY}[dry-run] would start the proxy on :{port}, set "
@@ -3006,7 +3042,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.22\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.23\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4175,7 +4211,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.22\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.23\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -4218,7 +4254,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.22\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.23\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")

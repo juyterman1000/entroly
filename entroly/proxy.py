@@ -867,6 +867,7 @@ class PromptCompilerProxy:
         self._requests_total: int = 0
         self._requests_optimized: int = 0
         self._requests_bypassed: int = 0
+        self._requests_subscription_blocked: int = 0
         self._total_original_tokens: int = 0
         self._total_optimized_tokens: int = 0
         # ── Context Waste Telemetry ──
@@ -1212,6 +1213,76 @@ class PromptCompilerProxy:
                 pass
         return _entroly_tags_to_headers(tags)
 
+    def _subscription_guard(
+        self, provider: str, headers: dict
+    ) -> JSONResponse | None:
+        """Keep Claude Pro/Max subscription logins on their supported setup path.
+
+        A subscription sends a first-party OAuth bearer (``Authorization: Bearer
+        sk-ant-oat…``) with **no** ``x-api-key``. The public Anthropic API accepts
+        pay-as-you-go API keys, and subscription tokens are intended for
+        first-party use — so the supported setups for a subscription are the MCP
+        integration (Claude Code stays the client) or a pay-as-you-go API key.
+        Entroly detects the subscription bearer up front and returns ONE friendly,
+        actionable response pointing there, instead of forwarding a request that
+        wouldn't work and isn't the intended path. (Maintainer note: per
+        Anthropic's Consumer Terms, subscription OAuth tokens are for first-party
+        use only — which is exactly why there is no bypass below.)
+
+        Design (why this is correct, not a heuristic):
+          • **Provider-scoped to Anthropic.** For OpenAI/Gemini, ``Authorization:
+            Bearer <key>`` IS the valid API key — never block those.
+          • **Precise, fail-open.** Blocks ONLY the positively-identified OAuth
+            prefix ``sk-ant-oat``. API keys sent as a bearer (``sk-ant-api…``),
+            ``x-api-key`` clients, and any unrecognized form are forwarded
+            untouched — zero false positives.
+          • **Covers every entry path** (wrap, bare ``entroly proxy``, manual
+            base-url) and the case the CLI pre-flight misses: a user who has
+            ``ANTHROPIC_API_KEY`` exported but whose Claude Code is logged in via
+            Pro/Max OAuth.
+          • **No bypass switch.** ``sk-ant-oat`` tokens are for first-party use
+            only, so the supported setups are MCP or a pay-as-you-go API key —
+            Entroly deliberately offers no "proxy a subscription anyway" flag.
+        """
+        if provider != "anthropic":
+            return None
+        h = {k.lower(): v for k, v in headers.items()}
+        if h.get("x-api-key"):
+            return None  # pay-as-you-go API-key client — forwards fine
+        auth = h.get("authorization", "") or ""
+        if auth[:7].lower() != "bearer ":
+            return None
+        token = auth[7:].strip()
+        if not token.startswith("sk-ant-oat"):
+            return None  # API key as bearer / unknown form → forward (fail-open)
+
+        with self._stats_lock:
+            self._requests_subscription_blocked += 1
+        logger.warning(
+            "Blocked a Claude Pro/Max subscription (OAuth) request: the public "
+            "Anthropic API rejects first-party tokens. Routed user to MCP."
+        )
+        return JSONResponse(
+            {
+                "error": "subscription_not_proxyable",
+                "status": 400,
+                "detail": (
+                    "You're signed in with a Claude Pro/Max subscription. For "
+                    "subscriptions, the smoothest Entroly setup is the MCP integration "
+                    "— Claude Code stays your client and Entroly adds its tools locally: "
+                    "`claude mcp add entroly -- entroly`. Prefer proxy mode? Use a "
+                    "pay-as-you-go API key (set ANTHROPIC_API_KEY). Want to see your "
+                    "savings first, with no API call? Run `entroly simulate`."
+                ),
+                "source": "entroly_proxy",
+                "remedy": {
+                    "mcp": "claude mcp add entroly -- entroly",
+                    "simulate": "entroly simulate",
+                },
+            },
+            status_code=400,
+        )
+
     async def handle_proxy(self, request: Request) -> StreamingResponse | JSONResponse:
         """Main proxy handler — intercept, optimize, forward.
 
@@ -1242,6 +1313,11 @@ class PromptCompilerProxy:
         path = request.url.path
         headers = {k: v for k, v in request.headers.items()}
         provider = detect_provider(path, headers, body)
+        # Authoritative subscription-auth guard — fail fast with actionable guidance
+        # before any forwarding, instead of a confusing upstream 401/429.
+        _sub_block = self._subscription_guard(provider, headers)
+        if _sub_block is not None:
+            return _sub_block
         control_before = copy.deepcopy(body)
         control_decision: ControlPlaneDecision | None = None
         control_headers: dict[str, str] = {}
@@ -3903,6 +3979,9 @@ async def _metrics_prometheus(request: Request) -> StreamingResponse:
             "# HELP entroly_requests_bypassed Bypassed requests",
             "# TYPE entroly_requests_bypassed counter",
             f"entroly_requests_bypassed {proxy._requests_bypassed}",
+            "# HELP entroly_requests_subscription_blocked Subscription-auth requests blocked (OAuth bearer to public API)",
+            "# TYPE entroly_requests_subscription_blocked counter",
+            f"entroly_requests_subscription_blocked {proxy._requests_subscription_blocked}",
             "# HELP entroly_tokens_original_total Original token count",
             "# TYPE entroly_tokens_original_total counter",
             f"entroly_tokens_original_total {proxy._total_original_tokens}",
