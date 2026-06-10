@@ -2816,6 +2816,7 @@ def create_mcp_server(
         token_budget: int = 8000,
         chunk_tokens: int = 360,
         overlap_tokens: int = 32,
+        recoverable: bool = False,
     ) -> str:
         """Create a Context Receipt from supplied documents.
 
@@ -2828,6 +2829,10 @@ def create_mcp_server(
         The receipt records selected context, omitted relevant context,
         dependency links, fingerprints, token ratio, warnings, and risk
         controls. It does not call an LLM.
+
+        Set ``recoverable=True`` to also persist a project-local recovery bundle,
+        so any omitted chunk can later be recovered byte-exact and verified via
+        ``recover_receipt_omission``.
         """
         try:
             from .sdk import create_context_receipt as _create_context_receipt
@@ -2839,6 +2844,7 @@ def create_mcp_server(
                 budget=token_budget,
                 chunk_tokens=chunk_tokens,
                 overlap_tokens=overlap_tokens,
+                recoverable=recoverable,
             )
             return json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False)
         except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
@@ -2890,6 +2896,29 @@ def create_mcp_server(
             return _explain_receipt_omission(json.loads(receipt_json), chunk_id)
         except Exception as exc:  # noqa: BLE001 - MCP tools return text errors
             return f"Context Receipt explanation error: {exc}"
+
+    @mcp.tool()
+    def recover_receipt_omission(receipt_json: str, chunk_id: str = "") -> str:
+        """Recover the full text of context a Context Receipt omitted.
+
+        Receipts explain *what* was dropped; this hands back the exact content,
+        byte-for-byte. Works on receipts created with ``recoverable=True`` — the
+        recovery bundle is read from the local store. Pass ``chunk_id`` to recover
+        one chunk, or leave it empty to recover everything that was omitted.
+
+        Each result carries ``verified=true`` only when the returned text is
+        provably identical to what was omitted (matched against the chunk's
+        recorded fingerprint and a storage-integrity hash) — never a guess.
+        """
+        try:
+            from .sdk import recover_receipt_omission as _recover_receipt_omission
+
+            recovered = _recover_receipt_omission(
+                json.loads(receipt_json), chunk_id or None
+            )
+            return json.dumps(recovered, indent=2, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
 
     @mcp.tool()
     def checkpoint_state(

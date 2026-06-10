@@ -888,6 +888,7 @@ def create_context_receipt(
     chunk_tokens: int = 360,
     overlap_tokens: int = 32,
     prefer_rust: bool = True,
+    recoverable: bool = False,
 ) -> dict[str, Any]:
     """Create an auditable Context Receipt from in-memory documents.
 
@@ -895,11 +896,25 @@ def create_context_receipt(
     ``(path, text)`` tuples, or a list of dicts with ``source_path``/``text``
     keys. The result records selected context, omitted context, dependency
     links, fingerprints, warnings, and deterministic risk controls.
-    """
-    from .context_receipts import run_receipt_pipeline
 
+    When ``recoverable`` is True, a project-local recovery bundle is also
+    persisted so any omitted chunk can later be recovered — byte-exact and
+    fingerprint-verified — via :func:`recover_receipt_omission`.
+    """
+    from .context_receipts import run_receipt_pipeline, run_recoverable_pipeline
+
+    docs = _normalize_receipt_documents(documents)
+    if recoverable:
+        return run_recoverable_pipeline(
+            docs,
+            query=query,
+            token_budget=budget,
+            chunk_tokens=chunk_tokens,
+            overlap_tokens=overlap_tokens,
+            prefer_rust=prefer_rust,
+        )["receipt"]
     return run_receipt_pipeline(
-        _normalize_receipt_documents(documents),
+        docs,
         query=query,
         token_budget=budget,
         chunk_tokens=chunk_tokens,
@@ -946,6 +961,25 @@ def explain_receipt_omission(
     from .context_receipts import explain_omitted
 
     return explain_omitted(receipt, chunk_id, prefer_rust=prefer_rust)
+
+
+def recover_receipt_omission(
+    receipt: dict[str, Any],
+    chunk_id: str | None = None,
+    *,
+    store_dir: str | None = None,
+) -> list[dict[str, Any]]:
+    """Recover the full, fingerprint-verified text of omitted context.
+
+    Receipts *explain* what was dropped; this *recovers* it. Works on receipts
+    created with ``recoverable=True`` (the recovery bundle is read from the local
+    store). Pass ``chunk_id`` to recover one chunk or omit it for all omitted
+    chunks. Each result carries ``verified=True`` only when the returned text is
+    provably the exact content that was omitted — not a re-derivation.
+    """
+    from .context_receipts import recover_omitted
+
+    return recover_omitted(receipt, chunk_id, store_dir=store_dir)
 
 
 # EICV — Evidence-Invariant Causal Verification (Deterministic, $0)
