@@ -1,7 +1,13 @@
 """Smoke tests for Query-Conditioned Compressive Retrieval."""
 from __future__ import annotations
 
-from entroly.qccr import select, _expanded_query_tokens
+import pytest
+
+# QCCR is the Rust SSOT (entroly-qccr crate); these tests exercise the engine,
+# so they self-skip on the pure-Python (engine-less) install surface.
+pytest.importorskip("entroly_core")
+
+from entroly.qccr import select, _expanded_query_tokens  # noqa: E402
 
 
 def test_empty_fragments_returns_empty():

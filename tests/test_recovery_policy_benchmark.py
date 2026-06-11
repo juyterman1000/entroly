@@ -1,4 +1,10 @@
-from benchmarks.recovery_policy_benchmark import (
+import pytest
+
+# Pulls QCCR (the Rust SSOT) transitively via benchmarks/; self-skip on the
+# pure-Python (engine-less) install surface.
+pytest.importorskip("entroly_core")
+
+from benchmarks.recovery_policy_benchmark import (  # noqa: E402
     compress_with_exact_replay_candidates,
     evaluate_cases,
 )

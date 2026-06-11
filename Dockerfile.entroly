@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y curl build-essential libssl-dev pkg-con
 
 RUN pip install --no-cache-dir maturin
 
+# entroly-core path-depends on the shared SSOT crate `entroly-qccr` (and future
+# entroly-* logic crates), so the build context must include it — a manual
+# `maturin build` does not auto-vendor path deps the way an sdist build does.
+COPY entroly-qccr/ ./entroly-qccr/
 COPY entroly-core/ ./entroly-core/
 RUN cd entroly-core && maturin build --release -o /build/wheels/
 
