@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -14,12 +15,93 @@ from .models import (
     text_fingerprint,
 )
 
-SUPPORTED_EXTENSIONS = {
+DOCUMENT_EXTENSIONS = frozenset({
     ".txt",
     ".md",
     ".markdown",
     ".rst",
-}
+})
+
+SOURCE_EXTENSIONS = frozenset({
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".css",
+    ".go",
+    ".h",
+    ".hpp",
+    ".html",
+    ".java",
+    ".js",
+    ".jsx",
+    ".json",
+    ".kt",
+    ".mjs",
+    ".py",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".swift",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".xml",
+    ".yaml",
+    ".yml",
+})
+
+SUPPORTED_FILENAMES = frozenset({
+    "Containerfile",
+    "Dockerfile",
+    "Justfile",
+    "Makefile",
+    "Procfile",
+    "Rakefile",
+})
+
+SUPPORTED_FILENAME_PREFIXES = (
+    "Containerfile.",
+    "Dockerfile.",
+)
+
+SUPPORTED_EXTENSIONS = DOCUMENT_EXTENSIONS | SOURCE_EXTENSIONS
+
+SKIP_DIRECTORIES = frozenset({
+    ".entroly",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "target",
+    "venv",
+})
+
+SKIP_DIRECTORY_SUFFIXES = (
+    ".egg-info",
+)
+
+SKIP_FILENAMES = frozenset({
+    "Cargo.lock",
+    "Gemfile.lock",
+    "Pipfile.lock",
+    "bun.lockb",
+    "composer.lock",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "yarn.lock",
+})
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_\-']*|[^\w\s]", re.UNICODE)
 HEADING_RE = re.compile(
@@ -48,17 +130,50 @@ def _title_for_path(source_path: str) -> str:
     return Path(name).stem.replace("_", " ").replace("-", " ").strip() or name
 
 
+def _is_skipped_directory(name: str) -> bool:
+    return name in SKIP_DIRECTORIES or name.endswith(SKIP_DIRECTORY_SUFFIXES)
+
+
+def _is_skipped_filename(name: str) -> bool:
+    return name in SKIP_FILENAMES
+
+
+def _has_supported_filename(name: str) -> bool:
+    return name in SUPPORTED_FILENAMES or name.startswith(SUPPORTED_FILENAME_PREFIXES)
+
+
+def _is_supported_document_path(path: Path) -> bool:
+    return (
+        path.is_file()
+        and not _is_skipped_filename(path.name)
+        and (path.suffix.lower() in SUPPORTED_EXTENSIONS or _has_supported_filename(path.name))
+    )
+
+
+def _discover_supported_paths(root: Path) -> list[Path]:
+    if root.is_file():
+        return [root] if _is_supported_document_path(root) else []
+
+    paths: list[Path] = []
+    for current_root, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not _is_skipped_directory(d))
+        current_path = Path(current_root)
+        for filename in sorted(filenames):
+            candidate = current_path / filename
+            if _is_supported_document_path(candidate):
+                paths.append(candidate)
+    return paths
+
+
+def supported_documents_hint() -> str:
+    extensions = ", ".join(sorted(DOCUMENT_EXTENSIONS | SOURCE_EXTENSIONS))
+    filenames = ", ".join(sorted(SUPPORTED_FILENAMES | {"Dockerfile.*", "Containerfile.*"}))
+    return f"Use supported text/source files ({extensions}) or filenames ({filenames})."
+
+
 def read_documents_from_path(path: str | Path) -> list[tuple[str, str]]:
     root = Path(path)
-    paths: list[Path]
-    if root.is_file():
-        paths = [root]
-    else:
-        paths = [
-            p
-            for p in sorted(root.rglob("*"))
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
-        ]
+    paths = _discover_supported_paths(root)
     documents: list[tuple[str, str]] = []
     for p in paths:
         source_path = p.as_posix()

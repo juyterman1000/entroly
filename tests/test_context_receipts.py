@@ -313,9 +313,32 @@ def test_cli_ingest_select_receipt_explain_smoke(tmp_path: Path):
 
 def test_read_documents_from_path_filters_supported_files(tmp_path: Path):
     (tmp_path / "a.md").write_text("# A\n\nalpha", encoding="utf-8")
+    (tmp_path / "app.py").write_text("def answer():\n    return 42\n", encoding="utf-8")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+    (tmp_path / "Dockerfile.prod").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+    (tmp_path / "Containerfile.dev").write_text("FROM fedora:latest\n", encoding="utf-8")
+    (tmp_path / "Justfile").write_text("test:\n    pytest\n", encoding="utf-8")
     (tmp_path / "b.bin").write_bytes(b"\x00\x01")
 
     docs = read_documents_from_path(tmp_path)
+    sources = {Path(source).name for source, _ in docs}
 
-    assert len(docs) == 1
-    assert docs[0][0].endswith("a.md")
+    assert sources == {"Containerfile.dev", "Dockerfile", "Dockerfile.prod", "Justfile", "a.md", "app.py"}
+
+
+def test_read_documents_from_path_skips_generated_dependency_dirs(tmp_path: Path):
+    (tmp_path / "README.md").write_text("# Project\n", encoding="utf-8")
+    node_modules = tmp_path / "node_modules" / "dep"
+    node_modules.mkdir(parents=True)
+    (node_modules / "README.md").write_text("# Dependency copy\n", encoding="utf-8")
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "config.toml").write_text("[core]\n", encoding="utf-8")
+    (tmp_path / "package-lock.json").write_text("{}\n", encoding="utf-8")
+    egg_info = tmp_path / "sample.egg-info"
+    egg_info.mkdir()
+    (egg_info / "PKG-INFO").write_text("Metadata-Version: 2.1\n", encoding="utf-8")
+
+    docs = read_documents_from_path(tmp_path)
+
+    assert [Path(source).name for source, _ in docs] == ["README.md"]
