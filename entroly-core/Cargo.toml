@@ -40,7 +40,7 @@ entroly-qccr = { path = "../entroly-qccr", default-features = false, features = 
 
 # Hashing
 md-5 = "0.11"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Compression (checkpoint)
 flate2 = "1.0"
