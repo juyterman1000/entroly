@@ -57,7 +57,7 @@ rand = "0.8"
 # sync (no async runtime) to preserve fast startup, and optional so they never
 # enter the Python wheel.
 tiny_http = { version = "0.12", optional = true }
-ureq = { version = "2", optional = true }
+ureq = { version = "3", optional = true }
 
 [dev-dependencies]
 tempfile = "3.12"
