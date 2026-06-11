@@ -3773,12 +3773,12 @@ def cmd_optimize(args):
 def cmd_ingest(args):
     """entroly ingest PATH - build a local multi-document Context Receipt index."""
     from entroly.context_receipts import ingest_documents
-    from entroly.context_receipts.ingest import read_documents_from_path
+    from entroly.context_receipts.ingest import read_documents_from_path, supported_documents_hint
     from entroly.context_receipts.store import DEFAULT_INDEX, write_json
 
     docs = read_documents_from_path(args.path)
     if not docs:
-        print(f"  {C.RED}No supported documents found.{C.RESET} Use .md, .txt, or .rst files.", file=sys.stderr)
+        print(f"  {C.RED}No supported documents found.{C.RESET} {supported_documents_hint()}", file=sys.stderr)
         return 1
     index = ingest_documents(
         docs,
