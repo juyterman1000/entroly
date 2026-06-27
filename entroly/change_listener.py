@@ -16,6 +16,7 @@ This is the change-driven glue between Truth, Belief, and Verification.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
@@ -96,7 +97,7 @@ class WorkspaceChangeListener:
         changed = []
         for rel_path, mtime in current.items():
             prev = previous.get(rel_path)
-            if force or prev is None or mtime > prev:
+            if force or prev is None or mtime != prev:
                 changed.append(rel_path)
 
         deleted = [rel_path for rel_path in previous.keys() if rel_path not in current]
@@ -187,15 +188,26 @@ class WorkspaceChangeListener:
         self._stop.set()
         return {"status": "stopped", "project_dir": str(self._project_dir)}
 
-    def _snapshot(self) -> dict[str, float]:
-        snapshot: dict[str, float] = {}
+    def _snapshot(self) -> dict[str, str]:
+        snapshot: dict[str, str] = {}
         for path in self._discover_source_files():
             try:
                 rel = path.relative_to(self._project_dir).as_posix()
-                snapshot[rel] = path.stat().st_mtime
+                snapshot[rel] = self._file_signature(path)
             except OSError:
                 continue
         return snapshot
+
+    def _file_signature(self, path: Path) -> str:
+        """Return a content-sensitive signature for change detection.
+
+        Some filesystems expose coarse mtimes, so rapid edit/test cycles can
+        write different content with the same recorded modification timestamp.
+        Include a content hash to avoid missing those changes.
+        """
+        stat = path.stat()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return f"{stat.st_size}:{stat.st_mtime_ns}:{digest}"
 
     def _discover_source_files(self) -> list[Path]:
         files: list[Path] = []
@@ -211,16 +223,21 @@ class WorkspaceChangeListener:
         files.sort()
         return files
 
-    def _load_state(self) -> dict[str, float]:
+    def _load_state(self) -> dict[str, str]:
         if not self._state_path.exists():
             return {}
         try:
-            return json.loads(self._state_path.read_text(encoding="utf-8"))
+            state = json.loads(self._state_path.read_text(encoding="utf-8"))
+            if not isinstance(state, dict):
+                return {}
+            return {str(k): str(v) for k, v in state.items()}
         except Exception:
             return {}
 
-    def _save_state(self, state: dict[str, float]) -> None:
-        self._state_path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    def _save_state(self, state: dict[str, str]) -> None:
+        self._state_path.write_text(
+            json.dumps(state, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
     def _render_summary(self, result: WorkspaceSyncResult) -> str:
         changed = ", ".join(result.changed_files[:20]) or "None"

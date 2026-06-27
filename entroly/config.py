@@ -8,6 +8,7 @@ All tunable parameters live here — no magic numbers buried in code.
 
 import hashlib
 import json
+import math
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -34,7 +35,9 @@ def _project_checkpoint_dir() -> Path:
         probe.unlink(missing_ok=True)
         return default_dir
     except OSError:
-        fallback_dir = Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash
+        fallback_dir = (
+            Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash
+        )
         fallback_dir.mkdir(parents=True, exist_ok=True)
         return fallback_dir
 
@@ -46,13 +49,18 @@ def tuning_config_candidates() -> list[Path]:
     explicit = os.environ.get("ENTROLY_TUNING_CONFIG")
     if explicit:
         candidates.append(Path(explicit))
-    candidates.extend([
-        _project_checkpoint_dir() / "tuning_config.json",
-        here.parent / "bench" / "tuning_config.json",
-        here / "tuning_config.json",
-        here.parent / "tuning_config.json",
-        here / "data" / "tuning_defaults.json",
-    ])
+    candidates.extend(
+        [
+            _project_checkpoint_dir() / "tuning_config.json",
+            here / "data" / "tuning_defaults.json",
+            here / "tuning_config.json",
+            here.parent / "tuning_config.json",
+            # Historical benchmark output is kept as a last-resort development
+            # fallback only. It may use legacy flat keys and should never outrank
+            # the packaged runtime defaults shipped to fresh projects.
+            here.parent / "bench" / "tuning_config.json",
+        ]
+    )
     return candidates
 
 
@@ -138,9 +146,7 @@ class EntrolyConfig:
     """Maximum fragments to pre-fetch per symbol lookup."""
 
     # ── Checkpoint ──────────────────────────────────────────────────────
-    checkpoint_dir: Path = field(
-        default_factory=lambda: _project_checkpoint_dir()
-    )
+    checkpoint_dir: Path = field(default_factory=lambda: _project_checkpoint_dir())
     """Directory for persisting checkpoint state (project-isolated)."""
 
     auto_checkpoint_interval: int = 5
@@ -162,7 +168,9 @@ class EntrolyConfig:
     # ── Server ──────────────────────────────────────────────────────────
     server_name: str = "entroly"
     server_version: str = field(
-        default_factory=lambda: __import__("entroly", fromlist=["__version__"]).__version__
+        default_factory=lambda: (
+            __import__("entroly", fromlist=["__version__"]).__version__
+        )
     )
 
 
@@ -202,11 +210,15 @@ def resolve_tuning_kwargs(cfg: dict) -> dict:
         val = nested
         if val is None:
             val = cfg.get(flat_key)
-        if val is None:
+        if val is None or isinstance(val, bool):
+            return default
+        if cast is int and isinstance(val, float) and not val.is_integer():
             return default
         try:
             val = cast(val)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            return default
+        if isinstance(val, float) and not math.isfinite(val):
             return default
         if val < lo or val > hi:
             return default
@@ -215,29 +227,95 @@ def resolve_tuning_kwargs(cfg: dict) -> dict:
     return {
         # ── knapsack scoring weights ──
         "weight_recency": pick(
-            weights.get("recency"), "weight_recency", _d("weight_recency"), float, 0.0, 1.0),
+            weights.get("recency"),
+            "weight_recency",
+            _d("weight_recency"),
+            float,
+            0.0,
+            1.0,
+        ),
         "weight_frequency": pick(
-            weights.get("frequency"), "weight_frequency", _d("weight_frequency"), float, 0.0, 1.0),
+            weights.get("frequency"),
+            "weight_frequency",
+            _d("weight_frequency"),
+            float,
+            0.0,
+            1.0,
+        ),
         "weight_semantic_sim": pick(
-            weights.get("semantic_sim"), "weight_semantic_sim", _d("weight_semantic_sim"), float, 0.0, 1.0),
+            weights.get("semantic_sim"),
+            "weight_semantic_sim",
+            _d("weight_semantic_sim"),
+            float,
+            0.0,
+            1.0,
+        ),
         "weight_entropy": pick(
-            weights.get("entropy"), "weight_entropy", _d("weight_entropy"), float, 0.0, 1.0),
+            weights.get("entropy"),
+            "weight_entropy",
+            _d("weight_entropy"),
+            float,
+            0.0,
+            1.0,
+        ),
         # ── decay ──
         "decay_half_life_turns": pick(
-            decay.get("half_life_turns"), "decay_half_life_turns", _d("decay_half_life_turns"), int, 1, 1000),
+            decay.get("half_life_turns"),
+            "decay_half_life_turns",
+            _d("decay_half_life_turns"),
+            int,
+            1,
+            1000,
+        ),
         "min_relevance_threshold": pick(
-            decay.get("min_relevance_threshold"), "min_relevance_threshold", _d("min_relevance_threshold"), float, 0.0, 1.0),
+            decay.get("min_relevance_threshold"),
+            "min_relevance_threshold",
+            _d("min_relevance_threshold"),
+            float,
+            0.0,
+            1.0,
+        ),
         # ── knapsack exploration ──
         "exploration_rate": pick(
-            knapsack.get("exploration_rate"), "exploration_rate", _d("exploration_rate"), float, 0.0, 1.0),
+            knapsack.get("exploration_rate"),
+            "exploration_rate",
+            _d("exploration_rate"),
+            float,
+            0.0,
+            1.0,
+        ),
         # ── dedup (Hamming distance, int) ──
         "dedup_hamming_threshold": pick(
-            dedup.get("hamming_threshold"), "hamming_threshold", _d("dedup_hamming_threshold"), int, 0, 64),
+            dedup.get("hamming_threshold"),
+            "hamming_threshold",
+            _d("dedup_hamming_threshold"),
+            int,
+            0,
+            64,
+        ),
         # ── IOS resolution factors ──
         "ios_skeleton_info_factor": pick(
-            ios.get("skeleton_info_factor"), "ios_skeleton_info_factor", _d("ios_skeleton_info_factor"), float, 0.0, 1.0),
+            ios.get("skeleton_info_factor"),
+            "ios_skeleton_info_factor",
+            _d("ios_skeleton_info_factor"),
+            float,
+            0.0,
+            1.0,
+        ),
         "ios_reference_info_factor": pick(
-            ios.get("reference_info_factor"), "ios_reference_info_factor", _d("ios_reference_info_factor"), float, 0.0, 1.0),
+            ios.get("reference_info_factor"),
+            "ios_reference_info_factor",
+            _d("ios_reference_info_factor"),
+            float,
+            0.0,
+            1.0,
+        ),
         "ios_diversity_floor": pick(
-            ios.get("diversity_floor"), "ios_diversity_floor", _d("ios_diversity_floor"), float, 0.0, 1.0),
+            ios.get("diversity_floor"),
+            "ios_diversity_floor",
+            _d("ios_diversity_floor"),
+            float,
+            0.0,
+            1.0,
+        ),
     }

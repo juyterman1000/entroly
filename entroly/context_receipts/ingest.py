@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
+from collections.abc import Mapping, Sequence
+from pathlib import Path, PurePath
 
 from .models import (
     SCHEMA_VERSION,
@@ -113,6 +114,68 @@ HEADING_RE = re.compile(
 PAGE_RE = re.compile(r"\bpage\s+(\d+)\b", re.IGNORECASE)
 
 
+def _int_or_default(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _overlap_tokens_or_default(
+    value: object, *, chunk_tokens: int, default: int = 32
+) -> int:
+    overlap = max(0, _int_or_default(value, default))
+    max_overlap = max(0, chunk_tokens - 1)
+    return min(overlap, max_overlap)
+
+
+def _source_path_to_str(source: object) -> str:
+    if isinstance(source, PurePath):
+        return source.as_posix()
+    return str(source)
+
+
+def normalize_document_pairs(documents: object) -> list[tuple[str, str]]:
+    """Return deterministic ``(source_path, text)`` pairs from public input.
+
+    Public SDK callers and older integrations occasionally pass ``Path`` objects,
+    bytes text, mapping-shaped records, or malformed rows.  Normalize valid rows
+    and skip rows that cannot identify both a source and text so ingestion never
+    fails before receipt generation can produce an auditable empty result.
+    """
+    pairs: list[tuple[str, str]] = []
+    if isinstance(documents, Mapping) or isinstance(documents, str | bytes):
+        iterable = ()
+    else:
+        try:
+            iterable = iter(documents)  # type: ignore[arg-type]
+        except TypeError:
+            iterable = ()
+
+    for item in iterable:
+        source: object
+        text: object
+        if isinstance(item, Mapping):
+            source = item.get("source_path", item.get("path"))
+            text = item.get("text", item.get("content"))
+        elif isinstance(item, Sequence) and not isinstance(item, str | bytes):
+            if len(item) < 2:
+                continue
+            source, text = item[0], item[1]
+        else:
+            continue
+        if source is None or text is None:
+            continue
+        if isinstance(text, bytes):
+            normalized_text = text.decode("utf-8", errors="replace")
+        else:
+            normalized_text = str(text)
+        pairs.append((_source_path_to_str(source), normalized_text))
+    return pairs
+
+
 def estimate_tokens(text: str) -> int:
     return max(1, len(TOKEN_RE.findall(text)))
 
@@ -180,7 +243,9 @@ def read_documents_from_path(path: str | Path) -> list[tuple[str, str]]:
         try:
             documents.append((source_path, p.read_text(encoding="utf-8")))
         except UnicodeDecodeError:
-            documents.append((source_path, p.read_text(encoding="utf-8", errors="replace")))
+            documents.append(
+                (source_path, p.read_text(encoding="utf-8", errors="replace"))
+            )
     return documents
 
 
@@ -329,7 +394,9 @@ def _chunk_document(
             flush()
         if start is None:
             start = int(block["start"])
-            heading = block.get("heading") if isinstance(block.get("heading"), str) else None
+            heading = (
+                block.get("heading") if isinstance(block.get("heading"), str) else None
+            )
             page = block.get("page") if isinstance(block.get("page"), int) else None
         pending.append(str(block["text"]))
         end = int(block["end"])
@@ -344,23 +411,32 @@ def _chunk_document(
         count = estimate_tokens(chunk_text)
         start_char = int(raw["start"])
         end_char = int(raw["end"])
-        fp = text_fingerprint(f"{document_fingerprint}\n{start_char}:{end_char}\n{chunk_text}")
-        chunk_id = "chk_" + stable_hash(
-            {
-                "doc": document_id,
-                "start": start_char,
-                "end": end_char,
-                "fingerprint": fp,
-            }
-        )[:12]
+        fp = text_fingerprint(
+            f"{document_fingerprint}\n{start_char}:{end_char}\n{chunk_text}"
+        )
+        chunk_id = (
+            "chk_"
+            + stable_hash(
+                {
+                    "doc": document_id,
+                    "start": start_char,
+                    "end": end_char,
+                    "fingerprint": fp,
+                }
+            )[:12]
+        )
         result.append(
             DocumentChunk(
                 chunk_id=chunk_id,
                 document_id=document_id,
                 source_path=source_path,
                 title=title,
-                section_heading=raw.get("heading") if isinstance(raw.get("heading"), str) else None,
-                page_number=raw.get("page") if isinstance(raw.get("page"), int) else None,
+                section_heading=raw.get("heading")
+                if isinstance(raw.get("heading"), str)
+                else None,
+                page_number=raw.get("page")
+                if isinstance(raw.get("page"), int)
+                else None,
                 chunk_index=idx,
                 byte_start=_byte_offset(text, start_char),
                 byte_end=_byte_offset(text, end_char),
@@ -384,17 +460,25 @@ def ingest_documents(
     records: list[DocumentRecord] = []
     chunks: list[DocumentChunk] = []
     source_fingerprints: dict[str, str] = {}
+    chunk_token_count = max(40, _int_or_default(chunk_tokens, 360))
+    overlap_token_count = _overlap_tokens_or_default(
+        overlap_tokens, chunk_tokens=chunk_token_count
+    )
 
-    for source_path, text in sorted(documents, key=lambda item: item[0]):
+    for source_path, text in sorted(
+        normalize_document_pairs(documents), key=lambda item: item[0]
+    ):
         doc_fp = text_fingerprint(text)
-        doc_id = "doc_" + stable_hash({"source": source_path, "fingerprint": doc_fp})[:12]
+        doc_id = (
+            "doc_" + stable_hash({"source": source_path, "fingerprint": doc_fp})[:12]
+        )
         doc_chunks = _chunk_document(
             source_path,
             text,
             document_id=doc_id,
             document_fingerprint=doc_fp,
-            chunk_tokens=max(40, int(chunk_tokens)),
-            overlap_tokens=max(0, int(overlap_tokens)),
+            chunk_tokens=chunk_token_count,
+            overlap_tokens=overlap_token_count,
         )
         source_fingerprints[source_path] = doc_fp
         records.append(
@@ -414,7 +498,7 @@ def ingest_documents(
         schema_version=SCHEMA_VERSION,
         documents=records,
         chunks=chunks,
-        chunk_token_limit=max(40, int(chunk_tokens)),
-        chunk_overlap=max(0, int(overlap_tokens)),
+        chunk_token_limit=chunk_token_count,
+        chunk_overlap=overlap_token_count,
         source_fingerprints=source_fingerprints,
     )

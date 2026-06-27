@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 
 from entroly import context_receipts as cr
+from entroly.context_receipts.models import text_fingerprint
+from entroly.context_receipts.recover import build_recovery_bundle
 
 # Enough distinct tokens that chunking yields many chunks and a small budget omits most.
 _TEXT = " ".join(f"token{i}" for i in range(800))
@@ -85,6 +87,69 @@ def test_unavailable_without_recovery_data(tmp_path):
     recovered = cr.recover_omitted(receipt, store_dir=tmp_path)  # empty store
     assert recovered
     assert all(r["status"] == "unavailable" and r["text"] is None for r in recovered)
+
+
+def test_recovery_tolerates_malformed_receipt_rows_and_bundle_entries():
+    receipt = {
+        "receipt_id": "r1",
+        "omitted_context": [
+            "not-a-row",
+            {
+                "chunk_id": "bad-count",
+                "source_path": None,
+                "section_heading": 123,
+                "token_count": float("inf"),
+                "omission_reason": None,
+                "fingerprint": "fp-bad",
+            },
+            {
+                "chunk_id": "ok",
+                "token_count": True,
+                "fingerprint": "fp-ok",
+            },
+        ],
+    }
+    bundle = {
+        "chunks": {
+            "bad-count": "not-a-mapping",
+            "ok": {
+                "text": 42,
+                "fingerprint": "fp-ok",
+                "content_sha": text_fingerprint("42"),
+            },
+        }
+    }
+
+    recovered = cr.recover_omitted(receipt, bundle=bundle)
+
+    assert [item["chunk_id"] for item in recovered] == ["bad-count", "ok"]
+    assert recovered[0]["status"] == "unavailable"
+    assert recovered[0]["token_count"] == 0
+    assert recovered[1]["status"] == "recovered"
+    assert recovered[1]["text"] == "42"
+    assert recovered[1]["token_count"] == 0
+
+
+def test_recovery_bundle_skips_malformed_index_chunks():
+    bundle = build_recovery_bundle(
+        {
+            "chunks": [
+                "not-a-row",
+                {"text": "missing id"},
+                {
+                    "chunk_id": "valid",
+                    "text": 123,
+                    "token_count": float("inf"),
+                    "fingerprint": None,
+                },
+            ]
+        }
+    )
+
+    assert list(bundle["chunks"]) == ["valid"]
+    assert bundle["chunks"]["valid"]["text"] == "123"
+    assert bundle["chunks"]["valid"]["token_count"] == 0
+    assert bundle["chunks"]["valid"]["fingerprint"] == ""
 
 
 def test_recover_no_omissions_returns_empty():

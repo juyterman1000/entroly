@@ -64,6 +64,28 @@ def test_malformed_and_out_of_range_fall_back_without_raising():
     assert kw["min_relevance_threshold"] == _DEFAULTS.min_relevance_threshold  # > 1.0
 
 
+
+def test_non_finite_boolean_and_fractional_tuning_values_fall_back():
+    cfg = {
+        "weights": {
+            "recency": float("nan"),
+            "frequency": float("inf"),
+            "semantic_sim": True,
+        },
+        "decay": {"half_life_turns": 3.5, "min_relevance_threshold": False},
+        "dedup": {"hamming_threshold": float("inf")},
+    }
+
+    kw = resolve_tuning_kwargs(cfg)
+
+    assert kw["weight_recency"] == _DEFAULTS.weight_recency
+    assert kw["weight_frequency"] == _DEFAULTS.weight_frequency
+    assert kw["weight_semantic_sim"] == _DEFAULTS.weight_semantic_sim
+    assert kw["decay_half_life_turns"] == _DEFAULTS.decay_half_life_turns
+    assert kw["min_relevance_threshold"] == _DEFAULTS.min_relevance_threshold
+    assert kw["dedup_hamming_threshold"] == _DEFAULTS.dedup_hamming_threshold
+
+
 def test_zero_is_a_valid_value_not_treated_as_missing():
     """0.0 is falsy — the mapper must distinguish 'absent' from 'zero'."""
     cfg = {"weights": {"entropy": 0.0}, "decay": {"min_relevance_threshold": 0.0}}
