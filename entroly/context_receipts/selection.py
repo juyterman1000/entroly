@@ -72,6 +72,8 @@ def select_context(
         return True
 
     for rank in ranked:
+        if rank.chunk_id not in chunks:
+            continue
         if rank.final_score <= 0 and selected_ids:
             continue
         chunk = chunks[rank.chunk_id]
@@ -120,7 +122,7 @@ def select_context(
 
     omitted: list[OmittedContextItem] = []
     for rank in ranked:
-        if rank.chunk_id in selected_set:
+        if rank.chunk_id in selected_set or rank.chunk_id not in chunks:
             continue
         chunk = chunks[rank.chunk_id]
         reason = "lower ranked than selected context under token budget"

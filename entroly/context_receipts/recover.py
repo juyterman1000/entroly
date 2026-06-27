@@ -21,6 +21,7 @@ omission *and* hand back the exact content, with a cryptographic guarantee.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,44 @@ from .models import ContextReceipt, text_fingerprint
 RECOVERY_SCHEMA = "context-receipt.recovery.v1"
 RECOVERY_SUFFIX = ".recovery.json"
 
+
+def _dict_or_empty(value: object) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _list_of_mappings(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
+
+
+def _str_or_default(value: object, default: str = "") -> str:
+    if value is None:
+        return default
+    return str(value)
+
+
+def _optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _int_or_default(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _chunk_entries(value: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(chunk_id): dict(entry)
+        for chunk_id, entry in value.items()
+        if isinstance(entry, Mapping)
+    }
 
 @dataclass
 class RecoveredChunk:
@@ -58,15 +97,18 @@ def build_recovery_bundle(index: dict[str, Any]) -> dict[str, Any]:
     This is the *only* place full omitted text is retained; keep it project-local.
     """
     chunks: dict[str, Any] = {}
-    for c in index.get("chunks", []):
-        text = c.get("text", "") or ""
-        chunks[str(c["chunk_id"])] = {
+    for c in _list_of_mappings(_dict_or_empty(index).get("chunks", [])):
+        chunk_id = _str_or_default(c.get("chunk_id"))
+        if not chunk_id:
+            continue
+        text = _str_or_default(c.get("text"))
+        chunks[chunk_id] = {
             "text": text,
-            "fingerprint": c.get("fingerprint", ""),
+            "fingerprint": _str_or_default(c.get("fingerprint")),
             "content_sha": text_fingerprint(text),
-            "source_path": c.get("source_path", ""),
-            "section_heading": c.get("section_heading"),
-            "token_count": int(c.get("token_count", 0) or 0),
+            "source_path": _str_or_default(c.get("source_path")),
+            "section_heading": _optional_str(c.get("section_heading")),
+            "token_count": max(0, _int_or_default(c.get("token_count"))),
         }
     return {"schema": RECOVERY_SCHEMA, "chunk_count": len(chunks), "chunks": chunks}
 
@@ -102,11 +144,11 @@ def _resolve_source(
     """Resolve chunk_id -> recovery entry, in priority order: explicit bundle,
     explicit index (converted), then the persisted bundle for this receipt."""
     if bundle is not None:
-        return dict(bundle.get("chunks", {}))
+        return _chunk_entries(_dict_or_empty(bundle).get("chunks", {}))
     if index is not None:
-        return dict(build_recovery_bundle(index).get("chunks", {}))
+        return _chunk_entries(build_recovery_bundle(index).get("chunks", {}))
     loaded = load_recovery_bundle(receipt_id, store_dir) if receipt_id else None
-    return dict(loaded.get("chunks", {})) if loaded else {}
+    return _chunk_entries(_dict_or_empty(loaded).get("chunks", {})) if loaded else {}
 
 
 def recover_omitted(
@@ -126,8 +168,8 @@ def recover_omitted(
     True only when the returned text is provably the exact omitted content.
     """
     rec = receipt if isinstance(receipt, dict) else receipt.to_dict()
-    receipt_id = str(rec.get("receipt_id", ""))
-    omitted = list(rec.get("omitted_context", []))
+    receipt_id = _str_or_default(rec.get("receipt_id", ""))
+    omitted = _list_of_mappings(rec.get("omitted_context", []))
     if chunk_id is not None:
         omitted = [o for o in omitted if o.get("chunk_id") == chunk_id]
 
@@ -135,14 +177,14 @@ def recover_omitted(
 
     results: list[RecoveredChunk] = []
     for item in omitted:
-        cid = str(item.get("chunk_id", ""))
-        recorded_fp = item.get("fingerprint", "")
+        cid = _str_or_default(item.get("chunk_id"))
+        recorded_fp = _str_or_default(item.get("fingerprint"))
         common = dict(
             chunk_id=cid,
-            source_path=item.get("source_path", ""),
-            section_heading=item.get("section_heading"),
-            token_count=int(item.get("token_count", 0) or 0),
-            omission_reason=item.get("omission_reason", ""),
+            source_path=_str_or_default(item.get("source_path")),
+            section_heading=_optional_str(item.get("section_heading")),
+            token_count=max(0, _int_or_default(item.get("token_count"))),
+            omission_reason=_str_or_default(item.get("omission_reason")),
             fingerprint=recorded_fp,
         )
         entry = source.get(cid)
@@ -154,10 +196,14 @@ def recover_omitted(
             ))
             continue
 
-        text = entry.get("text", "") or ""
+        text = _str_or_default(entry.get("text"))
         # (a) is this the chunk the receipt omitted?  (b) is the stored text intact?
-        chunk_matches = (not recorded_fp) or entry.get("fingerprint", "") == recorded_fp
-        text_intact = text_fingerprint(text) == entry.get("content_sha", "")
+        chunk_matches = (
+            not recorded_fp
+        ) or _str_or_default(entry.get("fingerprint")) == recorded_fp
+        text_intact = text_fingerprint(text) == _str_or_default(
+            entry.get("content_sha")
+        )
         verified = bool(chunk_matches and text_intact)
         results.append(RecoveredChunk(
             **common, text=text, verified=verified,
