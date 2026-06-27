@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bump version across all Entroly manifests.
 
-Usage: python scripts/bump_version.py 0.8.0
+Usage: python scripts/bump_version.py 1.0.25
 """
 from __future__ import annotations
 import re
@@ -20,6 +20,9 @@ TARGETS = [
     ("entroly-core/Cargo.lock",
         r'(name\s*=\s*"entroly-core"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
     ("entroly-core/README.md", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly-core>={v}'),
+    ("entroly-qccr/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
+    ("entroly-qccr/Cargo.lock",
+        r'(name\s*=\s*"entroly-qccr"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
     ("entroly-wasm/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
     ("entroly-wasm/Cargo.lock",
         r'(name\s*=\s*"entroly-wasm"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
