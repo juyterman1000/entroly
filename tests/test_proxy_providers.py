@@ -51,6 +51,48 @@ from entroly.proxy import (  # noqa: E402
 )
 
 
+class TestProviderForwardingPolicy:
+    def test_http_client_prefers_explicit_ca_bundle_env(self, monkeypatch, tmp_path):
+        from entroly.proxy import _http_client_kwargs
+
+        ca_file = tmp_path / "ca.pem"
+        ca_file.write_text("test-ca", encoding="utf-8")
+        monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(ca_file))
+
+        kwargs = _http_client_kwargs()
+
+        assert kwargs["trust_env"] is True
+        assert kwargs["verify"] == str(ca_file)
+
+    def test_anthropic_headers_preserve_provider_metadata_without_hop_by_hop(self):
+        proxy = PromptCompilerProxy(object(), ProxyConfig())
+
+        out = proxy._build_headers(
+            {
+                "authorization": "Bearer test",
+                "x-api-key": "sk-ant-test",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "prompt-caching-2024-07-31",
+                "x-stainless-lang": "python",
+                "host": "127.0.0.1:9377",
+                "content-length": "123",
+            },
+            "anthropic",
+        )
+
+        assert out["Content-Type"] == "application/json"
+        assert out["authorization"] == "Bearer test"
+        assert out["x-api-key"] == "sk-ant-test"
+        assert out["anthropic-version"] == "2023-06-01"
+        assert out["anthropic-beta"] == "prompt-caching-2024-07-31"
+        assert out["x-stainless-lang"] == "python"
+        assert "host" not in out
+        assert "content-length" not in out
+
+    def test_openai_compatible_prefix_models_use_registry_context_window(self):
+        assert context_window_for_model("deepseek-reasoner") == 128_000
+
+
 class TestAnthropicCompatibilitySanitizer:
     """Provider-level cleanup for native Anthropic request bodies."""
 

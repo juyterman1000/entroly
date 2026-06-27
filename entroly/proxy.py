@@ -22,6 +22,7 @@ import asyncio
 import collections
 import copy
 import hashlib
+import ipaddress
 import json
 import logging
 import math
@@ -32,6 +33,7 @@ import threading
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from starlette.applications import Starlette
@@ -41,7 +43,7 @@ from starlette.routing import Route
 
 from .adaptive_budget import AdaptiveBudgetModel, extract_features
 from .context_scaffold import generate_scaffold
-from .proxy_config import ProxyConfig, context_window_for_model
+from .proxy_config import ProxyConfig, context_window_for_model, provider_capability
 from .proxy_transform import (
     compute_dynamic_budget,
     compute_token_budget,
@@ -67,6 +69,31 @@ from .control_plane import (
 from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
+
+_HOP_BY_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "host",
+    "content-length",
+}
+
+_COMMON_PROVIDER_HEADERS = {
+    "accept",
+    "accept-language",
+    "content-type",
+    "traceparent",
+    "tracestate",
+    "baggage",
+    "user-agent",
+}
+
+_CERT_ENV_VARS = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS")
 
 # ── Privacy utilities ───────────────────────────────────────────────────
 
@@ -813,6 +840,102 @@ def _looks_like_structured_text(text: str) -> bool:
         return False
 
 
+def _host_without_port(value: str | None) -> str:
+    if not value:
+        return ""
+    parsed = value.strip()
+    if parsed.startswith("[") and "]" in parsed:
+        return parsed[1:parsed.index("]")]
+    if parsed.count(":") == 1:
+        return parsed.rsplit(":", 1)[0]
+    return parsed
+
+
+def _port_from_host(value: str | None) -> int | None:
+    if not value:
+        return None
+    parsed = value.strip()
+    if parsed.startswith("[") and "]" in parsed:
+        suffix = parsed[parsed.index("]") + 1:]
+        return int(suffix[1:]) if suffix.startswith(":") and suffix[1:].isdigit() else None
+    if parsed.count(":") == 1:
+        port = parsed.rsplit(":", 1)[1]
+        return int(port) if port.isdigit() else None
+    return None
+
+
+def _is_loopback_host(value: str | None) -> bool:
+    host = _host_without_port(value).lower()
+    if host in {"localhost", "test", "testserver"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _origin_matches_sidecar(request: Request, header_name: str) -> bool:
+    origin = request.headers.get(header_name)
+    if not origin:
+        return True
+    parsed = urlparse(origin)
+    if not _is_loopback_host(parsed.hostname):
+        return False
+    request_host = request.headers.get("host", "")
+    if not _is_loopback_host(request_host):
+        return False
+    request_port = _port_from_host(request_host) or request.url.port
+    origin_port = parsed.port
+    return request_port == origin_port
+
+
+def _is_trusted_sidecar_request(request: Request) -> bool:
+    client_host = request.client.host if request.client else ""
+    if client_host and not _is_loopback_host(client_host):
+        return False
+    if not client_host and not _is_loopback_host(request.headers.get("host")):
+        return False
+    return (
+        _origin_matches_sidecar(request, "origin")
+        and _origin_matches_sidecar(request, "referer")
+    )
+
+
+def _sidecar_guard(handler):
+    async def _guarded(request: Request):
+        if not _is_trusted_sidecar_request(request):
+            return JSONResponse(
+                {
+                    "error": "sidecar_forbidden",
+                    "detail": "Entroly sidecar endpoints only accept local same-origin requests.",
+                },
+                status_code=403,
+            )
+        return await handler(request)
+
+    return _guarded
+
+
+def _resolve_ca_bundle_from_env() -> str | None:
+    for name in _CERT_ENV_VARS:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
+def _http_client_kwargs() -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "timeout": httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
+        "follow_redirects": True,
+        "trust_env": True,
+    }
+    ca_bundle = _resolve_ca_bundle_from_env()
+    if ca_bundle:
+        kwargs["verify"] = ca_bundle
+    return kwargs
+
+
 async def _bytes_iter(data: bytes):
     yield data
 
@@ -1133,10 +1256,7 @@ class PromptCompilerProxy:
             )
 
     async def startup(self) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
-            follow_redirects=True,
-        )
+        self._client = httpx.AsyncClient(**_http_client_kwargs())
         logger.info("Prompt compiler proxy ready")
 
     async def _ensure_client(self) -> httpx.AsyncClient:
@@ -1146,10 +1266,7 @@ class PromptCompilerProxy:
         """
         if self._client is None or self._client.is_closed:
             logger.info("Reconnecting HTTP client (previous connection dropped)")
-            self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
-                follow_redirects=True,
-            )
+            self._client = httpx.AsyncClient(**_http_client_kwargs())
         return self._client
 
     async def shutdown(self) -> None:
@@ -1358,7 +1475,11 @@ class PromptCompilerProxy:
                         f"Aged tool pruning: ~{aged_bytes_saved // 4} tokens saved"
                     )
             # Stage 2: content-aware compression (test output, diffs, JSON, …)
-            body["messages"], tool_tokens_saved = compress_tool_messages(body["messages"])
+            body["messages"], tool_tokens_saved = compress_tool_messages(
+                body["messages"],
+                policy=getattr(self.config, "tool_result_policy", "auto"),
+                excluded_tools=getattr(self.config, "tool_result_excluded_tools", ""),
+            )
             if tool_tokens_saved > 0:
                 logger.info(f"Tool output compression: {tool_tokens_saved} tokens saved")
 
@@ -3920,16 +4041,23 @@ class PromptCompilerProxy:
     def _build_headers(
         self, original: dict[str, str], provider: str
     ) -> dict[str, str]:
-        """Build headers for the forwarded request. Pass through auth."""
+        """Build headers for the forwarded request without losing provider metadata."""
+        capability = provider_capability(provider)
         forward: dict[str, str] = {"Content-Type": "application/json"}
-        if "authorization" in original:
-            forward["Authorization"] = original["authorization"]
-        if "x-api-key" in original:
-            forward["x-api-key"] = original["x-api-key"]
-        if "anthropic-version" in original:
-            forward["anthropic-version"] = original["anthropic-version"]
-        if "x-goog-api-key" in original:
-            forward["x-goog-api-key"] = original["x-goog-api-key"]
+        for name, value in original.items():
+            lower = name.lower()
+            if lower in _HOP_BY_HOP_HEADERS:
+                continue
+            if lower in _COMMON_PROVIDER_HEADERS:
+                if lower == "content-type":
+                    continue
+                forward[name] = value
+                continue
+            if lower in capability.auth_headers:
+                forward[name] = value
+                continue
+            if any(lower.startswith(prefix) for prefix in capability.header_prefixes):
+                forward[name] = value
         return forward
 
     @staticmethod
@@ -4670,20 +4798,20 @@ def create_proxy_app(
             # Gemini: model name is embedded in the URL path
             Route("/v1beta/models/{model_id:path}", proxy.handle_proxy, methods=["POST"]),
             Route("/health", _health),
-            Route("/stats", _proxy_stats),
-            Route("/context", _context_inspect),          # Gap #29
-            Route("/metrics", _metrics_prometheus),        # Gap #34
-            Route("/outcome", _record_outcome, methods=["POST"]),  # Gap #37
-            Route("/bypass", _toggle_bypass, methods=["POST"]),    # Gap #28
-            Route("/feedback", _fragment_feedback, methods=["POST"]),  # Gap #42
-            Route("/explain", _context_explain),                       # Gap #43
-            Route("/confidence", _confidence),                         # IDE widget API
-            Route("/trends", _value_trends),                           # Dashboard trends
-            Route("/retrieve", _context_retrieve),                     # CCR: lossless retrieval
-            Route("/witness", _witness_list),                           # WITNESS certificate index
-            Route("/witness/train", _witness_train_route, methods=["POST"]),
-            Route("/witness/{witness_id}/feedback", _witness_feedback_route, methods=["POST"]),
-            Route("/witness/{witness_id}", _witness_certificate),       # WITNESS sidecar certificates
+            Route("/stats", _sidecar_guard(_proxy_stats)),
+            Route("/context", _sidecar_guard(_context_inspect)),          # Gap #29
+            Route("/metrics", _sidecar_guard(_metrics_prometheus)),        # Gap #34
+            Route("/outcome", _sidecar_guard(_record_outcome), methods=["POST"]),  # Gap #37
+            Route("/bypass", _sidecar_guard(_toggle_bypass), methods=["POST"]),    # Gap #28
+            Route("/feedback", _sidecar_guard(_fragment_feedback), methods=["POST"]),  # Gap #42
+            Route("/explain", _sidecar_guard(_context_explain)),                       # Gap #43
+            Route("/confidence", _sidecar_guard(_confidence)),                         # IDE widget API
+            Route("/trends", _sidecar_guard(_value_trends)),                           # Dashboard trends
+            Route("/retrieve", _sidecar_guard(_context_retrieve)),                     # CCR: lossless retrieval
+            Route("/witness", _sidecar_guard(_witness_list)),                           # WITNESS certificate index
+            Route("/witness/train", _sidecar_guard(_witness_train_route), methods=["POST"]),
+            Route("/witness/{witness_id}/feedback", _sidecar_guard(_witness_feedback_route), methods=["POST"]),
+            Route("/witness/{witness_id}", _sidecar_guard(_witness_certificate)),       # WITNESS sidecar certificates
             # Catch-all: forward any unmatched path to upstream API
             # Must be LAST — Starlette matches routes in declaration order
             Route("/{path:path}", _catch_all, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]),

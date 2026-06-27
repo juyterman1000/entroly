@@ -1,6 +1,7 @@
 """Exploit-oriented regression checks for local trust boundaries."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import pickle
@@ -25,6 +26,62 @@ from entroly.skill_engine import (
 from entroly.vault import VaultConfig, VaultManager
 from entroly.verifiers.cache import CacheMeta, _load_from_cache
 from entroly.verifiers.ngram_model import CharNGramModel
+
+
+def test_proxy_sidecar_rejects_cross_origin_browser_requests():
+    from httpx import ASGITransport, AsyncClient
+
+    from entroly.proxy import create_proxy_app
+    from entroly.proxy_config import ProxyConfig
+
+    class FakeEngine:
+        def stats(self):
+            return {}
+
+    async def run():
+        app = create_proxy_app(FakeEngine(), ProxyConfig(), start_dashboard=False)
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://127.0.0.1:9377",
+        ) as client:
+            blocked = await client.get(
+                "/stats",
+                headers={"Origin": "https://attacker.example"},
+            )
+            allowed = await client.get(
+                "/stats",
+                headers={"Origin": "http://localhost:9377"},
+            )
+        return blocked, allowed
+
+    blocked, allowed = asyncio.run(run())
+
+    assert blocked.status_code == 403
+    assert blocked.json()["error"] == "sidecar_forbidden"
+    assert allowed.status_code == 200
+
+
+def test_proxy_sidecar_rejects_remote_clients_without_browser_origin():
+    from httpx import ASGITransport, AsyncClient
+
+    from entroly.proxy import create_proxy_app
+    from entroly.proxy_config import ProxyConfig
+
+    class FakeEngine:
+        def stats(self):
+            return {}
+
+    async def run():
+        app = create_proxy_app(FakeEngine(), ProxyConfig(), start_dashboard=False)
+        async with AsyncClient(
+            transport=ASGITransport(app=app, client=("203.0.113.10", 4444)),
+            base_url="http://127.0.0.1:9377",
+        ) as client:
+            return await client.get("/stats")
+
+    response = asyncio.run(run())
+
+    assert response.status_code == 403
 
 
 def test_dashboard_control_writes_reject_cross_origin_browser_requests():

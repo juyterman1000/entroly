@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from entroly.proxy_transform import compress_tool_messages
 
 
@@ -65,6 +67,35 @@ def test_non_tool_blocks_are_not_rewritten():
     ]
 
     out, saved = compress_tool_messages(messages)
+
+    assert saved == 0
+    assert out == messages
+
+
+def test_auto_policy_preserves_parseable_json_tool_payloads():
+    content = json.dumps({
+        "rows": [
+            {"id": i, "payload": "x" * 80}
+            for i in range(80)
+        ]
+    })
+    messages = [{"role": "tool", "name": "json_query", "content": content}]
+
+    out, saved = compress_tool_messages(messages, policy="auto")
+
+    assert saved == 0
+    assert out == messages
+
+
+def test_excluded_tool_name_preserves_exact_output_even_in_compress_policy():
+    content = _large_tool_output()
+    messages = [{"role": "tool", "name": "bash", "content": content}]
+
+    out, saved = compress_tool_messages(
+        messages,
+        policy="compress",
+        excluded_tools="bash",
+    )
 
     assert saved == 0
     assert out == messages

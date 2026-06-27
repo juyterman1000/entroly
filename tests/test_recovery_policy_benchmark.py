@@ -2,7 +2,12 @@ import pytest
 
 # Pulls QCCR (the Rust SSOT) transitively via benchmarks/; self-skip on the
 # pure-Python (engine-less) install surface.
-pytest.importorskip("entroly_core")
+from entroly.native_status import QCCR_SYMBOLS, native_status  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    not native_status(QCCR_SYMBOLS).ok,
+    reason="installed entroly_core does not include current QCCR symbols",
+)
 
 from benchmarks.recovery_policy_benchmark import (  # noqa: E402
     compress_with_exact_replay_candidates,

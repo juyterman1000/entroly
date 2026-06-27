@@ -295,6 +295,30 @@ def test_cursor_mcp_config_uses_current_python_interpreter():
     assert cfg["env"]["PYTHONIOENCODING"] == "utf-8"
 
 
+def test_write_config_round_trips_utf8_existing_json(tmp_path: Path):
+    from entroly.cli import _write_config
+
+    config_path = tmp_path / "mcp.json"
+    config_path.write_text(
+        json.dumps(
+            {"mcpServers": {"existing": {"label": "caf\u00e9"}}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    _write_config(
+        {
+            "config_path": str(config_path),
+            "config_key": "mcpServers",
+        }
+    )
+
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert data["mcpServers"]["existing"]["label"] == "caf\u00e9"
+    assert data["mcpServers"]["entroly"]["env"]["PYTHONIOENCODING"] == "utf-8"
+
+
 def test_claude_code_mcp_wrap_uses_project_mcp_json():
     """Claude Code MCP mode should write the project `.mcp.json`, not the
     Claude Desktop global config."""

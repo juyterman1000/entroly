@@ -13,24 +13,28 @@ from __future__ import annotations
 
 import json
 
+from .native_status import QCCR_SYMBOLS, native_status, native_status_message
+
 # QCCR ranking/selection is the Rust SSOT (entroly-qccr crate via PyO3). Import is
 # guarded so the package still *imports* on a base, engine-less `pip install
 # entroly` (the pure-Python surface protects compress()/universal_compress). QCCR
 # itself requires the engine; calling it without one raises a clear, actionable
 # error rather than crashing at import time.
-try:
-    from entroly_core import py_qccr_expand_query as _rust_expand_query
-    from entroly_core import py_qccr_rank_files as _rust_rank_files
-    from entroly_core import py_qccr_select as _rust_select
+_NATIVE_STATUS = native_status(QCCR_SYMBOLS)
+if _NATIVE_STATUS.ok and _NATIVE_STATUS.module is not None:
+    _rust_expand_query = _NATIVE_STATUS.module.py_qccr_expand_query
+    _rust_rank_files = _NATIVE_STATUS.module.py_qccr_rank_files
+    _rust_select = _NATIVE_STATUS.module.py_qccr_select
     _HAS_RUST = True
-except ImportError:  # pragma: no cover - covered by the pure-Python CI surface
+else:  # pragma: no cover - covered by the pure-Python CI surface
     _HAS_RUST = False
 
     def _rust_unavailable(*_args, **_kwargs):
         raise RuntimeError(
-            "QCCR (query-conditioned retrieval) requires the Entroly Rust engine. "
-            "Install it with:  pip install 'entroly[full]'  "
-            "(or run `maturin develop --release` in a source checkout)."
+            native_status_message(
+                _NATIVE_STATUS,
+                feature="QCCR (query-conditioned retrieval)",
+            )
         )
 
     _rust_expand_query = _rust_rank_files = _rust_select = _rust_unavailable
