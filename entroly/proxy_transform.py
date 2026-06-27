@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import math
 import os as _os
 import re as _re
@@ -1334,9 +1335,78 @@ def _human_size(size_bytes: int) -> str:
         return f"{size_bytes // (1024 * 1024)}MB"
 
 
-def _compress_tool_text(text: str) -> tuple[str, int]:
+def _split_tool_names(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {part.strip().lower() for part in value.split(",") if part.strip()}
+
+
+def _tool_identity_candidates(
+    msg: dict[str, Any],
+    block: dict[str, Any] | None = None,
+) -> set[str]:
+    candidates: set[str] = set()
+    for source in (msg, block or {}):
+        for key in ("name", "tool_name", "tool_call_id", "tool_use_id"):
+            value = source.get(key)
+            if isinstance(value, str) and value:
+                candidates.add(value.lower())
+
+    for call in msg.get("tool_calls", []) if isinstance(msg.get("tool_calls"), list) else []:
+        if not isinstance(call, dict):
+            continue
+        fn = call.get("function")
+        if isinstance(fn, dict) and isinstance(fn.get("name"), str):
+            candidates.add(fn["name"].lower())
+        if isinstance(call.get("id"), str):
+            candidates.add(call["id"].lower())
+    return candidates
+
+
+def _looks_like_exact_structured_payload(text: str) -> bool:
+    stripped = text.strip()
+    if len(stripped) < _TOOL_COMPRESS_MIN_CHARS or stripped[:1] not in "{[":
+        return False
+    try:
+        json.loads(stripped)
+    except Exception:
+        return False
+    return True
+
+
+def _should_preserve_tool_text(
+    text: str,
+    *,
+    policy: str,
+    tool_names: set[str],
+    excluded_tools: set[str],
+) -> bool:
+    policy = (policy or "auto").lower()
+    if tool_names and excluded_tools and tool_names.intersection(excluded_tools):
+        return True
+    if policy in {"compress", "off", "0", "false"}:
+        return False
+    if policy in {"protect", "exact", "preserve", "1", "true"}:
+        return True
+    return _looks_like_exact_structured_payload(text)
+
+
+def _compress_tool_text(
+    text: str,
+    *,
+    policy: str = "compress",
+    tool_names: set[str] | None = None,
+    excluded_tools: set[str] | None = None,
+) -> tuple[str, int]:
     """Compress one tool-output string and return approximate tokens saved."""
     if len(text) < _TOOL_COMPRESS_MIN_CHARS:
+        return text, 0
+    if _should_preserve_tool_text(
+        text,
+        policy=policy,
+        tool_names=tool_names or set(),
+        excluded_tools=excluded_tools or set(),
+    ):
         return text, 0
 
     compressed, _comp_type, savings = compress_tool_output(text)
@@ -1347,13 +1417,25 @@ def _compress_tool_text(text: str) -> tuple[str, int]:
     return compressed, tokens_saved
 
 
-def _compress_tool_result_block(block: dict[str, Any]) -> tuple[dict[str, Any], int]:
+def _compress_tool_result_block(
+    block: dict[str, Any],
+    *,
+    parent_message: dict[str, Any],
+    policy: str,
+    excluded_tools: set[str],
+) -> tuple[dict[str, Any], int]:
     """Compress an Anthropic-style tool_result content block."""
     inner = block.get("content", "")
     total_saved = 0
+    tool_names = _tool_identity_candidates(parent_message, block)
 
     if isinstance(inner, str):
-        compressed, saved = _compress_tool_text(inner)
+        compressed, saved = _compress_tool_text(
+            inner,
+            policy=policy,
+            tool_names=tool_names,
+            excluded_tools=excluded_tools,
+        )
         if saved <= 0:
             return block, 0
         new_block = dict(block)
@@ -1365,12 +1447,22 @@ def _compress_tool_result_block(block: dict[str, Any]) -> tuple[dict[str, Any], 
         new_inner: list[Any] = []
         for item in inner:
             if isinstance(item, str):
-                compressed, saved = _compress_tool_text(item)
+                compressed, saved = _compress_tool_text(
+                    item,
+                    policy=policy,
+                    tool_names=tool_names,
+                    excluded_tools=excluded_tools,
+                )
                 total_saved += saved
                 changed = changed or saved > 0
                 new_inner.append(compressed)
             elif isinstance(item, dict) and isinstance(item.get("text"), str):
-                compressed, saved = _compress_tool_text(item["text"])
+                compressed, saved = _compress_tool_text(
+                    item["text"],
+                    policy=policy,
+                    tool_names=tool_names,
+                    excluded_tools=excluded_tools,
+                )
                 total_saved += saved
                 if saved > 0:
                     new_item = dict(item)
@@ -1389,7 +1481,13 @@ def _compress_tool_result_block(block: dict[str, Any]) -> tuple[dict[str, Any], 
     return block, 0
 
 
-def _compress_tool_blocks(blocks: list[Any]) -> tuple[list[Any], int]:
+def _compress_tool_blocks(
+    blocks: list[Any],
+    *,
+    parent_message: dict[str, Any],
+    policy: str,
+    excluded_tools: set[str],
+) -> tuple[list[Any], int]:
     """Compress provider-native tool_result blocks without changing other blocks."""
     total_saved = 0
     changed = False
@@ -1397,7 +1495,12 @@ def _compress_tool_blocks(blocks: list[Any]) -> tuple[list[Any], int]:
 
     for block in blocks:
         if isinstance(block, dict) and block.get("type") == "tool_result":
-            new_block, saved = _compress_tool_result_block(block)
+            new_block, saved = _compress_tool_result_block(
+                block,
+                parent_message=parent_message,
+                policy=policy,
+                excluded_tools=excluded_tools,
+            )
             total_saved += saved
             changed = changed or saved > 0
             new_blocks.append(new_block)
@@ -1407,11 +1510,18 @@ def _compress_tool_blocks(blocks: list[Any]) -> tuple[list[Any], int]:
     return (new_blocks if changed else blocks), total_saved
 
 
-def compress_tool_messages(messages: list[dict]) -> tuple[list[dict], int]:
+def compress_tool_messages(
+    messages: list[dict],
+    *,
+    policy: str = "compress",
+    excluded_tools: str | set[str] | None = None,
+) -> tuple[list[dict], int]:
     """Compress tool/MCP call results in a conversation message list.
 
     Processes messages with role="tool" or role="function" or content
     that looks like tool output, applying pattern-based compression.
+    policy="auto" preserves parseable structured payloads and explicitly
+    excluded tool names so callers that parse exact tool output do not break.
 
     Returns:
         (compressed_messages, total_tokens_saved)
@@ -1421,10 +1531,16 @@ def compress_tool_messages(messages: list[dict]) -> tuple[list[dict], int]:
 
     total_saved = 0
     result = []
+    excluded = (
+        _split_tool_names(excluded_tools)
+        if isinstance(excluded_tools, str)
+        else {str(name).lower() for name in (excluded_tools or set())}
+    )
 
     for msg in messages:
         role = msg.get("role", "")
         content = msg.get("content", "")
+        tool_names = _tool_identity_candidates(msg)
 
         # Only compress tool results and function responses
         is_tool = role in ("tool", "function")
@@ -1439,7 +1555,12 @@ def compress_tool_messages(messages: list[dict]) -> tuple[list[dict], int]:
             )
 
         if is_tool_block and isinstance(content, list):
-            new_blocks, tokens_saved = _compress_tool_blocks(content)
+            new_blocks, tokens_saved = _compress_tool_blocks(
+                content,
+                parent_message=msg,
+                policy=policy,
+                excluded_tools=excluded,
+            )
             if tokens_saved > 0:
                 total_saved += tokens_saved
                 new_msg = dict(msg)
@@ -1448,7 +1569,12 @@ def compress_tool_messages(messages: list[dict]) -> tuple[list[dict], int]:
                 continue
 
         if (is_tool or is_tool_block) and isinstance(content, str):
-            compressed, tokens_saved = _compress_tool_text(content)
+            compressed, tokens_saved = _compress_tool_text(
+                content,
+                policy=policy,
+                tool_names=tool_names,
+                excluded_tools=excluded,
+            )
             if tokens_saved > 0:
                 total_saved += tokens_saved
                 new_msg = dict(msg)

@@ -14,37 +14,108 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-# Model name → context window size (tokens)
-MODEL_CONTEXT_WINDOWS = {
-    # OpenAI
-    "gpt-4o": 128_000,
-    "gpt-4o-mini": 128_000,
-    "gpt-4-turbo": 128_000,
-    "gpt-4": 8_192,
-    "gpt-3.5-turbo": 16_385,
-    "o1": 200_000,
-    "o1-mini": 128_000,
-    "o1-pro": 200_000,
-    "o3": 200_000,
-    "o3-mini": 200_000,
-    "o4-mini": 200_000,
-    # Anthropic
-    "claude-opus-4-6": 200_000,
-    "claude-opus-4-20250514": 200_000,
-    "claude-sonnet-4-5-20250929": 200_000,
-    "claude-sonnet-4-20250514": 200_000,
-    "claude-haiku-4-5-20251001": 200_000,
-    "claude-3-5-sonnet-20241022": 200_000,
-    "claude-3-5-haiku-20241022": 200_000,
-    "claude-3-haiku-20240307": 200_000,
-    # Google Gemini
-    "gemini-2.5-pro": 1_048_576,
-    "gemini-2.5-flash": 1_048_576,
-    "gemini-2.0-flash": 1_048_576,
-    "gemini-2.0-flash-lite": 1_048_576,
-    "gemini-1.5-pro": 2_097_152,
-    "gemini-1.5-flash": 1_048_576,
+
+@dataclass(frozen=True)
+class ProviderCapability:
+    """Provider metadata used by routing, header forwarding, and budgets."""
+
+    name: str
+    base_url_attr: str
+    env_var: str
+    auth_headers: tuple[str, ...]
+    header_prefixes: tuple[str, ...]
+    context_windows: dict[str, int]
+    streaming_path_markers: tuple[str, ...] = ()
+    supports_tools: bool = True
+    supports_vision: bool = True
+
+
+PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
+    "openai": ProviderCapability(
+        name="openai",
+        base_url_attr="openai_base_url",
+        env_var="ENTROLY_OPENAI_BASE",
+        auth_headers=("authorization", "api-key", "x-api-key"),
+        header_prefixes=(
+            "openai-",
+            "x-openai-",
+            "x-stainless-",
+            "x-client-",
+            "x-request-",
+            "x-ms-",
+            "azure-",
+        ),
+        context_windows={
+            "gpt-4o": 128_000,
+            "gpt-4o-mini": 128_000,
+            "gpt-4-turbo": 128_000,
+            "gpt-4": 8_192,
+            "gpt-3.5-turbo": 16_385,
+            "o1": 200_000,
+            "o1-mini": 128_000,
+            "o1-pro": 200_000,
+            "o3": 200_000,
+            "o3-mini": 200_000,
+            "o4-mini": 200_000,
+            "deepseek-": 128_000,
+            "qwen-": 128_000,
+            "mistral-": 128_000,
+        },
+    ),
+    "anthropic": ProviderCapability(
+        name="anthropic",
+        base_url_attr="anthropic_base_url",
+        env_var="ENTROLY_ANTHROPIC_BASE",
+        auth_headers=("x-api-key", "authorization"),
+        header_prefixes=(
+            "anthropic-",
+            "x-stainless-",
+            "x-client-",
+            "x-request-",
+        ),
+        context_windows={
+            "claude-opus-4-6": 200_000,
+            "claude-opus-4-20250514": 200_000,
+            "claude-sonnet-4-5-20250929": 200_000,
+            "claude-sonnet-4-20250514": 200_000,
+            "claude-haiku-4-5-20251001": 200_000,
+            "claude-3-5-sonnet-20241022": 200_000,
+            "claude-3-5-haiku-20241022": 200_000,
+            "claude-3-haiku-20240307": 200_000,
+        },
+    ),
+    "gemini": ProviderCapability(
+        name="gemini",
+        base_url_attr="gemini_base_url",
+        env_var="ENTROLY_GEMINI_BASE",
+        auth_headers=("x-goog-api-key", "authorization"),
+        header_prefixes=(
+            "x-goog-",
+            "x-goog-api-",
+            "x-client-",
+            "x-request-",
+        ),
+        streaming_path_markers=("streamGenerateContent",),
+        context_windows={
+            "gemini-2.5-pro": 1_048_576,
+            "gemini-2.5-flash": 1_048_576,
+            "gemini-2.0-flash": 1_048_576,
+            "gemini-2.0-flash-lite": 1_048_576,
+            "gemini-1.5-pro": 2_097_152,
+            "gemini-1.5-flash": 1_048_576,
+        },
+    ),
 }
+
+
+def provider_capability(provider: str) -> ProviderCapability:
+    """Return provider metadata, defaulting unknown routes to OpenAI-compatible."""
+    return PROVIDER_CAPABILITIES.get(provider, PROVIDER_CAPABILITIES["openai"])
+
+
+MODEL_CONTEXT_WINDOWS: dict[str, int] = {}
+for _capability in PROVIDER_CAPABILITIES.values():
+    MODEL_CONTEXT_WINDOWS.update(_capability.context_windows)
 
 _DEFAULT_CONTEXT_WINDOW = 128_000
 
@@ -210,6 +281,8 @@ class ProxyConfig:
     # Pipeline hardening
     enable_aged_tool_pruning: bool = True
     aged_tool_tail_window: int = 4
+    tool_result_policy: str = "auto"
+    tool_result_excluded_tools: str = ""
     enable_context_sanitizer: bool = True
     enable_ecp_anti_thrash: bool = True
 
@@ -314,6 +387,12 @@ class ProxyConfig:
             ),
             enable_conversation_compression=(
                 os.environ.get("ENTROLY_CONVERSATION_COMPRESSION", "1") != "0"
+            ),
+            tool_result_policy=os.environ.get(
+                "ENTROLY_TOOL_RESULT_POLICY", "auto"
+            ).strip().lower() or "auto",
+            tool_result_excluded_tools=os.environ.get(
+                "ENTROLY_TOOL_RESULT_EXCLUDE", ""
             ),
             witness_mode=os.environ.get("ENTROLY_WITNESS_MODE", "off"),
             witness_use_nli=(

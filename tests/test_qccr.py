@@ -5,7 +5,13 @@ import pytest
 
 # QCCR is the Rust SSOT (entroly-qccr crate); these tests exercise the engine,
 # so they self-skip on the pure-Python (engine-less) install surface.
-pytest.importorskip("entroly_core")
+from entroly.native_status import QCCR_SYMBOLS, native_status  # noqa: E402
+
+_NATIVE = native_status(QCCR_SYMBOLS)
+pytestmark = pytest.mark.skipif(
+    not _NATIVE.ok,
+    reason="installed entroly_core does not include current QCCR symbols",
+)
 
 from entroly.qccr import select, _expanded_query_tokens  # noqa: E402
 

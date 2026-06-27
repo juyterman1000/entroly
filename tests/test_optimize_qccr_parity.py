@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import pytest
 
+from entroly.native_status import QCCR_SYMBOLS, native_status
 from entroly.server import EntrolyEngine, EntrolyConfig
 
 
 def _clean_engine() -> EntrolyEngine:
+    if not native_status(QCCR_SYMBOLS).ok:
+        pytest.skip("qccr routing requires current native QCCR symbols")
     cfg = EntrolyConfig()
     # Isolate from any on-disk checkpoint so the test store is exactly what we
     # ingest (otherwise a persisted repo index pollutes selection).

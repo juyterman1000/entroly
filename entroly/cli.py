@@ -391,9 +391,9 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
     parse_failed = False
     if os.path.exists(config_path):
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 existing = json.load(f)
-        except (json.JSONDecodeError, OSError):
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
             parse_failed = True
             existing = {}
 
@@ -419,8 +419,8 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
         if parse_failed:
             print(f"  {C.YELLOW if hasattr(C,'YELLOW') else ''}! Existing config at {config_path} was unparseable; original kept at {backup}{C.RESET}")
 
-    with open(config_path, "w") as f:
-        json.dump(existing, f, indent=2)
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
     return config_path
@@ -3029,13 +3029,22 @@ def cmd_doctor(args):
 
     # 2. Check Rust engine
     checks_total += 1
-    try:
-        import entroly_core  # noqa: F401
-        print(f"  {C.GREEN}+{C.RESET} Rust engine (entroly-core) loaded")
+    from .native_status import QCCR_SYMBOLS, native_status
+    native = native_status(QCCR_SYMBOLS)
+    if native.ok:
+        version = f" {native.version}" if native.version else ""
+        print(f"  {C.GREEN}+{C.RESET} Rust engine (entroly-core{version}) loaded")
         checks_passed += 1
-    except ImportError:
-        print(f"  {C.RED}x{C.RESET} Rust engine (entroly-core) not loaded "
+    else:
+        status = "not loaded" if not native.available else "stale or incomplete"
+        print(f"  {C.RED}x{C.RESET} Rust engine (entroly-core) {status} "
               f"{C.GRAY}— optional; core features still work{C.RESET}")
+        if native.version:
+            print(f"    {C.GRAY}Loaded version: {native.version}{C.RESET}")
+        if native.path:
+            print(f"    {C.GRAY}Loaded from: {native.path}{C.RESET}")
+        if native.missing_symbols:
+            print(f"    {C.GRAY}Missing symbols: {', '.join(native.missing_symbols)}{C.RESET}")
         # Prebuilt abi3 wheels (py>=3.10, incl. 3.14) ship for
         # mac/linux/windows. The usual failure is pip reusing a stale
         # cache or being too old to match the wheel, then falling back
