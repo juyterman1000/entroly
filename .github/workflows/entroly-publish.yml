@@ -6,6 +6,11 @@ on:
     tags:
       - 'entroly-v*'          # versioned image on release tags
   workflow_dispatch:           # allow manual trigger
+    inputs:
+      release_version:
+        description: 'Version to publish manually, for example 1.0.25. Leave blank for Docker-only run.'
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -55,11 +60,6 @@ jobs:
           cache-to: type=gha,mode=max
 
   quality-gate:
-    # RELEASE SAFETY GATE (audit P0-4). ci.yml does NOT run on tags, so
-    # a tag previously published to PyPI/npm gated only on a Docker
-    # build — a failing ruff/pytest still shipped. This self-contained
-    # gate mirrors ci.yml's known-good install and MUST pass before any
-    # publish job runs. Fail-closed: a red gate blocks the release.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -89,8 +89,7 @@ jobs:
 
   publish-pypi:
     needs: [build-and-push, quality-gate]
-    # Only publish to PyPI when a version tag triggered the workflow
-    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -103,9 +102,14 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Extract version from tag
+      - name: Extract release version
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
+            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update version in pyproject.toml
         run: |
@@ -124,7 +128,7 @@ jobs:
 
   publish-npm:
     needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -147,9 +151,14 @@ jobs:
           source ~/.cargo/env
           wasm-pack build --target nodejs --out-dir pkg
 
-      - name: Extract version from tag
+      - name: Extract release version
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
+            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update package.json version
         working-directory: entroly-wasm
@@ -164,7 +173,7 @@ jobs:
 
   publish-npm-mcp:
     needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -175,9 +184,14 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Extract version from tag
+      - name: Extract release version
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
+            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update package.json version
         working-directory: entroly/npm
@@ -192,7 +206,7 @@ jobs:
 
   publish-npm-alias:
     needs: [build-and-push, quality-gate, publish-npm]
-    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -203,9 +217,14 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Extract version from tag
+      - name: Extract release version
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
+            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update package.json version
         working-directory: entroly/npm-alias
@@ -219,14 +238,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
   github-release:
-    # The GitHub Releases page was frozen at v0.19.2 because nothing
-    # here ever created a Release object — tags shipped to PyPI/npm but
-    # never appeared under "Releases". This creates one automatically
-    # for every tagged release, AFTER the quality gate AND all publishes
-    # succeed, so a Release never advertises a version that failed to
-    # ship. Auto-generated notes from commit history.
     needs: [quality-gate, publish-pypi, publish-npm, publish-npm-mcp, publish-npm-alias]
-    if: startsWith(github.ref, 'refs/tags/entroly-v')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -240,11 +253,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${GITHUB_REF_NAME#entroly-v}"
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            echo "Release ${GITHUB_REF_NAME} already exists — skipping."
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
+            VERSION="${{ github.event.inputs.release_version }}"
+            TAG="entroly-v${VERSION}"
           else
-            gh release create "${GITHUB_REF_NAME}" \
+            VERSION="${GITHUB_REF_NAME#entroly-v}"
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists — skipping."
+          else
+            gh release create "${TAG}" \
               --title "v${VERSION}" \
               --verify-tag \
               --generate-notes
