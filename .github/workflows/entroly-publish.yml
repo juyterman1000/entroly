@@ -2,10 +2,10 @@ name: Build and Push Entroly Docker Image
 
 on:
   push:
-    branches: [main]          # auto-build :latest on every push to main
+    branches: [main]
     tags:
-      - 'entroly-v*'          # versioned image on release tags
-  workflow_dispatch:           # allow manual trigger
+      - 'entroly-v*'
+  workflow_dispatch:
     inputs:
       release_version:
         description: 'Version to publish manually, for example 1.0.25. Leave blank for Docker-only run.'
@@ -40,9 +40,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # On a version tag → push versioned + latest
             type=match,pattern=entroly-v(.*),group=1
-            # Always push :latest (covers both branch pushes and tags)
             type=raw,value=latest
 
       - name: Set up Docker Buildx
@@ -70,12 +68,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Ruff lint (pinned, identical to CI)
+      - name: Ruff lint
         run: |
           python -m pip install ruff==0.12.9
           ruff check entroly/
 
-      - name: Build entroly-core + install package (mirrors ci.yml)
+      - name: Build entroly-core + install package
         run: |
           python -m venv .venv
           .venv/bin/pip install maturin --timeout 120 --retries 5
@@ -84,7 +82,7 @@ jobs:
             "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" \
             "uvicorn>=0.30" psutil pytest pytest-timeout
 
-      - name: Test suite (fail-fast gate)
+      - name: Test suite
         run: .venv/bin/pytest tests/ -q --tb=short -x --timeout=60
 
   publish-pypi:
@@ -167,7 +165,14 @@ jobs:
 
       - name: Publish to npm
         working-directory: entroly-wasm
-        run: npm publish --access public
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
+            exit 0
+          fi
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
@@ -200,7 +205,14 @@ jobs:
 
       - name: Publish entroly-mcp to npm
         working-directory: entroly/npm
-        run: npm publish --access public
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
+            exit 0
+          fi
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
@@ -233,7 +245,14 @@ jobs:
 
       - name: Publish entroly alias to npm
         working-directory: entroly/npm-alias
-        run: npm publish --access public
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
+            exit 0
+          fi
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
@@ -244,7 +263,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout (full history for release notes)
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -261,7 +280,7 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "Release ${TAG} already exists — skipping."
+            echo "Release ${TAG} already exists; skipping."
           else
             gh release create "${TAG}" \
               --title "v${VERSION}" \
