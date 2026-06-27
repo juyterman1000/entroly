@@ -1,0 +1,47 @@
+name: Publish PyPI 1.0.25
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-pypi-1-0-25.yml'
+  workflow_dispatch:
+
+jobs:
+  publish-pypi-1025:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verify package version
+        run: |
+          python - <<'PY'
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              version = tomllib.load(f)['project']['version']
+          if version != '1.0.25':
+              raise SystemExit(f'Expected pyproject version 1.0.25, got {version}')
+          print(f'Publishing entroly {version}')
+          PY
+
+      - name: Build and check package
+        run: |
+          python -m pip install --upgrade build twine
+          rm -rf dist
+          python -m build
+          python -m twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          password: ${{ secrets.TESTING_API_TOKEN }}
