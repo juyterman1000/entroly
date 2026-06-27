@@ -91,8 +91,7 @@ def native_status_message(
     if not status.available:
         return (
             f"{feature} requires the Entroly Rust engine. "
-            "Install it with: python -m pip install --no-cache-dir -U "
-            f"\"entroly-core>={MIN_ENTROLY_CORE_VERSION},<2\""
+            f"Install entroly-core>={MIN_ENTROLY_CORE_VERSION},<2."
         )
 
     details: list[str] = []
@@ -107,6 +106,5 @@ def native_status_message(
     suffix = f" ({'; '.join(details)})" if details else ""
     return (
         f"{feature} requires a newer Entroly Rust engine{suffix}. "
-        "Fix: python -m pip install --no-cache-dir -U "
-        f"\"entroly-core>={MIN_ENTROLY_CORE_VERSION},<2\""
+        f"Install entroly-core>={MIN_ENTROLY_CORE_VERSION},<2."
     )
