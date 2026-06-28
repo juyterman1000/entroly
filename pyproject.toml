@@ -60,4 +60,5 @@ native = [
 ]
 
 [project.scripts]
+entroly = "entroly._docker_launcher:launch"
 entroly-memory = "entroly.memory_cli:main"
