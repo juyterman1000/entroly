@@ -83,8 +83,9 @@ class FabricRecall:
 class MemoryFabric:
     """Unified public facade over Entroly's memory ecosystem.
 
-    Use this when an application wants the best available memory stack without
-    directly depending on optional packages or native bindings.
+    Native kernels are preferred for speed. Dependency-free Python kernels are
+    used only as the production baseline when a native wheel does not export a
+    given kernel yet.
     """
 
     def __init__(
@@ -191,29 +192,25 @@ class MemoryFabric:
         receiver_id: int,
         content: str,
     ) -> dict[str, object]:
-        """Send a multi-agent memory/message through safety + SCHIPC filtering.
-
-        Uses native kernels when exported by entroly_core, otherwise uses the
-        dependency-free Python production fallback kernels.
-        """
-        if self._compliance_kernel is not None:
-            decision = self._compliance_kernel.check_message(sender_id, receiver_id, content)
-            decision_dict = _pyobject_to_dict(decision)
-            if decision_dict.get("allowed") is False:
-                return {
-                    "delivered": False,
-                    "reason": decision_dict.get("reason", "blocked"),
-                    "compliance": decision_dict,
-                    "ipc": None,
-                    "kernel_origin": self._kernel_origins.get("compliance_gate", "unknown"),
-                }
-        else:
+        """Send an agent message through compliance and IPC filtering."""
+        if self._compliance_kernel is None:
             return {
                 "delivered": False,
                 "reason": "compliance_gate_unavailable",
                 "compliance": {"allowed": None, "reason": "compliance_gate_unavailable"},
                 "ipc": None,
                 "kernel_origin": "none",
+            }
+
+        decision = self._compliance_kernel.check_message(sender_id, receiver_id, content)
+        decision_dict = _pyobject_to_dict(decision)
+        if decision_dict.get("allowed") is False:
+            return {
+                "delivered": False,
+                "reason": decision_dict.get("reason", "blocked"),
+                "compliance": decision_dict,
+                "ipc": None,
+                "kernel_origin": self._kernel_origins.get("compliance_gate", "unknown"),
             }
 
         if self._ipc_kernel is None:
@@ -330,7 +327,7 @@ class MemoryFabric:
                 "active",
                 "public runtime memory",
                 "Local safety, budget-aware recall, decay, persistence, and receipts.",
-            ),
+            )
         ]
 
         if self._long_term is not None and getattr(self._long_term, "active", False):
@@ -360,16 +357,7 @@ class MemoryFabric:
                 )
             )
 
-        layers.append(
-            self._kernel_layer(
-                "rust_memory_manager",
-                self._native_memory,
-                self._kernel_origins.get("rust_memory_manager"),
-                "native high-scale memory",
-                "entroly_core.MemoryManager was detected.",
-                "Native MemoryManager not exported by installed entroly_core yet.",
-            )
-        )
+        layers.append(self._native_memory_layer())
         layers.append(
             self._kernel_layer(
                 "schipc",
@@ -417,6 +405,31 @@ class MemoryFabric:
             ]
         )
         return layers
+
+    def _native_memory_layer(self) -> MemoryLayer:
+        if self._native_memory is not None:
+            return MemoryLayer(
+                "rust_memory_manager",
+                "available",
+                "native high-scale memory",
+                "entroly_core.MemoryManager was detected.",
+            )
+        if not self._enable_native:
+            return MemoryLayer(
+                "rust_memory_manager",
+                "disabled",
+                "native high-scale memory",
+                "Disabled by configuration.",
+            )
+        return MemoryLayer(
+            "rust_memory_manager",
+            "internal",
+            "native high-scale memory",
+            self._native_errors.get(
+                "rust_memory_manager",
+                "Native MemoryManager not exported by installed entroly_core yet.",
+            ),
+        )
 
     def _kernel_layer(
         self,
