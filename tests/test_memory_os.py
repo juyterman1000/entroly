@@ -43,11 +43,13 @@ def test_memory_os_forgets_weak_working_memory_but_keeps_semantic() -> None:
     mem.remember("temporary note", agent_id="coder", importance=0.1, tier="working")
     semantic_id = mem.remember("stable architectural invariant", agent_id="coder", importance=0.1, tier="semantic")
 
-    mem.tick(1000)
+    # Advance far enough for the weak working memory to decay, but below the
+    # auto-consolidation interval so this assertion measures explicit forget().
+    mem.tick(20)
     forgotten = mem.forget()
     ctx = mem.recall("architectural invariant", agent_id="coder", budget=100)
 
-    assert forgotten >= 1
+    assert forgotten == 1
     assert [m.id for m in ctx.selected] == [semantic_id]
 
 
