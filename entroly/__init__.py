@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.27"
+__version__ = "1.0.28"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -107,6 +107,16 @@ try:
         compress_evidence_locked,
         compress_payload_messages,
         detect_heavy_content_type,
+    )
+except ImportError:
+    pass
+
+# Compression Proxy — provider-light request payload compression surface.
+try:
+    from .compression_proxy import (  # noqa: F401
+        ProxyCompressionReceipt,
+        ProxyCompressionResult,
+        compress_proxy_payload,
     )
 except ImportError:
     pass
