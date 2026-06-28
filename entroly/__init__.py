@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.30"
+__version__ = "1.0.31"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -129,6 +129,12 @@ try:
         StoredCompression,
         StoredSpan,
     )
+except ImportError:
+    pass
+
+# Compression MCP server — focused MCP tools for omitted-span retrieval.
+try:
+    from .compression_mcp import create_compression_mcp_server  # noqa: F401
 except ImportError:
     pass
 
