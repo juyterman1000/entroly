@@ -89,8 +89,9 @@ def test_memory_fabric_reports_layer_capabilities() -> None:
     assert layers["memory_os"].status == "active"
     assert layers["hippocampus_bridge"].status == "disabled"
     assert layers["rust_memory_manager"].status == "disabled"
-    assert "schipc" in layers
-    assert "pollination" in layers
+    assert layers["schipc"].status == "available"
+    assert layers["compliance_gate"].status == "available"
+    assert layers["pollination"].status == "available"
     assert "federation" in layers
     assert "receipts_witness" in layers
 
@@ -128,6 +129,37 @@ def test_memory_fabric_consolidate_and_stats_are_structured() -> None:
     assert "memory_os_promoted" in result
     assert "memory_os" in stats
     assert "layers" in stats
+    assert "kernels" in stats
+    assert stats["kernel_origins"]["schipc"] == "python_fallback"
+
+
+def test_memory_fabric_builtin_kernels_are_production_usable() -> None:
+    fabric = MemoryFabric(enable_long_term=False, enable_native=False)
+
+    first = fabric.send_agent_message(1, 2, "auth retry strategy changed")
+    duplicate = fabric.send_agent_message(1, 2, "auth retry strategy changed")
+    blocked = fabric.send_agent_message(1, 2, "secret sk-abcdefghijklmnopqrstuvwxyz123456")
+
+    assert first["delivered"] is True
+    assert first["kernel_origin"] == "python_fallback"
+    assert duplicate["delivered"] is False
+    assert duplicate["reason"] == "redundant"
+    assert blocked["delivered"] is False
+    assert blocked["reason"] == "pii_detected"
+
+    recorded = fabric.record_agent_lesson("coder", "auth retry worked", success=True, surprise=0.2)
+    shared = fabric.share_agent_lessons("coder", "reviewer")
+    fabric.reward_agent_share("coder", "reviewer", 1.0)
+    fabric.tick()
+    stats = fabric.stats()
+
+    assert recorded["recorded"] is True
+    assert recorded["kernel_origin"] == "python_fallback"
+    assert shared["shared"] is True
+    assert "kernels" in stats
+    assert "ipc" in stats["kernels"]
+    assert "compliance" in stats["kernels"]
+    assert "pollination" in stats["kernels"]
 
 
 def test_memory_fabric_uses_native_kernels_when_exported(monkeypatch) -> None:
@@ -151,6 +183,7 @@ def test_memory_fabric_uses_native_kernels_when_exported(monkeypatch) -> None:
     blocked = fabric.send_agent_message(1, 2, "secret sk-abcdefghijklmnopqrstuvwxyz123456")
 
     assert delivered["delivered"] is True
+    assert delivered["kernel_origin"] == "native"
     assert blocked["delivered"] is False
     assert blocked["reason"] == "pii_detected"
 
@@ -161,8 +194,9 @@ def test_memory_fabric_uses_native_kernels_when_exported(monkeypatch) -> None:
     stats = fabric.stats()
 
     assert recorded["recorded"] is True
+    assert recorded["kernel_origin"] == "native"
     assert shared["shared"] is True
-    assert "native" in stats
-    assert "ipc" in stats["native"]
-    assert "compliance" in stats["native"]
-    assert "pollination" in stats["native"]
+    assert "kernels" in stats
+    assert "ipc" in stats["kernels"]
+    assert "compliance" in stats["kernels"]
+    assert "pollination" in stats["kernels"]
