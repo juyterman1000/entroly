@@ -2,7 +2,7 @@
 # Pin: hatchling >=1.28 emits Metadata-Version 2.5, which PyPI's upload
 # validator (twine/pkginfo in gh-action-pypi-publish) rejects as invalid.
 # 1.27.x emits the accepted 2.4 (PEP 639 license-expression metadata).
-requires = ["hatchling>=1.27,<1.28"]
+requires = ["hatchling>=1.27,<1.31"]
 build-backend = "hatchling.build"
 
 [project]
