@@ -115,6 +115,26 @@ Search omitted spans:
 matches = store.search("auth timeout")
 ```
 
+## MCP retrieval server
+
+Entroly also ships a focused MCP server for omitted-span retrieval:
+
+```bash
+export ENTROLY_COMPRESSION_STORE=.entroly/compression-store.json
+entroly-compression-mcp
+```
+
+It exposes:
+
+```text
+retrieve_compressed_span(receipt_id, span_id)
+search_compressed_spans(query, limit=5)
+list_compression_receipts()
+```
+
+Use it when a compressed prompt contains a retrieval receipt and the agent needs
+more exact context.
+
 ## Proxy headers
 
 `ProxyCompressionResult.headers()` returns:
@@ -154,5 +174,5 @@ Headroom retrieves dropped context.
 Entroly retrieves dropped context and keeps auditable evidence receipts for what was compressed, why it was compressed, and how to recover it.
 ```
 
-Entroly's next milestone is making retrieval available as an MCP tool so agents
-can fetch omitted spans by receipt/span id during a conversation.
+That is the product wedge: Entroly is not only a compression proxy; it is an
+auditable, recoverable evidence-control plane for compressed LLM context.
