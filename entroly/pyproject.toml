@@ -50,6 +50,7 @@ Repository = "https://github.com/juyterman1000/entroly"
 
 [project.scripts]
 entroly = "entroly._docker_launcher:launch"
+entroly-memory = "entroly.memory_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["entroly"]
