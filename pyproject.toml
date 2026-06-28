@@ -58,3 +58,6 @@ proxy = [
 native = [
     "entroly-core>=1.0.25,<2",
 ]
+
+[project.scripts]
+entroly-memory = "entroly.memory_cli:main"
