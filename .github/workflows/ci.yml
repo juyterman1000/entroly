@@ -87,9 +87,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             entroly-core/target
-          key: $${{ runner.os }}-cargo-$${{ hashFiles('entroly-core/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('entroly-core/Cargo.toml') }}
           restore-keys: |
-            $${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-
 
       - name: Clippy (lint)
         run: cargo clippy --all-targets -- -D warnings
@@ -121,9 +121,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             entroly-core/target
-          key: $${{ runner.os }}-cargo-proxy-$${{ hashFiles('entroly-core/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-proxy-${{ hashFiles('entroly-core/Cargo.toml') }}
           restore-keys: |
-            $${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-
 
       # The proxy server is behind the `proxy` feature, so the default
       # rust-tests job never compiles it. Build + lint + e2e it here so the
@@ -143,7 +143,7 @@ jobs:
         run: python scripts/proxy_e2e.py entroly-core/target/release/entroly-rs
 
   integration:
-    name: Build Wheel + Functional Test (Python $${{ matrix.python-version }})
+    name: Build Wheel + Functional Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -160,7 +160,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: $${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
           allow-prereleases: true
 
       - name: Create virtualenv
