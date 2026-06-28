@@ -95,6 +95,53 @@ for layer in fabric.capabilities():
 
 This matters for production because optional memory engines should not silently change behavior. Applications can log exactly which memory stack is active.
 
+## End-to-end demo
+
+Run the deterministic offline demo:
+
+```bash
+python examples/memory_fabric_e2e_demo.py
+python examples/memory_fabric_e2e_demo.py --json
+```
+
+It demonstrates:
+
+1. storing high-value evidence through the Fabric,
+2. blocking unsafe memory before storage,
+3. recalling under budget,
+4. emitting one combined receipt,
+5. reporting the active/internal/optional memory layers,
+6. saving and loading durable local memory.
+
+## Stress benchmark
+
+Run the Fabric benchmark:
+
+```bash
+python benchmarks/memory_fabric_stress_test.py
+python benchmarks/memory_fabric_stress_test.py --json
+```
+
+It gates:
+
+1. public orchestrator recall,
+2. capability contract completeness,
+3. safety contract,
+4. receipt contract,
+5. persistence contract.
+
+The benchmark is offline and intentionally does not depend on an LLM, vector DB, or optional memory engine.
+
+## CI gate
+
+The MemoryOS Production Gate now includes Fabric checks:
+
+```bash
+pytest tests/test_memory_fabric.py tests/test_memory_fabric_benchmark.py tests/test_memory_fabric_e2e_demo.py
+python benchmarks/memory_fabric_stress_test.py --json
+python examples/memory_fabric_e2e_demo.py --json
+```
+
 ## Maturity contract
 
 Use this claim publicly now:
