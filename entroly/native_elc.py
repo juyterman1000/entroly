@@ -4,22 +4,20 @@ This module is intentionally conservative: it uses a Rust/native implementation
 only when `entroly_core` exposes a compatible ELC function. Otherwise it falls
 back to the audited Python implementation.
 
-Expected native contract, once exported from `entroly-core`:
+Native contract:
 
-    elc_compress(text: str, query: str, budget_tokens: int) -> dict
+    elc_compress(text: str, query: str, budget_tokens: int) -> dict | str
 
-with keys:
+The Rust side may return either a Python dict or a JSON string with keys:
 
     compressed: str
     receipt: dict
     changed: bool
-
-Until that symbol exists, this module keeps the public fast-path API stable and
-safe without falsely claiming native acceleration is active.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .evidence_locked_compression import (
@@ -52,6 +50,8 @@ def compress_evidence_locked_fast(
         native = getattr(entroly_core, "elc_compress", None)
         if callable(native):
             raw = native(text, query, int(budget_tokens))
+            if isinstance(raw, str):
+                raw = json.loads(raw)
             if isinstance(raw, dict):
                 return _result_from_native(raw)
     except Exception:
