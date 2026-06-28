@@ -1,10 +1,6 @@
 name: Update Homebrew checksum 1.0.25
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/update-homebrew-1-0-25.yml'
   workflow_dispatch:
 
 permissions:
@@ -16,60 +12,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve PyPI source URL and checksum
         run: |
           set -euo pipefail
-          VERSION="1.0.25"
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          version = '1.0.25'
-          with urllib.request.urlopen(f'https://pypi.org/pypi/entroly/{version}/json') as response:
-              data = json.load(response)
-
-          source_files = [item for item in data.get('urls', []) if item.get('packagetype') == 'sdist']
-          if not source_files:
-              raise SystemExit('No source distribution found for entroly 1.0.25 on PyPI')
-
-          source = source_files[0]
-          url = source['url']
-          digest = source['digests']['sha256']
-
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
-              env.write(f'URL={url}\n')
-              env.write(f'SHA256={digest}\n')
-
-          print(f'URL: {url}')
-          print(f'SHA256: {digest}')
-          PY
+          python -c "import json, os, urllib.request; data=json.load(urllib.request.urlopen('https://pypi.org/pypi/entroly/1.0.25/json')); s=[x for x in data['urls'] if x.get('packagetype')=='sdist'][0]; open(os.environ['GITHUB_ENV'],'a').write('URL='+s['url']+'\nSHA256='+s['digests']['sha256']+'\n'); print(s['url']); print(s['digests']['sha256'])"
 
       - name: Update Homebrew formula
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import os
-
-          path = Path('packaging/homebrew/entroly.rb')
-          text = path.read_text()
-          lines = []
-          for line in text.splitlines():
-              stripped = line.strip()
-              if stripped.startswith('url '):
-                  indent = line[: len(line) - len(line.lstrip())]
-                  lines.append(f'{indent}url "{os.environ["URL"]}"')
-              elif stripped.startswith('sha256 '):
-                  indent = line[: len(line) - len(line.lstrip())]
-                  lines.append(f'{indent}sha256 "{os.environ["SHA256"]}"')
-              else:
-                  lines.append(line)
-          path.write_text('\n'.join(lines) + '\n')
-          PY
+          python -c "from pathlib import Path; import os; p=Path('packaging/homebrew/entroly.rb'); lines=[]
+          for line in p.read_text().splitlines():
+              stripped=line.strip(); indent=line[:len(line)-len(line.lstrip())]
+              if stripped.startswith('url '): lines.append(indent+'url \"'+os.environ['URL']+'\"')
+              elif stripped.startswith('sha256 '): lines.append(indent+'sha256 \"'+os.environ['SHA256']+'\"')
+              else: lines.append(line)
+          p.write_text('\\n'.join(lines)+'\\n')"
 
       - name: Commit formula update
         run: |
