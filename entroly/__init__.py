@@ -175,3 +175,17 @@ try:
     )
 except ImportError:
     pass
+
+# Entroly Memory OS — public, dependency-free memory-control facade.
+# Gives users a clean product surface while the native Rust memory stack is
+# exposed more deeply over time.
+try:
+    from .memory import (  # noqa: F401
+        MemoryContext,
+        MemoryEntry,
+        MemoryOS,
+        OmittedMemory,
+        SelectedMemory,
+    )
+except ImportError:
+    pass
