@@ -41,7 +41,9 @@ Entroly controls memory the way an operating system controls CPU, cache, IO, and
 | Layer | What it does | Primary files |
 |---|---|---|
 | Public facade | Stable Python API for remember/recall/decay/consolidation/save/load/safety | `entroly/memory.py` |
-| Standalone CLI | Local memory CLI entrypoint for demos and scripts | `entroly/memory_cli.py` |
+| Console script | Installed command for demos and scripts | `entroly-memory`, `entroly/memory_cli.py` |
+| Standalone module | Module form of the same CLI | `python -m entroly.memory_cli` |
+| Memory benchmark | Deterministic release gate for local memory behavior | `benchmarks/memory_stress_test.py` |
 | Working / episodic / semantic memory | Three-tier memory with token budgets | `entroly-core/src/memory/mod.rs`, `episode.rs` |
 | Salience and forgetting | Ebbinghaus retention, emotional tags, spaced recall | `entroly-core/src/memory/episode.rs` |
 | Neocortex | Kanerva Sparse Distributed Memory for consolidated patterns | `entroly-core/src/memory/kanerva.rs` |
@@ -143,7 +145,9 @@ Entroly should be honest about maturity.
 | Surface | Status | Notes |
 |---|---|---|
 | MemoryOS Python facade | Shipped | Dependency-free public API: remember, recall, decay, consolidate, save, load, snapshot, safety scan |
+| MemoryOS console script | Shipped | `entroly-memory remember/recall/stats/scan/forget` |
 | Standalone memory CLI module | Shipped | `python -m entroly.memory_cli`; main `entroly memory ...` dispatcher still needs wiring |
+| Memory stress benchmark | Shipped | `python benchmarks/memory_stress_test.py`; also gated in CI |
 | Context selection and optimization | Shipped | Public CLI/proxy/library path |
 | Context Receipts | Shipped | Public Python + Rust-backed receipt pipeline |
 | WITNESS verification | Shipped | Python gateway with Rust verifier support |
@@ -165,18 +169,19 @@ The first production gap is now closed with:
 4. local safety scanning before storage,
 5. durable atomic save/load,
 6. selected/omitted receipts,
-7. production tests for safety, persistence, invalid snapshots, capacity, and budget omissions,
-8. one maturity matrix,
-9. one demo narrative,
-10. one benchmark story,
-11. one comparison against graph-memory tools.
+7. console command: `entroly-memory`,
+8. production tests for safety, persistence, invalid snapshots, capacity, and budget omissions,
+9. deterministic memory stress benchmark,
+10. CI gate for the MemoryOS production surface,
+11. one maturity matrix,
+12. one demo narrative,
+13. one comparison against graph-memory tools.
 
 Remaining gaps:
 
-1. wire `python -m entroly.memory_cli` into the main `entroly memory ...` command,
+1. wire `entroly-memory` into the main `entroly memory ...` command,
 2. expose native Rust `MemoryManager`, `IpcBus`, `ComplianceGate`, and `PollinationEngine` as public PyO3 classes,
-3. add a memory-specific benchmark,
-4. add a public README section linking to this guide.
+3. add a public README section linking to this guide.
 
 ## Public API
 
@@ -238,21 +243,30 @@ The facade should later delegate to existing native primitives:
 - ComplianceGate for safe memory traffic,
 - FederationClient for opt-in shared learning.
 
-## Standalone CLI
+## CLI
 
-Until the main monolithic CLI is wired, use:
+After installation, use the console script:
 
 ```bash
-python -m entroly.memory_cli remember "Login timeout was fixed in auth/session.py" \
+entroly-memory remember "Login timeout was fixed in auth/session.py" \
   --agent coder \
   --importance 0.9 \
   --source incident/auth-timeout \
   --tag critical
 
-python -m entroly.memory_cli recall "why is login timing out again?" \
+entroly-memory recall "why is login timing out again?" \
   --agent coder \
   --budget 1200
 
+entroly-memory stats
+entroly-memory scan "candidate memory text"
+```
+
+Module form is also supported:
+
+```bash
+python -m entroly.memory_cli remember "Login timeout was fixed in auth/session.py" --agent coder --importance 0.9
+python -m entroly.memory_cli recall "why is login timing out again?" --agent coder --budget 1200
 python -m entroly.memory_cli stats
 ```
 
@@ -285,31 +299,25 @@ WITNESS checks answer against evidence
 Pollination learns whether sharing helped
 ```
 
-## Benchmark story to add next
+## Memory benchmark
 
-Entroly needs a memory-specific benchmark, separate from token benchmarks.
+Run the deterministic benchmark:
 
-Proposed benchmark: **Agent Memory Stress Test**
+```bash
+python benchmarks/memory_stress_test.py
+python benchmarks/memory_stress_test.py --json
+```
 
-Scenarios:
+The benchmark gates:
 
-1. long project with repeated bug recurrence,
-2. stale memory that should be forgotten,
-3. high-salience safety memory that must survive,
-4. two agents sharing repeated tool results,
-5. injected secret/prompt injection in memory traffic,
-6. limited token budget recall,
-7. answer verification from recalled memory.
+1. recall precision,
+2. stale-memory suppression,
+3. secret blocking and redaction,
+4. limited-budget omission reasons,
+5. durable persistence roundtrip,
+6. capacity eviction while preserving semantic/high-importance memory.
 
-Metrics:
-
-- recall precision,
-- stale-memory suppression,
-- token budget compliance,
-- redundant message suppression rate,
-- unsafe memory blocked,
-- WITNESS grounded/unsupported ratio,
-- cost saved from suppressed/reused context.
+This benchmark is intentionally offline. It measures the local memory-control layer, not LLM answer quality.
 
 ## Current strongest claim
 
@@ -319,7 +327,7 @@ Use this claim publicly:
 Entroly is not just a memory store. It is a local memory-control runtime for agents: budget-aware recall, decay, consolidation, safety scanning, durable local persistence, receipts, and verification.
 ```
 
-Avoid this claim until the native API and benchmark are added:
+Avoid this claim until the native API and benchmarked end-to-end agent workflow are added:
 
 ```text
 Entroly is universally better than all AI memory platforms.
