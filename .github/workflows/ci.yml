@@ -42,8 +42,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install test dependencies
-        run: pip install -e . pytest pytest-timeout --timeout 120 --retries 5
+      - name: Install MemoryOS test surface without runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-deps -e .
+          pip install pytest pytest-timeout --timeout 120 --retries 5
 
       - name: Run MemoryOS tests
         run: pytest tests/test_memory_os.py tests/test_memory_cli.py tests/test_memory_stress_benchmark.py -v --tb=short --timeout=60
