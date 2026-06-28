@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Iterable, Literal
 
 MemoryTier = Literal["working", "episodic", "semantic"]
@@ -130,8 +130,8 @@ class MemoryContext:
         return {
             "budget": self.budget,
             "used_tokens": self.used_tokens,
-            "selected": [m.__dict__ for m in self.selected],
-            "omitted": [m.__dict__ for m in self.omitted],
+            "selected": [asdict(m) for m in self.selected],
+            "omitted": [asdict(m) for m in self.omitted],
             "risk": self.risk,
         }
 
@@ -382,7 +382,7 @@ class MemoryOS:
             "created_at": time.time(),
             "current_tick": self._tick,
             "next_id": self._next_id,
-            "entries": [entry.__dict__ for entry in self._entries.values()],
+            "entries": [asdict(entry) for entry in self._entries.values()],
         }
 
     @classmethod
