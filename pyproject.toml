@@ -1,14 +1,10 @@
 [build-system]
-# Pin: hatchling >=1.28 emits Metadata-Version 2.5, which PyPI's upload
-# validator (twine/pkginfo in gh-action-pypi-publish) rejects as invalid.
-# 1.27.x emits the accepted 2.4 (PEP 639 license-expression metadata).
 requires = ["hatchling>=1.27,<1.31"]
 build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.34"
-
+version = "1.0.35"
 description = "Auditable context control plane for AI agents: Context Receipts, MCP tools, local optimization, and SDK helpers."
 readme = "README.md"
 license = "Apache-2.0"
@@ -37,15 +33,6 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.6.0,<2",
-    # Native Rust engine — kept as a base dependency so `pip install entroly`
-    # gives users the fast engine by default. publish-core-wheels.yml ships
-    # abi3 wheels for linux x86_64/aarch64, macOS universal2, and Windows, so
-    # this resolves on all mainstream platforms. The pure-Python fallback
-    # surface (SDK/MCP with the engine absent) is still supported and CI-tested
-    # by installing with `pip install --no-deps` — see the "Pure-Python
-    # Fallback" job in .github/workflows/ci.yml. Do not remove this without
-    # updating that job; removing it silently downgrades every default install
-    # to pure-Python.
     "entroly-core>=1.0.25,<2",
 ]
 
