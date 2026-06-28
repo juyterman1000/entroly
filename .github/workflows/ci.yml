@@ -49,10 +49,13 @@ jobs:
           pip install pytest pytest-timeout --timeout 120 --retries 5
 
       - name: Run MemoryOS tests
-        run: pytest tests/test_memory_os.py tests/test_memory_cli.py tests/test_memory_stress_benchmark.py -v --tb=short --timeout=60
+        run: pytest tests/test_memory_os.py tests/test_memory_cli.py tests/test_memory_launcher.py tests/test_memory_stress_benchmark.py tests/test_memory_e2e_demo.py -v --tb=short --timeout=60
 
       - name: Run MemoryOS stress benchmark
         run: python benchmarks/memory_stress_test.py --json
+
+      - name: Run MemoryOS end-to-end demo
+        run: python examples/memory_os_e2e_demo.py --json
 
   rust-tests:
     name: Rust Tests + Clippy
