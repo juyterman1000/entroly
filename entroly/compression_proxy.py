@@ -10,14 +10,19 @@ Design principle:
     Compress aggressively around evidence, never through evidence.
 
 The proxy surface preserves normal user/assistant text by default and compresses
-heavy tool/function payloads using Evidence-Locked Compression receipts.
+heavy tool/function payloads using Evidence-Locked Compression receipts. When a
+retrieval store is supplied, omitted spans are saved locally and can be fetched
+back by receipt/span id.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
+from .compression_retrieval_store import CompressionRetrievalStore
 from .evidence_locked_compression import compress_evidence_locked, estimate_tokens
 
 
@@ -54,6 +59,38 @@ class ProxyCompressionResult:
         }
 
 
+def compress_proxy_payload_from_env(
+    body: dict[str, Any],
+    *,
+    provider: str = "openai",
+    query: str = "",
+) -> ProxyCompressionResult:
+    """Compress using environment-driven live-proxy settings.
+
+    Intended for the HTTP proxy path. Defaults are safe: mode is off unless
+    ``ENTROLY_COMPRESSION_PROXY_MODE=elc`` is set.
+    """
+    mode = os.environ.get("ENTROLY_COMPRESSION_PROXY_MODE", "off").strip().lower()
+    budget = int(os.environ.get("ENTROLY_ELC_BUDGET_TOKENS", "1200"))
+    compress_user = os.environ.get("ENTROLY_ELC_COMPRESS_USER", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    store_path = os.environ.get("ENTROLY_COMPRESSION_STORE")
+    store = CompressionRetrievalStore(Path(store_path)) if store_path else None
+    return compress_proxy_payload(
+        body,
+        provider=provider,
+        query=query,
+        budget_tokens=budget,
+        mode="elc" if mode == "elc" else "off",
+        compress_user_messages=compress_user,
+        retrieval_store=store,
+    )
+
+
 def compress_proxy_payload(
     body: dict[str, Any],
     *,
@@ -63,6 +100,7 @@ def compress_proxy_payload(
     mode: str = "elc",
     include_receipt_header: bool = True,
     compress_user_messages: bool = False,
+    retrieval_store: CompressionRetrievalStore | None = None,
 ) -> ProxyCompressionResult:
     """Compress heavy payload blocks before they reach an LLM provider.
 
@@ -94,6 +132,7 @@ def compress_proxy_payload(
             budget_tokens=budget_tokens,
             include_receipt_header=include_receipt_header,
             compress_user_messages=compress_user_messages,
+            retrieval_store=retrieval_store,
         )
         if changed_count:
             new_body["messages"] = messages
@@ -107,6 +146,7 @@ def compress_proxy_payload(
             budget_tokens=budget_tokens,
             include_receipt_header=include_receipt_header,
             compress_user_messages=compress_user_messages,
+            retrieval_store=retrieval_store,
         )
         if changed_count:
             new_body["input"] = new_input
@@ -135,6 +175,7 @@ def _compress_messages(
     budget_tokens: int,
     include_receipt_header: bool,
     compress_user_messages: bool,
+    retrieval_store: CompressionRetrievalStore | None,
 ) -> tuple[list[Any], int, list[dict[str, object]]]:
     out: list[Any] = []
     changed_count = 0
@@ -155,6 +196,7 @@ def _compress_messages(
                 query=query,
                 budget_tokens=budget_tokens,
                 include_receipt_header=include_receipt_header,
+                retrieval_store=retrieval_store,
             )
             if changed:
                 new_msg = dict(msg)
@@ -171,6 +213,7 @@ def _compress_messages(
                 budget_tokens=budget_tokens,
                 include_receipt_header=include_receipt_header,
                 compress_user_text=compress_user_messages and role == "user",
+                retrieval_store=retrieval_store,
             )
             if changed:
                 new_msg = dict(msg)
@@ -191,6 +234,7 @@ def _compress_input_items(
     budget_tokens: int,
     include_receipt_header: bool,
     compress_user_messages: bool,
+    retrieval_store: CompressionRetrievalStore | None,
 ) -> tuple[list[Any], int, list[dict[str, object]]]:
     out: list[Any] = []
     changed_count = 0
@@ -207,6 +251,7 @@ def _compress_input_items(
                 budget_tokens=budget_tokens,
                 include_receipt_header=include_receipt_header,
                 compress_user_text=compress_user_messages and role == "user",
+                retrieval_store=retrieval_store,
             )
             if changed:
                 new_item = dict(item)
@@ -226,6 +271,7 @@ def _compress_content_blocks(
     budget_tokens: int,
     include_receipt_header: bool,
     compress_user_text: bool,
+    retrieval_store: CompressionRetrievalStore | None,
 ) -> tuple[list[Any], bool, list[dict[str, object]]]:
     out: list[Any] = []
     changed = False
@@ -245,6 +291,7 @@ def _compress_content_blocks(
                     query=query,
                     budget_tokens=budget_tokens,
                     include_receipt_header=include_receipt_header,
+                    retrieval_store=retrieval_store,
                 )
                 if did_change:
                     new_block = dict(block)
@@ -259,6 +306,7 @@ def _compress_content_blocks(
                 query=query,
                 budget_tokens=budget_tokens,
                 include_receipt_header=include_receipt_header,
+                retrieval_store=retrieval_store,
             )
             if did_change:
                 new_block = dict(block)
@@ -277,12 +325,26 @@ def _compress_text_block(
     query: str,
     budget_tokens: int,
     include_receipt_header: bool,
+    retrieval_store: CompressionRetrievalStore | None,
 ) -> tuple[str, bool, dict[str, object]]:
     result = compress_evidence_locked(text, query=query, budget_tokens=budget_tokens)
+    receipt = result.receipt.as_dict()
     if not result.changed:
-        return text, False, result.receipt.as_dict()
+        return text, False, receipt
+    if retrieval_store is not None:
+        stored = retrieval_store.put(
+            original_text=text,
+            compressed_text=result.compressed,
+            receipt=receipt,
+            metadata={"query": query, "component": "compression_proxy"},
+        )
+        receipt["retrieval"] = {
+            "receipt_id": stored.receipt_id,
+            "span_count": len(stored.spans),
+            "span_ids": [span.span_id for span in stored.spans],
+        }
     rendered = result.with_receipt_header() if include_receipt_header else result.compressed
-    return rendered, True, result.receipt.as_dict()
+    return rendered, True, receipt
 
 
 def _estimate_body_tokens(body: dict[str, Any]) -> int:
@@ -304,4 +366,5 @@ __all__ = [
     "ProxyCompressionReceipt",
     "ProxyCompressionResult",
     "compress_proxy_payload",
+    "compress_proxy_payload_from_env",
 ]
