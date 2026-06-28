@@ -13,12 +13,13 @@ the env var is absent or different, nothing changes.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 from .compression_proxy import compress_proxy_payload_from_env
 
 _INSTALLED = False
-_ORIGINAL = None
+_ORIGINAL: Callable[..., tuple[list[dict[str, Any]], int]] | None = None
 
 
 def install_live_compression_proxy() -> bool:
@@ -46,9 +47,12 @@ def install_live_compression_proxy() -> bool:
         policy: str = "compress",
         excluded_tools: str | set[str] | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
+        original = _ORIGINAL
+        if original is None:
+            return messages, 0
         # Honor explicit preserve/off modes used by existing proxy config.
         if str(policy).lower() in {"off", "0", "false", "protect", "exact", "preserve"}:
-            return _ORIGINAL(messages, policy=policy, excluded_tools=excluded_tools)
+            return original(messages, policy=policy, excluded_tools=excluded_tools)
         query = _last_user_query(messages)
         result = compress_proxy_payload_from_env(
             {"messages": messages},
@@ -56,12 +60,26 @@ def install_live_compression_proxy() -> bool:
             query=query,
         )
         if not result.changed:
-            return _ORIGINAL(messages, policy=policy, excluded_tools=excluded_tools)
+            return original(messages, policy=policy, excluded_tools=excluded_tools)
         return result.body.get("messages", messages), result.receipt.tokens_saved
 
     proxy_transform.compress_tool_messages = _elc_compress_tool_messages
     _INSTALLED = True
     return True
+
+
+def reset_live_compression_proxy() -> None:
+    """Restore the original compressor after tests or embedded use."""
+    global _INSTALLED, _ORIGINAL
+    if not _INSTALLED or _ORIGINAL is None:
+        return
+    try:
+        from . import proxy_transform
+
+        proxy_transform.compress_tool_messages = _ORIGINAL
+    finally:
+        _ORIGINAL = None
+        _INSTALLED = False
 
 
 def _last_user_query(messages: list[dict[str, Any]]) -> str:
@@ -88,4 +106,4 @@ def _content_to_text(value: Any) -> str:
     return ""
 
 
-__all__ = ["install_live_compression_proxy"]
+__all__ = ["install_live_compression_proxy", "reset_live_compression_proxy"]
