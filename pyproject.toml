@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.30"
+version = "1.0.31"
 
 description = "Auditable context control plane for AI agents: Context Receipts, MCP tools, local optimization, and SDK helpers."
 readme = "README.md"
@@ -62,3 +62,4 @@ native = [
 [project.scripts]
 entroly = "entroly._docker_launcher:launch"
 entroly-memory = "entroly.memory_cli:main"
+entroly-compression-mcp = "entroly.compression_mcp:main"
