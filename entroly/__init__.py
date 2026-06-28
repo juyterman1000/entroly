@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.34"
+__version__ = "1.0.35"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -111,6 +111,12 @@ try:
 except ImportError:
     pass
 
+# Optional native ELC fast-path adapter.
+try:
+    from .native_elc import compress_evidence_locked_fast, native_elc_available  # noqa: F401
+except ImportError:
+    pass
+
 # Compression Proxy — provider-light request payload compression surface.
 try:
     from .compression_proxy import (  # noqa: F401
@@ -122,12 +128,32 @@ try:
 except ImportError:
     pass
 
+# Direct non-monkey-patch proxy integration helper.
+try:
+    from .compression_proxy_direct import apply_elc_to_proxy_body  # noqa: F401
+except ImportError:
+    pass
+
 # Compression Retrieval Store — local recoverability for omitted spans.
 try:
     from .compression_retrieval_store import (  # noqa: F401
         CompressionRetrievalStore,
         StoredCompression,
         StoredSpan,
+    )
+except ImportError:
+    pass
+
+# Compression dashboard and verification loop.
+try:
+    from .compression_dashboard import (  # noqa: F401
+        CompressionDashboard,
+        dashboard_from_proxy_receipts,
+        dashboard_from_store,
+    )
+    from .compression_verification_loop import (  # noqa: F401
+        VerificationLoopResult,
+        answer_with_retrieval_verification,
     )
 except ImportError:
     pass
