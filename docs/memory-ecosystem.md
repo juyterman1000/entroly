@@ -2,7 +2,7 @@
 
 Entroly Memory OS is the product surface for Entroly's memory ecosystem.
 
-It should be explained as more than persistent storage. The differentiator is that Entroly decides **what should be remembered, recalled, suppressed, shared, verified, and sent under a token budget**.
+It should be explained as more than persistent storage. The differentiator is that Entroly decides **what should be remembered, recalled, suppressed, shared, verified, persisted, and sent under a token budget**.
 
 ## One-line positioning
 
@@ -20,10 +20,12 @@ A production agent does not only need to remember. It needs to:
 4. separate working, episodic, and semantic memory,
 5. consolidate important memories instead of retaining everything,
 6. suppress stale or low-retention memories,
-7. prevent memory traffic from leaking PII or prompt-injection payloads,
-8. share lessons across agents only when sharing is useful,
-9. preserve privacy when learning across installations,
-10. verify whether generated answers are supported by evidence.
+7. prevent memory traffic from leaking secrets, PII, or prompt-injection payloads,
+8. bound memory growth,
+9. persist memory locally and atomically,
+10. share lessons across agents only when sharing is useful,
+11. preserve privacy when learning across installations,
+12. verify whether generated answers are supported by evidence.
 
 Entroly is built around that runtime problem.
 
@@ -38,7 +40,8 @@ Entroly controls memory the way an operating system controls CPU, cache, IO, and
 
 | Layer | What it does | Primary files |
 |---|---|---|
-| Public facade | Stable Python API for remember/recall/decay/consolidation | `entroly/memory.py` |
+| Public facade | Stable Python API for remember/recall/decay/consolidation/save/load/safety | `entroly/memory.py` |
+| Standalone CLI | Local memory CLI entrypoint for demos and scripts | `entroly/memory_cli.py` |
 | Working / episodic / semantic memory | Three-tier memory with token budgets | `entroly-core/src/memory/mod.rs`, `episode.rs` |
 | Salience and forgetting | Ebbinghaus retention, emotional tags, spaced recall | `entroly-core/src/memory/episode.rs` |
 | Neocortex | Kanerva Sparse Distributed Memory for consolidated patterns | `entroly-core/src/memory/kanerva.rs` |
@@ -46,7 +49,7 @@ Entroly controls memory the way an operating system controls CPU, cache, IO, and
 | Sleep replay | Consolidates important memories and evicts weak ones | `entroly-core/src/memory/consolidation.rs` |
 | Context memory bridge | Recalls long-term memories into context selection | `entroly/long_term_memory.py` |
 | Inter-agent message memory | Suppresses redundant agent messages before token explosion | `entroly-core/src/ipc.rs` |
-| Safety gate | Blocks PII, prompt injection, and rate-limit abuse | `entroly-core/src/compliance.rs` |
+| Safety gate | Blocks PII, prompt injection, and rate-limit abuse | `entroly-core/src/compliance.rs`, `entroly/memory.py` |
 | Pollination | Shares learned lessons across agents with TD(0) feedback | `entroly-core/src/pollination.rs` |
 | Federation | Shares learned archetype weights with differential privacy | `entroly/federation.py` |
 | Verification | Checks whether answers are grounded in selected evidence | `entroly/witness.py`, `entroly-core/src/witness.rs` |
@@ -56,19 +59,29 @@ Entroly controls memory the way an operating system controls CPU, cache, IO, and
 
 ### 1. Remember
 
-Entroly stores memories with an explicit tier, salience, token cost, emotional tag, and binary address.
+Entroly stores memories with an explicit tier, salience, token cost, source, tags, and safety policy.
 
-The memory manager supports:
+The public facade supports:
 
 - `working`: current task memory,
 - `episodic`: session/history memory,
 - `semantic`: persistent pattern memory.
 
-Semantic memory is intentionally protected from normal forgetting.
+Semantic memory is intentionally protected from normal forgetting, but the runtime still has global capacity limits.
 
 ### 2. Recall
 
-Recall is not a blind nearest-neighbor search. Entroly scores candidates and selects memories under a token budget.
+Recall is not a blind nearest-neighbor dump. Entroly scores candidates and selects memories under a token budget.
+
+The public facade combines:
+
+- query overlap across content, source path, and tags,
+- Ebbinghaus retention,
+- recall frequency,
+- tier bonus,
+- importance,
+- score-per-token ordering,
+- explicit over-budget omission reasons.
 
 This matters because the model does not need every memory. It needs the few memories that fit the task and budget.
 
@@ -86,7 +99,7 @@ Entroly uses sleep-replay style consolidation:
 
 For multi-agent systems, Entroly treats memory sharing as a decision, not a broadcast.
 
-The stack includes:
+The deeper stack includes:
 
 - SCHIPC novelty filter for redundant messages,
 - compliance gate for PII, injection, and rate limits,
@@ -115,6 +128,7 @@ Run an AI agent without drowning it in noisy, unsafe, stale, or unaudited contex
 | Working / episodic / semantic tiers | Usually abstract | Explicit runtime model |
 | Sleep-replay consolidation | Usually not central | Built into the memory design |
 | Forgetting and salience | Often manual metadata | Native retention model |
+| Local safety guard before storage | Product-dependent | Public facade blocks/redacts secrets, PII, injection patterns |
 | Inter-agent message filtering | Usually not central | SCHIPC novelty filter |
 | PII / injection gate on memory traffic | Product-dependent | Built as kernel compliance gate |
 | Agent lesson sharing | Usually high-level | TD(0) pollination engine |
@@ -128,7 +142,8 @@ Entroly should be honest about maturity.
 
 | Surface | Status | Notes |
 |---|---|---|
-| MemoryOS Python facade | Shipped | Dependency-free public API: remember, recall, decay, consolidate, snapshot |
+| MemoryOS Python facade | Shipped | Dependency-free public API: remember, recall, decay, consolidate, save, load, snapshot, safety scan |
+| Standalone memory CLI module | Shipped | `python -m entroly.memory_cli`; main `entroly memory ...` dispatcher still needs wiring |
 | Context selection and optimization | Shipped | Public CLI/proxy/library path |
 | Context Receipts | Shipped | Public Python + Rust-backed receipt pipeline |
 | WITNESS verification | Shipped | Python gateway with Rust verifier support |
@@ -140,23 +155,26 @@ Entroly should be honest about maturity.
 | Pollination engine | Internal core surface | Present in Rust; needs integration guide |
 | Federation | Experimental / opt-in | Off by default; shares no code, paths, or fingerprints |
 
-## Product gap to close
+## Product gap now closed
 
-The strongest technology is already in the repository, but it was not presented as a coherent product.
-
-The first gap is now closed with:
+The first production gap is now closed with:
 
 1. one name: **Entroly Memory OS**,
 2. one public Python facade: `MemoryOS`,
-3. one maturity matrix,
-4. one demo narrative,
-5. one benchmark story,
-6. one comparison against graph-memory tools.
+3. bounded memory growth,
+4. local safety scanning before storage,
+5. durable atomic save/load,
+6. selected/omitted receipts,
+7. production tests for safety, persistence, invalid snapshots, capacity, and budget omissions,
+8. one maturity matrix,
+9. one demo narrative,
+10. one benchmark story,
+11. one comparison against graph-memory tools.
 
-The remaining product gaps are:
+Remaining gaps:
 
-1. expose native Rust `MemoryManager`, `IpcBus`, `ComplianceGate`, and `PollinationEngine` as public PyO3 classes,
-2. add CLI commands for `entroly memory remember`, `entroly memory recall`, and `entroly memory stats`,
+1. wire `python -m entroly.memory_cli` into the main `entroly memory ...` command,
+2. expose native Rust `MemoryManager`, `IpcBus`, `ComplianceGate`, and `PollinationEngine` as public PyO3 classes,
 3. add a memory-specific benchmark,
 4. add a public README section linking to this guide.
 
@@ -167,8 +185,14 @@ A simple public API is available through `entroly.memory.MemoryOS` and exported 
 ```python
 from entroly import MemoryOS
 
-mem = MemoryOS()
-mem.remember(agent_id="coder", content="Auth timeout bug was fixed in auth/session.py", importance=0.9)
+mem = MemoryOS(max_entries=50_000, max_tokens=500_000, safety_policy="block")
+mem.remember(
+    agent_id="coder",
+    content="Auth timeout bug was fixed in auth/session.py",
+    importance=0.9,
+    source="incident/auth-timeout",
+    tags=["critical"],
+)
 
 ctx = mem.recall(
     agent_id="coder",
@@ -178,6 +202,15 @@ ctx = mem.recall(
 
 print(ctx.as_text())
 print(ctx.receipt())
+mem.save(".entroly/memory.json")
+```
+
+Load it later:
+
+```python
+from entroly import MemoryOS
+
+mem = MemoryOS.load(".entroly/memory.json")
 ```
 
 Current facade behavior:
@@ -191,6 +224,9 @@ Current facade behavior:
 - recall reinforcement,
 - budget-aware recall,
 - selected/omitted memory receipt,
+- max entries and max token capacity,
+- secret/PII/prompt-injection scan with block/redact/allow policies,
+- atomic save/load,
 - snapshot/restore.
 
 The facade should later delegate to existing native primitives:
@@ -201,6 +237,26 @@ The facade should later delegate to existing native primitives:
 - SCHIPC for multi-agent filtering,
 - ComplianceGate for safe memory traffic,
 - FederationClient for opt-in shared learning.
+
+## Standalone CLI
+
+Until the main monolithic CLI is wired, use:
+
+```bash
+python -m entroly.memory_cli remember "Login timeout was fixed in auth/session.py" \
+  --agent coder \
+  --importance 0.9 \
+  --source incident/auth-timeout \
+  --tag critical
+
+python -m entroly.memory_cli recall "why is login timing out again?" \
+  --agent coder \
+  --budget 1200
+
+python -m entroly.memory_cli stats
+```
+
+Use `ENTROLY_MEMORY=/path/to/memory.json` or `--file /path/to/memory.json` to choose the memory file.
 
 ## Demo narrative
 
@@ -228,68 +284,6 @@ WITNESS checks answer against evidence
    ↓
 Pollination learns whether sharing helped
 ```
-
-## Demo script
-
-### Setup
-
-```bash
-pip install entroly[full]
-cd your-large-repo
-entroly doctor
-entroly simulate
-```
-
-### Show the public MemoryOS facade
-
-```python
-from entroly import MemoryOS
-
-mem = MemoryOS(default_budget=1200)
-mem.remember(
-    "Login timeout was fixed in auth/session.py by increasing refresh slack.",
-    agent_id="coder",
-    importance=0.9,
-    source="incident/auth-timeout",
-    tags=["critical"],
-)
-
-ctx = mem.recall("why is login timing out again?", agent_id="coder", budget=1200)
-print(ctx.as_text())
-print(ctx.receipt())
-```
-
-### Show context memory
-
-```bash
-entroly proxy --quality balanced
-```
-
-Ask through an agent:
-
-```text
-We fixed login timeout last week. Find the relevant code paths and explain what context matters now.
-```
-
-Show:
-
-- selected code fragments,
-- remembered high-value historical fragments,
-- omitted low-value fragments,
-- receipt/risk summary,
-- WITNESS result.
-
-### Show memory OS differentiator
-
-On screen, use this split:
-
-| Generic memory | Entroly Memory OS |
-|---|---|
-| Stores facts | Selects memories under token budget |
-| Recalls by similarity | Recalls by relevance + salience + retention + cost |
-| Shares context | Suppresses redundant agent chatter |
-| Adds more memory | Forgets, consolidates, and verifies |
-| Trusts retrieval | Emits receipts and WITNESS evidence |
 
 ## Benchmark story to add next
 
@@ -322,10 +316,10 @@ Metrics:
 Use this claim publicly:
 
 ```text
-Entroly is not just a memory store. It is a local memory-control runtime for agents: budget-aware recall, decay, consolidation, safe sharing, receipts, and verification.
+Entroly is not just a memory store. It is a local memory-control runtime for agents: budget-aware recall, decay, consolidation, safety scanning, durable local persistence, receipts, and verification.
 ```
 
-Avoid this claim until the public API and benchmark are added:
+Avoid this claim until the native API and benchmark are added:
 
 ```text
 Entroly is universally better than all AI memory platforms.
