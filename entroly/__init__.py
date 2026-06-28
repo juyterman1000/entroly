@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.26"
+__version__ = "1.0.27"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -93,6 +93,21 @@ except ImportError:
 # SimHash dedup + knapsack DP selection.  Works on ANY CLI tool output.
 try:
     from .shell_codec import esc_compress, ESCResult  # noqa: F401
+except ImportError:
+    pass
+
+# ELC — Evidence-Locked Compression.
+# Compress around evidence, never through evidence: anchors, query matches,
+# outliers, omitted-span receipts, and JSON schema+examples.
+try:
+    from .evidence_locked_compression import (  # noqa: F401
+        CompressionReceipt,
+        CompressionResult,
+        OmittedSpan,
+        compress_evidence_locked,
+        compress_payload_messages,
+        detect_heavy_content_type,
+    )
 except ImportError:
     pass
 
