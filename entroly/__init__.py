@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.28"
+__version__ = "1.0.29"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -117,6 +117,17 @@ try:
         ProxyCompressionReceipt,
         ProxyCompressionResult,
         compress_proxy_payload,
+        compress_proxy_payload_from_env,
+    )
+except ImportError:
+    pass
+
+# Compression Retrieval Store — local recoverability for omitted spans.
+try:
+    from .compression_retrieval_store import (  # noqa: F401
+        CompressionRetrievalStore,
+        StoredCompression,
+        StoredSpan,
     )
 except ImportError:
     pass
