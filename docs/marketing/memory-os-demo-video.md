@@ -134,7 +134,7 @@ Entroly: agent memory runtime
 
 > Graph-memory tools build a company brain. Entroly controls the agent's working memory and context budget at runtime.
 
-### 1:40-1:30 — Close
+### 1:40-1:55 — Close
 
 **Visual:** Terminal.
 
