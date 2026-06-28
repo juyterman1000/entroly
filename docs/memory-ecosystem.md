@@ -38,6 +38,7 @@ Entroly controls memory the way an operating system controls CPU, cache, IO, and
 
 | Layer | What it does | Primary files |
 |---|---|---|
+| Public facade | Stable Python API for remember/recall/decay/consolidation | `entroly/memory.py` |
 | Working / episodic / semantic memory | Three-tier memory with token budgets | `entroly-core/src/memory/mod.rs`, `episode.rs` |
 | Salience and forgetting | Ebbinghaus retention, emotional tags, spaced recall | `entroly-core/src/memory/episode.rs` |
 | Neocortex | Kanerva Sparse Distributed Memory for consolidated patterns | `entroly-core/src/memory/kanerva.rs` |
@@ -127,37 +128,44 @@ Entroly should be honest about maturity.
 
 | Surface | Status | Notes |
 |---|---|---|
+| MemoryOS Python facade | Shipped | Dependency-free public API: remember, recall, decay, consolidate, snapshot |
 | Context selection and optimization | Shipped | Public CLI/proxy/library path |
 | Context Receipts | Shipped | Public Python + Rust-backed receipt pipeline |
 | WITNESS verification | Shipped | Python gateway with Rust verifier support |
 | RAVS guarded routing | Shipped / gated | Fail-closed router behavior covered by tests |
 | Long-term memory Python bridge | Optional | Activates when `hippocampus-sharp-memory` is installed |
-| Rust memory manager | Internal core surface | Present in `entroly-core/src/memory`, but should be exposed more cleanly |
-| SCHIPC IPC bus | Internal core surface | Present in Rust; needs product docs and public examples |
+| Rust memory manager | Internal core surface | Present in `entroly-core/src/memory`, but should be exposed more deeply through PyO3 |
+| SCHIPC IPC bus | Internal core surface | Present in Rust; needs public examples |
 | Compliance gate | Internal core surface | Present in Rust; needs public examples |
 | Pollination engine | Internal core surface | Present in Rust; needs integration guide |
 | Federation | Experimental / opt-in | Off by default; shares no code, paths, or fingerprints |
 
 ## Product gap to close
 
-The strongest technology is already in the repository, but it is not yet presented as a coherent product.
+The strongest technology is already in the repository, but it was not presented as a coherent product.
 
-The gap is not algorithmic depth. The gap is product packaging:
+The first gap is now closed with:
 
-1. one name,
-2. one diagram,
-3. one demo,
-4. one public API story,
-5. one honest maturity matrix,
-6. one benchmark story,
-7. one comparison against graph-memory tools.
+1. one name: **Entroly Memory OS**,
+2. one public Python facade: `MemoryOS`,
+3. one maturity matrix,
+4. one demo narrative,
+5. one benchmark story,
+6. one comparison against graph-memory tools.
 
-## Recommended public API target
+The remaining product gaps are:
 
-The ideal product surface should be simple:
+1. expose native Rust `MemoryManager`, `IpcBus`, `ComplianceGate`, and `PollinationEngine` as public PyO3 classes,
+2. add CLI commands for `entroly memory remember`, `entroly memory recall`, and `entroly memory stats`,
+3. add a memory-specific benchmark,
+4. add a public README section linking to this guide.
+
+## Public API
+
+A simple public API is available through `entroly.memory.MemoryOS` and exported from `entroly`:
 
 ```python
-from entroly.memory import MemoryOS
+from entroly import MemoryOS
 
 mem = MemoryOS()
 mem.remember(agent_id="coder", content="Auth timeout bug was fixed in auth/session.py", importance=0.9)
@@ -168,12 +176,24 @@ ctx = mem.recall(
     budget=1200,
 )
 
-print(ctx.selected)
-print(ctx.omitted)
-print(ctx.risk)
+print(ctx.as_text())
+print(ctx.receipt())
 ```
 
-The implementation should wrap existing primitives:
+Current facade behavior:
+
+- dependency-free,
+- local-only,
+- no embeddings API,
+- exact deduplication,
+- working/episodic/semantic tiers,
+- Ebbinghaus-style retention,
+- recall reinforcement,
+- budget-aware recall,
+- selected/omitted memory receipt,
+- snapshot/restore.
+
+The facade should later delegate to existing native primitives:
 
 - Rust `MemoryManager` for tiered recall,
 - Entroly context optimizer for token-aware selection,
@@ -218,6 +238,25 @@ pip install entroly[full]
 cd your-large-repo
 entroly doctor
 entroly simulate
+```
+
+### Show the public MemoryOS facade
+
+```python
+from entroly import MemoryOS
+
+mem = MemoryOS(default_budget=1200)
+mem.remember(
+    "Login timeout was fixed in auth/session.py by increasing refresh slack.",
+    agent_id="coder",
+    importance=0.9,
+    source="incident/auth-timeout",
+    tags=["critical"],
+)
+
+ctx = mem.recall("why is login timing out again?", agent_id="coder", budget=1200)
+print(ctx.as_text())
+print(ctx.receipt())
 ```
 
 ### Show context memory
