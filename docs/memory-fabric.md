@@ -60,10 +60,10 @@ fabric = MemoryFabric.load(".entroly/memory.json")
 |---|---|---|
 | MemoryOS | Active | Public runtime memory: local safety, budget-aware recall, decay, persistence, receipts |
 | Hippocampus bridge | Optional | Cross-session long-term retention when `hippocampus-sharp-memory` is installed |
-| Rust MemoryManager | Internal / detected when exported | Native high-scale memory with hippocampal buffer, Kanerva SDM, LSH, sleep replay |
-| SCHIPC | Internal | Suppresses redundant inter-agent messages before token explosion |
-| ComplianceGate | Internal | Kernel memory-safety layer for PII, injection, and rate limiting |
-| Pollination | Internal | TD(0)-learned agent lesson sharing and experience packs |
+| Rust MemoryManager | Native adapter ready; wheel export pending | Native high-scale memory with hippocampal buffer, Kanerva SDM, LSH, sleep replay |
+| SCHIPC | Native adapter ready; wheel export pending | Suppresses redundant inter-agent messages before token explosion |
+| ComplianceGate | Native adapter ready; wheel export pending | Kernel memory-safety layer for PII, injection, and rate limiting |
+| Pollination | Native adapter ready; wheel export pending | TD(0)-learned agent lesson sharing and experience packs |
 | Federation | Optional / explicit | Differentially private archetype-weight sharing |
 | Context Receipts + WITNESS | Active | Audit what was selected/omitted and verify generated answers against evidence |
 
@@ -94,6 +94,52 @@ for layer in fabric.capabilities():
 ```
 
 This matters for production because optional memory engines should not silently change behavior. Applications can log exactly which memory stack is active.
+
+## Native kernel adapters
+
+`MemoryFabric` now detects and uses native kernels when the installed `entroly_core` wheel exports them:
+
+- `MemoryManager`,
+- `IpcBus`,
+- `ComplianceGate`,
+- `PollinationEngine`.
+
+The adapter path is fail-closed:
+
+- if `ComplianceGate` blocks a message, Fabric returns `delivered=False`,
+- if `IpcBus` is unavailable, Fabric returns `native_ipc_unavailable`,
+- if `PollinationEngine` is unavailable, lesson recording/sharing returns a structured disabled result,
+- `capabilities()` reports `available`, `internal`, or `disabled` for each layer.
+
+Example:
+
+```python
+from entroly.memory_fabric import MemoryFabric
+
+fabric = MemoryFabric()
+
+sent = fabric.send_agent_message(1, 2, "new auth retry lesson")
+blocked = fabric.send_agent_message(1, 2, "sk-secret-token-should-not-pass")
+
+fabric.record_agent_lesson("coder", "auth retry strategy worked", success=True, surprise=0.2)
+fabric.share_agent_lessons("coder", "reviewer")
+fabric.reward_agent_share("coder", "reviewer", 1.0)
+
+print(sent)
+print(blocked)
+print(fabric.stats())
+```
+
+To activate the native kernels in wheels, the Rust PyO3 module must export the existing classes from `entroly-core/src/lib.rs`:
+
+```rust
+m.add_class::<memory::MemoryManager>()?;
+m.add_class::<ipc::IpcBus>()?;
+m.add_class::<compliance::ComplianceGate>()?;
+m.add_class::<pollination::PollinationEngine>()?;
+```
+
+The Fabric Python side is ready for those exports now.
 
 ## End-to-end demo
 
@@ -147,10 +193,10 @@ python examples/memory_fabric_e2e_demo.py --json
 Use this claim publicly now:
 
 ```text
-Entroly Memory Fabric unifies MemoryOS with optional long-term and native memory layers through one safe public orchestration API.
+Entroly Memory Fabric unifies MemoryOS with optional long-term and native memory layers through one safe public orchestration API. Native SCHIPC, ComplianceGate, and Pollination adapters are ready and activate automatically when exported by entroly_core.
 ```
 
-Avoid this claim until public PyO3 examples and external benchmarks are added:
+Avoid this claim until public PyO3 exports and external benchmarks are fully green:
 
 ```text
 Every Entroly memory layer is fully productized and benchmarked against every peer.
@@ -158,7 +204,7 @@ Every Entroly memory layer is fully productized and benchmarked against every pe
 
 ## Next integration milestones
 
-1. Export the native Rust `MemoryManager` through the public Python package contract.
-2. Add public examples for SCHIPC, ComplianceGate, Pollination, and Federation.
+1. Add the four PyO3 export lines in `entroly-core/src/lib.rs`.
+2. Add public examples for SCHIPC, ComplianceGate, Pollination, and Federation using real native classes.
 3. Run an external benchmark comparing Memory Fabric against simple vector memory, Mem0/Zep-style memory, and graph-memory systems.
 4. Add a real model-output benchmark: recall -> context receipt -> answer -> WITNESS verification.
