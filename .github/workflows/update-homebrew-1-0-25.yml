@@ -16,7 +16,7 @@ jobs:
       - name: Resolve PyPI source URL and checksum
         run: |
           set -euo pipefail
-          python3 > /tmp/resolve_pypi.py <<'PY'
+          cat > /tmp/resolve_pypi.py <<'PY'
           import json
           import os
           import urllib.request
@@ -46,7 +46,7 @@ jobs:
       - name: Update Homebrew formula
         run: |
           set -euo pipefail
-          python3 > /tmp/update_formula.py <<'PY'
+          cat > /tmp/update_formula.py <<'PY'
           import os
           from pathlib import Path
 
