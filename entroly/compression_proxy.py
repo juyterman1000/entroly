@@ -18,12 +18,62 @@ back by receipt/span id.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .compression_retrieval_store import CompressionRetrievalStore
 from .evidence_locked_compression import compress_evidence_locked, estimate_tokens
+
+_QUERY_WORD_RE = re.compile(r"\b[\w.-]{3,}\b")
+_QUERY_STOPWORDS = {
+    "about",
+    "after",
+    "again",
+    "agent",
+    "agents",
+    "build",
+    "built",
+    "cause",
+    "caused",
+    "check",
+    "code",
+    "could",
+    "debug",
+    "did",
+    "does",
+    "error",
+    "errors",
+    "fail",
+    "failed",
+    "fails",
+    "failure",
+    "find",
+    "fix",
+    "from",
+    "happen",
+    "happened",
+    "issue",
+    "log",
+    "logs",
+    "output",
+    "please",
+    "proxy",
+    "result",
+    "results",
+    "show",
+    "test",
+    "tests",
+    "tool",
+    "tools",
+    "what",
+    "when",
+    "where",
+    "which",
+    "why",
+    "with",
+}
 
 
 @dataclass(slots=True)
@@ -327,7 +377,8 @@ def _compress_text_block(
     include_receipt_header: bool,
     retrieval_store: CompressionRetrievalStore | None,
 ) -> tuple[str, bool, dict[str, object]]:
-    result = compress_evidence_locked(text, query=query, budget_tokens=budget_tokens)
+    cleaned_query = _clean_query_for_compression(query)
+    result = compress_evidence_locked(text, query=cleaned_query, budget_tokens=budget_tokens)
     receipt = result.receipt.as_dict()
     if not result.changed:
         return text, False, receipt
@@ -336,7 +387,7 @@ def _compress_text_block(
             original_text=text,
             compressed_text=result.compressed,
             receipt=receipt,
-            metadata={"query": query, "component": "compression_proxy"},
+            metadata={"query": query, "cleaned_query": cleaned_query, "component": "compression_proxy"},
         )
         receipt["retrieval"] = {
             "receipt_id": stored.receipt_id,
@@ -345,6 +396,25 @@ def _compress_text_block(
         }
     rendered = result.with_receipt_header() if include_receipt_header else result.compressed
     return rendered, True, receipt
+
+
+def _clean_query_for_compression(query: str) -> str:
+    """Keep only specific intent terms for ELC query locks.
+
+    Generic words such as "build", "log", or "fail" appear on thousands of
+    lines in CI output. Treating them as evidence locks prevents compression.
+    This filter preserves specific entities like service names, file names,
+    error codes, and incident ids while removing broad task words.
+    """
+    terms = []
+    for word in _QUERY_WORD_RE.findall(query or ""):
+        lowered = word.lower()
+        if lowered in _QUERY_STOPWORDS:
+            continue
+        if len(lowered) < 4 and not any(ch.isdigit() for ch in lowered):
+            continue
+        terms.append(word)
+    return " ".join(terms)
 
 
 def _estimate_body_tokens(body: dict[str, Any]) -> int:
