@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.32"
+__version__ = "1.0.33"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -138,12 +138,12 @@ try:
 except ImportError:
     pass
 
-# Live HTTP proxy installer. This is inert unless
-# ENTROLY_COMPRESSION_PROXY_MODE=elc is set before importing Entroly.
+# Live HTTP proxy installer. Exported but intentionally not executed at import
+# time; the proxy entry path or embedding app must call it explicitly after
+# setting ENTROLY_COMPRESSION_PROXY_MODE=elc. Package imports must be side-effect
+# free for wheel builds, Docker quality gates, and downstream libraries.
 try:
     from .compression_proxy_live import install_live_compression_proxy  # noqa: F401
-
-    install_live_compression_proxy()
 except ImportError:
     pass
 
