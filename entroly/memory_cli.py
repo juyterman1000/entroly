@@ -1,12 +1,18 @@
-"""Standalone CLI for Entroly Memory OS.
+"""CLI for Entroly Memory OS.
 
-Run today with:
+Run through the main Entroly command:
+
+    entroly memory remember "important lesson"
+    entroly memory recall "what matters?"
+
+Or through the standalone console script:
+
+    entroly-memory remember "important lesson"
+    entroly-memory recall "what matters?"
+
+Module form is also supported:
 
     python -m entroly.memory_cli remember "important lesson"
-    python -m entroly.memory_cli recall "what matters?"
-
-The main `entroly memory ...` dispatcher can delegate to this module in a
-separate low-risk CLI patch.
 """
 
 from __future__ import annotations
@@ -73,10 +79,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
         stats = MemoryOS().stats()
     else:
         stats = MemoryOS.load(path).stats()
-    if args.json:
-        print(json.dumps(stats, indent=2, sort_keys=True))
-    else:
-        print(json.dumps(stats, indent=2, sort_keys=True))
+    print(json.dumps(stats, indent=2, sort_keys=True))
     return 0
 
 
@@ -101,7 +104,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m entroly.memory_cli", description="Entroly Memory OS CLI")
+    parser = argparse.ArgumentParser(prog="entroly memory", description="Entroly Memory OS CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     remember = sub.add_parser("remember", help="Store a memory")
@@ -127,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     stats = sub.add_parser("stats", help="Show memory stats")
     stats.add_argument("--file", default=None)
-    stats.add_argument("--json", action="store_true")
+    stats.add_argument("--json", action="store_true", help="Accepted for compatibility; stats always emits JSON")
     stats.set_defaults(func=cmd_stats)
 
     forget = sub.add_parser("forget", help="Advance time and forget weak memories")
