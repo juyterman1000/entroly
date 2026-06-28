@@ -2,7 +2,7 @@
 
 Entroly Memory OS is the product surface for Entroly's memory ecosystem.
 
-It should be explained as more than persistent storage. The differentiator is that Entroly decides **what should be remembered, recalled, suppressed, shared, verified, persisted, and sent under a token budget**.
+It is more than persistent storage. The differentiator is that Entroly decides **what should be remembered, recalled, suppressed, shared, verified, persisted, and sent under a token budget**.
 
 ## One-line positioning
 
@@ -12,7 +12,7 @@ It should be explained as more than persistent storage. The differentiator is th
 
 Most agent-memory products focus on storing and retrieving facts. That is necessary, but incomplete for coding agents and multi-agent systems.
 
-A production agent does not only need to remember. It needs to:
+A production agent also needs to:
 
 1. avoid sending redundant context,
 2. remember only high-value evidence,
@@ -41,8 +41,9 @@ Entroly controls memory the way an operating system controls CPU, cache, IO, and
 | Layer | What it does | Primary files |
 |---|---|---|
 | Public facade | Stable Python API for remember/recall/decay/consolidation/save/load/safety | `entroly/memory.py` |
-| Console script | Installed command for demos and scripts | `entroly-memory`, `entroly/memory_cli.py` |
-| Standalone module | Module form of the same CLI | `python -m entroly.memory_cli` |
+| Main command | Fast local `entroly memory ...` route before Docker | `entroly/_docker_launcher.py`, `entroly/memory_cli.py` |
+| Console script | Installed `entroly-memory` command | `pyproject.toml`, `entroly/pyproject.toml` |
+| End-to-end demo | Offline memory → safety → recall → receipt → persistence demo | `examples/memory_os_e2e_demo.py` |
 | Memory benchmark | Deterministic release gate for local memory behavior | `benchmarks/memory_stress_test.py` |
 | Working / episodic / semantic memory | Three-tier memory with token budgets | `entroly-core/src/memory/mod.rs`, `episode.rs` |
 | Salience and forgetting | Ebbinghaus retention, emotional tags, spaced recall | `entroly-core/src/memory/episode.rs` |
@@ -69,7 +70,7 @@ The public facade supports:
 - `episodic`: session/history memory,
 - `semantic`: persistent pattern memory.
 
-Semantic memory is intentionally protected from normal forgetting, but the runtime still has global capacity limits.
+Semantic memory is intentionally protected from normal forgetting, while the runtime still enforces global capacity limits.
 
 ### 2. Recall
 
@@ -145,8 +146,10 @@ Entroly should be honest about maturity.
 | Surface | Status | Notes |
 |---|---|---|
 | MemoryOS Python facade | Shipped | Dependency-free public API: remember, recall, decay, consolidate, save, load, snapshot, safety scan |
+| Main Entroly command | Shipped | `entroly memory remember/recall/stats/scan/forget`, routed locally before Docker |
 | MemoryOS console script | Shipped | `entroly-memory remember/recall/stats/scan/forget` |
-| Standalone memory CLI module | Shipped | `python -m entroly.memory_cli`; main `entroly memory ...` dispatcher still needs wiring |
+| Standalone memory CLI module | Shipped | `python -m entroly.memory_cli` |
+| End-to-end demo | Shipped | `python examples/memory_os_e2e_demo.py --json` |
 | Memory stress benchmark | Shipped | `python benchmarks/memory_stress_test.py`; also gated in CI |
 | Context selection and optimization | Shipped | Public CLI/proxy/library path |
 | Context Receipts | Shipped | Public Python + Rust-backed receipt pipeline |
@@ -169,19 +172,22 @@ The first production gap is now closed with:
 4. local safety scanning before storage,
 5. durable atomic save/load,
 6. selected/omitted receipts,
-7. console command: `entroly-memory`,
-8. production tests for safety, persistence, invalid snapshots, capacity, and budget omissions,
-9. deterministic memory stress benchmark,
-10. CI gate for the MemoryOS production surface,
-11. one maturity matrix,
-12. one demo narrative,
-13. one comparison against graph-memory tools.
+7. main command: `entroly memory ...`,
+8. console command: `entroly-memory`,
+9. production tests for safety, persistence, invalid snapshots, capacity, launcher routing, and budget omissions,
+10. deterministic memory stress benchmark,
+11. end-to-end demo,
+12. CI gate for the MemoryOS production surface,
+13. README discoverability,
+14. one maturity matrix,
+15. one demo narrative,
+16. one comparison against graph-memory tools.
 
 Remaining gaps:
 
-1. wire `entroly-memory` into the main `entroly memory ...` command,
-2. expose native Rust `MemoryManager`, `IpcBus`, `ComplianceGate`, and `PollinationEngine` as public PyO3 classes,
-3. add a public README section linking to this guide.
+1. expose native Rust `MemoryManager`, `IpcBus`, `ComplianceGate`, and `PollinationEngine` as public PyO3 classes,
+2. add public examples for SCHIPC, ComplianceGate, Pollination, and federation,
+3. add a benchmarked end-to-end agent workflow that includes model output + WITNESS, not only local memory-control behavior.
 
 ## Public API
 
@@ -245,21 +251,29 @@ The facade should later delegate to existing native primitives:
 
 ## CLI
 
-After installation, use the console script:
+Use the main command:
 
 ```bash
-entroly-memory remember "Login timeout was fixed in auth/session.py" \
+entroly memory remember "Login timeout was fixed in auth/session.py" \
   --agent coder \
   --importance 0.9 \
   --source incident/auth-timeout \
   --tag critical
 
-entroly-memory recall "why is login timing out again?" \
+entroly memory recall "why is login timing out again?" \
   --agent coder \
   --budget 1200
 
+entroly memory stats
+entroly memory scan "candidate memory text"
+```
+
+The standalone console script is equivalent:
+
+```bash
+entroly-memory remember "Login timeout was fixed in auth/session.py" --agent coder --importance 0.9
+entroly-memory recall "why is login timing out again?" --agent coder --budget 1200
 entroly-memory stats
-entroly-memory scan "candidate memory text"
 ```
 
 Module form is also supported:
@@ -298,6 +312,23 @@ WITNESS checks answer against evidence
    ↓
 Pollination learns whether sharing helped
 ```
+
+## End-to-end local demo
+
+Run:
+
+```bash
+python examples/memory_os_e2e_demo.py
+python examples/memory_os_e2e_demo.py --json
+```
+
+The demo shows:
+
+1. remembering high-value auth evidence,
+2. blocking unsafe memory before storage,
+3. recalling working + semantic memory under budget,
+4. producing a selected/omitted receipt,
+5. saving and loading local memory.
 
 ## Memory benchmark
 
