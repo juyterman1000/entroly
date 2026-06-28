@@ -142,8 +142,10 @@ def patch_proxy_transform() -> bool:
 
 
 def main() -> int:
-    changed = patch_lib_rs() or patch_proxy_transform()
-    print(f"changed={changed}")
+    changed_lib = patch_lib_rs()
+    changed_transform = patch_proxy_transform()
+    print(f"changed_lib={changed_lib}")
+    print(f"changed_transform={changed_transform}")
     return 0
 
 
