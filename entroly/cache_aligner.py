@@ -26,6 +26,20 @@ import threading
 from collections import OrderedDict
 from typing import Any
 
+# Live proxy integration point for Evidence-Locked Compression.
+#
+# proxy.py imports proxy_transform first and CacheAligner immediately after it.
+# That makes this the smallest safe hook point: proxy_transform is already fully
+# initialized, while the giant proxy.py request handler does not need to be
+# rewritten. The installer is feature-flagged and returns immediately unless
+# ENTROLY_COMPRESSION_PROXY_MODE=elc, so normal imports remain side-effect free.
+try:  # pragma: no cover - behavior covered by integration tests
+    from .compression_proxy_live import install_live_compression_proxy as _install_elc_proxy
+
+    _install_elc_proxy()
+except Exception:
+    pass
+
 
 class CacheAligner:
     """Stabilize context prefixes for LLM provider KV cache optimization.
