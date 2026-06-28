@@ -87,11 +87,20 @@ def _run_native() -> None:
     main()
 
 
+def _run_memory_cli() -> None:
+    """Route `entroly memory ...` to the local MemoryOS CLI without Docker."""
+    from entroly.memory_cli import main as memory_main  # noqa: PLC0415
+
+    # `memory_cli` expects argv like `remember ...`, not `memory remember ...`.
+    rc = memory_main(sys.argv[2:])
+    sys.exit(int(rc or 0))
+
+
 def launch() -> None:
     """Main entry point — docker launch or native fallback.
 
     Routes CLI subcommands (init, dashboard, health, autotune, benchmark,
-    status, proxy) to the local CLI handler. Only `serve` and bare `entroly`
+    status, proxy, memory) to local handlers. Only `serve` and bare `entroly`
     go through Docker (or native fallback).
     """
 
@@ -100,6 +109,10 @@ def launch() -> None:
     if len(sys.argv) <= 1 or (len(sys.argv) > 1 and sys.argv[1] in _help_flags):
         from entroly.cli import main as cli_main
         cli_main()
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "memory":
+        _run_memory_cli()
         return
 
     # CLI subcommands that don't need Docker or the MCP server
