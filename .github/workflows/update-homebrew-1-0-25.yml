@@ -1,0 +1,63 @@
+name: Update Homebrew checksum 1.0.25
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/update-homebrew-1-0-25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download PyPI source and compute checksum
+        run: |
+          set -euo pipefail
+          VERSION="1.0.25"
+          URL="https://files.pythonhosted.org/packages/source/e/entroly/entroly-${VERSION}.tar.gz"
+          curl -fsSL "$URL" -o "entroly-${VERSION}.tar.gz"
+          SHA256=$(sha256sum "entroly-${VERSION}.tar.gz" | awk '{print $1}')
+          echo "SHA256=${SHA256}" >> "$GITHUB_ENV"
+          echo "URL=${URL}" >> "$GITHUB_ENV"
+          echo "Computed sha256: ${SHA256}"
+
+      - name: Update Homebrew formula
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          path = Path('packaging/homebrew/entroly.rb')
+          text = path.read_text()
+          lines = []
+          for line in text.splitlines():
+              stripped = line.strip()
+              if stripped.startswith('url '):
+                  indent = line[: len(line) - len(line.lstrip())]
+                  lines.append(f'{indent}url "{os.environ["URL"]}"')
+              elif stripped.startswith('sha256 '):
+                  indent = line[: len(line) - len(line.lstrip())]
+                  lines.append(f'{indent}sha256 "{os.environ["SHA256"]}"')
+              else:
+                  lines.append(line)
+          path.write_text('\n'.join(lines) + '\n')
+          PY
+
+      - name: Commit formula update
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packaging/homebrew/entroly.rb
+          git diff --cached --quiet && echo "No Homebrew formula changes needed" && exit 0
+          git commit -m "Update Homebrew formula checksum for 1.0.25"
+          git push
