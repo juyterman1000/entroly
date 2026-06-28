@@ -6,7 +6,7 @@ around evidence, never through evidence:
 - preserve error/warning/failure anchors and nearby context,
 - preserve query-matching lines/records,
 - preserve first/last boundaries,
-- preserve high-information outliers,
+- preserve high-information outliers when the budget allows,
 - summarize omitted spans with receipts,
 - keep JSON schema plus examples, matching records, and outliers.
 
@@ -36,6 +36,8 @@ _ANCHOR_RE = re.compile(
 _PATH_RE = re.compile(r"(?:[\w./-]+\.(?:py|rs|ts|tsx|js|jsx|java|kt|go|c|cpp|h|hpp|json|ya?ml|toml))(?:[:#]\d+)?")
 _ID_RE = re.compile(r"\b(?:[A-Fa-f0-9]{7,40}|[A-Z]{2,}-\d+|[\w.-]+@[\w.-]+)\b")
 _WORD_RE = re.compile(r"\b[\w.-]{3,}\b")
+_HARD_LOCK_REASONS = {"anchor", "query", "boundary", "path", "id"}
+_RECEIPT_REASONS = _HARD_LOCK_REASONS | {"outlier"}
 
 
 @dataclass(slots=True)
@@ -216,11 +218,15 @@ def _compress_lines(
     keep: set[int] = set()
     anchor_counts: Counter[str] = Counter()
     for line in scored:
-        if line.reasons.intersection({"anchor", "query", "boundary", "path", "id", "outlier"}):
+        # Hard locks are strict evidence anchors. High-entropy outliers are
+        # useful candidates, but not hard locks: timestamped heartbeats and CI
+        # progress lines are high entropy too, and hard-locking all of them
+        # defeats compression on SRE/build logs.
+        if line.reasons.intersection(_HARD_LOCK_REASONS):
             for idx in range(max(0, line.index - context_radius), min(len(scored), line.index + context_radius + 1)):
                 keep.add(idx)
             for reason in line.reasons:
-                if reason in {"anchor", "query", "boundary", "path", "id", "outlier"}:
+                if reason in _RECEIPT_REASONS:
                     anchor_counts[reason] += 1
 
     used = sum(scored[i].tokens for i in keep)
@@ -234,6 +240,9 @@ def _compress_lines(
         if line.tokens <= remaining:
             keep.add(line.index)
             remaining -= line.tokens
+            for reason in line.reasons:
+                if reason == "outlier":
+                    anchor_counts[reason] += 1
 
     if not keep and scored:
         keep.update(range(min(3, len(scored))))
