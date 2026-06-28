@@ -19,16 +19,34 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download PyPI source and compute checksum
+      - name: Resolve PyPI source URL and checksum
         run: |
           set -euo pipefail
           VERSION="1.0.25"
-          URL="https://files.pythonhosted.org/packages/source/e/entroly/entroly-${VERSION}.tar.gz"
-          curl -fsSL "$URL" -o "entroly-${VERSION}.tar.gz"
-          SHA256=$(sha256sum "entroly-${VERSION}.tar.gz" | awk '{print $1}')
-          echo "SHA256=${SHA256}" >> "$GITHUB_ENV"
-          echo "URL=${URL}" >> "$GITHUB_ENV"
-          echo "Computed sha256: ${SHA256}"
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          version = '1.0.25'
+          with urllib.request.urlopen(f'https://pypi.org/pypi/entroly/{version}/json') as response:
+              data = json.load(response)
+
+          source_files = [item for item in data.get('urls', []) if item.get('packagetype') == 'sdist']
+          if not source_files:
+              raise SystemExit('No source distribution found for entroly 1.0.25 on PyPI')
+
+          source = source_files[0]
+          url = source['url']
+          digest = source['digests']['sha256']
+
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'URL={url}\n')
+              env.write(f'SHA256={digest}\n')
+
+          print(f'URL: {url}')
+          print(f'SHA256: {digest}')
+          PY
 
       - name: Update Homebrew formula
         run: |
@@ -36,6 +54,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import os
+
           path = Path('packaging/homebrew/entroly.rb')
           text = path.read_text()
           lines = []
