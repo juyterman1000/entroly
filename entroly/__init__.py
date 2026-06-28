@@ -184,6 +184,8 @@ try:
         MemoryContext,
         MemoryEntry,
         MemoryOS,
+        MemorySafetyFinding,
+        MemorySafetyResult,
         OmittedMemory,
         SelectedMemory,
     )
