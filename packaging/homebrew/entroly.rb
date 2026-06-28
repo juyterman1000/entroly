@@ -21,8 +21,8 @@ class Entroly < Formula
 
   desc "Token-saving proxy and context compression engine for AI coding agents"
   homepage "https://github.com/juyterman1000/entroly"
-  url "https://files.pythonhosted.org/packages/source/e/entroly/entroly-1.0.25.tar.gz"
-  sha256 "a18318b06b577200d8623aae815b87adf9525fee154e47a7b7cff6910c3c498e"
+  url "https://files.pythonhosted.org/packages/e9/77/85d2d6cd84404c556eb933b8bb419640dbea2ba3eabe702f43e0f1c9351c/entroly-1.0.25.tar.gz"
+  sha256 "1071ce1569373c9e8f7d7b361178b513d347634d39df7eefd9e71edf40f65506"
   license "Apache-2.0"
   head "https://github.com/juyterman1000/entroly.git", branch: "main"
 
