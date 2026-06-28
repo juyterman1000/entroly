@@ -1,5 +1,6 @@
 name: Apply ELC Native Proxy Patch
 
+# One-time self-applying workflow for the large-file native ELC/proxy wiring.
 on:
   push:
     paths:
