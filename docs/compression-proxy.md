@@ -29,17 +29,23 @@ headers = result.headers()
 receipt = result.receipt.as_dict()
 ```
 
-## Live proxy mode settings
+## Live HTTP proxy mode
 
-The provider-light runtime helper reads environment settings:
+Set these before starting the Entroly proxy:
 
 ```bash
 export ENTROLY_COMPRESSION_PROXY_MODE=elc
 export ENTROLY_ELC_BUDGET_TOKENS=1200
 export ENTROLY_COMPRESSION_STORE=.entroly/compression-store.json
+entroly proxy
 ```
 
-Then:
+When `ENTROLY_COMPRESSION_PROXY_MODE=elc`, Entroly installs the live proxy hook
+at package import time. The hook replaces the existing tool-output compression
+function with the Evidence-Locked Compression proxy surface. If the env var is
+absent or different, nothing changes.
+
+Programmatic helper:
 
 ```python
 from entroly import compress_proxy_payload_from_env
@@ -128,7 +134,7 @@ Run:
 
 ```bash
 python benchmarks/compression_proxy_scoreboard.py --json
-pytest tests/test_compression_proxy.py tests/test_compression_proxy_scoreboard.py tests/test_compression_retrieval_store.py -v
+pytest tests/test_compression_proxy.py tests/test_compression_proxy_scoreboard.py tests/test_compression_retrieval_store.py tests/test_compression_proxy_live.py -v
 ```
 
 The scoreboard requires:
@@ -148,5 +154,5 @@ Headroom retrieves dropped context.
 Entroly retrieves dropped context and keeps auditable evidence receipts for what was compressed, why it was compressed, and how to recover it.
 ```
 
-The next product milestone is wiring `compress_proxy_payload_from_env()` directly
-into the HTTP proxy request path behind `ENTROLY_COMPRESSION_PROXY_MODE=elc`.
+Entroly's next milestone is making retrieval available as an MCP tool so agents
+can fetch omitted spans by receipt/span id during a conversation.
