@@ -30,6 +30,27 @@ jobs:
       - name: Run ruff check
         run: ruff check entroly/
 
+  memory-os:
+    name: MemoryOS Production Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -e . pytest pytest-timeout --timeout 120 --retries 5
+
+      - name: Run MemoryOS tests
+        run: pytest tests/test_memory_os.py tests/test_memory_cli.py tests/test_memory_stress_benchmark.py -v --tb=short --timeout=60
+
+      - name: Run MemoryOS stress benchmark
+        run: python benchmarks/memory_stress_test.py --json
+
   rust-tests:
     name: Rust Tests + Clippy
     runs-on: ubuntu-latest
