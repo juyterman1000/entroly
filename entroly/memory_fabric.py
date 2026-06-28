@@ -22,7 +22,14 @@ from typing import Iterable, Literal
 
 from .memory import MemoryContext, MemoryOS, MemoryTier, SafetyPolicy
 
-MemoryLayerStatus = Literal["active", "available", "optional", "internal", "missing", "disabled"]
+MemoryLayerStatus = Literal[
+    "active",
+    "available",
+    "optional",
+    "internal",
+    "missing",
+    "disabled",
+]
 
 
 @dataclass(slots=True)
@@ -56,7 +63,10 @@ class FabricRecall:
                 source = mem.get("source", "long_term_memory")
                 retention = mem.get("retention", "?")
                 content = mem.get("content", "")
-                rendered.append(f"[long-term:{idx} source={source} retention={retention}]\n{content}")
+                rendered.append(
+                    f"[long-term:{idx} source={source} "
+                    f"retention={retention}]\n{content}"
+                )
             blocks.append("\n\n".join(rendered))
         return "\n\n".join(blocks)
 
@@ -163,8 +173,10 @@ class MemoryFabric:
         long_term: list[dict[str, object]] = []
         if self._long_term is not None and getattr(self._long_term, "active", False) and query:
             try:
-                long_term = list(self._long_term.recall_relevant(query, top_k=long_term_top_k))
-            except Exception as exc:  # pragma: no cover - optional backend defensive guard
+                long_term = list(
+                    self._long_term.recall_relevant(query, top_k=long_term_top_k)
+                )
+            except Exception as exc:  # pragma: no cover
                 self._long_term_error = str(exc)
                 long_term = []
         return FabricRecall(context=context, long_term=long_term, layers=self.capabilities())
@@ -175,7 +187,7 @@ class MemoryFabric:
             for _ in range(max(1, int(count))):
                 try:
                     self._long_term.tick()
-                except Exception:  # pragma: no cover - optional backend defensive guard
+                except Exception:  # pragma: no cover
                     break
 
     def forget(self, threshold: float | None = None) -> int:
@@ -213,28 +225,91 @@ class MemoryFabric:
         ]
 
         if self._long_term is not None and getattr(self._long_term, "active", False):
-            layers.append(MemoryLayer("hippocampus_bridge", "active", "optional long-term memory", "hippocampus-sharp-memory is installed and active."))
+            layers.append(
+                MemoryLayer(
+                    "hippocampus_bridge",
+                    "active",
+                    "optional long-term memory",
+                    "hippocampus-sharp-memory is installed and active.",
+                )
+            )
         elif self._enable_long_term:
-            detail = self._long_term_error or "Install hippocampus-sharp-memory to activate cross-session memory."
-            layers.append(MemoryLayer("hippocampus_bridge", "optional", "optional long-term memory", detail))
+            detail = (
+                self._long_term_error
+                or "Install hippocampus-sharp-memory to activate cross-session memory."
+            )
+            layers.append(
+                MemoryLayer("hippocampus_bridge", "optional", "optional long-term memory", detail)
+            )
         else:
-            layers.append(MemoryLayer("hippocampus_bridge", "disabled", "optional long-term memory", "Disabled by configuration."))
+            layers.append(
+                MemoryLayer(
+                    "hippocampus_bridge",
+                    "disabled",
+                    "optional long-term memory",
+                    "Disabled by configuration.",
+                )
+            )
 
         if self._native_memory is not None:
-            layers.append(MemoryLayer("rust_memory_manager", "available", "native high-scale memory", "entroly_core.MemoryManager was detected."))
+            layers.append(
+                MemoryLayer(
+                    "rust_memory_manager",
+                    "available",
+                    "native high-scale memory",
+                    "entroly_core.MemoryManager was detected.",
+                )
+            )
         elif self._enable_native:
-            detail = self._native_error or "Native MemoryManager not exported by installed entroly_core yet."
-            layers.append(MemoryLayer("rust_memory_manager", "internal", "native high-scale memory", detail))
+            detail = (
+                self._native_error
+                or "Native MemoryManager not exported by installed entroly_core yet."
+            )
+            layers.append(
+                MemoryLayer("rust_memory_manager", "internal", "native high-scale memory", detail)
+            )
         else:
-            layers.append(MemoryLayer("rust_memory_manager", "disabled", "native high-scale memory", "Disabled by configuration."))
+            layers.append(
+                MemoryLayer(
+                    "rust_memory_manager",
+                    "disabled",
+                    "native high-scale memory",
+                    "Disabled by configuration.",
+                )
+            )
 
         layers.extend(
             [
-                MemoryLayer("schipc", "internal", "multi-agent memory traffic", "Rust IPC bus suppresses redundant agent messages; public examples pending."),
-                MemoryLayer("compliance_gate", "internal", "memory safety kernel", "Rust compliance gate exists; MemoryOS exposes first-party safety scan today."),
-                MemoryLayer("pollination", "internal", "learned agent lesson sharing", "Rust TD(0) pollination engine exists; public integration guide pending."),
-                MemoryLayer("federation", "optional", "privacy-preserving shared learning", "FederationClient shares noised archetype weights when explicitly enabled."),
-                MemoryLayer("receipts_witness", "active", "trust and audit layer", "Memory recall can be paired with Context Receipts and WITNESS verification."),
+                MemoryLayer(
+                    "schipc",
+                    "internal",
+                    "multi-agent memory traffic",
+                    "Rust IPC bus suppresses redundant agent messages; examples pending.",
+                ),
+                MemoryLayer(
+                    "compliance_gate",
+                    "internal",
+                    "memory safety kernel",
+                    "Rust compliance gate exists; MemoryOS exposes safety scan today.",
+                ),
+                MemoryLayer(
+                    "pollination",
+                    "internal",
+                    "learned agent lesson sharing",
+                    "Rust TD(0) pollination engine exists; integration guide pending.",
+                ),
+                MemoryLayer(
+                    "federation",
+                    "optional",
+                    "privacy-preserving shared learning",
+                    "FederationClient shares noised archetype weights when enabled.",
+                ),
+                MemoryLayer(
+                    "receipts_witness",
+                    "active",
+                    "trust and audit layer",
+                    "Memory recall can pair with Context Receipts and WITNESS.",
+                ),
             ]
         )
         return layers
@@ -244,7 +319,7 @@ class MemoryFabric:
             from .long_term_memory import LongTermMemory  # noqa: PLC0415
 
             self._long_term = LongTermMemory()
-        except Exception as exc:  # pragma: no cover - depends on optional package/import state
+        except Exception as exc:  # pragma: no cover
             self._long_term_error = str(exc)
             self._long_term = None
 
@@ -254,7 +329,7 @@ class MemoryFabric:
 
             self._native_memory_cls = MemoryManager
             self._native_memory = MemoryManager()
-        except Exception as exc:  # pragma: no cover - native package optional in fallback tests
+        except Exception as exc:  # pragma: no cover
             self._native_error = str(exc)
             self._native_memory_cls = None
             self._native_memory = None
