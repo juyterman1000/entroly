@@ -62,7 +62,7 @@ def test_live_json_forward_records_usage_and_cache_observation() -> None:
                     },
                 },
             )
-    
+
         proxy = _proxy()
         proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
         body = {
@@ -96,6 +96,7 @@ def test_live_json_forward_records_usage_and_cache_observation() -> None:
 
     asyncio.run(run())
 
+
 def test_live_sse_forward_records_terminal_usage_without_rewriting_bytes() -> None:
     async def run() -> None:
         transcript = (
@@ -104,14 +105,14 @@ def test_live_sse_forward_records_terminal_usage_without_rewriting_bytes() -> No
             b'"prompt_tokens_details":{"cached_tokens":100}}}\n\n'
             b"data: [DONE]\n\n"
         )
-    
+
         async def upstream(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
                 content=transcript,
             )
-    
+
         proxy = _proxy()
         proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
         body = {
@@ -143,6 +144,7 @@ def test_live_sse_forward_records_terminal_usage_without_rewriting_bytes() -> No
             proxy._usage_ledger.close()
 
     asyncio.run(run())
+
 
 def test_cache_economics_keep_a_large_warm_prefix_on_current_model() -> None:
     proxy = _proxy()
@@ -285,7 +287,7 @@ def test_duplicate_provider_observation_is_idempotent_everywhere() -> None:
                 request_id="duplicate-request",
                 payload=payload,
             )
-    
+
             assert proxy._usage_ledger.summary()["requests"] == 1
             assert proxy._usage_recorded == 1
             assert proxy._cache_router.stats()["observed_hits"] == 1
