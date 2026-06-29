@@ -274,12 +274,38 @@ def render_canonical_request(
     request: CanonicalGatewayRequest,
     target: ProviderTarget,
 ) -> dict[str, Any]:
-    """Render canonical request to a provider body using only portable fields."""
+    """Render the text-only portable subset of a canonical request.
+
+    Cross-provider transport fails closed until a dedicated adapter proves
+    semantic equivalence for vision, reasoning, schemas, tools, and tool-call
+    history. Dropping those controls would change the request contract.
+    """
 
     if not _SAFE_MODEL_RE.fullmatch(target.model):
         raise ValueError("invalid model identifier")
+    required = request.required_capabilities()
+    if not target.supports(required):
+        raise ValueError("target does not satisfy canonical request capabilities")
+    if request.requires_vision:
+        raise ValueError("cross-provider vision translation is not implemented")
+    if request.requires_reasoning:
+        raise ValueError("cross-provider reasoning translation is not implemented")
+    if request.response_schema is not None:
+        raise ValueError("cross-provider response schema translation is not implemented")
+    if request.tools:
+        raise ValueError("cross-provider tool translation is not implemented")
+
+    messages: list[dict[str, Any]] = []
+    for message in request.messages:
+        role = str(message.get("role") or "")
+        content = message.get("content", "")
+        if role not in {"system", "user", "assistant"}:
+            raise ValueError("cross-provider message role is not portable")
+        if not isinstance(content, str):
+            raise ValueError("cross-provider message content is not text-only")
+        messages.append({"role": role, "content": content})
+
     provider = target.provider.lower()
-    messages = [dict(message) for message in request.messages]
 
     if provider == "openai":
         body: dict[str, Any] = {
