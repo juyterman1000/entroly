@@ -3046,12 +3046,18 @@ class PromptCompilerProxy:
         _witness_enabled = self._witness_enabled and bool(self._witness_analyzer)
         _frag_ids = selected_frag_ids or []
         _buffer_cap = ImplicitFeedbackTracker._MAX_BUFFER_BYTES
+        try:
+            _usage_tail_cap = int(os.environ.get("ENTROLY_USAGE_SSE_TAIL_BYTES", "262144"))
+        except ValueError:
+            _usage_tail_cap = 262144
+        _usage_tail_cap = max(16384, min(_usage_tail_cap, 1048576))
         # Capture selected fragments for per-variant utilization tracking (Change 4)
         _selected_frags = getattr(self, '_last_context_fragments', []) if _feedback_enabled else []
 
         async def event_generator():
             buffer = [] if (_feedback_enabled or _witness_enabled) else None
             buffer_size = 0
+            usage_tail = bytearray()
             try:
                 client = await self._ensure_client()
                 async with client.stream(
@@ -3106,8 +3112,19 @@ class PromptCompilerProxy:
                         if buffer is not None and buffer_size < _buffer_cap:
                             buffer.append(chunk)
                             buffer_size += len(chunk)
+                        usage_tail.extend(chunk)
+                        if len(usage_tail) > _usage_tail_cap:
+                            del usage_tail[:-_usage_tail_cap]
                         yield chunk
                 self._breaker.record_success()
+                if usage_tail:
+                    await self._observe_stream_usage(
+                        body=body,
+                        provider=provider,
+                        request_id=request_id,
+                        transcript=bytes(usage_tail),
+                        path=url,
+                    )
             except httpx.ReadError as e:
                 self._breaker.record_failure()
                 logger.warning(f"Upstream stream interrupted: {e}")
