@@ -176,9 +176,8 @@ class BehavioralWasteDetector:
             )
         return findings
 
-    @staticmethod
-    def _mark_new(state: _ConversationState, finding: WasteFinding) -> bool:
-        threshold_bucket = finding.occurrences // 3
+    def _mark_new(self, state: _ConversationState, finding: WasteFinding) -> bool:
+        threshold_bucket = finding.occurrences // self.repeat_threshold
         key = (finding.kind, finding.fingerprint, threshold_bucket)
         if key in state.emitted:
             return False
