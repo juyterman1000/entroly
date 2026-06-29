@@ -1853,6 +1853,8 @@ class PromptCompilerProxy:
 
         path = request.url.path
         headers = {k: v for k, v in request.headers.items()}
+        request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        usage_dimensions = self._usage_dimensions(headers)
         provider = detect_provider(path, headers, body)
         # Authoritative subscription-auth guard — fail fast with actionable guidance
         # before any forwarding, instead of a confusing upstream 401/429.
@@ -1938,13 +1940,18 @@ class PromptCompilerProxy:
                     forward_headers,
                     body,
                     provider=provider,
+                    request_id=request_id,
                     extra_headers=bypass_headers,
+                    usage_dimensions=usage_dimensions,
                 )
             return await self._forward_response(
                 target_url,
                 forward_headers,
                 body,
+                provider=provider,
+                request_id=request_id,
                 extra_headers=bypass_headers,
+                usage_dimensions=usage_dimensions,
             )
 
         # ── Pipelined: warmup connection while Rust pipeline runs ──
@@ -1966,8 +1973,6 @@ class PromptCompilerProxy:
         _recoverable_fragments: list[dict[str, Any]] = []
         user_message = ""
         witness_context = ""
-        request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
-
         # Run the optimization pipeline (synchronous Rust, off the event loop)
         try:
             user_message = extract_user_message(body, provider)
@@ -2405,12 +2410,14 @@ class PromptCompilerProxy:
                 target_url, forward_headers, body, _selected_frag_ids,
                 witness_context, provider, _recoverable_fragments, request_id,
                 extra_headers=control_headers,
+                usage_dimensions=usage_dimensions,
             )
         else:
             return await self._forward_response(
                 target_url, forward_headers, body, _selected_frag_ids,
                 witness_context, provider, _recoverable_fragments, request_id,
                 extra_headers=control_headers,
+                usage_dimensions=usage_dimensions,
             )
 
     @staticmethod
@@ -2855,6 +2862,7 @@ class PromptCompilerProxy:
         recovery_depth: int = 0,
         request_id: str = "",
         extra_headers: dict[str, str] | None = None,
+        usage_dimensions: dict[str, str] | None = None,
     ) -> StreamingResponse | JSONResponse:
         """Buffer a streaming upstream response so WITNESS can enforce before display."""
         if not self._breaker.allow_request():
@@ -2906,6 +2914,7 @@ class PromptCompilerProxy:
                 request_id=accounting_request_id,
                 transcript=raw,
                 path=url,
+                usage_dimensions=usage_dimensions,
             )
 
         # ── Pre-flight: handle upstream errors before WITNESS ──
@@ -2976,6 +2985,7 @@ class PromptCompilerProxy:
                 recovery_depth=recovery_depth + 1,
                 request_id=request_id,
                 extra_headers=extra_headers,
+                usage_dimensions=usage_dimensions,
             )
             recovered_ok = (
                 recovered.status_code < 400
@@ -3230,6 +3240,7 @@ class PromptCompilerProxy:
         request_id: str = "",
         recovery_depth: int = 0,
         extra_headers: dict[str, str] | None = None,
+        usage_dimensions: dict[str, str] | None = None,
     ) -> StreamingResponse:
         """Forward a streaming request and proxy the SSE response.
 
@@ -3249,6 +3260,7 @@ class PromptCompilerProxy:
                 recovery_depth=recovery_depth,
                 request_id=request_id,
                 extra_headers=extra_headers,
+                usage_dimensions=usage_dimensions,
             )
 
         # Check circuit breaker
@@ -3344,6 +3356,7 @@ class PromptCompilerProxy:
                         request_id=request_id,
                         transcript=bytes(usage_tail),
                         path=url,
+                        usage_dimensions=usage_dimensions,
                     )
             except httpx.ReadError as e:
                 self._breaker.record_failure()
@@ -4100,6 +4113,7 @@ class PromptCompilerProxy:
         request_id: str = "",
         recovery_depth: int = 0,
         extra_headers: dict[str, str] | None = None,
+        usage_dimensions: dict[str, str] | None = None,
     ) -> JSONResponse:
         """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation.
 
@@ -4311,6 +4325,7 @@ class PromptCompilerProxy:
                 request_id=accounting_request_id,
                 payload=content,
                 path=url,
+                usage_dimensions=usage_dimensions,
             )
 
         # ── Signal 1: Assess non-streaming response for implicit feedback ──
@@ -4356,6 +4371,7 @@ class PromptCompilerProxy:
                             recoverable_fragments=[],
                             recovery_depth=recovery_depth + 1,
                             request_id=request_id,
+                            usage_dimensions=usage_dimensions,
                         )
                         recovered_ok = (
                             recovered.status_code < 400
