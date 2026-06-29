@@ -2679,6 +2679,14 @@ class PromptCompilerProxy:
             return JSONResponse({"error": "stream_error", "detail": str(e)[:200]}, status_code=502)
 
         raw = b"".join(chunks)
+        if status_code < 400:
+            await self._observe_stream_usage(
+                body=body,
+                provider=provider,
+                request_id=request_id,
+                transcript=raw,
+                path=url,
+            )
 
         # ── Pre-flight: handle upstream errors before WITNESS ──
         # Must check status BEFORE recording success to the circuit breaker.
@@ -4053,6 +4061,15 @@ class PromptCompilerProxy:
                 "status": response.status_code,
                 "body_preview": response.text[:500],
             }
+
+        if isinstance(content, dict) and response.status_code < 400:
+            await self._observe_json_usage(
+                body=body,
+                provider=provider,
+                request_id=request_id,
+                payload=content,
+                path=url,
+            )
 
         # ── Signal 1: Assess non-streaming response for implicit feedback ──
         # If verification rejects an answer produced from compressed context,
