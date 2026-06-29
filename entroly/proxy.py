@@ -59,12 +59,31 @@ from .proxy_transform import (
     strip_anthropic_unsupported_params,
 )
 from .cache_aligner import CacheAligner
+from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
 from .control_plane import (
     ControlAudit,
     ControlPlaneDecision,
     audit_request_transform,
     plan_request,
     stable_request_fingerprint,
+)
+from .provider_adapters import (
+    apply_target_same_provider,
+    canonical_request_from_provider_body,
+    rewrite_gemini_model_in_url,
+)
+from .provider_policy import (
+    Capability,
+    GatewayRedactionPolicy,
+    ProviderTarget,
+)
+from .stable_prefix import conversation_anchor
+from .usage_ledger import (
+    TokenUsage,
+    UsageLedger,
+    UsagePricingCatalog,
+    parse_provider_usage,
+    parse_stream_usage,
 )
 from .value_tracker import get_tracker
 
@@ -1019,6 +1038,36 @@ class PromptCompilerProxy:
         self._cache_align_enabled = os.environ.get("ENTROLY_CACHE_ALIGN", "1") != "0"
         self._cache_aligner = CacheAligner() if self._cache_align_enabled else None
 
+        # Optional enterprise outbound policy. It is applied to the final JSON
+        # payload immediately before transport, including bypass/catch-all paths.
+        self._gateway_redaction = GatewayRedactionPolicy(
+            enabled=os.environ.get("ENTROLY_GATEWAY_REDACTION", "0").lower()
+            in {"1", "true", "yes", "on"}
+        )
+
+        # Provider-reported cache and spend accounting. A ledger is opt-in;
+        # cache observations remain available in-memory for routing decisions.
+        self._cache_router = CacheAwareRouter()
+        ledger_path = os.environ.get("ENTROLY_USAGE_LEDGER", "").strip()
+        catalog_path = os.environ.get("ENTROLY_PRICING_CATALOG", "").strip()
+        self._usage_ledger = UsageLedger(ledger_path) if ledger_path else None
+        self._pricing_catalog = (
+            UsagePricingCatalog.from_file(catalog_path)
+            if catalog_path
+            else None
+        )
+        self._usage_recorded = 0
+        self._usage_unpriced = 0
+        self._usage_failures = 0
+        self._trust_usage_headers = (
+            os.environ.get("ENTROLY_TRUST_USAGE_HEADERS", "0").lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self._cache_route_stays = 0
+        self._cache_route_switches = 0
+        self._cache_route_blocked_unpriced = 0
+        self._cache_route_last: dict[str, Any] | None = None
+
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
         self._last_excluded_fragments: list = []  # Top rejected candidates for /explain
@@ -1277,6 +1326,8 @@ class PromptCompilerProxy:
             logger.warning(f"Failed to persist state on shutdown: {e}")
         if self._client:
             await self._client.aclose()
+        if self._usage_ledger is not None:
+            await asyncio.to_thread(self._usage_ledger.close)
 
     def _persist_engine_state(self) -> None:
         """Flush learned PRISM weights, fragment index, and feedback to disk.
@@ -1400,6 +1451,370 @@ class PromptCompilerProxy:
             status_code=400,
         )
 
+    def _apply_outbound_redaction(
+        self,
+        body: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Apply the final outbound policy and emit value-free audit headers."""
+        if not self._gateway_redaction.enabled:
+            return body, {}
+        redacted, receipt = self._gateway_redaction.redact_value(body)
+        if not isinstance(redacted, dict):
+            raise TypeError("gateway redaction must preserve the JSON object shape")
+        headers = {
+            "X-Entroly-Redaction": "changed" if receipt.changed else "clean",
+            "X-Entroly-Redaction-Count": str(len(receipt.findings)),
+        }
+        return redacted, headers
+
+    def _usage_dimensions(
+        self,
+        headers: dict[str, str],
+    ) -> dict[str, str]:
+        """Read bounded attribution only from an explicitly trusted ingress."""
+        if not self._trust_usage_headers:
+            return {}
+        dimensions: dict[str, str] = {}
+        for dimension in ("team", "project", "tool"):
+            value = headers.get(f"x-entroly-{dimension}", "").strip()
+            if value and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}", value):
+                dimensions[dimension] = value
+        return dimensions
+
+    @staticmethod
+    def _routing_conversation_id(
+        body: dict[str, Any],
+        provider: str,
+    ) -> str:
+        messages: list[dict[str, Any]] = []
+        if provider == "anthropic" and body.get("system"):
+            messages.append({"role": "system", "content": body["system"]})
+
+        raw_messages = body.get("messages")
+        if isinstance(raw_messages, list):
+            messages.extend(
+                dict(message)
+                for message in raw_messages
+                if isinstance(message, dict)
+            )
+        elif provider == "gemini" and isinstance(body.get("contents"), list):
+            for item in body["contents"]:
+                if not isinstance(item, dict):
+                    continue
+                role = "assistant" if item.get("role") == "model" else str(
+                    item.get("role", "")
+                )
+                parts = item.get("parts", [])
+                text = " ".join(
+                    str(part.get("text", ""))
+                    for part in parts
+                    if isinstance(part, dict) and part.get("text")
+                )
+                messages.append({"role": role, "content": text})
+        elif isinstance(body.get("input"), list):
+            messages.extend(
+                dict(item)
+                for item in body["input"]
+                if isinstance(item, dict)
+            )
+
+        tools = body.get("tools")
+        tool_items = (
+            tuple(tool for tool in tools if isinstance(tool, dict))
+            if isinstance(tools, list)
+            else ()
+        )
+        if not messages:
+            return ""
+        return conversation_anchor(messages, tools=tool_items)
+
+    @staticmethod
+    def _cache_prefix_hash(body: dict[str, Any], provider: str) -> str:
+        stable: dict[str, Any] = {"provider": provider}
+        if provider == "anthropic":
+            stable["system"] = body.get("system", "")
+        elif provider == "gemini":
+            stable["systemInstruction"] = body.get("systemInstruction")
+        elif "instructions" in body:
+            stable["instructions"] = body.get("instructions")
+        else:
+            messages = body.get("messages")
+            if (
+                isinstance(messages, list)
+                and messages
+                and isinstance(messages[0], dict)
+                and messages[0].get("role") == "system"
+            ):
+                stable["system"] = messages[0].get("content", "")
+        stable["tools"] = body.get("tools", ())
+        encoded = json.dumps(
+            stable,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _route_target_url(
+        url: str,
+        provider: str,
+        model: str,
+    ) -> str:
+        """Apply a routed model to providers that encode it in the URL."""
+        if provider != "gemini":
+            return url
+        return rewrite_gemini_model_in_url(url, model)
+
+    @staticmethod
+    def _routing_token_estimates(
+        body: dict[str, Any],
+        user_message: str,
+    ) -> tuple[int, int, int]:
+        """Estimate the cacheable prefix, new input, and expected output."""
+        input_surface = {
+            key: body[key]
+            for key in (
+                "system",
+                "systemInstruction",
+                "instructions",
+                "messages",
+                "contents",
+                "input",
+                "tools",
+            )
+            if key in body
+        }
+        serialized = json.dumps(
+            input_surface,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        total_input = max(1, len(serialized.encode("utf-8")) // 4)
+        new_input = max(1, len(user_message.encode("utf-8")) // 4)
+        prefix_tokens = max(0, total_input - new_input)
+
+        expected_output: Any = body.get("max_completion_tokens")
+        if expected_output is None:
+            expected_output = body.get("max_tokens")
+        if expected_output is None:
+            generation = body.get("generationConfig")
+            if isinstance(generation, dict):
+                expected_output = generation.get("maxOutputTokens")
+        try:
+            output_tokens = max(0, min(int(expected_output or 1024), 1_000_000))
+        except (TypeError, ValueError):
+            output_tokens = 1024
+        return prefix_tokens, new_input, output_tokens
+
+    def _cache_economics_allow_ravs(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        current_model: str,
+        recommended_model: str,
+        user_message: str,
+        risk: str,
+    ) -> tuple[bool, str]:
+        """Apply observed cache economics after RAVS has passed quality gates."""
+        if self._pricing_catalog is None:
+            return True, "pricing_catalog_not_configured"
+
+        current_pricing = self._pricing_catalog.resolve(provider, current_model)
+        recommended_pricing = self._pricing_catalog.resolve(
+            provider,
+            recommended_model,
+        )
+        if current_pricing is None or recommended_pricing is None:
+            with self._stats_lock:
+                self._cache_route_blocked_unpriced += 1
+                self._cache_route_last = {
+                    "current_model": current_model,
+                    "recommended_model": recommended_model,
+                    "reason": "stay:missing_pricing",
+                }
+            return False, "stay:missing_pricing"
+
+        def candidate(model: str, pricing: Any) -> ModelCandidate:
+            return ModelCandidate(
+                model=model,
+                provider=provider,
+                price=CachePrice(
+                    input_per_million=float(pricing.input_per_million),
+                    cache_read_per_million=float(
+                        pricing.cache_read_per_million
+                    ),
+                    output_per_million=float(pricing.output_per_million),
+                    cache_write_per_million=float(pricing.cache_write_rate),
+                ),
+                # RAVS has already enforced empirical quality/risk gates.
+                quality=1.0,
+            )
+
+        conversation_id = self._routing_conversation_id(body, provider)
+        if not conversation_id:
+            with self._stats_lock:
+                self._cache_route_last = {
+                    "current_model": current_model,
+                    "recommended_model": recommended_model,
+                    "reason": "stay:missing_conversation_identity",
+                }
+            return False, "stay:missing_conversation_identity"
+
+        prefix_tokens, new_input_tokens, output_tokens = (
+            self._routing_token_estimates(body, user_message)
+        )
+        route = self._cache_router.decide(
+            conversation_id,
+            current_model=current_model,
+            candidates=(
+                candidate(current_model, current_pricing),
+                candidate(recommended_model, recommended_pricing),
+            ),
+            prefix_hash=self._cache_prefix_hash(body, provider),
+            prefix_tokens=prefix_tokens,
+            new_input_tokens=new_input_tokens,
+            expected_output_tokens=output_tokens,
+            risk=risk,
+        )
+        allow = route.selected_model == recommended_model
+        with self._stats_lock:
+            if allow:
+                self._cache_route_switches += 1
+            else:
+                self._cache_route_stays += 1
+            self._cache_route_last = {
+                "current_model": current_model,
+                "recommended_model": recommended_model,
+                "selected_model": route.selected_model,
+                "reason": route.reason,
+                "cache_warm": route.cache_warm,
+                "stayed_for_cache": route.stayed_for_cache,
+                "switch_savings_usd": route.switch_savings_usd,
+                "projected_costs_usd": dict(route.projected_costs_usd),
+            }
+        return allow, route.reason
+
+    def _record_provider_usage(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        request_id: str,
+        usage: TokenUsage,
+        streaming: bool,
+        path: str = "",
+        usage_dimensions: dict[str, str] | None = None,
+    ) -> None:
+        model = extract_model(body, path) or str(body.get("model", "unknown"))
+        conversation_id = self._routing_conversation_id(body, provider)
+        prefix_hash = self._cache_prefix_hash(body, provider)
+        inserted = True
+
+        if self._usage_ledger is not None:
+            pricing = (
+                self._pricing_catalog.resolve(provider, model)
+                if self._pricing_catalog is not None
+                else None
+            )
+            event, inserted = self._usage_ledger.record_usage_with_status(
+                request_id=request_id or uuid.uuid4().hex,
+                provider=provider,
+                model=model,
+                usage=usage,
+                pricing=pricing,
+                team=(usage_dimensions or {}).get("team", ""),
+                tool=(usage_dimensions or {}).get("tool", ""),
+                project=(usage_dimensions or {}).get("project", ""),
+                conversation_id=conversation_id,
+                metadata={"streaming": streaming},
+            )
+            if inserted:
+                with self._stats_lock:
+                    self._usage_recorded += 1
+                    if event.pricing_source.startswith("unpriced:"):
+                        self._usage_unpriced += 1
+
+        if not inserted:
+            return
+
+        cached_prefix_tokens = max(
+            usage.cache_read_tokens,
+            usage.cache_write_tokens,
+        )
+        if conversation_id:
+            self._cache_router.observe(
+                conversation_id,
+                model=model,
+                provider=provider,
+                prefix_hash=prefix_hash,
+                cached_prefix_tokens=cached_prefix_tokens,
+                cache_hit=usage.cache_read_tokens > 0,
+            )
+
+    async def _observe_json_usage(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        request_id: str,
+        payload: dict[str, Any],
+        path: str = "",
+        usage_dimensions: dict[str, str] | None = None,
+    ) -> None:
+        usage_keys = {"usage", "usage_metadata", "usageMetadata"}
+        if not usage_keys.intersection(payload):
+            return
+        try:
+            usage = parse_provider_usage(provider, payload)
+            await asyncio.to_thread(
+                self._record_provider_usage,
+                body=body,
+                provider=provider,
+                request_id=request_id,
+                usage=usage,
+                streaming=False,
+                path=path,
+                usage_dimensions=usage_dimensions,
+            )
+        except Exception:
+            with self._stats_lock:
+                self._usage_failures += 1
+            logger.warning("Provider usage accounting failed", exc_info=True)
+
+    async def _observe_stream_usage(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        request_id: str,
+        transcript: bytes,
+        path: str = "",
+        usage_dimensions: dict[str, str] | None = None,
+    ) -> None:
+        try:
+            usage = parse_stream_usage(provider, transcript)
+            if usage is None:
+                return
+            await asyncio.to_thread(
+                self._record_provider_usage,
+                body=body,
+                provider=provider,
+                request_id=request_id,
+                usage=usage,
+                streaming=True,
+                path=path,
+                usage_dimensions=usage_dimensions,
+            )
+        except Exception:
+            with self._stats_lock:
+                self._usage_failures += 1
+            logger.warning("Streaming usage accounting failed", exc_info=True)
+
     async def handle_proxy(self, request: Request) -> StreamingResponse | JSONResponse:
         """Main proxy handler — intercept, optimize, forward.
 
@@ -1424,12 +1839,32 @@ class PromptCompilerProxy:
         try:
             body = json.loads(body_bytes)
         except (json.JSONDecodeError, UnicodeDecodeError):
+            if self._gateway_redaction.enabled:
+                return JSONResponse(
+                    {
+                        "error": "outbound_redaction_requires_json",
+                        "detail": "Enterprise redaction cannot inspect a non-JSON payload.",
+                    },
+                    status_code=415,
+                )
             # Not JSON — forward raw (e.g. health checks hitting wrong path)
             return await self._forward_raw(request, body_bytes)
 
         path = request.url.path
         headers = {k: v for k, v in request.headers.items()}
+        request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        usage_dimensions = self._usage_dimensions(headers)
         provider = detect_provider(path, headers, body)
+        gateway_adapter = None
+        try:
+            gateway_adapter = canonical_request_from_provider_body(
+                provider,
+                body,
+                headers=headers,
+                path=path,
+            )
+        except ValueError as exc:
+            logger.debug("Canonical provider adapter unavailable: %s", exc)
         # Authoritative subscription-auth guard — fail fast with actionable guidance
         # before any forwarding, instead of a confusing upstream 401/429.
         _sub_block = self._subscription_guard(provider, headers)
@@ -1494,6 +1929,8 @@ class PromptCompilerProxy:
 
         # Gap #28: Bypass mode — forward unmodified, no optimization
         if self._bypass:
+            body, redaction_headers = self._apply_outbound_redaction(body)
+            control_headers.update(redaction_headers)
             with self._stats_lock:
                 self._requests_bypassed += 1
             target_url = self._resolve_target(provider, path)
@@ -1512,13 +1949,18 @@ class PromptCompilerProxy:
                     forward_headers,
                     body,
                     provider=provider,
+                    request_id=request_id,
                     extra_headers=bypass_headers,
+                    usage_dimensions=usage_dimensions,
                 )
             return await self._forward_response(
                 target_url,
                 forward_headers,
                 body,
+                provider=provider,
+                request_id=request_id,
                 extra_headers=bypass_headers,
+                usage_dimensions=usage_dimensions,
             )
 
         # ── Pipelined: warmup connection while Rust pipeline runs ──
@@ -1540,8 +1982,6 @@ class PromptCompilerProxy:
         _recoverable_fragments: list[dict[str, Any]] = []
         user_message = ""
         witness_context = ""
-        request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
-
         # Run the optimization pipeline (synchronous Rust, off the event loop)
         try:
             user_message = extract_user_message(body, provider)
@@ -1885,14 +2325,62 @@ class PromptCompilerProxy:
                                 "RAVS: kept original model because request has model-specific controls"
                             )
 
+                        if gateway_adapter is None:
+                            _ece_blocked = True
+                            logger.info(
+                                "RAVS: kept original model because canonical adaptation failed"
+                            )
+                        elif (
+                            gateway_adapter.canonical.required_capabilities()
+                            - {Capability.CHAT, Capability.STREAMING}
+                        ):
+                            _ece_blocked = True
+                            logger.info(
+                                "RAVS: kept original model because model-level "
+                                "capability compatibility is unproven"
+                            )
+
                         if not _ece_blocked:
-                            from .ravs.router import swap_model_in_body
+                            cache_allows, cache_reason = (
+                                self._cache_economics_allow_ravs(
+                                    body=body,
+                                    provider=provider,
+                                    current_model=_current_model,
+                                    recommended_model=decision.recommended_model,
+                                    user_message=user_message,
+                                    risk=decision.risk_level,
+                                )
+                            )
+                            if not cache_allows:
+                                _ece_blocked = True
+                                logger.info(
+                                    "RAVS: kept %s after cache-economics gate (%s)",
+                                    _current_model,
+                                    cache_reason,
+                                )
+
+                        if not _ece_blocked:
                             _ravs_original_model = _current_model
-                            body = swap_model_in_body(body, decision.recommended_model)
+                            target = ProviderTarget(
+                                provider=provider,
+                                model=decision.recommended_model,
+                                capabilities=(
+                                    gateway_adapter.canonical.required_capabilities()
+                                ),
+                            )
+                            body, target_url = apply_target_same_provider(
+                                provider=provider,
+                                target=target,
+                                body=body,
+                                url=target_url,
+                            )
                             _ravs_swapped = True
                             logger.info(
-                                "RAVS: %s -> %s (%s)",
-                                _current_model, decision.recommended_model, decision.reason,
+                                "RAVS: %s -> %s (%s; %s)",
+                                _current_model,
+                                decision.recommended_model,
+                                decision.reason,
+                                cache_reason,
                             )
 
                 # Store for next-request feedback attribution
@@ -1908,6 +2396,9 @@ class PromptCompilerProxy:
         if provider == "anthropic":
             body = strip_anthropic_unsupported_params(body)
 
+        body, redaction_headers = self._apply_outbound_redaction(body)
+        control_headers.update(redaction_headers)
+
         try:
             control_audit = audit_request_transform(
                 control_before,
@@ -1915,6 +2406,7 @@ class PromptCompilerProxy:
                 provider=provider,  # type: ignore[arg-type]
                 path=path,
                 headers=headers,
+                allow_model_change=_ravs_swapped,
             )
             control_outcome = "optimized" if body != control_before else "observed"
             control_headers = self._control_headers(
@@ -1948,12 +2440,14 @@ class PromptCompilerProxy:
                 target_url, forward_headers, body, _selected_frag_ids,
                 witness_context, provider, _recoverable_fragments, request_id,
                 extra_headers=control_headers,
+                usage_dimensions=usage_dimensions,
             )
         else:
             return await self._forward_response(
                 target_url, forward_headers, body, _selected_frag_ids,
                 witness_context, provider, _recoverable_fragments, request_id,
                 extra_headers=control_headers,
+                usage_dimensions=usage_dimensions,
             )
 
     @staticmethod
@@ -2398,6 +2892,7 @@ class PromptCompilerProxy:
         recovery_depth: int = 0,
         request_id: str = "",
         extra_headers: dict[str, str] | None = None,
+        usage_dimensions: dict[str, str] | None = None,
     ) -> StreamingResponse | JSONResponse:
         """Buffer a streaming upstream response so WITNESS can enforce before display."""
         if not self._breaker.allow_request():
@@ -2437,6 +2932,20 @@ class PromptCompilerProxy:
             return JSONResponse({"error": "stream_error", "detail": str(e)[:200]}, status_code=502)
 
         raw = b"".join(chunks)
+        if status_code < 400:
+            accounting_request_id = (
+                request_id
+                if recovery_depth == 0
+                else f"{request_id}:recovery:{recovery_depth}"
+            )
+            await self._observe_stream_usage(
+                body=body,
+                provider=provider,
+                request_id=accounting_request_id,
+                transcript=raw,
+                path=url,
+                usage_dimensions=usage_dimensions,
+            )
 
         # ── Pre-flight: handle upstream errors before WITNESS ──
         # Must check status BEFORE recording success to the circuit breaker.
@@ -2506,6 +3015,7 @@ class PromptCompilerProxy:
                 recovery_depth=recovery_depth + 1,
                 request_id=request_id,
                 extra_headers=extra_headers,
+                usage_dimensions=usage_dimensions,
             )
             recovered_ok = (
                 recovered.status_code < 400
@@ -2760,6 +3270,7 @@ class PromptCompilerProxy:
         request_id: str = "",
         recovery_depth: int = 0,
         extra_headers: dict[str, str] | None = None,
+        usage_dimensions: dict[str, str] | None = None,
     ) -> StreamingResponse:
         """Forward a streaming request and proxy the SSE response.
 
@@ -2779,6 +3290,7 @@ class PromptCompilerProxy:
                 recovery_depth=recovery_depth,
                 request_id=request_id,
                 extra_headers=extra_headers,
+                usage_dimensions=usage_dimensions,
             )
 
         # Check circuit breaker
@@ -2796,12 +3308,18 @@ class PromptCompilerProxy:
         _witness_enabled = self._witness_enabled and bool(self._witness_analyzer)
         _frag_ids = selected_frag_ids or []
         _buffer_cap = ImplicitFeedbackTracker._MAX_BUFFER_BYTES
+        try:
+            _usage_tail_cap = int(os.environ.get("ENTROLY_USAGE_SSE_TAIL_BYTES", "262144"))
+        except ValueError:
+            _usage_tail_cap = 262144
+        _usage_tail_cap = max(16384, min(_usage_tail_cap, 1048576))
         # Capture selected fragments for per-variant utilization tracking (Change 4)
         _selected_frags = getattr(self, '_last_context_fragments', []) if _feedback_enabled else []
 
         async def event_generator():
             buffer = [] if (_feedback_enabled or _witness_enabled) else None
             buffer_size = 0
+            usage_tail = bytearray()
             try:
                 client = await self._ensure_client()
                 async with client.stream(
@@ -2856,8 +3374,20 @@ class PromptCompilerProxy:
                         if buffer is not None and buffer_size < _buffer_cap:
                             buffer.append(chunk)
                             buffer_size += len(chunk)
+                        usage_tail.extend(chunk)
+                        if len(usage_tail) > _usage_tail_cap:
+                            del usage_tail[:-_usage_tail_cap]
                         yield chunk
                 self._breaker.record_success()
+                if usage_tail:
+                    await self._observe_stream_usage(
+                        body=body,
+                        provider=provider,
+                        request_id=request_id,
+                        transcript=bytes(usage_tail),
+                        path=url,
+                        usage_dimensions=usage_dimensions,
+                    )
             except httpx.ReadError as e:
                 self._breaker.record_failure()
                 logger.warning(f"Upstream stream interrupted: {e}")
@@ -3613,6 +4143,7 @@ class PromptCompilerProxy:
         request_id: str = "",
         recovery_depth: int = 0,
         extra_headers: dict[str, str] | None = None,
+        usage_dimensions: dict[str, str] | None = None,
     ) -> JSONResponse:
         """Forward a non-streaming request with circuit breaker, retry on 429/5xx, and response validation.
 
@@ -3812,6 +4343,21 @@ class PromptCompilerProxy:
                 "body_preview": response.text[:500],
             }
 
+        if isinstance(content, dict) and response.status_code < 400:
+            accounting_request_id = (
+                request_id
+                if recovery_depth == 0
+                else f"{request_id}:recovery:{recovery_depth}"
+            )
+            await self._observe_json_usage(
+                body=body,
+                provider=provider,
+                request_id=accounting_request_id,
+                payload=content,
+                path=url,
+                usage_dimensions=usage_dimensions,
+            )
+
         # ── Signal 1: Assess non-streaming response for implicit feedback ──
         # If verification rejects an answer produced from compressed context,
         # retry once with exact CCR originals before the answer escapes.
@@ -3855,6 +4401,7 @@ class PromptCompilerProxy:
                             recoverable_fragments=[],
                             recovery_depth=recovery_depth + 1,
                             request_id=request_id,
+                            usage_dimensions=usage_dimensions,
                         )
                         recovered_ok = (
                             recovered.status_code < 400
@@ -4452,6 +4999,8 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
     """
     proxy = request.app.state.proxy
     headers = {k: v for k, v in request.headers.items()}
+    request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    usage_dimensions = proxy._usage_dimensions(headers)
     provider = detect_provider(request.url.path, headers)
     target_url = proxy._resolve_target(provider, request.url.path)
     forward_headers = proxy._build_headers(headers, provider)
@@ -4483,6 +5032,11 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse({"error": "invalid request body"}, status_code=400)
 
+    if isinstance(body, dict):
+        body, _redaction_headers = proxy._apply_outbound_redaction(body)
+    else:
+        _redaction_headers = {}
+
     # Re-detect provider with body for model-name-based detection
     provider = detect_provider(request.url.path, headers, body if isinstance(body, dict) else None)
     target_url = proxy._resolve_target(provider, request.url.path)
@@ -4495,19 +5049,39 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
         if not is_streaming and "streamGenerateContent" in request.url.path:
             is_streaming = True
         if is_streaming:
-            return await proxy._stream_response(target_url, forward_headers, body, provider=provider)
+            return await proxy._stream_response(
+                target_url,
+                forward_headers,
+                body,
+                provider=provider,
+                request_id=request_id,
+                extra_headers=_redaction_headers,
+                usage_dimensions=usage_dimensions,
+            )
         response = await client.request(
             request.method, target_url, json=body, headers=forward_headers
         )
         content_type = response.headers.get("content-type", "")
         if "application/json" in content_type:
+            content = response.json()
+            if isinstance(body, dict) and isinstance(content, dict) and response.status_code < 400:
+                await proxy._observe_json_usage(
+                    body=body,
+                    provider=provider,
+                    request_id=request_id,
+                    payload=content,
+                    path=target_url,
+                    usage_dimensions=usage_dimensions,
+                )
             return JSONResponse(
-                content=response.json(),
+                content=content,
                 status_code=response.status_code,
+                headers=_redaction_headers,
             )
         return JSONResponse(
             content={"data": response.text},
             status_code=response.status_code,
+            headers=_redaction_headers,
         )
     except Exception as e:
         return JSONResponse(
@@ -4600,6 +5174,33 @@ async def _proxy_stats(request: Request) -> JSONResponse:
             "last": proxy._escalation_last,
             "ladder_models": len(proxy._escalation_ladder),
         }
+
+    stats["provider_cache"] = {
+        **proxy._cache_router.stats(),
+        "routing_stays": proxy._cache_route_stays,
+        "routing_switches": proxy._cache_route_switches,
+        "blocked_unpriced": proxy._cache_route_blocked_unpriced,
+        "last_decision": proxy._cache_route_last,
+    }
+    usage_accounting: dict[str, Any] = {
+        "enabled": proxy._usage_ledger is not None,
+        "pricing_catalog": (
+            proxy._pricing_catalog.source
+            if proxy._pricing_catalog is not None
+            else None
+        ),
+        "recorded": proxy._usage_recorded,
+        "unpriced": proxy._usage_unpriced,
+        "failures": proxy._usage_failures,
+    }
+    if proxy._usage_ledger is not None:
+        try:
+            usage_accounting["ledger"] = await asyncio.to_thread(
+                proxy._usage_ledger.summary
+            )
+        except Exception:
+            usage_accounting["ledger_error"] = "summary_unavailable"
+    stats["usage_accounting"] = usage_accounting
     return JSONResponse(stats)
 
 

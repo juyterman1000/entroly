@@ -1,6 +1,6 @@
 {
   "name": "entroly-mcp",
-  "version": "1.0.37",
+  "version": "1.0.39",
   "description": "NPX bridge for Entroly, an auditable context control plane with MCP tools, Context Receipts, and local optimization for AI agents.",
   "main": "index.js",
   "bin": {

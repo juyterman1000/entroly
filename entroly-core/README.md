@@ -17,7 +17,7 @@ Provides high-performance PyO3 bindings for:
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install --no-cache-dir -U "entroly-core>=1.0.37"
+python -m pip install --no-cache-dir -U "entroly-core>=1.0.39"
 ```
 
 Prebuilt abi3 wheels are published for Linux, macOS, and Windows. One
