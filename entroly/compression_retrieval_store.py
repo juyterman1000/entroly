@@ -31,6 +31,7 @@ class StoredSpan:
     retrieval_count: int = 0
     retrieved_tokens: int = 0
     last_retrieved_ns: int | None = None
+    retrieval_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -84,6 +85,15 @@ class CompressionRetrievalStore:
         if self.optimization_ledger is not None:
             for item in self._items.values():
                 self._record_compression(item)
+                for span in item.spans:
+                    token_count = _estimate_tokens(span.content)
+                    for retrieval_id in span.retrieval_ids:
+                        self._record_retrieval(
+                            item.receipt_id,
+                            span.span_id,
+                            token_count,
+                            retrieval_id=retrieval_id,
+                        )
 
     def put(
         self,
@@ -164,9 +174,15 @@ class CompressionRetrievalStore:
                 return None
             token_count = _estimate_tokens(span.content)
             now_ns = time.time_ns()
+            effective_id = retrieval_id or (
+                f"{receipt_id}:{span_id}:{span.retrieval_count + 1}"
+            )
+            if effective_id in span.retrieval_ids:
+                return span
             span.retrieval_count += 1
             span.retrieved_tokens += token_count
             span.last_retrieved_ns = now_ns
+            span.retrieval_ids.append(effective_id)
             item.retrieval_count += 1
             item.retrieved_tokens += token_count
             item.last_retrieved_ns = now_ns
@@ -175,7 +191,7 @@ class CompressionRetrievalStore:
             receipt_id,
             span_id,
             token_count,
-            retrieval_id=retrieval_id or f"{receipt_id}:{span_id}:{now_ns}",
+            retrieval_id=effective_id,
         )
         return span
 
@@ -300,6 +316,7 @@ class CompressionRetrievalStore:
                     retrieval_count=int(span.get("retrieval_count", 0)),
                     retrieved_tokens=int(span.get("retrieved_tokens", 0)),
                     last_retrieved_ns=span.get("last_retrieved_ns"),
+                    retrieval_ids=[str(value) for value in span.get("retrieval_ids", [])],
                 )
                 for span in item.get("spans", [])
             ]
