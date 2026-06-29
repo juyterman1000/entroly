@@ -325,3 +325,57 @@ def test_url_embedded_model_routing_rejects_path_injection() -> None:
         assert "invalid URL-embedded model identifier" in str(exc)
     else:
         raise AssertionError("unsafe model identifier was accepted")
+
+
+def test_usage_attribution_headers_require_explicit_trust() -> None:
+    proxy = _proxy()
+    headers = {
+        "x-entroly-team": "platform",
+        "x-entroly-project": "gateway/v2",
+        "x-entroly-tool": "coding-agent",
+    }
+
+    assert proxy._usage_dimensions(headers) == {}
+    proxy._trust_usage_headers = True
+    assert proxy._usage_dimensions(headers) == {
+        "team": "platform",
+        "project": "gateway/v2",
+        "tool": "coding-agent",
+    }
+    headers["x-entroly-team"] = "../invalid team"
+    assert "team" not in proxy._usage_dimensions(headers)
+    proxy._usage_ledger.close()
+
+
+def test_live_usage_records_trusted_attribution_dimensions() -> None:
+    async def run() -> None:
+        proxy = _proxy()
+        try:
+            await proxy._observe_json_usage(
+                body={
+                    "model": "gpt-current",
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+                provider="openai",
+                request_id="attributed-request",
+                payload={
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 2,
+                    }
+                },
+                usage_dimensions={
+                    "team": "platform",
+                    "project": "gateway",
+                    "tool": "agent",
+                },
+            )
+            assert proxy._usage_ledger.summary(team="platform")["requests"] == 1
+            event = proxy._usage_ledger.get("attributed-request")
+            assert event is not None
+            assert event.project == "gateway"
+            assert event.tool == "agent"
+        finally:
+            proxy._usage_ledger.close()
+
+    asyncio.run(run())
