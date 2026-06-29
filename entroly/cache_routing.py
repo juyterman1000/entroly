@@ -434,12 +434,15 @@ class CacheAwareRouter:
             leases = list(self._leases.values())
         hits = sum(lease.hits for lease in leases)
         misses = sum(lease.misses for lease in leases)
+        retention = self.retention_forecaster.stats()
         return {
             "active_leases": sum(lease.expires_at > timestamp for lease in leases),
             "tracked_leases": len(leases),
             "observed_hits": hits,
             "observed_misses": misses,
             "observed_hit_rate": hits / max(1, hits + misses),
+            "retention_tracked_conversations": retention["tracked_conversations"],
+            "retention_pause_samples": retention["pause_samples"],
         }
 
     def _evict(self, now: float) -> None:
