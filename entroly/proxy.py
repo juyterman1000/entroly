@@ -4969,6 +4969,8 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
     """
     proxy = request.app.state.proxy
     headers = {k: v for k, v in request.headers.items()}
+    request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    usage_dimensions = proxy._usage_dimensions(headers)
     provider = detect_provider(request.url.path, headers)
     target_url = proxy._resolve_target(provider, request.url.path)
     forward_headers = proxy._build_headers(headers, provider)
@@ -5022,15 +5024,27 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
                 forward_headers,
                 body,
                 provider=provider,
+                request_id=request_id,
                 extra_headers=_redaction_headers,
+                usage_dimensions=usage_dimensions,
             )
         response = await client.request(
             request.method, target_url, json=body, headers=forward_headers
         )
         content_type = response.headers.get("content-type", "")
         if "application/json" in content_type:
+            content = response.json()
+            if isinstance(body, dict) and isinstance(content, dict) and response.status_code < 400:
+                await proxy._observe_json_usage(
+                    body=body,
+                    provider=provider,
+                    request_id=request_id,
+                    payload=content,
+                    path=target_url,
+                    usage_dimensions=usage_dimensions,
+                )
             return JSONResponse(
-                content=response.json(),
+                content=content,
                 status_code=response.status_code,
                 headers=_redaction_headers,
             )
