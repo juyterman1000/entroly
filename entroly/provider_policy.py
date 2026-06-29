@@ -260,16 +260,19 @@ class GatewayRedactionPolicy:
         messages, message_receipt = self.redact_value(request.messages)
         tools, tool_receipt = self.redact_value(request.tools)
         schema, schema_receipt = self.redact_value(request.response_schema)
+        metadata, metadata_receipt = self.redact_value(request.metadata)
         findings = (
             message_receipt.findings
             + tool_receipt.findings
             + schema_receipt.findings
+            + metadata_receipt.findings
         )
         updated = replace(
             request,
             messages=tuple(messages),
             tools=tuple(tools),
             response_schema=schema,
+            metadata=dict(metadata),
         )
         return updated, RedactionReceipt(True, bool(findings), findings)
 
