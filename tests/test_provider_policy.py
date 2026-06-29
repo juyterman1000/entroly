@@ -68,3 +68,22 @@ def test_redaction_is_explicit_and_receipt_keeps_only_digests() -> None:
     assert receipt.counts == {"email": 1, "openai_api_key": 1}
     assert all(len(item.digest) == 16 for item in receipt.findings)
     assert "a@example.com" not in repr(receipt)
+
+
+def test_redaction_covers_outbound_metadata() -> None:
+    request = CanonicalGatewayRequest(
+        model="model",
+        messages=({"role": "user", "content": "hello"},),
+        metadata={
+            "owner": "dev@example.com",
+            "credential": "api_key=super-secret-value",
+        },
+    )
+
+    redacted, receipt = GatewayRedactionPolicy(enabled=True).apply(request)
+
+    assert redacted.metadata["owner"] == "[REDACTED_EMAIL]"
+    assert redacted.metadata["credential"] == "[REDACTED_CREDENTIAL]"
+    assert receipt.changed
+    assert receipt.counts["email"] == 1
+    assert receipt.counts["credential_assignment"] == 1
