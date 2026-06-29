@@ -95,7 +95,9 @@ class UsagePricing:
 
     @property
     def cache_write_rate(self) -> Decimal:
-        return self.cache_write_per_million or self.input_per_million
+        if self.cache_write_per_million is None:
+            return self.input_per_million
+        return self.cache_write_per_million
 
 
 @dataclass(frozen=True, slots=True)
