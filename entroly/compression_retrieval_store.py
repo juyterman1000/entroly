@@ -33,8 +33,11 @@ class StoredSpan:
     last_retrieved_ns: int | None = None
     retrieval_ids: list[str] = field(default_factory=list)
 
-    def as_dict(self) -> dict[str, object]:
-        return asdict(self)
+    def as_dict(self, *, include_internal: bool = False) -> dict[str, object]:
+        data = asdict(self)
+        if not include_internal:
+            data.pop("retrieval_ids", None)
+        return data
 
 
 @dataclass(slots=True)
@@ -59,9 +62,11 @@ class StoredCompression:
     def net_tokens_saved(self) -> int:
         return self.gross_tokens_saved - self.retrieved_tokens
 
-    def as_dict(self) -> dict[str, object]:
+    def as_dict(self, *, include_internal: bool = False) -> dict[str, object]:
         data = asdict(self)
-        data["spans"] = [span.as_dict() for span in self.spans]
+        data["spans"] = [
+            span.as_dict(include_internal=include_internal) for span in self.spans
+        ]
         data["gross_tokens_saved"] = self.gross_tokens_saved
         data["net_tokens_saved"] = self.net_tokens_saved
         return data
@@ -339,7 +344,12 @@ class CompressionRetrievalStore:
         if self.path is None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"schema_version": 2, "items": [item.as_dict() for item in self._items.values()]}
+        payload = {
+            "schema_version": 2,
+            "items": [
+                item.as_dict(include_internal=True) for item in self._items.values()
+            ],
+        }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         tmp.replace(self.path)
