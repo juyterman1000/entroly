@@ -140,7 +140,10 @@ class CacheRetentionForecaster:
         if baseline_name not in by_name:
             raise ValueError("baseline_plan must name one of the supplied plans")
         baseline = by_name[baseline_name]
-        best = min(estimates, key=lambda estimate: (estimate.projected_micro_usd, estimate.plan.name))
+        best = min(
+            estimates,
+            key=lambda estimate: (estimate.projected_micro_usd, estimate.plan.name),
+        )
         savings = baseline.projected_micro_usd - best.projected_micro_usd
         if savings < minimum_savings_micro_usd:
             best = baseline
