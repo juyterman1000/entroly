@@ -205,3 +205,27 @@ def test_duplicate_request_id_rejects_conflicting_usage(tmp_path) -> None:
                 },
                 pricing=pricing,
             )
+
+
+def test_unpriced_usage_preserves_tokens_and_surfaces_reconciliation_gap() -> None:
+    from entroly.usage_ledger import TokenUsage
+
+    with UsageLedger() as ledger:
+        event = ledger.record_usage(
+            request_id="unpriced-request",
+            provider="openai",
+            model="future-model",
+            usage=TokenUsage(
+                uncached_input_tokens=100,
+                cache_read_tokens=900,
+                output_tokens=50,
+            ),
+            pricing=None,
+        )
+        summary = ledger.summary()
+
+    assert event.pricing_source == "unpriced:openai:future-model"
+    assert event.cost_micro_usd == 0
+    assert summary["requests"] == 1
+    assert summary["cache_read_tokens"] == 900
+    assert summary["unpriced_requests"] == 1
