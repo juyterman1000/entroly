@@ -60,6 +60,17 @@ def test_retrieval_debits_measured_compression_savings(tmp_path) -> None:
     event = ledger.event(f"compression:{stored.receipt_id}")
     assert event is not None
     assert event["net_tokens_saved"] == 250 - summary["retrieved_tokens"]
+    store.retrieve_span(stored.receipt_id, span.span_id, retrieval_id="request-1")
+    assert store.savings_summary() == summary
+
+    reloaded = CompressionRetrievalStore(
+        tmp_path / "compression.json",
+        optimization_ledger=ledger,
+    )
+    assert reloaded.savings_summary() == summary
+    assert ledger.event(f"compression:{stored.receipt_id}")["net_tokens_saved"] == (
+        250 - summary["retrieved_tokens"]
+    )
 
 
 def test_old_retrieval_store_schema_loads_with_zero_retrievals(tmp_path) -> None:
