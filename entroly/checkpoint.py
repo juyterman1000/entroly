@@ -342,7 +342,7 @@ class CheckpointManager:
         """
         checkpoint_id = f"ckpt_{self.instance_id}_{int(time.time())}_{self._total_checkpoints_created}"
 
-        previous = self.load_latest()
+        previous = self._load_latest_for_instance()
         meta = merge_checkpoint_metadata(
             previous.metadata if previous is not None else None,
             metadata,
@@ -437,7 +437,7 @@ class CheckpointManager:
         Returns None if no checkpoints exist or all are unreadable.
         """
         checkpoints = sorted(
-            self.checkpoint_dir.glob(f"ckpt_{self.instance_id}_*.json.gz"),
+            self.checkpoint_dir.glob("ckpt_*.json.gz"),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
@@ -447,6 +447,19 @@ class CheckpointManager:
             if result is not None:
                 return result
 
+        return None
+
+    def _load_latest_for_instance(self) -> Checkpoint | None:
+        """Load this live instance's latest checkpoint for metadata continuity."""
+        paths = sorted(
+            self.checkpoint_dir.glob(f"ckpt_{self.instance_id}_*.json.gz"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for path in paths:
+            checkpoint = self._load_file(path)
+            if checkpoint is not None:
+                return checkpoint
         return None
 
     def find_relevant(
