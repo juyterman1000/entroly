@@ -268,3 +268,52 @@ try:
     )
 except ImportError:
     pass
+
+
+# Cache-aware gateway control plane: deterministic prefixes, provider cache
+# leases, capability-safe failover, real usage accounting, and harness budgets.
+try:
+    from .cache_routing import (  # noqa: F401
+        CacheAwareRouter,
+        CachePrice,
+        CacheRoutingDecision,
+        CacheRoutingPolicy,
+        ConversationCacheLease,
+        ModelCandidate,
+    )
+    from .gateway_control_plane import (  # noqa: F401
+        GatewayControlPlane,
+        GatewayExecutionPlan,
+    )
+    from .harness_budget import (  # noqa: F401
+        CodingHarnessBudgetController,
+        HarnessBudgetPlan,
+        SubagentAllocation,
+        SubagentBudgetAllocator,
+        SubagentDemand,
+    )
+    from .provider_policy import (  # noqa: F401
+        CanonicalGatewayRequest,
+        Capability,
+        FailoverPlan,
+        GatewayRedactionPolicy,
+        ProviderFailoverPlanner,
+        ProviderTarget,
+        RedactionReceipt,
+    )
+    from .stable_prefix import (  # noqa: F401
+        CanonicalPrefixBuilder,
+        PrefixSection,
+        StablePrompt,
+        conversation_anchor,
+    )
+    from .usage_ledger import (  # noqa: F401
+        TokenUsage,
+        UsageEvent,
+        UsageLedger,
+        UsagePricing,
+        parse_provider_usage,
+        price_usage,
+    )
+except ImportError:
+    pass
