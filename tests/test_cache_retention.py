@@ -70,7 +70,15 @@ def test_live_cache_observations_feed_pause_history() -> None:
         observed_at=160.0,
     )
     assert router.retention_forecaster.pauses("conversation") == (60.0,)
-    assert router.retention_forecaster.observe_activity(
-        "conversation", observed_at=120.0
-    ) is None
+    late = router.observe(
+        "conversation",
+        model="model",
+        provider="provider",
+        prefix_hash="prefix",
+        cached_prefix_tokens=10,
+        cache_hit=False,
+        observed_at=120.0,
+    )
     assert router.retention_forecaster.pauses("conversation") == (60.0,)
+    assert late.last_used_at == 160.0
+    assert late.cached_prefix_tokens == 100
