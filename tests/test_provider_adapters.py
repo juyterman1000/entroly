@@ -175,7 +175,6 @@ def test_render_canonical_request_to_anthropic_uses_only_portable_fields() -> No
                 {"role": "system", "content": "policy"},
                 {"role": "user", "content": "question"},
             ],
-            "tools": [{"name": "lookup"}],
             "temperature": 0.99,
         },
     ).canonical
@@ -186,9 +185,30 @@ def test_render_canonical_request_to_anthropic_uses_only_portable_fields() -> No
         "model": "claude-haiku",
         "messages": [{"role": "user", "content": "question"}],
         "system": "policy",
-        "tools": [{"name": "lookup"}],
     }
     assert "temperature" not in rendered
+
+
+def test_cross_provider_render_rejects_unproven_tool_translation() -> None:
+    canonical = canonical_request_from_provider_body(
+        "openai",
+        {
+            "model": "gpt-4.1",
+            "messages": [{"role": "user", "content": "use a tool"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        },
+    ).canonical
+
+    with pytest.raises(ValueError, match="tool translation"):
+        render_canonical_request(canonical, _target("anthropic", "claude-haiku"))
 
 
 def test_render_canonical_request_to_gemini_maps_assistant_to_model() -> None:
