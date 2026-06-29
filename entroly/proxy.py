@@ -1915,6 +1915,7 @@ class PromptCompilerProxy:
                 provider=provider,  # type: ignore[arg-type]
                 path=path,
                 headers=headers,
+                allow_model_change=_ravs_swapped,
             )
             control_outcome = "optimized" if body != control_before else "observed"
             control_headers = self._control_headers(
