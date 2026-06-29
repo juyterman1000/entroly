@@ -181,6 +181,10 @@ class CacheAwareRouter:
         )
         with self._lock:
             previous = self._leases.get(conversation_id)
+            if previous is not None and now <= previous.last_used_at:
+                previous.hits += int(cache_hit)
+                previous.misses += int(not cache_hit)
+                return previous
             hits = (previous.hits if previous else 0) + int(cache_hit)
             misses = (previous.misses if previous else 0) + int(not cache_hit)
             lease = ConversationCacheLease(
