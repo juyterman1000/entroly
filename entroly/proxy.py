@@ -4889,6 +4889,27 @@ async def _proxy_stats(request: Request) -> JSONResponse:
             "last": proxy._escalation_last,
             "ladder_models": len(proxy._escalation_ladder),
         }
+
+    stats["provider_cache"] = proxy._cache_router.stats()
+    usage_accounting: dict[str, Any] = {
+        "enabled": proxy._usage_ledger is not None,
+        "pricing_catalog": (
+            proxy._pricing_catalog.source
+            if proxy._pricing_catalog is not None
+            else None
+        ),
+        "recorded": proxy._usage_recorded,
+        "unpriced": proxy._usage_unpriced,
+        "failures": proxy._usage_failures,
+    }
+    if proxy._usage_ledger is not None:
+        try:
+            usage_accounting["ledger"] = await asyncio.to_thread(
+                proxy._usage_ledger.summary
+            )
+        except Exception:
+            usage_accounting["ledger_error"] = "summary_unavailable"
+    stats["usage_accounting"] = usage_accounting
     return JSONResponse(stats)
 
 
