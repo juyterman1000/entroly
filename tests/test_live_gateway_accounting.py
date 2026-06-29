@@ -251,3 +251,41 @@ def test_usage_ledger_survives_reopen(tmp_path) -> None:
         assert event.pricing_source == "durability-test"
         assert event.usage.cache_read_tokens == 90
         assert json.loads(json.dumps(reopened.summary()))["requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicate_provider_observation_is_idempotent_everywhere() -> None:
+    proxy = _proxy()
+    body = {
+        "model": "gpt-current",
+        "messages": [
+            {"role": "system", "content": "stable policy"},
+            {"role": "user", "content": "answer this"},
+        ],
+    }
+    payload = {
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 7,
+            "prompt_tokens_details": {"cached_tokens": 80},
+        }
+    }
+    try:
+        await proxy._observe_json_usage(
+            body=body,
+            provider="openai",
+            request_id="duplicate-request",
+            payload=payload,
+        )
+        await proxy._observe_json_usage(
+            body=body,
+            provider="openai",
+            request_id="duplicate-request",
+            payload=payload,
+        )
+
+        assert proxy._usage_ledger.summary()["requests"] == 1
+        assert proxy._usage_recorded == 1
+        assert proxy._cache_router.stats()["observed_hits"] == 1
+    finally:
+        proxy._usage_ledger.close()
