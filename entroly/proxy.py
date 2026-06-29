@@ -1674,6 +1674,32 @@ class PromptCompilerProxy:
         model = extract_model(body, path) or str(body.get("model", "unknown"))
         conversation_id = self._routing_conversation_id(body, provider)
         prefix_hash = self._cache_prefix_hash(body, provider)
+        inserted = True
+
+        if self._usage_ledger is not None:
+            pricing = (
+                self._pricing_catalog.resolve(provider, model)
+                if self._pricing_catalog is not None
+                else None
+            )
+            event, inserted = self._usage_ledger.record_usage_with_status(
+                request_id=request_id or uuid.uuid4().hex,
+                provider=provider,
+                model=model,
+                usage=usage,
+                pricing=pricing,
+                conversation_id=conversation_id,
+                metadata={"streaming": streaming},
+            )
+            if inserted:
+                with self._stats_lock:
+                    self._usage_recorded += 1
+                    if event.pricing_source.startswith("unpriced:"):
+                        self._usage_unpriced += 1
+
+        if not inserted:
+            return
+
         cached_prefix_tokens = max(
             usage.cache_read_tokens,
             usage.cache_write_tokens,
@@ -1687,27 +1713,6 @@ class PromptCompilerProxy:
                 cached_prefix_tokens=cached_prefix_tokens,
                 cache_hit=usage.cache_read_tokens > 0,
             )
-
-        if self._usage_ledger is None:
-            return
-        pricing = (
-            self._pricing_catalog.resolve(provider, model)
-            if self._pricing_catalog is not None
-            else None
-        )
-        event = self._usage_ledger.record_usage(
-            request_id=request_id or uuid.uuid4().hex,
-            provider=provider,
-            model=model,
-            usage=usage,
-            pricing=pricing,
-            conversation_id=conversation_id,
-            metadata={"streaming": streaming},
-        )
-        with self._stats_lock:
-            self._usage_recorded += 1
-            if event.pricing_source.startswith("unpriced:"):
-                self._usage_unpriced += 1
 
     async def _observe_json_usage(
         self,
