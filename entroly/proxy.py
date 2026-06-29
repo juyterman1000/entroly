@@ -59,6 +59,7 @@ from .proxy_transform import (
     strip_anthropic_unsupported_params,
 )
 from .cache_aligner import CacheAligner
+from .cache_routing import CacheAwareRouter
 from .control_plane import (
     ControlAudit,
     ControlPlaneDecision,
@@ -67,6 +68,14 @@ from .control_plane import (
     stable_request_fingerprint,
 )
 from .provider_policy import GatewayRedactionPolicy
+from .stable_prefix import conversation_anchor
+from .usage_ledger import (
+    TokenUsage,
+    UsageLedger,
+    UsagePricingCatalog,
+    parse_provider_usage,
+    parse_stream_usage,
+)
 from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
@@ -1027,6 +1036,21 @@ class PromptCompilerProxy:
             in {"1", "true", "yes", "on"}
         )
 
+        # Provider-reported cache and spend accounting. A ledger is opt-in;
+        # cache observations remain available in-memory for routing decisions.
+        self._cache_router = CacheAwareRouter()
+        ledger_path = os.environ.get("ENTROLY_USAGE_LEDGER", "").strip()
+        catalog_path = os.environ.get("ENTROLY_PRICING_CATALOG", "").strip()
+        self._usage_ledger = UsageLedger(ledger_path) if ledger_path else None
+        self._pricing_catalog = (
+            UsagePricingCatalog.from_file(catalog_path)
+            if catalog_path
+            else None
+        )
+        self._usage_recorded = 0
+        self._usage_unpriced = 0
+        self._usage_failures = 0
+
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
         self._last_excluded_fragments: list = []  # Top rejected candidates for /explain
@@ -1285,6 +1309,8 @@ class PromptCompilerProxy:
             logger.warning(f"Failed to persist state on shutdown: {e}")
         if self._client:
             await self._client.aclose()
+        if self._usage_ledger is not None:
+            await asyncio.to_thread(self._usage_ledger.close)
 
     def _persist_engine_state(self) -> None:
         """Flush learned PRISM weights, fragment index, and feedback to disk.
@@ -1423,6 +1449,179 @@ class PromptCompilerProxy:
             "X-Entroly-Redaction-Count": str(len(receipt.findings)),
         }
         return redacted, headers
+
+    @staticmethod
+    def _routing_conversation_id(
+        body: dict[str, Any],
+        provider: str,
+    ) -> str:
+        messages: list[dict[str, Any]] = []
+        if provider == "anthropic" and body.get("system"):
+            messages.append({"role": "system", "content": body["system"]})
+
+        raw_messages = body.get("messages")
+        if isinstance(raw_messages, list):
+            messages.extend(
+                dict(message)
+                for message in raw_messages
+                if isinstance(message, dict)
+            )
+        elif provider == "gemini" and isinstance(body.get("contents"), list):
+            for item in body["contents"]:
+                if not isinstance(item, dict):
+                    continue
+                role = "assistant" if item.get("role") == "model" else str(
+                    item.get("role", "")
+                )
+                parts = item.get("parts", [])
+                text = " ".join(
+                    str(part.get("text", ""))
+                    for part in parts
+                    if isinstance(part, dict) and part.get("text")
+                )
+                messages.append({"role": role, "content": text})
+        elif isinstance(body.get("input"), list):
+            messages.extend(
+                dict(item)
+                for item in body["input"]
+                if isinstance(item, dict)
+            )
+
+        tools = body.get("tools")
+        tool_items = (
+            tuple(tool for tool in tools if isinstance(tool, dict))
+            if isinstance(tools, list)
+            else ()
+        )
+        if not messages:
+            return ""
+        return conversation_anchor(messages, tools=tool_items)
+
+    @staticmethod
+    def _cache_prefix_hash(body: dict[str, Any], provider: str) -> str:
+        stable: dict[str, Any] = {"provider": provider}
+        if provider == "anthropic":
+            stable["system"] = body.get("system", "")
+        elif provider == "gemini":
+            stable["systemInstruction"] = body.get("systemInstruction")
+        elif "instructions" in body:
+            stable["instructions"] = body.get("instructions")
+        else:
+            messages = body.get("messages")
+            if (
+                isinstance(messages, list)
+                and messages
+                and isinstance(messages[0], dict)
+                and messages[0].get("role") == "system"
+            ):
+                stable["system"] = messages[0].get("content", "")
+        stable["tools"] = body.get("tools", ())
+        encoded = json.dumps(
+            stable,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    def _record_provider_usage(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        request_id: str,
+        usage: TokenUsage,
+        streaming: bool,
+    ) -> None:
+        model = extract_model(body) or str(body.get("model", "unknown"))
+        conversation_id = self._routing_conversation_id(body, provider)
+        prefix_hash = self._cache_prefix_hash(body, provider)
+        cached_prefix_tokens = max(
+            usage.cache_read_tokens,
+            usage.cache_write_tokens,
+        )
+        if conversation_id:
+            self._cache_router.observe(
+                conversation_id,
+                model=model,
+                provider=provider,
+                prefix_hash=prefix_hash,
+                cached_prefix_tokens=cached_prefix_tokens,
+                cache_hit=usage.cache_read_tokens > 0,
+            )
+
+        if self._usage_ledger is None:
+            return
+        pricing = (
+            self._pricing_catalog.resolve(provider, model)
+            if self._pricing_catalog is not None
+            else None
+        )
+        event = self._usage_ledger.record_usage(
+            request_id=request_id or uuid.uuid4().hex,
+            provider=provider,
+            model=model,
+            usage=usage,
+            pricing=pricing,
+            conversation_id=conversation_id,
+            metadata={"streaming": streaming},
+        )
+        with self._stats_lock:
+            self._usage_recorded += 1
+            if event.pricing_source.startswith("unpriced:"):
+                self._usage_unpriced += 1
+
+    async def _observe_json_usage(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        request_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        usage_keys = {"usage", "usage_metadata", "usageMetadata"}
+        if not usage_keys.intersection(payload):
+            return
+        try:
+            usage = parse_provider_usage(provider, payload)
+            await asyncio.to_thread(
+                self._record_provider_usage,
+                body=body,
+                provider=provider,
+                request_id=request_id,
+                usage=usage,
+                streaming=False,
+            )
+        except Exception:
+            with self._stats_lock:
+                self._usage_failures += 1
+            logger.warning("Provider usage accounting failed", exc_info=True)
+
+    async def _observe_stream_usage(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        request_id: str,
+        transcript: bytes,
+    ) -> None:
+        try:
+            usage = parse_stream_usage(provider, transcript)
+            if usage is None:
+                return
+            await asyncio.to_thread(
+                self._record_provider_usage,
+                body=body,
+                provider=provider,
+                request_id=request_id,
+                usage=usage,
+                streaming=True,
+            )
+        except Exception:
+            with self._stats_lock:
+                self._usage_failures += 1
+            logger.warning("Streaming usage accounting failed", exc_info=True)
 
     async def handle_proxy(self, request: Request) -> StreamingResponse | JSONResponse:
         """Main proxy handler — intercept, optimize, forward.
