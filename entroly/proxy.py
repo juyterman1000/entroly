@@ -1050,6 +1050,10 @@ class PromptCompilerProxy:
         self._usage_recorded = 0
         self._usage_unpriced = 0
         self._usage_failures = 0
+        self._trust_usage_headers = (
+            os.environ.get("ENTROLY_TRUST_USAGE_HEADERS", "0").lower()
+            in {"1", "true", "yes", "on"}
+        )
         self._cache_route_stays = 0
         self._cache_route_switches = 0
         self._cache_route_blocked_unpriced = 0
@@ -1454,6 +1458,20 @@ class PromptCompilerProxy:
         }
         return redacted, headers
 
+    def _usage_dimensions(
+        self,
+        headers: dict[str, str],
+    ) -> dict[str, str]:
+        """Read bounded attribution only from an explicitly trusted ingress."""
+        if not self._trust_usage_headers:
+            return {}
+        dimensions: dict[str, str] = {}
+        for dimension in ("team", "project", "tool"):
+            value = headers.get(f"x-entroly-{dimension}", "").strip()
+            if value and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}", value):
+                dimensions[dimension] = value
+        return dimensions
+
     @staticmethod
     def _routing_conversation_id(
         body: dict[str, Any],
@@ -1691,6 +1709,7 @@ class PromptCompilerProxy:
         usage: TokenUsage,
         streaming: bool,
         path: str = "",
+        usage_dimensions: dict[str, str] | None = None,
     ) -> None:
         model = extract_model(body, path) or str(body.get("model", "unknown"))
         conversation_id = self._routing_conversation_id(body, provider)
@@ -1709,6 +1728,9 @@ class PromptCompilerProxy:
                 model=model,
                 usage=usage,
                 pricing=pricing,
+                team=(usage_dimensions or {}).get("team", ""),
+                tool=(usage_dimensions or {}).get("tool", ""),
+                project=(usage_dimensions or {}).get("project", ""),
                 conversation_id=conversation_id,
                 metadata={"streaming": streaming},
             )
@@ -1743,6 +1765,7 @@ class PromptCompilerProxy:
         request_id: str,
         payload: dict[str, Any],
         path: str = "",
+        usage_dimensions: dict[str, str] | None = None,
     ) -> None:
         usage_keys = {"usage", "usage_metadata", "usageMetadata"}
         if not usage_keys.intersection(payload):
@@ -1757,6 +1780,7 @@ class PromptCompilerProxy:
                 usage=usage,
                 streaming=False,
                 path=path,
+                usage_dimensions=usage_dimensions,
             )
         except Exception:
             with self._stats_lock:
@@ -1771,6 +1795,7 @@ class PromptCompilerProxy:
         request_id: str,
         transcript: bytes,
         path: str = "",
+        usage_dimensions: dict[str, str] | None = None,
     ) -> None:
         try:
             usage = parse_stream_usage(provider, transcript)
@@ -1784,6 +1809,7 @@ class PromptCompilerProxy:
                 usage=usage,
                 streaming=True,
                 path=path,
+                usage_dimensions=usage_dimensions,
             )
         except Exception:
             with self._stats_lock:
