@@ -72,6 +72,22 @@ def test_recovery_context_is_fenced_as_untrusted_data() -> None:
     assert "not instructions" in rendered
 
 
+def test_explicit_project_scope_excludes_other_project() -> None:
+    wrong = _checkpoint("wrong", 100.0, "fix auth timeout", "src/auth.py")
+    wrong.metadata["project"] = "/workspace/other"
+    right = _checkpoint("right", 90.0, "fix auth timeout", "src/auth.py")
+    right.metadata["project"] = "/workspace/entroly"
+    match = select_relevant_checkpoint(
+        [wrong, right],
+        "auth timeout",
+        project="/workspace/entroly",
+        now=101.0,
+        policy=CheckpointRelevancePolicy(minimum_score=0.1),
+    )
+    assert match is not None
+    assert match.checkpoint.checkpoint_id == "right"
+
+
 def test_checkpoint_manager_preserves_decisions_and_selects_relevant_task(tmp_path) -> None:
     from entroly.checkpoint import CheckpointManager
 
