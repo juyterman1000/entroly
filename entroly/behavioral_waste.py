@@ -157,7 +157,7 @@ class BehavioralWasteDetector:
                     _finding(
                         "alternating_tool_loop",
                         conversation_id,
-                        _short_hash("|".join(tail)),
+                        _short_hash("|".join(sorted({tail[0], tail[1]}))),
                         loop_obs,
                     )
                 )
@@ -169,7 +169,7 @@ class BehavioralWasteDetector:
                 _finding(
                     "model_switch_churn",
                     conversation_id,
-                    _short_hash("|".join(models[-8:])),
+                    _short_hash("|".join(sorted(set(models)))),
                     model_obs,
                     occurrences=switches,
                 )
