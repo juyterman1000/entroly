@@ -70,3 +70,7 @@ def test_live_cache_observations_feed_pause_history() -> None:
         observed_at=160.0,
     )
     assert router.retention_forecaster.pauses("conversation") == (60.0,)
+    assert router.retention_forecaster.observe_activity(
+        "conversation", observed_at=120.0
+    ) is None
+    assert router.retention_forecaster.pauses("conversation") == (60.0,)
