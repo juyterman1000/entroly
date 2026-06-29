@@ -268,8 +268,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
+  # The source release must not be blocked by external package registries.
+  # PyPI/npm remain quality-gated independently and are idempotent.
   github-release:
-    needs: [quality-gate, publish-pypi, publish-npm, publish-npm-mcp, publish-npm-alias]
     if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     runs-on: ubuntu-latest
     permissions:
