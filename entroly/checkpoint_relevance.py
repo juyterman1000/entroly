@@ -84,9 +84,14 @@ def merge_checkpoint_metadata(
     # inherited implicitly. Only explicit decisions have cross-checkpoint
     # continuity; current metadata remains authoritative for everything else.
     merged = dict(current or {})
+    previous_decisions = normalize_decisions(
+        (previous or {}).get("decisions"), limit=max_decisions
+    )
+    if not _same_task_scope(previous or {}, current or {}):
+        previous_decisions = []
     decisions = normalize_decisions(
         [
-            *normalize_decisions((previous or {}).get("decisions"), limit=max_decisions),
+            *previous_decisions,
             *normalize_decisions((current or {}).get("decisions"), limit=max_decisions),
         ],
         limit=max_decisions,
@@ -94,6 +99,21 @@ def merge_checkpoint_metadata(
     if decisions:
         merged["decisions"] = decisions
     return merged
+
+
+def _same_task_scope(
+    previous: Mapping[str, Any], current: Mapping[str, Any]
+) -> bool:
+    if bool(current.get("reset_decisions")):
+        return False
+    previous_task = str(previous.get("task", "")).strip()
+    current_task = str(current.get("task", "")).strip()
+    if not previous_task or not current_task:
+        return True
+    previous_terms = _terms(previous_task)
+    current_terms = _terms(current_task)
+    overlap = len(previous_terms & current_terms)
+    return overlap / max(1, min(len(previous_terms), len(current_terms))) >= 0.5
 
 
 def select_relevant_checkpoint(
