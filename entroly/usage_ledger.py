@@ -447,6 +447,10 @@ class UsageLedger:
             identity = (
                 existing["provider"],
                 existing["model"],
+                existing["team"],
+                existing["tool"],
+                existing["project"],
+                existing["conversation_id"],
                 existing["uncached_input_tokens"],
                 existing["cache_read_tokens"],
                 existing["cache_write_tokens"],
@@ -454,10 +458,15 @@ class UsageLedger:
                 existing["cost_micro_usd"],
                 existing["cache_savings_micro_usd"],
                 existing["pricing_source"],
+                existing["metadata_json"],
             )
             proposed = (
                 event.provider,
                 event.model,
+                event.team,
+                event.tool,
+                event.project,
+                event.conversation_id,
                 event.usage.uncached_input_tokens,
                 event.usage.cache_read_tokens,
                 event.usage.cache_write_tokens,
@@ -465,6 +474,13 @@ class UsageLedger:
                 event.cost_micro_usd,
                 event.cache_savings_micro_usd,
                 event.pricing_source,
+                json.dumps(
+                    dict(event.metadata),
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ),
             )
             if identity != proposed:
                 raise ValueError(
