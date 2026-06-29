@@ -52,6 +52,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .checkpoint_relevance import (
+    CheckpointMatch,
+    CheckpointRelevancePolicy,
+    merge_checkpoint_metadata,
+    render_recovery_context,
+    select_relevant_checkpoint,
+)
+
 try:
     from entroly_core import ContextFragment
 except ImportError:
@@ -334,7 +342,11 @@ class CheckpointManager:
         """
         checkpoint_id = f"ckpt_{self.instance_id}_{int(time.time())}_{self._total_checkpoints_created}"
 
-        meta = metadata or {}
+        previous = self.load_latest()
+        meta = merge_checkpoint_metadata(
+            previous.metadata if previous is not None else None,
+            metadata,
+        )
         meta["instance_id"] = self.instance_id
 
         # Privacy: strip raw code content from checkpoints when requested.
@@ -436,6 +448,38 @@ class CheckpointManager:
                 return result
 
         return None
+
+    def find_relevant(
+        self,
+        query: str,
+        *,
+        project: str = "",
+        now: float | None = None,
+        policy: CheckpointRelevancePolicy | None = None,
+    ) -> CheckpointMatch | None:
+        """Return the best task-relevant checkpoint, or None below threshold."""
+        checkpoints: list[Checkpoint] = []
+        paths = sorted(
+            self.checkpoint_dir.glob("ckpt_*.json.gz"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for path in paths:
+            checkpoint = self._load_file(path)
+            if checkpoint is not None:
+                checkpoints.append(checkpoint)
+        return select_relevant_checkpoint(
+            checkpoints,
+            query,
+            project=project,
+            now=now,
+            policy=policy,
+        )
+
+    @staticmethod
+    def render_recovery_context(match: CheckpointMatch) -> str:
+        """Render fenced continuity metadata for a selected checkpoint."""
+        return render_recovery_context(match)
 
     def load_by_id(self, checkpoint_id: str) -> Checkpoint | None:
         """Load a specific checkpoint by its ID."""
