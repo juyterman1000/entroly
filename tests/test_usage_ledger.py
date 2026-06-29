@@ -206,6 +206,21 @@ def test_duplicate_request_id_rejects_conflicting_usage(tmp_path) -> None:
                 pricing=pricing,
             )
 
+        with pytest.raises(ValueError, match="different provider usage"):
+            ledger.record_provider_payload(
+                request_id="same-request",
+                provider="openai",
+                model="model",
+                payload={
+                    "usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 10,
+                    }
+                },
+                pricing=pricing,
+                team="different-team",
+            )
+
 
 def test_unpriced_usage_preserves_tokens_and_surfaces_reconciliation_gap() -> None:
     from entroly.usage_ledger import TokenUsage
