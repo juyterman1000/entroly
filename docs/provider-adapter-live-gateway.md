@@ -36,7 +36,7 @@ If the target provider is unchanged, the live proxy can preserve the original bo
 
 A cross-provider failover target must not reuse the original provider body. Provider-specific generation controls and tool formats are not interchangeable.
 
-For that reason, cross-provider execution must render from the canonical request using `render_canonical_request(...)`. That renderer emits only portable fields with equivalent semantics. Provider-specific fields are deliberately dropped unless a future explicit adapter implements a verified translation.
+For that reason, cross-provider execution must render from the canonical request using `render_canonical_request(...)`. The current renderer accepts only text chat with portable system, user, and assistant roles. It fails closed for tools, tool-call history, vision, reasoning controls, and response schemas until a dedicated adapter proves equivalent semantics. Provider-specific controls are never silently dropped.
 
 ## Production invariant
 
