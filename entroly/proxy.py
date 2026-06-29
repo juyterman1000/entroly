@@ -2838,10 +2838,15 @@ class PromptCompilerProxy:
 
         raw = b"".join(chunks)
         if status_code < 400:
+            accounting_request_id = (
+                request_id
+                if recovery_depth == 0
+                else f"{request_id}:recovery:{recovery_depth}"
+            )
             await self._observe_stream_usage(
                 body=body,
                 provider=provider,
-                request_id=request_id,
+                request_id=accounting_request_id,
                 transcript=raw,
                 path=url,
             )
@@ -4238,10 +4243,15 @@ class PromptCompilerProxy:
             }
 
         if isinstance(content, dict) and response.status_code < 400:
+            accounting_request_id = (
+                request_id
+                if recovery_depth == 0
+                else f"{request_id}:recovery:{recovery_depth}"
+            )
             await self._observe_json_usage(
                 body=body,
                 provider=provider,
-                request_id=request_id,
+                request_id=accounting_request_id,
                 payload=content,
                 path=url,
             )
