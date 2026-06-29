@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-qccr"
-version = "1.0.25"
+version = "1.0.37"
 dependencies = [
  "regex",
  "regex-lite",
