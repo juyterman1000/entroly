@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass, replace
 from typing import Any, Iterable, Mapping
@@ -72,8 +73,29 @@ class GatewayControlPlane:
         provider_failed: bool = False,
         now: float | None = None,
     ) -> GatewayExecutionPlan:
-        redacted_request, redaction_receipt = self.redaction_policy.apply(request)
+        redacted_request, request_receipt = self.redaction_policy.apply(request)
+        redacted_prefix, prefix_receipt = self.redaction_policy.redact_text(
+            stable_prompt.stable_prefix
+        )
+        redacted_tail, tail_receipt = self.redaction_policy.redact_text(
+            stable_prompt.dynamic_tail
+        )
+        prompt_findings = prefix_receipt.findings + tail_receipt.findings
+        if redacted_prefix != stable_prompt.stable_prefix or redacted_tail != stable_prompt.dynamic_tail:
+            stable_prompt = StablePrompt(
+                stable_prefix=redacted_prefix,
+                dynamic_tail=redacted_tail,
+                prefix_hash=hashlib.sha256(redacted_prefix.encode("utf-8")).hexdigest(),
+                version=stable_prompt.version,
+                section_names=stable_prompt.section_names,
+            )
+        redaction_receipt = RedactionReceipt(
+            enabled=request_receipt.enabled or prefix_receipt.enabled or tail_receipt.enabled,
+            changed=request_receipt.changed or prefix_receipt.changed or tail_receipt.changed,
+            findings=request_receipt.findings + prompt_findings,
+        )
         choices = list(candidates)
+        target_choices = list(targets)
         current_matches = [
             candidate for candidate in choices if candidate.model == current_model
         ]
@@ -83,7 +105,7 @@ class GatewayControlPlane:
 
         failover = self.failover_planner.plan(
             redacted_request,
-            targets,
+            target_choices,
             preferred_key=f"{current.provider}:{current.model}",
         )
         compatible = {target.key for target in failover.attempts}
@@ -120,6 +142,24 @@ class GatewayControlPlane:
             provider_failed=provider_failed,
             now=now,
         )
+        failed_provider_keys = (
+            {
+                target.key
+                for target in target_choices
+                if provider_failed and target.provider == current.provider
+            }
+        )
+        failover = self.failover_planner.plan(
+            redacted_request,
+            target_choices,
+            preferred_key=f"{routing.selected_provider}:{routing.selected_model}",
+            excluded_keys=failed_provider_keys,
+        )
+        if failover.primary.key != (
+            f"{routing.selected_provider}:{routing.selected_model}"
+        ):
+            raise RuntimeError("routed model is absent from the executable failover plan")
+
         return GatewayExecutionPlan(
             conversation_id=conversation_id,
             request=redacted_request,
@@ -152,7 +192,10 @@ class GatewayControlPlane:
             model=model,
             provider=provider,
             prefix_hash=plan.stable_prompt.prefix_hash,
-            cached_prefix_tokens=usage.cache_read_tokens,
+            cached_prefix_tokens=max(
+                usage.cache_read_tokens,
+                usage.cache_write_tokens,
+            ),
             cache_hit=usage.cache_read_tokens > 0,
             observed_at=timestamp,
             ttl_seconds=cache_ttl_seconds,

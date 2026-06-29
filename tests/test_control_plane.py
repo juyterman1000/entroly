@@ -257,3 +257,25 @@ def test_stable_request_fingerprint_tracks_sticky_headers_and_tool_contracts():
     assert base["entroly_header_fingerprint"] != header_changed["entroly_header_fingerprint"]
     assert base["entroly_protocol_fingerprint"] != header_changed["entroly_protocol_fingerprint"]
     assert base["entroly_tool_fingerprint"] != tool_fingerprint_changed["entroly_tool_fingerprint"]
+
+
+def test_audit_allows_only_explicit_model_routing_change():
+    before = {
+        "model": "gpt-4o",
+        "temperature": 0.2,
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    after = deepcopy(before)
+    after["model"] = "gpt-4o-mini"
+    after["temperature"] = 0.8
+
+    audit = audit_request_transform(
+        before,
+        after,
+        path="/v1/chat/completions",
+        allow_model_change=True,
+    )
+
+    assert audit.compliant is False
+    assert len(audit.provider_control_violations) == 1
+    assert audit.provider_control_violations[0].path == "temperature"
