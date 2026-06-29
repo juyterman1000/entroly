@@ -1491,10 +1491,16 @@ class EntrolyEngine:
         for src, targets in ckpt.co_access_data.items():
             self._prefetch._co_access[src] = Counter(targets)
 
+        decisions = ckpt.metadata.get("decisions")
+        modified_files = ckpt.metadata.get("modified_files")
         public_metadata = {
-            key: value
-            for key, value in ckpt.metadata.items()
-            if key != "engine_state"
+            "instance_id": str(ckpt.metadata.get("instance_id", "")),
+            "has_task": bool(ckpt.metadata.get("task")),
+            "has_step": bool(ckpt.metadata.get("step")),
+            "decision_count": len(decisions) if isinstance(decisions, list) else 0,
+            "modified_file_count": (
+                len(modified_files) if isinstance(modified_files, list) else 0
+            ),
         }
         result: dict[str, Any] = {
             "status": "resumed",
@@ -1502,6 +1508,11 @@ class EntrolyEngine:
             "restored_fragments": len(ckpt.fragments),
             "restored_turn": ckpt.current_turn,
             "metadata": public_metadata,
+            "continuity_context": (
+                self._checkpoint_mgr.render_recovery_context(match)
+                if match is not None
+                else self._checkpoint_mgr.render_checkpoint_context(ckpt)
+            ),
         }
         if match is not None:
             result["relevance"] = {
@@ -1512,9 +1523,6 @@ class EntrolyEngine:
                 "project_score": match.project_score,
                 "recency_score": match.recency_score,
             }
-            result["continuity_context"] = (
-                self._checkpoint_mgr.render_recovery_context(match)
-            )
         return result
 
     def get_stats(self) -> dict[str, Any]:
