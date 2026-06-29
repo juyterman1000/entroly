@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bump version across all Entroly manifests.
 
-Usage: python scripts/bump_version.py 1.0.25
+Usage: python scripts/bump_version.py 1.0.37
 """
 from __future__ import annotations
 import re
