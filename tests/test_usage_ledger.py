@@ -244,3 +244,14 @@ def test_unpriced_usage_preserves_tokens_and_surfaces_reconciliation_gap() -> No
     assert summary["requests"] == 1
     assert summary["cache_read_tokens"] == 900
     assert summary["unpriced_requests"] == 1
+
+
+def test_explicit_zero_cache_write_rate_is_not_replaced() -> None:
+    pricing = UsagePricing.from_values(
+        input_per_million=10,
+        output_per_million=20,
+        cache_read_per_million=1,
+        cache_write_per_million=0,
+    )
+
+    assert pricing.cache_write_rate == 0
