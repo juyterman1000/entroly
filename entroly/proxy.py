@@ -4538,7 +4538,13 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
         if not is_streaming and "streamGenerateContent" in request.url.path:
             is_streaming = True
         if is_streaming:
-            return await proxy._stream_response(target_url, forward_headers, body, provider=provider)
+            return await proxy._stream_response(
+                target_url,
+                forward_headers,
+                body,
+                provider=provider,
+                extra_headers=_redaction_headers,
+            )
         response = await client.request(
             request.method, target_url, json=body, headers=forward_headers
         )
