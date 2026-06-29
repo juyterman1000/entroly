@@ -80,8 +80,10 @@ def merge_checkpoint_metadata(
     max_decisions: int = 20,
 ) -> dict[str, Any]:
     """Carry explicit decisions forward while allowing current metadata to win."""
-    merged = dict(previous or {})
-    merged.update(dict(current or {}))
+    # Checkpoint state such as engine snapshots and current steps must never be
+    # inherited implicitly. Only explicit decisions have cross-checkpoint
+    # continuity; current metadata remains authoritative for everything else.
+    merged = dict(current or {})
     decisions = normalize_decisions(
         [
             *normalize_decisions((previous or {}).get("decisions"), limit=max_decisions),
