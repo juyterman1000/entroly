@@ -67,7 +67,16 @@ from .control_plane import (
     plan_request,
     stable_request_fingerprint,
 )
-from .provider_policy import GatewayRedactionPolicy
+from .provider_adapters import (
+    apply_target_same_provider,
+    canonical_request_from_provider_body,
+    rewrite_gemini_model_in_url,
+)
+from .provider_policy import (
+    Capability,
+    GatewayRedactionPolicy,
+    ProviderTarget,
+)
 from .stable_prefix import conversation_anchor
 from .usage_ledger import (
     TokenUsage,
@@ -1556,17 +1565,7 @@ class PromptCompilerProxy:
         """Apply a routed model to providers that encode it in the URL."""
         if provider != "gemini":
             return url
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", model):
-            raise ValueError("invalid URL-embedded model identifier")
-        routed, replacements = re.subn(
-            r"(/models/)[^/:?]+",
-            rf"\g<1>{model}",
-            url,
-            count=1,
-        )
-        if replacements != 1:
-            raise ValueError("Gemini target URL does not contain a model")
-        return routed
+        return rewrite_gemini_model_in_url(url, model)
 
     @staticmethod
     def _routing_token_estimates(
@@ -1856,6 +1855,16 @@ class PromptCompilerProxy:
         request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
         usage_dimensions = self._usage_dimensions(headers)
         provider = detect_provider(path, headers, body)
+        gateway_adapter = None
+        try:
+            gateway_adapter = canonical_request_from_provider_body(
+                provider,
+                body,
+                headers=headers,
+                path=path,
+            )
+        except ValueError as exc:
+            logger.debug("Canonical provider adapter unavailable: %s", exc)
         # Authoritative subscription-auth guard — fail fast with actionable guidance
         # before any forwarding, instead of a confusing upstream 401/429.
         _sub_block = self._subscription_guard(provider, headers)
@@ -2316,6 +2325,21 @@ class PromptCompilerProxy:
                                 "RAVS: kept original model because request has model-specific controls"
                             )
 
+                        if gateway_adapter is None:
+                            _ece_blocked = True
+                            logger.info(
+                                "RAVS: kept original model because canonical adaptation failed"
+                            )
+                        elif (
+                            gateway_adapter.canonical.required_capabilities()
+                            - {Capability.CHAT, Capability.STREAMING}
+                        ):
+                            _ece_blocked = True
+                            logger.info(
+                                "RAVS: kept original model because model-level "
+                                "capability compatibility is unproven"
+                            )
+
                         if not _ece_blocked:
                             cache_allows, cache_reason = (
                                 self._cache_economics_allow_ravs(
@@ -2336,13 +2360,19 @@ class PromptCompilerProxy:
                                 )
 
                         if not _ece_blocked:
-                            from .ravs.router import swap_model_in_body
                             _ravs_original_model = _current_model
-                            body = swap_model_in_body(body, decision.recommended_model)
-                            target_url = self._route_target_url(
-                                target_url,
-                                provider,
-                                decision.recommended_model,
+                            target = ProviderTarget(
+                                provider=provider,
+                                model=decision.recommended_model,
+                                capabilities=(
+                                    gateway_adapter.canonical.required_capabilities()
+                                ),
+                            )
+                            body, target_url = apply_target_same_provider(
+                                provider=provider,
+                                target=target,
+                                body=body,
+                                url=target_url,
                             )
                             _ravs_swapped = True
                             logger.info(
