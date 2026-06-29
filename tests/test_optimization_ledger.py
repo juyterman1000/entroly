@@ -62,6 +62,7 @@ def test_retrieval_debits_measured_compression_savings(tmp_path) -> None:
     assert event["net_tokens_saved"] == 250 - summary["retrieved_tokens"]
     store.retrieve_span(stored.receipt_id, span.span_id, retrieval_id="request-1")
     assert store.savings_summary() == summary
+    assert "retrieval_ids" not in returned.as_dict()
 
     reloaded = CompressionRetrievalStore(
         tmp_path / "compression.json",
