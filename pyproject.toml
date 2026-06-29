@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.35"
+version = "1.0.36"
 description = "Auditable context control plane for AI agents: Context Receipts, MCP tools, local optimization, and SDK helpers."
 readme = "README.md"
 license = "Apache-2.0"
