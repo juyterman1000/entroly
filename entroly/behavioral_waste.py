@@ -9,7 +9,7 @@ import threading
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 _ERROR_RE = re.compile(
     r"(?i)(error|exception|failed|failure|fatal|panic|timeout|denied|refused|invalid|not found)"
@@ -225,4 +225,78 @@ def _short_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
-__all__ = ["BehavioralWasteDetector", "WasteFinding"]
+def observe_canonical_messages(
+    detector: BehavioralWasteDetector,
+    conversation_id: str,
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    model: str,
+    observed_at: float | None = None,
+) -> tuple[WasteFinding, ...]:
+    """Extract one portable behavioral observation from canonical messages."""
+    tool_name = ""
+    arguments: dict[str, Any] = {}
+    result_text = ""
+    if messages:
+        latest = messages[-1]
+        role = str(latest.get("role", ""))
+        tool_calls = latest.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            call = tool_calls[-1]
+            if isinstance(call, Mapping):
+                function = call.get("function")
+                if isinstance(function, Mapping):
+                    tool_name = str(function.get("name", ""))
+                    arguments = {"arguments": function.get("arguments", "")}
+        if role in {"tool", "function"}:
+            tool_name = str(
+                latest.get("name") or latest.get("tool_call_id") or role
+            )
+            result_text = _content_text(latest.get("content"))
+            arguments = {"tool_call_id": str(latest.get("tool_call_id", ""))}
+        content = latest.get("content")
+        if isinstance(content, list):
+            for block in reversed(content):
+                if not isinstance(block, Mapping):
+                    continue
+                if block.get("type") == "tool_result":
+                    tool_name = str(block.get("tool_use_id") or "tool_result")
+                    result_text = _content_text(block.get("content"))
+                    arguments = {"tool_use_id": tool_name}
+                    break
+                if block.get("type") == "tool_use":
+                    tool_name = str(block.get("name") or "tool_use")
+                    raw_input = block.get("input")
+                    arguments = dict(raw_input) if isinstance(raw_input, Mapping) else {}
+                    break
+    token_estimate = max(
+        0,
+        len(
+            json.dumps(messages, sort_keys=True, default=str).encode(
+                "utf-8", errors="replace"
+            )
+        )
+        // 4,
+    )
+    return detector.observe(
+        conversation_id,
+        tool_name=tool_name,
+        arguments=arguments,
+        result_text=result_text,
+        model=model,
+        input_tokens=token_estimate,
+        observed_at=observed_at,
+    )
+
+
+def _content_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(_content_text(part) for part in value)
+    if isinstance(value, Mapping):
+        return _content_text(value.get("text", value.get("content", "")))
+    return ""
+
+
+__all__ = ["BehavioralWasteDetector", "WasteFinding", "observe_canonical_messages"]
