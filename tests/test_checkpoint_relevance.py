@@ -47,6 +47,11 @@ def test_decisions_are_carried_forward_and_deduplicated() -> None:
         "Use canonical provider adapters",
         "Keep failover closed",
     ]
+    unrelated = merge_checkpoint_metadata(
+        {"task": "fix authentication timeout", "decisions": ["Keep auth cache"]},
+        {"task": "write installation docs", "decisions": ["Use short examples"]},
+    )
+    assert unrelated["decisions"] == ["Use short examples"]
 
 
 def test_recovery_context_is_fenced_as_untrusted_data() -> None:
@@ -76,7 +81,7 @@ def test_checkpoint_manager_preserves_decisions_and_selects_relevant_task(tmp_pa
         "decisions": ["Keep the provider cache warm"],
     })
     manager.save([], {}, {}, 2, metadata={
-        "task": "update installation docs",
+        "step": "verify provider usage",
         "decisions": ["Use canonical provider adapters"],
     })
     latest = manager.load_latest()
@@ -85,6 +90,13 @@ def test_checkpoint_manager_preserves_decisions_and_selects_relevant_task(tmp_pa
         "Keep the provider cache warm",
         "Use canonical provider adapters",
     ]
+    manager.save([], {}, {}, 3, metadata={
+        "task": "update installation docs",
+        "decisions": ["Use short examples"],
+    })
+    latest = manager.load_latest()
+    assert latest is not None
+    assert latest.metadata["decisions"] == ["Use short examples"]
 
     match = manager.find_relevant(
         "authentication timeout",
