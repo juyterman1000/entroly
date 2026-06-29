@@ -295,3 +295,33 @@ def test_duplicate_provider_observation_is_idempotent_everywhere() -> None:
             proxy._usage_ledger.close()
 
     asyncio.run(run())
+
+
+def test_url_embedded_model_routing_updates_gemini_target_only() -> None:
+    gemini = PromptCompilerProxy._route_target_url(
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-1.5-pro:streamGenerateContent?alt=sse",
+        "gemini",
+        "gemini-2.0-flash",
+    )
+    openai = PromptCompilerProxy._route_target_url(
+        "https://api.openai.com/v1/chat/completions",
+        "openai",
+        "gpt-cheap",
+    )
+
+    assert "/models/gemini-2.0-flash:streamGenerateContent" in gemini
+    assert openai == "https://api.openai.com/v1/chat/completions"
+
+
+def test_url_embedded_model_routing_rejects_path_injection() -> None:
+    try:
+        PromptCompilerProxy._route_target_url(
+            "https://provider.example/v1beta/models/current:generateContent",
+            "gemini",
+            "../attacker",
+        )
+    except ValueError as exc:
+        assert "invalid URL-embedded model identifier" in str(exc)
+    else:
+        raise AssertionError("unsafe model identifier was accepted")
