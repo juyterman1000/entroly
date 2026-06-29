@@ -1140,3 +1140,103 @@ class TestEndToEndFormatChain:
         assert injected["messages"][0]["role"] == "system"
         assert "temperature" not in injected
         assert "generationConfig" not in injected
+
+
+class TestLiveGatewayRedaction:
+    def test_bypass_still_enforces_explicit_outbound_policy(self):
+        import asyncio
+
+        from httpx import ASGITransport, AsyncClient
+        from starlette.applications import Starlette
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        from entroly.provider_policy import GatewayRedactionPolicy
+
+        async def run():
+            proxy = PromptCompilerProxy(object(), ProxyConfig())
+            proxy._bypass = True
+            proxy._gateway_redaction = GatewayRedactionPolicy(enabled=True)
+            captured = {}
+
+            async def capture(_url, _headers, body, *_args, **kwargs):
+                captured["body"] = body
+                return JSONResponse(
+                    {"ok": True},
+                    headers=kwargs.get("extra_headers") or {},
+                )
+
+            proxy._forward_response = capture
+            app = Starlette(
+                routes=[
+                    Route(
+                        "/v1/chat/completions",
+                        proxy.handle_proxy,
+                        methods=["POST"],
+                    )
+                ]
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "gpt-4o",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "contact dev@example.com using "
+                                    "sk-abcdefghijklmnopqrstuvwxyz"
+                                ),
+                            }
+                        ],
+                    },
+                )
+            return response, captured["body"]
+
+        response, forwarded = asyncio.run(run())
+
+        rendered = str(forwarded)
+        assert "dev@example.com" not in rendered
+        assert "sk-abcdefghijklmnopqrstuvwxyz" not in rendered
+        assert response.headers["x-entroly-redaction"] == "changed"
+        assert int(response.headers["x-entroly-redaction-count"]) == 2
+
+    def test_enabled_policy_fails_closed_for_uninspectable_raw_body(self):
+        import asyncio
+
+        from httpx import ASGITransport, AsyncClient
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+
+        from entroly.provider_policy import GatewayRedactionPolicy
+
+        async def run():
+            proxy = PromptCompilerProxy(object(), ProxyConfig())
+            proxy._gateway_redaction = GatewayRedactionPolicy(enabled=True)
+            app = Starlette(
+                routes=[
+                    Route(
+                        "/v1/chat/completions",
+                        proxy.handle_proxy,
+                        methods=["POST"],
+                    )
+                ]
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                return await client.post(
+                    "/v1/chat/completions",
+                    content=b"not-json secret",
+                    headers={"content-type": "text/plain"},
+                )
+
+        response = asyncio.run(run())
+
+        assert response.status_code == 415
+        assert response.json()["error"] == "outbound_redaction_requires_json"
