@@ -1,9 +1,4 @@
-"""MCP tools for Entroly compression retrieval.
-
-This module provides a focused MCP server for retrieving omitted spans produced
-by Evidence-Locked Compression. It can run independently or be mounted by the
-main Entroly MCP server in a future normal-code patch.
-"""
+"""MCP tools for Entroly compression retrieval."""
 
 from __future__ import annotations
 
@@ -12,6 +7,7 @@ import os
 from pathlib import Path
 
 from .compression_retrieval_store import CompressionRetrievalStore
+from .optimization_ledger import OptimizationLedger
 
 
 def _default_store_path() -> Path:
@@ -19,6 +15,13 @@ def _default_store_path() -> Path:
     if configured:
         return Path(configured)
     return Path(os.environ.get("ENTROLY_DIR", ".entroly")) / "compression-store.json"
+
+
+def _default_ledger_path() -> Path:
+    configured = os.environ.get("ENTROLY_OPTIMIZATION_LEDGER")
+    if configured:
+        return Path(configured)
+    return Path(os.environ.get("ENTROLY_DIR", ".entroly")) / "optimization-ledger.sqlite3"
 
 
 def create_compression_mcp_server(store_path: str | None = None):
@@ -37,14 +40,32 @@ def create_compression_mcp_server(store_path: str | None = None):
     )
 
     def _store(path_override: str = "") -> CompressionRetrievalStore:
-        path = Path(path_override) if path_override else Path(store_path) if store_path else _default_store_path()
-        return CompressionRetrievalStore(path)
+        path = (
+            Path(path_override)
+            if path_override
+            else Path(store_path)
+            if store_path
+            else _default_store_path()
+        )
+        return CompressionRetrievalStore(
+            path,
+            optimization_ledger=OptimizationLedger(_default_ledger_path()),
+        )
 
     @mcp.tool()
-    def retrieve_compressed_span(receipt_id: str, span_id: str, store_path_override: str = "") -> str:
-        """Retrieve one omitted span by receipt id and span id."""
+    def retrieve_compressed_span(
+        receipt_id: str,
+        span_id: str,
+        store_path_override: str = "",
+        retrieval_id: str = "",
+    ) -> str:
+        """Retrieve one span and debit returned tokens from measured savings."""
         store = _store(store_path_override)
-        span = store.get_span(receipt_id, span_id)
+        span = store.retrieve_span(
+            receipt_id,
+            span_id,
+            retrieval_id=retrieval_id or None,
+        )
         if span is None:
             return json.dumps(
                 {"status": "not_found", "receipt_id": receipt_id, "span_id": span_id},
@@ -53,10 +74,20 @@ def create_compression_mcp_server(store_path: str | None = None):
         return json.dumps({"status": "ok", "span": span.as_dict()}, indent=2, ensure_ascii=False)
 
     @mcp.tool()
-    def search_compressed_spans(query: str, limit: int = 5, store_path_override: str = "") -> str:
-        """Search recoverable omitted spans by keyword."""
+    def search_compressed_spans(
+        query: str,
+        limit: int = 5,
+        store_path_override: str = "",
+        retrieval_id: str = "",
+    ) -> str:
+        """Search spans and debit every span returned to the agent."""
         store = _store(store_path_override)
-        spans = store.search(query, limit=max(1, min(int(limit), 20)))
+        spans = store.search(
+            query,
+            limit=max(1, min(int(limit), 20)),
+            record_retrieval=True,
+            retrieval_id=retrieval_id or None,
+        )
         return json.dumps(
             {"status": "ok", "query": query, "spans": [span.as_dict() for span in spans]},
             indent=2,
@@ -65,10 +96,14 @@ def create_compression_mcp_server(store_path: str | None = None):
 
     @mcp.tool()
     def list_compression_receipts(store_path_override: str = "") -> str:
-        """List locally stored compression receipts and span counts."""
+        """List receipts with gross, retrieval, and net measured token savings."""
         store = _store(store_path_override)
         return json.dumps(
-            {"status": "ok", "receipts": store.list_receipts()},
+            {
+                "status": "ok",
+                "receipts": store.list_receipts(),
+                "savings": store.savings_summary(),
+            },
             indent=2,
             ensure_ascii=False,
         )
