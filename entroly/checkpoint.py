@@ -481,6 +481,21 @@ class CheckpointManager:
         """Render fenced continuity metadata for a selected checkpoint."""
         return render_recovery_context(match)
 
+    @staticmethod
+    def render_checkpoint_context(checkpoint: Checkpoint) -> str:
+        """Render fenced continuity metadata without claiming query relevance."""
+        return render_recovery_context(
+            CheckpointMatch(
+                checkpoint=checkpoint,
+                score=0.0,
+                lexical_score=0.0,
+                source_score=0.0,
+                project_score=0.0,
+                recency_score=0.0,
+                matched_terms=(),
+            )
+        )
+
     def load_by_id(self, checkpoint_id: str) -> Checkpoint | None:
         """Load a specific checkpoint by its ID."""
         filepath = self.checkpoint_dir / f"{checkpoint_id}.json.gz"
