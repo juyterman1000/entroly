@@ -84,6 +84,11 @@ def merge_checkpoint_metadata(
     # inherited implicitly. Only explicit decisions have cross-checkpoint
     # continuity; current metadata remains authoritative for everything else.
     merged = dict(current or {})
+    previous_scope = str(
+        (previous or {}).get("_decision_scope")
+        or (previous or {}).get("task", "")
+    ).strip()
+    current_task = str((current or {}).get("task", "")).strip()
     previous_decisions = normalize_decisions(
         (previous or {}).get("decisions"), limit=max_decisions
     )
@@ -98,6 +103,11 @@ def merge_checkpoint_metadata(
     )
     if decisions:
         merged["decisions"] = decisions
+    if current_task:
+        merged["_decision_scope"] = current_task
+    elif previous_scope and previous_decisions:
+        merged["_decision_scope"] = previous_scope
+    merged.pop("reset_decisions", None)
     return merged
 
 
@@ -106,7 +116,9 @@ def _same_task_scope(
 ) -> bool:
     if bool(current.get("reset_decisions")):
         return False
-    previous_task = str(previous.get("task", "")).strip()
+    previous_task = str(
+        previous.get("_decision_scope") or previous.get("task", "")
+    ).strip()
     current_task = str(current.get("task", "")).strip()
     if not previous_task or not current_task:
         return True
@@ -200,7 +212,9 @@ def _terms(text: str) -> set[str]:
 
 def _metadata_text(metadata: Mapping[str, Any]) -> str:
     values: list[str] = []
-    for key in ("task", "step", "remaining_work", "query", "project"):
+    for key in (
+        "task", "_decision_scope", "step", "remaining_work", "query", "project"
+    ):
         value = metadata.get(key)
         if isinstance(value, str):
             values.append(value)
