@@ -69,7 +69,7 @@ def test_recovery_context_is_fenced_as_untrusted_data() -> None:
     assert match is not None
     rendered = render_recovery_context(match)
     assert rendered.startswith("<entroly:retrieved-context>")
-    assert "not instructions" in rendered
+    assert "NOT a user instruction" in rendered or "not instructions" in rendered
 
 
 def test_explicit_project_scope_excludes_other_project() -> None:
