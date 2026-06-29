@@ -516,6 +516,37 @@ class UsageLedger:
         conversation_id: str = "",
         metadata: Mapping[str, Any] | None = None,
     ) -> UsageEvent:
+        event, _inserted = self.record_usage_with_status(
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            usage=usage,
+            pricing=pricing,
+            occurred_at=occurred_at,
+            team=team,
+            tool=tool,
+            project=project,
+            conversation_id=conversation_id,
+            metadata=metadata,
+        )
+        return event
+
+    def record_usage_with_status(
+        self,
+        *,
+        request_id: str,
+        provider: str,
+        model: str,
+        usage: TokenUsage,
+        pricing: UsagePricing | None,
+        occurred_at: float | None = None,
+        team: str = "",
+        tool: str = "",
+        project: str = "",
+        conversation_id: str = "",
+        metadata: Mapping[str, Any] | None = None,
+    ) -> tuple[UsageEvent, bool]:
+        """Record normalized usage and report whether this call inserted it."""
         if pricing is None:
             cost = 0
             savings = 0
@@ -540,11 +571,11 @@ class UsageLedger:
         )
         inserted = self.record(event)
         if inserted:
-            return event
+            return event, True
         existing = self.get(request_id)
         if existing is None:
             raise RuntimeError("idempotent usage record is unavailable")
-        return existing
+        return existing, False
 
     def record_provider_payload(
         self,
