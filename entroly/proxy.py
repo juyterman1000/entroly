@@ -1530,6 +1530,27 @@ class PromptCompilerProxy:
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     @staticmethod
+    def _route_target_url(
+        url: str,
+        provider: str,
+        model: str,
+    ) -> str:
+        """Apply a routed model to providers that encode it in the URL."""
+        if provider != "gemini":
+            return url
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", model):
+            raise ValueError("invalid URL-embedded model identifier")
+        routed, replacements = re.subn(
+            r"(/models/)[^/:?]+",
+            rf"\g<1>{model}",
+            url,
+            count=1,
+        )
+        if replacements != 1:
+            raise ValueError("Gemini target URL does not contain a model")
+        return routed
+
+    @staticmethod
     def _routing_token_estimates(
         body: dict[str, Any],
         user_message: str,
@@ -2287,6 +2308,11 @@ class PromptCompilerProxy:
                             from .ravs.router import swap_model_in_body
                             _ravs_original_model = _current_model
                             body = swap_model_in_body(body, decision.recommended_model)
+                            target_url = self._route_target_url(
+                                target_url,
+                                provider,
+                                decision.recommended_model,
+                            )
                             _ravs_swapped = True
                             logger.info(
                                 "RAVS: %s -> %s (%s; %s)",
