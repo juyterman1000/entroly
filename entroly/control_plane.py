@@ -242,6 +242,7 @@ def audit_request_transform(
     path: str = "",
     headers: Mapping[str, str] | None = None,
     allow_tool_contract_changes: bool = False,
+    allow_model_change: bool = False,
 ) -> ControlAudit:
     """Audit that a transform preserved provider controls and tool contracts."""
 
@@ -257,6 +258,12 @@ def audit_request_transform(
         provider_controls_after,
         label="provider control",
     )
+    if allow_model_change:
+        provider_violations = tuple(
+            violation
+            for violation in provider_violations
+            if violation.path != "model"
+        )
 
     tool_violations: tuple[ControlViolation, ...] = ()
     if not allow_tool_contract_changes:
