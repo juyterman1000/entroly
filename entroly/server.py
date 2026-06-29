@@ -2963,6 +2963,7 @@ def create_mcp_server(
         current_step: str = "",
         decisions: list[str] | None = None,
         modified_files: list[str] | None = None,
+        project: str = "",
     ) -> str:
         """Save state plus explicit decisions needed for safe continuation."""
         metadata: dict[str, Any] = {}
@@ -2974,6 +2975,8 @@ def create_mcp_server(
             metadata["decisions"] = decisions
         if modified_files:
             metadata["modified_files"] = modified_files
+        if project:
+            metadata["project"] = project
 
         path = engine.checkpoint(metadata)
         return json.dumps({
