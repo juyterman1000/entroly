@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
+from .cache_retention import CacheRetentionForecaster
+
 
 @dataclass(frozen=True, slots=True)
 class CachePrice:
@@ -143,8 +145,16 @@ class CacheRoutingDecision:
 class CacheAwareRouter:
     """Thread-safe controller for observed cache leases and routing decisions."""
 
-    def __init__(self, policy: CacheRoutingPolicy | None = None) -> None:
+    def __init__(
+        self,
+        policy: CacheRoutingPolicy | None = None,
+        *,
+        retention_forecaster: CacheRetentionForecaster | None = None,
+    ) -> None:
         self.policy = policy or CacheRoutingPolicy()
+        self.retention_forecaster = retention_forecaster or CacheRetentionForecaster(
+            max_conversations=self.policy.max_leases
+        )
         self._leases: dict[str, ConversationCacheLease] = {}
         self._lock = threading.RLock()
 
@@ -165,6 +175,10 @@ class CacheAwareRouter:
             raise ValueError("conversation_id is required")
         now = time.time() if observed_at is None else float(observed_at)
         ttl = self.policy.ttl_for(provider) if ttl_seconds is None else max(0.0, ttl_seconds)
+        self.retention_forecaster.observe_activity(
+            conversation_id,
+            observed_at=now,
+        )
         with self._lock:
             previous = self._leases.get(conversation_id)
             hits = (previous.hits if previous else 0) + int(cache_hit)
