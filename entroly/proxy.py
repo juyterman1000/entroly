@@ -1879,6 +1879,11 @@ class PromptCompilerProxy:
             )
         except ValueError as exc:
             logger.debug("Canonical provider adapter unavailable: %s", exc)
+        # Authoritative subscription-auth guard — fail fast with actionable guidance
+        # before any forwarding, instead of a confusing upstream 401/429.
+        _sub_block = self._subscription_guard(provider, headers)
+        if _sub_block is not None:
+            return _sub_block
         if gateway_adapter is not None:
             conversation_id = self._routing_conversation_id(body, provider)
             if conversation_id:
@@ -1928,11 +1933,6 @@ class PromptCompilerProxy:
                     with self._stats_lock:
                         self._behavior_failures += 1
                     logger.debug("Behavioral waste observation failed: %s", exc)
-        # Authoritative subscription-auth guard — fail fast with actionable guidance
-        # before any forwarding, instead of a confusing upstream 401/429.
-        _sub_block = self._subscription_guard(provider, headers)
-        if _sub_block is not None:
-            return _sub_block
         control_before = copy.deepcopy(body)
         control_decision: ControlPlaneDecision | None = None
         control_headers: dict[str, str] = {}
