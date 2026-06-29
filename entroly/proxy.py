@@ -1533,8 +1533,9 @@ class PromptCompilerProxy:
         request_id: str,
         usage: TokenUsage,
         streaming: bool,
+        path: str = "",
     ) -> None:
-        model = extract_model(body) or str(body.get("model", "unknown"))
+        model = extract_model(body, path) or str(body.get("model", "unknown"))
         conversation_id = self._routing_conversation_id(body, provider)
         prefix_hash = self._cache_prefix_hash(body, provider)
         cached_prefix_tokens = max(
@@ -1579,6 +1580,7 @@ class PromptCompilerProxy:
         provider: str,
         request_id: str,
         payload: dict[str, Any],
+        path: str = "",
     ) -> None:
         usage_keys = {"usage", "usage_metadata", "usageMetadata"}
         if not usage_keys.intersection(payload):
@@ -1592,6 +1594,7 @@ class PromptCompilerProxy:
                 request_id=request_id,
                 usage=usage,
                 streaming=False,
+                path=path,
             )
         except Exception:
             with self._stats_lock:
@@ -1605,6 +1608,7 @@ class PromptCompilerProxy:
         provider: str,
         request_id: str,
         transcript: bytes,
+        path: str = "",
     ) -> None:
         try:
             usage = parse_stream_usage(provider, transcript)
@@ -1617,6 +1621,7 @@ class PromptCompilerProxy:
                 request_id=request_id,
                 usage=usage,
                 streaming=True,
+                path=path,
             )
         except Exception:
             with self._stats_lock:
