@@ -45,3 +45,28 @@ def test_forecaster_never_performs_provider_io() -> None:
     )
     assert forecast.recommended_plan == "anthropic_5m"
     assert forecast.confidence == 0.0
+
+
+def test_live_cache_observations_feed_pause_history() -> None:
+    from entroly.cache_routing import CacheAwareRouter
+
+    router = CacheAwareRouter()
+    router.observe(
+        "conversation",
+        model="model",
+        provider="provider",
+        prefix_hash="prefix",
+        cached_prefix_tokens=100,
+        cache_hit=True,
+        observed_at=100.0,
+    )
+    router.observe(
+        "conversation",
+        model="model",
+        provider="provider",
+        prefix_hash="prefix",
+        cached_prefix_tokens=100,
+        cache_hit=True,
+        observed_at=160.0,
+    )
+    assert router.retention_forecaster.pauses("conversation") == (60.0,)
