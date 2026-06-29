@@ -154,6 +154,11 @@ def test_same_provider_gemini_rewrite_validates_url_embedded_model() -> None:
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
             "../bad",
         )
+    with pytest.raises(ValueError):
+        rewrite_gemini_model_in_url(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+            "gemini-safe:alternateAction",
+        )
 
 
 def test_cross_provider_same_body_rewrite_is_rejected() -> None:
