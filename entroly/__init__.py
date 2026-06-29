@@ -317,3 +317,50 @@ try:
     )
 except ImportError:
     pass
+
+
+# Optimization economics: realized, estimated, and opportunity savings remain
+# separate so dashboards cannot present forecasts as invoice savings.
+try:
+    from .optimization_ledger import (  # noqa: F401
+        OptimizationAdjustment,
+        OptimizationEvent,
+        OptimizationLedger,
+        SavingsSummary,
+        SavingsTier,
+    )
+except ImportError:
+    pass
+
+# Query-conditioned checkpoint continuity with explicit decision preservation.
+try:
+    from .checkpoint_relevance import (  # noqa: F401
+        CheckpointMatch,
+        CheckpointRelevancePolicy,
+        render_recovery_context,
+        select_relevant_checkpoint,
+    )
+except ImportError:
+    pass
+
+# Forecast-only cache retention economics. This surface performs no provider I/O.
+try:
+    from .cache_retention import (  # noqa: F401
+        CacheRetentionEstimate,
+        CacheRetentionForecast,
+        CacheRetentionForecaster,
+        CacheRetentionPlan,
+        anthropic_retention_plans,
+    )
+except ImportError:
+    pass
+
+# Advisory retry, error-loop, and model-churn telemetry.
+try:
+    from .behavioral_waste import (  # noqa: F401
+        BehavioralWasteDetector,
+        WasteFinding,
+        observe_canonical_messages,
+    )
+except ImportError:
+    pass

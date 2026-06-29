@@ -1443,11 +1443,22 @@ class EntrolyEngine:
             self._ensure_gzip_index(self._index_path)
         return checkpoint_path
 
-    def resume(self) -> dict[str, Any]:
-        """Resume from the latest checkpoint."""
-        ckpt = self._checkpoint_mgr.load_latest()
-        if ckpt is None:
-            return {"status": "no_checkpoint_found"}
+    def resume(self, query: str = "", project: str = "") -> dict[str, Any]:
+        """Resume the latest checkpoint or a query-relevant checkpoint."""
+        match = None
+        if query.strip():
+            match = self._checkpoint_mgr.find_relevant(query, project=project)
+            if match is None:
+                return {
+                    "status": "no_relevant_checkpoint_found",
+                    "query": query,
+                    "project": project,
+                }
+            ckpt = match.checkpoint
+        else:
+            ckpt = self._checkpoint_mgr.load_latest()
+            if ckpt is None:
+                return {"status": "no_checkpoint_found"}
 
         if self._use_rust:
             # Try to restore from full engine state (preferred)
@@ -1480,13 +1491,39 @@ class EntrolyEngine:
         for src, targets in ckpt.co_access_data.items():
             self._prefetch._co_access[src] = Counter(targets)
 
-        return {
+        decisions = ckpt.metadata.get("decisions")
+        modified_files = ckpt.metadata.get("modified_files")
+        public_metadata = {
+            "instance_id": str(ckpt.metadata.get("instance_id", "")),
+            "has_task": bool(ckpt.metadata.get("task")),
+            "has_step": bool(ckpt.metadata.get("step")),
+            "decision_count": len(decisions) if isinstance(decisions, list) else 0,
+            "modified_file_count": (
+                len(modified_files) if isinstance(modified_files, list) else 0
+            ),
+        }
+        result: dict[str, Any] = {
             "status": "resumed",
             "checkpoint_id": ckpt.checkpoint_id,
             "restored_fragments": len(ckpt.fragments),
             "restored_turn": ckpt.current_turn,
-            "metadata": ckpt.metadata,
+            "metadata": public_metadata,
+            "continuity_context": (
+                self._checkpoint_mgr.render_recovery_context(match)
+                if match is not None
+                else self._checkpoint_mgr.render_checkpoint_context(ckpt)
+            ),
         }
+        if match is not None:
+            result["relevance"] = {
+                "score": match.score,
+                "matched_terms": list(match.matched_terms),
+                "lexical_score": match.lexical_score,
+                "source_score": match.source_score,
+                "project_score": match.project_score,
+                "recency_score": match.recency_score,
+            }
+        return result
 
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive session statistics."""
@@ -2924,21 +2961,22 @@ def create_mcp_server(
     def checkpoint_state(
         task_description: str = "",
         current_step: str = "",
+        decisions: list[str] | None = None,
+        modified_files: list[str] | None = None,
+        project: str = "",
     ) -> str:
-        """Save current state to disk for crash recovery and session resume.
-
-        Checkpoints include all fragments, dedup index, co-access patterns,
-        and custom metadata. Stored as gzipped JSON (~50-200 KB).
-
-        Args:
-            task_description: What the agent is working on
-            current_step: Where in the task it currently is
-        """
-        metadata = {}
+        """Save state plus explicit decisions needed for safe continuation."""
+        metadata: dict[str, Any] = {}
         if task_description:
             metadata["task"] = task_description
         if current_step:
             metadata["step"] = current_step
+        if decisions:
+            metadata["decisions"] = decisions
+        if modified_files:
+            metadata["modified_files"] = modified_files
+        if project:
+            metadata["project"] = project
 
         path = engine.checkpoint(metadata)
         return json.dumps({
@@ -2947,13 +2985,9 @@ def create_mcp_server(
         }, indent=2)
 
     @mcp.tool()
-    def resume_state() -> str:
-        """Resume from the latest checkpoint.
-
-        Restores all context fragments, dedup index, co-access patterns,
-        and custom metadata from the most recent checkpoint.
-        """
-        result = engine.resume()
+    def resume_state(query: str = "", project: str = "") -> str:
+        """Resume by task relevance; omit query only for latest-checkpoint behavior."""
+        result = engine.resume(query=query, project=project)
         return json.dumps(result, indent=2)
 
     @mcp.tool()
