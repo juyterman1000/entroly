@@ -26,6 +26,7 @@ from typing import Any, Mapping
 from .provider_policy import CanonicalGatewayRequest, ProviderTarget
 
 _SAFE_MODEL_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+_SAFE_GEMINI_MODEL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,7 +235,7 @@ def _model_from_gemini_path(path: str) -> str:
 
 
 def rewrite_gemini_model_in_url(url: str, model: str) -> str:
-    if not _SAFE_MODEL_RE.fullmatch(model):
+    if not _SAFE_GEMINI_MODEL_RE.fullmatch(model):
         raise ValueError("invalid URL-embedded model identifier")
     rewritten, count = re.subn(r"(/models/)[^/:?]+", rf"\g<1>{model}", url, count=1)
     if count != 1:
