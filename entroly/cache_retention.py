@@ -72,6 +72,9 @@ class CacheRetentionForecaster:
         timestamp = time.time() if observed_at is None else float(observed_at)
         with self._lock:
             previous = self._last_activity.get(conversation_id)
+            if previous is not None and timestamp <= previous:
+                self._last_activity.move_to_end(conversation_id)
+                return None
             pause = max(0.0, timestamp - previous) if previous is not None else None
             if pause is not None:
                 self._pauses.setdefault(
@@ -87,6 +90,13 @@ class CacheRetentionForecaster:
     def pauses(self, conversation_id: str) -> tuple[float, ...]:
         with self._lock:
             return tuple(self._pauses.get(conversation_id, ()))
+
+    def stats(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                "tracked_conversations": len(self._last_activity),
+                "pause_samples": sum(len(samples) for samples in self._pauses.values()),
+            }
 
     def forecast(
         self,
