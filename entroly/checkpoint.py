@@ -437,7 +437,7 @@ class CheckpointManager:
         Returns None if no checkpoints exist or all are unreadable.
         """
         checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
+            self.checkpoint_dir.glob(f"ckpt_{self.instance_id}_*.json.gz"),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
