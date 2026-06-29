@@ -58,6 +58,7 @@ from .proxy_transform import (
     inject_context_responses,
     strip_anthropic_unsupported_params,
 )
+from .behavioral_waste import BehavioralWasteDetector, observe_canonical_messages
 from .cache_aligner import CacheAligner
 from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
 from .control_plane import (
@@ -77,6 +78,7 @@ from .provider_policy import (
     GatewayRedactionPolicy,
     ProviderTarget,
 )
+from .optimization_ledger import OptimizationEvent, OptimizationLedger, SavingsTier
 from .stable_prefix import conversation_anchor
 from .usage_ledger import (
     TokenUsage,
@@ -1067,6 +1069,18 @@ class PromptCompilerProxy:
         self._cache_route_switches = 0
         self._cache_route_blocked_unpriced = 0
         self._cache_route_last: dict[str, Any] | None = None
+        self._behavior_detector = BehavioralWasteDetector()
+        self._behavior_findings = 0
+        self._behavior_failures = 0
+        self._behavior_last: list[dict[str, Any]] = []
+        optimization_path = os.environ.get(
+            "ENTROLY_OPTIMIZATION_LEDGER", ""
+        ).strip()
+        self._optimization_ledger = (
+            OptimizationLedger(optimization_path)
+            if optimization_path
+            else None
+        )
 
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
@@ -1865,6 +1879,55 @@ class PromptCompilerProxy:
             )
         except ValueError as exc:
             logger.debug("Canonical provider adapter unavailable: %s", exc)
+        if gateway_adapter is not None:
+            conversation_id = self._routing_conversation_id(body, provider)
+            if conversation_id:
+                try:
+                    findings = observe_canonical_messages(
+                        self._behavior_detector,
+                        conversation_id,
+                        gateway_adapter.canonical.messages,
+                        model=gateway_adapter.canonical.model,
+                    )
+                    if findings:
+                        rendered_findings = [
+                            {
+                                "kind": finding.kind,
+                                "occurrences": finding.occurrences,
+                                "estimated_wasted_tokens": finding.estimated_wasted_tokens,
+                                "confidence": finding.confidence,
+                                "severity": finding.severity,
+                                "tier": finding.tier,
+                            }
+                            for finding in findings
+                        ]
+                        with self._stats_lock:
+                            self._behavior_findings += len(findings)
+                            self._behavior_last = rendered_findings[-10:]
+                        if self._optimization_ledger is not None:
+                            for finding in findings:
+                                self._optimization_ledger.record(
+                                    OptimizationEvent(
+                                        event_id=(
+                                            f"behavior:{conversation_id}:{finding.kind}:"
+                                            f"{finding.fingerprint}:{finding.occurrences}"
+                                        ),
+                                        feature=finding.kind,
+                                        tier=SavingsTier.OPPORTUNITY,
+                                        gross_tokens_saved=finding.estimated_wasted_tokens,
+                                        conversation_id=conversation_id,
+                                        provider=provider,
+                                        model=gateway_adapter.canonical.model,
+                                        metadata={
+                                            "confidence": finding.confidence,
+                                            "severity": finding.severity,
+                                        },
+                                    )
+                                )
+                except Exception as exc:
+                    with self._stats_lock:
+                        self._behavior_failures += 1
+                    logger.debug("Behavioral waste observation failed: %s", exc)
         # Authoritative subscription-auth guard — fail fast with actionable guidance
         # before any forwarding, instead of a confusing upstream 401/429.
         _sub_block = self._subscription_guard(provider, headers)
@@ -5181,6 +5244,12 @@ async def _proxy_stats(request: Request) -> JSONResponse:
         "routing_switches": proxy._cache_route_switches,
         "blocked_unpriced": proxy._cache_route_blocked_unpriced,
         "last_decision": proxy._cache_route_last,
+    }
+    stats["behavioral_waste"] = {
+        "findings": proxy._behavior_findings,
+        "failures": proxy._behavior_failures,
+        "last_findings": proxy._behavior_last,
+        "optimization_ledger_enabled": proxy._optimization_ledger is not None,
     }
     usage_accounting: dict[str, Any] = {
         "enabled": proxy._usage_ledger is not None,
