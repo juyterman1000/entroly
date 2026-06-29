@@ -149,6 +149,14 @@ def select_relevant_checkpoint(
         if age > active_policy.max_age_seconds:
             continue
         metadata = getattr(checkpoint, "metadata", {}) or {}
+        recorded_project = str(metadata.get("project", "")).strip()
+        if (
+            project
+            and recorded_project
+            and PurePath(project).name.casefold()
+            != PurePath(recorded_project).name.casefold()
+        ):
+            continue
         fragments = getattr(checkpoint, "fragments", []) or []
         metadata_text = _metadata_text(metadata)
         metadata_terms = _terms(metadata_text)
