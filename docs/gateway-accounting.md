@@ -15,6 +15,17 @@ Set a durable SQLite path to enable the ledger:
 export ENTROLY_USAGE_LEDGER=.entroly/usage.sqlite3
 ```
 
+A trusted ingress can attach bounded cost-allocation dimensions:
+
+```bash
+export ENTROLY_TRUST_USAGE_HEADERS=1
+# The ingress sets x-entroly-team, x-entroly-project, and x-entroly-tool.
+```
+
+Leave this disabled for direct or untrusted clients. When enabled, the reverse
+proxy must remove client-supplied `x-entroly-*` attribution headers and inject
+authenticated values. Invalid or oversized dimension values are ignored.
+
 Set a versioned pricing catalog to calculate cost and enable the cache-economics
 gate for RAVS recommendations:
 
