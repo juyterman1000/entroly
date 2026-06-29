@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
-import pytest
 
 from entroly.proxy import PromptCompilerProxy
 from entroly.proxy_config import ProxyConfig
@@ -46,101 +46,103 @@ def _proxy() -> PromptCompilerProxy:
     return proxy
 
 
-@pytest.mark.asyncio
-async def test_live_json_forward_records_usage_and_cache_observation() -> None:
-    async def upstream(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            headers={"content-type": "application/json"},
-            json={
-                "id": "response-1",
-                "choices": [{"message": {"content": "ok"}}],
-                "usage": {
-                    "prompt_tokens": 100,
-                    "completion_tokens": 7,
-                    "prompt_tokens_details": {"cached_tokens": 80},
+def test_live_json_forward_records_usage_and_cache_observation() -> None:
+    async def run() -> None:
+        async def upstream(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={
+                    "id": "response-1",
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 7,
+                        "prompt_tokens_details": {"cached_tokens": 80},
+                    },
                 },
-            },
-        )
+            )
+    
+        proxy = _proxy()
+        proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        body = {
+            "model": "gpt-current",
+            "messages": [
+                {"role": "system", "content": "stable policy"},
+                {"role": "user", "content": "answer this"},
+            ],
+        }
+        try:
+            response = await proxy._forward_response(
+                "https://provider.example/v1/chat/completions",
+                {},
+                body,
+                provider="openai",
+                request_id="request-json",
+            )
+            event = proxy._usage_ledger.get("request-json")
+            assert response.status_code == 200
+            assert event is not None
+            assert event.usage == TokenUsage(
+                uncached_input_tokens=20,
+                cache_read_tokens=80,
+                output_tokens=7,
+            )
+            assert event.cost_micro_usd > 0
+            assert proxy._cache_router.stats()["observed_hits"] == 1
+        finally:
+            await proxy._client.aclose()
+            proxy._usage_ledger.close()
 
-    proxy = _proxy()
-    proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
-    body = {
-        "model": "gpt-current",
-        "messages": [
-            {"role": "system", "content": "stable policy"},
-            {"role": "user", "content": "answer this"},
-        ],
-    }
-    try:
-        response = await proxy._forward_response(
-            "https://provider.example/v1/chat/completions",
-            {},
-            body,
-            provider="openai",
-            request_id="request-json",
-        )
-        event = proxy._usage_ledger.get("request-json")
-        assert response.status_code == 200
-        assert event is not None
-        assert event.usage == TokenUsage(
-            uncached_input_tokens=20,
-            cache_read_tokens=80,
-            output_tokens=7,
-        )
-        assert event.cost_micro_usd > 0
-        assert proxy._cache_router.stats()["observed_hits"] == 1
-    finally:
-        await proxy._client.aclose()
-        proxy._usage_ledger.close()
+    asyncio.run(run())
 
-
-@pytest.mark.asyncio
-async def test_live_sse_forward_records_terminal_usage_without_rewriting_bytes() -> None:
-    transcript = (
-        b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
-        b'data: {"usage":{"prompt_tokens":120,"completion_tokens":9,'
-        b'"prompt_tokens_details":{"cached_tokens":100}}}\n\n'
-        b"data: [DONE]\n\n"
-    )
-
-    async def upstream(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            headers={"content-type": "text/event-stream"},
-            content=transcript,
+def test_live_sse_forward_records_terminal_usage_without_rewriting_bytes() -> None:
+    async def run() -> None:
+        transcript = (
+            b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+            b'data: {"usage":{"prompt_tokens":120,"completion_tokens":9,'
+            b'"prompt_tokens_details":{"cached_tokens":100}}}\n\n'
+            b"data: [DONE]\n\n"
         )
+    
+        async def upstream(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=transcript,
+            )
+    
+        proxy = _proxy()
+        proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        body = {
+            "model": "gpt-current",
+            "stream": True,
+            "messages": [
+                {"role": "system", "content": "stable policy"},
+                {"role": "user", "content": "stream this"},
+            ],
+        }
+        try:
+            response = await proxy._stream_response(
+                "https://provider.example/v1/chat/completions",
+                {},
+                body,
+                provider="openai",
+                request_id="request-stream",
+            )
+            forwarded = b"".join(
+                [chunk async for chunk in response.body_iterator]
+            )
+            event = proxy._usage_ledger.get("request-stream")
+            assert forwarded == transcript
+            assert event is not None
+            assert event.usage.cache_read_tokens == 100
+            assert event.usage.output_tokens == 9
+        finally:
+            await proxy._client.aclose()
+            proxy._usage_ledger.close()
 
-    proxy = _proxy()
-    proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
-    body = {
-        "model": "gpt-current",
-        "stream": True,
-        "messages": [
-            {"role": "system", "content": "stable policy"},
-            {"role": "user", "content": "stream this"},
-        ],
-    }
-    try:
-        response = await proxy._stream_response(
-            "https://provider.example/v1/chat/completions",
-            {},
-            body,
-            provider="openai",
-            request_id="request-stream",
-        )
-        forwarded = b"".join(
-            [chunk async for chunk in response.body_iterator]
-        )
-        event = proxy._usage_ledger.get("request-stream")
-        assert forwarded == transcript
-        assert event is not None
-        assert event.usage.cache_read_tokens == 100
-        assert event.usage.output_tokens == 9
-    finally:
-        await proxy._client.aclose()
-        proxy._usage_ledger.close()
-
+    asyncio.run(run())
 
 def test_cache_economics_keep_a_large_warm_prefix_on_current_model() -> None:
     proxy = _proxy()
@@ -253,39 +255,41 @@ def test_usage_ledger_survives_reopen(tmp_path) -> None:
         assert json.loads(json.dumps(reopened.summary()))["requests"] == 1
 
 
-@pytest.mark.asyncio
-async def test_duplicate_provider_observation_is_idempotent_everywhere() -> None:
-    proxy = _proxy()
-    body = {
-        "model": "gpt-current",
-        "messages": [
-            {"role": "system", "content": "stable policy"},
-            {"role": "user", "content": "answer this"},
-        ],
-    }
-    payload = {
-        "usage": {
-            "prompt_tokens": 100,
-            "completion_tokens": 7,
-            "prompt_tokens_details": {"cached_tokens": 80},
+def test_duplicate_provider_observation_is_idempotent_everywhere() -> None:
+    async def run() -> None:
+        proxy = _proxy()
+        body = {
+            "model": "gpt-current",
+            "messages": [
+                {"role": "system", "content": "stable policy"},
+                {"role": "user", "content": "answer this"},
+            ],
         }
-    }
-    try:
-        await proxy._observe_json_usage(
-            body=body,
-            provider="openai",
-            request_id="duplicate-request",
-            payload=payload,
-        )
-        await proxy._observe_json_usage(
-            body=body,
-            provider="openai",
-            request_id="duplicate-request",
-            payload=payload,
-        )
+        payload = {
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 7,
+                "prompt_tokens_details": {"cached_tokens": 80},
+            }
+        }
+        try:
+            await proxy._observe_json_usage(
+                body=body,
+                provider="openai",
+                request_id="duplicate-request",
+                payload=payload,
+            )
+            await proxy._observe_json_usage(
+                body=body,
+                provider="openai",
+                request_id="duplicate-request",
+                payload=payload,
+            )
+    
+            assert proxy._usage_ledger.summary()["requests"] == 1
+            assert proxy._usage_recorded == 1
+            assert proxy._cache_router.stats()["observed_hits"] == 1
+        finally:
+            proxy._usage_ledger.close()
 
-        assert proxy._usage_ledger.summary()["requests"] == 1
-        assert proxy._usage_recorded == 1
-        assert proxy._cache_router.stats()["observed_hits"] == 1
-    finally:
-        proxy._usage_ledger.close()
+    asyncio.run(run())
