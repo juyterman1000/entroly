@@ -238,6 +238,10 @@ class CacheAwareRouter:
         timestamp = time.time() if now is None else float(now)
         choices = list(candidates)
         by_model = {candidate.model: candidate for candidate in choices}
+        if len(by_model) != len(choices):
+            raise ValueError(
+                "candidate model identifiers must be unique across providers"
+            )
         if current_model not in by_model:
             raise ValueError("current_model must be included in candidates")
         current = by_model[current_model]
@@ -265,7 +269,11 @@ class CacheAwareRouter:
         if not eligible:
             raise RuntimeError("no eligible routing candidates")
         if provider_failed:
-            eligible = [candidate for candidate in eligible if candidate.model != current_model]
+            eligible = [
+                candidate
+                for candidate in eligible
+                if candidate.provider != current.provider
+            ]
             if not eligible:
                 raise RuntimeError("provider failed and no failover candidate is eligible")
 
