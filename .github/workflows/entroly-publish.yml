@@ -87,7 +87,7 @@ jobs:
 
   publish-pypi:
     needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -104,10 +104,13 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.inputs.release_version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#entroly-v}"
           else
-            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update version in pyproject.toml
         run: |
@@ -126,7 +129,7 @@ jobs:
 
   publish-npm:
     needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -153,10 +156,13 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.inputs.release_version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#entroly-v}"
           else
-            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update package.json version
         working-directory: entroly-wasm
@@ -178,7 +184,7 @@ jobs:
 
   publish-npm-mcp:
     needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -193,10 +199,13 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.inputs.release_version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#entroly-v}"
           else
-            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update package.json version
         working-directory: entroly/npm
@@ -218,7 +227,7 @@ jobs:
 
   publish-npm-alias:
     needs: [build-and-push, quality-gate, publish-npm]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -233,10 +242,13 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            echo "VERSION=${{ github.event.inputs.release_version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.inputs.release_version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#entroly-v}"
           else
-            echo "VERSION=${GITHUB_REF_NAME#entroly-v}" >> "$GITHUB_OUTPUT"
+            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update package.json version
         working-directory: entroly/npm-alias
@@ -258,7 +270,7 @@ jobs:
 
   github-release:
     needs: [quality-gate, publish-pypi, publish-npm, publish-npm-mcp, publish-npm-alias]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '')
+    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -275,15 +287,18 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
             VERSION="${{ github.event.inputs.release_version }}"
             TAG="entroly-v${VERSION}"
-          else
+          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
             VERSION="${GITHUB_REF_NAME#entroly-v}"
             TAG="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+            TAG="entroly-v${VERSION}"
           fi
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "Release ${TAG} already exists; skipping."
           else
             gh release create "${TAG}" \
               --title "v${VERSION}" \
-              --verify-tag \
+              --target "${GITHUB_SHA}" \
               --generate-notes
           fi
