@@ -501,6 +501,51 @@ class UsageLedger:
             metadata=json.loads(row["metadata_json"]),
         )
 
+    def record_usage(
+        self,
+        *,
+        request_id: str,
+        provider: str,
+        model: str,
+        usage: TokenUsage,
+        pricing: UsagePricing | None,
+        occurred_at: float | None = None,
+        team: str = "",
+        tool: str = "",
+        project: str = "",
+        conversation_id: str = "",
+        metadata: Mapping[str, Any] | None = None,
+    ) -> UsageEvent:
+        if pricing is None:
+            cost = 0
+            savings = 0
+            pricing_source = f"unpriced:{provider.lower()}:{model}"
+        else:
+            cost, savings = price_usage(usage, pricing)
+            pricing_source = pricing.source
+        event = UsageEvent(
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            usage=usage,
+            cost_micro_usd=cost,
+            cache_savings_micro_usd=savings,
+            occurred_at=time.time() if occurred_at is None else occurred_at,
+            team=team,
+            tool=tool,
+            project=project,
+            conversation_id=conversation_id,
+            pricing_source=pricing_source,
+            metadata=dict(metadata or {}),
+        )
+        inserted = self.record(event)
+        if inserted:
+            return event
+        existing = self.get(request_id)
+        if existing is None:
+            raise RuntimeError("idempotent usage record is unavailable")
+        return existing
+
     def record_provider_payload(
         self,
         *,
@@ -517,29 +562,19 @@ class UsageLedger:
         metadata: Mapping[str, Any] | None = None,
     ) -> UsageEvent:
         usage = parse_provider_usage(provider, payload)
-        cost, savings = price_usage(usage, pricing)
-        event = UsageEvent(
+        return self.record_usage(
             request_id=request_id,
             provider=provider,
             model=model,
             usage=usage,
-            cost_micro_usd=cost,
-            cache_savings_micro_usd=savings,
-            occurred_at=time.time() if occurred_at is None else occurred_at,
+            pricing=pricing,
+            occurred_at=occurred_at,
             team=team,
             tool=tool,
             project=project,
             conversation_id=conversation_id,
-            pricing_source=pricing.source,
-            metadata=dict(metadata or {}),
+            metadata=metadata,
         )
-        inserted = self.record(event)
-        if inserted:
-            return event
-        existing = self.get(request_id)
-        if existing is None:
-            raise RuntimeError("idempotent usage record is unavailable")
-        return existing
 
     def summary(self, **filters: str) -> dict[str, int | float]:
         unknown = set(filters) - self._FILTER_COLUMNS
@@ -564,7 +599,11 @@ class UsageLedger:
                     COALESCE(SUM(output_tokens), 0) AS output_tokens,
                     COALESCE(SUM(cost_micro_usd), 0) AS cost_micro_usd,
                     COALESCE(SUM(cache_savings_micro_usd), 0)
-                        AS cache_savings_micro_usd
+                        AS cache_savings_micro_usd,
+                    COALESCE(SUM(
+                        CASE WHEN pricing_source LIKE 'unpriced:%'
+                        THEN 1 ELSE 0 END
+                    ), 0) AS unpriced_requests
                 FROM usage_events
                 {where}
                 """,
