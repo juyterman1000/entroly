@@ -66,6 +66,7 @@ from .control_plane import (
     plan_request,
     stable_request_fingerprint,
 )
+from .provider_policy import GatewayRedactionPolicy
 from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
@@ -1019,6 +1020,13 @@ class PromptCompilerProxy:
         self._cache_align_enabled = os.environ.get("ENTROLY_CACHE_ALIGN", "1") != "0"
         self._cache_aligner = CacheAligner() if self._cache_align_enabled else None
 
+        # Optional enterprise outbound policy. It is applied to the final JSON
+        # payload immediately before transport, including bypass/catch-all paths.
+        self._gateway_redaction = GatewayRedactionPolicy(
+            enabled=os.environ.get("ENTROLY_GATEWAY_REDACTION", "0").lower()
+            in {"1", "true", "yes", "on"}
+        )
+
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
         self._last_excluded_fragments: list = []  # Top rejected candidates for /explain
@@ -1400,6 +1408,22 @@ class PromptCompilerProxy:
             status_code=400,
         )
 
+    def _apply_outbound_redaction(
+        self,
+        body: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Apply the final outbound policy and emit value-free audit headers."""
+        if not self._gateway_redaction.enabled:
+            return body, {}
+        redacted, receipt = self._gateway_redaction.redact_value(body)
+        if not isinstance(redacted, dict):
+            raise TypeError("gateway redaction must preserve the JSON object shape")
+        headers = {
+            "X-Entroly-Redaction": "changed" if receipt.changed else "clean",
+            "X-Entroly-Redaction-Count": str(len(receipt.findings)),
+        }
+        return redacted, headers
+
     async def handle_proxy(self, request: Request) -> StreamingResponse | JSONResponse:
         """Main proxy handler — intercept, optimize, forward.
 
@@ -1424,6 +1448,14 @@ class PromptCompilerProxy:
         try:
             body = json.loads(body_bytes)
         except (json.JSONDecodeError, UnicodeDecodeError):
+            if self._gateway_redaction.enabled:
+                return JSONResponse(
+                    {
+                        "error": "outbound_redaction_requires_json",
+                        "detail": "Enterprise redaction cannot inspect a non-JSON payload.",
+                    },
+                    status_code=415,
+                )
             # Not JSON — forward raw (e.g. health checks hitting wrong path)
             return await self._forward_raw(request, body_bytes)
 
@@ -1494,6 +1526,8 @@ class PromptCompilerProxy:
 
         # Gap #28: Bypass mode — forward unmodified, no optimization
         if self._bypass:
+            body, redaction_headers = self._apply_outbound_redaction(body)
+            control_headers.update(redaction_headers)
             with self._stats_lock:
                 self._requests_bypassed += 1
             target_url = self._resolve_target(provider, path)
@@ -1907,6 +1941,9 @@ class PromptCompilerProxy:
         # provider compatibility cleanup even when RAVS did not swap models.
         if provider == "anthropic":
             body = strip_anthropic_unsupported_params(body)
+
+        body, redaction_headers = self._apply_outbound_redaction(body)
+        control_headers.update(redaction_headers)
 
         try:
             control_audit = audit_request_transform(
@@ -4484,6 +4521,11 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse({"error": "invalid request body"}, status_code=400)
 
+    if isinstance(body, dict):
+        body, _redaction_headers = proxy._apply_outbound_redaction(body)
+    else:
+        _redaction_headers = {}
+
     # Re-detect provider with body for model-name-based detection
     provider = detect_provider(request.url.path, headers, body if isinstance(body, dict) else None)
     target_url = proxy._resolve_target(provider, request.url.path)
@@ -4505,10 +4547,12 @@ async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
             return JSONResponse(
                 content=response.json(),
                 status_code=response.status_code,
+                headers=_redaction_headers,
             )
         return JSONResponse(
             content={"data": response.text},
             status_code=response.status_code,
+            headers=_redaction_headers,
         )
     except Exception as e:
         return JSONResponse(
