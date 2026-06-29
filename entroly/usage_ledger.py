@@ -99,6 +99,84 @@ class UsagePricing:
 
 
 @dataclass(frozen=True, slots=True)
+class UsagePricingCatalog:
+    """Validated model pricing keyed by provider:model."""
+
+    entries: Mapping[str, UsagePricing]
+    source: str
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        default_source: str = "explicit-catalog",
+    ) -> "UsagePricingCatalog":
+        source = str(payload.get("source") or default_source).strip()
+        if not source:
+            raise ValueError("pricing catalog source is required")
+        models = payload.get("models")
+        if not isinstance(models, Mapping) or not models:
+            raise ValueError("pricing catalog requires a non-empty models mapping")
+
+        entries: dict[str, UsagePricing] = {}
+        for raw_key, raw_rates in models.items():
+            key = str(raw_key).strip()
+            provider, separator, model = key.partition(":")
+            if not separator or not provider or not model:
+                raise ValueError(
+                    "pricing keys must use the provider:model form"
+                )
+            if not isinstance(raw_rates, Mapping):
+                raise ValueError(f"pricing entry {key!r} must be an object")
+            required = {
+                "input_per_million",
+                "output_per_million",
+                "cache_read_per_million",
+            }
+            missing = required - set(raw_rates)
+            if missing:
+                raise ValueError(
+                    f"pricing entry {key!r} is missing {sorted(missing)}"
+                )
+            normalized_key = f"{provider.lower()}:{model}"
+            if normalized_key in entries:
+                raise ValueError(f"duplicate pricing entry {normalized_key!r}")
+            entries[normalized_key] = UsagePricing.from_values(
+                input_per_million=raw_rates["input_per_million"],
+                output_per_million=raw_rates["output_per_million"],
+                cache_read_per_million=raw_rates["cache_read_per_million"],
+                cache_write_per_million=raw_rates.get(
+                    "cache_write_per_million"
+                ),
+                source=f"{source}:{normalized_key}",
+            )
+        return cls(entries=entries, source=source)
+
+    @classmethod
+    def from_file(cls, path: str | Path) -> "UsagePricingCatalog":
+        catalog_path = Path(path)
+        try:
+            payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"cannot load pricing catalog {catalog_path}: {exc}"
+            ) from exc
+        if not isinstance(payload, Mapping):
+            raise ValueError("pricing catalog root must be an object")
+        return cls.from_mapping(
+            payload,
+            default_source=f"file:{catalog_path}",
+        )
+
+    def resolve(self, provider: str, model: str) -> UsagePricing | None:
+        provider_key = provider.lower().strip()
+        return self.entries.get(
+            f"{provider_key}:{model}"
+        ) or self.entries.get(f"{provider_key}:*")
+
+
+@dataclass(frozen=True, slots=True)
 class UsageEvent:
     request_id: str
     provider: str
@@ -128,6 +206,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
     raw = payload.get("usage")
     if not isinstance(raw, Mapping):
         raw = payload.get("usage_metadata")
+    if not isinstance(raw, Mapping):
+        raw = payload.get("usageMetadata")
     if not isinstance(raw, Mapping):
         raw = payload
 
@@ -167,6 +247,76 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     raise ValueError(f"unsupported provider usage format: {provider!r}")
+
+
+def parse_stream_usage(
+    provider: str,
+    payload: bytes | str,
+) -> TokenUsage | None:
+    """Extract cumulative provider usage from an SSE transcript.
+
+    Providers split usage across different events. Component-wise maxima merge
+    cumulative counters without double-counting repeated terminal frames.
+    """
+    text = (
+        payload.decode("utf-8", errors="replace")
+        if isinstance(payload, bytes)
+        else payload
+    )
+    aggregate = TokenUsage()
+    found = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("data:"):
+            continue
+        encoded = stripped[5:].strip()
+        if not encoded or encoded == "[DONE]":
+            continue
+        try:
+            event = json.loads(encoded)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, Mapping):
+            continue
+
+        candidates: list[Mapping[str, Any]] = []
+        if isinstance(event.get("usage"), Mapping):
+            candidates.append({"usage": event["usage"]})
+        if isinstance(event.get("usage_metadata"), Mapping):
+            candidates.append({"usage_metadata": event["usage_metadata"]})
+        if isinstance(event.get("usageMetadata"), Mapping):
+            candidates.append({"usageMetadata": event["usageMetadata"]})
+        for container_name in ("message", "response"):
+            container = event.get(container_name)
+            if isinstance(container, Mapping) and isinstance(
+                container.get("usage"), Mapping
+            ):
+                candidates.append({"usage": container["usage"]})
+
+        for candidate in candidates:
+            usage = parse_provider_usage(provider, candidate)
+            aggregate = TokenUsage(
+                uncached_input_tokens=max(
+                    aggregate.uncached_input_tokens,
+                    usage.uncached_input_tokens,
+                ),
+                cache_read_tokens=max(
+                    aggregate.cache_read_tokens,
+                    usage.cache_read_tokens,
+                ),
+                cache_write_tokens=max(
+                    aggregate.cache_write_tokens,
+                    usage.cache_write_tokens,
+                ),
+                output_tokens=max(
+                    aggregate.output_tokens,
+                    usage.output_tokens,
+                ),
+            )
+            found = True
+
+    return aggregate if found else None
 
 
 def _micro_cost(tokens: int, rate_per_million: Decimal) -> int:
@@ -286,7 +436,70 @@ class UsageLedger:
                 """,
                 row,
             )
-            return cursor.rowcount == 1
+            if cursor.rowcount == 1:
+                return True
+            existing = self._conn.execute(
+                "SELECT * FROM usage_events WHERE request_id = ?",
+                (event.request_id,),
+            ).fetchone()
+            if existing is None:
+                raise RuntimeError("idempotent usage insert lost its stored row")
+            identity = (
+                existing["provider"],
+                existing["model"],
+                existing["uncached_input_tokens"],
+                existing["cache_read_tokens"],
+                existing["cache_write_tokens"],
+                existing["output_tokens"],
+                existing["cost_micro_usd"],
+                existing["cache_savings_micro_usd"],
+                existing["pricing_source"],
+            )
+            proposed = (
+                event.provider,
+                event.model,
+                event.usage.uncached_input_tokens,
+                event.usage.cache_read_tokens,
+                event.usage.cache_write_tokens,
+                event.usage.output_tokens,
+                event.cost_micro_usd,
+                event.cache_savings_micro_usd,
+                event.pricing_source,
+            )
+            if identity != proposed:
+                raise ValueError(
+                    "request_id already has different provider usage"
+                )
+            return False
+
+    def get(self, request_id: str) -> UsageEvent | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM usage_events WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return UsageEvent(
+            request_id=row["request_id"],
+            provider=row["provider"],
+            model=row["model"],
+            usage=TokenUsage(
+                uncached_input_tokens=row["uncached_input_tokens"],
+                cache_read_tokens=row["cache_read_tokens"],
+                cache_write_tokens=row["cache_write_tokens"],
+                output_tokens=row["output_tokens"],
+            ),
+            cost_micro_usd=row["cost_micro_usd"],
+            cache_savings_micro_usd=row["cache_savings_micro_usd"],
+            occurred_at=row["occurred_at"],
+            team=row["team"],
+            tool=row["tool"],
+            project=row["project"],
+            conversation_id=row["conversation_id"],
+            pricing_source=row["pricing_source"],
+            metadata=json.loads(row["metadata_json"]),
+        )
 
     def record_provider_payload(
         self,
@@ -320,8 +533,13 @@ class UsageLedger:
             pricing_source=pricing.source,
             metadata=dict(metadata or {}),
         )
-        self.record(event)
-        return event
+        inserted = self.record(event)
+        if inserted:
+            return event
+        existing = self.get(request_id)
+        if existing is None:
+            raise RuntimeError("idempotent usage record is unavailable")
+        return existing
 
     def summary(self, **filters: str) -> dict[str, int | float]:
         unknown = set(filters) - self._FILTER_COLUMNS
@@ -375,6 +593,8 @@ __all__ = [
     "UsageEvent",
     "UsageLedger",
     "UsagePricing",
+    "UsagePricingCatalog",
     "parse_provider_usage",
+    "parse_stream_usage",
     "price_usage",
 ]
