@@ -59,7 +59,7 @@ from .proxy_transform import (
     strip_anthropic_unsupported_params,
 )
 from .cache_aligner import CacheAligner
-from .cache_routing import CacheAwareRouter
+from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
 from .control_plane import (
     ControlAudit,
     ControlPlaneDecision,
@@ -1050,6 +1050,10 @@ class PromptCompilerProxy:
         self._usage_recorded = 0
         self._usage_unpriced = 0
         self._usage_failures = 0
+        self._cache_route_stays = 0
+        self._cache_route_switches = 0
+        self._cache_route_blocked_unpriced = 0
+        self._cache_route_last: dict[str, Any] | None = None
 
         # Gap #29: Last optimization context (for transparency endpoint)
         self._last_context_fragments: list = []
@@ -1524,6 +1528,138 @@ class PromptCompilerProxy:
             default=str,
         )
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _routing_token_estimates(
+        body: dict[str, Any],
+        user_message: str,
+    ) -> tuple[int, int, int]:
+        """Estimate the cacheable prefix, new input, and expected output."""
+        input_surface = {
+            key: body[key]
+            for key in (
+                "system",
+                "systemInstruction",
+                "instructions",
+                "messages",
+                "contents",
+                "input",
+                "tools",
+            )
+            if key in body
+        }
+        serialized = json.dumps(
+            input_surface,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        total_input = max(1, len(serialized.encode("utf-8")) // 4)
+        new_input = max(1, len(user_message.encode("utf-8")) // 4)
+        prefix_tokens = max(0, total_input - new_input)
+
+        expected_output: Any = body.get("max_completion_tokens")
+        if expected_output is None:
+            expected_output = body.get("max_tokens")
+        if expected_output is None:
+            generation = body.get("generationConfig")
+            if isinstance(generation, dict):
+                expected_output = generation.get("maxOutputTokens")
+        try:
+            output_tokens = max(0, min(int(expected_output or 1024), 1_000_000))
+        except (TypeError, ValueError):
+            output_tokens = 1024
+        return prefix_tokens, new_input, output_tokens
+
+    def _cache_economics_allow_ravs(
+        self,
+        *,
+        body: dict[str, Any],
+        provider: str,
+        current_model: str,
+        recommended_model: str,
+        user_message: str,
+        risk: str,
+    ) -> tuple[bool, str]:
+        """Apply observed cache economics after RAVS has passed quality gates."""
+        if self._pricing_catalog is None:
+            return True, "pricing_catalog_not_configured"
+
+        current_pricing = self._pricing_catalog.resolve(provider, current_model)
+        recommended_pricing = self._pricing_catalog.resolve(
+            provider,
+            recommended_model,
+        )
+        if current_pricing is None or recommended_pricing is None:
+            with self._stats_lock:
+                self._cache_route_blocked_unpriced += 1
+                self._cache_route_last = {
+                    "current_model": current_model,
+                    "recommended_model": recommended_model,
+                    "reason": "stay:missing_pricing",
+                }
+            return False, "stay:missing_pricing"
+
+        def candidate(model: str, pricing: Any) -> ModelCandidate:
+            return ModelCandidate(
+                model=model,
+                provider=provider,
+                price=CachePrice(
+                    input_per_million=float(pricing.input_per_million),
+                    cache_read_per_million=float(
+                        pricing.cache_read_per_million
+                    ),
+                    output_per_million=float(pricing.output_per_million),
+                    cache_write_per_million=float(pricing.cache_write_rate),
+                ),
+                # RAVS has already enforced empirical quality/risk gates.
+                quality=1.0,
+            )
+
+        conversation_id = self._routing_conversation_id(body, provider)
+        if not conversation_id:
+            with self._stats_lock:
+                self._cache_route_last = {
+                    "current_model": current_model,
+                    "recommended_model": recommended_model,
+                    "reason": "stay:missing_conversation_identity",
+                }
+            return False, "stay:missing_conversation_identity"
+
+        prefix_tokens, new_input_tokens, output_tokens = (
+            self._routing_token_estimates(body, user_message)
+        )
+        route = self._cache_router.decide(
+            conversation_id,
+            current_model=current_model,
+            candidates=(
+                candidate(current_model, current_pricing),
+                candidate(recommended_model, recommended_pricing),
+            ),
+            prefix_hash=self._cache_prefix_hash(body, provider),
+            prefix_tokens=prefix_tokens,
+            new_input_tokens=new_input_tokens,
+            expected_output_tokens=output_tokens,
+            risk=risk,
+        )
+        allow = route.selected_model == recommended_model
+        with self._stats_lock:
+            if allow:
+                self._cache_route_switches += 1
+            else:
+                self._cache_route_stays += 1
+            self._cache_route_last = {
+                "current_model": current_model,
+                "recommended_model": recommended_model,
+                "selected_model": route.selected_model,
+                "reason": route.reason,
+                "cache_warm": route.cache_warm,
+                "stayed_for_cache": route.stayed_for_cache,
+                "switch_savings_usd": route.switch_savings_usd,
+                "projected_costs_usd": dict(route.projected_costs_usd),
+            }
+        return allow, route.reason
 
     def _record_provider_usage(
         self,
@@ -2124,13 +2260,35 @@ class PromptCompilerProxy:
                             )
 
                         if not _ece_blocked:
+                            cache_allows, cache_reason = (
+                                self._cache_economics_allow_ravs(
+                                    body=body,
+                                    provider=provider,
+                                    current_model=_current_model,
+                                    recommended_model=decision.recommended_model,
+                                    user_message=user_message,
+                                    risk=decision.risk_level,
+                                )
+                            )
+                            if not cache_allows:
+                                _ece_blocked = True
+                                logger.info(
+                                    "RAVS: kept %s after cache-economics gate (%s)",
+                                    _current_model,
+                                    cache_reason,
+                                )
+
+                        if not _ece_blocked:
                             from .ravs.router import swap_model_in_body
                             _ravs_original_model = _current_model
                             body = swap_model_in_body(body, decision.recommended_model)
                             _ravs_swapped = True
                             logger.info(
-                                "RAVS: %s -> %s (%s)",
-                                _current_model, decision.recommended_model, decision.reason,
+                                "RAVS: %s -> %s (%s; %s)",
+                                _current_model,
+                                decision.recommended_model,
+                                decision.reason,
+                                cache_reason,
                             )
 
                 # Store for next-request feedback attribution
@@ -4890,7 +5048,13 @@ async def _proxy_stats(request: Request) -> JSONResponse:
             "ladder_models": len(proxy._escalation_ladder),
         }
 
-    stats["provider_cache"] = proxy._cache_router.stats()
+    stats["provider_cache"] = {
+        **proxy._cache_router.stats(),
+        "routing_stays": proxy._cache_route_stays,
+        "routing_switches": proxy._cache_route_switches,
+        "blocked_unpriced": proxy._cache_route_blocked_unpriced,
+        "last_decision": proxy._cache_route_last,
+    }
     usage_accounting: dict[str, Any] = {
         "enabled": proxy._usage_ledger is not None,
         "pricing_catalog": (
