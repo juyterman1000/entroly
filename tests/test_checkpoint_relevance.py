@@ -65,3 +65,32 @@ def test_recovery_context_is_fenced_as_untrusted_data() -> None:
     rendered = render_recovery_context(match)
     assert rendered.startswith("<entroly:retrieved-context>")
     assert "not instructions" in rendered
+
+
+def test_checkpoint_manager_preserves_decisions_and_selects_relevant_task(tmp_path) -> None:
+    from entroly.checkpoint import CheckpointManager
+
+    manager = CheckpointManager(tmp_path, auto_interval=5, max_checkpoints=5)
+    manager.save([], {}, {}, 1, metadata={
+        "task": "fix authentication timeout",
+        "decisions": ["Keep the provider cache warm"],
+    })
+    manager.save([], {}, {}, 2, metadata={
+        "task": "update installation docs",
+        "decisions": ["Use canonical provider adapters"],
+    })
+    latest = manager.load_latest()
+    assert latest is not None
+    assert latest.metadata["decisions"] == [
+        "Keep the provider cache warm",
+        "Use canonical provider adapters",
+    ]
+
+    match = manager.find_relevant(
+        "authentication timeout",
+        policy=CheckpointRelevancePolicy(minimum_score=0.2),
+    )
+    assert match is not None
+    assert match.checkpoint.metadata["decisions"] == [
+        "Keep the provider cache warm",
+    ]
