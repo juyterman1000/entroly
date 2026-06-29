@@ -91,11 +91,31 @@ class CacheRoutingPolicy:
     default_ttl_seconds: float = 300.0
     provider_ttl_seconds: Mapping[str, float] = field(default_factory=dict)
     expected_turns: int = 3
+    projected_turn_interval_seconds: float = 60.0
     switch_hysteresis_usd: float = 0.001
     max_quality_drop_low: float = 0.05
     max_quality_drop_standard: float = 0.02
     max_quality_drop_high: float = 0.0
     max_leases: int = 10_000
+
+    def __post_init__(self) -> None:
+        if self.default_ttl_seconds < 0:
+            raise ValueError("default TTL must be non-negative")
+        if self.expected_turns < 1:
+            raise ValueError("expected_turns must be at least one")
+        if self.projected_turn_interval_seconds < 0:
+            raise ValueError("projected turn interval must be non-negative")
+        if self.switch_hysteresis_usd < 0:
+            raise ValueError("switch hysteresis must be non-negative")
+        if self.max_leases < 1:
+            raise ValueError("max_leases must be at least one")
+        drops = (
+            self.max_quality_drop_low,
+            self.max_quality_drop_standard,
+            self.max_quality_drop_high,
+        )
+        if any(drop < 0 or drop > 1 for drop in drops):
+            raise ValueError("quality drops must be between zero and one")
 
     def ttl_for(self, provider: str) -> float:
         ttl = float(self.provider_ttl_seconds.get(provider, self.default_ttl_seconds))
@@ -177,16 +197,20 @@ class CacheAwareRouter:
         candidate: ModelCandidate,
         *,
         prefix_tokens: int,
+        cached_prefix_tokens: int,
         new_input_tokens: int,
         output_tokens: int,
-        warm: bool,
     ) -> float:
+        """Price cached and uncached prefix portions separately."""
         price = candidate.price
-        prefix_rate = price.cache_read_per_million if warm else price.write_rate
+        prefix = max(0, int(prefix_tokens))
+        cached = min(prefix, max(0, int(cached_prefix_tokens)))
+        uncached_prefix = prefix - cached
         billed = (
-            prefix_tokens * prefix_rate
-            + new_input_tokens * price.input_per_million
-            + output_tokens * price.output_per_million
+            cached * price.cache_read_per_million
+            + uncached_prefix * price.write_rate
+            + max(0, int(new_input_tokens)) * price.input_per_million
+            + max(0, int(output_tokens)) * price.output_per_million
         )
         return billed / 1_000_000.0
 
@@ -195,28 +219,32 @@ class CacheAwareRouter:
         candidate: ModelCandidate,
         *,
         prefix_tokens: int,
+        cached_prefix_tokens_now: int,
         new_input_tokens: int,
         output_tokens: int,
-        warm_now: bool,
         turns: int,
+        cache_reusable_between_turns: bool,
     ) -> float:
-        first = self._turn_cost(
+        """Project cost without inventing cache hits outside provider TTL."""
+        total = self._turn_cost(
             candidate,
             prefix_tokens=prefix_tokens,
+            cached_prefix_tokens=cached_prefix_tokens_now,
             new_input_tokens=new_input_tokens,
             output_tokens=output_tokens,
-            warm=warm_now,
         )
         if turns <= 1:
-            return first
-        subsequent = self._turn_cost(
+            return total
+
+        future_cached = prefix_tokens if cache_reusable_between_turns else 0
+        future = self._turn_cost(
             candidate,
             prefix_tokens=prefix_tokens,
+            cached_prefix_tokens=future_cached,
             new_input_tokens=new_input_tokens,
             output_tokens=output_tokens,
-            warm=True,
         )
-        return first + subsequent * (turns - 1)
+        return total + future * (turns - 1)
 
     def decide(
         self,
@@ -284,14 +312,21 @@ class CacheAwareRouter:
         ]
         if quality_eligible:
             eligible = quality_eligible
-        elif not provider_failed:
+        elif provider_failed:
+            raise RuntimeError(
+                "provider failed and no failover candidate satisfies the quality floor"
+            )
+        elif current in eligible:
             eligible = [current]
+        else:
+            raise RuntimeError("no available routing candidate satisfies the quality floor")
 
         with self._lock:
             lease = self._leases.get(conversation_id)
 
         projected: dict[str, float] = {}
         warm_by_model: dict[str, bool] = {}
+        cached_by_model: dict[str, int] = {}
         for candidate in eligible:
             warm = bool(
                 lease
@@ -302,14 +337,26 @@ class CacheAwareRouter:
                     now=timestamp,
                 )
             )
+            cached_now = (
+                min(max(0, prefix_tokens), lease.cached_prefix_tokens)
+                if warm and lease is not None
+                else 0
+            )
+            provider_ttl = self.policy.ttl_for(candidate.provider)
+            cache_reusable = (
+                provider_ttl > 0
+                and provider_ttl >= self.policy.projected_turn_interval_seconds
+            )
             warm_by_model[candidate.model] = warm
+            cached_by_model[candidate.model] = cached_now
             projected[candidate.model] = self._projected_cost(
                 candidate,
                 prefix_tokens=max(0, prefix_tokens),
+                cached_prefix_tokens_now=cached_now,
                 new_input_tokens=max(0, new_input_tokens),
                 output_tokens=max(0, expected_output_tokens),
-                warm_now=warm,
                 turns=turns,
+                cache_reusable_between_turns=cache_reusable,
             )
 
         best = min(
@@ -327,8 +374,13 @@ class CacheAwareRouter:
                 prefix_tokens=max(0, prefix_tokens),
                 new_input_tokens=max(0, new_input_tokens),
                 output_tokens=max(0, expected_output_tokens),
-                warm_now=False,
+                cached_prefix_tokens_now=0,
                 turns=turns,
+                cache_reusable_between_turns=(
+                    self.policy.ttl_for(current.provider) > 0
+                    and self.policy.ttl_for(current.provider)
+                    >= self.policy.projected_turn_interval_seconds
+                ),
             )
 
         savings = current_cost - projected[best.model]
