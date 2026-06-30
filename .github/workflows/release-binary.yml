@@ -12,6 +12,12 @@ on:
   push:
     tags:
       - 'entroly-v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag to attach binaries to
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       tag:
@@ -49,6 +55,20 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+            TAG="entroly-v${VERSION}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
       - name: Build entroly-rs (--features proxy)
         working-directory: entroly-core
         run: cargo build --release --bin entroly-rs --features proxy --target ${{ matrix.target }}
@@ -81,5 +101,5 @@ jobs:
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          tag_name: ${{ steps.release.outputs.tag }}
           files: dist/*

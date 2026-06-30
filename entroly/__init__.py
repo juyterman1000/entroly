@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.25"
+__version__ = "1.0.39"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -93,6 +93,83 @@ except ImportError:
 # SimHash dedup + knapsack DP selection.  Works on ANY CLI tool output.
 try:
     from .shell_codec import esc_compress, ESCResult  # noqa: F401
+except ImportError:
+    pass
+
+# ELC — Evidence-Locked Compression.
+# Compress around evidence, never through evidence: anchors, query matches,
+# outliers, omitted-span receipts, and JSON schema+examples.
+try:
+    from .evidence_locked_compression import (  # noqa: F401
+        CompressionReceipt,
+        CompressionResult,
+        OmittedSpan,
+        compress_evidence_locked,
+        compress_payload_messages,
+        detect_heavy_content_type,
+    )
+except ImportError:
+    pass
+
+# Optional native ELC fast-path adapter.
+try:
+    from .native_elc import compress_evidence_locked_fast, native_elc_available  # noqa: F401
+except ImportError:
+    pass
+
+# Compression Proxy — provider-light request payload compression surface.
+try:
+    from .compression_proxy import (  # noqa: F401
+        ProxyCompressionReceipt,
+        ProxyCompressionResult,
+        compress_proxy_payload,
+        compress_proxy_payload_from_env,
+    )
+except ImportError:
+    pass
+
+# Direct non-monkey-patch proxy integration helper.
+try:
+    from .compression_proxy_direct import apply_elc_to_proxy_body  # noqa: F401
+except ImportError:
+    pass
+
+# Compression Retrieval Store — local recoverability for omitted spans.
+try:
+    from .compression_retrieval_store import (  # noqa: F401
+        CompressionRetrievalStore,
+        StoredCompression,
+        StoredSpan,
+    )
+except ImportError:
+    pass
+
+# Compression dashboard and verification loop.
+try:
+    from .compression_dashboard import (  # noqa: F401
+        CompressionDashboard,
+        dashboard_from_proxy_receipts,
+        dashboard_from_store,
+    )
+    from .compression_verification_loop import (  # noqa: F401
+        VerificationLoopResult,
+        answer_with_retrieval_verification,
+    )
+except ImportError:
+    pass
+
+# Compression MCP server — focused MCP tools for omitted-span retrieval.
+try:
+    from .compression_mcp import create_compression_mcp_server  # noqa: F401
+except ImportError:
+    pass
+
+# Live HTTP proxy installer. Exported but intentionally not executed at import
+# time; the proxy entry path or embedding app must call it explicitly after
+# setting ENTROLY_COMPRESSION_PROXY_MODE=elc. Package imports must be side-effect
+# free for wheel builds, Docker quality gates, and downstream libraries.
+try:
+    from .compression_proxy_live import install_live_compression_proxy  # noqa: F401
 except ImportError:
     pass
 
@@ -172,6 +249,71 @@ try:
         Decision,
         ProviderPrice,
         clamp_injected_budget,
+    )
+except ImportError:
+    pass
+
+# Entroly Memory OS — public, dependency-free memory-control facade.
+# Gives users a clean product surface while the native Rust memory stack is
+# exposed more deeply over time.
+try:
+    from .memory import (  # noqa: F401
+        MemoryContext,
+        MemoryEntry,
+        MemoryOS,
+        MemorySafetyFinding,
+        MemorySafetyResult,
+        OmittedMemory,
+        SelectedMemory,
+    )
+except ImportError:
+    pass
+
+
+# Cache-aware gateway control plane: deterministic prefixes, provider cache
+# leases, capability-safe failover, real usage accounting, and harness budgets.
+try:
+    from .cache_routing import (  # noqa: F401
+        CacheAwareRouter,
+        CachePrice,
+        CacheRoutingDecision,
+        CacheRoutingPolicy,
+        ConversationCacheLease,
+        ModelCandidate,
+    )
+    from .gateway_control_plane import (  # noqa: F401
+        GatewayControlPlane,
+        GatewayExecutionPlan,
+    )
+    from .harness_budget import (  # noqa: F401
+        CodingHarnessBudgetController,
+        HarnessBudgetPlan,
+        SubagentAllocation,
+        SubagentBudgetAllocator,
+        SubagentDemand,
+    )
+    from .provider_policy import (  # noqa: F401
+        CanonicalGatewayRequest,
+        Capability,
+        FailoverPlan,
+        GatewayRedactionPolicy,
+        ProviderFailoverPlanner,
+        ProviderTarget,
+        RedactionReceipt,
+    )
+    from .stable_prefix import (  # noqa: F401
+        CanonicalPrefixBuilder,
+        PrefixSection,
+        StablePrompt,
+        conversation_anchor,
+    )
+    from .usage_ledger import (  # noqa: F401
+        TokenUsage,
+        UsageEvent,
+        UsageLedger,
+        UsagePricing,
+        parse_provider_usage,
+        price_usage,
     )
 except ImportError:
     pass
