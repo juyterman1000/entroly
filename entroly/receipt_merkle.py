@@ -10,6 +10,7 @@ from entroly.receipt_attestation import AttestationKey
 
 _LEAF = b"\x00"
 _NODE = b"\x01"
+_TREE_HEAD_DOMAIN = "entroly.receipt-tree-head.v1"
 
 
 def _sha(data: bytes) -> bytes:
@@ -26,6 +27,17 @@ def _node_hash(left: bytes, right: bytes) -> bytes:
 
 def receipt_leaf(receipt: dict[str, Any]) -> bytes:
     return leaf_hash(stable_json(receipt).encode("utf-8"))
+
+
+def _tree_head_message(tree_size: int, root_hash: str, timestamp: float) -> bytes:
+    return stable_json(
+        {
+            "domain": _TREE_HEAD_DOMAIN,
+            "root_hash": root_hash,
+            "timestamp": timestamp,
+            "tree_size": tree_size,
+        }
+    ).encode("utf-8")
 
 
 def _split(size: int) -> int:
@@ -74,6 +86,8 @@ def _rebuild(index: int, size: int, leaf: bytes, proof: list[bytes]) -> bytes:
 def verify_inclusion(index: int, size: int, leaf: bytes, proof: list[bytes], root: bytes) -> bool:
     if not 0 <= index < size:
         return False
+    if len(leaf) != 32 or len(root) != 32 or any(len(item) != 32 for item in proof):
+        return False
     try:
         return _rebuild(index, size, leaf, list(proof)) == root
     except (IndexError, ValueError):
@@ -82,9 +96,9 @@ def verify_inclusion(index: int, size: int, leaf: bytes, proof: list[bytes], roo
 
 def consistency_proof(leaves: list[bytes], old_size: int) -> list[bytes]:
     size = len(leaves)
-    if not 0 < old_size <= size:
+    if not 0 <= old_size <= size:
         raise ValueError("old_size must be in range")
-    if old_size == size:
+    if old_size in {0, size}:
         return []
     return _subproof(old_size, leaves, True)
 
@@ -102,10 +116,16 @@ def _subproof(old_size: int, leaves: list[bytes], on_old_path: bool) -> list[byt
 def verify_consistency(old_size: int, new_size: int, proof: list[bytes], old_root: bytes, new_root: bytes) -> bool:
     if old_size < 0 or new_size < 0 or old_size > new_size:
         return False
+    if len(old_root) != 32 or len(new_root) != 32 or any(len(item) != 32 for item in proof):
+        return False
+    if old_size == 0:
+        return (
+            old_root == _sha(b"")
+            and not proof
+            and (new_size != 0 or new_root == old_root)
+        )
     if old_size == new_size:
         return old_root == new_root and not proof
-    if old_size == 0:
-        return not proof
     path = list(proof)
     if old_size & (old_size - 1) == 0:
         path = [old_root] + path
@@ -144,7 +164,7 @@ class SignedTreeHead:
     timestamp: float
 
     def signing_message(self) -> bytes:
-        return f"{self.tree_size}|{self.root_hash}".encode()
+        return _tree_head_message(self.tree_size, self.root_hash, self.timestamp)
 
     def verify(self, *, public_key: str | None = None) -> bool:
         from cryptography.exceptions import InvalidSignature
@@ -154,7 +174,7 @@ class SignedTreeHead:
         try:
             Ed25519PublicKey.from_public_bytes(bytes.fromhex(self.public_key)).verify(bytes.fromhex(self.signature), self.signing_message())
             return True
-        except (InvalidSignature, ValueError):
+        except (InvalidSignature, TypeError, ValueError):
             return False
 
 
@@ -190,8 +210,15 @@ class ReceiptMerkleLog:
         if self._key is None:
             raise RuntimeError("a signing key is required")
         root_hex = self.root_hex()
-        message = f"{self.size}|{root_hex}".encode()
-        return SignedTreeHead(self.size, root_hex, self._key.sign(message), self._key.public_hex(), time.time())
+        timestamp = time.time()
+        message = _tree_head_message(self.size, root_hex, timestamp)
+        return SignedTreeHead(
+            self.size,
+            root_hex,
+            self._key.sign(message),
+            self._key.public_hex(),
+            timestamp,
+        )
 
 
 # Backward-friendly alias for the design package name.

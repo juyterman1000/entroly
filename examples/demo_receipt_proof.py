@@ -25,11 +25,14 @@ def main() -> None:
     witnesses = [ReceiptWitness(name=f"witness-{idx}") for idx in range(3)]
     signatures = tuple(w.cosign(head, operator_key=log.public_key) for w in witnesses)
     cosigned = CosignedTreeHead(head, signatures)
-    trusted = {w.witness_id for w in witnesses}
+    trusted = {w.witness_id: w.public_key for w in witnesses}
 
     print("receipt_id:", recorded.receipt_id)
     print("tree_size:", proof.tree_size)
-    print("proof_valid:", proof.verify(operator_public_key=log.public_key))
+    print(
+        "proof_valid:",
+        proof.verify(recorded.receipt, operator_public_key=log.public_key),
+    )
     print("witness_quorum_valid:", cosigned.verify(operator_key=log.public_key, trusted_witnesses=trusted, threshold=2))
 
 

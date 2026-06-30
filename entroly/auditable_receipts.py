@@ -1,22 +1,33 @@
 from __future__ import annotations
 
+import copy
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Iterable
 
 from entroly.context_receipts import run_receipt_pipeline
 from entroly.receipt_attestation import AttestationKey
 from entroly.receipt_disclosure import ReceiptCommitment
-from entroly.receipt_merkle import ReceiptMerkleLog, verify_inclusion
+from entroly.receipt_merkle import (
+    ReceiptMerkleLog,
+    SignedTreeHead,
+    receipt_leaf,
+    verify_inclusion,
+)
 
 
 @dataclass(frozen=True)
 class RecordedReceipt:
-    receipt: dict[str, Any]
+    _receipt: dict[str, Any]
     index: int
 
     @property
+    def receipt(self) -> dict[str, Any]:
+        return copy.deepcopy(self._receipt)
+
+    @property
     def receipt_id(self) -> str:
-        return str(self.receipt.get("receipt_id", ""))
+        return str(self._receipt.get("receipt_id", ""))
 
 
 @dataclass(frozen=True)
@@ -26,28 +37,35 @@ class ReceiptProof:
     audit_path: list[str]
     tree_size: int
     root_hash: str
+    timestamp: float
     operator_signature: str
     operator_public_key: str
 
-    def verify(self, *, operator_public_key: str | None = None) -> bool:
-        from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        if operator_public_key is not None and operator_public_key != self.operator_public_key:
-            return False
+    def verify(
+        self,
+        receipt: Mapping[str, Any],
+        *,
+        operator_public_key: str,
+    ) -> bool:
         try:
-            Ed25519PublicKey.from_public_bytes(bytes.fromhex(self.operator_public_key)).verify(
-                bytes.fromhex(self.operator_signature),
-                f"{self.tree_size}|{self.root_hash}".encode(),
+            if receipt_leaf(dict(receipt)).hex() != self.leaf_hex:
+                return False
+            head = SignedTreeHead(
+                tree_size=self.tree_size,
+                root_hash=self.root_hash,
+                signature=self.operator_signature,
+                public_key=self.operator_public_key,
+                timestamp=self.timestamp,
             )
-        except (InvalidSignature, ValueError):
+            return head.verify(public_key=operator_public_key) and verify_inclusion(
+                self.index,
+                self.tree_size,
+                bytes.fromhex(self.leaf_hex),
+                [bytes.fromhex(item) for item in self.audit_path],
+                bytes.fromhex(self.root_hash),
+            )
+        except (TypeError, ValueError):
             return False
-        return verify_inclusion(
-            self.index,
-            self.tree_size,
-            bytes.fromhex(self.leaf_hex),
-            [bytes.fromhex(item) for item in self.audit_path],
-            bytes.fromhex(self.root_hash),
-        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +74,7 @@ class ReceiptProof:
             "audit_path": list(self.audit_path),
             "tree_size": self.tree_size,
             "root_hash": self.root_hash,
+            "timestamp": self.timestamp,
             "operator_signature": self.operator_signature,
             "operator_public_key": self.operator_public_key,
         }
@@ -68,6 +87,7 @@ class ReceiptProof:
             audit_path=[str(item) for item in data.get("audit_path", [])],
             tree_size=int(data["tree_size"]),
             root_hash=str(data["root_hash"]),
+            timestamp=float(data["timestamp"]),
             operator_signature=str(data["operator_signature"]),
             operator_public_key=str(data["operator_public_key"]),
         )
@@ -107,8 +127,9 @@ class AuditableReceiptLog:
         return self.record_receipt(receipt)
 
     def record_receipt(self, receipt: dict[str, Any]) -> RecordedReceipt:
-        index = self._log.append(receipt)
-        return RecordedReceipt(receipt=receipt, index=index)
+        snapshot = copy.deepcopy(receipt)
+        index = self._log.append(snapshot)
+        return RecordedReceipt(_receipt=snapshot, index=index)
 
     def record_commitment(self, receipt: dict[str, Any]) -> tuple[RecordedReceipt, ReceiptCommitment]:
         commitment = ReceiptCommitment.from_receipt(receipt)
@@ -130,6 +151,7 @@ class AuditableReceiptLog:
             audit_path=[item.hex() for item in self._log.prove_inclusion(index)],
             tree_size=head.tree_size,
             root_hash=head.root_hash,
+            timestamp=head.timestamp,
             operator_signature=head.signature,
             operator_public_key=head.public_key,
         )

@@ -47,3 +47,17 @@ def test_consistency_false_for_different_old_root() -> None:
     leaves = _leaves(20)
     proof = consistency_proof(leaves, 7)
     assert not verify_consistency(7, 20, proof, leaf_hash(b"other"), merkle_root(leaves))
+
+
+def test_empty_tree_consistency_requires_the_canonical_empty_root() -> None:
+    leaves = _leaves(3)
+    proof = consistency_proof(leaves, 0)
+    assert proof == []
+    assert verify_consistency(0, 3, proof, merkle_root([]), merkle_root(leaves))
+    assert not verify_consistency(0, 3, proof, b"x" * 32, merkle_root(leaves))
+    assert not verify_consistency(0, 0, [], b"x" * 32, b"x" * 32)
+
+
+def test_inclusion_rejects_non_digest_proof_elements() -> None:
+    leaf = leaf_hash(b"leaf")
+    assert not verify_inclusion(0, 1, leaf, [b"short"], leaf)

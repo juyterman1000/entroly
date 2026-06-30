@@ -72,7 +72,9 @@ def receipt_atoms(receipt: dict[str, Any]) -> list[ProvenanceAtom]:
                     identifier=str(chunk.get("source_path") or chunk.get("chunk_id") or ""),
                     content_hash=str(chunk.get("fingerprint") or chunk.get("content_hash") or ""),
                     status="omitted",
-                    detail=str(chunk.get("reason") or "")[:160],
+                    detail=str(
+                        chunk.get("omission_reason") or chunk.get("reason") or ""
+                    )[:160],
                 )
             )
     return atoms
@@ -90,13 +92,16 @@ class AtomDisclosure:
     def verify(self, *, commitment_root: str | None = None) -> bool:
         if commitment_root is not None and commitment_root != self.commitment_root:
             return False
-        return verify_inclusion(
-            self.index,
-            self.tree_size,
-            _atom_leaf(self.atom, self.salt),
-            [bytes.fromhex(item) for item in self.audit_path],
-            bytes.fromhex(self.commitment_root),
-        )
+        try:
+            return verify_inclusion(
+                self.index,
+                self.tree_size,
+                _atom_leaf(self.atom, self.salt),
+                [bytes.fromhex(item) for item in self.audit_path],
+                bytes.fromhex(self.commitment_root),
+            )
+        except (TypeError, ValueError):
+            return False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +131,12 @@ class ReceiptCommitment:
         self._salts = list(salts) if salts is not None else [secrets.token_bytes(16).hex() for _ in self._atoms]
         if len(self._atoms) != len(self._salts):
             raise ValueError("atoms and salts must have the same length")
+        try:
+            salt_bytes = [bytes.fromhex(salt) for salt in self._salts]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("salts must be hexadecimal") from exc
+        if any(len(salt) < 16 for salt in salt_bytes):
+            raise ValueError("salts must contain at least 128 bits")
         self._leaves = [_atom_leaf(atom, salt) for atom, salt in zip(self._atoms, self._salts)]
         self._root = merkle_root(self._leaves)
 

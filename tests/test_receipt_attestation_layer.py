@@ -31,6 +31,24 @@ def test_attestation_detects_changed_receipt_body() -> None:
     assert not verify_attestation(changed, public_key=key.public_hex())
 
 
+def test_attestation_detects_changed_timestamp() -> None:
+    key = AttestationKey.generate()
+    entry = AttestationLog(key).append(_receipt())
+    changed = dataclasses.replace(entry, signed_at=entry.signed_at + 1)
+    assert not verify_attestation(changed, public_key=key.public_hex())
+
+
+def test_attestation_log_snapshots_mutable_receipts() -> None:
+    key = AttestationKey.generate()
+    receipt = _receipt()
+    log = AttestationLog(key)
+    returned = log.append(receipt)
+    receipt["token_budget"] = 999
+    returned.receipt["token_budget"] = 888
+    assert verify_chain(log.entries, public_key=key.public_hex()).valid
+    assert log.entries[0].receipt["token_budget"] == 40
+
+
 def test_attestation_rejects_unexpected_key() -> None:
     key = AttestationKey.generate()
     other = AttestationKey.generate()

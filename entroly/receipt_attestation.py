@@ -3,18 +3,34 @@
 This module keeps the cryptography optional at import time. When the
 ``cryptography`` package is available, receipts can be signed with Ed25519 and
 verified as an append-only hash chain. The chain is useful for local custody;
-Merkle transparency proofs live in ``merkle_transparency``.
+Merkle transparency proofs live in ``receipt_merkle``.
 """
 
 from __future__ import annotations
 
+import copy
 import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from entroly.context_receipts.models import stable_hash
+from entroly.context_receipts.models import stable_hash, stable_json
 
 _GENESIS = "0" * 64
+_ATTESTATION_DOMAIN = "entroly.receipt-attestation.v1"
+
+
+def _attestation_message(
+    sequence: int, prev_hash: str, content_hash: str, signed_at: float
+) -> bytes:
+    return stable_json(
+        {
+            "content_hash": content_hash,
+            "domain": _ATTESTATION_DOMAIN,
+            "prev_hash": prev_hash,
+            "sequence": sequence,
+            "signed_at": signed_at,
+        }
+    ).encode("utf-8")
 
 
 def _crypto():
@@ -84,7 +100,9 @@ class AttestedReceipt:
     signed_at: float
 
     def signing_message(self) -> bytes:
-        return f"{self.sequence}|{self.prev_hash}|{self.content_hash}".encode()
+        return _attestation_message(
+            self.sequence, self.prev_hash, self.content_hash, self.signed_at
+        )
 
     def attestation_hash(self) -> str:
         return stable_hash(
@@ -123,28 +141,30 @@ class AttestationLog:
 
     @property
     def entries(self) -> list[AttestedReceipt]:
-        return list(self._entries)
+        return copy.deepcopy(self._entries)
 
     @property
     def head_hash(self) -> str:
         return self._entries[-1].attestation_hash() if self._entries else _GENESIS
 
     def append(self, receipt: dict[str, Any]) -> AttestedReceipt:
+        snapshot = copy.deepcopy(receipt)
         sequence = len(self._entries)
-        content_hash = stable_hash(receipt)
+        content_hash = stable_hash(snapshot)
         prev_hash = self.head_hash
-        message = f"{sequence}|{prev_hash}|{content_hash}".encode()
+        signed_at = time.time()
+        message = _attestation_message(sequence, prev_hash, content_hash, signed_at)
         entry = AttestedReceipt(
-            receipt=receipt,
+            receipt=snapshot,
             sequence=sequence,
             prev_hash=prev_hash,
             content_hash=content_hash,
             signature=self._key.sign(message),
             public_key=self._key.public_hex(),
-            signed_at=time.time(),
+            signed_at=signed_at,
         )
         self._entries.append(entry)
-        return entry
+        return copy.deepcopy(entry)
 
 
 def _signature_valid(entry: AttestedReceipt) -> bool:
@@ -172,12 +192,13 @@ def verify_chain(
     entries: list[AttestedReceipt], *, public_key: str | None = None
 ) -> VerificationResult:
     prev_hash = _GENESIS
+    expected_key = public_key or (entries[0].public_key if entries else None)
     for index, entry in enumerate(entries):
         if entry.sequence != index:
             return VerificationResult(False, index, index, "sequence out of order")
         if entry.prev_hash != prev_hash:
             return VerificationResult(False, index, index, "broken previous hash")
-        if not verify_attestation(entry, public_key=public_key):
+        if not verify_attestation(entry, public_key=expected_key):
             return VerificationResult(False, index, index, "invalid attestation")
         prev_hash = entry.attestation_hash()
     return VerificationResult(True, len(entries))

@@ -1,6 +1,12 @@
 # Receipt proof layer
 
-This branch adds a small proof layer on top of Context Receipts.
+This layer adds cryptographic proofs on top of Context Receipts.
+
+Install the optional cryptographic dependency with:
+
+```bash
+python -m pip install "entroly[receipt-proof]"
+```
 
 ## Included
 
@@ -23,7 +29,22 @@ from entroly.auditable_receipts import AuditableReceiptLog
 log = AuditableReceiptLog(prefer_rust=False)
 recorded = log.record_receipt({"receipt_id": "example", "selected_context": []})
 proof = log.prove(recorded.index)
-assert proof.verify(operator_public_key=log.public_key)
+assert proof.verify(recorded.receipt, operator_public_key=log.public_key)
 ```
 
-The root package exports are intentionally not changed in this PR. Use explicit module imports.
+`verify` requires both the expected operator public key and the claimed receipt.
+This binds the signed Merkle inclusion proof to the exact receipt contents instead
+of only proving membership of an opaque leaf hash.
+
+Witness quorums pin each witness name to its Ed25519 public key:
+
+```python
+trusted_witnesses = {witness.witness_id: witness.public_key}
+```
+
+The current log and witness state are in memory. Persist tree heads, consistency
+proofs, witness checkpoints, and private keys in an access-controlled store before
+using this layer across process restarts. A proof is trusted only when its operator
+key and witness-key mapping come from a separately trusted configuration.
+
+The root package exports are intentionally unchanged. Use explicit module imports.
