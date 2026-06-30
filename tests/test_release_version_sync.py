@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+from entroly import __version__
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _toml_version(text: str) -> str:
+    match = re.search(r'^version\s*=\s*"([^"]+)"\s*$', text, flags=re.MULTILINE)
+    assert match is not None
+    return match.group(1)
+
+
+def _json_version(text: str) -> str:
+    return str(json.loads(text)["version"])
+
+
+def _formula_version(text: str) -> str:
+    match = re.search(r'url\s+"[^"]+/entroly-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz"', text)
+    assert match is not None
+    return match.group(1)
+
+
+def _daemon_version(text: str) -> str:
+    match = re.search(r'version:\s*str\s*=\s*"([^"]+)"', text)
+    assert match is not None
+    return match.group(1)
+
+
+def _read(rel_path: str) -> str:
+    return (ROOT / rel_path).read_text(encoding="utf-8")
+
+
+def test_release_version_surfaces_match_package_version() -> None:
+    assert _toml_version(_read("pyproject.toml")) == __version__
+    assert _toml_version(_read("entroly/pyproject.toml")) == __version__
+    assert _toml_version(_read("entroly-core/pyproject.toml")) == __version__
+    assert _toml_version(_read("entroly-core/Cargo.toml")) == __version__
+    assert _toml_version(_read("entroly-wasm/Cargo.toml")) == __version__
+    assert _json_version(_read("entroly/npm/package.json")) == __version__
+    assert _json_version(_read("entroly/npm-alias/package.json")) == __version__
+    assert _json_version(_read("entroly-wasm/package.json")) == __version__
+    assert _formula_version(_read("packaging/homebrew/entroly.rb")) == __version__
+    assert _daemon_version(_read("entroly/daemon.py")) == __version__

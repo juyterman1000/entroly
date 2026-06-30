@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 
@@ -41,3 +42,18 @@ def test_bump_chains_multiple_edits_to_the_same_file(tmp_path, monkeypatch):
     assert manifest.read_text(encoding="utf-8") == (
         'version = "1.0.1"\ndep = "core>=1.0.1,<2"\n'
     )
+
+
+def test_homebrew_readme_targets_update_heading_and_command():
+    text = "Current release example version: `1.0.39`\nSet VER=1.0.39\n"
+    targets = [
+        (pattern, template)
+        for path, pattern, template in bump_version.TARGETS
+        if path == "packaging/homebrew/README.md"
+    ]
+
+    for pattern, template in targets:
+        text = re.sub(pattern, template.format(v="1.0.40"), text)
+
+    assert "Current release example version: `1.0.40`" in text
+    assert "VER=1.0.40" in text

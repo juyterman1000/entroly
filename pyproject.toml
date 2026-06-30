@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.39"
+version = "1.0.40"
 description = "Auditable context control plane for AI agents: Context Receipts, MCP tools, local optimization, and SDK helpers."
 readme = "README.md"
 license = "Apache-2.0"
@@ -33,7 +33,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.6.0,<2",
-    "entroly-core>=1.0.39,<2",
+    "entroly-core>=1.0.40,<2",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +43,7 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=1.0.39,<2",
+    "entroly-core>=1.0.40,<2",
 ]
 receipt-proof = [
     "cryptography>=42",

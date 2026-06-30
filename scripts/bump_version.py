@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bump version across all Entroly manifests.
 
-Usage: python scripts/bump_version.py 1.0.39
+Usage: python scripts/bump_version.py <semver>
 """
 from __future__ import annotations
 import re
@@ -49,6 +49,9 @@ TARGETS = [
     ("packaging/homebrew/entroly.rb",
         r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', 'entroly-{v}.tar.gz'),
     # Homebrew release runbook (example bash). Two `VER=...` lines.
+    ("packaging/homebrew/README.md",
+        r'Current release example version: `[0-9]+\.[0-9]+\.[0-9]+`',
+        'Current release example version: `{v}`'),
     ("packaging/homebrew/README.md",
         r'VER=[0-9]+\.[0-9]+\.[0-9]+', 'VER={v}'),
 ]
