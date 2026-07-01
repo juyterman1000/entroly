@@ -30,15 +30,15 @@ import pytest
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
-from entroly.ravs.compiler import NodeKind, Plan, PlanCompiler, PlanNode
-from entroly.ravs.controller import (
+from entroly.ravs.compiler import NodeKind, Plan, PlanCompiler, PlanNode  # noqa: E402
+from entroly.ravs.controller import (  # noqa: E402
     ControllerResult,
     EscalationPolicy,
     SequentialController,
     StepOutcome,
 )
-from entroly.ravs.executors import ExecutorRegistry
-from entroly.ravs.verifiers import VerifierRegistry
+from entroly.ravs.executors import ExecutorRegistry  # noqa: E402
+from entroly.ravs.verifiers import VerifierRegistry  # noqa: E402
 
 
 def _make_plan(*node_specs) -> Plan:
@@ -141,7 +141,7 @@ def test_v4_05_budget_enforcement():
     )
     # Tiny budget — should stop after first or second step
     result = ctrl.execute(plan, budget_usd=0.000015)
-    budget_exceeded = any(
+    any(
         s.outcome == StepOutcome.BUDGET_EXCEEDED.value for s in result.steps
     )
     # Either budget exceeded or all fit

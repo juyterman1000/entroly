@@ -1,5 +1,8 @@
 """E2E federation with realistic params: 20 simulated clients."""
-import os, sys, tempfile, shutil
+import os
+import sys
+import tempfile
+import shutil
 os.environ["ENTROLY_FEDERATION"] = "1"
 
 from entroly.federation import (
@@ -47,7 +50,7 @@ for i, client in enumerate(clients):
         else:
             local_w[k] = v + random.gauss(0, 0.08)
             local_w[k] = max(0.0, min(1.0, local_w[k]))
-    
+
     packet = client.prepare_contribution(
         archetype_label="python_backend",
         weights=local_w,
@@ -60,7 +63,7 @@ for i, client in enumerate(clients):
 print(f"  All {N} contributed")
 
 # New client aggregates
-print(f"\n--- STEP 2: Aggregate ---")
+print("\n--- STEP 2: Aggregate ---")
 agg_client = FederationClient(data_dir=shared_dir, enabled=True, estimated_participants=N)
 agg_client._client_id = "aggregator_" + "z" * 48
 
@@ -70,7 +73,7 @@ gw = global_w.get("python_backend")
 if gw:
     print(f"  Contributors: {gw.contributors}")
     print(f"  Confidence: {gw.confidence:.2f}")
-    print(f"\n  Global vs True:")
+    print("\n  Global vs True:")
     all_close = True
     for k in ["w_recency", "w_semantic", "w_entropy", "w_frequency", "decay_half_life"]:
         true_v = TRUE_WEIGHTS[k]
@@ -80,9 +83,9 @@ if gw:
         if ok == "DRIFT":
             all_close = False
         print(f"    {k:20s}: true={true_v:.3f}  global={global_v:.4f}  delta={delta:.4f}  [{ok}]")
-    
+
     # Merge test
-    print(f"\n--- STEP 3: Merge into local ---")
+    print("\n--- STEP 3: Merge into local ---")
 
     class MockOpt:
         def __init__(self):
@@ -97,21 +100,21 @@ if gw:
     before = opt.current_weights()["w_recency"]
     merged = agg_client.merge_global(opt)
     after = opt.current_weights()["w_recency"]
-    
+
     print(f"  merge_global: {merged}")
     print(f"  w_recency: {before:.4f} -> {after:.4f}")
-    
+
     if merged:
-        print(f"\n  [OK] Federation works end-to-end!")
+        print("\n  [OK] Federation works end-to-end!")
         print(f"       {N} clients -> DP noise -> trimmed mean -> FedProx blend -> local update")
     else:
-        print(f"\n  [INFO] Merge was rejected by validation (safety guardrail working)")
-        print(f"         This happens when noised weights fall outside valid ranges")
+        print("\n  [INFO] Merge was rejected by validation (safety guardrail working)")
+        print("         This happens when noised weights fall outside valid ranges")
 else:
     print("  FAIL: no global weights")
 
 # Privacy
-print(f"\n--- Privacy budget ---")
+print("\n--- Privacy budget ---")
 acc = clients[0]._accountant
 print(f"  After 1 contribution: consumed_eps={acc.consumed_epsilon():.2f}")
 

@@ -181,7 +181,7 @@ try:
 
     actual_ratio = len(compressed) / len(fcontent)
 
-    check("universal_compress returns (str, str, float)", 
+    check("universal_compress returns (str, str, float)",
          isinstance(compressed, str) and isinstance(trace_id, str) and isinstance(duration_ms, float))
     check(f"Compression ratio ~30%: actual {actual_ratio:.1%}", actual_ratio < 0.6,
          f"file: {fname} ({len(fcontent):,} chars)")

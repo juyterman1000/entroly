@@ -14,7 +14,7 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.esg import ESGAnalyzer
+from entroly.esg import ESGAnalyzer  # noqa: E402
 
 SEED = 42
 N_SAMPLES = 1000
@@ -22,9 +22,14 @@ N_SAMPLES = 1000
 
 def load_fever():
     from datasets import load_dataset
+
     ds = load_dataset("copenlu/fever_gold_evidence", split="validation")
-    label_map = {"SUPPORTS": 0, "REFUTES": 1, "NOT ENOUGH INFO": None,
-                 "NOT_ENOUGH_INFO": None}
+    label_map = {
+        "SUPPORTS": 0,
+        "REFUTES": 1,
+        "NOT ENOUGH INFO": None,
+        "NOT_ENOUGH_INFO": None,
+    }
     out = []
     for row in ds:
         claim = str(row.get("claim", "") or "")
@@ -80,9 +85,12 @@ def main() -> int:
     best_t = 0.5
     tp = fp = 0
     for s, y, _, _ in reversed(scored):
-        if y == 1: tp += 1
-        else: fp += 1
-        tn = n_neg - fp; fn = n_pos - tp
+        if y == 1:
+            tp += 1
+        else:
+            fp += 1
+        tn = n_neg - fp
+        n_pos - tp
         acc = (tp + tn) / (n_pos + n_neg)
         if acc > best_acc:
             best_acc = acc
@@ -95,7 +103,7 @@ def main() -> int:
     print("WORST 15 FALSE NEGATIVES (REFUTES we missed — low T(G), said SUPPORTS)")
     print("=" * 80)
     fns = [(s, lab, cl, ev) for s, lab, cl, ev in scored if lab == 1 and s < best_t]
-    fns.sort()   # sort low to high T(G)
+    fns.sort()  # sort low to high T(G)
     for s, lab, cl, ev in fns[:15]:
         print(f"\n  T(G)={s:.4f}")
         print(f"  CLAIM: {cl}")
@@ -103,7 +111,9 @@ def main() -> int:
 
     print()
     print("=" * 80)
-    print("WORST 15 FALSE POSITIVES (SUPPORTS we wrongly flagged — high T(G), said REFUTES)")
+    print(
+        "WORST 15 FALSE POSITIVES (SUPPORTS we wrongly flagged — high T(G), said REFUTES)"
+    )
     print("=" * 80)
     fps = [(s, lab, cl, ev) for s, lab, cl, ev in scored if lab == 0 and s >= best_t]
     fps.sort(reverse=True)

@@ -30,12 +30,12 @@ html_page = """
     <script>
         const term = document.getElementById('term');
         const ws = new WebSocket('ws://' + window.location.host + '/ws');
-        
+
         ws.onopen = function() {
             term.innerHTML += "<span style='color: #58a6ff'>C:\\\\Users\\\\abhis\\\\langfuse\\\\langfuse></span> entroly wrap claude -p \\"Explain how trace ingestion works in the worker package\\"\\n\\n";
             ws.send("start");
         };
-        
+
         ws.onmessage = function(event) {
             let text = event.data;
             // Basic ANSI color parsing
@@ -48,14 +48,14 @@ html_page = """
             text = text.replace(/\\x1b\\[1m/g, "<span style='font-weight: bold; color: #f0f6fc'>"); // bold
             text = text.replace(/\\x1b\\[2m/g, "<span style='color: #8b949e'>"); // dim
             text = text.replace(/\\x1b\\[0m/g, "</span>"); // reset
-            
+
             // Fix newlines that might be missing from terminal stream
             text = text.replace(/\\r/g, "");
-            
+
             term.innerHTML += text;
             window.scrollTo(0, document.body.scrollHeight);
         };
-        
+
         ws.onclose = function() {
             term.innerHTML += "\\n\\n<span style='color: #8b949e'>[Process completed]</span>";
         };
@@ -64,8 +64,10 @@ html_page = """
 </html>
 """
 
+
 async def handle_index(request):
-    return web.Response(text=html_page, content_type='text/html')
+    return web.Response(text=html_page, content_type="text/html")
+
 
 async def handle_websocket(request):
     ws = web.WebSocketResponse()
@@ -76,35 +78,36 @@ async def handle_websocket(request):
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
             # Force color output for CLI tools if possible
-            env["FORCE_COLOR"] = "1" 
+            env["FORCE_COLOR"] = "1"
             env["CLICOLOR_FORCE"] = "1"
-            
+
             # Use entroly wrap claude inside the langfuse directory
             process = await asyncio.create_subprocess_shell(
                 'entroly wrap claude -p "Explain how trace ingestion works in the worker package"',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env=env,
-                cwd=r"C:\\Users\\abhis\\langfuse\\langfuse"
+                cwd=r"C:\\Users\\abhis\\langfuse\\langfuse",
             )
-            
+
             while True:
                 line = await process.stdout.readline()
                 if not line:
                     break
-                await ws.send_str(line.decode('utf-8', errors='replace'))
+                await ws.send_str(line.decode("utf-8", errors="replace"))
                 await asyncio.sleep(0.01)
-            
+
             await process.wait()
             await ws.close()
             break
 
     return ws
 
-app = web.Application()
-app.router.add_get('/', handle_index)
-app.router.add_get('/ws', handle_websocket)
 
-if __name__ == '__main__':
+app = web.Application()
+app.router.add_get("/", handle_index)
+app.router.add_get("/ws", handle_websocket)
+
+if __name__ == "__main__":
     print("Starting Claude live streaming server on http://localhost:8083")
     web.run_app(app, port=8083)

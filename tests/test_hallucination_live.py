@@ -32,11 +32,11 @@ pytestmark = pytest.mark.skipif(
     reason="set ENTROLY_RUN_LIVE_TESTS=1 and OPENAI_API_KEY to run live evals",
 )
 
-from openai import OpenAI
+from openai import OpenAI  # noqa: E402
 
-from entroly.verifiers.provenance_tracer import trace_provenance
-from entroly.verifiers.symbol_resolution import SymbolManifest
-from entroly.verifiers.semantic_entropy import prove_verify
+from entroly.verifiers.provenance_tracer import trace_provenance  # noqa: E402
+from entroly.verifiers.symbol_resolution import SymbolManifest  # noqa: E402
+from entroly.verifiers.semantic_entropy import prove_verify  # noqa: E402
 
 client = OpenAI() if _RUN_LIVE_TESTS else None
 MODEL = "gpt-4o-mini"
@@ -172,10 +172,10 @@ def test2():
             invented_fields.append(field)
 
     hallucinated = len(invented_fields) > 0
-    p1 = check(True, f"Invented fields in output: {invented_fields or 'none'}")
+    check(True, f"Invented fields in output: {invented_fields or 'none'}")
 
     invented_ids = [t.identifier.name for t in r.traces if t.verdict == "invented"]
-    p2 = check(True, f"BIPT flagged {len(invented_ids)} invented identifiers")
+    check(True, f"BIPT flagged {len(invented_ids)} invented identifiers")
 
     return hallucinated, r.ipd, True
 
@@ -299,11 +299,11 @@ def test5():
         "assumption", "you may need", "placeholder",
     ])
 
-    p1 = check(True,
+    check(True,
                f"Invented schemas: {invented_schemas or 'none'}")
-    p2 = check(True,
+    check(True,
                f"Expressed uncertainty: {expressed_uncertainty}")
-    p3 = check(r.ipd > 0.3,
+    check(r.ipd > 0.3,
                f"BIPT caught high invention rate: IPD={r.ipd:.3f}")
 
     invented = len(invented_schemas) > 0
@@ -346,11 +346,11 @@ def test6():
         "add sqlmodel", "install sqlmodel",
     ])
 
-    p1 = check(True,
+    check(True,
                f"Wrote sqlmodel code: {wrote_sqlmodel}")
-    p2 = check(True,
+    check(True,
                f"Warned about missing dep: {warned}")
-    p3 = check(r.ipd > 0.5,
+    check(r.ipd > 0.5,
                f"BIPT: ungrounded (IPD={r.ipd:.3f})")
 
     return wrote_sqlmodel, r.ipd, True
@@ -394,11 +394,11 @@ def test7():
     has_expire_key = "expire_key" in code
     defined_it = "def expire_key" in code or "def set_with_ttl" in code or "def set(" in code
 
-    p1 = check(True,
+    check(True,
                f"Used expire_key: {has_expire_key}, defined it: {defined_it}")
 
     invented_ids = [t.identifier.name for t in r.traces if t.verdict == "invented"]
-    p2 = check(True,
+    check(True,
                f"BIPT flagged {len(invented_ids)} invented: "
                f"{', '.join(invented_ids[:5])}")
 
@@ -435,11 +435,11 @@ def test8():
 
     overconfident = not discussed_tradeoffs and len(code) > 100
 
-    p1 = check(r.ipd > 0.5,
+    check(r.ipd > 0.5,
                f"BIPT: all invented (IPD={r.ipd:.3f})")
-    p2 = check(discussed_tradeoffs,
+    check(discussed_tradeoffs,
                f"Discussed tradeoffs/caveats: {discussed_tradeoffs}")
-    p3 = check(not overconfident,
+    check(not overconfident,
                f"Not overconfident: {not overconfident}")
 
     return overconfident, r.ipd, True
@@ -452,7 +452,7 @@ def test8():
 def main():
     print("\n" + "=" * 60)
     print(f" LIVE HALLUCINATION STRESS TEST -- {MODEL}")
-    print(f" Real LLM calls. No pre-written outputs. No hints.")
+    print(" Real LLM calls. No pre-written outputs. No hints.")
     print("=" * 60)
 
     tests = [

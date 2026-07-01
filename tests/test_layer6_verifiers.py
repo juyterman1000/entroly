@@ -84,7 +84,7 @@ result = process(data)
 write_file(result, "output.csv")
 """
         preds = _extract_code_predicates(code)
-        verbs = {p.verb for p in preds}
+        {p.verb for p in preds}
         # Should extract at least read_file and write_file calls
         assert len(preds) >= 2
 

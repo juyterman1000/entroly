@@ -67,7 +67,7 @@ def _ci95(n: int, acc: float) -> float:
     import math
     z = 1.96
     denom = 1 + z * z / n
-    centre = (acc + z * z / (2 * n)) / denom
+    (acc + z * z / (2 * n)) / denom
     spread = z * math.sqrt((acc * (1 - acc) + z * z / (4 * n)) / n) / denom
     return round(spread, 4)
 
@@ -262,21 +262,21 @@ def main() -> None:
     print(f"  {'ms/decision':<20} {ms_per:>12.2f} {'~same':>14}")
     print(f"  {'Cost/eval':<20} {'$0':>12} {'$0':>14}")
 
-    print(f"\n  === RAGAS Comparison Context ===\n")
-    print(f"  RAGAS faithfulness metric (LLM-as-judge):")
-    print(f"    Uses GPT-3.5/GPT-4 to decompose claims and verify")
-    print(f"    Published faithfulness: ~0.82 (GPT-3.5), ~0.90 (GPT-4)")
-    print(f"    Cost: $0.01-0.05 per evaluation")
-    print(f"")
-    print(f"  WITNESS faithfulness detection (deterministic):")
+    print("\n  === RAGAS Comparison Context ===\n")
+    print("  RAGAS faithfulness metric (LLM-as-judge):")
+    print("    Uses GPT-3.5/GPT-4 to decompose claims and verify")
+    print("    Published faithfulness: ~0.82 (GPT-3.5), ~0.90 (GPT-4)")
+    print("    Cost: $0.01-0.05 per evaluation")
+    print("")
+    print("  WITNESS faithfulness detection (deterministic):")
     print(f"    AUROC: {w_auroc:.4f}  (threshold-free discrimination)")
     print(f"    Accuracy: {w_result['accuracy']:.2%} at calibrated threshold")
-    print(f"    Cost: $0 per evaluation")
-    print(f"")
-    print(f"  NOTE: RAGAS faithfulness is a continuous score [0,1].")
-    print(f"  Our task is binary detection (faithful vs unfaithful).")
-    print(f"  AUROC is the fair comparison metric since it's")
-    print(f"  threshold-free and measures discrimination ability.")
+    print("    Cost: $0 per evaluation")
+    print("")
+    print("  NOTE: RAGAS faithfulness is a continuous score [0,1].")
+    print("  Our task is binary detection (faithful vs unfaithful).")
+    print("  AUROC is the fair comparison metric since it's")
+    print("  threshold-free and measures discrimination ability.")
 
     # ── Save ──
     result_data = {

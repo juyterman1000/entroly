@@ -44,7 +44,10 @@ impl LSHTable {
         }
         positions.sort_unstable();
 
-        LSHTable { bit_positions: positions, buckets: HashMap::new() }
+        LSHTable {
+            bit_positions: positions,
+            buckets: HashMap::new(),
+        }
     }
 
     /// Extract hash key from a 1024-bit address.

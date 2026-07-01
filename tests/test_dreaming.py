@@ -1,5 +1,9 @@
 """E2E test: DreamingLoop + PRISM 5D + ArchetypeOptimizer + AutoTune."""
-import os, sys, tempfile, shutil, time
+import os
+import sys
+import tempfile
+import shutil
+import time
 
 
 def main():

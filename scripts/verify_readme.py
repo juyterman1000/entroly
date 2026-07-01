@@ -20,8 +20,8 @@ check("SDK: compress_messages import", lambda: __import__("entroly").compress_me
 check("SDK: compress works", lambda: f"{len(__import__('entroly').compress('hello ' * 500, budget=50))} chars")
 
 # === CLI: wrap ===
-from entroly.cli import _WRAP_AGENTS
-from pathlib import Path
+from entroly.cli import _WRAP_AGENTS  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
@@ -102,7 +102,7 @@ check("Proxy: PromptCompilerProxy", lambda: __import__("entroly.proxy", fromlist
 check("Proxy: ProxyConfig port=9377", lambda: f"port={__import__('entroly.proxy_config', fromlist=['ProxyConfig']).ProxyConfig.from_env().port}")
 
 # === Engine ===
-from entroly.server import EntrolyEngine
+from entroly.server import EntrolyEngine  # noqa: E402
 e = EntrolyEngine()
 check("Engine: Rust backend", lambda: f"use_rust={e._use_rust}")
 check("Engine: ingest_fragment", lambda: e.ingest_fragment("def foo(): pass", "test.py", 5) and "OK")
@@ -116,7 +116,7 @@ check("Federation", lambda: __import__("entroly.federation", fromlist=["Federati
 check("CCR reversible", lambda: __import__("entroly.ccr", fromlist=["get_ccr_store"]).get_ccr_store and "OK")
 
 # === Value tracker ===
-from entroly.value_tracker import estimate_cost
+from entroly.value_tracker import estimate_cost  # noqa: E402
 check("estimate_cost", lambda: f"10K gpt-4o = ${estimate_cost(10000, 'gpt-4o'):.4f}")
 
 # === Dashboard ===
@@ -126,7 +126,7 @@ check("Dashboard", lambda: __import__("entroly.dashboard", fromlist=["start_dash
 check("auto_index", lambda: __import__("entroly.auto_index", fromlist=["auto_index"]).auto_index and "OK")
 
 # === Language support ===
-from entroly.auto_index import SUPPORTED_EXTENSIONS
+from entroly.auto_index import SUPPORTED_EXTENSIONS  # noqa: E402
 check("Language extensions", lambda: f"{len(SUPPORTED_EXTENSIONS)} extensions supported")
 
 # === bench/accuracy.py ===
@@ -138,6 +138,6 @@ print(f"  PASSED: {passed}  |  FAILED: {failed}")
 if failed:
     print(f"  README has {failed} unverified claim(s)!")
 else:
-    print(f"  All README claims verified!")
+    print("  All README claims verified!")
 print(f"{'='*50}")
 sys.exit(1 if failed else 0)

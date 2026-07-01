@@ -7,7 +7,7 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum EmotionalTag {
-    Neutral  = 0,
+    Neutral = 0,
     Positive = 1,
     Negative = 2,
     Critical = 3,
@@ -16,7 +16,7 @@ pub enum EmotionalTag {
 impl EmotionalTag {
     pub fn multiplier(self) -> f32 {
         match self {
-            EmotionalTag::Neutral  => 1.0,
+            EmotionalTag::Neutral => 1.0,
             EmotionalTag::Positive => 1.2,
             EmotionalTag::Negative => 1.5,
             EmotionalTag::Critical => 3.0,
@@ -25,7 +25,7 @@ impl EmotionalTag {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            EmotionalTag::Neutral  => "neutral",
+            EmotionalTag::Neutral => "neutral",
             EmotionalTag::Positive => "positive",
             EmotionalTag::Negative => "negative",
             EmotionalTag::Critical => "critical",
@@ -58,7 +58,7 @@ pub enum MemoryTier {
 impl MemoryTier {
     pub fn as_str(self) -> &'static str {
         match self {
-            MemoryTier::Working  => "working",
+            MemoryTier::Working => "working",
             MemoryTier::Episodic => "episodic",
             MemoryTier::Semantic => "semantic",
         }
@@ -69,7 +69,7 @@ impl MemoryTier {
         match s {
             "episodic" => MemoryTier::Episodic,
             "semantic" => MemoryTier::Semantic,
-            _          => MemoryTier::Working,
+            _ => MemoryTier::Working,
         }
     }
 }
@@ -190,7 +190,8 @@ pub fn hamming_distance(a: &[u64; 16], b: &[u64; 16]) -> u32 {
 /// Quantize f32 embedding → u16 (preserving ranking order).
 ///   val_u16 = clamp((val_f32 + 1.0) / 2.0 * 65535, 0, 65535)
 pub fn quantize_embedding(float_vec: &[f32]) -> Vec<u16> {
-    float_vec.iter()
+    float_vec
+        .iter()
         .map(|&v| {
             let scaled = ((v + 1.0) * 0.5 * 65535.0).round();
             scaled.clamp(0.0, 65535.0) as u16
@@ -221,8 +222,14 @@ pub fn trigram_embedding(content: &str) -> Vec<u16> {
     }
 
     // Normalize counters to u16 range
-    let max_abs = counters.iter().map(|&v| v.unsigned_abs()).max().unwrap_or(1).max(1);
-    counters.iter()
+    let max_abs = counters
+        .iter()
+        .map(|&v| v.unsigned_abs())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    counters
+        .iter()
         .map(|&v| {
             let normalized = (v as f64 / max_abs as f64 + 1.0) * 0.5 * 65535.0;
             normalized.clamp(0.0, 65535.0) as u16
@@ -237,11 +244,20 @@ mod tests {
     #[test]
     fn test_retention_decay() {
         let ep = Episode {
-            id: 0, agent_id: 0, content: "test".into(), tier: MemoryTier::Working,
-            embedding: vec![32768; 64], binary_address: [0; 16],
-            salience: 1.0, created_at: 0.0, last_recalled: 0.0, recall_count: 0,
-            emotional_tag: EmotionalTag::Neutral, consolidated: false,
-            token_cost: 1, tags: vec![],
+            id: 0,
+            agent_id: 0,
+            content: "test".into(),
+            tier: MemoryTier::Working,
+            embedding: vec![32768; 64],
+            binary_address: [0; 16],
+            salience: 1.0,
+            created_at: 0.0,
+            last_recalled: 0.0,
+            recall_count: 0,
+            emotional_tag: EmotionalTag::Neutral,
+            consolidated: false,
+            token_cost: 1,
+            tags: vec![],
         };
         assert!((ep.retention(0.0) - 1.0).abs() < 0.001);
         assert!((ep.retention(1.0) - 0.3679).abs() < 0.01); // e^-1
@@ -251,11 +267,20 @@ mod tests {
     #[test]
     fn test_reinforcement() {
         let mut ep = Episode {
-            id: 0, agent_id: 0, content: "test".into(), tier: MemoryTier::Working,
-            embedding: vec![32768; 64], binary_address: [0; 16],
-            salience: 1.0, created_at: 0.0, last_recalled: 0.0, recall_count: 0,
-            emotional_tag: EmotionalTag::Neutral, consolidated: false,
-            token_cost: 1, tags: vec![],
+            id: 0,
+            agent_id: 0,
+            content: "test".into(),
+            tier: MemoryTier::Working,
+            embedding: vec![32768; 64],
+            binary_address: [0; 16],
+            salience: 1.0,
+            created_at: 0.0,
+            last_recalled: 0.0,
+            recall_count: 0,
+            emotional_tag: EmotionalTag::Neutral,
+            consolidated: false,
+            token_cost: 1,
+            tags: vec![],
         };
         ep.reinforce(5.0, 1.3);
         assert_eq!(ep.recall_count, 1);

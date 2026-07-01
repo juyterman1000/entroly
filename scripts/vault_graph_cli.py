@@ -102,12 +102,12 @@ class VaultGraphParser:
         print(f"Status: {file_info['frontmatter'].get('status', 'N/A')}")
 
         if file_info['derived_from']:
-            print(f"\n[DERIVED FROM]:")
+            print("\n[DERIVED FROM]:")
             for dep in file_info['derived_from']:
                 print(f"  -> {dep}")
 
         if file_info['wikilinks']:
-            print(f"\n[REFERENCES]:")
+            print("\n[REFERENCES]:")
             for link in file_info['wikilinks']:
                 print(f"  -> {link}")
 
@@ -185,7 +185,7 @@ class VaultGraphParser:
         )[:5]
 
         if most_referenced:
-            print(f"\nMost Referenced (Hubs):")
+            print("\nMost Referenced (Hubs):")
             for node, count in most_referenced:
                 print(f"  {node}: {count} references")
 

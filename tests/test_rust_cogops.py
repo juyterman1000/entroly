@@ -1,24 +1,38 @@
 """Full CogOps Rust engine integration test."""
+
 import tempfile
 import json
 from entroly_core import CogOpsEngine
 
 PASS = FAIL = 0
+
+
 def check(name, cond):
     global PASS, FAIL
-    if cond: PASS += 1; print(f"  PASS: {name}")
-    else: FAIL += 1; print(f"  FAIL: {name}")
+    if cond:
+        PASS += 1
+        print(f"  PASS: {name}")
+    else:
+        FAIL += 1
+        print(f"  FAIL: {name}")
+
 
 with tempfile.TemporaryDirectory() as td:
     e = CogOpsEngine(td, miss_threshold=3)
 
     # ── Intent Classification ──
     print("=== Intent Classification (Rust) ===")
-    check("architecture", e.classify_intent("how does the auth module work?") == "architecture")
+    check(
+        "architecture",
+        e.classify_intent("how does the auth module work?") == "architecture",
+    )
     check("pr_brief", e.classify_intent("review this PR diff") == "pr_brief")
     check("incident", e.classify_intent("production outage on API") == "incident")
     check("audit", e.classify_intent("check for security vulnerabilities") == "audit")
-    check("onboarding", e.classify_intent("explain this to a new engineer") == "onboarding")
+    check(
+        "onboarding",
+        e.classify_intent("explain this to a new engineer") == "onboarding",
+    )
     check("repair", e.classify_intent("fix the broken login") == "repair")
     check("general", e.classify_intent("hello world") == "general")
 
@@ -38,7 +52,7 @@ class AuthService:
     check("Found AuthService", "AuthService" in names)
     check("Found verify_token", "verify_token" in names)
 
-    rs_code = '''
+    rs_code = """
 /// Token budget allocator
 pub struct NkbeAllocator {
     budget: usize,
@@ -47,7 +61,7 @@ pub trait BudgetPolicy {
     fn evaluate(&self) -> f64;
 }
 pub fn allocate(budget: usize) -> Vec<usize> { vec![] }
-'''
+"""
     rs_ents = e.extract_entities(rs_code, "nkbe.rs")
     check("Rust extraction", len(rs_ents) >= 2)
     rs_names = [x["name"] for x in rs_ents]
@@ -57,10 +71,13 @@ pub fn allocate(budget: usize) -> Vec<usize> { vec![] }
     # ── Belief Compilation ──
     print("\n=== Belief Compilation (Rust) ===")
     import os
+
     src = os.path.join(td, "src")
     os.makedirs(src)
-    with open(os.path.join(src, "auth.py"), "w") as f: f.write(py_code)
-    with open(os.path.join(src, "nkbe.rs"), "w") as f: f.write(rs_code)
+    with open(os.path.join(src, "auth.py"), "w") as f:
+        f.write(py_code)
+    with open(os.path.join(src, "nkbe.rs"), "w") as f:
+        f.write(rs_code)
 
     result = e.compile_beliefs(src, 200)
     check("Files processed", result["files_processed"] == 2)
@@ -81,7 +98,10 @@ pub fn allocate(budget: usize) -> Vec<usize> { vec![] }
     # ── Routing ──
     print("\n=== Routing (Rust) ===")
     r1 = e.route("how does auth_service work?", False, "")
-    check(f"Route flow: {r1['flow']}", r1["flow"] in ("fast_answer", "verify_before_answer", "compile_on_demand"))
+    check(
+        f"Route flow: {r1['flow']}",
+        r1["flow"] in ("fast_answer", "verify_before_answer", "compile_on_demand"),
+    )
     check("Has reasoning", len(r1["reasoning"]) > 0)
 
     r2 = e.route("PR opened: fix auth", True, "pr")
@@ -122,11 +142,14 @@ pub fn allocate(budget: usize) -> Vec<usize> { vec![] }
 
     # ── Write Belief ──
     print("\n=== Write Belief (Rust) ===")
-    wb = e.write_belief("test_entity", "Test Belief", "This is a test.", 0.9, "verified", ["manual"])
+    wb = e.write_belief(
+        "test_entity", "Test Belief", "This is a test.", 0.9, "verified", ["manual"]
+    )
     check("Written", wb["status"] == "written")
     check("Has claim_id", len(wb["claim_id"]) > 0)
 
-print(f"\n{'='*50}")
+print(f"\n{'=' * 50}")
 print(f"RESULTS: {PASS} passed, {FAIL} failed")
-print(f"{'='*50}")
-if FAIL == 0: print("ALL RUST COGOPS TESTS PASSED")
+print(f"{'=' * 50}")
+if FAIL == 0:
+    print("ALL RUST COGOPS TESTS PASSED")

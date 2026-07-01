@@ -155,14 +155,14 @@ def test_negative_control_no_free_lunch():
 def test_real_halueval_cascade_guarantee_and_pareto():
     data = json.loads(ARRAYS.read_text(encoding="utf-8"))
     idx = list(range(data["n"]))
-    random.Random(SEED := 49).shuffle(idx)
+    random.Random(49).shuffle(idx)
     half = data["n"] // 2
 
     def take(ix, k):
         return [data[k][i] for i in ix]
     cs = take(idx[:half], "scores")
     cl = take(idx[:half], "labels")
-    cj = take(idx[:half], "llm")
+    take(idx[:half], "llm")
     ts = take(idx[half:], "scores")
     tl = take(idx[half:], "labels")
     tj = take(idx[half:], "llm")

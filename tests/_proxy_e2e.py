@@ -1,5 +1,10 @@
 """Proxy E2E: verify _run_pipeline produces context and inject_context_openai injects it."""
-import asyncio, json, os, sys, tempfile, shutil
+import asyncio
+import json
+import os
+import sys
+import tempfile
+import shutil
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -9,10 +14,10 @@ os.environ["ENTROLY_VAULT"] = str(tmp / "vault")
 os.environ["ENTROLY_BYPASS"] = "0"
 os.environ["ENTROLY_CONFIDENCE_THRESHOLD"] = "0"
 
-from entroly.server import EntrolyEngine
-from entroly.proxy import PromptCompilerProxy, create_proxy_app
-from entroly.proxy_config import ProxyConfig
-from entroly.proxy_transform import extract_user_message
+from entroly.server import EntrolyEngine  # noqa: E402
+from entroly.proxy import PromptCompilerProxy, create_proxy_app  # noqa: E402
+from entroly.proxy_config import ProxyConfig  # noqa: E402
+from entroly.proxy_transform import extract_user_message  # noqa: E402
 
 engine = EntrolyEngine()
 engine.ingest_fragment(
@@ -56,8 +61,8 @@ print("  PASS: pipeline produces non-empty context")
 
 # --- Test 2: Full ASGI proxy with respx mocking ---
 print("\n=== Test 2: Full ASGI proxy with respx ===")
-import respx
-from httpx import Response, AsyncClient, ASGITransport
+import respx  # noqa: E402
+from httpx import Response, AsyncClient, ASGITransport  # noqa: E402
 
 app = create_proxy_app(engine, cfg)
 

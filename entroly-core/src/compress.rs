@@ -56,7 +56,10 @@ pub fn knapsack_select(values: &[f64], weights: &[usize], capacity: usize) -> Ve
         return keep;
     }
 
-    let vals: Vec<u64> = values.iter().map(|&v| (v.max(0.0) * 1000.0).round() as u64).collect();
+    let vals: Vec<u64> = values
+        .iter()
+        .map(|&v| (v.max(0.0) * 1000.0).round() as u64)
+        .collect();
     let cap = capacity;
     // Memory-efficient 0/1 knapsack: a 1D value row (O(cap)) plus a flat
     // boolean decision grid (O(n·cap) BYTES, not u64) for reconstruction — ~8×
@@ -89,7 +92,10 @@ pub fn knapsack_select(values: &[f64], weights: &[usize], capacity: usize) -> Ve
 /// Split text into blocks: paragraphs (blank-line separated) first, falling
 /// back to non-empty lines when there is no paragraph structure.
 pub fn split_blocks(text: &str) -> Vec<&str> {
-    let mut blocks: Vec<&str> = text.split("\n\n").filter(|b| !b.trim().is_empty()).collect();
+    let mut blocks: Vec<&str> = text
+        .split("\n\n")
+        .filter(|b| !b.trim().is_empty())
+        .collect();
     if blocks.len() < 2 {
         blocks = text.lines().filter(|l| !l.trim().is_empty()).collect();
     }
@@ -108,7 +114,12 @@ pub fn score_blocks(blocks: &[&str]) -> Vec<f64> {
         .enumerate()
         .map(|(i, b)| {
             let others: Vec<&str> = if n <= SCORE_SAMPLE_CAP {
-                blocks.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, s)| *s).collect()
+                blocks
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| *j != i)
+                    .map(|(_, s)| *s)
+                    .collect()
             } else {
                 blocks
                     .iter()
@@ -179,7 +190,12 @@ mod tests {
     #[test]
     fn test_knapsack_respects_capacity() {
         let keep = knapsack_select(&[1.0, 1.0, 1.0], &[3, 3, 3], 5);
-        let total: usize = keep.iter().zip([3, 3, 3]).filter(|(k, _)| **k).map(|(_, w)| w).sum();
+        let total: usize = keep
+            .iter()
+            .zip([3, 3, 3])
+            .filter(|(k, _)| **k)
+            .map(|(_, w)| w)
+            .sum();
         assert!(total <= 5);
         assert_eq!(keep.iter().filter(|&&k| k).count(), 1);
     }
@@ -205,12 +221,21 @@ mod tests {
 
     #[test]
     fn test_compresses_under_budget() {
-        let para = |n: usize| format!("Paragraph {n} with genuine content describing module {n} behavior and edge cases.");
+        let para = |n: usize| {
+            format!(
+                "Paragraph {n} with genuine content describing module {n} behavior and edge cases."
+            )
+        };
         let text = (0..20).map(para).collect::<Vec<_>>().join("\n\n");
         let budget = 40;
         let out = compress_text(&text, budget);
         assert!(!out.is_empty());
-        assert!(est_tokens(&out) <= budget + 12, "respect budget: {} vs {}", est_tokens(&out), budget);
+        assert!(
+            est_tokens(&out) <= budget + 12,
+            "respect budget: {} vs {}",
+            est_tokens(&out),
+            budget
+        );
         assert!(out.len() < text.len());
     }
 
@@ -225,13 +250,20 @@ mod tests {
     #[test]
     fn test_scoring_bounded_for_large_input() {
         // 500 blocks: must not hang (O(n·cap) not O(n²·ngrams)); just complete.
-        let text = (0..500).map(|i| format!("Block {i} content here.")).collect::<Vec<_>>().join("\n\n");
+        let text = (0..500)
+            .map(|i| format!("Block {i} content here."))
+            .collect::<Vec<_>>()
+            .join("\n\n");
         let budget = 100;
         let out = compress_text(&text, budget);
         assert!(!out.is_empty());
         // Tolerance: est_tokens() floors per block, so packing to `budget`
         // weight-units yields slightly more actual tokens (accumulated rounding).
-        assert!(est_tokens(&out) <= budget * 3 / 2, "bounded near budget: {}", est_tokens(&out));
+        assert!(
+            est_tokens(&out) <= budget * 3 / 2,
+            "bounded near budget: {}",
+            est_tokens(&out)
+        );
         assert!(out.len() < text.len() / 3, "compressed substantially");
     }
 }

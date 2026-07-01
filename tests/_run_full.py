@@ -16,9 +16,9 @@ if not key:
     print("ERROR: no key", flush=True)
     sys.exit(1)
 os.environ["OPENAI_API_KEY"] = key
-print(f"Key loaded. Starting benchmarks...", flush=True)
+print("Key loaded. Starting benchmarks...", flush=True)
 
-from bench.accuracy import run_benchmark
+from bench.accuracy import run_benchmark  # noqa: E402
 results = {}
 
 for bench in ["squad", "longbench"]:

@@ -92,7 +92,7 @@ def main() -> int:
     # Switch to "gpt-4o-mini" once API key is rotated and budget approved.
     backend = "deterministic"
     print(f"  Backend: {backend}")
-    print(f"  Building 4-variant records...", flush=True)
+    print("  Building 4-variant records...", flush=True)
     t0 = time.perf_counter()
     records = build_records(
         items, backend=backend, seed=SEED, cache_path=CACHE_PATH,

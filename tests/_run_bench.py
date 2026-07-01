@@ -27,5 +27,5 @@ sys.argv = [
 ]
 
 # Import and run
-from bench.accuracy import main
+from bench.accuracy import main  # noqa: E402
 main()

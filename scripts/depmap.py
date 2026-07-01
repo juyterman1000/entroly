@@ -278,7 +278,7 @@ def loc(p: Path) -> int:
 
 def main() -> None:
     sources = collect_sources()
-    print(f"# Source counts (after exclusions)")
+    print("# Source counts (after exclusions)")
     for k, v in sources.items():
         print(f"  {k:7s}: {len(v):4d} files")
     print(f"  TOTAL : {sum(len(v) for v in sources.values()):4d} files\n")

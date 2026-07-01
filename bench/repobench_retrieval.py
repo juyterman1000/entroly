@@ -227,7 +227,7 @@ def run_benchmark(args) -> dict:
     sample_idx = sorted(rng.sample(all_idx, n_sample))
     print(_c(DIM, f"  {n_avail} examples, sampling {n_sample} queries, pool_size={pool_size}"))
 
-    budget_chars = args.budget * 4  # tokens → chars
+    args.budget * 4  # tokens → chars
 
     methods = ["topk", "bm25", "entroly"]
     acc: dict[str, dict] = {m: defaultdict(float) for m in methods}
@@ -271,7 +271,7 @@ def run_benchmark(args) -> dict:
                 acc[method]["mrr"] += rr
                 acc[method]["ms"]  += ms
                 acc[method]["n"]   += 1
-            except Exception as e:
+            except Exception:
                 acc[method]["errors"] += 1
 
         if (i + 1) % 100 == 0 or (i + 1) == n_sample:

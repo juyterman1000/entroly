@@ -523,7 +523,7 @@ def main():
         print(json.dumps(output, indent=2))
     else:
         print(f"\n{'=' * 72}")
-        print(f"  SWE-BENCH LITE RETRIEVAL PRECISION")
+        print("  SWE-BENCH LITE RETRIEVAL PRECISION")
         print(f"{'=' * 72}")
         print(f"  Engine: {args.engine}  |  Budget: {args.budget:,} tokens  |  Tasks: {n}")
         print(f"  Elapsed: {elapsed:.1f}s")
@@ -537,16 +537,16 @@ def main():
         print(f"{'-' * 72}")
 
         # Interpretation
-        print(f"\n  Interpretation:")
+        print("\n  Interpretation:")
         if hit_rate >= 0.7:
             print(f"  STRONG: Entroly finds ALL needed files in {hit_rate:.0%} of tasks.")
-            print(f"     A cheap model receiving this context CAN fix most bugs.")
+            print("     A cheap model receiving this context CAN fix most bugs.")
         elif hit_rate >= 0.4:
             print(f"  MODERATE: Entroly finds all needed files in {hit_rate:.0%} of tasks.")
-            print(f"     Room for improvement in retrieval precision.")
+            print("     Room for improvement in retrieval precision.")
         else:
             print(f"  WEAK: Entroly only finds all needed files in {hit_rate:.0%} of tasks.")
-            print(f"     Retrieval quality needs significant improvement.")
+            print("     Retrieval quality needs significant improvement.")
 
         if avg_mrr >= 0.5:
             print(f"  When it finds the right file, it's typically ranked #{1/avg_mrr:.0f}.")

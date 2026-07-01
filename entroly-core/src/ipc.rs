@@ -76,14 +76,21 @@ struct U64IdentityHasher(u64);
 
 impl Hasher for U64IdentityHasher {
     #[inline(always)]
-    fn finish(&self) -> u64 { self.0 }
+    fn finish(&self) -> u64 {
+        self.0
+    }
     #[inline(always)]
-    fn write_u64(&mut self, i: u64) { self.0 = i; }
+    fn write_u64(&mut self, i: u64) {
+        self.0 = i;
+    }
     #[inline(always)]
     fn write(&mut self, bytes: &[u8]) {
         // FNV-1a fallback for non-u64 keys (unused, but required by trait)
         let mut h = 0xcbf29ce484222325u64;
-        for &b in bytes { h ^= b as u64; h = h.wrapping_mul(0x100000001b3); }
+        for &b in bytes {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
         self.0 = h;
     }
 }
@@ -129,7 +136,9 @@ impl<const W: usize> AgentSketch<W> {
     fn push(&mut self, fp: u64) {
         self.ring[self.head as usize] = fp;
         self.head = (self.head + 1) % W as u32;
-        if self.len < W as u32 { self.len += 1; }
+        if self.len < W as u32 {
+            self.len += 1;
+        }
     }
 
     /// Minimum Hamming distance from `fp` to all stored fingerprints.
@@ -151,7 +160,9 @@ impl<const W: usize> AgentSketch<W> {
         // Tight loop — branch-free inner body: compiler emits conditional move.
         for &stored in &self.ring[..n] {
             let d = hamming_distance(fp, stored);
-            if d < min_d { min_d = d; }
+            if d < min_d {
+                min_d = d;
+            }
         }
         min_d
     }
@@ -186,8 +197,8 @@ pub struct IpcBus {
     /// Softcap constant (mirrors autoresearch 15·tanh(logits/15)).
     softcap: f32,
     // ── Lock-free statistics (no Mutex needed) ─────────────────────────────
-    total_sent:       AtomicU64,
-    total_delivered:  AtomicU64,
+    total_sent: AtomicU64,
+    total_delivered: AtomicU64,
     total_suppressed: AtomicU64,
 }
 
@@ -209,15 +220,17 @@ impl IpcBus {
             id_map: IdMap::default(),
             novelty_threshold: (novelty_threshold as f32).min(64.0),
             softcap: 8.0,
-            total_sent:       AtomicU64::new(0),
-            total_delivered:  AtomicU64::new(0),
+            total_sent: AtomicU64::new(0),
+            total_delivered: AtomicU64::new(0),
             total_suppressed: AtomicU64::new(0),
         }
     }
 
     /// Register an agent as a receiver (O(1) amortised, one-time allocation).
     pub fn register_receiver(&mut self, agent_id: u64) {
-        if self.id_map.contains_key(&agent_id) { return; }
+        if self.id_map.contains_key(&agent_id) {
+            return;
+        }
         let idx = self.sketches.len() as u32;
         self.sketches.push(AgentSketch::new(agent_id));
         self.id_map.insert(agent_id, idx);
@@ -225,7 +238,9 @@ impl IpcBus {
 
     /// Deregister an agent (swap-remove for O(1); updates id_map).
     pub fn deregister(&mut self, agent_id: u64) {
-        let Some(&idx) = self.id_map.get(&agent_id) else { return };
+        let Some(&idx) = self.id_map.get(&agent_id) else {
+            return;
+        };
         let last = self.sketches.len() - 1;
         if (idx as usize) < last {
             // Swap with last to avoid O(N) shift.
@@ -279,12 +294,12 @@ impl IpcBus {
                 result.set_item("reason", "redundant").unwrap();
             }
 
-            result.set_item("hamming",        min_d).unwrap();
-            result.set_item("novelty_score",  novelty).unwrap();
+            result.set_item("hamming", min_d).unwrap();
+            result.set_item("novelty_score", novelty).unwrap();
             result.set_item("entropy_approx", entropy_approx).unwrap();
-            result.set_item("sender_id",      sender_id).unwrap();
-            result.set_item("receiver_id",    receiver_id).unwrap();
-            result.set_item("fingerprint",    fp).unwrap();
+            result.set_item("sender_id", sender_id).unwrap();
+            result.set_item("receiver_id", receiver_id).unwrap();
+            result.set_item("fingerprint", fp).unwrap();
             result.into()
         })
     }
@@ -294,7 +309,9 @@ impl IpcBus {
         // Collect receiver IDs first (avoid borrow-during-send).
         // Note: fp computed here for potential future batch-SIMD scan optimisation.
         let _fp = simhash(content.as_bytes());
-        let receiver_ids: Vec<u64> = self.sketches.iter()
+        let receiver_ids: Vec<u64> = self
+            .sketches
+            .iter()
             .map(|s| s.agent_id)
             .filter(|&id| id != sender_id)
             .collect();
@@ -320,7 +337,9 @@ impl IpcBus {
     /// Delivery rate ∈ [0, 1]. 0 = all suppressed; 1 = all delivered.
     pub fn delivery_rate(&self) -> f32 {
         let sent = self.total_sent.load(Ordering::Relaxed);
-        if sent == 0 { return 1.0; }
+        if sent == 0 {
+            return 1.0;
+        }
         self.total_delivered.load(Ordering::Relaxed) as f32 / sent as f32
     }
 
@@ -333,23 +352,38 @@ impl IpcBus {
     pub fn stats(&self) -> PyObject {
         Python::with_gil(|py| {
             let d = PyDict::new(py);
-            d.set_item("total_sent",        self.total_sent.load(Ordering::Relaxed)).unwrap();
-            d.set_item("total_delivered",   self.total_delivered.load(Ordering::Relaxed)).unwrap();
-            d.set_item("total_suppressed",  self.total_suppressed.load(Ordering::Relaxed)).unwrap();
-            d.set_item("delivery_rate",     self.delivery_rate()).unwrap();
-            d.set_item("suppression_rate",  self.suppression_rate()).unwrap();
-            d.set_item("registered_agents", self.sketches.len()).unwrap();
-            d.set_item("novelty_threshold", self.novelty_threshold).unwrap();
-            d.set_item("softcap",           self.softcap).unwrap();
-            d.set_item("window_size",       DEFAULT_WINDOW).unwrap();
+            d.set_item("total_sent", self.total_sent.load(Ordering::Relaxed))
+                .unwrap();
+            d.set_item(
+                "total_delivered",
+                self.total_delivered.load(Ordering::Relaxed),
+            )
+            .unwrap();
+            d.set_item(
+                "total_suppressed",
+                self.total_suppressed.load(Ordering::Relaxed),
+            )
+            .unwrap();
+            d.set_item("delivery_rate", self.delivery_rate()).unwrap();
+            d.set_item("suppression_rate", self.suppression_rate())
+                .unwrap();
+            d.set_item("registered_agents", self.sketches.len())
+                .unwrap();
+            d.set_item("novelty_threshold", self.novelty_threshold)
+                .unwrap();
+            d.set_item("softcap", self.softcap).unwrap();
+            d.set_item("window_size", DEFAULT_WINDOW).unwrap();
             // Memory budget: each sketch is 16 + W*8 bytes
             let bytes_per_sketch = 16 + DEFAULT_WINDOW * 8;
-            d.set_item("memory_bytes", self.sketches.len() * bytes_per_sketch).unwrap();
+            d.set_item("memory_bytes", self.sketches.len() * bytes_per_sketch)
+                .unwrap();
             d.into()
         })
     }
 
-    pub fn receiver_count(&self) -> usize { self.sketches.len() }
+    pub fn receiver_count(&self) -> usize {
+        self.sketches.len()
+    }
 
     /// Estimated RAM usage in MB.
     pub fn memory_mb(&self) -> f64 {
@@ -375,7 +409,9 @@ impl IpcBus {
 /// described by Charikar, with collision probability 1 - arccos(sim)/π.
 #[inline(always)]
 pub fn simhash(content: &[u8]) -> u64 {
-    if content.is_empty() { return 0; }
+    if content.is_empty() {
+        return 0;
+    }
     let mut scores = [0i32; 64];
     let w = 3usize;
     let n = content.len();
@@ -392,7 +428,9 @@ pub fn simhash(content: &[u8]) -> u64 {
 
     let mut fp = 0u64;
     for (b, &score) in scores.iter().enumerate() {
-        if score > 0 { fp |= 1u64 << b; }
+        if score > 0 {
+            fp |= 1u64 << b;
+        }
     }
     fp
 }
@@ -496,7 +534,11 @@ mod tests {
         bus.send(1, 42, msg);
         // Second identical → suppressed
         bus.send(1, 42, msg);
-        assert!(bus.total_suppressed.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+        assert!(
+            bus.total_suppressed
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 1
+        );
     }
 
     #[test]
@@ -506,7 +548,11 @@ mod tests {
         bus.register_receiver(99);
         bus.send(1, 99, "Nash-KKT equilibrium allocation");
         bus.send(1, 99, "quantum cryptography post-RSA era");
-        assert!(bus.total_delivered.load(std::sync::atomic::Ordering::Relaxed) >= 2);
+        assert!(
+            bus.total_delivered
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 2
+        );
     }
 
     #[test]
@@ -536,7 +582,11 @@ mod tests {
         let bus = IpcBus::new(4, DEFAULT_WINDOW);
         // Verify atomics initialise to 0
         assert_eq!(bus.total_sent.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(bus.total_delivered.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(
+            bus.total_delivered
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
         assert_eq!(bus.delivery_rate(), 1.0); // empty bus: rate = 1.0
     }
 }

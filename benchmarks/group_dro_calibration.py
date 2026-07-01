@@ -21,7 +21,7 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.adversarial_calibration import group_dro_search
+from entroly.adversarial_calibration import group_dro_search  # noqa: E402
 
 SEED = 42
 N_ITEMS = 150
@@ -85,7 +85,7 @@ def main() -> int:
     print("  Group-DRO Best Config (worst-case optimised):")
     for k, v in result.best_config.as_dict().items():
         print(f"    {k:<22}= {v}")
-    print(f"\n  Per-manifold AUROC under best_config:")
+    print("\n  Per-manifold AUROC under best_config:")
     for m, auc in result.best_manifold_aurocs.items():
         print(f"    {m}: {auc:.4f}")
     print(f"    worst-case = {result.worst_auroc_best:.4f}")
@@ -94,7 +94,7 @@ def main() -> int:
     print("\n  ERM Baseline (average-best config):")
     for k, v in result.erm_config.as_dict().items():
         print(f"    {k:<22}= {v}")
-    print(f"\n  Per-manifold AUROC under erm_config:")
+    print("\n  Per-manifold AUROC under erm_config:")
     for m, auc in result.erm_manifold_aurocs.items():
         print(f"    {m}: {auc:.4f}")
     print(f"    worst-case = {result.worst_auroc_erm:.4f}")

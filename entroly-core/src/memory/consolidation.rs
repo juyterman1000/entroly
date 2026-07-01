@@ -77,7 +77,9 @@ pub fn consolidate(
             && !ep.consolidated
         {
             // Write to Kanerva SDM neocortex
-            let content: Vec<f32> = ep.embedding.iter()
+            let content: Vec<f32> = ep
+                .embedding
+                .iter()
                 .map(|&v| (v as f32 / 32768.0) - 1.0)
                 .collect();
             sdm.write(&ep.binary_address, &content);
@@ -87,9 +89,9 @@ pub fn consolidate(
 
             // Promote tier: Working → Episodic, Episodic → Semantic
             match ep.tier {
-                MemoryTier::Working  => ep.tier = MemoryTier::Episodic,
+                MemoryTier::Working => ep.tier = MemoryTier::Episodic,
                 MemoryTier::Episodic => ep.tier = MemoryTier::Semantic,
-                MemoryTier::Semantic => {},
+                MemoryTier::Semantic => {}
             }
 
             report.consolidated += 1;
@@ -106,18 +108,32 @@ pub fn consolidate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::episode::{EmotionalTag, simhash_embedding};
+    use crate::memory::episode::{simhash_embedding, EmotionalTag};
 
-    fn make_episode(id: u64, salience: f32, created_at: f64,
-                    recall_count: u32, tier: MemoryTier) -> Episode {
+    fn make_episode(
+        id: u64,
+        salience: f32,
+        created_at: f64,
+        recall_count: u32,
+        tier: MemoryTier,
+    ) -> Episode {
         let embedding = vec![32768u16; 64];
         let binary_address = simhash_embedding(&embedding);
         Episode {
-            id, agent_id: 0, content: format!("memory_{}", id),
-            tier, embedding, binary_address, salience,
-            created_at, last_recalled: created_at, recall_count,
-            emotional_tag: EmotionalTag::Neutral, consolidated: false,
-            token_cost: 10, tags: vec![],
+            id,
+            agent_id: 0,
+            content: format!("memory_{}", id),
+            tier,
+            embedding,
+            binary_address,
+            salience,
+            created_at,
+            last_recalled: created_at,
+            recall_count,
+            emotional_tag: EmotionalTag::Neutral,
+            consolidated: false,
+            token_cost: 10,
+            tags: vec![],
         }
     }
 
@@ -127,7 +143,10 @@ mod tests {
         let config = ConsolidationConfig::default();
         let mut episodes = vec![make_episode(1, 0.1, 0.0, 0, MemoryTier::Working)];
         let report = consolidate(&mut episodes, &mut sdm, 100.0, &config);
-        assert_eq!(report.evicted, 1, "Low-salience old memory should be evicted");
+        assert_eq!(
+            report.evicted, 1,
+            "Low-salience old memory should be evicted"
+        );
         assert!(episodes.is_empty());
     }
 
@@ -137,7 +156,10 @@ mod tests {
         let config = ConsolidationConfig::default();
         let mut episodes = vec![make_episode(1, 0.1, 0.0, 0, MemoryTier::Semantic)];
         let report = consolidate(&mut episodes, &mut sdm, 100.0, &config);
-        assert_eq!(report.evicted, 0, "Semantic memories should never be evicted");
+        assert_eq!(
+            report.evicted, 0,
+            "Semantic memories should never be evicted"
+        );
         assert_eq!(report.surviving, 1);
     }
 
@@ -158,6 +180,9 @@ mod tests {
         let config = ConsolidationConfig::default();
         let mut episodes = vec![make_episode(1, 100.0, 0.0, 3, MemoryTier::Working)];
         consolidate(&mut episodes, &mut sdm, 1.0, &config);
-        assert!((episodes[0].salience - 50.0).abs() < 0.1, "Salience should be halved");
+        assert!(
+            (episodes[0].salience - 50.0).abs() < 0.1,
+            "Salience should be halved"
+        );
     }
 }

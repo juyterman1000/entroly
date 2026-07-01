@@ -187,7 +187,7 @@ def test_r09_retry_collector_emits_for_rephrase(log):
                          query_text="how do I fix the auth login bug exactly",
                          timestamp=110.0)
     assert emitted == "retry_event"
-    pairs = list(log.traces_with_outcomes())
+    list(log.traces_with_outcomes())
     # No traces written (collector only writes outcomes); read raw events
     events = list(log.read_all())
     outcome_events = [e for e in events if e.get("kind") == "outcome"]

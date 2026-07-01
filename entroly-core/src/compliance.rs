@@ -32,7 +32,10 @@ pub fn detect_pii_fast(text: &str) -> Vec<&'static str> {
     // API key pattern: "sk-" prefix with long alphanumeric string
     if text.contains("sk-") {
         let after = &text[text.find("sk-").unwrap()..];
-        let key_len = after.chars().take_while(|c| c.is_alphanumeric() || *c == '-').count();
+        let key_len = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '-')
+            .count();
         if key_len > 20 {
             found.push("APIKey");
         }
@@ -41,10 +44,10 @@ pub fn detect_pii_fast(text: &str) -> Vec<&'static str> {
     let bytes = text.as_bytes();
     for i in 0..bytes.len().saturating_sub(11) {
         if bytes[i].is_ascii_digit()
-            && bytes[i+3] == b'-'
-            && bytes[i+4].is_ascii_digit()
-            && bytes[i+6] == b'-'
-            && bytes[i+7].is_ascii_digit()
+            && bytes[i + 3] == b'-'
+            && bytes[i + 4].is_ascii_digit()
+            && bytes[i + 6] == b'-'
+            && bytes[i + 7].is_ascii_digit()
         {
             found.push("SSN");
             break;
@@ -76,7 +79,7 @@ pub struct AuditEntry {
     pub timestamp_ns: u64,
     pub sender_id: u64,
     pub receiver_id: u64,
-    pub decision: &'static str,  // "allowed", "pii_blocked", "injection_blocked", "rate_limited"
+    pub decision: &'static str, // "allowed", "pii_blocked", "injection_blocked", "rate_limited"
     pub pii_types: Vec<&'static str>,
 }
 
@@ -84,7 +87,7 @@ pub struct AuditEntry {
 struct TokenBucket {
     tokens: f32,
     capacity: f32,
-    refill_rate: f32,  // tokens per ns
+    refill_rate: f32, // tokens per ns
     last_refill_ns: u64,
 }
 
@@ -212,7 +215,9 @@ impl ComplianceGate {
             }
 
             // 3. Rate limit check (token bucket)
-            let bucket = self.rate_buckets.entry(sender_id)
+            let bucket = self
+                .rate_buckets
+                .entry(sender_id)
                 .or_insert_with(|| TokenBucket::new(10.0, self.rate_limit_mps));
             if !bucket.try_consume(1.0) {
                 self.total_blocked_rate += 1;
@@ -251,13 +256,18 @@ impl ComplianceGate {
             let d = PyDict::new(py);
             d.set_item("total_allowed", self.total_allowed).unwrap();
             d.set_item("blocked_pii", self.total_blocked_pii).unwrap();
-            d.set_item("blocked_injection", self.total_blocked_injection).unwrap();
+            d.set_item("blocked_injection", self.total_blocked_injection)
+                .unwrap();
             d.set_item("blocked_rate", self.total_blocked_rate).unwrap();
-            let total = self.total_allowed + self.total_blocked_pii
-                + self.total_blocked_injection + self.total_blocked_rate;
+            let total = self.total_allowed
+                + self.total_blocked_pii
+                + self.total_blocked_injection
+                + self.total_blocked_rate;
             let denial_rate = if total > 0 {
                 (total - self.total_allowed) as f32 / total as f32
-            } else { 0.0 };
+            } else {
+                0.0
+            };
             d.set_item("denial_rate", denial_rate).unwrap();
             d.set_item("audit_entries", self.audit_log.len()).unwrap();
             d.into()
@@ -266,14 +276,18 @@ impl ComplianceGate {
 
     /// Export audit log as JSON string.
     pub fn export_audit(&self) -> String {
-        let entries: Vec<serde_json::Value> = self.audit_log.iter()
-            .map(|e| serde_json::json!({
-                "ts": e.timestamp_ns,
-                "sender": e.sender_id,
-                "receiver": e.receiver_id,
-                "decision": e.decision,
-                "pii": e.pii_types,
-            }))
+        let entries: Vec<serde_json::Value> = self
+            .audit_log
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "ts": e.timestamp_ns,
+                    "sender": e.sender_id,
+                    "receiver": e.receiver_id,
+                    "decision": e.decision,
+                    "pii": e.pii_types,
+                })
+            })
             .collect();
         serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
     }
@@ -288,7 +302,7 @@ impl ComplianceGate {
 impl ComplianceGate {
     fn append_audit(&mut self, entry: AuditEntry) {
         if self.audit_log.len() >= self.audit_capacity {
-            self.audit_log.remove(0);  // ring-style eviction (oldest first)
+            self.audit_log.remove(0); // ring-style eviction (oldest first)
         }
         self.audit_log.push(entry);
     }

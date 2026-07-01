@@ -85,9 +85,18 @@ impl EicvSuppressor {
         }
 
         // Tally
-        let n_supported = certificates.iter().filter(|c| c.decision == "supported").count();
-        let n_abstained = certificates.iter().filter(|c| c.decision == "abstain").count();
-        let n_hallucinated = certificates.iter().filter(|c| c.decision == "hallucinated").count();
+        let n_supported = certificates
+            .iter()
+            .filter(|c| c.decision == "supported")
+            .count();
+        let n_abstained = certificates
+            .iter()
+            .filter(|c| c.decision == "abstain")
+            .count();
+        let n_hallucinated = certificates
+            .iter()
+            .filter(|c| c.decision == "hallucinated")
+            .count();
         let n_claims = certificates.len();
         let hallucination_rate = if n_claims > 0 {
             n_hallucinated as f64 / n_claims as f64
@@ -229,7 +238,9 @@ fn extract_claims(text: &str) -> Vec<ClaimSpan> {
                 let byte_end = if end >= chars.len() {
                     text.len()
                 } else {
-                    text.char_indices().nth(end).map_or(text.len(), |(idx, _)| idx)
+                    text.char_indices()
+                        .nth(end)
+                        .map_or(text.len(), |(idx, _)| idx)
                 };
                 claims.push(ClaimSpan {
                     start: byte_start,
@@ -299,7 +310,8 @@ mod tests {
     #[test]
     fn annotate_mode_appends_warning() {
         let context = "Rust is a programming language.";
-        let output = "Rust was created by Mozilla. Python was invented by Guido van Rossum in Antarctica.";
+        let output =
+            "Rust was created by Mozilla. Python was invented by Guido van Rossum in Antarctica.";
         let s = EicvSuppressor::new("rag", "annotate");
         let result = s.suppress(context, output);
         if result.n_hallucinated + result.n_abstained > 0 {
@@ -309,14 +321,19 @@ mod tests {
 
     #[test]
     fn extract_claims_basic() {
-        let claims = extract_claims("This is a short sentence. This is another longer sentence here. Two words.");
+        let claims = extract_claims(
+            "This is a short sentence. This is another longer sentence here. Two words.",
+        );
         // "Two words." has only 2 words → excluded
         assert_eq!(claims.len(), 2);
     }
 
     #[test]
     fn convenience_function() {
-        let result = suppress("evidence here for grounding", "some claim that is long enough.");
+        let result = suppress(
+            "evidence here for grounding",
+            "some claim that is long enough.",
+        );
         assert!(result.n_claims >= 1);
     }
 

@@ -10,7 +10,7 @@ from entroly.server import create_mcp_server
 def run_real_mcp_test():
     print("Initializing Real MCP Server (as Claude Desktop would)...")
     mcp = create_mcp_server()
-    
+
     print("\nSending Real Code-Inspection request to Entroly MCP...")
     # This invokes the RAVS-wrapped MCP tool directly
     try:

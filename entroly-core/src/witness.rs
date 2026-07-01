@@ -63,8 +63,8 @@ fn stopwords() -> &'static HashSet<&'static str> {
             "many", "more", "most", "much", "only", "other", "over", "should", "some", "such",
             "than", "that", "their", "them", "then", "there", "these", "they", "this", "those",
             "very", "were", "what", "when", "where", "which", "while", "with", "would", "yes",
-            "sure", "okay", "actually", "believe", "call", "use", "run", "read", "write",
-            "return", "update", "create", "delete",
+            "sure", "okay", "actually", "believe", "call", "use", "run", "read", "write", "return",
+            "update", "create", "delete",
         ]
         .into_iter()
         .collect()
@@ -1258,10 +1258,9 @@ fn has_negation_before(text: &str, word: &str) -> bool {
     let start = idx.saturating_sub(30);
     let preceding = &text[start..idx];
     [
-        "is not", "are not", "was not", "were not", "does not", "do not", "did not",
-        "has not", "have not", "had not", "cannot", "can not", "isn't", "aren't",
-        "wasn't", "weren't", "doesn't", "don't", "didn't", "hasn't", "haven't",
-        "not ", "never ", " no ",
+        "is not", "are not", "was not", "were not", "does not", "do not", "did not", "has not",
+        "have not", "had not", "cannot", "can not", "isn't", "aren't", "wasn't", "weren't",
+        "doesn't", "don't", "didn't", "hasn't", "haven't", "not ", "never ", " no ",
     ]
     .iter()
     .any(|cue| preceding.contains(cue))
@@ -1359,9 +1358,7 @@ fn continuous_qa_alignment(answer: &str, knowledge: &str, question: &str) -> f64
                 let payload: Vec<String> = a_tok
                     .iter()
                     .filter(|t| {
-                        t.len() > 2
-                            && !stop.contains(t.as_str())
-                            && !q_words.contains(t.as_str())
+                        t.len() > 2 && !stop.contains(t.as_str()) && !q_words.contains(t.as_str())
                     })
                     .cloned()
                     .collect();

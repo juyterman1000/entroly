@@ -1,4 +1,5 @@
 """Comprehensive ACB + accuracy harness verification."""
+
 import json
 import sys
 import tempfile
@@ -33,6 +34,7 @@ def main():
         BUDGET_MIN,
         BUDGET_MAX,
     )
+
     check("ACB imports", True)
 
     # ── 2. Feature extraction ──
@@ -44,7 +46,9 @@ def main():
 
     arr = f.to_array()
     check("to_array returns list", isinstance(arr, list))
-    check("to_array length=14 (6 numeric + 8 task onehot)", len(arr) == 14, str(len(arr)))
+    check(
+        "to_array length=14 (6 numeric + 8 task onehot)", len(arr) == 14, str(len(arr))
+    )
 
     # ── 3. derive_optimal_budget ──
     accs = {0.05: 0.60, 0.10: 0.70, 0.20: 0.85, 0.30: 0.92, 0.50: 0.95}
@@ -79,14 +83,22 @@ def main():
     fit_result = m.fit()
     check("fit status='fit'", fit_result["status"] == "fit", str(fit_result))
     check("fit n=25", fit_result["n"] == 25)
-    check("fit train_mse < 0.1", fit_result["train_mse"] < 0.1, f"mse={fit_result['train_mse']}")
+    check(
+        "fit train_mse < 0.1",
+        fit_result["train_mse"] < 0.1,
+        f"mse={fit_result['train_mse']}",
+    )
     check("bootstrap_n=50", fit_result["bootstrap_n"] == 50)
 
     # ── 6. Learned prediction ──
     p2 = m.predict(f)
     check("learned fallback=None (confident)", p2["fallback"] is None, str(p2))
     check("learned budget_se is not None", p2["budget_se"] is not None)
-    check("budget_raw in [0.05, 0.95]", BUDGET_MIN <= p2["budget_raw"] <= BUDGET_MAX, str(p2["budget_raw"]))
+    check(
+        "budget_raw in [0.05, 0.95]",
+        BUDGET_MIN <= p2["budget_raw"] <= BUDGET_MAX,
+        str(p2["budget_raw"]),
+    )
 
     # ── 7. Ceiling cap ──
     p3 = m.predict(f, ceiling=0.10)
@@ -96,12 +108,17 @@ def main():
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp:
         tmp_path = Path(tmp.name)
     m.save(tmp_path)
-    check("save creates file", tmp_path.exists(), str(tmp_path.stat().st_size) + " bytes")
+    check(
+        "save creates file", tmp_path.exists(), str(tmp_path.stat().st_size) + " bytes"
+    )
 
     m2 = AdaptiveBudgetModel.load(tmp_path)
     p_restored = m2.predict(f)
-    check("load restores weights", p_restored["budget_raw"] == p2["budget_raw"],
-          f"original={p2['budget_raw']} restored={p_restored['budget_raw']}")
+    check(
+        "load restores weights",
+        p_restored["budget_raw"] == p2["budget_raw"],
+        f"original={p2['budget_raw']} restored={p_restored['budget_raw']}",
+    )
     check("load restores n_training", p_restored["n_training"] == 25)
     tmp_path.unlink()
 
@@ -113,7 +130,9 @@ def main():
 
     # ── 10. Thread safety ──
     import threading
+
     errors = []
+
     def thread_fn():
         try:
             for _ in range(50):
@@ -122,9 +141,15 @@ def main():
             errors.append(e)
 
     threads = [threading.Thread(target=thread_fn) for _ in range(4)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    check("thread-safe (4x50 concurrent predicts)", len(errors) == 0, f"errors={len(errors)}")
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check(
+        "thread-safe (4x50 concurrent predicts)",
+        len(errors) == 0,
+        f"errors={len(errors)}",
+    )
 
     # ── 11. Accuracy harness imports ──
     print("\n" + "=" * 60)
@@ -132,11 +157,16 @@ def main():
     print("=" * 60)
 
     import bench.accuracy as a
+
     check("bench.accuracy imports", True)
-    check("_COMPRESSORS has 6 modes", len(a._COMPRESSORS) == 6,
-          str(list(a._COMPRESSORS.keys())))
+    check(
+        "_COMPRESSORS has 6 modes",
+        len(a._COMPRESSORS) == 6,
+        str(list(a._COMPRESSORS.keys())),
+    )
 
     import inspect
+
     sig_rb = inspect.signature(a.run_benchmark)
     check("run_benchmark has 'mode' param", "mode" in sig_rb.parameters)
 
@@ -147,10 +177,12 @@ def main():
     check("_compress_messages_modal has 'mode' param", "mode" in sig_cm.parameters)
 
     # ── 12. Compressors work on real text ──
-    text = ("The Wright brothers were two American aviation pioneers credited "
-            "with inventing, building, and flying the world's first successful "
-            "motor-operated airplane. They made the first controlled, sustained "
-            "flight of a powered, heavier-than-air aircraft on December 17, 1903. ") * 5
+    text = (
+        "The Wright brothers were two American aviation pioneers credited "
+        "with inventing, building, and flying the world's first successful "
+        "motor-operated airplane. They made the first controlled, sustained "
+        "flight of a powered, heavier-than-air aircraft on December 17, 1903. "
+    ) * 5
     q = "When did the Wright brothers first fly?"
     budget = 80
 
@@ -158,8 +190,11 @@ def main():
         try:
             out = a._COMPRESSORS[mode](text, budget, q)
             ratio = len(out) / len(text) if text else 0
-            check(f"compressor '{mode}' works", len(out) > 0 and len(out) < len(text),
-                  f"in={len(text)}c out={len(out)}c ratio={ratio:.1%}")
+            check(
+                f"compressor '{mode}' works",
+                len(out) > 0 and len(out) < len(text),
+                f"in={len(text)}c out={len(out)}c ratio={ratio:.1%}",
+            )
         except Exception as e:
             check(f"compressor '{mode}' works", False, f"{type(e).__name__}: {e}")
 
@@ -167,11 +202,17 @@ def main():
     for mode in ("llmlingua", "hybrid"):
         try:
             out = a._COMPRESSORS[mode](text, budget, q)
-            check(f"compressor '{mode}' works", len(out) > 0,
-                  f"in={len(text)}c out={len(out)}c")
+            check(
+                f"compressor '{mode}' works",
+                len(out) > 0,
+                f"in={len(text)}c out={len(out)}c",
+            )
         except Exception as e:
-            check(f"compressor '{mode}' works (optional dep)", True,
-                  f"skipped: {type(e).__name__}")
+            check(
+                f"compressor '{mode}' works (optional dep)",
+                True,
+                f"skipped: {type(e).__name__}",
+            )
 
     # ── Summary ──
     print("\n" + "=" * 60)

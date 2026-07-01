@@ -22,19 +22,19 @@ from pathlib import Path
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
-from entroly.online_learner import OnlinePrism
-from entroly.ravs.compiler import PlanCompiler, NodeKind
-from entroly.ravs.events import (
+from entroly.online_learner import OnlinePrism  # noqa: E402
+from entroly.ravs.compiler import PlanCompiler, NodeKind  # noqa: E402
+from entroly.ravs.events import (  # noqa: E402
     AppendOnlyEventLog,
     DecompositionEvidence,
     OutcomeEvent,
     TraceEvent,
 )
-from entroly.ravs.executors import ExecutorRegistry
-from entroly.ravs.outcome_bridge import OutcomeBridge
-from entroly.ravs.report import generate_report, format_report_text
-from entroly.ravs.shadow_runner import ShadowRunner
-from entroly.ravs.verifiers import VerifierRegistry
+from entroly.ravs.executors import ExecutorRegistry  # noqa: E402
+from entroly.ravs.outcome_bridge import OutcomeBridge  # noqa: E402
+from entroly.ravs.report import generate_report, format_report_text  # noqa: E402
+from entroly.ravs.shadow_runner import ShadowRunner  # noqa: E402
+from entroly.ravs.verifiers import VerifierRegistry  # noqa: E402
 
 
 def main():
@@ -56,7 +56,7 @@ def main():
         )
         bridge = OutcomeBridge(prism)
         runner = ShadowRunner()
-        compiler = PlanCompiler()
+        PlanCompiler()
 
         print("  ✓ Components initialized (PRISM, Bridge, Shadow Runner)\n")
 
@@ -183,7 +183,7 @@ def main():
 
         # ── Generate offline report ───────────────────────────────
         report = generate_report(str(log_path))
-        print(f"\n  ── Offline Report ────────────────────────────────────")
+        print("\n  ── Offline Report ────────────────────────────────────")
         print(f"  Total requests:          {report['total_requests']}")
         print(f"  Honest label coverage:   {report['honest_label_coverage']*100:.0f}%")
         print(f"  Weak label coverage:     {report['weak_label_coverage']*100:.0f}%")
@@ -201,7 +201,7 @@ def main():
                   f"avg=${entry['avg_cost_usd']:.6f}")
 
         # ── Assertions ────────────────────────────────────────────
-        print(f"\n  ── Assertions ────────────────────────────────────────")
+        print("\n  ── Assertions ────────────────────────────────────────")
         ok = True
 
         def check(name, cond):
@@ -232,12 +232,12 @@ def main():
         j2 = json.dumps(r2, sort_keys=True)
         check("byte-stable JSON output", j1 == j2)
 
-        print(f"\n  ══════════════════════════════════════════════════════════")
+        print("\n  ══════════════════════════════════════════════════════════")
         if ok:
-            print(f"  ALL ASSERTIONS PASSED ✓")
+            print("  ALL ASSERTIONS PASSED ✓")
         else:
-            print(f"  SOME ASSERTIONS FAILED ✗")
-        print(f"  ══════════════════════════════════════════════════════════\n")
+            print("  SOME ASSERTIONS FAILED ✗")
+        print("  ══════════════════════════════════════════════════════════\n")
 
         return 0 if ok else 1
 

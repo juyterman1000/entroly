@@ -205,8 +205,8 @@ def create_engine_from_config(config: dict):
     w = config["weights"]
     d = config["decay"]
     k = config["knapsack"]
-    sw = config.get("sliding_window", {})
-    at = config.get("autotuner", {})
+    config.get("sliding_window", {})
+    config.get("autotuner", {})
     # IOS parameters from tuning config
     ios = config.get("ios", {})
     return EntrolyEngine(
@@ -305,7 +305,8 @@ def evaluate(config: dict | None = None, cases_path: Path | None = None) -> dict
         config = load_tuning_config()
     cases = load_cases(cases_path)
 
-    factory = lambda: create_engine_from_config(config)
+    def factory():
+        return create_engine_from_config(config)
 
     results = []
     for case in cases:

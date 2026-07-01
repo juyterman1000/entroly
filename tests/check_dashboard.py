@@ -1,8 +1,13 @@
 """Check exact field names in explain_selection output."""
-import sys, json
+
+import sys
+import json
+
 if sys.platform == "win32":
-    try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except: pass
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except:
+        pass
 
 from entroly.server import EntrolyEngine
 from entroly.auto_index import auto_index
@@ -20,7 +25,7 @@ inc = explain.get("included", [])
 if inc:
     f = dict(inc[0]) if hasattr(inc[0], "items") else inc[0]
     print("=== FIRST INCLUDED FRAGMENT KEYS ===")
-    for k, v in (f.items() if isinstance(f, dict) else []):
+    for k, v in f.items() if isinstance(f, dict) else []:
         print(f"  {k}: {type(v).__name__} = {str(v)[:80]}")
 else:
     print("No included fragments")

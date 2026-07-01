@@ -27,8 +27,8 @@ import pytest
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
-from entroly.online_learner import OnlinePrism, compute_implicit_reward, compute_contributions
-from entroly.ravs.outcome_bridge import (
+from entroly.online_learner import OnlinePrism, compute_implicit_reward, compute_contributions  # noqa: E402
+from entroly.ravs.outcome_bridge import (  # noqa: E402
     CachedObservation,
     OutcomeBridge,
     honest_reward,
@@ -124,7 +124,7 @@ def test_hpc04_posterior_correction_changes_alphas():
     bridge = _make_bridge(prism)
 
     # Record initial alphas
-    initial_alphas = dict(prism._alphas)
+    dict(prism._alphas)
 
     # Simulate an optimization with low implicit reward
     contribs = {"w_recency": 0.4, "w_frequency": 0.1, "w_semantic": 0.4, "w_entropy": 0.1}

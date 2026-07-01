@@ -30,8 +30,8 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.esg import compute_tension
-from entroly.rnr import compute_rnr
+from entroly.esg import compute_tension  # noqa: E402
+from entroly.rnr import compute_rnr  # noqa: E402
 
 SEED = 42
 N_ITEMS = 400

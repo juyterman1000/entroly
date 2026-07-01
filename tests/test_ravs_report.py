@@ -33,13 +33,13 @@ import pytest
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
-from entroly.ravs.events import (
+from entroly.ravs.events import (  # noqa: E402
     AppendOnlyEventLog,
     DecompositionEvidence,
     OutcomeEvent,
     TraceEvent,
 )
-from entroly.ravs.report import generate_report, format_report_text
+from entroly.ravs.report import generate_report, format_report_text  # noqa: E402
 
 
 # ── Helpers ────────────────────────────────────────────────────────────

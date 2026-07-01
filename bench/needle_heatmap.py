@@ -68,7 +68,7 @@ def generate_heatmap(
 
     cmap = plt.cm.RdYlGn
 
-    im1 = ax1.imshow(baseline_matrix, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+    ax1.imshow(baseline_matrix, cmap=cmap, vmin=0, vmax=1, aspect="auto")
     ax1.set_title("Baseline (No Compression)", fontsize=14)
     ax1.set_xlabel("Context Length")
     ax1.set_ylabel("Needle Depth")

@@ -17,18 +17,17 @@
 //!   - Kanerva (1988): Sparse Distributed Memory
 //!   - ebbiforge-core: HippocampusEngine, Kanerva SDM, LSH Index
 
+pub mod consolidation;
 pub mod episode;
 pub mod kanerva;
 pub mod lsh;
-pub mod consolidation;
 
+use consolidation::{consolidate, ConsolidationConfig};
 use episode::{
-    Episode, MemoryTier, EmotionalTag,
-    simhash_embedding, hamming_distance, trigram_embedding,
+    hamming_distance, simhash_embedding, trigram_embedding, EmotionalTag, Episode, MemoryTier,
 };
 use kanerva::KanervaSDM;
 use lsh::LSHIndex;
-use consolidation::{ConsolidationConfig, consolidate};
 
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -210,7 +209,10 @@ impl MemoryManager {
 
         // Update indices
         self.id_to_index.insert(id, ep_idx);
-        self.agent_episodes.entry(agent_id).or_default().push(ep_idx);
+        self.agent_episodes
+            .entry(agent_id)
+            .or_default()
+            .push(ep_idx);
         self.lsh_index.insert(&binary_address, ep_idx);
 
         // Temporal index
@@ -226,17 +228,13 @@ impl MemoryManager {
     /// Now uses LSH-accelerated lookup for O(1) candidate retrieval,
     /// then greedy knapsack for budget-constrained selection.
     #[pyo3(signature = (agent_id, budget = None, tier = None))]
-    pub fn recall(
-        &mut self,
-        agent_id: u64,
-        budget: Option<u32>,
-        tier: Option<&str>,
-    ) -> PyObject {
+    pub fn recall(&mut self, agent_id: u64, budget: Option<u32>, tier: Option<&str>) -> PyObject {
         let max_tokens = budget.unwrap_or(self.l1_budget);
         let tier_filter = tier.map(MemoryTier::from_str);
 
         // Get candidate episodes for this agent
-        let indices: Vec<usize> = self.agent_episodes
+        let indices: Vec<usize> = self
+            .agent_episodes
             .get(&agent_id)
             .cloned()
             .unwrap_or_default();
@@ -244,11 +242,15 @@ impl MemoryManager {
         // Score each candidate
         let mut scored: Vec<(usize, f64, u32)> = Vec::new();
         for &idx in &indices {
-            if idx >= self.episodes.len() { continue; }
+            if idx >= self.episodes.len() {
+                continue;
+            }
             let ep = &self.episodes[idx];
 
             if let Some(ref tf) = tier_filter {
-                if ep.tier != *tf { continue; }
+                if ep.tier != *tf {
+                    continue;
+                }
             }
 
             let score = ep.score(self.current_tick);
@@ -261,7 +263,9 @@ impl MemoryManager {
         scored.sort_by(|a, b| {
             let ratio_a = a.1 / a.2.max(1) as f64;
             let ratio_b = b.1 / b.2.max(1) as f64;
-            ratio_b.partial_cmp(&ratio_a).unwrap_or(std::cmp::Ordering::Equal)
+            ratio_b
+                .partial_cmp(&ratio_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         let mut selected: Vec<usize> = Vec::new();
@@ -295,9 +299,11 @@ impl MemoryManager {
                     d.set_item("importance", ep.salience as f64 / 50.0).unwrap();
                     d.set_item("tier", ep.tier.as_str()).unwrap();
                     d.set_item("tokens", ep.token_cost).unwrap();
-                    d.set_item("retention", ep.retention(self.current_tick)).unwrap();
+                    d.set_item("retention", ep.retention(self.current_tick))
+                        .unwrap();
                     d.set_item("recall_count", ep.recall_count).unwrap();
-                    d.set_item("emotional_tag", ep.emotional_tag.as_str()).unwrap();
+                    d.set_item("emotional_tag", ep.emotional_tag.as_str())
+                        .unwrap();
                     d.set_item("consolidated", ep.consolidated).unwrap();
                     result.append(d).unwrap();
                 }
@@ -311,7 +317,8 @@ impl MemoryManager {
         self.current_tick += 1.0;
 
         // Auto-consolidation at interval
-        if (self.current_tick - self.last_consolidation_tick) >= self.consolidation_interval as f64 {
+        if (self.current_tick - self.last_consolidation_tick) >= self.consolidation_interval as f64
+        {
             let report = consolidate(
                 &mut self.episodes,
                 &mut self.sdm,
@@ -334,9 +341,8 @@ impl MemoryManager {
         let threshold = threshold as f32;
         let before = self.episodes.len();
 
-        self.episodes.retain(|ep| {
-            ep.tier == MemoryTier::Semantic || ep.retention(tick) >= threshold
-        });
+        self.episodes
+            .retain(|ep| ep.tier == MemoryTier::Semantic || ep.retention(tick) >= threshold);
 
         let forgotten = (before - self.episodes.len()) as u32;
         self.total_forgotten += forgotten as u64;
@@ -379,9 +385,18 @@ impl MemoryManager {
 
         for ep in &self.episodes {
             match ep.tier {
-                MemoryTier::Working  => { l1_count += 1; l1_tokens += ep.token_cost; },
-                MemoryTier::Episodic => { l2_count += 1; l2_tokens += ep.token_cost; },
-                MemoryTier::Semantic => { l3_count += 1; l3_tokens += ep.token_cost; },
+                MemoryTier::Working => {
+                    l1_count += 1;
+                    l1_tokens += ep.token_cost;
+                }
+                MemoryTier::Episodic => {
+                    l2_count += 1;
+                    l2_tokens += ep.token_cost;
+                }
+                MemoryTier::Semantic => {
+                    l3_count += 1;
+                    l3_tokens += ep.token_cost;
+                }
             }
         }
 
@@ -403,7 +418,8 @@ impl MemoryManager {
             d.set_item("total_stored", self.total_stored).unwrap();
             d.set_item("total_recalled", self.total_recalled).unwrap();
             d.set_item("total_forgotten", self.total_forgotten).unwrap();
-            d.set_item("total_consolidated", self.total_consolidated).unwrap();
+            d.set_item("total_consolidated", self.total_consolidated)
+                .unwrap();
             d.into()
         })
     }
@@ -426,14 +442,18 @@ impl MemoryManager {
 impl MemoryManager {
     /// Evict the weakest episode (lowest retention score).
     fn evict_weakest(&mut self) {
-        if self.episodes.is_empty() { return; }
+        if self.episodes.is_empty() {
+            return;
+        }
 
         let tick = self.current_tick;
         let mut min_score = f64::MAX;
         let mut min_idx = 0;
 
         for (i, ep) in self.episodes.iter().enumerate() {
-            if ep.tier == MemoryTier::Semantic { continue; } // never evict semantic
+            if ep.tier == MemoryTier::Semantic {
+                continue;
+            } // never evict semantic
             let score = ep.score(tick);
             if score < min_score {
                 min_score = score;
@@ -455,7 +475,10 @@ impl MemoryManager {
         for (idx, ep) in self.episodes.iter().enumerate() {
             self.lsh_index.insert(&ep.binary_address, idx);
             self.id_to_index.insert(ep.id, idx);
-            self.agent_episodes.entry(ep.agent_id).or_default().push(idx);
+            self.agent_episodes
+                .entry(ep.agent_id)
+                .or_default()
+                .push(idx);
             let tick_key = ep.created_at as i64;
             self.temporal_index.entry(tick_key).or_default().push(ep.id);
         }
@@ -492,7 +515,9 @@ mod tests {
         mm.remember(1, "old low-importance memory".into(), 0.1, "working", None);
 
         // Advance 1000 ticks — auto-consolidation every 100 ticks will evict it
-        for _ in 0..1000 { mm.tick(); }
+        for _ in 0..1000 {
+            mm.tick();
+        }
 
         // Memory may have been evicted by auto-consolidation OR by explicit forget().
         // Either way, total_forgotten should be at least 1.
@@ -500,10 +525,27 @@ mod tests {
         Python::with_gil(|py| {
             let stats: pyo3::PyObject = mm.stats();
             let dict = stats.downcast_bound::<pyo3::types::PyDict>(py).unwrap();
-            let total_forgotten: u64 = dict.get_item("total_forgotten").unwrap().unwrap().extract().unwrap();
-            assert!(total_forgotten >= 1, "Ancient low-salience memory should be forgotten (total_forgotten={})", total_forgotten);
-            let total_entries: usize = dict.get_item("total_entries").unwrap().unwrap().extract().unwrap();
-            assert_eq!(total_entries, 0, "No memories should remain after 1000 ticks");
+            let total_forgotten: u64 = dict
+                .get_item("total_forgotten")
+                .unwrap()
+                .unwrap()
+                .extract()
+                .unwrap();
+            assert!(
+                total_forgotten >= 1,
+                "Ancient low-salience memory should be forgotten (total_forgotten={})",
+                total_forgotten
+            );
+            let total_entries: usize = dict
+                .get_item("total_entries")
+                .unwrap()
+                .unwrap()
+                .extract()
+                .unwrap();
+            assert_eq!(
+                total_entries, 0,
+                "No memories should remain after 1000 ticks"
+            );
         });
     }
 
@@ -513,7 +555,9 @@ mod tests {
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         mm.remember(1, "core pattern knowledge".into(), 0.1, "semantic", None);
 
-        for _ in 0..1000 { mm.tick(); }
+        for _ in 0..1000 {
+            mm.tick();
+        }
 
         let forgotten = mm.forget(0.5);
         assert_eq!(forgotten, 0, "Semantic memories should never be forgotten");
@@ -523,7 +567,13 @@ mod tests {
     fn test_consolidation_promotes() {
         pyo3::prepare_freethreaded_python();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
-        mm.remember(1, "important insight discovered".into(), 0.9, "working", None);
+        mm.remember(
+            1,
+            "important insight discovered".into(),
+            0.9,
+            "working",
+            None,
+        );
 
         // Simulate multiple recalls to meet min_accesses threshold
         if let Some(ep) = mm.episodes.first_mut() {
@@ -532,7 +582,10 @@ mod tests {
         }
 
         let promoted = mm.consolidate(0.3, 2);
-        assert!(promoted >= 1, "High-importance frequently-recalled memory should consolidate");
+        assert!(
+            promoted >= 1,
+            "High-importance frequently-recalled memory should consolidate"
+        );
     }
 
     #[test]
@@ -549,7 +602,13 @@ mod tests {
     fn test_spaced_recall_reinforcement() {
         pyo3::prepare_freethreaded_python();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
-        mm.remember(1, "reinforceable memory content".into(), 0.5, "working", None);
+        mm.remember(
+            1,
+            "reinforceable memory content".into(),
+            0.5,
+            "working",
+            None,
+        );
         let initial_salience = mm.episodes[0].salience;
 
         // Recall triggers reinforcement
@@ -558,8 +617,12 @@ mod tests {
         });
 
         let boosted_salience = mm.episodes[0].salience;
-        assert!(boosted_salience > initial_salience,
-            "Salience should increase after recall: {} → {}", initial_salience, boosted_salience);
+        assert!(
+            boosted_salience > initial_salience,
+            "Salience should increase after recall: {} → {}",
+            initial_salience,
+            boosted_salience
+        );
     }
 
     #[test]
@@ -576,7 +639,11 @@ mod tests {
         let critical_salience = mm.episodes[1].salience;
 
         // Critical should have much higher salience
-        assert!(critical_salience > neutral_salience * 2.0,
-            "Critical salience ({}) should be >> Neutral ({})", critical_salience, neutral_salience);
+        assert!(
+            critical_salience > neutral_salience * 2.0,
+            "Critical salience ({}) should be >> Neutral ({})",
+            critical_salience,
+            neutral_salience
+        );
     }
 }

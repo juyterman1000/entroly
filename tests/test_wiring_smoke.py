@@ -25,8 +25,8 @@ assert toks == ["Hello"], f"Expected ['Hello'], got {toks}"
 print("  logprob extraction: PASS")
 
 # 2. Test spectral + EPR modules
-from entroly.ravs.spectral import compute_spectral_consistency
-from entroly.ravs.epr import compute_epr, compute_fused_risk
+from entroly.ravs.spectral import compute_spectral_consistency  # noqa: E402
+from entroly.ravs.epr import compute_epr, compute_fused_risk  # noqa: E402
 
 spec = compute_spectral_consistency(
     "The Eiffel Tower in Paris was built in 1889.",
@@ -49,7 +49,7 @@ fused = compute_fused_risk(0.3, epr_lp, entity_gap=0.2)
 print(f"  fused risk: {fused.fused_risk:.3f}")
 
 # 4. Verify RAVS __init__ exports everything
-from entroly.ravs import (
+from entroly.ravs import (  # noqa: E402
     compute_epr, compute_fused_risk, EPRSignal, FusedHallucinationSignal,
     compute_spectral_consistency, SpectralSignal,
     EpistemicCascadeEngine, compute_fisher_curvature,

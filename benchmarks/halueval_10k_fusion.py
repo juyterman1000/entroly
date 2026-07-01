@@ -162,7 +162,7 @@ def main():
 
     # ── Print ──
     n_test = len(test_l)
-    print(f"\n  === Full 10K Results ===\n")
+    print("\n  === Full 10K Results ===\n")
     print(f"  {'Metric':<25} {'WITNESS':>12} {'Fusion':>12} {'Delta':>10}")
     print(f"  {'-'*25} {'-'*12} {'-'*12} {'-'*10}")
     print(f"  {'AUROC (full)':<25} {w_auroc_full:>12.4f} {f_auroc_full:>12.4f} "
@@ -178,7 +178,7 @@ def main():
     significant = abs(f_auroc_test - w_auroc_test) > 0.01
     print(f"\n  Statistically significant AUROC lift: "
           f"{'YES' if significant else 'NO (within noise)'}")
-    print(f"  Published GPT-3.5 baseline: 62.59% accuracy")
+    print("  Published GPT-3.5 baseline: 62.59% accuracy")
     print(f"  WITNESS: {w_acc:.2%} accuracy (AUROC {w_auroc_full:.4f})")
     print(f"  Fusion:  {f_acc:.2%} accuracy (AUROC {f_auroc_full:.4f})")
 

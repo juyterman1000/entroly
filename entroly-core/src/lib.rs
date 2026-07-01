@@ -13,7 +13,6 @@
 mod anomaly;
 pub mod archetype;
 mod bm25;
-mod qccr;
 mod cache;
 mod causal;
 mod channel;
@@ -22,11 +21,11 @@ pub mod cogops;
 /// Pure-Rust text compression entry point for the standalone binary.
 pub mod compress;
 pub mod context_receipts;
-/// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
-pub mod proxy;
 mod conversation_pruner;
 mod dedup;
 mod depgraph;
+pub mod eicv;
+pub mod eicv_suppressor;
 mod entropy;
 mod fragment;
 mod guardrails;
@@ -38,9 +37,13 @@ mod learning;
 mod lsh;
 mod nkbe;
 mod prism;
+/// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
+pub mod proxy;
+mod qccr;
 mod query;
 pub mod query_persona;
 mod resonance;
+mod rnr;
 mod sast;
 mod semantic_dedup;
 mod skeleton;
@@ -48,19 +51,16 @@ mod telemetry;
 mod trajectory;
 mod utilization;
 mod witness;
-mod rnr;
-pub mod eicv;
-pub mod eicv_suppressor;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:
 //   - ipc:         SimHash Conditional-Entropy IPC bus (SCHIPC)
 //   - compliance:  PII + injection guard for cross-agent traffic
 //   - pollination: cross-agent knowledge transfer kernel
 //   - memory:      episode store + Kanerva SDM + LSH + consolidation
-pub mod ipc;
 pub mod compliance;
-pub mod pollination;
+pub mod ipc;
 pub mod memory;
+pub mod pollination;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -3353,12 +3353,7 @@ impl EntrolyEngine {
                 .values()
                 .map(|f| {
                     let identifiers = depgraph::extract_identifiers(&f.content);
-                    let score = bm25_idx.score(
-                        &query_terms,
-                        &f.content,
-                        &f.source,
-                        &identifiers,
-                    );
+                    let score = bm25_idx.score(&query_terms, &f.content, &f.source, &identifiers);
                     (f, score)
                 })
                 .collect();
@@ -4504,8 +4499,7 @@ impl EntrolyEngine {
             // Top-K most relevant fragment IDs (seed for cluster expansion).
             // Proxy callers pass BM25+PRISM optimized seeds. Standalone callers
             // retain the local SimHash fallback for backwards compatibility.
-            let known_ids: HashSet<&str> =
-                frags.iter().map(|f| f.fragment_id.as_str()).collect();
+            let known_ids: HashSet<&str> = frags.iter().map(|f| f.fragment_id.as_str()).collect();
             let provided_seeds = seed_ids.unwrap_or_default();
             let top_k = if provided_seeds.is_empty() {
                 scored
@@ -5973,7 +5967,11 @@ fn py_witness_features(
         claim,
         context,
         adequacy,
-        if question.trim().is_empty() { None } else { Some(question) },
+        if question.trim().is_empty() {
+            None
+        } else {
+            Some(question)
+        },
     );
     serde_json::to_string(&features)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("JSON error: {}", e)))
@@ -5990,17 +5988,16 @@ fn py_witness_risk_predict(features_json: &str) -> PyResult<f64> {
 /// Convenience binding: extract continuous features and predict risk in Rust.
 #[pyfunction]
 #[pyo3(signature = (claim, context, adequacy = 0.5, question = ""))]
-fn py_witness_risk(
-    claim: &str,
-    context: &str,
-    adequacy: f64,
-    question: &str,
-) -> PyResult<String> {
+fn py_witness_risk(claim: &str, context: &str, adequacy: f64, question: &str) -> PyResult<String> {
     let features = witness::continuous_features(
         claim,
         context,
         adequacy,
-        if question.trim().is_empty() { None } else { Some(question) },
+        if question.trim().is_empty() {
+            None
+        } else {
+            Some(question)
+        },
     );
     let risk = witness::continuous_risk(&features);
     let payload = serde_json::json!({
@@ -6194,11 +6191,26 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_progressive_thresholds, m)?)?;
     m.add_function(wrap_pyfunction!(py_compress_block, m)?)?;
     m.add_function(wrap_pyfunction!(py_classify_block, m)?)?;
-    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_ingest, m)?)?;
-    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_select, m)?)?;
-    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_run, m)?)?;
-    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_report, m)?)?;
-    m.add_function(wrap_pyfunction!(context_receipts::py_context_receipts_explain_omitted, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        context_receipts::py_context_receipts_ingest,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        context_receipts::py_context_receipts_select,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        context_receipts::py_context_receipts_run,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        context_receipts::py_context_receipts_report,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        context_receipts::py_context_receipts_explain_omitted,
+        m
+    )?)?;
     // ── QCCR retrieval (Rust SSOT; shared by Python via PyO3 + npm via WASM)
     m.add_function(wrap_pyfunction!(qccr::py_qccr_rank_files, m)?)?;
     m.add_function(wrap_pyfunction!(qccr::py_qccr_expand_query, m)?)?;

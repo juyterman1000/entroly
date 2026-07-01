@@ -31,8 +31,8 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.counterfactual import compute_gamma
-from entroly.esg import compute_tension
+from entroly.counterfactual import compute_gamma  # noqa: E402
+from entroly.esg import compute_tension  # noqa: E402
 
 SEED = 42
 N_ITEMS = 300
@@ -100,7 +100,6 @@ def run_dataset(name: str, items: list[tuple[str, str]]) -> dict:
     elapsed = time.perf_counter() - t0
 
     STYLISTIC  = {"compose", "temporal"}
-    SEMANTIC   = {"entity", "numeric", "retrieval"}
 
     manifold_verdicts = {}
     all_pass = True

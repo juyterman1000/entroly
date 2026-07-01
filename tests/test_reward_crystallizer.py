@@ -61,7 +61,8 @@ def test_c01_no_event_below_min_samples():
     for _ in range(4):
         ev = c.observe(
             query="fix bug in payments",
-            reward=0.99, weights=_w(),
+            reward=0.99,
+            weights=_w(),
             selected_fragment_ids=_frags("a", "b"),
             baseline_reward=0.50,
         )
@@ -75,7 +76,8 @@ def test_c02_ignores_at_baseline():
     for _ in range(20):
         ev = c.observe(
             query="check status of orders",
-            reward=0.50, weights=_w(),
+            reward=0.50,
+            weights=_w(),
             selected_fragment_ids=_frags("o1", "o2"),
             baseline_reward=0.50,
         )
@@ -84,8 +86,10 @@ def test_c02_ignores_at_baseline():
 
 def test_c03_crystallizes_sustained_high_reward():
     c = RewardCrystallizer(
-        min_samples=5, window=10,
-        epsilon=0.05, delta=0.05,
+        min_samples=5,
+        window=10,
+        epsilon=0.05,
+        delta=0.05,
     )
     event = None
     # Realistic shape: a query family asked many times across a session.
@@ -108,14 +112,17 @@ def test_c03_crystallizes_sustained_high_reward():
     for q in family:
         ev = c.observe(
             query=q,
-            reward=0.95, weights=_w(s=0.5, e=0.3),
+            reward=0.95,
+            weights=_w(s=0.5, e=0.3),
             selected_fragment_ids=_frags("auth.py", "session.py", "tokens.py"),
             baseline_reward=0.50,
         )
         if ev is not None:
             event = ev
             break
-    assert event is not None, "should have crystallized within 12 high-reward observations"
+    assert event is not None, (
+        "should have crystallized within 12 high-reward observations"
+    )
     assert event.n_samples >= 5
     assert event.mean_reward > 0.9
     assert event.lcb_reward > event.baseline_reward + 0.05
@@ -123,8 +130,10 @@ def test_c03_crystallizes_sustained_high_reward():
 
 def test_c04_cooldown_prevents_duplicate_emission():
     c = RewardCrystallizer(
-        min_samples=5, window=10,
-        epsilon=0.05, delta=0.05,
+        min_samples=5,
+        window=10,
+        epsilon=0.05,
+        delta=0.05,
         cooldown=10,
     )
     events = []
@@ -132,7 +141,9 @@ def test_c04_cooldown_prevents_duplicate_emission():
     q = "profile rust hot function in core engine"
     for _ in range(20):
         ev = c.observe(
-            query=q, reward=0.95, weights=_w(),
+            query=q,
+            reward=0.95,
+            weights=_w(),
             selected_fragment_ids=_frags("core.rs", "perf.rs"),
             baseline_reward=0.4,
         )
@@ -151,17 +162,31 @@ def test_c04_cooldown_prevents_duplicate_emission():
 def test_c05_cluster_requires_text_and_fragment_jaccard():
     """Two queries with similar text but disjoint fragment sets → different clusters.
     Two queries with identical fragments but unrelated text → different clusters."""
-    c = RewardCrystallizer(min_samples=3, window=10, epsilon=0.05, delta=0.05,
-                           query_jaccard=0.34, fragment_jaccard=0.5)
+    c = RewardCrystallizer(
+        min_samples=3,
+        window=10,
+        epsilon=0.05,
+        delta=0.05,
+        query_jaccard=0.34,
+        fragment_jaccard=0.5,
+    )
     # First family: "fix auth bug" with auth fragments
     for i in range(4):
-        c.observe(query=f"fix auth bug {i}", reward=0.95, weights=_w(),
-                  selected_fragment_ids=_frags("auth.py", "login.py"),
-                  baseline_reward=0.4)
+        c.observe(
+            query=f"fix auth bug {i}",
+            reward=0.95,
+            weights=_w(),
+            selected_fragment_ids=_frags("auth.py", "login.py"),
+            baseline_reward=0.4,
+        )
     # Same text family BUT disjoint fragments → must NOT merge
-    c.observe(query="fix auth bug zzz", reward=0.95, weights=_w(),
-              selected_fragment_ids=_frags("payment.py", "billing.py"),
-              baseline_reward=0.4)
+    c.observe(
+        query="fix auth bug zzz",
+        reward=0.95,
+        weights=_w(),
+        selected_fragment_ids=_frags("payment.py", "billing.py"),
+        baseline_reward=0.4,
+    )
     stats = c.stats()
     assert stats["active_clusters"] >= 2
 
@@ -195,7 +220,9 @@ def test_c07_event_carries_cluster_state():
     ]
     for q in family:
         ev = c.observe(
-            query=q, reward=0.95, weights=_w(s=0.45, e=0.30),
+            query=q,
+            reward=0.95,
+            weights=_w(s=0.45, e=0.30),
             selected_fragment_ids=_frags("knapsack.rs", "entropy.rs"),
             baseline_reward=0.45,
         )
@@ -216,31 +243,43 @@ def test_c07_event_carries_cluster_state():
 
 def test_c08_empty_query_silent():
     c = RewardCrystallizer()
-    assert c.observe(
-        query="", reward=0.95, weights=_w(),
-        selected_fragment_ids=_frags("x"), baseline_reward=0.5,
-    ) is None
+    assert (
+        c.observe(
+            query="",
+            reward=0.95,
+            weights=_w(),
+            selected_fragment_ids=_frags("x"),
+            baseline_reward=0.5,
+        )
+        is None
+    )
     assert c.stats()["total_observations"] == 0
 
 
 def test_c09_thread_safety_no_corruption():
-    c = RewardCrystallizer(min_samples=3, window=20, epsilon=0.05,
-                           delta=0.05, cooldown=100)
+    c = RewardCrystallizer(
+        min_samples=3, window=20, epsilon=0.05, delta=0.05, cooldown=100
+    )
     errors = []
+
     def worker(thread_id: int) -> None:
         try:
             for i in range(50):
                 c.observe(
                     query=f"thread {thread_id} query {i}",
-                    reward=0.6, weights=_w(),
+                    reward=0.6,
+                    weights=_w(),
                     selected_fragment_ids=_frags(f"frag_{thread_id}"),
                     baseline_reward=0.5,
                 )
         except Exception as e:
             errors.append(e)
+
     threads = [threading.Thread(target=worker, args=(t,)) for t in range(8)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
     assert errors == []
     assert c.stats()["total_observations"] == 8 * 50
 
@@ -256,12 +295,19 @@ def _fake_event(**overrides):
         cluster_id="cl0001",
         sample_queries=["fix auth bug", "fix auth crash", "fix auth retry"],
         common_terms=["fix", "auth", "bug"],
-        weight_profile={"w_recency": 0.2, "w_frequency": 0.2,
-                        "w_semantic": 0.4, "w_entropy": 0.2},
+        weight_profile={
+            "w_recency": 0.2,
+            "w_frequency": 0.2,
+            "w_semantic": 0.4,
+            "w_entropy": 0.2,
+        },
         fragment_recipe=["auth.py", "session.py", "login.py"],
-        n_samples=8, mean_reward=0.92,
-        lcb_reward=0.78, baseline_reward=0.45,
-        effect_size=0.33, created_at=0.0,
+        n_samples=8,
+        mean_reward=0.92,
+        lcb_reward=0.78,
+        baseline_reward=0.45,
+        effect_size=0.33,
+        created_at=0.0,
     )
     base.update(overrides)
     return CrystallizationEvent(**base)
@@ -273,7 +319,9 @@ def test_c10_synthesize_from_success_carries_provenance():
     assert spec.metrics.get("source") == "crystallization"
     assert spec.metrics.get("fitness_score") == 0.78
     assert "auth.py" in spec.tool_code
-    assert "0.4000" in spec.tool_code or "0.4" in spec.tool_code  # weight profile embedded
+    assert (
+        "0.4000" in spec.tool_code or "0.4" in spec.tool_code
+    )  # weight profile embedded
     # Trigger contains common terms
     assert "auth" in spec.trigger
     # Test cases come from real winning queries, not synthetic placeholders
@@ -283,6 +331,7 @@ def test_c10_synthesize_from_success_carries_provenance():
 def test_c11_crystallize_skill_writes_vault(tmp_path):
     # Stand up a minimal vault rooted at tmp_path
     from entroly.vault import VaultManager, VaultConfig
+
     vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
     vault.ensure_structure()
     se = SkillEngine(vault)
@@ -327,7 +376,9 @@ def test_c12_promoted_status_skips_draft_lifecycle():
     assert spec.status == "promoted"
     # Distinct from failure-driven path which starts as 'draft'
     failure_spec = SkillSynthesizer().synthesize_from_gap(
-        "auth", ["fix auth"], "Debugging",
+        "auth",
+        ["fix auth"],
+        "Debugging",
     )
     assert failure_spec.status == "draft"
 
@@ -353,7 +404,7 @@ def test_c13_simhash_similarity_property():
 def test_c14_jaccard_basic():
     assert _jaccard(["a", "b", "c"], ["a", "b", "c"]) == 1.0
     assert _jaccard(["a", "b"], ["c", "d"]) == 0.0
-    assert abs(_jaccard(["a", "b", "c"], ["b", "c", "d"]) - 2/4) < 1e-9
+    assert abs(_jaccard(["a", "b", "c"], ["b", "c", "d"]) - 2 / 4) < 1e-9
     assert _jaccard([], []) == 1.0
 
 

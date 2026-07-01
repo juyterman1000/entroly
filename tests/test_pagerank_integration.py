@@ -120,7 +120,7 @@ class TestRustPageRank:
             "from config import Config\ndef start(): Config.DEBUG",
             "server.py", 20, False,
         )
-        stats = dict(rust_engine.dep_graph_stats())
+        dict(rust_engine.dep_graph_stats())
         scores = dict(rust_engine.compute_pagerank())
         # Should have scores regardless of edge count
         assert len(scores) >= 2
@@ -419,7 +419,7 @@ class TestDaemonLifecycle:
         )
 
         # First run processes the gap
-        r1 = daemon.run_once()
+        daemon.run_once()
         # Second run should skip due to cooldown
         r2 = daemon.run_once()
         assert r2["gaps_processed"] == 0

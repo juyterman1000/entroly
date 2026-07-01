@@ -32,6 +32,7 @@ import random
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 _THIS = Path(__file__).resolve().parent
 _REPO = _THIS.parent
@@ -52,7 +53,7 @@ log = logging.getLogger("fever_baseline")
 # Order of dataset loaders to try. Each loader returns
 # list[(evidence_text, claim_text, label_int)] where label is 0 = SUPPORTS,
 # 1 = REFUTES, 2 = NOT_ENOUGH_INFO (or None to skip).
-def _load_first_available_split(name: str, prefer: list[str]) -> "Any":
+def _load_first_available_split(name: str, prefer: list[str]) -> Any:
     """Try a list of split names; return the first that loads."""
     from datasets import load_dataset
     last_err = None

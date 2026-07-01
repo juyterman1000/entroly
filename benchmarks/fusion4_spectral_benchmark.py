@@ -142,7 +142,7 @@ def main():
     f3_auroc = _auroc(test_f3, test_l)
     f4_auroc = _auroc(test_f4, test_l)
     sp_auroc = _auroc(test_sp, test_l)
-    ece_risks = [min(1.0, compute_fisher_curvature(ans)[0] * 2.5)
+    [min(1.0, compute_fisher_curvature(ans)[0] * 2.5)
                  for ans in [""] * 0]  # skip standalone — too slow
 
     # Full AUROC
@@ -181,7 +181,8 @@ def main():
     f4_acc = acc(test_f4, test_l, f4_tau)
 
     n_test = len(test_l)
-    ci = lambda a: 1.96 * (a * (1 - a) / n_test) ** 0.5
+    def ci(a):
+        return 1.96 * (a * (1 - a) / n_test) ** 0.5
 
     print(f"\n  === Results (test split, n={n_test}) ===\n")
     print(f"  {'System':<30} {'AUROC(test)':>12} {'AUROC(full)':>12} "
@@ -199,7 +200,7 @@ def main():
     # Delta analysis
     d34 = f4_auroc - f3_auroc
     d_w4 = f4_auroc - w_auroc
-    print(f"\n  Delta (AUROC):")
+    print("\n  Delta (AUROC):")
     print(f"    Fusion-4 vs WITNESS:   {d_w4:+.4f}")
     print(f"    Fusion-4 vs Fusion-3:  {d34:+.4f}")
     print(f"    Significant (>0.01):   {'YES' if abs(d34) > 0.01 else 'NO'}")

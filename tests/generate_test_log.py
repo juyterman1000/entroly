@@ -2,7 +2,11 @@
 Generate a realistic RAVS event log for end-to-end CLI testing.
 Simulates 20 requests across a typical coding session.
 """
-import json, os, sys, time, random
+import json
+import os
+import sys
+import time
+import random
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from entroly.ravs.events import AppendOnlyEventLog, TraceEvent, OutcomeEvent

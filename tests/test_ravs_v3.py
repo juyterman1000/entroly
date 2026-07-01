@@ -32,7 +32,7 @@ import pytest
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
-from entroly.ravs.router import (
+from entroly.ravs.router import (  # noqa: E402
     DomainRisk,
     GateStatus,
     GuardedRouter,

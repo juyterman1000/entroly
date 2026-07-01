@@ -24,7 +24,7 @@ import pytest
 
 _HAS_GIT = shutil.which("git") is not None
 
-from entroly.causal_attribution import (
+from entroly.causal_attribution import (  # noqa: E402
     CausalCredit,
     RetrievalSnapshot,
     RetrievedFragment,

@@ -29,13 +29,13 @@ def translate_readme():
                 temperature=0.2
             )
             translated = response.choices[0].message.content
-            
+
             # Write to file
             filename = f"README_{code}.md"
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(translated)
             print(f"✅ Saved {filename}")
-            
+
         except Exception as e:
             print(f"Error translating {lang}: {e}")
 

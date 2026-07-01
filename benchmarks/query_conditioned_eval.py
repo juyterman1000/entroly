@@ -111,7 +111,7 @@ def run():
                   f"{'YES' if ag_recall else 'no':15} {ag_prec:<13.2f}")
 
         qc_prec = (qc_prec_num / qc_prec_den) if qc_prec_den else 0.0
-        ag_recall_rate = len(ag_kept) and sum(1 for _,_,m in TOPICS if m in agnostic) / len(TOPICS)
+        len(ag_kept) and sum(1 for _,_,m in TOPICS if m in agnostic) / len(TOPICS)
         print("-" * 100)
         print(f"  QUERY-CONDITIONED : recall {qc_recall_hits}/{len(TOPICS)},  precision {qc_prec:.2f}")
         print(f"  QUERY-AGNOSTIC    : recall {sum(1 for m in markers if m in agnostic)}/{len(TOPICS)},  "

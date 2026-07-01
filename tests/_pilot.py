@@ -16,8 +16,8 @@ if not key:
 os.environ["OPENAI_API_KEY"] = key
 print(f"Key loaded (len={len(key)})", flush=True)
 
-from bench.accuracy import run_benchmark
-import json
+from bench.accuracy import run_benchmark  # noqa: E402
+import json  # noqa: E402
 
 for bench in ["squad"]:
     print(f"\n=== {bench} (5 samples) ===", flush=True)

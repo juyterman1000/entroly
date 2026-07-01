@@ -32,7 +32,7 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.eicv import EICVAnalyzer
+from entroly.eicv import EICVAnalyzer  # noqa: E402
 
 SEED = 42
 N_ITEMS = 200

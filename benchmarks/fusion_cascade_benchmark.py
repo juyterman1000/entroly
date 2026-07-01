@@ -208,7 +208,7 @@ def main() -> None:
     w_iqr = statistics.quantiles(witness_risks, n=4)
     f_iqr = statistics.quantiles(fusion_scores, n=4)
 
-    print(f"\n  Score concentration (higher spread = better cascade):")
+    print("\n  Score concentration (higher spread = better cascade):")
     print(f"    WITNESS-only:  std={w_std:.4f}  IQR=[{w_iqr[0]:.4f}, {w_iqr[2]:.4f}]")
     print(f"    Fusion (3-sig): std={f_std:.4f}  IQR=[{f_iqr[0]:.4f}, {f_iqr[2]:.4f}]")
 
@@ -221,11 +221,11 @@ def main() -> None:
     def take(ix, arr): return [arr[i] for i in ix]
 
     # WITNESS-only baseline arrays
-    w_cal_s, w_cal_l, w_cal_j = take(cal_idx, witness_risks), take(cal_idx, labels), take(cal_idx, llm_preds)
+    w_cal_s, w_cal_l, _w_cal_j = take(cal_idx, witness_risks), take(cal_idx, labels), take(cal_idx, llm_preds)
     w_test_s, w_test_l, w_test_j = take(test_idx, witness_risks), take(test_idx, labels), take(test_idx, llm_preds)
 
     # Fusion arrays
-    f_cal_s, f_cal_l, f_cal_j = take(cal_idx, fusion_scores), take(cal_idx, labels), take(cal_idx, llm_preds)
+    f_cal_s, f_cal_l, _f_cal_j = take(cal_idx, fusion_scores), take(cal_idx, labels), take(cal_idx, llm_preds)
     f_test_s, f_test_l, f_test_j = take(test_idx, fusion_scores), take(test_idx, labels), take(test_idx, llm_preds)
 
     # ── Baselines ──
@@ -269,7 +269,7 @@ def main() -> None:
 
     # ── Cascade frontier: WITNESS-only vs Fusion ──
     Q = 1.0
-    print(f"\n  ── Cascade Frontier (band fit on calibration, measured on test) ──")
+    print("\n  ── Cascade Frontier (band fit on calibration, measured on test) ──")
     print(f"  {'eps':>6} │ {'WITNESS cascade':^34} │ {'FUSION cascade':^34} │")
     print(f"  {'':>6} │ {'escal%':>7} {'error':>7} {'cost':>7} {'Pareto':>7} │ "
           f"{'escal%':>7} {'error':>7} {'cost':>7} {'Pareto':>7} │")
@@ -310,7 +310,7 @@ def main() -> None:
 
     # ── Verdict ──
     print(f"\n  {'═' * 60}")
-    print(f"  VERDICT")
+    print("  VERDICT")
     print(f"  {'═' * 60}")
 
     if best_fusion_pareto:
@@ -344,7 +344,7 @@ def main() -> None:
         print("  need isotonic regression or deeper feature engineering.")
 
     # ── Comparison table ──
-    print(f"\n  ── Summary Comparison ──")
+    print("\n  ── Summary Comparison ──")
     print(f"  {'System':<30} {'Accuracy':>10} {'AUROC':>8} {'Cost':>8} {'$/item':>8}")
     print(f"  {'─'*30} {'─'*10} {'─'*8} {'─'*8} {'─'*8}")
     print(f"  {'GPT-3.5 (published)':<30} {'62.59%':>10} {'n/a':>8} {'LLM':>8} {'$$$':>8}")

@@ -282,7 +282,12 @@ const MAX_BODY_BYTES: u64 = 64 * 1024 * 1024;
 /// Run the proxy: listen on `127.0.0.1:port`, compress provider message context
 /// under `total_budget`, and forward to `upstream`. Concurrent worker pool.
 #[cfg(feature = "proxy")]
-pub fn run(port: u16, upstream: &str, total_budget: usize, cache_aligned: bool) -> std::io::Result<()> {
+pub fn run(
+    port: u16,
+    upstream: &str,
+    total_budget: usize,
+    cache_aligned: bool,
+) -> std::io::Result<()> {
     use std::sync::Arc;
     use tiny_http::Server;
 
@@ -295,7 +300,9 @@ pub fn run(port: u16, upstream: &str, total_budget: usize, cache_aligned: bool) 
         .unwrap_or(4)
         .clamp(2, 16);
     eprintln!("entroly-rs proxy on http://{addr}  ->  {upstream}  ({workers} workers)");
-    eprintln!("  Anthropic/OpenAI/Gemini auto-detected by path; point your client's base URL here.");
+    eprintln!(
+        "  Anthropic/OpenAI/Gemini auto-detected by path; point your client's base URL here."
+    );
 
     let upstream: Arc<str> = Arc::from(upstream);
     // Shared agent (connection pooling) with a connect timeout so an
@@ -349,12 +356,23 @@ fn handle(
         .filter(|h| {
             matches!(
                 h.field.as_str().as_str().to_ascii_lowercase().as_str(),
-                "x-api-key" | "authorization" | "anthropic-version" | "anthropic-beta"
-                    | "openai-organization" | "openai-beta" | "x-goog-api-key"
-                    | "content-type" | "accept"
+                "x-api-key"
+                    | "authorization"
+                    | "anthropic-version"
+                    | "anthropic-beta"
+                    | "openai-organization"
+                    | "openai-beta"
+                    | "x-goog-api-key"
+                    | "content-type"
+                    | "accept"
             )
         })
-        .map(|h| (h.field.as_str().as_str().to_string(), h.value.as_str().to_string()))
+        .map(|h| {
+            (
+                h.field.as_str().as_str().to_string(),
+                h.value.as_str().to_string(),
+            )
+        })
         .collect();
 
     if is_get && (url == "/" || url == "/health") {
@@ -363,7 +381,10 @@ fn handle(
     }
 
     let mut body = String::new();
-    let _ = req.as_reader().take(MAX_BODY_BYTES).read_to_string(&mut body);
+    let _ = req
+        .as_reader()
+        .take(MAX_BODY_BYTES)
+        .read_to_string(&mut body);
 
     let (new_body, before, after) = match detect_provider(&url) {
         Some(p) => compress_request_body(&body, total_budget, p, cache_aligned),
@@ -435,7 +456,10 @@ mod tests {
     #[test]
     fn test_detect_provider() {
         assert_eq!(detect_provider("/v1/messages"), Some(Provider::Anthropic));
-        assert_eq!(detect_provider("/v1/chat/completions"), Some(Provider::OpenAI));
+        assert_eq!(
+            detect_provider("/v1/chat/completions"),
+            Some(Provider::OpenAI)
+        );
         assert_eq!(
             detect_provider("/v1beta/models/gemini-2.5-pro:generateContent"),
             Some(Provider::Gemini)
@@ -469,7 +493,10 @@ mod tests {
             serde_json::to_string(&big(200)).unwrap()
         );
         let (out, before, after) = compress_request_body(&body, 60, Provider::OpenAI, true);
-        assert!(before > 0 && after < before, "openai should compress: {before}->{after}");
+        assert!(
+            before > 0 && after < before,
+            "openai should compress: {before}->{after}"
+        );
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["messages"][0]["role"], "system");
         assert_eq!(v["messages"][1]["content"][0]["type"], "text");
@@ -483,7 +510,10 @@ mod tests {
             serde_json::to_string(&big(200)).unwrap()
         );
         let (out, before, after) = compress_request_body(&body, 60, Provider::Gemini, true);
-        assert!(before > 0 && after < before, "gemini should compress: {before}->{after}");
+        assert!(
+            before > 0 && after < before,
+            "gemini should compress: {before}->{after}"
+        );
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["contents"][0]["parts"][0]["text"].is_string());
         assert!(v["systemInstruction"]["parts"][0]["text"].is_string());
@@ -498,7 +528,10 @@ mod tests {
         );
         // Global mode (cache_aligned=false): one budget shared across fields.
         let (_, before, after) = compress_request_body(&body, 80, Provider::OpenAI, false);
-        assert!(before > 0 && after <= 130, "shared total budget ~80: {after}");
+        assert!(
+            before > 0 && after <= 130,
+            "shared total budget ~80: {after}"
+        );
     }
 
     #[test]
@@ -524,7 +557,10 @@ mod tests {
         let (o2, _, _) = compress_request_body(&req2, 60, Provider::Anthropic, true);
         let v1: Value = serde_json::from_str(&o1).unwrap();
         let v2: Value = serde_json::from_str(&o2).unwrap();
-        assert_eq!(v1["system"], v2["system"], "system prefix must stay byte-stable");
+        assert_eq!(
+            v1["system"], v2["system"],
+            "system prefix must stay byte-stable"
+        );
         assert_eq!(
             v1["messages"][0]["content"], v2["messages"][0]["content"],
             "earlier turn must stay byte-stable"

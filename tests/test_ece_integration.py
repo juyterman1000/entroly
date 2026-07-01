@@ -109,7 +109,7 @@ print(f"  Escalation rate (EMA):   {stats['escalation_rate_ema']}")
 lyap.adjust_for_load(gpu_load=0.95, queue_depth=150)
 stats2 = lyap.stats()
 print(f"  Tau after GPU spike:     {stats2['current_tau']}")
-print(f"  (System raised tau to reduce escalations under load)")
+print("  (System raised tau to reduce escalations under load)")
 
 # --- SimHash Clustering ---
 print("\n[Clustering] SimHash Semantic Clustering")

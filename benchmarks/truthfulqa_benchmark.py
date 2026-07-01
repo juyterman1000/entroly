@@ -72,7 +72,7 @@ def _ci95(n: int, acc: float) -> float:
     import math
     z = 1.96
     denom = 1 + z * z / n
-    centre = (acc + z * z / (2 * n)) / denom
+    (acc + z * z / (2 * n)) / denom
     spread = z * math.sqrt((acc * (1 - acc) + z * z / (4 * n)) / n) / denom
     return round(spread, 4)
 
@@ -256,24 +256,24 @@ def main() -> None:
     print(f"  {'ms/decision':<20} {ms_per:>12.2f} {'~same':>14}")
 
     # ── Comparison to published baselines ──
-    print(f"\n  === Comparison to Published Baselines ===\n")
-    print(f"  NOTE: Published TruthfulQA numbers measure GENERATION")
-    print(f"  truthfulness (can the model produce a truthful answer?).")
-    print(f"  Our numbers measure DETECTION (can WITNESS detect")
-    print(f"  whether a given answer is truthful?). These are")
-    print(f"  different tasks. Direct comparison is not valid.")
-    print(f"")
-    print(f"  Published generation truthfulness (Lin et al., 2022):")
-    print(f"    GPT-3 (davinci):  ~58% truthful")
-    print(f"    InstructGPT:      ~65% truthful")
-    print(f"    GPT-4:            ~78% truthful (various reports)")
-    print(f"")
-    print(f"  Our DETECTION accuracy (distinct task):")
+    print("\n  === Comparison to Published Baselines ===\n")
+    print("  NOTE: Published TruthfulQA numbers measure GENERATION")
+    print("  truthfulness (can the model produce a truthful answer?).")
+    print("  Our numbers measure DETECTION (can WITNESS detect")
+    print("  whether a given answer is truthful?). These are")
+    print("  different tasks. Direct comparison is not valid.")
+    print("")
+    print("  Published generation truthfulness (Lin et al., 2022):")
+    print("    GPT-3 (davinci):  ~58% truthful")
+    print("    InstructGPT:      ~65% truthful")
+    print("    GPT-4:            ~78% truthful (various reports)")
+    print("")
+    print("  Our DETECTION accuracy (distinct task):")
     print(f"    WITNESS:          {w_result['accuracy']:.2%} "
           f"+/- {w_result['ci95']:.2%} (AUROC {w_auroc:.4f})")
     print(f"    Fusion:           {f_result['accuracy']:.2%} "
           f"+/- {f_result['ci95']:.2%} (AUROC {f_auroc:.4f})")
-    print(f"    Cost:             $0 (deterministic, no LLM)")
+    print("    Cost:             $0 (deterministic, no LLM)")
 
     # ── Save ──
     result_data = {

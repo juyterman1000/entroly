@@ -66,12 +66,30 @@ struct ProfileThresholds {
 
 fn profile_thresholds(profile: &str) -> ProfileThresholds {
     match profile {
-        "rag" => ProfileThresholds { supported: 0.65, hallucinated: 0.35 },
-        "qa" => ProfileThresholds { supported: 0.60, hallucinated: 0.30 },
-        "summarization" => ProfileThresholds { supported: 0.55, hallucinated: 0.25 },
-        "dialogue" => ProfileThresholds { supported: 0.50, hallucinated: 0.20 },
-        "fact_check" => ProfileThresholds { supported: 0.75, hallucinated: 0.45 },
-        _ => ProfileThresholds { supported: 0.60, hallucinated: 0.35 }, // default
+        "rag" => ProfileThresholds {
+            supported: 0.65,
+            hallucinated: 0.35,
+        },
+        "qa" => ProfileThresholds {
+            supported: 0.60,
+            hallucinated: 0.30,
+        },
+        "summarization" => ProfileThresholds {
+            supported: 0.55,
+            hallucinated: 0.25,
+        },
+        "dialogue" => ProfileThresholds {
+            supported: 0.50,
+            hallucinated: 0.20,
+        },
+        "fact_check" => ProfileThresholds {
+            supported: 0.75,
+            hallucinated: 0.45,
+        },
+        _ => ProfileThresholds {
+            supported: 0.60,
+            hallucinated: 0.35,
+        }, // default
     }
 }
 
@@ -134,11 +152,7 @@ impl EicvAnalyzer {
         let unsupported_fraction = if !claim_atoms.is_empty() {
             let unsupported = claim_atoms
                 .iter()
-                .filter(|ca| {
-                    ev_atoms
-                        .iter()
-                        .all(|ea| token_overlap(ca, ea) < 0.1)
-                })
+                .filter(|ca| ev_atoms.iter().all(|ea| token_overlap(ca, ea) < 0.1))
                 .count();
             unsupported as f64 / claim_atoms.len() as f64
         } else {
@@ -244,7 +258,10 @@ fn split_sentences(text: &str) -> Vec<String> {
     let mut i = 0;
     while i < len {
         current.push(chars[i]);
-        if (chars[i] == '.' || chars[i] == '?' || chars[i] == '!') && i + 1 < len && chars[i + 1] == ' ' {
+        if (chars[i] == '.' || chars[i] == '?' || chars[i] == '!')
+            && i + 1 < len
+            && chars[i + 1] == ' '
+        {
             let trimmed = current.trim().to_string();
             if !trimmed.is_empty() {
                 result.push(trimmed);
@@ -355,10 +372,8 @@ fn entity_overlap(claim: &str, evidence: &str) -> f64 {
         return 1.0; // No entities to check → fully grounded
     }
 
-    let evidence_lower: HashSet<String> = evidence_entities
-        .iter()
-        .map(|e| e.to_lowercase())
-        .collect();
+    let evidence_lower: HashSet<String> =
+        evidence_entities.iter().map(|e| e.to_lowercase()).collect();
 
     let found = claim_entities
         .iter()
@@ -373,7 +388,10 @@ fn extract_entities(text: &str) -> HashSet<String> {
     let mut entities = HashSet::new();
     for word in text.split_whitespace() {
         // Strip trailing punctuation for matching
-        let cleaned: String = word.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
+        let cleaned: String = word
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+            .collect();
         if cleaned.is_empty() {
             continue;
         }
@@ -422,8 +440,14 @@ fn semantic_entropy(claim: &str, evidence: &str) -> f64 {
     let norm_entropy = (entropy / max_entropy).clamp(0.0, 1.0);
 
     // Coverage: fraction of claim tokens found in evidence
-    let ev_tokens: HashSet<String> = evidence.split_whitespace().map(|w| w.to_lowercase()).collect();
-    let covered = claim_tokens.iter().filter(|t| ev_tokens.contains(*t)).count();
+    let ev_tokens: HashSet<String> = evidence
+        .split_whitespace()
+        .map(|w| w.to_lowercase())
+        .collect();
+    let covered = claim_tokens
+        .iter()
+        .filter(|t| ev_tokens.contains(*t))
+        .count();
     let coverage = covered as f64 / claim_tokens.len() as f64;
 
     // High entropy + low coverage → high hallucination signal

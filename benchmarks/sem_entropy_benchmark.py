@@ -25,7 +25,7 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.semantic_entropy import SemanticEntropyAnalyzer
+from entroly.semantic_entropy import SemanticEntropyAnalyzer  # noqa: E402
 
 SEED = 42
 N_ITEMS = 300

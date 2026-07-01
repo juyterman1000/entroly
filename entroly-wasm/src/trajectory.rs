@@ -59,4 +59,3 @@ pub fn classify_query_transition(
         elapsed_s,
     }
 }
-

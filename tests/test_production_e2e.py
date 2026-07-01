@@ -184,7 +184,7 @@ def main():
     # Cannot re-test __init__ here without reinitializing, but we can verify
     # the pattern manually:
     gc.enable()
-    was_enabled = gc.isenabled()
+    gc.isenabled()
     gc.disable()
     try:
         _ = [x * x for x in range(1000)]  # no GC during tight loop
@@ -248,7 +248,6 @@ def main():
         import entroly.autotune as at_mod
         from entroly.server import _start_autotune_daemon
 
-        original_run = at_mod.run_autotune
         cfg_path = REPO / "tuning_config.json"
 
         cfg = json.loads(cfg_path.read_text())
@@ -318,7 +317,7 @@ def main():
         ok("empty string ingest does not crash", False, str(exc))
 
     try:
-        r_ws = dict(e_em.ingest("   \n\t\n   ", "whitespace.py", 0, False))
+        dict(e_em.ingest("   \n\t\n   ", "whitespace.py", 0, False))
         ok("whitespace-only ingest does not crash", True)
     except Exception as exc:
         ok("whitespace-only ingest does not crash", False, str(exc))
@@ -356,7 +355,7 @@ def main():
         ok("optimize(budget=0) does not crash", False, str(exc))
 
     try:
-        r1 = dict(e_z.optimize(1, "auth"))
+        dict(e_z.optimize(1, "auth"))
         ok("optimize(budget=1) does not crash", True)
     except Exception as exc:
         ok("optimize(budget=1) does not crash", False, str(exc))

@@ -115,4 +115,3 @@ mod tests {
         assert_eq!(out.status, "expired");
     }
 }
-

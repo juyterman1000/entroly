@@ -84,7 +84,7 @@ result = re_exec.execute(
     ],
 )
 print(f"  succeeded={result.succeeded} time={result.execution_time_ms}ms")
-import json
+import json  # noqa: E402
 matches = json.loads(result.result).get("matches", [])
 for m in matches:
     print(f"    {m['id']}: similarity={m['similarity']}")

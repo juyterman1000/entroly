@@ -22,12 +22,84 @@ pub struct LearningEpisode {
 }
 
 const TASK_PATTERNS: [(&str, &[&str]); 6] = [
-    ("Debugging", &["fix", "bug", "error", "crash", "issue", "debug", "broken", "fail", "wrong", "exception"]),
-    ("Feature", &["add", "implement", "create", "build", "feature", "new", "support", "integrate", "enable"]),
-    ("Refactoring", &["refactor", "clean", "reorganize", "simplify", "extract", "rename", "move", "split", "merge"]),
-    ("Performance", &["optimize", "performance", "slow", "fast", "speed", "cache", "memory", "leak", "bottleneck"]),
-    ("Testing", &["test", "spec", "assert", "expect", "mock", "stub", "coverage", "unit", "integration", "e2e"]),
-    ("Documentation", &["document", "readme", "comment", "explain", "describe", "usage", "api"]),
+    (
+        "Debugging",
+        &[
+            "fix",
+            "bug",
+            "error",
+            "crash",
+            "issue",
+            "debug",
+            "broken",
+            "fail",
+            "wrong",
+            "exception",
+        ],
+    ),
+    (
+        "Feature",
+        &[
+            "add",
+            "implement",
+            "create",
+            "build",
+            "feature",
+            "new",
+            "support",
+            "integrate",
+            "enable",
+        ],
+    ),
+    (
+        "Refactoring",
+        &[
+            "refactor",
+            "clean",
+            "reorganize",
+            "simplify",
+            "extract",
+            "rename",
+            "move",
+            "split",
+            "merge",
+        ],
+    ),
+    (
+        "Performance",
+        &[
+            "optimize",
+            "performance",
+            "slow",
+            "fast",
+            "speed",
+            "cache",
+            "memory",
+            "leak",
+            "bottleneck",
+        ],
+    ),
+    (
+        "Testing",
+        &[
+            "test",
+            "spec",
+            "assert",
+            "expect",
+            "mock",
+            "stub",
+            "coverage",
+            "unit",
+            "integration",
+            "e2e",
+        ],
+    ),
+    (
+        "Documentation",
+        &[
+            "document", "readme", "comment", "explain", "describe", "usage", "api",
+        ],
+    ),
 ];
 
 const TASK_ORDER: [&str; 7] = [
@@ -88,7 +160,11 @@ fn extract_weights(w: &Value) -> HashMap<&'static str, f64> {
 fn normalize_weights(w: &HashMap<&'static str, f64>) -> Value {
     let mut out: HashMap<&'static str, f64> = HashMap::new();
     for key in WEIGHT_KEYS {
-        let v = w.get(key).copied().unwrap_or(0.25).clamp(MIN_WEIGHT, MAX_WEIGHT);
+        let v = w
+            .get(key)
+            .copied()
+            .unwrap_or(0.25)
+            .clamp(MIN_WEIGHT, MAX_WEIGHT);
         out.insert(key, v);
     }
     let sum: f64 = out.values().sum();
@@ -139,7 +215,8 @@ pub fn reward_weighted_optimize(
     let mut sorted: Vec<(usize, &LearningEpisode)> = episodes.iter().enumerate().collect();
     sorted.sort_by(|(_, a), (_, b)| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
 
-    let mut attract: HashMap<&'static str, f64> = WEIGHT_KEYS.map(|k| (k, 0.0)).into_iter().collect();
+    let mut attract: HashMap<&'static str, f64> =
+        WEIGHT_KEYS.map(|k| (k, 0.0)).into_iter().collect();
     let mut repel: HashMap<&'static str, f64> = WEIGHT_KEYS.map(|k| (k, 0.0)).into_iter().collect();
     let mut attract_sum = 0.0;
     let mut repel_sum = 0.0;
@@ -177,7 +254,10 @@ pub fn reward_weighted_optimize(
     let mut dim_std: HashMap<&'static str, f64> = HashMap::new();
     let mut dim_snr: HashMap<&'static str, f64> = HashMap::new();
     for key in WEIGHT_KEYS {
-        let values: Vec<f64> = sorted.iter().map(|(_, ep)| extract_weights(&ep.w)[key]).collect();
+        let values: Vec<f64> = sorted
+            .iter()
+            .map(|(_, ep)| extract_weights(&ep.w)[key])
+            .collect();
         let mean = values.iter().sum::<f64>() / values.len() as f64;
         let std = (values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64)
             .sqrt()
@@ -197,7 +277,11 @@ pub fn reward_weighted_optimize(
     let mut optimal: HashMap<&'static str, f64> = HashMap::new();
     let mut blended: HashMap<&'static str, f64> = HashMap::new();
     for key in WEIGHT_KEYS {
-        let repel_delta = if repel_sum > 0.0 { repel[key] - current[key] } else { 0.0 };
+        let repel_delta = if repel_sum > 0.0 {
+            repel[key] - current[key]
+        } else {
+            0.0
+        };
         let opt = attract[key] - beta * repel_delta;
         optimal.insert(key, opt);
 
@@ -208,7 +292,8 @@ pub fn reward_weighted_optimize(
         blended.insert(key, current[key] + alpha_k * direction);
     }
 
-    let mut polyak: HashMap<&'static str, f64> = WEIGHT_KEYS.map(|k| (k, 0.0)).into_iter().collect();
+    let mut polyak: HashMap<&'static str, f64> =
+        WEIGHT_KEYS.map(|k| (k, 0.0)).into_iter().collect();
     for (_, ep) in sorted {
         let weights = extract_weights(&ep.w);
         for key in WEIGHT_KEYS {
@@ -255,7 +340,10 @@ pub fn optimize_task_profiles(episodes: &[LearningEpisode]) -> Value {
 
     let mut buckets: HashMap<&'static str, Vec<LearningEpisode>> = HashMap::new();
     for ep in episodes {
-        buckets.entry(classify_query(&ep.q)).or_default().push(ep.clone());
+        buckets
+            .entry(classify_query(&ep.q))
+            .or_default()
+            .push(ep.clone());
     }
 
     let mut profiles = serde_json::Map::new();
@@ -264,25 +352,34 @@ pub fn optimize_task_profiles(episodes: &[LearningEpisode]) -> Value {
             let prior = task_prior(task_type);
             if task_eps.len() >= 3 {
                 if let Some(result) = reward_weighted_optimize(task_eps, &prior) {
-                    profiles.insert(task_type.to_string(), json!({
-                        "weights": result["blended"].clone(),
-                        "confidence": result["confidence"].clone(),
-                        "episodes": task_eps.len(),
-                    }));
+                    profiles.insert(
+                        task_type.to_string(),
+                        json!({
+                            "weights": result["blended"].clone(),
+                            "confidence": result["confidence"].clone(),
+                            "episodes": task_eps.len(),
+                        }),
+                    );
                     continue;
                 }
             }
-            profiles.insert(task_type.to_string(), json!({
-                "weights": prior,
-                "confidence": 0,
-                "episodes": task_eps.len(),
-            }));
+            profiles.insert(
+                task_type.to_string(),
+                json!({
+                    "weights": prior,
+                    "confidence": 0,
+                    "episodes": task_eps.len(),
+                }),
+            );
         } else {
-            profiles.insert(task_type.to_string(), json!({
-                "weights": task_prior(task_type),
-                "confidence": 0,
-                "episodes": 0,
-            }));
+            profiles.insert(
+                task_type.to_string(),
+                json!({
+                    "weights": task_prior(task_type),
+                    "confidence": 0,
+                    "episodes": 0,
+                }),
+            );
         }
     }
 
@@ -301,11 +398,30 @@ mod tests {
     #[test]
     fn optimizer_returns_profile_after_three_episodes() {
         let episodes = vec![
-            LearningEpisode { t: 1.0, r: 0.8, w: json!({"w_r": 0.4, "w_f": 0.2, "w_s": 0.2, "w_e": 0.2}), q: "fix auth bug".to_string() },
-            LearningEpisode { t: 2.0, r: -0.4, w: json!({"w_r": 0.1, "w_f": 0.6, "w_s": 0.2, "w_e": 0.1}), q: "fix auth bug".to_string() },
-            LearningEpisode { t: 3.0, r: 0.9, w: json!({"w_r": 0.5, "w_f": 0.1, "w_s": 0.3, "w_e": 0.1}), q: "fix auth bug".to_string() },
+            LearningEpisode {
+                t: 1.0,
+                r: 0.8,
+                w: json!({"w_r": 0.4, "w_f": 0.2, "w_s": 0.2, "w_e": 0.2}),
+                q: "fix auth bug".to_string(),
+            },
+            LearningEpisode {
+                t: 2.0,
+                r: -0.4,
+                w: json!({"w_r": 0.1, "w_f": 0.6, "w_s": 0.2, "w_e": 0.1}),
+                q: "fix auth bug".to_string(),
+            },
+            LearningEpisode {
+                t: 3.0,
+                r: 0.9,
+                w: json!({"w_r": 0.5, "w_f": 0.1, "w_s": 0.3, "w_e": 0.1}),
+                q: "fix auth bug".to_string(),
+            },
         ];
-        let out = reward_weighted_optimize(&episodes, &json!({"w_r": 0.3, "w_f": 0.25, "w_s": 0.25, "w_e": 0.2})).unwrap();
+        let out = reward_weighted_optimize(
+            &episodes,
+            &json!({"w_r": 0.3, "w_f": 0.25, "w_s": 0.25, "w_e": 0.2}),
+        )
+        .unwrap();
         assert_eq!(out["total_episodes"], 3);
         assert_eq!(out["success_count"], 2);
         assert!(out["blended"]["w_r"].as_f64().unwrap() > 0.0);
@@ -314,9 +430,24 @@ mod tests {
     #[test]
     fn task_profiles_include_priors_and_bucketed_counts() {
         let episodes = vec![
-            LearningEpisode { t: 1.0, r: 0.8, w: json!({"w_r": 0.4, "w_f": 0.2, "w_s": 0.2, "w_e": 0.2}), q: "fix auth bug".to_string() },
-            LearningEpisode { t: 2.0, r: 0.7, w: json!({"w_r": 0.5, "w_f": 0.1, "w_s": 0.3, "w_e": 0.1}), q: "debug login error".to_string() },
-            LearningEpisode { t: 3.0, r: 0.9, w: json!({"w_r": 0.45, "w_f": 0.15, "w_s": 0.25, "w_e": 0.15}), q: "wrong auth behavior".to_string() },
+            LearningEpisode {
+                t: 1.0,
+                r: 0.8,
+                w: json!({"w_r": 0.4, "w_f": 0.2, "w_s": 0.2, "w_e": 0.2}),
+                q: "fix auth bug".to_string(),
+            },
+            LearningEpisode {
+                t: 2.0,
+                r: 0.7,
+                w: json!({"w_r": 0.5, "w_f": 0.1, "w_s": 0.3, "w_e": 0.1}),
+                q: "debug login error".to_string(),
+            },
+            LearningEpisode {
+                t: 3.0,
+                r: 0.9,
+                w: json!({"w_r": 0.45, "w_f": 0.15, "w_s": 0.25, "w_e": 0.15}),
+                q: "wrong auth behavior".to_string(),
+            },
         ];
         let profiles = optimize_task_profiles(&episodes);
         assert_eq!(profiles["Debugging"]["episodes"], 3);

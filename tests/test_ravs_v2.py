@@ -35,26 +35,26 @@ import pytest
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
-from entroly.ravs.compiler import (
+from entroly.ravs.compiler import (  # noqa: E402
     NodeKind,
     Plan,
     PlanCompiler,
     PlanNode,
     detect_substeps,
 )
-from entroly.ravs.executors import (
+from entroly.ravs.executors import (  # noqa: E402
     ASTExecutor,
     ExecutorRegistry,
     PythonExecutor,
     SymPyExecutor,
 )
-from entroly.ravs.verifiers import (
+from entroly.ravs.verifiers import (  # noqa: E402
     ExactVerifier,
     ExitCodeVerifier,
     StructuralVerifier,
     VerifierRegistry,
 )
-from entroly.ravs.shadow_runner import ShadowRunner
+from entroly.ravs.shadow_runner import ShadowRunner  # noqa: E402
 
 
 # ══════════════════════════════════════════════════════════════════════

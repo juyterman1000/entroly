@@ -106,8 +106,7 @@ impl PollinatorState {
     /// Should this agent share knowledge right now?
     /// High surprise temporarily boosts willingness (emergency override).
     fn should_share(&self, random_val: f32, current_surprise: f32) -> bool {
-        let effective = (self.share_probability
-            + current_surprise * self.surprise_weight).min(1.0);
+        let effective = (self.share_probability + current_surprise * self.surprise_weight).min(1.0);
         random_val < effective
     }
 
@@ -194,7 +193,8 @@ impl PollinationEngine {
 
     /// Register an agent for pollination.
     pub fn register_agent(&mut self, agent_id: String) {
-        self.agents.entry(agent_id)
+        self.agents
+            .entry(agent_id)
             .or_insert_with(|| PollinatorState::new(self.alpha, self.gamma, self.temperature));
     }
 
@@ -238,7 +238,9 @@ impl PollinationEngine {
 
         // Add to pending pack for this agent
         let source = agent_id.to_string();
-        if let Some(pack) = self.pending_packs.iter_mut()
+        if let Some(pack) = self
+            .pending_packs
+            .iter_mut()
             .find(|p| p.source_agent == source)
         {
             pack.lessons.push(lesson);
@@ -263,12 +265,16 @@ impl PollinationEngine {
         let tick = self.current_tick;
 
         // Find pending pack from source
-        let lessons_count = self.pending_packs.iter()
+        let lessons_count = self
+            .pending_packs
+            .iter()
             .find(|p| p.source_agent == from_agent)
             .map(|p| p.lessons.len() as u32)
             .unwrap_or(0);
 
-        if lessons_count == 0 { return 0; }
+        if lessons_count == 0 {
+            return 0;
+        }
 
         // Register share for TD(0) credit
         if let Some(state) = self.agents.get_mut(from_agent) {
@@ -305,14 +311,16 @@ impl PollinationEngine {
     /// Returns the agent's current share probability [0, 1].
     /// AMP uses this as the `reciprocity` dimension in the 12D relationship vector.
     pub fn share_probability(&self, agent_id: &str) -> f32 {
-        self.agents.get(agent_id)
+        self.agents
+            .get(agent_id)
             .map(|s| s.share_probability)
             .unwrap_or(0.5)
     }
 
     /// Get V(share) for an agent (raw TD value).
     pub fn value(&self, agent_id: &str) -> f32 {
-        self.agents.get(agent_id)
+        self.agents
+            .get(agent_id)
             .map(|s| s.raw_eagerness)
             .unwrap_or(0.0)
     }
@@ -322,9 +330,12 @@ impl PollinationEngine {
         Python::with_gil(|py| {
             let d = PyDict::new(py);
             d.set_item("total_agents", self.agents.len()).unwrap();
-            d.set_item("total_packs_created", self.total_packs_created).unwrap();
-            d.set_item("total_packs_ingested", self.total_packs_ingested).unwrap();
-            d.set_item("total_lessons_shared", self.total_lessons_shared).unwrap();
+            d.set_item("total_packs_created", self.total_packs_created)
+                .unwrap();
+            d.set_item("total_packs_ingested", self.total_packs_ingested)
+                .unwrap();
+            d.set_item("total_lessons_shared", self.total_lessons_shared)
+                .unwrap();
             d.set_item("current_tick", self.current_tick).unwrap();
 
             // Per-agent summary
@@ -332,12 +343,15 @@ impl PollinationEngine {
             for (id, state) in &self.agents {
                 let a = PyDict::new(py);
                 a.set_item("agent_id", id).unwrap();
-                a.set_item("share_probability", state.share_probability).unwrap();
+                a.set_item("share_probability", state.share_probability)
+                    .unwrap();
                 a.set_item("raw_eagerness", state.raw_eagerness).unwrap();
                 a.set_item("total_shares", state.total_shares).unwrap();
                 a.set_item("total_rewards", state.total_rewards).unwrap();
-                a.set_item("lessons_given", state.total_lessons_given).unwrap();
-                a.set_item("lessons_received", state.total_lessons_received).unwrap();
+                a.set_item("lessons_given", state.total_lessons_given)
+                    .unwrap();
+                a.set_item("lessons_received", state.total_lessons_received)
+                    .unwrap();
                 agents.append(a).unwrap();
             }
             d.set_item("agents", agents).unwrap();
@@ -376,7 +390,11 @@ mod tests {
 
         // Initial share probability should be ~0.5 (neutral)
         let p0 = engine.share_probability("agent_a");
-        assert!((p0 - 0.5).abs() < 0.01, "Initial probability should be ~0.5, got {}", p0);
+        assert!(
+            (p0 - 0.5).abs() < 0.01,
+            "Initial probability should be ~0.5, got {}",
+            p0
+        );
 
         // Simulate positive reward loop: share → reward → V(share) ↑
         for _ in 0..50 {
@@ -387,8 +405,17 @@ mod tests {
         }
 
         let p1 = engine.share_probability("agent_a");
-        assert!(p1 > p0, "After positive rewards, share probability should increase: {} → {}", p0, p1);
-        assert!(p1 > 0.7, "After 50 positive rewards, probability should be >0.7, got {}", p1);
+        assert!(
+            p1 > p0,
+            "After positive rewards, share probability should increase: {} → {}",
+            p0,
+            p1
+        );
+        assert!(
+            p1 > 0.7,
+            "After 50 positive rewards, probability should be >0.7, got {}",
+            p1
+        );
     }
 
     #[test]
@@ -406,7 +433,11 @@ mod tests {
         }
 
         let p = engine.share_probability("selfish");
-        assert!(p < 0.5, "After negative rewards, share probability should decrease: got {}", p);
+        assert!(
+            p < 0.5,
+            "After negative rewards, share probability should decrease: got {}",
+            p
+        );
     }
 
     #[test]
@@ -418,17 +449,24 @@ mod tests {
         let mut state = PollinatorState::new(0.1, 0.9, 1.0);
         state.raw_eagerness = -3.0; // very selfish
         state.update_probability();
-        assert!(state.share_probability < 0.1,
-            "Base probability should be low: {}", state.share_probability);
+        assert!(
+            state.share_probability < 0.1,
+            "Base probability should be low: {}",
+            state.share_probability
+        );
 
         // Without surprise: random_val=0.4 should NOT trigger sharing
-        assert!(!state.should_share(0.4, 0.0),
-            "Without surprise, low eagerness should not share");
+        assert!(
+            !state.should_share(0.4, 0.0),
+            "Without surprise, low eagerness should not share"
+        );
 
         // With high surprise: random_val=0.4 SHOULD trigger sharing
         // effective = 0.047 + 0.9 * 0.5 = 0.497 > 0.4
-        assert!(state.should_share(0.4, 0.9),
-            "High surprise should override low eagerness");
+        assert!(
+            state.should_share(0.4, 0.9),
+            "High surprise should override low eagerness"
+        );
     }
 
     #[test]
@@ -442,14 +480,19 @@ mod tests {
         engine.share("agent_a", "agent_b");
 
         // Advance past recency window (default 10 ticks)
-        for _ in 0..20 { engine.tick(); }
+        for _ in 0..20 {
+            engine.tick();
+        }
 
         let v_before = engine.value("agent_a");
         engine.reward("agent_a", "agent_b", 10.0); // late reward
         let v_after = engine.value("agent_a");
 
         // Should NOT update because reward was too late
-        assert_eq!(v_before, v_after, "Late rewards (past recency window) should be ignored");
+        assert_eq!(
+            v_before, v_after,
+            "Late rewards (past recency window) should be ignored"
+        );
     }
 
     #[test]
@@ -477,7 +520,12 @@ mod tests {
         Python::with_gil(|py| {
             let stats: PyObject = engine.stats();
             let dict = stats.downcast_bound::<PyDict>(py).unwrap();
-            let n: usize = dict.get_item("total_agents").unwrap().unwrap().extract().unwrap();
+            let n: usize = dict
+                .get_item("total_agents")
+                .unwrap()
+                .unwrap()
+                .extract()
+                .unwrap();
             assert_eq!(n, 2);
         });
     }
@@ -495,14 +543,19 @@ mod tests {
             engine.share("cooperative", "imaginary_partner");
             // Manually apply feedback since imaginary_partner isn't registered
             if let Some(state) = engine.agents.get_mut("cooperative") {
-                state.active_shares.insert("imaginary_partner".to_string(), engine.current_tick);
+                state
+                    .active_shares
+                    .insert("imaginary_partner".to_string(), engine.current_tick);
                 state.apply_feedback("imaginary_partner", 1.0, engine.current_tick);
             }
             engine.tick();
         }
 
         let reciprocity = engine.share_probability("cooperative");
-        assert!(reciprocity > 0.8,
-            "High V(share) should map to high AMP reciprocity: got {}", reciprocity);
+        assert!(
+            reciprocity > 0.8,
+            "High V(share) should map to high AMP reciprocity: got {}",
+            reciprocity
+        );
     }
 }

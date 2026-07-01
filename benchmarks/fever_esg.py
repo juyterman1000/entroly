@@ -23,8 +23,8 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from entroly.esg import ESGAnalyzer
-from entroly.eicv import EICVAnalyzer
+from entroly.esg import ESGAnalyzer  # noqa: E402
+from entroly.eicv import EICVAnalyzer  # noqa: E402
 
 SEED = 42
 N_SAMPLES = 5000
@@ -127,7 +127,7 @@ def main() -> int:
     print("=" * 74)
     print("  FEVER with EICV / Slot-Aware ESG (Phase 5)")
     print("=" * 74)
-    print(f"\n  Loading copenlu/fever_gold_evidence validation split...")
+    print("\n  Loading copenlu/fever_gold_evidence validation split...")
     items = load_fever()
     print(f"  Total binary items available: {len(items)}")
 
@@ -180,9 +180,9 @@ def main() -> int:
     print("=" * 74)
     print("  Comparison to existing FEVER baselines:")
     print("=" * 74)
-    print(f"  WITNESS-only (pre-EICV):           AUROC 0.7040, Acc 0.7000")
-    print(f"  DeBERTa-large NLI (published):     Acc ~0.74")
-    print(f"  LLM-judge (published):             Acc ~0.78")
+    print("  WITNESS-only (pre-EICV):           AUROC 0.7040, Acc 0.7000")
+    print("  DeBERTa-large NLI (published):     Acc ~0.74")
+    print("  LLM-judge (published):             Acc ~0.78")
     print(f"  ESG slot-aware (this run):         AUROC {esg_auroc:.4f}, Acc {esg_acc:.4f}")
     print(f"  EICV integrated (this run):        AUROC {eicv_auroc:.4f}, Acc {eicv_acc:.4f}")
     print()

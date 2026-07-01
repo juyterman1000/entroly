@@ -265,7 +265,7 @@ def run_benchmark(args) -> dict:
         # GPT-4o-mini pricing: $0.150 / 1M input tokens, $0.600 / 1M output tokens
         avg_in = s["tokens_in_sum"] / n
         avg_orig = s["original_tokens_sum"] / n
-        
+
         # Calculate cost per 1000 queries
         if m == "agentic_pruning":
             api_calls = 2
@@ -275,7 +275,7 @@ def run_benchmark(args) -> dict:
             api_calls = 1
             # Cost = (Read compressed for answer)
             cost = (avg_in * 0.150) / 1000
-            
+
         summary[m] = {
             "n":           s["n"],
             "errors":      s["errors"],
@@ -326,11 +326,11 @@ def print_report(report: dict) -> None:
         f1_str = f"{d['avg_f1']:.3f}"
         if d["avg_f1"] == best_f1 and d["avg_f1"] > 0:
             f1_str = _c(GREEN + BOLD, f1_str)
-            
+
         cost_str = f"${d['cost_1k']:.3f}"
         if m == "entroly":
             cost_str = _c(CYAN, cost_str)
-            
+
         print(f"  {m:<16} {f1_str:>6} {int(d['avg_tokens']):>8} "
               f"{d['avg_compress_ms']:>8.0f}ms {d['api_calls']:>10} {cost_str:>10}")
 

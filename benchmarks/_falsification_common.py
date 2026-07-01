@@ -58,7 +58,7 @@ if str(_REPO_ROOT) not in sys.path:
 logger = logging.getLogger("entroly.benchmarks.falsification")
 
 # Frozen Fusion-4 weights: keep apples-to-apples with fusion4_falsification.py
-WEIGHTS = (0.05, 0.05, 0.80, 0.10)   # W, E, G, S
+WEIGHTS = (0.05, 0.05, 0.80, 0.10)  # W, E, G, S
 
 # Entity patterns matching fusion4_weight_optimizer.py:32 byte-for-byte.
 _ENTITY_PATTERNS = [
@@ -70,16 +70,18 @@ _ENTITY_PATTERNS = [
 @dataclass(frozen=True)
 class FalsItem:
     """One labelled item from a benchmark."""
-    context: str         # the shared evidence (knowledge / doc / dialogue history)
-    query: str           # the question (or empty string for tasks without one)
-    right: str           # grounded answer
-    halu: str            # hallucinated answer
-    item_id: str = ""    # benchmark-specific stable identifier (optional)
+
+    context: str  # the shared evidence (knowledge / doc / dialogue history)
+    query: str  # the question (or empty string for tasks without one)
+    right: str  # grounded answer
+    halu: str  # hallucinated answer
+    item_id: str = ""  # benchmark-specific stable identifier (optional)
 
 
 @dataclass
 class FalsRecord:
     """One processed item with all four answer variants."""
+
     item_id: str
     context: str
     query: str
@@ -87,7 +89,7 @@ class FalsRecord:
     halu: str
     h_ctrl: str
     r_para: str
-    backend: str   # "deterministic" or "gpt-4o-mini"
+    backend: str  # "deterministic" or "gpt-4o-mini"
 
 
 # ── Scoring (mirrors fusion4_falsification.py:202-216) ──────────────────
@@ -123,14 +125,16 @@ def auroc(scores: list[float], labels: list[int]) -> float:
     n0 = len(p) - n1
     if n0 == 0 or n1 == 0:
         return 0.5
-    return (sum(rr for rr, (_, y) in zip(r, p) if y == 1)
-            - n1 * (n1 + 1) / 2) / (n0 * n1)
+    return (sum(rr for rr, (_, y) in zip(r, p) if y == 1) - n1 * (n1 + 1) / 2) / (
+        n0 * n1
+    )
 
 
 def _signals(analyzer: Any, ctx: str, ans: str) -> tuple[float, float, float, float]:
     """The four-signal vector (W, E, G, S) used by Fusion-4."""
     from entroly.ravs.ece import compute_fisher_curvature
     from entroly.ravs.spectral import compute_spectral_consistency
+
     w = 1.0 - float(analyzer.analyze(ctx, ans).summary_score)
     mk, _, _ = compute_fisher_curvature(ans)
     e = min(1.0, mk * 2.5)
@@ -149,11 +153,27 @@ def _fuse(sig: tuple[float, float, float, float]) -> float:
 
 
 _NUMBER_TO_WORD = {
-    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
-    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
-    "10": "ten", "11": "eleven", "12": "twelve", "13": "thirteen",
-    "14": "fourteen", "15": "fifteen", "16": "sixteen", "17": "seventeen",
-    "18": "eighteen", "19": "nineteen", "20": "twenty",
+    "0": "zero",
+    "1": "one",
+    "2": "two",
+    "3": "three",
+    "4": "four",
+    "5": "five",
+    "6": "six",
+    "7": "seven",
+    "8": "eight",
+    "9": "nine",
+    "10": "ten",
+    "11": "eleven",
+    "12": "twelve",
+    "13": "thirteen",
+    "14": "fourteen",
+    "15": "fifteen",
+    "16": "sixteen",
+    "17": "seventeen",
+    "18": "eighteen",
+    "19": "nineteen",
+    "20": "twenty",
 }
 _WORD_TO_NUMBER = {v: k for k, v in _NUMBER_TO_WORD.items()}
 
@@ -161,19 +181,32 @@ _WORD_TO_NUMBER = {v: k for k, v in _NUMBER_TO_WORD.items()}
 # Used in deterministic r_para to break verbatim-copy artifacts without
 # introducing semantic drift. Curated from common QA answer verbs.
 _SYNONYM_SWAPS = [
-    ("started", "began"), ("began", "started"),
-    ("created", "founded"), ("founded", "established"), ("established", "founded"),
-    ("located", "situated"), ("situated", "located"),
-    ("known as", "called"), ("called", "named"),
-    ("received", "won"), ("won", "received"),
-    ("authored", "wrote"), ("wrote", "authored"),
+    ("started", "began"),
+    ("began", "started"),
+    ("created", "founded"),
+    ("founded", "established"),
+    ("established", "founded"),
+    ("located", "situated"),
+    ("situated", "located"),
+    ("known as", "called"),
+    ("called", "named"),
+    ("received", "won"),
+    ("won", "received"),
+    ("authored", "wrote"),
+    ("wrote", "authored"),
     ("formed", "founded"),
-    ("primarily", "mainly"), ("mainly", "primarily"),
-    ("approximately", "around"), ("around", "approximately"),
-    ("often", "frequently"), ("frequently", "often"),
-    ("important", "significant"), ("significant", "important"),
-    ("various", "several"), ("several", "various"),
-    ("commonly", "typically"), ("typically", "commonly"),
+    ("primarily", "mainly"),
+    ("mainly", "primarily"),
+    ("approximately", "around"),
+    ("around", "approximately"),
+    ("often", "frequently"),
+    ("frequently", "often"),
+    ("important", "significant"),
+    ("significant", "important"),
+    ("various", "several"),
+    ("several", "various"),
+    ("commonly", "typically"),
+    ("typically", "commonly"),
 ]
 
 
@@ -197,7 +230,9 @@ def _extract_entities(text: str) -> list[tuple[int, int, str, str]]:
     return out
 
 
-def deterministic_h_ctrl(knowledge: str, hallucinated: str, *, rng: random.Random) -> str:
+def deterministic_h_ctrl(
+    knowledge: str, hallucinated: str, *, rng: random.Random
+) -> str:
     """Entity-controlled hallucination rewrite. Replace each out-of-knowledge
     entity in `hallucinated` with a random in-knowledge entity of the same
     type. Keeps wrongness (because the structure is unchanged) but strips the
@@ -257,6 +292,7 @@ def deterministic_r_para(knowledge: str, right: str, *, rng: random.Random) -> s
         if n in _NUMBER_TO_WORD and rng.random() < 0.6:
             return _NUMBER_TO_WORD[n]
         return n
+
     out = re.sub(r"\b\d+\b", _num_to_word, out)
 
     def _word_to_num(m: re.Match) -> str:
@@ -264,8 +300,13 @@ def deterministic_r_para(knowledge: str, right: str, *, rng: random.Random) -> s
         if w in _WORD_TO_NUMBER and rng.random() < 0.4:
             return _WORD_TO_NUMBER[w]
         return m.group()
-    out = re.sub(r"\b(?:" + "|".join(_WORD_TO_NUMBER.keys()) + r")\b",
-                 _word_to_num, out, flags=re.IGNORECASE)
+
+    out = re.sub(
+        r"\b(?:" + "|".join(_WORD_TO_NUMBER.keys()) + r")\b",
+        _word_to_num,
+        out,
+        flags=re.IGNORECASE,
+    )
 
     # (b) Synonym swap, first applicable per pass.
     for src, dst in _SYNONYM_SWAPS:
@@ -275,7 +316,7 @@ def deterministic_r_para(knowledge: str, right: str, *, rng: random.Random) -> s
             if idx >= 0:
                 # Preserve surrounding case of first char
                 head = out[:idx]
-                tail = out[idx + len(src):]
+                tail = out[idx + len(src) :]
                 replacement = dst
                 if out[idx].isupper():
                     replacement = dst[0].upper() + dst[1:]
@@ -284,8 +325,12 @@ def deterministic_r_para(knowledge: str, right: str, *, rng: random.Random) -> s
 
     # (c) Light contraction expansion
     contractions = [
-        ("won't", "will not"), ("can't", "cannot"), ("isn't", "is not"),
-        ("aren't", "are not"), ("don't", "do not"), ("doesn't", "does not"),
+        ("won't", "will not"),
+        ("can't", "cannot"),
+        ("isn't", "is not"),
+        ("aren't", "are not"),
+        ("don't", "do not"),
+        ("doesn't", "does not"),
     ]
     for src, dst in contractions:
         out = out.replace(src, dst)
@@ -320,8 +365,11 @@ def _load_env() -> None:
     if not f.exists():
         return
     for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = re.match(r"(?:export\s+)?OPENAI_API_KEY\s*=\s*"
-                     r"[\"']?([^\"'\s]+)", line.strip())
+        m = re.match(
+            r"(?:export\s+)?OPENAI_API_KEY\s*=\s*"
+            r"[\"']?([^\"'\s]+)",
+            line.strip(),
+        )
         if m:
             os.environ["OPENAI_API_KEY"] = m.group(1)
 
@@ -331,15 +379,18 @@ def _gpt_call(client: Any, system: str, user: str, model: str = "gpt-4o-mini") -
         try:
             r = client.chat.completions.create(
                 model=model,
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": user}],
-                temperature=0.7, max_tokens=120,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=0.7,
+                max_tokens=120,
             )
             return (r.choices[0].message.content or "").strip()
         except Exception:  # noqa: BLE001
             if attempt == 3:
                 return ""
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)
     return ""
 
 
@@ -366,8 +417,12 @@ def build_records(
             cached_raw = json.loads(cache_path.read_text(encoding="utf-8"))
             cached = [FalsRecord(**r) for r in cached_raw]
             if cached and cached[0].backend == backend and len(cached) == len(items):
-                logger.info("loaded cache %s (n=%d backend=%s)",
-                            cache_path.name, len(cached), backend)
+                logger.info(
+                    "loaded cache %s (n=%d backend=%s)",
+                    cache_path.name,
+                    len(cached),
+                    backend,
+                )
                 return cached
             logger.info("cache backend mismatch — rebuilding")
         except Exception:  # noqa: BLE001
@@ -378,38 +433,53 @@ def build_records(
 
     if backend == "deterministic":
         for it in items:
-            records.append(FalsRecord(
-                item_id=it.item_id,
-                context=it.context, query=it.query,
-                right=it.right, halu=it.halu,
-                h_ctrl=deterministic_h_ctrl(it.context, it.halu, rng=rng),
-                r_para=deterministic_r_para(it.context, it.right, rng=rng),
-                backend="deterministic",
-            ))
+            records.append(
+                FalsRecord(
+                    item_id=it.item_id,
+                    context=it.context,
+                    query=it.query,
+                    right=it.right,
+                    halu=it.halu,
+                    h_ctrl=deterministic_h_ctrl(it.context, it.halu, rng=rng),
+                    r_para=deterministic_r_para(it.context, it.right, rng=rng),
+                    backend="deterministic",
+                )
+            )
     elif backend == "gpt-4o-mini":
         _load_env()
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not available for gpt-4o-mini backend")
         from openai import OpenAI
+
         client = OpenAI()
+
         def _work(idx: int, it: FalsItem) -> tuple[int, FalsRecord]:
             kq = f"Knowledge: {it.context}\n"
             if it.query:
                 kq += f"Question: {it.query}\n"
-            h_ctrl = _gpt_call(client, _H_CTRL_SYS,
-                               kq + f"Wrong answer to rewrite: {it.halu}",
-                               gpt_model)
-            r_para = _gpt_call(client, _R_PARA_SYS,
-                               kq + f"Correct answer to paraphrase: {it.right}",
-                               gpt_model)
+            h_ctrl = _gpt_call(
+                client,
+                _H_CTRL_SYS,
+                kq + f"Wrong answer to rewrite: {it.halu}",
+                gpt_model,
+            )
+            r_para = _gpt_call(
+                client,
+                _R_PARA_SYS,
+                kq + f"Correct answer to paraphrase: {it.right}",
+                gpt_model,
+            )
             return idx, FalsRecord(
                 item_id=it.item_id,
-                context=it.context, query=it.query,
-                right=it.right, halu=it.halu,
+                context=it.context,
+                query=it.query,
+                right=it.right,
+                halu=it.halu,
                 h_ctrl=h_ctrl or it.halu,
                 r_para=r_para or it.right,
                 backend=gpt_model,
             )
+
         records = [None] * len(items)  # type: ignore
         with ThreadPoolExecutor(max_workers=gpt_workers) as ex:
             futs = [ex.submit(_work, i, it) for i, it in enumerate(items)]
@@ -420,15 +490,19 @@ def build_records(
                 records[idx] = rec
                 done += 1
                 if done % 100 == 0:
-                    print(f"    gpt {done}/{len(items)} "
-                          f"({time.perf_counter() - t0:.0f}s)", flush=True)
+                    print(
+                        f"    gpt {done}/{len(items)} "
+                        f"({time.perf_counter() - t0:.0f}s)",
+                        flush=True,
+                    )
     else:
         raise ValueError(f"unknown backend {backend!r}")
 
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps([asdict(r) for r in records], indent=2),
-                              encoding="utf-8")
+        cache_path.write_text(
+            json.dumps([asdict(r) for r in records], indent=2), encoding="utf-8"
+        )
         logger.info("wrote cache %s", cache_path.name)
 
     return records
@@ -453,6 +527,7 @@ def run_probe(
     Returns a canonical falsification JSON record (same shape as
     benchmarks/results/fusion4_falsification.json)."""
     from entroly.witness import WitnessAnalyzer
+
     analyzer = WitnessAnalyzer(use_nli=False, force_python=True, profile=profile)
 
     # Compute signals once per (record, variant). 4 variants × N records.
@@ -469,11 +544,18 @@ def run_probe(
         sh = _signals(analyzer, ctx, rec.halu)
         shc = _signals(analyzer, ctx, rec.h_ctrl)
         srp = _signals(analyzer, ctx, rec.r_para)
-        R.append(sr); H.append(sh); HC.append(shc); RP.append(srp)
-        gR += sr[2]; gH += sh[2]; gHC += shc[2]; gRP += srp[2]
+        R.append(sr)
+        H.append(sh)
+        HC.append(shc)
+        RP.append(srp)
+        gR += sr[2]
+        gH += sh[2]
+        gHC += shc[2]
+        gRP += srp[2]
         if (i + 1) % 100 == 0:
-            print(f"    signals {i + 1}/{n} ({time.perf_counter() - t0:.0f}s)",
-                  flush=True)
+            print(
+                f"    signals {i + 1}/{n} ({time.perf_counter() - t0:.0f}s)", flush=True
+            )
 
     def _cond(neg: list, pos: list, cname: str) -> dict[str, float]:
         sc = [_fuse(x) for x in neg] + [_fuse(x) for x in pos]
@@ -484,9 +566,10 @@ def run_probe(
             "g_only": auroc([x[2] for x in neg] + [x[2] for x in pos], lb),
             "witness_only": auroc([x[0] for x in neg] + [x[0] for x in pos], lb),
         }
-    C1 = _cond(R, H,   "C1 original (r vs h)")
-    C2 = _cond(R, HC,  "C2 entity-controlled (r vs h_ctrl)")
-    C3 = _cond(RP, H,  "C3 paraphrase-stress (r_para vs h)")
+
+    C1 = _cond(R, H, "C1 original (r vs h)")
+    C2 = _cond(R, HC, "C2 entity-controlled (r vs h_ctrl)")
+    C3 = _cond(RP, H, "C3 paraphrase-stress (r_para vs h)")
     C4 = _cond(RP, HC, "C4 realistic (r_para vs h_ctrl)")
 
     aurocs = [c["fusion"] for c in (C1, C2, C3, C4)]
@@ -509,8 +592,7 @@ def run_probe(
     return {
         "benchmark": name,
         "n": n,
-        "weights": {"W": WEIGHTS[0], "E": WEIGHTS[1],
-                    "G": WEIGHTS[2], "S": WEIGHTS[3]},
+        "weights": {"W": WEIGHTS[0], "E": WEIGHTS[1], "G": WEIGHTS[2], "S": WEIGHTS[3]},
         "backend": records[0].backend if records else "unknown",
         "conditions": [C1, C2, C3, C4],
         "min_fusion_auroc_c1_c4": min_auc,

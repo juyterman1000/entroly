@@ -1059,7 +1059,10 @@ mod tests {
     fn test_belief_novelty_known_high_confidence_drops() {
         // Fragment restates an already-held, high-confidence belief → low novelty.
         let frag = "the rate limiter uses a sliding window of requests per key";
-        let beliefs = [("the rate limiter uses a sliding window of requests per key", 0.95)];
+        let beliefs = [(
+            "the rate limiter uses a sliding window of requests per key",
+            0.95,
+        )];
         let novelty = belief_conditioned_novelty(frag, &beliefs);
         assert!(
             novelty < 0.2,
@@ -1071,8 +1074,14 @@ mod tests {
     fn test_belief_novelty_low_confidence_stays_informative() {
         // Same restatement, but the belief is barely held → still informative.
         let frag = "the rate limiter uses a sliding window of requests per key";
-        let high = [("the rate limiter uses a sliding window of requests per key", 0.95)];
-        let low = [("the rate limiter uses a sliding window of requests per key", 0.2)];
+        let high = [(
+            "the rate limiter uses a sliding window of requests per key",
+            0.95,
+        )];
+        let low = [(
+            "the rate limiter uses a sliding window of requests per key",
+            0.2,
+        )];
         let n_high = belief_conditioned_novelty(frag, &high);
         let n_low = belief_conditioned_novelty(frag, &low);
         assert!(
@@ -1114,7 +1123,10 @@ mod tests {
         )];
         let base = information_score(frag, &[]);
         let cond = conditional_information_score(frag, &[], &beliefs);
-        assert!(cond < base, "known content must be discounted: cond={cond:.3} base={base:.3}");
+        assert!(
+            cond < base,
+            "known content must be discounted: cond={cond:.3} base={base:.3}"
+        );
         assert!(
             cond >= base * KNOWN_VALUE_FLOOR - 1e-9,
             "discount must not fall below the floor: cond={cond:.3} floor={:.3}",

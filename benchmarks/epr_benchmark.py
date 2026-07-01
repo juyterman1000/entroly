@@ -157,20 +157,20 @@ def main():
     print(f"\n  Heuristic EPR delta: {delta_h:+.4f} AUROC")
     print(f"  Logprob EPR delta:  {delta_lp:+.4f} AUROC (simulated)")
 
-    print(f"\n  === Honest Caveats ===")
-    print(f"  1. Synthetic logprobs are SIMULATED, not real API logprobs.")
-    print(f"     Real logprobs will perform differently (likely better")
-    print(f"     because they capture actual model uncertainty, not")
-    print(f"     label-correlated noise).")
-    print(f"  2. The heuristic EPR is what runs TODAY in production.")
-    print(f"     The logprob path activates when the proxy forwards")
-    print(f"     logprobs=true to the API.")
-    print(f"  3. To get real EPR results, run the proxy with")
-    print(f"     ENTROLY_REQUEST_LOGPROBS=1 and re-benchmark on")
-    print(f"     live API traffic.")
+    print("\n  === Honest Caveats ===")
+    print("  1. Synthetic logprobs are SIMULATED, not real API logprobs.")
+    print("     Real logprobs will perform differently (likely better")
+    print("     because they capture actual model uncertainty, not")
+    print("     label-correlated noise).")
+    print("  2. The heuristic EPR is what runs TODAY in production.")
+    print("     The logprob path activates when the proxy forwards")
+    print("     logprobs=true to the API.")
+    print("  3. To get real EPR results, run the proxy with")
+    print("     ENTROLY_REQUEST_LOGPROBS=1 and re-benchmark on")
+    print("     live API traffic.")
 
     # ── Test EPR module works correctly ──
-    print(f"\n  === EPR Module Validation ===")
+    print("\n  === EPR Module Validation ===")
     # Test with real logprobs
     epr_real = compute_epr(
         "The Eiffel Tower is 324 meters tall.",

@@ -146,7 +146,7 @@ def generate_svg() -> str:
 
     total_lines = len(all_lines)
     terminal_height = PADDING_Y + (total_lines * LINE_HEIGHT) + 40
-    total_duration = t + 4.0  # hold final frame
+    t + 4.0  # hold final frame
 
     parts = []
 

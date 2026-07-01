@@ -17,10 +17,8 @@ use std::collections::HashSet;
 ///
 /// Returns a value in `[0.0, 1.0]` where 1.0 = fully recognized (no novel entities).
 pub fn rnr_score(claim: &str, evidence: &str) -> f64 {
-    let claim_tokens: HashSet<String> = claim
-        .split_whitespace()
-        .map(|w| w.to_lowercase())
-        .collect();
+    let claim_tokens: HashSet<String> =
+        claim.split_whitespace().map(|w| w.to_lowercase()).collect();
     let evidence_tokens: HashSet<String> = evidence
         .split_whitespace()
         .map(|w| w.to_lowercase())
@@ -37,11 +35,7 @@ pub fn rnr_score(claim: &str, evidence: &str) -> f64 {
     // Novel entity penalty: capitalized words in claim not found in evidence
     let claim_entities: HashSet<String> = claim
         .split_whitespace()
-        .filter(|w| {
-            w.chars()
-                .next()
-                .is_some_and(|c| c.is_uppercase())
-        })
+        .filter(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
         .map(|w| w.to_lowercase())
         .collect();
 

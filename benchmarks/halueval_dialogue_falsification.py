@@ -31,12 +31,15 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from benchmarks._falsification_common import (  # noqa: E402
-    FalsItem, build_records, dataset_hash, run_probe,
+    FalsItem,
+    build_records,
+    dataset_hash,
+    run_probe,
 )
 
 SEED = 42
 N_ITEMS = 400
-TARGET_AUROC = 0.78           # AUROC equivalent for F1≥0.68 zone; conservative
+TARGET_AUROC = 0.78  # AUROC equivalent for F1≥0.68 zone; conservative
 RESULTS_DIR = _THIS / "results"
 OUT_PATH = RESULTS_DIR / "halueval_dialogue_falsification.json"
 CACHE_PATH = RESULTS_DIR / "halueval_dialogue_falsification_cache.json"
@@ -44,8 +47,9 @@ CACHE_PATH = RESULTS_DIR / "halueval_dialogue_falsification_cache.json"
 
 def load_items() -> list[FalsItem]:
     from datasets import load_dataset
+
     ds = load_dataset("pminervini/HaluEval", "dialogue", split="data")
-    rights: list[tuple[str, str]] = []   # (context, response)
+    rights: list[tuple[str, str]] = []  # (context, response)
     halus: list[tuple[str, str]] = []
     for i, row in enumerate(ds):
         knowledge = str(row.get("knowledge", "") or "")
@@ -53,7 +57,11 @@ def load_items() -> list[FalsItem]:
         # Field name shifts across mirror copies; try both
         right_resp = str(row.get("right_response", row.get("response", "")) or "")
         halu_resp = str(row.get("hallucinated_response", "") or "")
-        context = (knowledge + ("\n\nDialogue history:\n" + history if history else "")) if knowledge else history
+        context = (
+            (knowledge + ("\n\nDialogue history:\n" + history if history else ""))
+            if knowledge
+            else history
+        )
         if not context:
             continue
         if right_resp:
@@ -63,18 +71,21 @@ def load_items() -> list[FalsItem]:
     # Pair them up to length min(rights, halus, N_ITEMS)
     n = min(len(rights), len(halus), N_ITEMS)
     rng = random.Random(SEED)
-    rng.shuffle(rights); rng.shuffle(halus)
+    rng.shuffle(rights)
+    rng.shuffle(halus)
     items: list[FalsItem] = []
     for i in range(n):
         ctx, right = rights[i]
-        _, halu = halus[i]   # use ctx from right (paired by index after shuffle)
-        items.append(FalsItem(
-            context=ctx,
-            query="",     # dialogue has no separate question
-            right=right,
-            halu=halu,
-            item_id=f"hed_{i:04d}",
-        ))
+        _, halu = halus[i]  # use ctx from right (paired by index after shuffle)
+        items.append(
+            FalsItem(
+                context=ctx,
+                query="",  # dialogue has no separate question
+                right=right,
+                halu=halu,
+                item_id=f"hed_{i:04d}",
+            )
+        )
     return items
 
 
@@ -93,16 +104,21 @@ def main() -> int:
 
     backend = "deterministic"
     print(f"  Backend: {backend}")
-    print(f"  Building 4-variant records...", flush=True)
+    print("  Building 4-variant records...", flush=True)
     t0 = time.perf_counter()
     records = build_records(items, backend=backend, seed=SEED, cache_path=CACHE_PATH)
     print(f"  Built {len(records)} records ({time.perf_counter() - t0:.1f}s)")
 
-    print(f"  Scoring C1-C4 fusion AUROC...", flush=True)
+    print("  Scoring C1-C4 fusion AUROC...", flush=True)
     t0 = time.perf_counter()
     # profile=dialogue is the right WitnessAnalyzer profile for this task
-    result = run_probe("halueval_dialogue", records, profile="dialogue",
-                       target=TARGET_AUROC, tolerance=0.03)
+    result = run_probe(
+        "halueval_dialogue",
+        records,
+        profile="dialogue",
+        target=TARGET_AUROC,
+        tolerance=0.03,
+    )
     print(f"  Scored in {time.perf_counter() - t0:.1f}s")
 
     result["dataset_hash"] = ds_hash
@@ -117,8 +133,10 @@ def main() -> int:
     print(f"  {'condition':<34}{'fusion':>8}{'G-only':>8}{'WIT':>7}")
     print("  " + "-" * 56)
     for c in result["conditions"]:
-        print(f"  {c['name']:<34}{c['fusion']:>8.4f}"
-              f"{c['g_only']:>8.4f}{c['witness_only']:>7.4f}")
+        print(
+            f"  {c['name']:<34}{c['fusion']:>8.4f}"
+            f"{c['g_only']:>8.4f}{c['witness_only']:>7.4f}"
+        )
     print()
     print(f"  min(C1-C4)             = {result['min_fusion_auroc_c1_c4']:.4f}")
     print(f"  artifact_drop C1->C4   = {result['artifact_drop_c1_c4']:+.4f}")

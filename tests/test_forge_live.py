@@ -25,13 +25,13 @@ pytestmark = pytest.mark.skipif(
     reason="set ENTROLY_RUN_LIVE_TESTS=1 and OPENAI_API_KEY to run live evals",
 )
 
-from openai import OpenAI
+from openai import OpenAI  # noqa: E402
 
-from entroly.verifiers.repair_loop import (
+from entroly.verifiers.repair_loop import (  # noqa: E402
     forge_loop,
     SimpleContextStore,
 )
-from entroly.verifiers.symbol_resolution import SymbolManifest
+from entroly.verifiers.symbol_resolution import SymbolManifest  # noqa: E402
 
 client = OpenAI() if _RUN_LIVE_TESTS else None
 MODEL = "gpt-4o-mini"
@@ -91,7 +91,7 @@ def test_forge_missing_context():
 
     print(f"  Context: {len(initial_context)} bytes (just settle_payment)")
     print(f"  Store: {len(codebase)} files available for retrieval")
-    print(f"  Calling FORGE with max_iters=3...\n")
+    print("  Calling FORGE with max_iters=3...\n")
 
     result = forge_loop(
         prompt=prompt,
@@ -145,9 +145,9 @@ def test_forge_package():
 
     prompt = "Build an ORM model using the available packages. Write only Python code."
 
-    print(f"  Context: requirements.txt only")
+    print("  Context: requirements.txt only")
     print(f"  Store: {len(codebase)} files available for retrieval")
-    print(f"  Calling FORGE with max_iters=3...\n")
+    print("  Calling FORGE with max_iters=3...\n")
 
     result = forge_loop(
         prompt=prompt,

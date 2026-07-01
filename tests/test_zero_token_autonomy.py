@@ -536,7 +536,7 @@ class TestPrefetchSelfImprovement:
     def test_hit_rate_tracking(self):
         engine = self._make_engine()
         # Make a prediction
-        preds = engine.predict("src/auth.py", "import utils\n", "python")
+        engine.predict("src/auth.py", "import utils\n", "python")
         # Record some actual accesses
         engine.record_actual_access("src/auth.py")
         assert engine._total_predictions >= 1
@@ -651,7 +651,7 @@ class TestFlowOrchestratorFeedback:
 
     def test_execute_records_outcome_to_router(self):
         orch, router = self._make_orchestrator()
-        result = orch.execute("explain the auth module")
+        orch.execute("explain the auth module")
         # Router should now have outcome history
         assert hasattr(router, "_flow_outcomes") or hasattr(router, "_total_outcomes")
 

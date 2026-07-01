@@ -9,8 +9,8 @@
 //! - Read:  O(N) — same scan
 //! - XOR+POPCNT inner loop: ~15ns per location comparison
 
-use rand::Rng;
 use super::episode::hamming_distance;
+use rand::Rng;
 
 /// Width of the content counter array.
 const COUNTER_WIDTH: usize = 64;
@@ -70,13 +70,18 @@ impl KanervaSDM {
             });
         }
 
-        KanervaSDM { locations, n_locations, activation_radius }
+        KanervaSDM {
+            locations,
+            n_locations,
+            activation_radius,
+        }
     }
 
     /// Write a content vector at a binary address.
     /// All hard locations within `activation_radius` are updated.
     pub fn write(&mut self, address: &[u64; 16], content: &[f32]) {
-        let signs: Vec<i32> = content.iter()
+        let signs: Vec<i32> = content
+            .iter()
             .take(COUNTER_WIDTH)
             .map(|&v| if v >= 0.0 { 1 } else { -1 })
             .collect();
@@ -111,15 +116,22 @@ impl KanervaSDM {
             }
         }
 
-        let content_vector: Vec<i32> = sum_counters.iter()
+        let content_vector: Vec<i32> = sum_counters
+            .iter()
             .map(|&c| if c >= 0 { 1 } else { -1 })
             .collect();
 
         let mean_distance = if activated > 0 {
             total_distance as f32 / activated as f32
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
-        SDMRecallResult { content_vector, activated_count: activated, mean_distance }
+        SDMRecallResult {
+            content_vector,
+            activated_count: activated,
+            mean_distance,
+        }
     }
 
     /// Number of locations that have been written to.

@@ -30,15 +30,15 @@ def extract_rust(filepath):
     output.append("".join(lines[:10]).strip())
 
     for line in lines:
-        l = line.strip()
-        if l.startswith("pub struct") or l.startswith("struct"):
-            output.append(f"STRUCT: {l.split('{')[0]}")
-        elif l.startswith("pub fn") or l.startswith("fn"):
-            output.append(f"FN: {l.split('{')[0]}")
-        elif l.startswith("pub enum") or l.startswith("enum"):
-            output.append(f"ENUM: {l.split('{')[0]}")
-        elif l.startswith("impl"):
-            output.append(f"IMPL: {l.split('{')[0]}")
+        stripped = line.strip()
+        if stripped.startswith("pub struct") or stripped.startswith("struct"):
+            output.append(f"STRUCT: {stripped.split('{')[0]}")
+        elif stripped.startswith("pub fn") or stripped.startswith("fn"):
+            output.append(f"FN: {stripped.split('{')[0]}")
+        elif stripped.startswith("pub enum") or stripped.startswith("enum"):
+            output.append(f"ENUM: {stripped.split('{')[0]}")
+        elif stripped.startswith("impl"):
+            output.append(f"IMPL: {stripped.split('{')[0]}")
 
     return "\n".join(output)
 

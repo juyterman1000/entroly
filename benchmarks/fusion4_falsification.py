@@ -51,16 +51,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 SEED = 42
-CAL = 2000                 # match the optimizer's split; sample from TEST region
-N_ITEMS = 400              # 400 items -> up to 4 conditions; gpt calls = 2*N
+CAL = 2000  # match the optimizer's split; sample from TEST region
+N_ITEMS = 400  # 400 items -> up to 4 conditions; gpt calls = 2*N
 GPT_MODEL = "gpt-4o-mini"
 WORKERS = 8
-WEIGHTS = (0.05, 0.05, 0.80, 0.10)   # frozen: W, E, G, S
+WEIGHTS = (0.05, 0.05, 0.80, 0.10)  # frozen: W, E, G, S
 CACHE = Path(__file__).parent / "results" / "fusion4_falsification_cache.json"
 
 # EXACT entity patterns from fusion4_weight_optimizer.py:32 — apples-to-apples.
-EP = [re.compile(r"\b\d+\.?\d*\b"),
-      re.compile(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b")]
+EP = [re.compile(r"\b\d+\.?\d*\b"), re.compile(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b")]
 
 
 def _entity_gap(ctx: str, ans: str) -> float:
@@ -89,16 +88,20 @@ def auroc(scores: list[float], labels: list[int]) -> float:
     n0 = len(p) - n1
     if n0 == 0 or n1 == 0:
         return 0.5
-    return (sum(rr for rr, (_, y) in zip(r, p) if y == 1)
-            - n1 * (n1 + 1) / 2) / (n0 * n1)
+    return (sum(rr for rr, (_, y) in zip(r, p) if y == 1) - n1 * (n1 + 1) / 2) / (
+        n0 * n1
+    )
 
 
 def _load_env() -> None:
     f = Path(__file__).resolve().parent.parent / ".env"
     if f.exists():
         for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
-            m = re.match(r"(?:export\s+)?OPENAI_API_KEY\s*=\s*"
-                         r"[\"']?([^\"'\s]+)", line.strip())
+            m = re.match(
+                r"(?:export\s+)?OPENAI_API_KEY\s*=\s*"
+                r"[\"']?([^\"'\s]+)",
+                line.strip(),
+            )
             if m:
                 os.environ["OPENAI_API_KEY"] = m.group(1)
 
@@ -126,15 +129,18 @@ def _gpt(client, system: str, user: str) -> str:
         try:
             r = client.chat.completions.create(
                 model=GPT_MODEL,
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": user}],
-                temperature=0.7, max_tokens=120,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=0.7,
+                max_tokens=120,
             )
             return (r.choices[0].message.content or "").strip()
         except Exception:  # noqa: BLE001
             if attempt == 3:
                 return ""
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)
     return ""
 
 
@@ -147,28 +153,42 @@ def build_dataset() -> list[dict]:
     from openai import OpenAI
 
     ds = load_dataset("pminervini/HaluEval", "qa", split="data")
-    items = [(str(r.get("knowledge", "")), str(r.get("question", "")),
-              str(r.get("right_answer", "")), str(r.get("hallucinated_answer", "")))
-             for r in ds
-             if all(r.get(f) for f in
-                    ("knowledge", "question", "right_answer",
-                     "hallucinated_answer"))]
+    items = [
+        (
+            str(r.get("knowledge", "")),
+            str(r.get("question", "")),
+            str(r.get("right_answer", "")),
+            str(r.get("hallucinated_answer", "")),
+        )
+        for r in ds
+        if all(
+            r.get(f)
+            for f in ("knowledge", "question", "right_answer", "hallucinated_answer")
+        )
+    ]
     random.Random(SEED).shuffle(items)
-    sample = items[CAL * 2: CAL * 2 + N_ITEMS]   # TEST region only
+    sample = items[CAL * 2 : CAL * 2 + N_ITEMS]  # TEST region only
 
     client = OpenAI()
-    print(f"  Constructing artifact-broken answers with {GPT_MODEL} "
-          f"({2 * len(sample)} calls)...", flush=True)
+    print(
+        f"  Constructing artifact-broken answers with {GPT_MODEL} "
+        f"({2 * len(sample)} calls)...",
+        flush=True,
+    )
 
     def work(it):
         k, q, ra, ha = it
         kq = f"Knowledge: {k}\nQuestion: {q}\n"
-        h_ctrl = _gpt(client, _H_CTRL_SYS,
-                      kq + f"Wrong answer to rewrite: {ha}")
-        r_para = _gpt(client, _R_PARA_SYS,
-                      kq + f"Correct answer to paraphrase: {ra}")
-        return {"k": k, "q": q, "ra": ra, "ha": ha,
-                "h_ctrl": h_ctrl or ha, "r_para": r_para or ra}
+        h_ctrl = _gpt(client, _H_CTRL_SYS, kq + f"Wrong answer to rewrite: {ha}")
+        r_para = _gpt(client, _R_PARA_SYS, kq + f"Correct answer to paraphrase: {ra}")
+        return {
+            "k": k,
+            "q": q,
+            "ra": ra,
+            "ha": ha,
+            "h_ctrl": h_ctrl or ha,
+            "r_para": r_para or ra,
+        }
 
     out: list[dict] = [None] * len(sample)  # type: ignore
     t0 = time.perf_counter()
@@ -179,8 +199,10 @@ def build_dataset() -> list[dict]:
             out[futs[f]] = f.result()
             done += 1
             if done % 100 == 0:
-                print(f"    {done}/{len(sample)} "
-                      f"({time.perf_counter() - t0:.0f}s)", flush=True)
+                print(
+                    f"    {done}/{len(sample)} ({time.perf_counter() - t0:.0f}s)",
+                    flush=True,
+                )
     CACHE.parent.mkdir(exist_ok=True)
     CACHE.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"  Cached: {CACHE}")
@@ -197,8 +219,8 @@ def main() -> None:
     from entroly.ravs.ece import compute_fisher_curvature
     from entroly.ravs.spectral import compute_spectral_consistency
     from entroly.witness import WitnessAnalyzer
-    az = WitnessAnalyzer(use_nli=False, force_python=True,
-                         profile="benchmark_qa")
+
+    az = WitnessAnalyzer(use_nli=False, force_python=True, profile="benchmark_qa")
 
     def signals(ctx: str, ans: str):
         w = 1 - float(az.analyze(ctx, ans).summary_score)
@@ -224,11 +246,19 @@ def main() -> None:
         sh = signals(ctx, r["ha"])
         shc = signals(ctx, r["h_ctrl"])
         srp = signals(ctx, r["r_para"])
-        R.append(sr); H.append(sh); HC.append(shc); RP.append(srp)
-        gR += sr[2]; gH += sh[2]; gHC += shc[2]; gRP += srp[2]
+        R.append(sr)
+        H.append(sh)
+        HC.append(shc)
+        RP.append(srp)
+        gR += sr[2]
+        gH += sh[2]
+        gHC += shc[2]
+        gRP += srp[2]
         if (idx + 1) % 100 == 0:
-            print(f"    signals {idx + 1}/{len(rows)} "
-                  f"({time.perf_counter() - t0:.0f}s)", flush=True)
+            print(
+                f"    signals {idx + 1}/{len(rows)} ({time.perf_counter() - t0:.0f}s)",
+                flush=True,
+            )
     n = len(rows)
 
     def cond(neg, pos, name):
@@ -236,8 +266,12 @@ def main() -> None:
         lb = [0] * len(neg) + [1] * len(pos)
         gg = [x[2] for x in neg] + [x[2] for x in pos]
         wwl = [x[0] for x in neg] + [x[0] for x in pos]
-        return {"name": name, "fusion": auroc(sc, lb),
-                "g_only": auroc(gg, lb), "witness_only": auroc(wwl, lb)}
+        return {
+            "name": name,
+            "fusion": auroc(sc, lb),
+            "g_only": auroc(gg, lb),
+            "witness_only": auroc(wwl, lb),
+        }
 
     C1 = cond(R, H, "C1 original (r vs h)")
     C2 = cond(R, HC, "C2 entity-controlled (r vs h_ctrl)")
@@ -246,13 +280,14 @@ def main() -> None:
 
     mgR, mgH, mgHC, mgRP = gR / n, gH / n, gHC / n, gRP / n
 
-    print(f"\n  n={n} items per class | frozen weights "
-          f"W={ww} E={we} G={wg} S={ws}\n")
+    print(f"\n  n={n} items per class | frozen weights W={ww} E={we} G={wg} S={ws}\n")
     print(f"  {'condition':<34}{'fusion':>8}{'G-only':>8}{'WIT':>7}")
     print("  " + "-" * 56)
     for c in (C1, C2, C3, C4):
-        print(f"  {c['name']:<34}{c['fusion']:>8.4f}"
-              f"{c['g_only']:>8.4f}{c['witness_only']:>7.4f}")
+        print(
+            f"  {c['name']:<34}{c['fusion']:>8.4f}"
+            f"{c['g_only']:>8.4f}{c['witness_only']:>7.4f}"
+        )
     print("\n  Mean entity-gap G by answer type (the mechanism):")
     print(f"    faithful r        = {mgR:.4f}")
     print(f"    hallucinated h    = {mgH:.4f}   (orig positive)")
@@ -268,30 +303,39 @@ def main() -> None:
     print("\n" + "=" * 74)
     print("  PRE-REGISTERED VERDICT")
     print("=" * 74)
-    print(f"  C1->C2 fusion drop      = {drop_c2:+.4f}  "
-          f"(artifact if >= +0.07)")
-    print(f"  G(h_ctrl)~G(r) collapse = {hc_collapse}  "
-          f"(|{mgHC:.3f}-{mgR:.3f}|<=0.05)")
+    print(f"  C1->C2 fusion drop      = {drop_c2:+.4f}  (artifact if >= +0.07)")
+    print(f"  G(h_ctrl)~G(r) collapse = {hc_collapse}  (|{mgHC:.3f}-{mgR:.3f}|<=0.05)")
     print(f"  G(r_para) inflated      = {rp_inflate}")
     print(f"  Fusion>=0.87 in C2,C3,C4= {survives}")
     if artifact and not survives:
-        verdict = ("ARTIFACT CONFIRMED — the 0.90 is largely HaluEval's "
-                   "entity-swap synthesis. Does NOT generalize. Keep "
-                   "README at WITNESS 0.798.")
+        verdict = (
+            "ARTIFACT CONFIRMED — the 0.90 is largely HaluEval's "
+            "entity-swap synthesis. Does NOT generalize. Keep "
+            "README at WITNESS 0.798."
+        )
     elif survives and not artifact:
-        verdict = ("BREAKTHROUGH SURVIVES — fusion holds with the "
-                   "artifact removed. Defensible to report.")
+        verdict = (
+            "BREAKTHROUGH SURVIVES — fusion holds with the "
+            "artifact removed. Defensible to report."
+        )
     else:
-        verdict = ("PARTIAL — real signal but inflated; the headline "
-                   "0.90 is not defensible. Report the artifact-broken "
-                   "number, not 0.90.")
+        verdict = (
+            "PARTIAL — real signal but inflated; the headline "
+            "0.90 is not defensible. Report the artifact-broken "
+            "number, not 0.90."
+        )
     print(f"\n  >>> {verdict}\n")
 
-    res = {"weights": {"W": ww, "E": we, "G": wg, "S": ws}, "n": n,
-           "conditions": [C1, C2, C3, C4],
-           "mean_G": {"r": mgR, "h": mgH, "h_ctrl": mgHC, "r_para": mgRP},
-           "drop_c1_c2": drop_c2, "artifact": artifact,
-           "survives": survives, "verdict": verdict}
+    res = {
+        "weights": {"W": ww, "E": we, "G": wg, "S": ws},
+        "n": n,
+        "conditions": [C1, C2, C3, C4],
+        "mean_G": {"r": mgR, "h": mgH, "h_ctrl": mgHC, "r_para": mgRP},
+        "drop_c1_c2": drop_c2,
+        "artifact": artifact,
+        "survives": survives,
+        "verdict": verdict,
+    }
     op = Path(__file__).parent / "results" / "fusion4_falsification.json"
     op.write_text(json.dumps(res, indent=2), encoding="utf-8")
     print(f"  Saved: {op}")

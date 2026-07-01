@@ -183,7 +183,7 @@ def run_demo():
 
     total_tokens = sum(f["tokens"] for f in FRAGMENTS)
     relevant_tokens = sum(f["tokens"] for f in FRAGMENTS if f["relevant"])
-    noise_tokens = total_tokens - relevant_tokens
+    total_tokens - relevant_tokens
 
     print(f"""
   {C.RED}Your AI agent receives ALL 12 fragments — {total_tokens} tokens.{C.RESET}
@@ -297,7 +297,7 @@ def run_demo():
     entroly_f1 = 2 * entroly_precision * entroly_recall / max(entroly_precision + entroly_recall, 1e-9)
 
     total_tokens_used = opt_result.get("total_tokens", 0)
-    tokens_saved = stats.get("session", {}).get("total_tokens_saved", stats.get("savings", {}).get("total_tokens_saved", 0))
+    stats.get("session", {}).get("total_tokens_saved", stats.get("savings", {}).get("total_tokens_saved", 0))
     dupes = stats.get("session", {}).get("total_duplicates_caught", stats.get("savings", {}).get("total_duplicates_caught", 0))
 
     print()

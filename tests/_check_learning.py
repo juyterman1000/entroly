@@ -12,7 +12,9 @@
   Signal 6: Evolution Daemon — does it boot and schedule?
   Signal 7: Causal Attribution — is the module importable and functional?
 """
-import os, sys, traceback
+import os
+import sys
+import traceback
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 from entroly.server import EntrolyEngine
@@ -117,7 +119,7 @@ def main():
 
     check("apply_feedback succeeds with recorded features", applied > 0,
           f"{applied} updates applied")
-    
+
     if w_rl0 and w_rl1:
         rl_shifted = w_rl0 != w_rl1
         check("RL weights shift after feedback", rl_shifted,
@@ -138,7 +140,7 @@ def main():
     cryst_stats = cryst.stats()
     check("Crystallizer has stats surface", isinstance(cryst_stats, dict),
           f"keys={list(cryst_stats.keys())[:5]}")
-    
+
     # The crystallizer fires only after sustained high rewards (Hoeffding bound).
     # In a 15-call test it won't fire, but the observation path should work.
     try:
@@ -223,9 +225,9 @@ def main():
     # ══════════════════════════════════════════════════════════════
     print("\n  ── Signal 8: Feedback Journal ──")
     try:
-        journal_cb = getattr(engine, '_journal_callback', None)
+        getattr(engine, '_journal_callback', None)
         check("Journal callback slot exists", hasattr(engine, '_journal_callback'))
-        
+
         log_method = getattr(engine, '_log_outcome_to_journal', None)
         check("_log_outcome_to_journal method exists", log_method is not None)
     except Exception as e:
@@ -237,11 +239,11 @@ def main():
     total = len(results)
     passed = sum(1 for _, ok in results if ok)
     failed = total - passed
-    
+
     print("\n" + "=" * 64)
     print(f"  AUDIT COMPLETE: {passed}/{total} checks passed, {failed} failed")
     print()
-    
+
     if failed == 0:
         print("  All learning signals are correctly wired and functional.")
     else:
@@ -249,7 +251,7 @@ def main():
         for name, ok in results:
             if not ok:
                 print(f"    - {name}")
-    
+
     print()
     print("  Architecture summary:")
     print("    optimize_context()")

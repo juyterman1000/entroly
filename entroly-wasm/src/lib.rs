@@ -24,7 +24,6 @@
 
 mod anomaly;
 mod bm25;
-mod qccr;
 mod cache;
 mod causal;
 mod channel;
@@ -32,6 +31,8 @@ mod cognitive_bus;
 mod conversation_pruner;
 mod dedup;
 mod depgraph;
+mod eicv;
+mod eicv_suppressor;
 mod entropy;
 mod fragment;
 mod guardrails;
@@ -44,17 +45,16 @@ mod localization;
 mod lsh;
 mod nkbe;
 mod prism;
+mod qccr;
 mod query;
 mod query_persona;
 mod resonance;
+mod rnr;
 mod sast;
 mod semantic_dedup;
 mod skeleton;
 mod trajectory;
 mod utilization;
-mod rnr;
-mod eicv;
-mod eicv_suppressor;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

@@ -36,11 +36,7 @@ pub struct PruneStats {
 ///
 /// This is the part you unit-test exhaustively. The IO wrapper below is
 /// just plumbing.
-pub fn prune_jsonl_lines<'a, I>(
-    lines: I,
-    ts_key: &str,
-    cutoff_ts: f64,
-) -> (Vec<String>, PruneStats)
+pub fn prune_jsonl_lines<'a, I>(lines: I, ts_key: &str, cutoff_ts: f64) -> (Vec<String>, PruneStats)
 where
     I: IntoIterator<Item = &'a str>,
 {
@@ -55,14 +51,9 @@ where
         }
         match serde_json::from_str::<serde_json::Value>(s) {
             Ok(v) => {
-                let ts_ok = v
-                    .get(ts_key)
-                    .and_then(|x| x.as_f64())
-                    .unwrap_or(0.0)
-                    >= cutoff_ts;
+                let ts_ok = v.get(ts_key).and_then(|x| x.as_f64()).unwrap_or(0.0) >= cutoff_ts;
                 if ts_ok {
-                    kept_lines
-                        .push(serde_json::to_string(&v).unwrap_or_else(|_| s.to_string()));
+                    kept_lines.push(serde_json::to_string(&v).unwrap_or_else(|_| s.to_string()));
                     kept += 1;
                 } else {
                     removed += 1;
@@ -226,6 +217,13 @@ mod tests {
     #[test]
     fn io_missing_file_returns_empty_stats() {
         let stats = prune_jsonl_by_ts("/tmp/does-not-exist.jsonl", "ts", 0.0).unwrap();
-        assert_eq!(stats, PruneStats { kept: 0, removed: 0, changed: false });
+        assert_eq!(
+            stats,
+            PruneStats {
+                kept: 0,
+                removed: 0,
+                changed: false
+            }
+        );
     }
 }

@@ -19,11 +19,11 @@ _REPO = _THIS.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-import itertools
-import math
+import itertools  # noqa: E402
+import math  # noqa: E402
 
-from entroly.esg import ESGAnalyzer
-from entroly.semantic_entropy import SemanticEntropyAnalyzer
+from entroly.esg import ESGAnalyzer  # noqa: E402
+from entroly.semantic_entropy import SemanticEntropyAnalyzer  # noqa: E402
 
 SEED = 42
 N_PER = 150
