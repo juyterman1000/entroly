@@ -56,10 +56,11 @@ def localize_files(
         return (base_ranked or list(files))[:k]
     try:
         from .localization import Tier0Localizer
-        loc = Tier0Localizer(files)
         if base_ranked is None:
+            loc = Tier0Localizer(files)
             base_ranked = loc.rank(query, k=max(k, len(files)))
         else:
+            loc = Tier0Localizer.for_edit_rerank(files)
             # Filter to entries actually present in the corpus so the
             # rerank operates on a clean candidate set.
             base_ranked = [p for p in base_ranked if p in files]
@@ -118,7 +119,7 @@ def localize_fragments(
 
         kk = k if k is not None else max(20, len(order))
         from .localization import Tier0Localizer
-        reranked = Tier0Localizer(files_map).rerank_edit_target(
+        reranked = Tier0Localizer.for_edit_rerank(files_map).rerank_edit_target(
             order, query, k=kk,
         )
 

@@ -154,9 +154,22 @@ fn intent_clusters() -> &'static HashMap<&'static str, HashSet<&'static str>> {
         m.insert(
             "mapping",
             [
-                "map", "mapping", "mapper", "transform", "convert", "converter",
-                "serialize", "deserialize", "marshal", "unmarshal", "adapt",
-                "translate", "encode", "decode", "parse", "parser",
+                "map",
+                "mapping",
+                "mapper",
+                "transform",
+                "convert",
+                "converter",
+                "serialize",
+                "deserialize",
+                "marshal",
+                "unmarshal",
+                "adapt",
+                "translate",
+                "encode",
+                "decode",
+                "parse",
+                "parser",
             ]
             .into_iter()
             .collect(),
@@ -164,8 +177,18 @@ fn intent_clusters() -> &'static HashMap<&'static str, HashSet<&'static str>> {
         m.insert(
             "schema",
             [
-                "schema", "model", "models", "type", "types", "record", "records",
-                "entity", "entities", "struct", "dto", "interface",
+                "schema",
+                "model",
+                "models",
+                "type",
+                "types",
+                "record",
+                "records",
+                "entity",
+                "entities",
+                "struct",
+                "dto",
+                "interface",
             ]
             .into_iter()
             .collect(),
@@ -173,9 +196,22 @@ fn intent_clusters() -> &'static HashMap<&'static str, HashSet<&'static str>> {
         m.insert(
             "ingest",
             [
-                "incoming", "request", "payload", "event", "events", "ingest",
-                "ingestion", "consume", "consumer", "intake", "receive", "handler",
-                "queue", "worker", "processor", "stream",
+                "incoming",
+                "request",
+                "payload",
+                "event",
+                "events",
+                "ingest",
+                "ingestion",
+                "consume",
+                "consumer",
+                "intake",
+                "receive",
+                "handler",
+                "queue",
+                "worker",
+                "processor",
+                "stream",
             ]
             .into_iter()
             .collect(),
@@ -183,9 +219,23 @@ fn intent_clusters() -> &'static HashMap<&'static str, HashSet<&'static str>> {
         m.insert(
             "persistence",
             [
-                "persist", "persistence", "save", "store", "stored", "write",
-                "upsert", "insert", "update", "delete", "repository",
-                "repositories", "dao", "table", "tables", "database", "migration",
+                "persist",
+                "persistence",
+                "save",
+                "store",
+                "stored",
+                "write",
+                "upsert",
+                "insert",
+                "update",
+                "delete",
+                "repository",
+                "repositories",
+                "dao",
+                "table",
+                "tables",
+                "database",
+                "migration",
                 "query",
             ]
             .into_iter()
@@ -291,7 +341,10 @@ lazy_re!(
     logic_dir_re,
     r"(?i)/(?:services?|repositor(?:y|ies)|models?|domain|handlers?|controllers?|workers?|queues?|jobs?|processors?|usecases?|adapters?|mappers?|stores?|dao|db|database|persistence)/"
 );
-lazy_re!(ui_dir_re, r"(?i)/(?:components?|pages?|views?|widgets?|ui|styles?)/");
+lazy_re!(
+    ui_dir_re,
+    r"(?i)/(?:components?|pages?|views?|widgets?|ui|styles?)/"
+);
 lazy_re!(
     re_mapper,
     r"\b(?:map|convert|transform|to|from)[A-Za-z0-9_]*?(?:To|From|Into)[A-Z][A-Za-z0-9_]*\b"
@@ -344,7 +397,10 @@ fn rank_features(
     let s = source.to_lowercase().replace('\\', "/");
     let mut adj = 0.0;
     let wants_tests = base.iter().any(|t| {
-        matches!(t.as_str(), "test" | "tests" | "spec" | "assert" | "fixture" | "mock")
+        matches!(
+            t.as_str(),
+            "test" | "tests" | "spec" | "assert" | "fixture" | "mock"
+        )
     });
     let backend = intents.contains("mapping")
         || intents.contains("ingest")
@@ -377,7 +433,8 @@ fn rank_features(
     if (intents.contains("mapping") || intents.contains("schema")) && re_mapper().is_match(text) {
         adj += gw("defines_mapper");
     }
-    if (intents.contains("mapping") || intents.contains("ingest")) && re_transform().is_match(text) {
+    if (intents.contains("mapping") || intents.contains("ingest")) && re_transform().is_match(text)
+    {
         adj += gw("defines_transform");
     }
     if (intents.contains("persistence") || intents.contains("ingest"))
@@ -385,7 +442,9 @@ fn rank_features(
     {
         adj += gw("defines_persistence");
     }
-    if (intents.contains("schema") || intents.contains("mapping") || intents.contains("persistence"))
+    if (intents.contains("schema")
+        || intents.contains("mapping")
+        || intents.contains("persistence"))
         && re_schema_type().is_match(text)
     {
         adj += gw("defines_schema_type");
@@ -548,8 +607,11 @@ fn approx_tokens(s: &str) -> usize {
     (s.chars().count() / CHARS_PER_TOKEN).max(1)
 }
 
+type TermFrequencies = HashMap<String, usize>;
+type Bm25CorpusStats = (Vec<TermFrequencies>, Vec<f64>, TermFrequencies, f64);
+
 /// Single-field BM25 corpus stats for sentence scoring.
-fn bm25_corpus(texts: &[String]) -> (Vec<HashMap<String, usize>>, Vec<f64>, HashMap<String, usize>, f64) {
+fn bm25_corpus(texts: &[String]) -> Bm25CorpusStats {
     let mut tf_list = Vec::with_capacity(texts.len());
     let mut lens = Vec::with_capacity(texts.len());
     let mut df: HashMap<String, usize> = HashMap::new();
@@ -628,7 +690,12 @@ fn mmr_select(
                     .partial_cmp(&rel[a])
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| tf_list[b].len().cmp(&tf_list[a].len()))
-                    .then_with(|| sentences[b].chars().count().cmp(&sentences[a].chars().count()))
+                    .then_with(|| {
+                        sentences[b]
+                            .chars()
+                            .count()
+                            .cmp(&sentences[a].chars().count())
+                    })
             });
             ranked.truncate(MAX_MMR_SENTENCE_CANDIDATES);
             ranked.sort_unstable();
@@ -647,7 +714,12 @@ fn mmr_select(
     if remaining.is_empty() {
         // Anchor fallback: pack the longest sentences that fit.
         let mut by_len: Vec<usize> = (0..n).collect();
-        by_len.sort_by(|&a, &b| sentences[b].chars().count().cmp(&sentences[a].chars().count()));
+        by_len.sort_by(|&a, &b| {
+            sentences[b]
+                .chars()
+                .count()
+                .cmp(&sentences[a].chars().count())
+        });
         let mut out = Vec::new();
         let mut used: i64 = 0;
         for i in by_len {
@@ -677,7 +749,9 @@ fn mmr_select(
         let best = if selected.is_empty() {
             argmax_first(&remaining, |i| rel[i])
         } else {
-            argmax_first(&remaining, |i| MMR_LAMBDA * rel[i] - (1.0 - MMR_LAMBDA) * max_sim[i])
+            argmax_first(&remaining, |i| {
+                MMR_LAMBDA * rel[i] - (1.0 - MMR_LAMBDA) * max_sim[i]
+            })
         };
         let best = match best {
             Some(b) => b,
@@ -761,7 +835,10 @@ pub fn select(
         if !groups.contains_key(&f.source) {
             order.push(f.source.clone());
         }
-        groups.entry(f.source.clone()).or_default().push(f.content.clone());
+        groups
+            .entry(f.source.clone())
+            .or_default()
+            .push(f.content.clone());
     }
     let file_sources: Vec<String> = order.clone();
     let file_texts: Vec<String> = order.iter().map(|s| groups[s].join("\n")).collect();
@@ -774,7 +851,9 @@ pub fn select(
 
     // Caller-supplied reorder (engine_s6 localizer) — same effect as the Python
     // `localize_files` block: reorder the candidate list, scores preserved.
-    if !preferred.is_empty() && file_scores.len() > 1 && file_scores.iter().any(|(s, _, _)| *s > 0.0)
+    if !preferred.is_empty()
+        && file_scores.len() > 1
+        && file_scores.iter().any(|(s, _, _)| *s > 0.0)
     {
         let by_src: HashMap<String, (f64, String)> = file_scores
             .iter()
@@ -848,7 +927,11 @@ pub fn select(
                 }
             }
         }
-        let file_budget = per_file_budget.get(src).copied().unwrap_or(256).min(budget_left);
+        let file_budget = per_file_budget
+            .get(src)
+            .copied()
+            .unwrap_or(256)
+            .min(budget_left);
         let chosen = mmr_select(&sentences, &s_tf, &rel, file_budget);
         if chosen.is_empty() {
             continue;
@@ -875,8 +958,13 @@ pub fn select(
 
     // Hard budget ceiling: trim trailing excerpts (drop last sentence, then
     // whole excerpts) until the emitted total fits.
-    let frag_tokens =
-        |f: &OutFragment| -> usize { if f.token_count > 0 { f.token_count } else { approx_tokens(&f.content) } };
+    let frag_tokens = |f: &OutFragment| -> usize {
+        if f.token_count > 0 {
+            f.token_count
+        } else {
+            approx_tokens(&f.content)
+        }
+    };
     let mut total: i64 = output.iter().map(|f| frag_tokens(f) as i64).sum();
     while !output.is_empty() && total > token_budget {
         let last = output.last_mut().unwrap();
@@ -933,14 +1021,18 @@ mod tests {
 
     #[test]
     fn stemming_makes_intent_morphology_robust() {
-        let base: HashSet<String> = query_tokens("how are scores persisted").into_iter().collect();
+        let base: HashSet<String> = query_tokens("how are scores persisted")
+            .into_iter()
+            .collect();
         let intents = query_intents(&base);
         assert!(intents.contains("persistence"), "persisted -> persistence");
     }
 
     #[test]
     fn expansion_reaches_code_vocabulary() {
-        let e: HashSet<String> = expand_query("map incoming json to schema").into_iter().collect();
+        let e: HashSet<String> = expand_query("map incoming json to schema")
+            .into_iter()
+            .collect();
         // mapping + schema + (ingest -> mapping/persistence) clusters reachable
         assert!(e.contains("record") || e.contains("records"));
         assert!(e.contains("transform") || e.contains("mapper"));
@@ -968,7 +1060,12 @@ mod tests {
                 .to_string(),
             "describe('scores', () => { it('upserts', () => expect(true)); });".to_string(),
         ];
-        let ranked = rank_files(&sources, &texts, "how are scores persisted", &HashMap::new());
+        let ranked = rank_files(
+            &sources,
+            &texts,
+            "how are scores persisted",
+            &HashMap::new(),
+        );
         assert_eq!(ranked[0].0, 1, "repository should rank first");
         // the test file must not be first
         assert_ne!(ranked[0].0, 2);
@@ -988,7 +1085,13 @@ mod tests {
                     .into(),
             },
         ];
-        let out = select(&frags, 300, "how are scores persisted", &HashMap::new(), &[]);
+        let out = select(
+            &frags,
+            300,
+            "how are scores persisted",
+            &HashMap::new(),
+            &[],
+        );
         assert!(!out.is_empty());
         assert_eq!(out[0].source, "file:server/repositories/scores.ts");
         let total: usize = out.iter().map(|f| f.token_count).sum();

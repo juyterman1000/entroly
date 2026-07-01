@@ -7,7 +7,7 @@ recall() bug silently degraded retrieval.
 
 from __future__ import annotations
 
-from entroly.file_localizer import localize_fragments
+from entroly.file_localizer import localize_files, localize_fragments
 from entroly.localization import Tier0Localizer, _module_to_paths, _split_ident
 from entroly.server import EntrolyEngine
 
@@ -274,6 +274,27 @@ def test_localize_fragments_reorders_sources_without_dropping_fragments():
     assert sources.index("docs/auth.rst") > sources.index("tests/test_auth.py")
     assert len(out) == len(fragments)
     assert out[-1]["content"] == "unkeyed"
+
+
+def test_base_ranked_localization_skips_unused_corpus_tokenization(monkeypatch):
+    tokenized: list[str] = []
+
+    def track_tokenization(text: str) -> list[str]:
+        tokenized.append(text)
+        return text.lower().split()
+
+    monkeypatch.setattr("entroly.localization._tok", track_tokenization)
+    base = list(EDIT_REPO)
+
+    result = localize_files(
+        EDIT_REPO,
+        "login is broken",
+        k=len(base),
+        base_ranked=base,
+    )
+
+    assert set(result) >= set(base)
+    assert tokenized == []
 
 
 def test_optimize_context_applies_engine_s6_postpass(monkeypatch):

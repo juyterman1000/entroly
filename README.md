@@ -214,7 +214,9 @@ The stress test gates recall precision, stale-memory suppression, secret blockin
 
 ## Works with your stack
 
-`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a copy-paste endpoint hint.
+`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
+
+For a manually configured Gemini API client, use `GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta`.
 
 **Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
 

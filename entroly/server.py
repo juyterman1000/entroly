@@ -465,6 +465,9 @@ class EntrolyEngine:
     def __init__(self, config: EntrolyConfig | None = None):
         self.config = config or EntrolyConfig()
         self._use_rust = _RUST_AVAILABLE
+        # Python-routed selectors (currently QCCR) bypass the Rust optimizer,
+        # so their session savings need engine-independent accounting.
+        self._total_tokens_saved: int = 0
 
         if self._use_rust:
             self._rust = _build_rust_engine(self.config)
@@ -479,7 +482,6 @@ class EntrolyEngine:
             self._dedup = _PyDedupIndex(
                 hamming_threshold=getattr(self.config, "dedup_hamming_threshold", 3)
             )
-            self._total_tokens_saved: int = 0
             self._total_optimizations: int = 0
             self._total_fragments_ingested: int = 0
             self._total_duplicates_caught: int = 0
@@ -797,13 +799,48 @@ class EntrolyEngine:
                     selected = qccr_select(
                         candidates, token_budget=token_budget, query=refined_query,
                     )
+                    def _fragment_tokens(fragment: dict[str, Any]) -> int:
+                        token_count = int(fragment.get("token_count") or 0)
+                        if token_count > 0:
+                            return token_count
+                        content = str(fragment.get("content") or "")
+                        return max(1, len(content) // 4) if content else 0
+
+                    tokens_used = sum(
+                        _fragment_tokens(f) for f in selected if isinstance(f, dict)
+                    )
+                    total_available_tokens = sum(
+                        _fragment_tokens(f) for f in candidates if isinstance(f, dict)
+                    )
+                    tokens_saved = max(0, total_available_tokens - tokens_used)
+                    self._total_tokens_saved += tokens_saved
+                    selected_count = len(selected)
+                    total_relevance = round(sum(
+                        float(f.get("relevance", f.get("relevance_score", 0.0)) or 0.0)
+                        for f in selected if isinstance(f, dict)
+                    ), 4)
+                    optimization_stats = {
+                        "total_tokens": tokens_used,
+                        "selected_count": selected_count,
+                        "total_relevance": total_relevance,
+                        "effective_budget": token_budget,
+                        "budget_utilization": round(tokens_used / max(token_budget, 1), 4),
+                    }
                     result = {
                         "selected_fragments": selected,
                         "selected": selected,
-                        "tokens_used": sum(
-                            (f.get("token_count") or (len(f.get("content", "")) // 4))
-                            for f in selected if isinstance(f, dict)
-                        ),
+                        "tokens_used": tokens_used,
+                        "total_tokens": tokens_used,
+                        "selected_count": selected_count,
+                        "total_relevance": total_relevance,
+                        "tokens_saved": tokens_saved,
+                        "tokens_saved_this_call": tokens_saved,
+                        "total_tokens_saved_session": self._total_tokens_saved,
+                        "optimization_stats": optimization_stats,
+                        "method": "qccr",
+                        "effective_budget": token_budget,
+                        "user_budget": token_budget,
+                        "budget_utilization": optimization_stats["budget_utilization"],
                         "total_fragments": len(candidates),
                         "selector": "qccr",
                     }

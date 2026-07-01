@@ -147,7 +147,7 @@ class Tier0Localizer:
     RM3_E = 20        # expansion terms
     RM3_LAMBDA = 0.5  # original vs. expansion mixing
 
-    def __init__(self, files: dict[str, str]):
+    def __init__(self, files: dict[str, str], *, build_rank_index: bool = True):
         self.files = files
         self.paths = list(files)
         self._path_set = set(self.paths)
@@ -165,25 +165,32 @@ class Tier0Localizer:
             sym_field = _split_ident(path.replace("/", "_").rsplit(".", 1)[0])
             for s in defs:
                 sym_field += _split_ident(s)
-            self._symbol_corpus.append((path, sym_field))
-            self._content_corpus.append((path, _tok(content)))
+            if build_rank_index:
+                self._symbol_corpus.append((path, sym_field))
+                self._content_corpus.append((path, _tok(content)))
 
-        for path, content in files.items():
-            mods: list[str] = list(_IMPORT_FROM_RE.findall(content))
-            for grp in _IMPORT_RE.findall(content):
-                mods += [m.strip() for m in grp.split(",")]
-            for mod in mods:
-                for cand in _module_to_paths(mod.strip().lstrip(".")):
-                    if cand in self._path_set:
-                        self.imports[path].add(cand)
-                        self.imported_by[cand].add(path)
-                        break
+        if build_rank_index:
+            for path, content in files.items():
+                mods: list[str] = list(_IMPORT_FROM_RE.findall(content))
+                for grp in _IMPORT_RE.findall(content):
+                    mods += [m.strip() for m in grp.split(",")]
+                for mod in mods:
+                    for cand in _module_to_paths(mod.strip().lstrip(".")):
+                        if cand in self._path_set:
+                            self.imports[path].add(cand)
+                            self.imported_by[cand].add(path)
+                            break
 
         self._bm25_content = _BM25(self._content_corpus)
         self._bm25_symbol = _BM25(self._symbol_corpus)
         self._sym_iff = {
             s: 1.0 / len(fs) for s, fs in self.sym_def.items() if fs
         }
+
+    @classmethod
+    def for_edit_rerank(cls, files: dict[str, str]) -> "Tier0Localizer":
+        """Build only the path/symbol state needed by ``rerank_edit_target``."""
+        return cls(files, build_rank_index=False)
 
     # ── S1: explicit location extraction ──────────────────────────────
 

@@ -17,6 +17,11 @@ import sys
 import traceback
 import time
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 PASS = 0
 FAIL = 0
 
@@ -36,7 +41,7 @@ def test(name, fn):
         print(f"    → {type(e).__name__}: {e}")
         traceback.print_exc()
 
-import entroly_core as sc
+import entroly_core as sc  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════
@@ -373,7 +378,7 @@ print("\n═══ C. DUPLICATE DETECTION DEPTH ═══")
 def test_duplicate_updates_existing():
     """When duplicate ingested, existing fragment gets access_count boosted."""
     e = sc.EntrolyEngine()
-    r1 = e.ingest("def foo(): return 42", "a.py", 0, False)
+    e.ingest("def foo(): return 42", "a.py", 0, False)
     r2 = e.ingest("def foo(): return 42", "b.py", 0, False)
     assert r2["status"] == "duplicate"
     assert r2["tokens_saved"] > 0
@@ -440,7 +445,7 @@ def test_feedback_negative_suppresses():
         e.record_success([r_good["fragment_id"]])
 
     opt = e.optimize(110, "")
-    selected_ids = [f["id"] for f in opt["selected"]]
+    [f["id"] for f in opt["selected"]]
     selected_sources = [f["source"] for f in opt["selected"]]
     assert "good.py" in selected_sources, f"good.py should win: {selected_sources}"
     assert "bad.py" not in selected_sources, f"bad.py should be suppressed: {selected_sources}"
@@ -583,13 +588,13 @@ def test_dep_boost_changes_selection():
     """Dep boost should cause dependency to be selected over a higher-raw-score fragment."""
     e = sc.EntrolyEngine()
     # Define rate function (will be depended on)
-    r_rates = e.ingest("def get_rate(currency):\n    return {'USD': 1.0}[currency]", "rates.py", 50, False)
+    e.ingest("def get_rate(currency):\n    return {'USD': 1.0}[currency]", "rates.py", 50, False)
 
     # Define payment function that calls get_rate
-    r_payments = e.ingest("from rates import get_rate\ndef process(amount, currency):\n    return amount * get_rate(currency)", "payments.py", 100, False)
+    e.ingest("from rates import get_rate\ndef process(amount, currency):\n    return amount * get_rate(currency)", "payments.py", 100, False)
 
     # Define a completely unrelated high-relevance fragment
-    r_noise = e.ingest("def totally_different_thing(): return 'optimized!'", "noise.py", 50, False)
+    e.ingest("def totally_different_thing(): return 'optimized!'", "noise.py", 50, False)
 
     # Query relevant to payments
     opt = e.optimize(160, "payment processing")  # fits rates(50) + payments(100) or rates(50) + noise(50) + payments won't fit
@@ -713,7 +718,7 @@ def test_auth_content_safety():
     """auth.py contains 'api_key' keyword → should be auto-pinned as safety signal."""
     e = sc.EntrolyEngine()
     r = e.ingest(REAL_FILES["auth.py"], "auth.py", 0, False)
-    assert r["is_pinned"] == True, \
+    assert r["is_pinned"], \
         f"auth.py contains api_key → should be auto-pinned: {r}"
 test("auth.py auto-pinned (contains api_key)", test_auth_content_safety)
 

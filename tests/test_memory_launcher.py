@@ -22,3 +22,42 @@ def test_docker_launcher_routes_memory_without_docker(monkeypatch) -> None:
 
     assert exc.value.code == 0
     assert calls == [["stats"]]
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["go", "optimize", "verify-claims", "witness", "daemon", "unknown-command"],
+)
+def test_docker_launcher_routes_every_non_serve_command_locally(
+    monkeypatch, command: str
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr("entroly.cli.main", lambda: calls.append(command))
+    monkeypatch.setattr(
+        _docker_launcher,
+        "_docker_available",
+        lambda: pytest.fail("non-serve commands must not inspect Docker"),
+    )
+    monkeypatch.setattr(
+        _docker_launcher,
+        "_run_native",
+        lambda: pytest.fail("non-serve commands must not start the MCP server"),
+    )
+    monkeypatch.setattr(sys, "argv", ["entroly", command])
+
+    _docker_launcher.launch()
+
+    assert calls == [command]
+
+
+def test_docker_launcher_keeps_serve_as_the_only_docker_command(monkeypatch) -> None:
+    monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
+    monkeypatch.setattr(_docker_launcher.os.path, "exists", lambda _path: False)
+    monkeypatch.setattr(_docker_launcher, "_docker_available", lambda: False)
+    monkeypatch.setattr(sys, "argv", ["entroly", "serve"])
+
+    with pytest.raises(SystemExit) as exc:
+        _docker_launcher.launch()
+
+    assert exc.value.code == 1

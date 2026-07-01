@@ -70,6 +70,14 @@ def test_query_path_uses_qccr_and_keeps_the_answer():
     assert "shard rebalancing" not in kept, (
         "irrelevant distractors must be dropped at a tight budget"
     )
+    tokens_used = sum(f.get("token_count", 0) for f in selected)
+    total_available = sum(f.get("token_count", 0) for f in eng._rust.export_fragments())
+    assert result["tokens_used"] == tokens_used
+    assert result["total_tokens"] == tokens_used
+    assert result["selected_count"] == len(selected)
+    assert result["tokens_saved"] == total_available - tokens_used
+    assert result["tokens_saved_this_call"] == result["tokens_saved"]
+    assert result["optimization_stats"]["total_tokens"] == tokens_used
 
 
 def test_no_query_does_not_use_qccr():

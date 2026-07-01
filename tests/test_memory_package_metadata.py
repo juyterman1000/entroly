@@ -36,3 +36,11 @@ def test_nested_pyproject_exposes_memory_entrypoint() -> None:
     scripts = _read_project_scripts("entroly/pyproject.toml")
 
     assert scripts["entroly-memory"] == "entroly.memory_cli:main"
+
+
+def test_root_pyproject_defines_documented_full_extra() -> None:
+    text = Path("pyproject.toml").read_text(encoding="utf-8")
+    full_section = text.split("full = [", 1)[1].split("]", 1)[0]
+
+    for dependency in ("cryptography", "httpx", "starlette", "uvicorn"):
+        assert dependency in full_section

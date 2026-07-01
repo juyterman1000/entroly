@@ -2,8 +2,9 @@
 entroly Docker launcher — cross-platform entry point.
 
 When installed via `pip install entroly`, this is what runs.
-It launches the actual MCP server inside a Docker container so it
-works identically on Linux, macOS, and Windows without needing Rust.
+CLI commands run in the installed Python environment. Only ``entroly serve``
+uses the Docker image by default so ordinary commands never trigger a remote
+image pull or require a Docker daemon.
 
 The Docker image is built from Dockerfile.entroly and pushed to:
   ghcr.io/juyterman1000/entroly:latest
@@ -99,9 +100,8 @@ def _run_memory_cli() -> None:
 def launch() -> None:
     """Main entry point — docker launch or native fallback.
 
-    Routes CLI subcommands (init, dashboard, health, autotune, benchmark,
-    status, proxy, memory) to local handlers. Only `serve` and bare `entroly`
-    go through Docker (or native fallback).
+    Route every CLI subcommand locally. Only ``serve`` goes through Docker (or
+    the native server fallback when ``ENTROLY_NO_DOCKER`` is set).
     """
 
     # Bare command or --help/--version → show help without Docker
@@ -115,14 +115,10 @@ def launch() -> None:
         _run_memory_cli()
         return
 
-    # CLI subcommands that don't need Docker or the MCP server
-    _local_commands = {
-        "init", "dashboard", "health", "autotune", "benchmark",
-        "status", "config", "proxy", "completions", "clean", "telemetry",
-        "export", "import", "drift", "profile", "batch",
-        "demo", "doctor", "digest", "migrate", "role",
-    }
-    if len(sys.argv) > 1 and sys.argv[1] in _local_commands:
+    # The canonical CLI owns command discovery and validation. Routing every
+    # non-server token through it prevents newly added commands (and typos)
+    # from accidentally becoming Docker invocations.
+    if sys.argv[1] != "serve":
         from entroly.cli import main as cli_main
         cli_main()
         return

@@ -9,6 +9,11 @@ No mocks, no stubs, no hardcoded expected values where avoidable.
 import sys
 import traceback
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 PASS = 0
 FAIL = 0
 
@@ -27,7 +32,7 @@ def test(name, fn):
 # Import
 # ═══════════════════════════════════════════════════════════════════
 
-import entroly_core as sc
+import entroly_core as sc  # noqa: E402
 
 print("═══ 1. CONSTRUCTOR & CONFIGURATION ═══")
 
@@ -47,9 +52,9 @@ def test_custom_params():
 test("Custom constructor params", test_custom_params)
 
 def test_exploration_rate_clamp():
-    e = sc.EntrolyEngine(exploration_rate=5.0)
+    sc.EntrolyEngine(exploration_rate=5.0)
     # Should be clamped to 1.0 internally
-    e2 = sc.EntrolyEngine(exploration_rate=-1.0)
+    sc.EntrolyEngine(exploration_rate=-1.0)
     # Should be clamped to 0.0 internally
 test("Exploration rate clamping", test_exploration_rate_clamp)
 
@@ -64,7 +69,7 @@ def test_basic_ingest():
     assert r["token_count"] > 0
     assert 0.0 <= r["entropy_score"] <= 1.0
     assert r["criticality"] == "Normal"
-    assert r["is_pinned"] == False
+    assert not r["is_pinned"]
     assert r["total_fragments"] == 1
     assert e.fragment_count() == 1
 test("Basic ingest", test_basic_ingest)
@@ -90,7 +95,7 @@ test("Token estimation: code vs prose", test_token_estimation_code_vs_prose)
 def test_pinned_ingest():
     e = sc.EntrolyEngine()
     r = e.ingest("important data", "data.txt", 0, True)
-    assert r["is_pinned"] == True
+    assert r["is_pinned"]
 test("Pinned ingest", test_pinned_ingest)
 
 def test_empty_content():
@@ -161,7 +166,7 @@ def test_criticality(path, expected_crit):
         assert r["criticality"] == expected_crit, \
             f"{path}: expected {expected_crit}, got {r['criticality']}"
         if expected_crit in ("Critical", "Safety"):
-            assert r["is_pinned"] == True, f"{path} should be auto-pinned"
+            assert r["is_pinned"], f"{path} should be auto-pinned"
     return _test
 
 for path, crit in CRITICAL_FILES + SAFETY_FILES + IMPORTANT_FILES + NORMAL_FILES:
@@ -176,19 +181,19 @@ def test_license_safety():
     # files is NOT auto-pinned (intentional — broad content matching destroyed
     # budgets in real codebases).
     r = e.ingest("MIT License\nCopyright 2024", "LICENSE", 0, False)
-    assert r["is_pinned"] == True, "LICENSE file should be auto-pinned via Safety criticality"
+    assert r["is_pinned"], "LICENSE file should be auto-pinned via Safety criticality"
 test("License file auto-pinned", test_license_safety)
 
 def test_security_warning_safety():
     e = sc.EntrolyEngine()
     r = e.ingest("# SECURITY WARNING: do not expose API keys\nAPI_KEY = os.environ['KEY']", "config.py", 0, False)
-    assert r["is_pinned"] == True
+    assert r["is_pinned"]
 test("Security warning auto-pinned", test_security_warning_safety)
 
 def test_normal_code_not_pinned():
     e = sc.EntrolyEngine()
     r = e.ingest("def add(a, b): return a + b", "math.py", 0, False)
-    assert r["is_pinned"] == False, "Normal code should NOT be auto-pinned"
+    assert not r["is_pinned"], "Normal code should NOT be auto-pinned"
 test("Normal code NOT auto-pinned", test_normal_code_not_pinned)
 
 
@@ -272,7 +277,7 @@ def test_dep_graph_order_matters():
     e = sc.EntrolyEngine()
     # Ingest usage first (no definition yet)
     e.ingest("result = unknown_function(42)", "caller.py", 0, False)
-    dg1 = e.dep_graph_stats()
+    e.dep_graph_stats()
     # Now ingest the definition
     e.ingest("def unknown_function(x):\n    return x * 2", "impl.py", 0, False)
     # The definition registers the symbol, but caller already ingested
@@ -732,7 +737,7 @@ def test_skeleton_populated_on_ingest_python():
     e = sc.EntrolyEngine()
     r = e.ingest(PYTHON_CODE, "pipeline.py", 0, False)
     assert r["status"] == "ingested"
-    assert r.get("has_skeleton") == True, \
+    assert r.get("has_skeleton"), \
         f"Python file should have skeleton; keys={list(r.keys())}"
     assert r.get("skeleton_token_count", 0) > 0, "Skeleton token count should be positive"
 test("Skeleton populated for Python file", test_skeleton_populated_on_ingest_python)
@@ -750,7 +755,7 @@ test("Skeleton token count < full token count", test_skeleton_token_count_less_t
 def test_no_skeleton_for_non_code():
     e = sc.EntrolyEngine()
     r = e.ingest("This is a plain text document with no code structure at all.\n" * 10, "readme.md", 0, False)
-    assert r.get("has_skeleton", False) == False, \
+    assert not r.get("has_skeleton", False), \
         "Non-code file should NOT have skeleton"
 test("No skeleton for non-code files (markdown)", test_no_skeleton_for_non_code)
 
@@ -758,7 +763,7 @@ def test_skeleton_present_for_js():
     e = sc.EntrolyEngine()
     r = e.ingest(JS_CODE, "service.js", 0, False)
     assert r["status"] == "ingested"
-    assert r.get("has_skeleton") == True, \
+    assert r.get("has_skeleton"), \
         f"JS file should have skeleton; keys={list(r.keys())}"
 test("Skeleton populated for JS file", test_skeleton_present_for_js)
 
@@ -769,7 +774,7 @@ def test_optimize_uses_skeleton_when_budget_tight():
     r1 = e.ingest(PYTHON_CODE, "pipeline.py", 0, False)
     r2 = e.ingest(JS_CODE, "service.js", 0, False)
     full_tc1 = r1["token_count"]
-    full_tc2 = r2["token_count"]
+    r2["token_count"]
     # Budget: fits only ~1 full fragment but might fit 1 full + 1 skeleton
     skel_tc1 = r1.get("skeleton_token_count", full_tc1)
     tight_budget = full_tc1 + skel_tc1 + 5  # enough for 1 full + 1 skeleton
