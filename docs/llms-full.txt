@@ -1,376 +1,47 @@
-# Entroly — Complete Documentation for AI Systems
+# Entroly Extended Documentation Index
 
-> Entroly is an open-source context engineering engine for AI coding agents. It reduces LLM API costs by 70–95% through intelligent context compression, provider cache alignment, and local hallucination detection. Apache-2.0 licensed. Runs entirely on the user's machine.
+> Entroly is an auditable context-control plane for AI agents. This file routes readers to source, documentation, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
 
-## Table of Contents
+Entroly can index, select, and compress repository context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering source content. WITNESS can evaluate whether output claims are supported by supplied evidence.
 
-1. [Overview](#overview)
-2. [Problem Statement](#problem-statement)
-3. [How Entroly Works](#how-entroly-works)
-4. [Context Compression Pipeline](#context-compression-pipeline)
-5. [The 9 Compressors](#the-9-compressors)
-6. [Cache Aligner](#cache-aligner)
-7. [Content-Compressed Retrieval (CCR)](#content-compressed-retrieval-ccr)
-8. [WITNESS Hallucination Guard](#witness-hallucination-guard)
-9. [PRISM Reinforcement Learning](#prism-reinforcement-learning)
-10. [Benchmarks and Measured Results](#benchmarks-and-measured-results)
-11. [Supported Tools and Providers](#supported-tools-and-providers)
-12. [Installation and Quick Start](#installation-and-quick-start)
-13. [Usage Modes](#usage-modes)
-14. [Comparison with Alternatives](#comparison-with-alternatives)
-15. [FAQ](#faq)
-16. [Links and Resources](#links-and-resources)
+Local indexing, selection, compression, receipts, and recovery storage do not require an external model call. When enabled with its default local verifier, WITNESS also avoids an external model call. When Entroly is used as a proxy, selected context is still sent to the LLM provider configured by the user. No outbound analytics are enabled by default.
 
----
+Measured savings and quality vary by repository, query, budget, provider, baseline, and enabled features. WITNESS does not establish universal truth, and strict suppression is opt-in rather than the default proxy policy.
 
-## Overview
+## Product Documentation
 
-Entroly is designed for developers and teams who use AI coding assistants (Cursor, Claude Code, Aider, Windsurf, Cline, VS Code Copilot, Zed, etc.) and want to:
+- [README and quick start](https://github.com/juyterman1000/entroly): Installation, product model, commands, and benchmark summary.
+- [Documentation site](https://juyterman1000.github.io/entroly/): Integration and workflow guides.
+- [Architecture](https://github.com/juyterman1000/entroly/blob/main/docs/DETAILS.md): Components, algorithms, and system boundaries.
+- [Limitations](https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md): Known constraints and non-guarantees.
+- [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment and evaluation considerations.
+- [Memory system](https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md): Local memory architecture and controls.
 
-1. **Reduce LLM API costs** by 70–95% without switching models
-2. **Improve AI answer quality** by giving the model better, broader context
-3. **Detect hallucinations** locally at $0 cost before they cause bugs
-4. **Keep provider cache discounts** (Anthropic 90%, OpenAI 50%) consistently active
+## Verification And Benchmarks
 
-Entroly runs as a local proxy or MCP (Model Context Protocol) server. It sits between your AI tool and your LLM provider. Your code never leaves your machine.
+- [Packaged verifier source](https://github.com/juyterman1000/entroly/blob/main/entroly/verify_claims.py): Bounded install, indexing, token-budget, synthetic recovery, and engine checks.
+- [Benchmark artifacts](https://github.com/juyterman1000/entroly/tree/main/benchmarks/results): Machine-readable workload results and reports.
+- [Benchmark runner](https://github.com/juyterman1000/entroly/blob/main/benchmarks/run_readme_benchmarks.py): Reproduction path for README measurements.
+- [Context receipt example](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.md): Human-readable selection and risk record.
+- [Context receipt JSON](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.json): Machine-readable receipt example.
 
----
+## Verification Components
 
-## Problem Statement
+- [WITNESS](https://github.com/juyterman1000/entroly/blob/main/entroly/witness.py): Evidence-grounding analysis and audit, annotation, or strict output policies.
+- [STAVE](https://github.com/juyterman1000/entroly/blob/main/entroly/verifiers/stave.py): Deterministic structural verification used by the default WITNESS path.
+- [RAVS](https://github.com/juyterman1000/entroly/tree/main/entroly/ravs): Request-aware routing and deterministic verification components.
+- [CCR](https://github.com/juyterman1000/entroly/blob/main/entroly/ccr.py): Recoverable compressed-context storage.
 
-### Why AI Coding Tools Produce Bad Results
+## Interfaces And Packages
 
-AI coding tools like Cursor and Claude Code have a fundamental problem: they can only see a fraction of your codebase at a time. On a typical 500-file project, the AI sees about 5–10 files per request — roughly 5% of the codebase.
+- [Python package](https://pypi.org/project/entroly/): Primary CLI, proxy, MCP server, and Python SDK distribution.
+- [MCP package](https://www.npmjs.com/package/entroly-mcp): NPX bridge for MCP clients.
+- [Node and WASM package](https://www.npmjs.com/package/entroly): Compatibility alias for the Node and WASM runtime.
+- [Python SDK](https://github.com/juyterman1000/entroly/blob/main/entroly/sdk.py): Public compression API.
+- [MCP server](https://github.com/juyterman1000/entroly/blob/main/entroly/server.py): MCP tools and context engine orchestration.
+- [HTTP proxy](https://github.com/juyterman1000/entroly/blob/main/entroly/proxy.py): Provider proxy and optional WITNESS policy integration.
+- [CLI](https://github.com/juyterman1000/entroly/blob/main/entroly/cli.py): Commands, onboarding, diagnostics, and wrappers.
 
-The other 95% is invisible. This causes:
-- **Hallucinated imports** — the AI references modules it can't see
-- **Invented APIs** — it guesses function signatures
-- **Missed dependencies** — it changes one file without knowing about related files
-- **Duplicate code** — it writes functions that already exist elsewhere
-- **Incomplete refactors** — it updates visible files but breaks invisible ones
+## License
 
-### Why LLM API Bills Are High
-
-Three compounding problems:
-1. **Wrong files sent** — tools send whatever files they find, not the files most relevant to the query
-2. **Cache invalidation** — provider cache discounts (Anthropic 90%, OpenAI 50%) require identical byte prefixes across requests, but tools rebuild context dynamically on every turn, busting the cache
-3. **Compressed junk** — even with compression, if you compress the wrong 200 files, you're just sending smaller versions of the wrong content
-
----
-
-## How Entroly Works
-
-Entroly intercepts the context flowing from your AI tool to the LLM provider and applies three optimizations:
-
-### 1. Smart Context Selection (Knapsack Optimizer)
-Instead of sending random files, Entroly scores every fragment in your repo by:
-- **BM25 lexical relevance** to the user's query
-- **Shannon entropy density** (information per token)
-- **SimHash deduplication** (penalizes near-duplicate content)
-- **Dependency graph distance** (rewards files referenced by relevant files)
-- **PRISM learned weights** (reinforcement learning from past outcomes)
-
-A knapsack solver then selects the mathematically optimal subset under the token budget. The result: the model sees broader coverage of the codebase in a smaller prompt.
-
-### 2. Variable-Resolution Compression
-Selected fragments are delivered at three resolution levels:
-- **Critical files**: Full source code (files the AI needs to edit)
-- **Supporting files**: Function signatures and type annotations (context the AI needs to reference)
-- **Peripheral files**: One-line path references (so the AI knows they exist and can request expansion)
-
-### 3. Provider Cache Alignment
-The Cache Aligner tracks the injected context prefix per client. When context hasn't materially changed (Jaccard similarity > 90%), it reuses the previous prefix byte-for-byte, keeping the provider's cached-prefix discount active.
-
----
-
-## Context Compression Pipeline
-
-```
-your prompt  ──►  Entroly (local, <10ms)  ──►  LLM provider
-                  │
-                  ├─ 1. Ingest + index repo (BM25 + entropy + dep-graph)
-                  ├─ 2. Rank fragments by query relevance
-                  ├─ 3. Select optimal subset (knapsack solver)
-                  ├─ 4. Compress: full → skeleton → reference
-                  ├─ 5. Store originals in CCR store (lossless recovery)
-                  ├─ 6. Align prefix for provider cache hit
-                  └─ 7. Verify response against evidence (WITNESS)
-```
-
-The entire pipeline runs locally in under 10ms.
-
----
-
-## The 9 Compressors
-
-Entroly ships 9 content-type-aware compressors:
-
-| Input Type | Compressor | Technique | Typical Savings |
-|---|---|---|---|
-| Source code | Code Skeletonizer | AST-based, extracts signatures + docstrings | 60–90% |
-| Shell output / logs | Shell Codec | Entropy-based deduplication | 60–95% |
-| JSON / API responses | JSON Compressor | Schema extraction + value sampling | 70–90% |
-| Prose / docs | Semantic Pruner | Sentence-level relevance scoring | 40–70% |
-| Diffs / patches | Diff Compressor | Context-window selection around changed hunks | 50–80% |
-| Test output | Test Codec | Failure extraction, pass collapsing | 70–90% |
-| CSV / tabular | Table Compressor | Schema + sample rows | 80–95% |
-| Images (base64) | Image Optimizer | Resolution reduction | 40–60% |
-| Conversation history | Entropic Pruner | Low-entropy turn removal | 30–60% |
-
----
-
-## Cache Aligner
-
-Anthropic offers a 90% discount on cached token prefixes. OpenAI offers 50%. But this only works if the prefix bytes are identical across requests. Most tools dynamically rebuild context on every turn — breaking the prefix and busting the cache.
-
-Entroly's Cache Aligner tracks the injected context prefix per client and uses Jaccard token similarity to detect when the context hasn't materially changed. When similarity exceeds the threshold (default: 90%), it reuses the previous prefix verbatim — byte-for-byte — preserving the provider's cache hit.
-
-On agent loops where the same files are relevant across 10+ turns, this alone can reduce costs by 80–90%.
-
----
-
-## Content-Compressed Retrieval (CCR)
-
-CCR solves the fundamental problem with lossy compression: what happens when the model needs the detail you compressed away?
-
-When Entroly compresses a fragment to a skeleton or reference, it stores the full original in a local CCR store (content-addressed, LRU-evicted, ~5MB for 500 fragments). The compressed fragment contains a retrieval handle. If the model needs more detail, it calls `entroly_retrieve` via MCP or `GET /retrieve?source=file:src/auth.py` via the proxy endpoint — and gets the full original back immediately.
-
-Nothing is permanently lost. Compression is fully reversible.
-
----
-
-## WITNESS Hallucination Guard
-
-WITNESS is a local, deterministic hallucination guard that checks every LLM response against the evidence it was given.
-
-### How It Works
-1. **Claim extraction**: Parses the LLM response into individual factual claims
-2. **Evidence grounding**: Checks each claim against the specific evidence chunks included in the context
-3. **STAVE verification**: Statistical Token Alignment Verification Engine uses token-level alignment and NLI signals
-4. **Verdict**: Each claim is marked as SUPPORTED, UNSUPPORTED, or UNCERTAIN
-
-### Performance
-- **0.844 AUROC** on HaluEval-QA benchmark (standard protocol)
-- **85.8% accuracy** — statistically equivalent to GPT-4o-mini judge (86.3%)
-- **$0 cost** — runs entirely locally, no API call
-- **~3ms latency** per verification decision
-- For comparison: GPT-3.5-turbo achieves only 62.6% on the same benchmark
-
-### Verification Profiles
-| Profile | Behavior | Use For |
-|---|---|---|
-| `rag` | Fail closed — suppress unsupported claims | RAG applications, document Q&A |
-| `qa` | Fail closed | Question answering systems |
-| `code` | Fail closed — flag hallucinated APIs | Code generation agents |
-| `chat` | Warn — flag but don't suppress | Conversational AI |
-| `summary` | Warn | Summarization tasks |
-
-### Optional: Local DeBERTa NLI
-For higher accuracy, enable local DeBERTa NLI inference:
-```
-ENTROLY_LOCAL_NLI=1 entroly proxy
-```
-Adds ~20ms latency but improves accuracy at $0 marginal cost.
-
----
-
-## PRISM Reinforcement Learning
-
-PRISM (Progressive Reinforcement for Information Selection and Management) learns which context selections produce good AI outcomes. After each interaction:
-
-1. The `record_outcome` tool captures whether the AI's response was accepted, edited, or rejected
-2. PRISM updates selection weights for the fragments that were included
-3. Over time, the system learns which files and patterns are most valuable for different query types
-
-This means Entroly gets better the more you use it.
-
----
-
-## Benchmarks and Measured Results
-
-All numbers are from committed JSON artifacts in the repository. Reproduce with `entroly verify-claims`.
-
-### Token Reduction
-| Token Budget | Token Reduction |
-|---|---|
-| 8K tokens | 99.1% |
-| 32K tokens | 96.7% |
-| Average across workloads | 87.0% |
-
-### Accuracy Retention (tested with gpt-4o-mini)
-| Benchmark | Token Savings | Accuracy Retention |
-|---|---|---|
-| NeedleInAHaystack | 99.5% | 100% |
-| LongBench (HotpotQA) | 85.3% | 103% (better than baseline) |
-| Berkeley Function Calling | 79.3% | 100% |
-| SQuAD 2.0 | 43.8% | 90% |
-
----
-
-## Supported Tools and Providers
-
-### AI Coding Tools (37+ supported)
-- **Cursor** — via MCP server (`entroly init` auto-configures `.cursor/mcp.json`)
-- **Claude Code** — via MCP (`claude mcp add entroly -- entroly`)
-- **Aider** — via proxy (`OPENAI_BASE_URL=http://localhost:9377/v1 aider`)
-- **Windsurf** — via MCP server
-- **Cline** — via MCP server
-- **VS Code** — via MCP server
-- **Zed** — via MCP server
-- **Continue** — via proxy
-- **Any tool supporting custom base URL** — via transparent proxy on http://localhost:9377
-
-### LLM Providers
-- **Anthropic** (Claude Sonnet, Claude Opus, Claude Haiku) — 90% cache discount alignment
-- **OpenAI** (GPT-4o, GPT-4o-mini, GPT-4, o1, o3) — 50% cache discount alignment
-- **Google** (Gemini Pro, Gemini Flash) — cache alignment
-- **Any OpenAI-compatible API** (Groq, Together, Fireworks, etc.)
-
----
-
-## Installation and Quick Start
-
-### Install
-```
-pip install entroly
-```
-
-### For full features (Rust engine + local NLI):
-```
-pip install entroly[full]
-```
-
-### Quick Start
-```
-# Auto-detect your tool and start
-entroly go
-
-# Or start the proxy manually
-entroly proxy  # http://localhost:9377
-
-# Or start the MCP server
-entroly serve
-
-# Test token savings on your repo (no API key, no outbound calls)
-entroly verify-claims
-
-# See before/after comparison
-entroly demo
-```
-
-### Connect to your tool
-```
-# Cursor
-entroly init  # auto-generates .cursor/mcp.json
-
-# Claude Code
-claude mcp add entroly -- entroly
-
-# Aider
-OPENAI_BASE_URL=http://localhost:9377/v1 aider
-
-# Any tool with custom base URL
-ANTHROPIC_BASE_URL=http://localhost:9377 your-tool
-OPENAI_BASE_URL=http://localhost:9377/v1 your-tool
-```
-
----
-
-## Usage Modes
-
-### 1. Transparent Proxy (Zero Code Changes)
-```
-entroly proxy
-ANTHROPIC_BASE_URL=http://localhost:9377 claude
-OPENAI_BASE_URL=http://localhost:9377/v1 your-app
-```
-
-### 2. MCP Server (Native IDE Integration)
-```
-entroly serve --transport stdio    # for local IDE
-entroly serve --transport sse --port 9378  # for remote
-```
-
-### 3. Python Library
-```python
-from entroly import compress, compress_messages, optimize
-
-# Compress chat messages
-compressed = compress_messages(messages, budget=30000)
-
-# Compress arbitrary content
-compressed = compress(log_output, budget=2000)
-
-# Task-conditioned selection from repo
-context = optimize(fragments, budget=8000, query="fix the login bug")
-```
-
-### 4. CLI Tools
-```
-entroly select --query "fix auth bug" --budget 8000
-entroly witness --context-file code.py --output-file response.txt
-entroly dashboard  # lifetime savings, cost trends
-entroly doctor     # diagnostic checks
-```
-
----
-
-## Comparison with Alternatives
-
-| Feature | Entroly | LLMLingua | Manual Prompt Eng. | No Optimization |
-|---|---|---|---|---|
-| Selection before compression | ✅ Knapsack-optimal | ❌ Compresses what you give | ❌ Manual | ❌ None |
-| Provider cache alignment | ✅ Automatic | ❌ No | ❌ No | ❌ No |
-| Hallucination detection | ✅ WITNESS (0.844 AUROC) | ❌ No | ❌ No | ❌ No |
-| Content-type-aware | ✅ 9 compressors | Partial | ❌ No | ❌ No |
-| Lossless recovery | ✅ CCR store | ❌ Lossy | N/A | N/A |
-| Learning from outcomes | ✅ PRISM RL | ❌ No | ❌ No | ❌ No |
-| Setup effort | 30 seconds | Moderate | High | None |
-| Runs locally | ✅ 100% local | ✅ Local | N/A | N/A |
-| Token savings | 70–95% | 30–50% | Variable | 0% |
-
----
-
-## FAQ
-
-### How much can I save on my Claude/OpenAI/Gemini API bill?
-It depends on your repo size and query patterns. Run `entroly demo` in your repo for a before/after estimate with no API calls. On large repos (300+ files) with agent loops, most users see 70–90% reduction. On small repos or single-file prompts, savings are lower.
-
-### Does it work with my existing tool?
-If your tool supports a custom `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`, it works via the proxy. Entroly also has native MCP server support for Cursor, Claude Code, VS Code, Windsurf, Zed, and Cline.
-
-### Is my code safe? Does it send data anywhere?
-No. Entroly runs entirely on your machine. Context selection, compression, and the CCR store are all local. The only outbound call is the one your tool was already making to the LLM provider. No analytics, no telemetry by default.
-
-### What's the difference between Entroly and other compression tools?
-Most compression tools shrink whatever you give them. Entroly selects first (knapsack optimizer over the full repo), then compresses. You get the right context at the right resolution — not just a smaller version of everything. The Cache Aligner is also unique: it actively stabilizes the prefix to keep provider discounts applying.
-
-### Does compression hurt AI answer quality?
-No. Benchmarks show accuracy retention of 90–103% across NeedleInAHaystack, LongBench, Berkeley Function Calling, and SQuAD 2.0. In some cases, compressed context actually produces better answers because the model sees less noise and more signal.
-
-### What languages/frameworks does it support?
-All of them. Entroly works at the file/fragment level. It supports any text-based source code, configuration files, documentation, and data files.
-
-### How fast is it?
-The full compression pipeline runs in under 10ms via the Rust core engine. WITNESS hallucination checking adds ~3ms. You won't notice any latency.
-
----
-
-## Links and Resources
-
-- **GitHub Repository**: https://github.com/juyterman1000/entroly
-- **Documentation Site**: https://juyterman1000.github.io/entroly/
-- **PyPI Package**: https://pypi.org/project/entroly/
-- **Reduce LLM API Costs Guide**: https://juyterman1000.github.io/entroly/docs/reduce-llm-api-costs.html
-- **Prompt Compression Deep Dive**: https://juyterman1000.github.io/entroly/docs/prompt-compression.html
-- **Hallucination Guard (WITNESS)**: https://juyterman1000.github.io/entroly/docs/hallucination-guard.html
-- **Context Engineering Explainer**: https://juyterman1000.github.io/entroly/docs/context-engineering.html
-- **Cursor Setup Guide**: https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html
-- **Claude Code Setup Guide**: https://juyterman1000.github.io/entroly/docs/claude-code-setup.html
-- **MCP Server Guide**: https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html
-- **Token Optimization**: https://juyterman1000.github.io/entroly/docs/token-optimization.html
-- **Live Telemetry Dashboard**: https://juyterman1000.github.io/entroly/docs/dashboard.html
-
----
-
-*Entroly is open-source under Apache-2.0. Maintained by the Entroly team. Last updated: June 2026.*
+- [Apache-2.0 license](https://github.com/juyterman1000/entroly/blob/main/LICENSE): Open-source license terms.

@@ -39,5 +39,6 @@ Sitemap: https://juyterman1000.github.io/entroly/docs/sitemap.xml
 
 # AI documentation files
 # See https://llmstxt.org/
-# llms.txt: https://juyterman1000.github.io/entroly/docs/llms.txt
-# llms-full.txt: https://juyterman1000.github.io/entroly/docs/llms-full.txt
+# Canonical llms.txt: https://juyterman1000.github.io/entroly/llms.txt
+# Legacy mirror: https://juyterman1000.github.io/entroly/docs/llms.txt
+# Extended index: https://juyterman1000.github.io/entroly/docs/llms-full.txt
