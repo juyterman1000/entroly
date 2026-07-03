@@ -43,13 +43,14 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.41"
+    __version__ = "1.0.42"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -81,7 +82,31 @@ class C:
     RESET = "\033[0m"
 
 
-_ENTROLY_DIR = Path.home() / ".entroly"
+def _resolve_entroly_dir() -> Path:
+    """Return a writable Entroly data directory.
+
+    MCP hosts, containers, and managed IDE runtimes can expose a read-only
+    HOME. A read-only HOME must not make basic commands like ``entroly status``
+    or ``entroly --help`` crash before the command handler runs.
+    """
+    explicit = os.environ.get("ENTROLY_DIR")
+    candidates = [Path(explicit).expanduser()] if explicit else [
+        Path.home() / ".entroly",
+        Path(tempfile.gettempdir()) / "entroly",
+    ]
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".write_probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return Path(tempfile.gettempdir()) / "entroly"
+
+
+_ENTROLY_DIR = _resolve_entroly_dir()
 _FIRST_RUN_MARKER = _ENTROLY_DIR / ".welcome_shown"
 
 
@@ -141,7 +166,6 @@ def _check_first_run() -> None:
     """
     if _FIRST_RUN_MARKER.exists():
         return
-    _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"""
 {C.CYAN}{C.BOLD}  Welcome to Entroly{C.RESET} — information-theoretic context optimization
@@ -165,6 +189,7 @@ def _check_first_run() -> None:
   {C.GRAY}This message appears once. Run entroly --help anytime.{C.RESET}
 """, file=sys.stderr)
     try:
+        _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
         _FIRST_RUN_MARKER.write_text("1")
     except OSError:
         pass
@@ -703,15 +728,26 @@ def cmd_proxy(args):
     if getattr(args, "bypass", False):
         os.environ["ENTROLY_BYPASS"] = "1"
 
+    try:
+        from entroly.auto_index import auto_index, start_incremental_watcher
+        from entroly.proxy import create_proxy_app
+        from entroly.proxy_config import ProxyConfig, resolve_quality
+        from entroly.server import EntrolyEngine
+    except ImportError as exc:
+        missing = getattr(exc, "name", None) or str(exc)
+        if missing not in {"httpx", "starlette"}:
+            raise
+        print(
+            f"  {C.RED}Proxy dependency missing:{C.RESET} {missing}\n"
+            f"  {C.GRAY}Install proxy support with: python -m pip install 'entroly[proxy]'{C.RESET}",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"""
 {C.CYAN}{C.BOLD}  Entroly Prompt Compiler Proxy{C.RESET}
 {C.GRAY}  Invisible intelligence layer for any AI coding tool{C.RESET}
 """)
-
-    from entroly.auto_index import auto_index, start_incremental_watcher
-    from entroly.proxy import create_proxy_app
-    from entroly.proxy_config import ProxyConfig, resolve_quality
-    from entroly.server import EntrolyEngine
 
     # Load config from environment
     config = ProxyConfig.from_env()
@@ -2119,6 +2155,8 @@ def cmd_wrap(args):
         print(f"    {C.CYAN}entroly simulate{C.RESET}\n")
         print(f"  {C.GRAY}Prefer proxy mode? Set a pay-as-you-go key: "
               f"`export {key_env}=...`, then re-run.{C.RESET}\n")
+        if dry_run:
+            return 0
         return 1
 
     if dry_run:
@@ -2544,27 +2582,34 @@ def _simulation_queries(args) -> list[str]:
     ]
 
 
-def _load_local_simulation_engine():
-    from entroly.auto_index import auto_index
+def _load_local_simulation_engine(max_files: int | None = None):
+    from entroly import auto_index as auto_index_module
     from entroly.server import EntrolyEngine
 
+    old_max_files = auto_index_module.MAX_FILES
+    if max_files and max_files > 0:
+        auto_index_module.MAX_FILES = max(1, int(max_files))
     engine = EntrolyEngine()
-    index = auto_index(engine)
-    if index["status"] == "indexed":
-        return engine, index["files_indexed"], index["total_tokens"], index["status"]
-    if index["status"] == "skipped":
-        files_indexed = index.get("existing_fragments", 0)
-        if getattr(engine, "_use_rust", False):
-            stats = engine._rust.stats()
-            total_tokens = stats.get("session", {}).get("total_tokens_tracked", 0)
-        else:
-            total_tokens = getattr(engine, "_total_token_count", 0)
-        return engine, files_indexed, total_tokens, index["status"]
-    return engine, 0, 0, index["status"]
+    try:
+        index = auto_index_module.auto_index(engine)
+        if index["status"] == "indexed":
+            return engine, index["files_indexed"], index["total_tokens"], index["status"]
+        if index["status"] == "skipped":
+            files_indexed = index.get("existing_fragments", 0)
+            if getattr(engine, "_use_rust", False):
+                stats = engine._rust.stats()
+                total_tokens = stats.get("session", {}).get("total_tokens_tracked", 0)
+            else:
+                total_tokens = getattr(engine, "_total_token_count", 0)
+            return engine, files_indexed, total_tokens, index["status"]
+        return engine, 0, 0, index["status"]
+    finally:
+        auto_index_module.MAX_FILES = old_max_files
 
 
 def _run_local_simulation(args) -> dict:
-    engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine()
+    max_files = int(getattr(args, "max_files", 100) or 0)
+    engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
     budget = int(getattr(args, "budget", 4096) or 4096)
     queries = _simulation_queries(args)
     baseline = int(getattr(args, "baseline", 0) or 0)
@@ -2581,7 +2626,7 @@ def _run_local_simulation(args) -> dict:
         elapsed_ms = (time.perf_counter() - t0) * 1000
         selected = result.get("selected_fragments", [])
         selected_tokens = sum(int(f.get("token_count", 0) or 0) for f in selected)
-        saved = max(0, baseline - selected_tokens)
+        saved = max(0, baseline - selected_tokens) if selected else 0
         total_saved += saved
         latencies_ms.append(elapsed_ms)
         rows.append(
@@ -2607,6 +2652,7 @@ def _run_local_simulation(args) -> dict:
         "files_indexed": files_indexed,
         "repo_tokens_indexed": total_tokens,
         "budget": budget,
+        "max_files": max_files,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
         "total_tokens_saved": total_saved,
@@ -3055,7 +3101,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.41\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.42\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4224,7 +4270,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.41\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.42\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -4267,7 +4313,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.41\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.42\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -4803,6 +4849,10 @@ def main():
         p.add_argument(
             "--json", action="store_true",
             help="Emit machine-readable JSON",
+        )
+        p.add_argument(
+            "--max-files", type=int, default=100,
+            help="Maximum files to index for this local smoke estimate (default: 100; 0 = full auto-index limit)",
         )
 
     simulate_parser = subparsers.add_parser(

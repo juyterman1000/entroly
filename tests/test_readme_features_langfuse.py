@@ -34,7 +34,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-LANGFUSE_ROOT = Path(r"C:\Users\abhis\langfuse\langfuse")
+LANGFUSE_ROOT = Path(
+    os.environ.get("LANGFUSE_ROOT", r"C:\Users\abhis\langfuse\langfuse")
+)
 
 # ── ANSI ──────────────────────────────────────────────────────────────
 GREEN = "\033[32m"
@@ -104,6 +106,54 @@ print(f"  {DIM}{'─' * 60}{RESET}\n")
 # Load sample files
 files = load_langfuse_files(max_files=100)
 print(f"  {DIM}Loaded {len(files)} Langfuse source files for testing{RESET}\n")
+using_synthetic_fixture = False
+
+if not files:
+    using_synthetic_fixture = True
+    skip_check(
+        "Langfuse fixture",
+        "Set LANGFUSE_ROOT to a local Langfuse checkout for the full integration verifier; using synthetic fixture",
+    )
+    files = [
+        (
+            "packages/shared/src/schema.ts",
+            (
+                "export type TraceRecord = { id: string; projectId: string; name: string };\n"
+                "export interface ObservationRecord { id: string; traceId: string; type: string }\n"
+                "export function normalizeTrace(trace: TraceRecord): TraceRecord { return trace; }\n"
+            )
+            * 120,
+        ),
+        (
+            "web/src/server/auth.ts",
+            (
+                "import { TraceRecord } from '../../shared/src/schema';\n"
+                "export async function requireAuth(userId: string) { return Boolean(userId); }\n"
+                "export async function listProjectTraces(projectId: string): Promise<TraceRecord[]> { return []; }\n"
+            )
+            * 100,
+        ),
+        (
+            "web/src/server/traces.ts",
+            (
+                "import { TraceRecord, ObservationRecord } from '../../shared/src/schema';\n"
+                "import { requireAuth } from './auth';\n"
+                "export async function getTraceWithObservations(id: string): Promise<ObservationRecord[]> { return []; }\n"
+                "export function renderTraceName(trace: TraceRecord): string { return trace.name; }\n"
+            )
+            * 90,
+        ),
+        (
+            "worker/jobs/ingest.py",
+            (
+                "def ingest_trace(trace_id: str) -> dict:\n"
+                "    return {'trace_id': trace_id, 'status': 'ok'}\n\n"
+                "def score_observation(observation_id: str, value: float) -> float:\n"
+                "    return max(0.0, min(1.0, value))\n\n"
+            )
+            * 120,
+        ),
+    ]
 
 big_context = build_big_context(files, max_tokens=50000)
 tokens_approx = len(big_context) // 4
@@ -383,7 +433,10 @@ except ImportError:
     except Exception as e:
         check("MCP Server", False, str(e)[:100])
 except Exception as e:
-    check("MCP Server", False, str(e)[:100])
+    if "MCP SDK not installed" in str(e):
+        skip_check("MCP Server", "MCP SDK not installed in this environment")
+    else:
+        check("MCP Server", False, str(e)[:100])
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -393,7 +446,10 @@ print(f"\n  {DIM}{'─' * 60}{RESET}")
 total = passed + failed + skipped
 print(f"\n  {BOLD}Results: {GREEN}{passed} passed{RESET}, {RED if failed else DIM}{failed} failed{RESET}, {YELLOW if skipped else DIM}{skipped} skipped{RESET} / {total} total")
 if failed == 0:
-    print(f"  {GREEN}{BOLD}All README features verified against Langfuse! ✓{RESET}")
+    if using_synthetic_fixture:
+        print(f"  {GREEN}{BOLD}All README feature smoke checks passed on the synthetic fixture. ✓{RESET}")
+    else:
+        print(f"  {GREEN}{BOLD}All README features verified against Langfuse! ✓{RESET}")
 else:
     print(f"  {YELLOW}{failed} feature(s) need attention.{RESET}")
 print()

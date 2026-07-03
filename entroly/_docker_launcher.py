@@ -17,13 +17,32 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 DOCKER_IMAGE = "ghcr.io/juyterman1000/entroly:latest"
 
 # TTL-based pull caching: skip `docker pull` if last pull was recent.
-_PULL_CACHE_FILE = Path.home() / ".entroly" / ".last_pull_ts"
+def _runtime_dir() -> Path:
+    explicit = os.environ.get("ENTROLY_DIR")
+    candidates = [Path(explicit).expanduser()] if explicit else [
+        Path.home() / ".entroly",
+        Path(tempfile.gettempdir()) / "entroly",
+    ]
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".write_probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return Path(tempfile.gettempdir()) / "entroly"
+
+
+_PULL_CACHE_FILE = _runtime_dir() / ".last_pull_ts"
 _DEFAULT_PULL_TTL = 3600  # 1 hour
 
 
@@ -85,7 +104,11 @@ def _pull_image() -> None:
 def _run_native() -> None:
     """Fall back to running local Python server (when inside Docker)."""
     from entroly.server import main  # noqa: PLC0415
-    main()
+    try:
+        main()
+    except RuntimeError as exc:
+        print(f"[entroly] {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _run_memory_cli() -> None:
@@ -104,9 +127,20 @@ def launch() -> None:
     the native server fallback when ``ENTROLY_NO_DOCKER`` is set).
     """
 
-    # Bare command or --help/--version → show help without Docker
+    # Bare `entroly` is the documented MCP command for Claude Code and other
+    # stdio clients. In a terminal it remains friendly help; under an MCP host
+    # stdin is a pipe, so start the server and keep stdout protocol-clean.
+    if len(sys.argv) <= 1:
+        if sys.stdin.isatty():
+            from entroly.cli import main as cli_main
+            cli_main()
+            return
+        _run_native()
+        return
+
+    # --help/--version → show help without Docker
     _help_flags = {"--help", "-h", "--version", "-V"}
-    if len(sys.argv) <= 1 or (len(sys.argv) > 1 and sys.argv[1] in _help_flags):
+    if len(sys.argv) > 1 and sys.argv[1] in _help_flags:
         from entroly.cli import main as cli_main
         cli_main()
         return

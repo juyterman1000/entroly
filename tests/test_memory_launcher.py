@@ -7,6 +7,40 @@ import pytest
 from entroly import _docker_launcher
 
 
+class _FakeStdin:
+    def __init__(self, tty: bool) -> None:
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def test_bare_launcher_shows_help_in_terminal(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr("entroly.cli.main", lambda: calls.append("cli"))
+    monkeypatch.setattr(_docker_launcher, "_run_native", lambda: calls.append("native"))
+    monkeypatch.setattr(sys, "argv", ["entroly"])
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(tty=True))
+
+    _docker_launcher.launch()
+
+    assert calls == ["cli"]
+
+
+def test_bare_launcher_starts_mcp_under_stdio(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr("entroly.cli.main", lambda: calls.append("cli"))
+    monkeypatch.setattr(_docker_launcher, "_run_native", lambda: calls.append("native"))
+    monkeypatch.setattr(sys, "argv", ["entroly"])
+    monkeypatch.setattr(sys, "stdin", _FakeStdin(tty=False))
+
+    _docker_launcher.launch()
+
+    assert calls == ["native"]
+
+
 def test_docker_launcher_routes_memory_without_docker(monkeypatch) -> None:
     calls: list[list[str] | None] = []
 

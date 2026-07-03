@@ -499,7 +499,14 @@ def _compress_all_messages(
         len(m.get("content", "")) // 4
         for m in messages if isinstance(m.get("content"), str)
     )
-    ratio = max(0.05, budget / max(total_tokens, 1))
+    preserved_tokens = (
+        len(messages[last_user_idx].get("content", "")) // 4
+        if last_user_idx >= 0 and isinstance(messages[last_user_idx].get("content"), str)
+        else 0
+    )
+    compressible_tokens = max(1, total_tokens - preserved_tokens)
+    remaining_budget = max(1, budget - preserved_tokens)
+    ratio = max(0.05, remaining_budget / compressible_tokens)
 
     result = []
     for i, msg in enumerate(messages):
@@ -520,6 +527,33 @@ def _compress_all_messages(
         new_msg = dict(msg)
         new_msg["content"] = compressed_content
         result.append(new_msg)
+
+    # Final hard guard: proportional estimates can still land slightly above
+    # budget due to token-estimation floors and preserved messages. Tighten the
+    # largest compressible messages until the SDK contract is honored.
+    def _total(result_messages: list[dict[str, Any]]) -> int:
+        return sum(
+            len(m.get("content", "")) // 4
+            for m in result_messages if isinstance(m.get("content"), str)
+        )
+
+    while _total(result) > budget:
+        candidates = [
+            (len(m.get("content", "")), i)
+            for i, m in enumerate(result)
+            if i != last_user_idx and isinstance(m.get("content"), str) and len(m.get("content", "")) > 80
+        ]
+        if not candidates:
+            break
+        _, idx = max(candidates)
+        msg = dict(result[idx])
+        content = msg.get("content", "")
+        current_tokens = max(1, len(content) // 4)
+        target_tokens = max(1, int(current_tokens * 0.8))
+        msg["content"] = compress(content, budget=target_tokens)
+        if msg["content"] == content:
+            msg["content"] = _budget_bounded_head(content, target_tokens)
+        result[idx] = msg
 
     return result
 

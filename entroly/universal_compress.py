@@ -121,7 +121,23 @@ def _tokenize(text: str) -> list[str]:
 def _split_sentences(text: str) -> list[str]:
     """Split text into sentences."""
     sentences = _SENTENCE_SPLIT.split(text)
-    return [s.strip() for s in sentences if s.strip() and len(s.strip()) > 10]
+    cleaned = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 10]
+    if len(cleaned) > 1 or len(text) < 1000:
+        return cleaned
+
+    # Logs, generated docs, and repeated prompt material often arrive as a
+    # punctuation-light blob. Treating that as one sentence makes extraction a
+    # no-op, so split into deterministic word windows for the scorer.
+    words = text.split()
+    if len(words) < 120:
+        return cleaned
+    chunk_words = 80
+    chunks = [
+        " ".join(words[i:i + chunk_words])
+        for i in range(0, len(words), chunk_words)
+        if len(words[i:i + chunk_words]) >= 10
+    ]
+    return chunks or cleaned
 
 
 def tfidf_extractive_summarize(
@@ -405,6 +421,55 @@ def compress_xml(text: str, max_depth: int = 3) -> str:
     return "\n".join(result)
 
 
+def compress_code(text: str, target_ratio: float = 0.3) -> str:
+    """Compress source code by preserving imports and symbol skeletons.
+
+    ``universal_compress(..., content_type="code")`` used to fall through to
+    prose summarization, which no-ops on many source files because code often
+    lacks sentence punctuation. This lightweight path is deterministic and
+    language-agnostic enough for SDK fallback use.
+    """
+    lines = text.splitlines()
+    if not lines:
+        return text
+
+    keep_patterns = (
+        r"^\s*(import|from|use)\s+",
+        r"^\s*(export\s+)?(async\s+)?function\s+",
+        r"^\s*(export\s+)?(abstract\s+)?class\s+",
+        r"^\s*(export\s+)?interface\s+",
+        r"^\s*(export\s+)?type\s+",
+        r"^\s*(export\s+)?const\s+[A-Za-z_][A-Za-z0-9_]*\s*=",
+        r"^\s*(def|async\s+def|class)\s+",
+        r"^\s*(pub\s+)?(async\s+)?fn\s+",
+        r"^\s*(pub\s+)?(struct|enum|trait)\s+",
+    )
+    compiled = [re.compile(p) for p in keep_patterns]
+
+    kept: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        stripped = line.rstrip()
+        if not stripped:
+            continue
+        if any(p.search(stripped) for p in compiled):
+            key = stripped.strip()
+            if key not in seen:
+                kept.append(stripped)
+                seen.add(key)
+
+    if not kept:
+        # Fallback: preserve the lead within the requested ratio.
+        max_chars = max(200, int(len(text) * max(0.05, target_ratio)))
+        return text[:max_chars].rstrip() + "\n...[truncated]"
+
+    out = "\n".join(kept)
+    max_chars = max(200, int(len(text) * max(0.05, target_ratio)))
+    if len(out) > max_chars:
+        out = out[:max_chars].rstrip() + "\n...[truncated]"
+    return out
+
+
 # ─── Universal Compress Entry Point ──────────────────────────────────────
 
 
@@ -431,6 +496,8 @@ def universal_compress(
 
     # Auto-detect content type
     ctype = content_type or detect_content_type(content)
+    if ctype in {"text", "plain"}:
+        ctype = "prose"
 
     # Dispatch to type-specific compressor
     _DISPATCH = {
@@ -443,6 +510,7 @@ def universal_compress(
         "email": lambda t, r: compress_email_thread(t),
         "legal": lambda t, r: tfidf_extractive_summarize(t, r),
         "stacktrace": lambda t, r: compress_stacktrace(t),
+        "code": lambda t, r: compress_code(t, r),
         "prose": lambda t, r: tfidf_extractive_summarize(t, r),
     }
 
