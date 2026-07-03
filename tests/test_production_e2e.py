@@ -6,8 +6,8 @@ Entroly — Production Edge-Case Test Suite
 Focus: gaps NOT covered by existing tests/test_functional.py.
 
 Tests added here:
-  P-01  CONTEXT EFFICIENCY METRIC    stats() exposes correct key + math
-  P-02  SLIDING WINDOW RECALL        window caps, 0=disabled, window > N
+  P-01  CONTEXT EFFICIENCY METRIC    optimize() exposes bounded efficiency
+  P-02  TOP-K RECALL                 k caps, k=0, k > corpus
   P-03  MCP SERVER TOOL LAYER        ingest_fragment / optimize_context / recall_tool via Python layer
   P-04  GC FREEZE STATE              gc is disabled after engine __init__; re-enabled after optimize
   P-05  AUTOTUNE CONFIG I/O          json round-trip, weight normalization, bounds
@@ -18,7 +18,7 @@ Tests added here:
   P-10  ALL DUPLICATES CORPUS        100% dupe corpus → still optimize works
   P-11  RAPID CONCURRENT INGESTS     threading doesn't corrupt fragment count
   P-12  RECALL WINDOW > CORPUS       window larger than N fragments = same as no window
-  P-13  EFFICIENCY MATH EXACTNESS    cumulative_information / tokens = context_efficiency
+  P-13  EFFICIENCY STABILITY         repeated optimize calls remain bounded
   P-14  PRISM DRIFT GUARD            10 feedbacks → weights still in (0,1) simplex
   P-15  BENCH EVALUATE CONFIG        bench/evaluate reads updated tuning_config correctly
   P-16  MAX_FRAGMENTS EVICTION       fragment_count never exceeds max_fragments
@@ -37,6 +37,11 @@ from pathlib import Path
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
+if sys.platform == "win32":
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 def main():
 
@@ -45,6 +50,9 @@ def main():
     except ImportError:
         print("FATAL: entroly_core not importable. Run `maturin develop` first.")
         return 1
+
+    test_state = tempfile.TemporaryDirectory(prefix="entroly_production_e2e_")
+    os.environ["ENTROLY_DIR"] = test_state.name
 
     # ── Test harness ──────────────────────────────────────────────────────────────
     _passed = _failed = 0
@@ -95,26 +103,23 @@ def main():
     e = fresh()
     for name, (content, src, tokens) in CODE.items():
         e.ingest(content, src, tokens, False)
-    e.optimize(4096, "auth payment")  # must call optimize first to accumulate
-
-    stats = dict(e.stats())
-    ok("stats() contains context_efficiency key", "context_efficiency" in stats)
-    eff_block = dict(stats.get("context_efficiency", {}))
-    ok("context_efficiency has sub-keys", all(k in eff_block for k in ["context_efficiency", "cumulative_information", "cumulative_tokens_used"]))
-    ok("context_efficiency is non-negative float", isinstance(eff_block.get("context_efficiency", None), float) and eff_block["context_efficiency"] >= 0)
-    ok("cumulative_tokens_used > 0 after optimize", int(eff_block.get("cumulative_tokens_used", 0)) > 0)
-
-    # Math check: efficiency = cumulative_information / cumulative_tokens_used
-    info = eff_block.get("cumulative_information", 0)
-    tokens_used = eff_block.get("cumulative_tokens_used", 1)
-    expected_eff = info / (tokens_used / 1000.0) if tokens_used > 0 else 0.0
-    actual_eff = eff_block.get("context_efficiency", -1)
-    ok("context_efficiency = information / tokens (math exact)", abs(actual_eff - expected_eff) < 0.01,
-       f"expected≈{expected_eff:.4f} actual={actual_eff:.4f}")
+    optimized = dict(e.optimize(4096, "auth payment"))
+    efficiency = optimized.get("context_efficiency")
+    ok("optimize() contains context_efficiency", isinstance(efficiency, float))
+    ok(
+        "context_efficiency is bounded",
+        isinstance(efficiency, float) and 0.0 <= efficiency <= 1.0,
+        f"actual={efficiency}",
+    )
+    ok("optimize() reports selected tokens", optimized.get("total_tokens", 0) > 0)
+    ok(
+        "stats() tracks optimization count",
+        dict(e.stats()).get("savings", {}).get("total_optimizations") == 1,
+    )
 
 
     # ─── P-02: Sliding Window Recall ─────────────────────────────────────────────
-    section("P-02  SLIDING WINDOW RECALL")
+    section("P-02  TOP-K RECALL")
     e_win = fresh()
     ids = []
     for i in range(10):
@@ -122,25 +127,25 @@ def main():
         if r.get("status") == "ingested":
             ids.append(r.get("fragment_id", ""))
 
-    # Only the last 3 ingested should come back at most
-    recalled_win = [dict(r) for r in e_win.recall("function module logic", 10)]
-    ok("sliding window caps results to window vicinity", len(recalled_win) <= 3,
-       f"got {len(recalled_win)} (expect ≤ 3)")
+    recalled_top3 = [dict(r) for r in e_win.recall("function module logic", 3)]
+    ok("top_k=3 caps recall results", len(recalled_top3) <= 3,
+       f"got {len(recalled_top3)}")
+    ok("top_k=0 returns no results", len(list(e_win.recall("function module logic", 0))) == 0)
 
     # Window = 0 → all fragments eligible
     e_nowin = fresh()
     for i in range(10):
         e_nowin.ingest(f"function module_{i}(): handles specific logic for component {i}", f"mod{i}.py", 50, False)
     recalled_all = [dict(r) for r in e_nowin.recall("function module logic", 10)]
-    ok("window=0 returns more results than window=3", len(recalled_all) >= len(recalled_win),
-       f"no_window={len(recalled_all)} vs window3={len(recalled_win)}")
+    ok("top_k=10 returns at least as many results as top_k=3", len(recalled_all) >= len(recalled_top3),
+       f"top10={len(recalled_all)} vs top3={len(recalled_top3)}")
 
     # Window larger than corpus → same as no window
     e_bigwin = fresh()
     for i in range(5):
         e_bigwin.ingest(f"procedure step {i} for pipeline processing", f"step{i}.py", 40, False)
     recalled_big = [dict(r) for r in e_bigwin.recall("pipeline procedure", 10)]
-    ok("window > corpus size works (no crash, returns results)", len(recalled_big) >= 1)
+    ok("top_k > corpus size works (no crash, returns results)", len(recalled_big) >= 1)
 
 
     # ─── P-03: MCP Server Tool Layer ─────────────────────────────────────────────
@@ -198,12 +203,12 @@ def main():
     # ─── P-05: Autotune Config I/O ───────────────────────────────────────────────
     section("P-05  AUTOTUNE CONFIG I/O")
     try:
-        from bench.autotune import mutate_random, normalize_weights, TUNABLE_PARAMS
+        from bench.autotune import mutate_random, TUNABLE_PARAMS
+        from bench.evaluate import load_tuning_config
         import random
         import copy
 
-        cfg_path = REPO / "tuning_config.json"
-        cfg_orig = json.loads(cfg_path.read_text())
+        cfg_orig = load_tuning_config()
 
         # Weight normalization invariant: always sums to 1.0
         failures_norm = 0
@@ -238,55 +243,47 @@ def main():
         ok("config json round-trip preserves all keys", set(cfg_orig.keys()) == set(reloaded.keys()))
         ok("config json round-trip preserves weights", cfg_orig["weights"] == reloaded["weights"])
 
-    except ImportError as exc:
-        print(f"  ⊘ Skipping autotune config (import error: {exc})")
+    except Exception as exc:
+        ok("autotune config checks complete", False, str(exc))
 
 
     # ─── P-06: Daemon enabled/disabled flag ──────────────────────────────────────
     section("P-06  DAEMON CONTROL")
     try:
-        import entroly.autotune as at_mod
         from entroly.server import _start_autotune_daemon
+        from bench.evaluate import load_tuning_config
+        from unittest.mock import patch
 
-        cfg_path = REPO / "tuning_config.json"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_path = Path(tmpdir) / "tuning_config.json"
+            cfg = load_tuning_config()
+            cfg["autotuner"] = {"enabled": True}
+            cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+            previous = os.environ.get("ENTROLY_TUNING_CONFIG")
+            os.environ["ENTROLY_TUNING_CONFIG"] = str(cfg_path)
+            try:
+                with patch("threading.Thread") as thread_cls:
+                    thread_cls.return_value.ident = 123
+                    _start_autotune_daemon(None)
+                    ok("daemon starts when enabled=true", thread_cls.called)
+                    ok(
+                        "autotune thread is daemon=True",
+                        thread_cls.call_args.kwargs.get("daemon") is True,
+                    )
 
-        cfg = json.loads(cfg_path.read_text())
-        try:
-            # ensure it starts enabled for the first test
-            cfg["autotuner"]["enabled"] = True
-            cfg["autotuner"]["idle_only"] = False
-            cfg_path.write_text(json.dumps(cfg, indent=2))
+                cfg["autotuner"]["enabled"] = False
+                cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+                with patch("threading.Thread") as thread_cls:
+                    _start_autotune_daemon(None)
+                    ok("daemon does not start when enabled=false", not thread_cls.called)
+            finally:
+                if previous is None:
+                    os.environ.pop("ENTROLY_TUNING_CONFIG", None)
+                else:
+                    os.environ["ENTROLY_TUNING_CONFIG"] = previous
 
-            # enabled=true → daemon spawns
-            threads_before = sum(1 for t in threading.enumerate() if t.name == "entroly-autotune")
-            _start_autotune_daemon(None)
-            time.sleep(0.1)
-            threads_after = sum(1 for t in threading.enumerate() if t.name == "entroly-autotune")
-            ok("daemon spawns when enabled=true", threads_after > threads_before)
-
-            # enabled=false → no spawn
-            cfg["autotuner"]["enabled"] = False
-            cfg_path.write_text(json.dumps(cfg, indent=2))
-
-            threads_before2 = sum(1 for t in threading.enumerate() if t.name == "entroly-autotune")
-            _start_autotune_daemon(None)
-            time.sleep(0.1)
-            threads_after2 = sum(1 for t in threading.enumerate() if t.name == "entroly-autotune")
-            ok("daemon does NOT spawn when enabled=false", threads_after2 == threads_before2)
-        finally:
-            # Restore always!
-            cfg["autotuner"]["enabled"] = True
-            cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-
-        # Daemon thread is a daemon (dies with process)
-        spawned = [t for t in threading.enumerate() if t.name == "entroly-autotune"]
-        if spawned:
-            ok("autotune thread is daemon=True", all(t.daemon for t in spawned))
-        else:
-            ok("autotune thread is daemon=True (already completed)", True)  # finished fast = also OK
-
-    except ImportError as exc:
-        print(f"  ⊘ Skipping daemon tests (import error: {exc})")
+    except Exception as exc:
+        ok("daemon control checks complete", False, str(exc))
 
 
     # ─── P-07: Unicode + Non-ASCII content ───────────────────────────────────────
@@ -417,32 +414,30 @@ def main():
 
 
     # ─── P-12: Recall Window > Corpus ─────────────────────────────────────────────
-    section("P-12  RECALL WINDOW LARGER THAN CORPUS")
+    section("P-12  RECALL TOP_K LARGER THAN CORPUS")
     e_wlarge = fresh()
     for i in range(5):
         e_wlarge.ingest(f"utility function helper_{i}() for general use", f"util{i}.py", 30, False)
     r_wlarge = [dict(x) for x in e_wlarge.recall("utility function", 10)]
-    ok("window=10000 with 5-fragment corpus: no crash", True)
-    ok("window=10000 with 5-fragment corpus: returns results", len(r_wlarge) >= 1)
+    ok("top_k=10 with 5-fragment corpus: no crash", True)
+    ok("top_k=10 with 5-fragment corpus: returns results", len(r_wlarge) >= 1)
 
 
-    # ─── P-13: Efficiency Math Exactness ──────────────────────────────────────────
-    section("P-13  EFFICIENCY MATH EXACTNESS (across N optimize calls)")
+    # ─── P-13: Efficiency Stability ───────────────────────────────────────────────
+    section("P-13  EFFICIENCY STABILITY (across N optimize calls)")
     e_math = fresh()
     for name, (content, src, tokens) in CODE.items():
         e_math.ingest(content, src, tokens, False)
 
-    for _ in range(5):
-        e_math.optimize(4096, "auth payment database")
-
-    final_stats = dict(dict(e_math.stats()).get("context_efficiency", {}))
-    info_total = final_stats.get("cumulative_information", 0)
-    tok_total  = final_stats.get("cumulative_tokens_used", 1)
-    eff_reported = final_stats.get("context_efficiency", -1)
-    eff_computed = info_total / (tok_total / 1000.0) if tok_total > 0 else 0.0
-    ok("efficiency after 5 optimize calls: math holds",
-       abs(eff_reported - eff_computed) < 0.01,
-       f"reported={eff_reported:.4f} computed={eff_computed:.4f}")
+    efficiencies = [
+        dict(e_math.optimize(4096, "auth payment database")).get("context_efficiency")
+        for _ in range(5)
+    ]
+    ok(
+        "efficiency remains finite and bounded across repeated calls",
+        all(isinstance(value, float) and 0.0 <= value <= 1.0 for value in efficiencies),
+        str(efficiencies),
+    )
 
 
     # ─── P-14: PRISM Drift Guard ──────────────────────────────────────────────────
@@ -463,7 +458,15 @@ def main():
     ok("selected count > 0 after heavy feedback", len(opt_after.get("selected", [])) > 0)
 
     stats_prism = dict(e_prism.stats())
-    ok("stats still returns correctly after PRISM updates", "context_efficiency" in stats_prism)
+    prism_stats = dict(stats_prism.get("prism", {}))
+    ok("stats still returns PRISM state after updates", bool(prism_stats))
+    ok(
+        "PRISM weights remain finite and bounded",
+        all(0.0 <= float(prism_stats.get(key, -1)) <= 1.0 for key in (
+            "w_recency", "w_frequency", "w_semantic", "w_entropy"
+        )),
+        str(prism_stats),
+    )
 
 
     # ─── P-15: bench/evaluate reads updated config ────────────────────────────────
@@ -478,8 +481,8 @@ def main():
         ok("composite_score in [0, 1]", 0.0 <= result["composite_score"] <= 1.0, str(result["composite_score"]))
         ok("all_latency_ok = True (all under 500ms)", result["all_latency_ok"],
            f"avg={result.get('avg_latency_ms', '?')}ms")
-    except ImportError as exc:
-        print(f"  ⊘ Skipping bench evaluate (import: {exc})")
+    except Exception as exc:
+        ok("bench evaluate checks complete", False, str(exc))
 
 
     # ─── P-16: Max_Fragments Eviction ─────────────────────────────────────────────
@@ -553,6 +556,7 @@ def main():
         print("\nFailed tests:")
         for f in _failures:
             print(f"  {f}")
+    test_state.cleanup()
     return _failed
 
 

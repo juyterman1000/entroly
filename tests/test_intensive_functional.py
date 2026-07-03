@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
-CORE = REPO.parent / "entroly-core"
+CORE = REPO / "entroly-core"
 
 # ── Harness ───────────────────────────────────────────────────────────────────
 PASS, FAIL, SKIP = "  ✓", "  ✗", "  ⊘"
@@ -147,18 +147,24 @@ def test_feedback_idempotency():
         skip("feedback idempotency", "nothing selected")
         return
 
-    fid = sel[0]["id"]
-    score_base = sel[0].get("relevance", 0.0)
+    subject = next((f for f in sel if f.get("relevance") is not None), None)
+    if subject is None:
+        skip("feedback idempotency", "no scored fragment selected")
+        return
+    fid = subject["id"]
+    score_base = float(subject.get("relevance") or 0.0)
 
     engine.record_success([fid])
     opt2 = engine.optimize_context(token_budget=500_000, query="optimization")
-    score_1x = next((f.get("relevance") for f in opt2.get("selected", [])
-                     if f.get("id") == fid), score_base)
+    score_1x = next((float(f.get("relevance") or 0.0)
+                     for f in opt2.get("selected", []) if f.get("id") == fid),
+                    score_base)
 
     engine.record_success([fid])
     opt3 = engine.optimize_context(token_budget=500_000, query="optimization")
-    score_2x = next((f.get("relevance") for f in opt3.get("selected", [])
-                     if f.get("id") == fid), score_1x)
+    score_2x = next((float(f.get("relevance") or 0.0)
+                     for f in opt3.get("selected", []) if f.get("id") == fid),
+                    score_1x)
 
     check("score after 2× success >= score after 1× success",
           score_2x >= score_1x,

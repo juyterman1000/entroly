@@ -796,15 +796,63 @@ class EntrolyEngine:
                 try:
                     from .qccr import select as qccr_select
                     candidates = [dict(f) for f in self._rust.export_fragments()]
-                    selected = qccr_select(
-                        candidates, token_budget=token_budget, query=refined_query,
-                    )
                     def _fragment_tokens(fragment: dict[str, Any]) -> int:
                         token_count = int(fragment.get("token_count") or 0)
                         if token_count > 0:
                             return token_count
                         content = str(fragment.get("content") or "")
                         return max(1, len(content) // 4) if content else 0
+
+                    pinned = [f for f in candidates if f.get("is_pinned")]
+                    pinned_cap = token_budget // 2
+                    pinned_tokens = sum(_fragment_tokens(f) for f in pinned)
+                    if pinned_tokens > pinned_cap:
+                        def _pinned_priority(fragment: dict[str, Any]) -> float:
+                            relevance = (
+                                self.config.weight_recency
+                                * float(fragment.get("recency_score") or 0.0)
+                                + self.config.weight_frequency
+                                * float(fragment.get("frequency_score") or 0.0)
+                                + self.config.weight_semantic_sim
+                                * float(fragment.get("semantic_score") or 0.0)
+                                + self.config.weight_entropy
+                                * float(fragment.get("entropy_score") or 0.0)
+                            )
+                            return relevance * float(
+                                fragment.get("feedback_multiplier") or 1.0
+                            )
+
+                        pinned.sort(key=_pinned_priority, reverse=True)
+                        exact_pinned = []
+                        pinned_tokens = 0
+                        for fragment in pinned:
+                            fragment_tokens = _fragment_tokens(fragment)
+                            if pinned_tokens + fragment_tokens <= pinned_cap:
+                                exact_pinned.append(fragment)
+                                pinned_tokens += fragment_tokens
+                    else:
+                        exact_pinned = pinned
+
+                    exact_pinned_sources = {
+                        str(f.get("source") or "") for f in exact_pinned
+                    }
+                    qccr_candidates = [
+                        f for f in candidates
+                        if str(f.get("source") or "") not in exact_pinned_sources
+                    ]
+                    qccr_budget = max(0, token_budget - pinned_tokens)
+                    selected = qccr_select(
+                        qccr_candidates,
+                        token_budget=qccr_budget,
+                        query=refined_query,
+                    ) if qccr_budget else []
+                    selected = [
+                        {
+                            **f,
+                            "id": f.get("id") or f.get("fragment_id"),
+                        }
+                        for f in exact_pinned
+                    ] + selected
 
                     tokens_used = sum(
                         _fragment_tokens(f) for f in selected if isinstance(f, dict)
@@ -876,9 +924,14 @@ class EntrolyEngine:
             # freeze, doc/test intent guards, test→source mirror) so the
             # LLM sees the most plausible edit target first. Selection
             # is unchanged — only order — so token budget, savings, and
-            # PRISM outcome math below remain correct. Recall-safe by
-            # construction (see entroly/file_localizer.py).
-            if refined_query and result.get("selected_fragments"):
+            # PRISM outcome math below remain correct. QCCR already applies
+            # this rerank before selection, so repeating it here wastes a full
+            # corpus scan. Recall-safe by construction (see file_localizer.py).
+            if (
+                refined_query
+                and result.get("selected_fragments")
+                and result.get("selector") != "qccr"
+            ):
                 try:
                     from .file_localizer import localize_fragments
                     result["selected_fragments"] = localize_fragments(
@@ -1304,28 +1357,64 @@ class EntrolyEngine:
         except Exception:
             pass  # Never fail outcome recording for journal IO
 
+    def _resolve_native_feedback_ids(self, fragment_ids: list[str]) -> list[str]:
+        """Map synthetic QCCR IDs back to the native fragments they represent."""
+        if not self._use_rust or not fragment_ids:
+            return list(fragment_ids)
+        try:
+            exported = [dict(f) for f in self._rust.export_fragments()]
+        except Exception:
+            return list(fragment_ids)
+
+        native_ids = {
+            str(f.get("fragment_id") or f.get("id") or "") for f in exported
+        }
+        by_source: dict[str, list[str]] = {}
+        for fragment in exported:
+            source = str(fragment.get("source") or "")
+            fragment_id = str(
+                fragment.get("fragment_id") or fragment.get("id") or ""
+            )
+            if source and fragment_id:
+                by_source.setdefault(source, []).append(fragment_id)
+
+        resolved: list[str] = []
+        for fragment_id in fragment_ids:
+            if fragment_id in native_ids:
+                targets = [fragment_id]
+            elif fragment_id.startswith("qccr::"):
+                targets = by_source.get(fragment_id.removeprefix("qccr::"), [])
+            else:
+                targets = [fragment_id]
+            for target in targets:
+                if target and target not in resolved:
+                    resolved.append(target)
+        return resolved
+
     def record_success(self, fragment_ids: list[str]) -> None:
         """Record that selected fragments led to a successful output."""
+        native_ids = self._resolve_native_feedback_ids(fragment_ids)
         if self._use_rust:
-            self._rust.record_success(fragment_ids)
+            self._rust.record_success(native_ids)
         else:
-            self._wilson.record_success(fragment_ids)
+            self._wilson.record_success(native_ids)
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, 1.0)
         # Feed FeedbackJournal from genuine outcome signal.
         # This is real user-validated quality, not budget-shape proxy.
-        self._log_outcome_to_journal(fragment_ids, reward=1.0)
+        self._log_outcome_to_journal(native_ids, reward=1.0)
 
     def record_failure(self, fragment_ids: list[str]) -> None:
         """Record that selected fragments led to a failed output."""
+        native_ids = self._resolve_native_feedback_ids(fragment_ids)
         if self._use_rust:
-            self._rust.record_failure(fragment_ids)
+            self._rust.record_failure(native_ids)
         else:
-            self._wilson.record_failure(fragment_ids)
+            self._wilson.record_failure(native_ids)
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, -1.0)
         # Feed FeedbackJournal from genuine outcome signal.
-        self._log_outcome_to_journal(fragment_ids, reward=-1.0)
+        self._log_outcome_to_journal(native_ids, reward=-1.0)
 
     def record_retrieval_miss(self, source_paths: list[str]) -> None:
         """Boost any fragments whose source matches a file the user actually
@@ -1381,7 +1470,9 @@ class EntrolyEngine:
         and hit predictor for continuous learning.
         """
         if self._use_rust:
-            self._rust.record_reward(fragment_ids, reward)
+            self._rust.record_reward(
+                self._resolve_native_feedback_ids(fragment_ids), reward
+            )
         # RL pruner also gets the continuous signal
         for fid in fragment_ids:
             self._pruner.apply_feedback(fid, reward)
@@ -2080,7 +2171,9 @@ def create_mcp_server(
             content: The text content to store (code, tool output, etc.)
             source: Origin label (e.g., 'file:utils.py', 'tool:grep')
             token_count: Token count (auto-estimated if 0)
-            is_pinned: If True, always include in optimized context
+            is_pinned: If True, prioritize exact inclusion within the pinned
+                budget reserve; excess pinned content remains a high-priority
+                compressed candidate so the total token ceiling stays honest.
         """
         # NOTE: turn is NOT advanced here — turns advance on optimize/recall
         result = engine.ingest_fragment(content, source, token_count, is_pinned)

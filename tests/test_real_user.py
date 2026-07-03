@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
-CORE = REPO.parent / "entroly-core"
+CORE = REPO / "entroly-core"
 
 PASS = "  ✓"
 FAIL = "  ✗"
@@ -166,8 +166,19 @@ def run():
         # Read scores from the optimize result's 'selected' list — these have real scores.
         # explain_selection returns 0.0 for fragments not yet scored by the optimizer.
         def top_scores(opt_result: dict) -> dict:
-            return {f.get("id", f.get("fragment_id", "")): f.get("relevance", f.get("relevance_score", f.get("score", 0.0)))
-                    for f in opt_result.get("selected", [])}
+            scores = {}
+            for fragment in opt_result.get("selected", []):
+                score = fragment.get(
+                    "relevance",
+                    fragment.get("relevance_score", fragment.get("score", 0.0)),
+                )
+                origin_ids = fragment.get("source_fragment_ids") or [
+                    fragment.get("id", fragment.get("fragment_id", ""))
+                ]
+                for fragment_id in origin_ids:
+                    if fragment_id:
+                        scores[fragment_id] = score
+            return scores
 
         opt_b = engine.optimize_context(token_budget=64_000, query=QUERY)
         sb = top_scores(opt_b)
@@ -216,40 +227,27 @@ def run():
 
         # ═══════════════════════════════════════════════════════════════════
         # INV-3: PIN SURVIVAL
-        # Every pinned fragment must appear in recall for top_k = n_pinned
-        # regardless of query, regardless of age.
+        # Explicitly pinned fragments must remain exact in optimized context.
         # ═══════════════════════════════════════════════════════════════════
-        invariant("INV-3  PIN SURVIVAL  —  pinned ∈ recall(any_query, k=n_pinned)")
+        invariant("INV-3  PIN SURVIVAL  —  pinned stays exact in optimize")
 
-        pinned_ids = {fid for label, fid in ids.items()
-                      if any(k in label for k in ("knapsack", "lib.rs"))
-                      and fid}
-        len(pinned_ids)
-
-        # INV-3 REVISED: The Rust engine (lib.rs:244-247) force-pins Critical/Safety files,
-        # overriding is_pinned=False from the caller. ALL .py and .rs source files are
-        # classified Critical by file_criticality(), so they are always pinned.
-        # The correct invariant: pinned (or force-pinned) lib.rs survives recall when
-        # queried with semantically related terms.
         lib_id = ids.get("src/lib.rs", "")
-        if lib_id:
-            lib_recalled = {r["fragment_id"]
-                            for r in engine.recall_relevant(
-                                "EntrolyEngine ingest optimize recall fragment",
-                                top_k=15)}
-            check("auto-pinned lib.rs recalled for relevant query",
-                  lib_id in lib_recalled,
-                  f"lib_id={lib_id}, found={lib_id in lib_recalled}")
-
-        # The 5x-boosted knapsack.py is also force-pinned and included in optimize output.
-        # Verify it appears in the optimize selected list (not just recall).
-        if knapsack_id:
-            opt_kn = engine.optimize_context(token_budget=200_000, query=QUERY)
-            kn_in_opt = any(f.get("id") == knapsack_id
-                            for f in opt_kn.get("selected", []))
-            check("5x-boosted knapsack.py appears in large optimize window",
-                  kn_in_opt,
-                  f"kn_id={knapsack_id}, in_selected={'yes' if kn_in_opt else 'no'}")
+        opt_pinned = engine.optimize_context(token_budget=1_000_000, query=QUERY)
+        selected_ids = {
+            fragment_id
+            for fragment in opt_pinned.get("selected", [])
+            for fragment_id in (
+                fragment.get("source_fragment_ids")
+                or [fragment.get("id") or fragment.get("fragment_id")]
+            )
+            if fragment_id
+        }
+        check("pinned lib.rs appears in optimized context",
+              not lib_id or lib_id in selected_ids,
+              f"lib_id={lib_id}, found={lib_id in selected_ids}")
+        check("pinned knapsack appears in optimized context",
+              knapsack_id in selected_ids,
+              f"kn_id={knapsack_id}, found={knapsack_id in selected_ids}")
 
         # ═══════════════════════════════════════════════════════════════════
         # INV-4: CHECKPOINT IDEMPOTENCY
@@ -261,6 +259,11 @@ def run():
         stats_pre   = engine.get_stats()
         n_frags_pre = (stats_pre.get("session", {}).get("total_fragments") or
                        stats_pre.get("total_fragments") or 0)
+        checkpoint_query = "EntrolyEngine ingest optimize recall fragment"
+        recall_pre = [
+            r["fragment_id"]
+            for r in engine.recall_relevant(checkpoint_query, top_k=15)
+        ]
         ckpt_path = engine.checkpoint(metadata={"invariant": "idempotency-test",
                                                 "n_frags": n_frags_pre})
         check("checkpoint written", os.path.exists(ckpt_path),
@@ -280,14 +283,13 @@ def run():
               n_frags_pre == n_frags_post,
               f"pre={n_frags_pre}, post={n_frags_post}")
 
-        # Pinned lib.rs must still be recallable after resume
-        lib_post = {r["fragment_id"] for r in
-                    engine2.recall_relevant(
-                        "EntrolyEngine ingest optimize recall fragment", top_k=15)}
-        lib_id_chk = ids.get("src/lib.rs", "")
-        check("pinned lib.rs recalled after resume",
-              lib_id_chk in lib_post or not lib_id_chk,
-              f"found={'yes' if lib_id_chk in lib_post else 'no'}")
+        recall_post = [
+            r["fragment_id"]
+            for r in engine2.recall_relevant(checkpoint_query, top_k=15)
+        ]
+        check("recall ordering identical after resume",
+              recall_pre == recall_post,
+              f"pre={len(recall_pre)}, post={len(recall_post)}")
 
 
         # ═══════════════════════════════════════════════════════════════════
@@ -297,12 +299,6 @@ def run():
         invariant("INV-5  BUDGET SOUNDNESS  —  sum(selected_tokens) ≤ budget")
 
         # INV-5: BUDGET SOUNDNESS — tested on the real corpus (engine2, after resume).
-        #
-        # The Rust guardrails (lib.rs:244-247) force-pin Critical/Safety files,
-        # overriding is_pinned=False. ALL .py and .rs source files are Critical,
-        # so they are ALWAYS included regardless of budget — by design.
-        # The knapsack result.total_tokens can therefore exceed token_budget
-        # when pinned fragments alone exceed it. This is documented behaviour.
         #
         # What the engine DOES guarantee:
         #   (a) budget_utilization = total_tokens / effective_budget

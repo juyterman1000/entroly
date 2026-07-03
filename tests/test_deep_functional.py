@@ -52,7 +52,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
-CORE = REPO.parent / "entroly-core"
+CORE = REPO / "entroly-core"
 
 PASS = "  \u2713"
 FAIL = "  \u2717"

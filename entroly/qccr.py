@@ -108,6 +108,17 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
         ]
         ranked = _rust_rank_files(file_sources, file_texts, query, overrides)
         if ranked and any(sc > 0 for _, sc in ranked):
+            feedback_by_file = {
+                source: sum(
+                    float(r.get("feedback_multiplier", 1.0) or 1.0)
+                    for r in by_file[source]
+                ) / max(len(by_file[source]), 1)
+                for source in file_sources
+            }
+            ranked.sort(
+                key=lambda item: -item[1]
+                * feedback_by_file[file_sources[item[0]]]
+            )
             base_ranked = [file_sources[i] for i, _ in ranked]
             preferred = base_ranked
             try:
@@ -120,7 +131,13 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
                 preferred = base_ranked
 
     slim = [
-        {"source": r.get("source", "") or "", "content": r.get("content") or ""}
+        {
+            "source": r.get("source", "") or "",
+            "content": r.get("content") or "",
+            "feedback_multiplier": float(
+                r.get("feedback_multiplier", 1.0) or 1.0
+            ),
+        }
         for r in fragments
     ]
     out_json = _rust_select(
@@ -130,4 +147,19 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
         json.dumps(overrides),
         json.dumps(preferred),
     )
-    return json.loads(out_json)
+    selected = json.loads(out_json)
+
+    # QCCR emits one synthetic fragment per source file. Preserve the native
+    # fragment IDs so callers can correlate compressed output with ingestion
+    # receipts and feed outcomes back into the engine.
+    source_fragment_ids: dict[str, list[str]] = {}
+    for raw in fragments:
+        source = str(raw.get("source") or "")
+        fragment_id = str(raw.get("fragment_id") or raw.get("id") or "")
+        if fragment_id and fragment_id not in source_fragment_ids.setdefault(source, []):
+            source_fragment_ids[source].append(fragment_id)
+    for fragment in selected:
+        origin_ids = source_fragment_ids.get(str(fragment.get("source") or ""), [])
+        if origin_ids:
+            fragment["source_fragment_ids"] = origin_ids
+    return selected

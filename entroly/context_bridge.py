@@ -523,7 +523,7 @@ class AgentContext:
         """
         stats = {"files_ingested": 0, "total_tokens": 0, "sections": 0}
 
-        # Core identity files (pinned — always included)
+        # Core identity files (pinned — prioritized within the budget reserve)
         for fname in ["SOUL.md", "IDENTITY.md"]:
             fpath = self.workspace_path / fname
             if fpath.exists():
@@ -539,7 +539,7 @@ class AgentContext:
                 stats["files_ingested"] += 1
                 stats["total_tokens"] += result.get("token_count", 0)
 
-        # User context (pinned — always included)
+        # User context (pinned — prioritized within the budget reserve)
         user_path = self.workspace_path / "USER.md"
         if user_path.exists():
             content = user_path.read_text(encoding="utf-8", errors="replace")

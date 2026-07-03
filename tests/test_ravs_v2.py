@@ -36,6 +36,7 @@ REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
 from entroly.ravs.compiler import (  # noqa: E402
+    ExecutorType,
     NodeKind,
     Plan,
     PlanCompiler,
@@ -86,6 +87,25 @@ def test_v2_02_computation_detected(query):
     nodes = detect_substeps(query)
     kinds = [n.kind for n in nodes]
     assert NodeKind.COMPUTATION.value in kinds
+
+
+def test_numeric_computation_preserves_expression_and_uses_builtin_executor():
+    nodes = detect_substeps("calculate 2 + 3 * 4")
+    computation = next(n for n in nodes if n.kind == NodeKind.COMPUTATION.value)
+
+    assert computation.input_text == "calculate 2 + 3 * 4"
+    assert computation.executor == ExecutorType.PYTHON.value
+
+
+def test_numeric_computation_executes_without_optional_sympy():
+    plan = ShadowRunner().compile_and_run("calculate 2 + 3 * 4")
+    computation = next(
+        n for n in plan.nodes if n.kind == NodeKind.COMPUTATION.value
+    )
+
+    assert computation.executor_succeeded
+    assert computation.executor_result == "14"
+    assert computation.verifier_passed
 
 
 # ══════════════════════════════════════════════════════════════════════

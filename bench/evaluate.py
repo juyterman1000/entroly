@@ -100,15 +100,21 @@ def validate_tuning_config(config: dict) -> list[str]:
     Returns a list of error strings. Empty list means valid.
     """
     errors: list[str] = []
+    if not isinstance(config, dict):
+        return ["config root must be an object"]
 
     # Required top-level sections
     required_sections = ["weights", "decay", "knapsack"]
     for sec in required_sections:
         if sec not in config:
             errors.append(f"missing required section: '{sec}'")
+        elif not isinstance(config[sec], dict):
+            errors.append(f"{sec} must be an object")
 
     # Weights: must be numeric, positive, sum to ~1.0
     w = config.get("weights", {})
+    if not isinstance(w, dict):
+        w = {}
     weight_keys = ["recency", "frequency", "semantic_sim", "entropy"]
     for k in weight_keys:
         if k not in w:
@@ -143,6 +149,10 @@ def validate_tuning_config(config: dict) -> list[str]:
     ]
     for section, key, lo, hi in range_checks:
         sec = config.get(section, {})
+        if not isinstance(sec, dict):
+            if section in config and f"{section} must be an object" not in errors:
+                errors.append(f"{section} must be an object")
+            continue
         if key in sec:
             val = sec[key]
             if not isinstance(val, (int, float)):
@@ -189,8 +199,19 @@ def load_tuning_config(path: Path | None = None) -> dict:
     if errors:
         for err in errors:
             log.warning(f"tuning_config validation: {err}")
+        log.warning(
+            "tuning_config at %s has an incompatible schema -- using built-in defaults",
+            path,
+        )
+        return copy.deepcopy(DEFAULT_TUNING_CONFIG)
 
-    return config
+    merged = copy.deepcopy(DEFAULT_TUNING_CONFIG)
+    for key, value in config.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key].update(value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
 
 
 def create_engine_from_config(config: dict):

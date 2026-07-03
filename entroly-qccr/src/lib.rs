@@ -798,6 +798,12 @@ pub struct InFragment {
     pub source: String,
     #[serde(default)]
     pub content: String,
+    #[serde(default = "default_feedback_multiplier")]
+    pub feedback_multiplier: f64,
+}
+
+fn default_feedback_multiplier() -> f64 {
+    1.0
 }
 
 #[derive(Serialize)]
@@ -831,6 +837,7 @@ pub fn select(
     // Group by file, first-seen order (mirrors Python dict insertion order).
     let mut order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    let mut feedback_by_source: HashMap<String, (f64, usize)> = HashMap::new();
     for f in fragments {
         if !groups.contains_key(&f.source) {
             order.push(f.source.clone());
@@ -839,6 +846,12 @@ pub fn select(
             .entry(f.source.clone())
             .or_default()
             .push(f.content.clone());
+        let feedback = f.feedback_multiplier.clamp(0.5, 2.0);
+        let entry = feedback_by_source
+            .entry(f.source.clone())
+            .or_insert((0.0, 0));
+        entry.0 += feedback;
+        entry.1 += 1;
     }
     let file_sources: Vec<String> = order.clone();
     let file_texts: Vec<String> = order.iter().map(|s| groups[s].join("\n")).collect();
@@ -846,8 +859,16 @@ pub fn select(
     let ranked = rank_files(&file_sources, &file_texts, query, overrides);
     let mut file_scores: Vec<(f64, String, String)> = ranked
         .iter()
-        .map(|&(i, sc)| (sc, file_sources[i].clone(), file_texts[i].clone()))
+        .map(|&(i, sc)| {
+            let source = &file_sources[i];
+            let (sum, count) = feedback_by_source
+                .get(source)
+                .copied()
+                .unwrap_or((1.0, 1));
+            (sc * sum / count.max(1) as f64, source.clone(), file_texts[i].clone())
+        })
         .collect();
+    file_scores.sort_by(|a, b| b.0.total_cmp(&a.0));
 
     // Caller-supplied reorder (engine_s6 localizer) — same effect as the Python
     // `localize_files` block: reorder the candidate list, scores preserved.
@@ -1077,12 +1098,14 @@ mod tests {
             InFragment {
                 source: "file:web/components/Table.tsx".into(),
                 content: "dataset scores persisted display table. ".repeat(20),
+                feedback_multiplier: 1.0,
             },
             InFragment {
                 source: "file:server/repositories/scores.ts".into(),
                 content: "export const upsertScore = async (s) => { await db.insert(s); };\n\
                           export type ScoreRecordInsertType = {}; the repository upserts scores."
                     .into(),
+                feedback_multiplier: 1.0,
             },
         ];
         let out = select(
@@ -1103,7 +1126,36 @@ mod tests {
         let frags = vec![InFragment {
             source: "a.py".into(),
             content: "def f(): pass".into(),
+            feedback_multiplier: 1.0,
         }];
         assert!(select(&frags, 100, "", &HashMap::new(), &[]).is_empty());
+    }
+
+    #[test]
+    fn feedback_multiplier_changes_equal_content_ordering() {
+        let content = "rate limiter token bucket handles burst traffic";
+        let frags = vec![
+            InFragment {
+                source: "failed.py".into(),
+                content: content.into(),
+                feedback_multiplier: 0.5,
+            },
+            InFragment {
+                source: "successful.py".into(),
+                content: content.into(),
+                feedback_multiplier: 2.0,
+            },
+        ];
+
+        let out = select(
+            &frags,
+            512,
+            "rate limiter burst traffic",
+            &HashMap::new(),
+            &[],
+        );
+
+        assert_eq!(out[0].source, "successful.py");
+        assert!(out[0].relevance > out[1].relevance);
     }
 }

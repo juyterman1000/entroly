@@ -247,7 +247,7 @@ class TestDreamingLoop:
 
         import entroly.autotune as autotune
 
-        def boom():
+        def boom(_path=None):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(autotune, "load_config", boom)
@@ -268,8 +268,10 @@ class TestDreamingLoop:
             def __init__(self, eff: float):
                 self.context_efficiency = eff
 
-        monkeypatch.setattr(autotune, "load_config", lambda: {"w_r": 0.2, "w_f": 0.2, "w_s": 0.3, "w_e": 0.3})
-        monkeypatch.setattr(autotune, "save_config", lambda _cfg: None)
+        monkeypatch.setattr(autotune, "load_config", lambda _path=None: {"w_r": 0.2, "w_f": 0.2, "w_s": 0.3, "w_e": 0.3})
+        monkeypatch.setattr(
+            autotune, "save_config", lambda _cfg, _path=None: None
+        )
         monkeypatch.setattr(autotune, "load_cases", lambda: [{"q": "x", "a": "y"}])
         monkeypatch.setattr(autotune, "evaluate", lambda _cfg, _cases, time_budget=None: DummyEval(0.5))
 
@@ -349,6 +351,60 @@ class TestEvolutionDaemon:
         assert "llm_rejections" in stats
         assert "budget" in stats
         assert "running" in stats
+
+    def test_dreamed_runtime_weights_update_archetype(self, monkeypatch):
+        import entroly.autotune as autotune
+
+        daemon, _, _ = self._make_daemon()
+
+        class Dreaming:
+            @staticmethod
+            def should_dream():
+                return True
+
+            @staticmethod
+            def run_dream_cycle():
+                return {"status": "completed", "improvements": 1}
+
+        class Archetype:
+            updated = None
+
+            @staticmethod
+            def current_weights():
+                return {
+                    "w_recency": 0.25,
+                    "w_frequency": 0.25,
+                    "w_semantic": 0.25,
+                    "w_entropy": 0.25,
+                }
+
+            def update_weights(self, weights):
+                self.updated = weights
+
+        archetype = Archetype()
+        daemon._dreaming = Dreaming()
+        daemon._archetype = archetype
+        daemon._federation = None
+        monkeypatch.setattr(
+            autotune,
+            "load_config",
+            lambda: {
+                "weight_recency": 0.40,
+                "weight_frequency": 0.20,
+                "weight_semantic_sim": 0.30,
+                "weight_entropy": 0.10,
+            },
+        )
+
+        result = daemon.run_once()
+
+        assert result["archetype_updated"] is True
+        assert archetype.updated == {
+            "w_recency": 0.40,
+            "w_frequency": 0.20,
+            "w_semantic": 0.30,
+            "w_entropy": 0.10,
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════════

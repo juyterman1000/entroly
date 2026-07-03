@@ -641,6 +641,7 @@ def cmd_autotune(args):
         print(f"  {C.GRAY}= 0.50·recall + 0.25·precision + 0.25·efficiency on bench/cases.json{C.RESET}")
         print(f"  {C.GRAY}Config saved to bench/tuning_config.json{C.RESET}")
         print(f"  {C.GRAY}To undo: entroly autotune --rollback{C.RESET}\n")
+        return 0
     except ImportError:
         # The bench/ harness (autotune.py, cases.json) is a development tool and
         # is NOT shipped in the published pip/npm package — so there is no script
@@ -652,6 +653,10 @@ def cmd_autotune(args):
             f"harness is not included in the published package; clone the repository "
             f"and run autotune from a source checkout."
         )
+        return 1
+    except Exception as exc:
+        logging.getLogger("entroly").debug("autotune command failed", exc_info=True)
+        print(f"  {C.RED}Autotune failed:{C.RESET} {exc}")
         return 1
 
 

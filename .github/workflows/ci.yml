@@ -198,6 +198,9 @@ jobs:
       - name: Run functional test
         run: .venv/bin/python tests/functional_test.py
 
+      - name: Run production edge-case test
+        run: .venv/bin/python tests/test_production_e2e.py
+
       - name: Run Python tests
         run: |
           .venv/bin/pip install pytest pytest-timeout --timeout 120 --retries 5
