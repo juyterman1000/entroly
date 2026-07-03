@@ -297,25 +297,40 @@ def test_base_ranked_localization_skips_unused_corpus_tokenization(monkeypatch):
     assert tokenized == []
 
 
-def test_optimize_context_applies_engine_s6_postpass(monkeypatch):
-    calls = []
+def test_optimize_context_applies_engine_s6_once_inside_qccr(monkeypatch):
+    file_calls = []
+    fragment_calls = []
+
+    def fake_localize_files(files, query, *, k=50, base_ranked=None):
+        file_calls.append((query, len(files), k))
+        return list(base_ranked or files)[:k]
 
     def fake_localize_fragments(fragments, query, *, k=None):
-        calls.append((query, len(fragments), k))
+        fragment_calls.append((query, len(fragments), k))
         return list(reversed(fragments))
 
+    monkeypatch.setattr("entroly.file_localizer.localize_files", fake_localize_files)
     monkeypatch.setattr(
         "entroly.file_localizer.localize_fragments",
         fake_localize_fragments,
     )
 
     engine = EntrolyEngine()
-    engine.ingest_fragment("def a(): return 1", "a.py", 8)
-    engine.ingest_fragment("def b(): return 2", "b.py", 8)
+    engine.ingest_fragment(
+        "def authentication_handler(): return 'authenticated'",
+        "auth.py",
+        12,
+    )
+    engine.ingest_fragment("def payment_handler(): return 'paid'", "payment.py", 10)
 
-    result = engine.optimize_context(token_budget=1000, query="fix a")
+    result = engine.optimize_context(
+        token_budget=1000,
+        query="fix authentication handler",
+    )
 
-    assert calls, "optimize_context did not invoke engine_s6 post-pass"
+    assert result.get("selector") == "qccr"
+    assert file_calls, "QCCR did not invoke the engine_s6 file rerank"
+    assert fragment_calls == [], "QCCR must not repeat localization after selection"
     selected = result.get("selected_fragments") or result.get("selected") or []
     assert len(selected) >= 2
     assert result.get("selected") == result.get("selected_fragments")
