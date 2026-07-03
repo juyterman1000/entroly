@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import itertools
 import random
+from dataclasses import dataclass
 
 import pytest
 
@@ -52,6 +53,19 @@ class Frag:
         self.entropy_score = ent
         self.token_count = tok
         self.is_pinned = pinned
+
+
+@dataclass
+class OversizedFrag:
+    fragment_id: str
+    content: str
+    token_count: int
+    source: str = "oversized.py"
+    recency_score: float = 0.8
+    frequency_score: float = 0.5
+    semantic_score: float = 0.8
+    entropy_score: float = 0.6
+    is_pinned: bool = False
 
 
 def _val(frags) -> float:
@@ -117,6 +131,18 @@ def test_adversarial_guarantee(name, frags, budget):
         f"Python fallback does not honour the (1-1/e) guarantee "
         f"entroly advertises. Fix: Khuller–Moss–Naor singleton champion."
     )
+
+
+def test_oversized_python_fallback_returns_budget_excerpt():
+    frag = OversizedFrag("huge", "x = 1\n" * 5000, 5000)
+
+    sel, stats = _selected([frag], 128)
+
+    assert len(sel) == 1
+    assert sel[0].fragment_id == "huge:excerpt"
+    assert sel[0].token_count == 128
+    assert sum(f.token_count for f in sel) <= 128
+    assert stats["method"] == "greedy_python+oversize_excerpt"
 
 
 def test_randomized_contract():

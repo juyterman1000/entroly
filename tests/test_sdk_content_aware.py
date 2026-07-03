@@ -121,3 +121,46 @@ def test_compress_messages_caps_budget_for_named_model(monkeypatch):
     assert out[-1] == messages[-1]
     assert len(out[0]["content"]) < len(messages[0]["content"])
     assert sum(len(message["content"]) // 4 for message in out) <= 800
+
+
+def test_compress_messages_compresses_huge_recent_context_to_budget():
+    messages = [
+        {"role": "system", "content": "system constraints"},
+        {"role": "user", "content": "export function traceWorker() { return 'ok'; }\n" * 600},
+        {"role": "assistant", "content": "I can inspect that context."},
+        {"role": "user", "content": "What does traceWorker do?"},
+    ]
+
+    out = sdk.compress_messages(messages, budget=500, preserve_last_n=4, distill=False)
+
+    assert out[-1] == messages[-1]
+    assert sum(len(message["content"]) // 4 for message in out) <= 500
+    assert len(out[1]["content"]) < len(messages[1]["content"])
+
+
+def test_universal_compress_code_uses_code_path():
+    from entroly.universal_compress import universal_compress
+
+    content = (
+        "export type TraceRecord = { id: string; name: string };\n"
+        "export function normalizeTrace(trace: TraceRecord): TraceRecord { return trace; }\n"
+    ) * 200
+
+    out, ctype, savings = universal_compress(content, 0.3, "code")
+
+    assert ctype == "code"
+    assert out.strip()
+    assert len(out) < len(content) * 0.6
+    assert savings > 0.4
+
+
+def test_punctuation_light_prose_does_not_noop():
+    content = " ".join(
+        ["important architecture compression cli mcp first user bug"] * 800
+    )
+
+    out = sdk.compress(content, content_type="text", target_ratio=0.1)
+
+    assert out.strip()
+    assert len(out) < len(content) * 0.5
+    assert out != content

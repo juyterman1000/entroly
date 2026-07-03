@@ -36,11 +36,46 @@ def test_nested_pyproject_exposes_memory_entrypoint() -> None:
     scripts = _read_project_scripts("entroly/pyproject.toml")
 
     assert scripts["entroly-memory"] == "entroly.memory_cli:main"
+    assert scripts["entroly-compression-mcp"] == "entroly.compression_mcp:main"
 
 
 def test_root_pyproject_defines_documented_full_extra() -> None:
     text = Path("pyproject.toml").read_text(encoding="utf-8")
     full_section = text.split("full = [", 1)[1].split("]", 1)[0]
 
-    for dependency in ("cryptography", "httpx", "starlette", "uvicorn"):
+    for dependency in ("cryptography", "entroly-core", "httpx", "starlette", "uvicorn"):
         assert dependency in full_section
+
+
+def test_root_pyproject_keeps_native_engine_optional() -> None:
+    text = Path("pyproject.toml").read_text(encoding="utf-8")
+    hard_deps = text.split("dependencies = [", 1)[1].split("]", 1)[0]
+    native_extra = text.split("native = [", 1)[1].split("]", 1)[0]
+
+    assert "mcp" in hard_deps
+    assert "entroly-core" not in hard_deps
+    assert "entroly-core" in native_extra
+
+
+def test_root_pyproject_defines_test_extra() -> None:
+    text = Path("pyproject.toml").read_text(encoding="utf-8")
+    test_section = text.split("test = [", 1)[1].split("]", 1)[0]
+
+    assert "pytest" in test_section
+
+
+def test_nested_pyproject_dependency_shape_matches_root() -> None:
+    root = Path("pyproject.toml").read_text(encoding="utf-8")
+    nested = Path("entroly/pyproject.toml").read_text(encoding="utf-8")
+
+    for text in (root, nested):
+        hard_deps = text.split("dependencies = [", 1)[1].split("]", 1)[0]
+        native_extra = text.split("native = [", 1)[1].split("]", 1)[0]
+        full_extra = text.split("full = [", 1)[1].split("]", 1)[0]
+        test_extra = text.split("test = [", 1)[1].split("]", 1)[0]
+
+        assert "mcp" in hard_deps
+        assert "entroly-core" not in hard_deps
+        assert "entroly-core" in native_extra
+        assert "entroly-core" in full_extra
+        assert "pytest" in test_extra

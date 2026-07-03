@@ -42,7 +42,6 @@ Compress context, keep provider caches hot, and verify every answer with a <b>$0
 <p align="center">
   <a href="#get-started-60-seconds"><b>Get started</b></a> ·
   <a href="#proof"><b>Proof</b></a> ·
-  <a href="docs/memory-ecosystem.md"><b>Memory OS</b></a> ·
   <a href="#works-with-your-stack"><b>Integrations</b></a> ·
   <a href="#whats-inside"><b>What's inside</b></a> ·
   <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
@@ -68,9 +67,8 @@ Entroly is an auditable context control plane for AI agents. It decides what con
 - **Route** - sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
 - **Cache-align** - keeps the injected prefix byte-stable so provider prefix caches can keep hitting where terms and API shape allow it.
 - **Learn** - improves which files it picks for *your* workflow from local feedback. No embeddings API, no training job.
-- **Memory OS** - gives agents local working/episodic/semantic memory with budget-aware recall, decay, durable persistence, safety scanning, and selected/omitted receipts.
 
-Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in as an **MCP server**, use **MemoryOS**, or import the **library**.
+Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in as an **MCP server**, or import the **library**.
 
 ---
 
@@ -83,7 +81,6 @@ your agent  ──►  Entroly (local)  ──►  LLM provider
                  ├─ select under budget  (knapsack, reversible)
                  ├─ emit receipt         (included, omitted, risks)
                  ├─ cache-align prefix    (keep provider cache hot)
-                 ├─ recall local memory   (working / episodic / semantic)
                  └─ verify the reply      (WITNESS hallucination guard)
 ```
 
@@ -129,15 +126,7 @@ entroly perf            # local no-LLM savings + optimizer latency
 entroly verify-claims   # runs the packaged self-test, writes a JSON report
 ```
 
-**5. Or try MemoryOS directly:**
-
-```bash
-entroly-memory remember "Login timeout was fixed in auth/session.py" --agent coder --importance 0.9
-entroly-memory recall "why is login timing out again?" --agent coder --budget 1200
-entroly-memory stats
-```
-
-> Local-first: your code is indexed and selected on-device, never sent anywhere for analysis. MemoryOS is local, dependency-free, and blocks/redacts common secrets, PII, and prompt-injection patterns before storage. Apache-2.0. No outbound analytics by default.
+> Local-first: your code is indexed and selected on-device, never sent anywhere for analysis. Apache-2.0. No outbound analytics by default.
 
 ---
 
@@ -192,14 +181,6 @@ Every number below is reproducible and backed by a committed JSON artifact you c
 
 <sub>*pass-through: context already fit the budget, so Entroly left it unchanged. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`). Full table + MMLU/TruthfulQA in [DETAILS](docs/DETAILS.md).</sub>
 
-**MemoryOS** — local, deterministic, no API:
-
-```bash
-python benchmarks/memory_stress_test.py --json
-```
-
-The stress test gates recall precision, stale-memory suppression, secret blocking/redaction, over-budget omission, durable persistence, and capacity eviction. It is also wired into CI as the **MemoryOS Production Gate**.
-
 **Hallucination guard** — [HaluEval-QA](https://github.com/RUCAIBox/HaluEval), standard protocol, GPT-judge baseline on identical data:
 
 | System | Accuracy | AUROC | Cost / latency |
@@ -214,9 +195,7 @@ The stress test gates recall precision, stale-memory suppression, secret blockin
 
 ## Works with your stack
 
-`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
-
-For a manually configured Gemini API client, use `GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta`.
+`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a copy-paste endpoint hint.
 
 **Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
 
@@ -235,15 +214,11 @@ Any tool that supports a custom `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` works v
 **As a library** (LangChain, LlamaIndex, your own code):
 
 ```python
-from entroly import MemoryOS, compress, compress_messages, optimize
+from entroly import compress, compress_messages, optimize
 
 compressed = compress(api_response, budget=2000)          # query-agnostic
 messages   = compress_messages(messages, budget=30000)    # whole conversation
 context    = optimize(fragments, budget=8000, query="fix the login bug")  # task-conditioned
-
-mem = MemoryOS()
-mem.remember("Auth timeout was fixed in auth/session.py", agent_id="coder", importance=0.9)
-ctx = mem.recall("why is login timing out again?", agent_id="coder", budget=1200)
 ```
 
 **In CI** — fail the build if a prompt blows the token budget:
@@ -260,7 +235,6 @@ ctx = mem.recall("why is login timing out again?", agent_id="coder", budget=1200
 - Large repos where the agent only sees a few files at a time
 - Chatty, multi-turn agents (cache alignment compounds the savings)
 - Anywhere you want answers checked against evidence before you trust them
-- Agent workflows that need local durable memory, stale-memory decay, and safety checks before memory storage
 - Teams trying to cut a real, growing AI bill
 
 **Skip it (it'll just pass through)**
@@ -271,10 +245,10 @@ ctx = mem.recall("why is login timing out again?", agent_id="coder", budget=1200
 
 ## What's inside
 
-Most people install Entroly for input-token compression. It actually ships **20 local cost-saving mechanisms** across input, inference, output, verification, memory, and learning — each one readable in the source with a committed benchmark where applicable.
+Most people install Entroly for input-token compression. It actually ships **19 local cost-saving mechanisms** across input, inference, output, verification, and learning — each one readable in the source with a committed benchmark where applicable.
 
 <details>
-<summary><b>The 20 levers (and the file that implements each)</b></summary>
+<summary><b>The 19 levers (and the file that implements each)</b></summary>
 
 | # | Lever | Win | Source |
 |---|---|---|---|
@@ -297,7 +271,6 @@ Most people install Entroly for input-token compression. It actually ships **20 
 | 17 | Semantic Resolution Protocol | 40–70% fewer tokens on file reads | `semantic_resolution.py` |
 | 18 | Adversarial Context Firewall | blocks prompt-injection / poisoning | `context_firewall.py` |
 | 19 | Witness-Verified Handoff | filters hallucinations between agents | `verified_handoff.py` |
-| 20 | MemoryOS | local budget-aware recall, decay, persistence, safety scan, receipts | `memory.py`, `memory_cli.py` |
 
 Most levers are **multiplicative**: input compression × cache alignment × cheaper-model routing × output distillation can leave well under 1% of the original input-token spend on the bill. Per-lever contribution shows up in the dashboard's Cost Intelligence panel. Full math and proofs in [docs/DETAILS.md](docs/DETAILS.md).
 </details>
@@ -347,7 +320,7 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 | Quality loss | **None measured** | 2–5% | Variable | High |
 | Needs embeddings API | **No** | Varies | Yes | No |
 | Reversible | **Yes** | Varies | Yes | No |
-| Learns over time | **Yes (PRISM + MemoryOS)** | No | No | No |
+| Learns over time | **Yes (PRISM)** | No | No | No |
 | Verifies the answer | **Yes (WITNESS)** | No | No | No |
 
 > Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
@@ -375,7 +348,6 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 | `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
 | `entroly perf` | Local no-LLM savings and optimizer latency |
 | `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
-| `entroly-memory` | MemoryOS: remember, recall, stats, safety scan, forget |
 | `entroly health` | Codebase health grade (A–F) |
 | `entroly cache stats` | Persistent cross-session cache stats |
 | `entroly ravs report` | Model-routing cost-savings report |
@@ -384,7 +356,6 @@ Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail clo
 
 </details>
 
-- **[Memory OS](docs/memory-ecosystem.md)** — local budget-aware recall, safety scanning, persistence, receipts, CLI, and benchmark.
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
 - **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
 - **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, and what it does not guarantee.

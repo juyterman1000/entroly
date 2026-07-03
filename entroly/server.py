@@ -338,6 +338,30 @@ def _py_knapsack_optimize(
         total_relevance = pinned_relevance + best_single_rel
         method = "greedy_python+kmn_singleton"
 
+    # If every candidate is larger than the budget, returning an empty
+    # selection makes downstream CLI/proxy metrics claim "100% savings" while
+    # giving the model no context. The Python fallback must degrade like a
+    # compressor, not a filter: keep a budget-sized excerpt of the best
+    # relevance candidate so first-run installs without the Rust wheel still
+    # produce useful context.
+    if not selected and candidates and token_budget > 0:
+        from dataclasses import replace as _dc_replace
+
+        best_frag, best_rel, _ = max(scored, key=lambda x: x[1])
+        excerpt_tokens = max(1, min(int(token_budget), int(best_frag.token_count or token_budget)))
+        excerpt_chars = max(256, excerpt_tokens * 4)
+        selected = [
+            _dc_replace(
+                best_frag,
+                fragment_id=f"{best_frag.fragment_id}:excerpt",
+                content=best_frag.content[:excerpt_chars],
+                token_count=excerpt_tokens,
+            )
+        ]
+        used_tokens = excerpt_tokens
+        total_relevance = best_rel
+        method = "greedy_python+oversize_excerpt"
+
     stats = {
         "total_tokens": used_tokens,
         "total_relevance": round(total_relevance, 4),
@@ -2030,7 +2054,7 @@ def create_mcp_server(
         logger.error(
             "MCP SDK not installed. Install with: pip install mcp"
         )
-        raise
+        raise RuntimeError("MCP SDK not installed. Install with: pip install mcp") from None
 
     mcp = FastMCP(
         "entroly",
@@ -4852,7 +4876,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.41"
+        _version = "1.0.42"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

@@ -226,6 +226,35 @@ def test_upstream_probe_is_opt_in(monkeypatch):
     assert cli._should_check_upstream() is True
 
 
+def test_resolve_entroly_dir_falls_back_when_home_unwritable(tmp_path, monkeypatch):
+    bad_home = tmp_path / "not-a-dir"
+    bad_home.write_text("blocks mkdir", encoding="utf-8")
+    monkeypatch.delenv("ENTROLY_DIR", raising=False)
+    monkeypatch.setattr(cli.Path, "home", lambda: bad_home)
+
+    resolved = cli._resolve_entroly_dir()
+
+    assert resolved != bad_home / ".entroly"
+    assert resolved.exists()
+
+
+def test_wrap_claude_subscription_dry_run_is_success(monkeypatch, capsys):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "_check_codebase", lambda: True)
+
+    args = SimpleNamespace(
+        agent="claude",
+        agent_args=[],
+        port=None,
+        dry_run=True,
+        force=False,
+    )
+
+    assert cli.cmd_wrap(args) == 0
+    out = capsys.readouterr().out
+    assert "claude mcp add entroly -- entroly" in out
+
+
 def test_telemetry_command_describes_local_preference(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
     cli.cmd_telemetry(SimpleNamespace(action="on"))
