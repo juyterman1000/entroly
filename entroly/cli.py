@@ -2155,6 +2155,8 @@ def cmd_wrap(args):
         print(f"    {C.CYAN}entroly simulate{C.RESET}\n")
         print(f"  {C.GRAY}Prefer proxy mode? Set a pay-as-you-go key: "
               f"`export {key_env}=...`, then re-run.{C.RESET}\n")
+        if dry_run:
+            return 0
         return 1
 
     if dry_run:

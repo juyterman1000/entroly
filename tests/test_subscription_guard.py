@@ -88,14 +88,14 @@ def test_no_auth_is_not_blocked(proxy):
 
 
 # ── CLI pre-flight (friendly fast-fail before launching the agent) ───────────
-def test_cli_wrap_blocks_without_api_key():
+def test_cli_wrap_blocks_launch_without_api_key():
     """`entroly wrap claude` with no ANTHROPIC_API_KEY routes the user to MCP/
     simulate instead of launching a doomed proxy session."""
     env = os.environ.copy()
     env.pop("ANTHROPIC_API_KEY", None)
     env["PYTHONIOENCODING"] = "utf-8"
     proc = subprocess.run(
-        [sys.executable, "-m", "entroly", "wrap", "claude", "--dry-run"],
+        [sys.executable, "-m", "entroly", "wrap", "claude"],
         capture_output=True, text=True, env=env, timeout=60,
         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     )
