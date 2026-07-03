@@ -1,395 +1,153 @@
-<p align="center">
-  <a href="docs/i18n/README.zh-CN.md">中文</a> •
-  <a href="docs/i18n/README.ja.md">日本語</a> •
-  <a href="docs/i18n/README.ko.md">한국어</a> •
-  <a href="docs/i18n/README.pt-BR.md">Português</a> •
-  <a href="docs/i18n/README.es.md">Español</a> •
-  <a href="docs/i18n/README.de.md">Deutsch</a> •
-  <a href="docs/i18n/README.fr.md">Français</a> •
-  <a href="docs/i18n/README.ru.md">Русский</a> •
-  <a href="docs/i18n/README.hi.md">हिन्दी</a> •
-  <a href="docs/i18n/README.tr.md">Türkçe</a>
-</p>
+# MCP Registry
 
-<p align="center">
-  <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
-</p>
+The MCP registry provides MCP clients with a list of MCP servers, like an app store for MCP servers.
 
-<p align="center"><b>Cut your Claude / OpenAI / Gemini bill 70–95% on AI coding.</b><br>
-Compress context, keep provider caches hot, and verify every answer with a <b>$0 hallucination guard</b>.</p>
+[**📤 Publish my MCP server**](docs/modelcontextprotocol-io/quickstart.mdx) | [**⚡️ Live API docs**](https://registry.modelcontextprotocol.io/docs) | [**👀 Ecosystem vision**](docs/design/ecosystem-vision.md) | 📖 **[Full documentation](./docs)**
 
-<p align="center">
-  <sub>Drop-in for <b>Cursor, Claude Code, Codex, Aider + 34 more</b> and custom providers — 30s, no code changes.</sub>
-</p>
+## Development Status
 
-<p align="center">
-  <sub>Auditable context control plane · every answer gets a receipt: what was used, what was omitted, why, and the risks that remain · local-first · Rust + WASM · reversible · savings measured on real workloads</sub>
-</p>
+**2025-10-24 update**: The Registry API has entered an **API freeze (v0.1)** 🎉. For the next month or more, the API will remain stable with no breaking changes, allowing integrators to confidently implement support. This freeze applies to v0.1 while development continues on v0. We'll use this period to validate the API in real-world integrations and gather feedback to shape v1 for general availability. Thank you to everyone for your contributions and patience—your involvement has been key to getting us here!
 
-<p align="center">
-  <img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="PyPI">
-  <img src="https://img.shields.io/npm/v/entroly-wasm?color=red&label=npm" alt="npm">
-  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
-  <img src="https://img.shields.io/badge/Token_Savings-tested_70--95%25-brightgreen" alt="Token savings">
-  <img src="https://img.shields.io/badge/Hallucination-HaluEval--QA_0.844_AUROC_·_%240-blueviolet" alt="Hallucination guard">
-  <img src="https://img.shields.io/badge/Engine-Rust_+_WASM-orange?logo=rust" alt="Rust + WASM">
-</p>
+**2025-09-08 update**: The registry has launched in preview 🎉 ([announcement blog post](https://blog.modelcontextprotocol.io/posts/2025-09-08-mcp-registry-preview/)). While the system is now more stable, this is still a preview release and breaking changes or data resets may occur. A general availability (GA) release will follow later. We'd love your feedback in [GitHub discussions](https://github.com/modelcontextprotocol/registry/discussions/new?category=ideas) or in the [#registry-dev Discord](https://discord.com/channels/1358869848138059966/1369487942862504016) ([joining details here](https://modelcontextprotocol.io/community/communication)).
 
-<p align="center">
-  <code>pip install entroly && cd /your/repo && entroly go</code>
-</p>
+Current key maintainers:
+- **Adam Jones** (Anthropic) [@domdomegg](https://github.com/domdomegg)  
+- **Tadas Antanavicius** (PulseMCP) [@tadasant](https://github.com/tadasant)
+- **Toby Padilla** (GitHub) [@toby](https://github.com/toby)
+- **Radoslav (Rado) Dimitrov** (Stacklok) [@rdimitrov](https://github.com/rdimitrov)
 
-<p align="center">
-  <a href="#get-started-60-seconds"><b>Get started</b></a> ·
-  <a href="#proof"><b>Proof</b></a> ·
-  <a href="docs/memory-ecosystem.md"><b>Memory OS</b></a> ·
-  <a href="#works-with-your-stack"><b>Integrations</b></a> ·
-  <a href="#whats-inside"><b>What's inside</b></a> ·
-  <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
-  <a href="docs/for-teams.md"><b>For teams</b></a> ·
-  <a href="docs/limitations.md"><b>Limitations</b></a>
-</p>
+## Contributing
 
-<p align="center">
-  <a href="https://huggingface.co/spaces/entroly/entroly-context-compression"><img src="https://img.shields.io/badge/▶_Try_it_live-no_install-FF4B4B?logo=huggingface&logoColor=white" alt="Live demo"></a>
-  &nbsp;
-  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><img src="https://img.shields.io/badge/See_the_dashboard-live-2EA44F" alt="Dashboard"></a>
-</p>
+We use multiple channels for collaboration - see [modelcontextprotocol.io/community/communication](https://modelcontextprotocol.io/community/communication).
 
----
+Often (but not always) ideas flow through this pipeline:
 
-## What it does
+- **[Discord](https://modelcontextprotocol.io/community/communication)** - Real-time community discussions
+- **[Discussions](https://github.com/modelcontextprotocol/registry/discussions)** - Propose and discuss product/technical requirements
+- **[Issues](https://github.com/modelcontextprotocol/registry/issues)** - Track well-scoped technical work  
+- **[Pull Requests](https://github.com/modelcontextprotocol/registry/pulls)** - Contribute work towards issues
 
-Entroly is an auditable context control plane for AI agents. It decides what context to send, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.
+### Quick start:
 
-- **Receipts** - every selection run can explain selected chunks, omitted nearby evidence, dependency links, fingerprints, token ratio, and residual risks.
-- **Select** - ranks your repo or document set, then sends the answer-relevant context under a token budget.
-- **Verify** - WITNESS checks the model's answer against the evidence it was given and flags unsupported claims. $0, ~3 ms, no extra API call.
-- **Route** - sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
-- **Cache-align** - keeps the injected prefix byte-stable so provider prefix caches can keep hitting where terms and API shape allow it.
-- **Learn** - improves which files it picks for *your* workflow from local feedback. No embeddings API, no training job.
-- **Memory OS** - gives agents local working/episodic/semantic memory with budget-aware recall, decay, durable persistence, safety scanning, and selected/omitted receipts.
+#### Pre-requisites
 
-Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in as an **MCP server**, use **MemoryOS**, or import the **library**.
+- **Docker**
+- **Go 1.24.x**
+- **ko** - Container image builder for Go ([installation instructions](https://ko.build/install/))
+- **golangci-lint v2.4.0**
 
----
-
-## How it works (30 seconds)
-
-```
-your agent  ──►  Entroly (local)  ──►  LLM provider
-                 │
-                 ├─ rank the repo        (BM25 + entropy + dep-graph)
-                 ├─ select under budget  (knapsack, reversible)
-                 ├─ emit receipt         (included, omitted, risks)
-                 ├─ cache-align prefix    (keep provider cache hot)
-                 ├─ recall local memory   (working / episodic / semantic)
-                 └─ verify the reply      (WITNESS hallucination guard)
-```
-
-Critical files go in full. Supporting files become signatures. Everything else becomes a reference you can expand on demand — so the model gets a **broader** view of your codebase in a **smaller** prompt. Nothing is lost: every compressed fragment is fully retrievable.
-
----
-
-## Get started (60 seconds)
+#### Running the server
 
 ```bash
-pip install entroly        # or: npm i -g entroly  ·  brew install juyterman1000/entroly/entroly
+# Start full development environment
+make dev-compose
 ```
 
-**1. One command — auto-detects your IDE, wraps your agent, opens the dashboard:**
+This starts the registry at [`localhost:8080`](http://localhost:8080) with PostgreSQL. The database uses ephemeral storage and is reset each time you restart the containers, ensuring a clean state for development and testing.
 
-```bash
-cd /your/repo && entroly go
-```
+**Note:** The registry uses [ko](https://ko.build) to build container images. The `make dev-compose` command automatically builds the registry image with ko and loads it into your local Docker daemon before starting the services.
 
-**2. Or wrap a specific agent:**
+By default, the registry seeds from the production API with a filtered subset of servers (to keep startup fast). This ensures your local environment mirrors production behavior and all seed data passes validation. For offline development you can seed from a file without validation with `MCP_REGISTRY_SEED_FROM=data/seed.json MCP_REGISTRY_ENABLE_REGISTRY_VALIDATION=false make dev-compose`.
 
-```bash
-entroly wrap claude     # Claude Code
-entroly wrap cursor     # Cursor
-entroly wrap codex      # Codex CLI
-entroly wrap aider      # Aider
-```
-
-**3. Or run the proxy — zero code changes, any language:**
-
-```bash
-entroly proxy                                   # http://localhost:9377
-ANTHROPIC_BASE_URL=http://localhost:9377     your-app
-OPENAI_BASE_URL=http://localhost:9377/v1     your-app
-```
-
-**4. Or measure it on your own repo first:**
-
-```bash
-entroly demo            # before/after token + cost estimate
-entroly simulate        # local no-LLM savings estimate
-entroly perf            # local no-LLM savings + optimizer latency
-entroly verify-claims   # runs the packaged self-test, writes a JSON report
-```
-
-**5. Or try MemoryOS directly:**
-
-```bash
-entroly-memory remember "Login timeout was fixed in auth/session.py" --agent coder --importance 0.9
-entroly-memory recall "why is login timing out again?" --agent coder --budget 1200
-entroly-memory stats
-```
-
-> Local-first: your code is indexed and selected on-device, never sent anywhere for analysis. MemoryOS is local, dependency-free, and blocks/redacts common secrets, PII, and prompt-injection patterns before storage. Apache-2.0. No outbound analytics by default.
-
----
-
-## Context Receipts
-
-Entroly gives every AI answer a context receipt: what was used, what was omitted, why, and what risks remain. This is built for hard multi-document work such as contracts, policies, addenda, code reviews, and audit evidence where "top-k chunks" is not enough.
-
-```bash
-entroly ingest ./docs
-entroly select --query "Does this contract have a change-of-control clause?" --budget 8000
-entroly receipt .entroly/receipts/cr_example.json
-entroly explain --why-omitted chk_example --receipt .entroly/receipts/cr_example.json
-```
-
-The receipt JSON includes selected chunks, omitted relevant chunks, ranking reasons, dependency links, source fingerprints, token ratio, warnings, and a reproducibility hash. The Markdown report is designed for human review before a compressed context is trusted.
-
-Implementation notes:
-
-- Rust core (`entroly-core/src/context_receipts.rs`) handles deterministic ingestion, BM25-style ranking, dependency scans, selection, and hashes when the native wheel is available.
-- Python control plane (`entroly/context_receipts/`) provides CLI wiring and a pure-Python fallback for source checkouts.
-- The semantic/vector scorer and reranker are explicit extension points; the local MVP ships with lexical scoring and dependency heuristics, not a legal-accuracy guarantee.
-
-Examples:
-
-- [Example receipt JSON](docs/examples/context_receipt.json)
-- [Example Markdown report](docs/examples/context_receipt.md)
-- [Limitations](docs/limitations.md#context-receipts)
-
----
-
-## Proof
-
-Every number below is reproducible and backed by a committed JSON artifact you can audit — not a screenshot.
-
-**Token savings** (this repo, `entroly verify-claims`, local, no API):
-
-| Budget | Token reduction |
-|---|---|
-| 8K  | **99.1%** |
-| 32K | **96.7%** |
-| average across workloads | **87.0%** |
-
-**Accuracy retention** — does compression hurt answers? Measured with `gpt-4o-mini`; intervals are Wilson 95% CIs. Each row links its raw result file.
-
-| Benchmark | n | Budget | Baseline | With Entroly | Retention | Token savings |
-|---|---|---|---|---|---|---|
-| [NeedleInAHaystack](benchmarks/results/needle_accuracy.json) | 20 | 2K | 100% | 100% | **100%** | **99.5%** |
-| [LongBench (HotpotQA)](benchmarks/results/longbench_accuracy.json) | 50 | 2K | 64% | 66% | **103%** | **85.3%** |
-| [Berkeley Function Calling](benchmarks/results/bfcl_accuracy.json) | 50 | 500 | 100% | 100% | **100%** | **79.3%** |
-| [SQuAD 2.0](benchmarks/results/squad_accuracy.json) | 50 | 100 | 80% | 72% | **90%** | **43.8%** |
-| [GSM8K](benchmarks/results/gsm8k_accuracy.json) | 20 | 50K | 85% | 85% | **100%** | pass-through* |
-
-<sub>*pass-through: context already fit the budget, so Entroly left it unchanged. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`). Full table + MMLU/TruthfulQA in [DETAILS](docs/DETAILS.md).</sub>
-
-**MemoryOS** — local, deterministic, no API:
-
-```bash
-python benchmarks/memory_stress_test.py --json
-```
-
-The stress test gates recall precision, stale-memory suppression, secret blocking/redaction, over-budget omission, durable persistence, and capacity eviction. It is also wired into CI as the **MemoryOS Production Gate**.
-
-**Hallucination guard** — [HaluEval-QA](https://github.com/RUCAIBox/HaluEval), standard protocol, GPT-judge baseline on identical data:
-
-| System | Accuracy | AUROC | Cost / latency |
-|---|---|---|---|
-| **WITNESS + STAVE** (default) | **85.8%** | **0.844** | **$0, ~3 ms/decision** |
-| gpt-4o-mini (grounded judge) | 86.3% | — | LLM call |
-| gpt-3.5-turbo (HaluEval paper) | 62.6% | — | LLM call |
-
-<sub>$0, zero-network verifier that statistically ties a strong LLM judge. Reproduce: `python benchmarks/halueval_qa_faithful.py`. [Proof JSON](benchmarks/results/stave_benchmark.json).</sub>
-
----
-
-## Works with your stack
-
-`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
-
-For a manually configured Gemini API client, use `GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta`.
-
-**Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
+The setup can be configured with environment variables in [docker-compose.yml](./docker-compose.yml) - see [.env.example](./.env.example) for a reference.
 
 <details>
-<summary><b>Full agent list (38 targets)</b></summary>
+<summary>Alternative: Running a pre-built Docker image</summary>
 
-| Type | Agents |
-|---|---|
-| **CLI (env-wrap + exec)** | Claude Code, Codex CLI, Aider, Gemini CLI, Qwen Code, OpenCode, Charm CRUSH, Hermes, Pi, Ollama |
-| **MCP IDEs (auto-merge `mcp.json`)** | Cursor, Windsurf, VS Code, Claude Desktop, Claude Code (MCP), Zed |
-| **Copy-paste endpoint** | Cline, Roo Code, Continue, Cody, Amp, Kiro, Qoder, Trae, Antigravity, Amazon Q, Verdent, JetBrains AI, Helix, Tabby, Twinny, Sublime, Emacs, Neovim, Fitten, Tabnine, Supermaven |
-
-Any tool that supports a custom `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` works via the proxy. Run `entroly wrap` (no agent) for the full grouped list. Use wrappers only with tools whose terms permit local proxies / custom endpoints.
-</details>
-
-**As a library** (LangChain, LlamaIndex, your own code):
-
-```python
-from entroly import MemoryOS, compress, compress_messages, optimize
-
-compressed = compress(api_response, budget=2000)          # query-agnostic
-messages   = compress_messages(messages, budget=30000)    # whole conversation
-context    = optimize(fragments, budget=8000, query="fix the login bug")  # task-conditioned
-
-mem = MemoryOS()
-mem.remember("Auth timeout was fixed in auth/session.py", agent_id="coder", importance=0.9)
-ctx = mem.recall("why is login timing out again?", agent_id="coder", budget=1200)
-```
-
-**In CI** — fail the build if a prompt blows the token budget:
-
-```yaml
-- run: pip install entroly && entroly batch --budget 8000 --fail-over-budget
-```
-
----
-
-## When to use it · when to skip
-
-**Great fit**
-- Large repos where the agent only sees a few files at a time
-- Chatty, multi-turn agents (cache alignment compounds the savings)
-- Anywhere you want answers checked against evidence before you trust them
-- Agent workflows that need local durable memory, stale-memory decay, and safety checks before memory storage
-- Teams trying to cut a real, growing AI bill
-
-**Skip it (it'll just pass through)**
-- Tiny repos or short prompts that already fit the budget
-- Judgment-heavy tasks where you want the full flagship model every time
-
----
-
-## What's inside
-
-Most people install Entroly for input-token compression. It actually ships **20 local cost-saving mechanisms** across input, inference, output, verification, memory, and learning — each one readable in the source with a committed benchmark where applicable.
-
-<details>
-<summary><b>The 20 levers (and the file that implements each)</b></summary>
-
-| # | Lever | Win | Source |
-|---|---|---|---|
-| 1 | Context compression (knapsack + 9 compressors + dep-graph) | 39–99% input tokens | `proxy_transform.py`, `qccr.py` |
-| 2 | WITNESS + STAVE hallucination gateway | AUROC 0.844, $0 | `witness.py`, `verifiers/stave.py` |
-| 3 | Cache Aligner | up to 90% off cached calls | `cache_aligner.py` |
-| 4 | Escalation cascade (conformally calibrated) | avoids most flagship calls | `escalation.py` |
-| 5 | Conformal cascade | proven cost/coverage tradeoff | `conformal_cascade.py` |
-| 6 | RAVS Bayesian router | routes easy tasks to cheaper models | `ravs/router.py` |
-| 7 | Fast-path crystallized skills | 100% LLM cost saved on cache hits | `fast_path.py` |
-| 8 | Adaptive compression budget | right-sizes budget per query | `adaptive_budget.py` |
-| 9 | Entropic conversation pruning | flattens history-growth cost | `proxy_transform.py` |
-| 10 | Shell-output compression | 60–95% on tool output | `proxy_transform.py`, `shell_codec.py` |
-| 11 | Response distillation | fewer output tokens billed | `proxy_transform.py` |
-| 12 | Local DeBERTa NLI (opt-in) | $0 offline NLI | `witness.py` |
-| 13 | EICV suppressor | stops bad info propagating | `eicv_suppressor.py` |
-| 14 | PRISM 5D adaptive weights | quality improves with use | `online_learner.py`, `prism.rs` |
-| 15 | Federation (opt-in) | amortized cold-start | `federation.py` |
-| 16 | Entropic Shell Codec | universal tool-output fallback | `shell_codec.py` |
-| 17 | Semantic Resolution Protocol | 40–70% fewer tokens on file reads | `semantic_resolution.py` |
-| 18 | Adversarial Context Firewall | blocks prompt-injection / poisoning | `context_firewall.py` |
-| 19 | Witness-Verified Handoff | filters hallucinations between agents | `verified_handoff.py` |
-| 20 | MemoryOS | local budget-aware recall, decay, persistence, safety scan, receipts | `memory.py`, `memory_cli.py` |
-
-Most levers are **multiplicative**: input compression × cache alignment × cheaper-model routing × output distillation can leave well under 1% of the original input-token spend on the bill. Per-lever contribution shows up in the dashboard's Cost Intelligence panel. Full math and proofs in [docs/DETAILS.md](docs/DETAILS.md).
-</details>
-
-<details>
-<summary><b>Engine & install options</b></summary>
-
-Python is the reference runtime; the Rust core (via PyO3) does the heavy compute at 50–100× Python speed, and the same engine ships to Node via WASM.
+Pre-built Docker images are automatically published to GitHub Container Registry. Note that the image does not bundle PostgreSQL, so you need to run your own and point the registry at it via `MCP_REGISTRY_DATABASE_URL` (see [docker-compose.yml](./docker-compose.yml) for a working example):
 
 ```bash
-pip install entroly            # core: MCP server + Python engine
-pip install entroly[proxy]     # + HTTP proxy
-pip install entroly[native]    # + Rust engine
-pip install entroly[full]      # everything
+# Run latest stable release
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:latest
 
-npm install -g entroly         # WASM runtime, no Python needed
-docker pull ghcr.io/juyterman1000/entroly:latest
+# Run latest from main branch (continuous deployment)
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main
+
+# Run specific release version
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:v1.0.0
+
+# Run development build from main branch
+docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main-20250906-abc123d
 ```
 
-**Single binary, no Python** — a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
-
-```bash
-cd entroly/entroly-core && cargo build --release --bin entroly-rs --features proxy
-./target/release/entroly-rs proxy --upstream https://api.anthropic.com
-```
-</details>
-
----
-
-## WITNESS — check answers before you trust them
-
-```bash
-entroly witness --context-file evidence.txt --output-file answer.txt --mode strict
-entroly proxy --witness strict --witness-profile rag    # suppress unsupported claims inline
-```
-
-Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail closed; `chat`, `summary` warn). Every non-streaming response gets a proof certificate; the dashboard shows flagged claims, evidence snippets, and suppression counts. Optional offline DeBERTa NLI (`ENTROLY_LOCAL_NLI=1`) raises accuracy further at $0.
-
----
-
-## Compared to
-
-| | **Entroly** | Compression tools | Top-K / RAG | Raw truncation |
-|---|---|---|---|---|
-| Approach | Rank → select → compress | Compress whatever's given | Embedding retrieval | Cut off |
-| Token savings | **70–95%** (large repos) | 50–70% | 30–50% | 0% |
-| Quality loss | **None measured** | 2–5% | Variable | High |
-| Needs embeddings API | **No** | Varies | Yes | No |
-| Reversible | **Yes** | Varies | Yes | No |
-| Learns over time | **Yes (PRISM + MemoryOS)** | No | No | No |
-| Verifies the answer | **Yes (WITNESS)** | No | No | No |
-
-> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
-
----
-
-## Docs & community
-
-<details>
-<summary><b>Command reference</b></summary>
-
-| Command | What it does |
-|---|---|
-| `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
-| `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
-| `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
-| `entroly serve` | Start the MCP server |
-| `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
-| `entroly dashboard` | Open the live metrics dashboard |
-| `entroly demo` | Before/after token + cost estimate on your repo |
-| `entroly ingest` | Ingest documents into a local Context Receipt index |
-| `entroly select` | Select context under budget and write a Context Receipt |
-| `entroly receipt` | Render a Context Receipt as a Markdown report |
-| `entroly explain` | Explain why a chunk was selected or omitted |
-| `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
-| `entroly perf` | Local no-LLM savings and optimizer latency |
-| `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
-| `entroly-memory` | MemoryOS: remember, recall, stats, safety scan, forget |
-| `entroly health` | Codebase health grade (A–F) |
-| `entroly cache stats` | Persistent cross-session cache stats |
-| `entroly ravs report` | Model-routing cost-savings report |
-| `entroly witness` | Check an answer against supplied evidence |
-| `entroly verify-claims` | Run the packaged self-test → JSON report |
+**Available tags:** 
+- **Releases**: `latest`, `v1.0.0`, `v1.1.0`, etc.
+- **Continuous**: `main` (latest main branch build)
+- **Development**: `main-<date>-<sha>` (specific commit builds)
 
 </details>
 
-- **[Memory OS](docs/memory-ecosystem.md)** — local budget-aware recall, safety scanning, persistence, receipts, CLI, and benchmark.
-- **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
-- **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
-- **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, and what it does not guarantee.
-- **[Cookbook](cookbook/README.md)** — copy-paste recipes for common workflows.
-- **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
+#### Publishing a server
 
-<p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
-<p align="center"><code>pip install entroly && entroly go</code></p>
+To publish a server, we've built a simple CLI. You can use it with:
+
+```bash
+# Build the latest CLI
+make publisher
+
+# Use it!
+./bin/mcp-publisher --help
+```
+
+See [the publisher guide](./docs/modelcontextprotocol-io/quickstart.mdx) for more details.
+
+#### Other commands
+
+```bash
+# Run lint, unit tests and integration tests
+make check
+```
+
+There are also a few more helpful commands for development. Run `make help` to learn more, or look in [Makefile](./Makefile).
+
+<!--
+For Claude and other AI tools: Always prefer make targets over custom commands where possible.
+-->
+
+## Architecture
+
+### Project Structure
+
+```
+├── cmd/                     # Application entry points
+│   └── publisher/           # Server publishing tool
+├── data/                    # Seed data
+├── deploy/                  # Deployment configuration (Pulumi)
+├── docs/                    # Documentation
+├── internal/                # Private application code
+│   ├── api/                 # HTTP handlers and routing
+│   ├── auth/                # Authentication (GitHub OAuth, JWT, namespace blocking)
+│   ├── config/              # Configuration management
+│   ├── database/            # Data persistence (PostgreSQL)
+│   ├── service/             # Business logic
+│   ├── telemetry/           # Metrics and monitoring
+│   └── validators/          # Input validation
+├── pkg/                     # Public packages
+│   ├── api/                 # API types and structures
+│   │   └── v0/              # Version 0 API types
+│   └── model/               # Data models for server.json
+├── scripts/                 # Development and testing scripts
+├── tests/                   # Integration tests
+└── tools/                   # CLI tools and utilities
+    └── validate-*.sh        # Schema validation tools
+```
+
+### Authentication
+
+Publishing supports multiple authentication methods:
+- **GitHub OAuth** - For publishing by logging into GitHub
+- **GitHub OIDC** - For publishing from GitHub Actions
+- **DNS verification** - For proving ownership of a domain and its subdomains
+- **HTTP verification** - For proving ownership of a domain
+
+The registry validates namespace ownership when publishing. E.g. to publish...:
+- `io.github.domdomegg/my-cool-mcp` you must login to GitHub as `domdomegg`, or be in a GitHub Action on domdomegg's repos
+- `me.adamjones/my-cool-mcp` you must prove ownership of `adamjones.me` via DNS or HTTP challenge
+
+## Community Projects
+
+Check out [community projects](docs/community-projects.md) to explore notable registry-related work created by the community.
+
+## More documentation
+
+See the [documentation](./docs) for more details if your question has not been answered here!

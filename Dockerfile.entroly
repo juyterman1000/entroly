@@ -32,6 +32,8 @@ RUN cd entroly-core && maturin build --release -o /build/wheels/
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────────
 FROM python:3.13-slim
 
+LABEL io.modelcontextprotocol.server.name="io.github.juyterman1000/entroly"
+
 WORKDIR /app
 
 # Install the Rust wheel and runtime deps
