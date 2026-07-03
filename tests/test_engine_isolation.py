@@ -303,3 +303,25 @@ def test_auto_index_size_cap_allows_large_hot_source_files(monkeypatch):
     assert hot_source_cap >= 60 * 1024
     assert generated_cap == auto_index_module.MAX_FILE_BYTES
     assert fixture_cap == auto_index_module.MAX_FILE_BYTES
+
+
+def test_auto_index_excludes_virtualenv_paths_from_first_run():
+    rejected = [
+        ".fresh/Lib/site-packages/pip/__init__.py",
+        "fresh/Lib/site-packages/pip/_internal/cli/main.py",
+        ".venv/lib/python3.12/site-packages/requests/api.py",
+        "venv/Lib/site-packages/pkg_resources/__init__.py",
+        "node_modules/typescript/lib/typescript.js",
+    ]
+    accepted = [
+        "src/app.py",
+        "packages/api/src/index.ts",
+        "README.md",
+    ]
+
+    for rel_path in rejected:
+        assert not auto_index_module._should_index(rel_path)
+        assert auto_index_module._priority_score(rel_path) <= 5
+
+    for rel_path in accepted:
+        assert auto_index_module._should_index(rel_path)

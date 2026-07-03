@@ -74,6 +74,19 @@ SKIP_PATTERNS = frozenset({
     ".DS_Store", "thumbs.db",
 })
 
+# Directories that are never useful as first-run project evidence. These show
+# up most painfully in fresh Windows source checkouts where a local virtualenv
+# such as `.fresh/Lib/site-packages` can outrank the user's actual source files.
+SKIP_DIR_NAMES = frozenset({
+    ".git", ".hg", ".svn",
+    ".venv", "venv", "env", ".env",
+    ".fresh", "fresh", ".venv-clean", "venv-clean",
+    ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+    "__pycache__", "site-packages", "dist-packages",
+    "node_modules", "bower_components",
+    "target", "dist", "build", ".next", ".nuxt", "coverage", "htmlcov",
+})
+
 # Max file size to ingest. Default 50 KB filters out generated artifacts
 # (lockfiles, minified JS, large generated specs). Override with
 # ENTROLY_MAX_FILE_BYTES — useful on documentation/list-style repos where
@@ -173,8 +186,7 @@ def _walk_fallback(project_dir: str) -> list[str]:
         dirs[:] = [
             d for d in dirs
             if not d.startswith(".")
-            and d not in {"node_modules", "__pycache__", "target", "dist",
-                         "build", ".git", "venv", ".venv", "env"}
+            and d not in SKIP_DIR_NAMES
         ]
         for fname in filenames:
             rel = os.path.relpath(os.path.join(root, fname), project_dir)
@@ -215,9 +227,21 @@ def _matches_ignore(rel_path: str) -> bool:
     return False
 
 
+def _path_parts(rel_path: str) -> tuple[str, ...]:
+    normalized = rel_path.replace("\\", "/").strip("/")
+    return tuple(part for part in normalized.split("/") if part)
+
+
+def _has_skipped_dir(rel_path: str) -> bool:
+    return any(part.lower() in SKIP_DIR_NAMES for part in _path_parts(rel_path))
+
+
 def _should_index(rel_path: str) -> bool:
     """Decide whether a file should be indexed."""
     basename = os.path.basename(rel_path)
+
+    if _has_skipped_dir(rel_path):
+        return False
 
     # Skip lock files and system files
     if basename in SKIP_PATTERNS:
@@ -259,6 +283,9 @@ def _priority_score(rel_path: str) -> int:
     name = os.path.basename(p)
     _, ext = os.path.splitext(name)
 
+    if _has_skipped_dir(rel_path):
+        return 5
+
     # Dead weight — migrations, generated, CI
     dead = (
         "/migrations/" in p
@@ -270,6 +297,8 @@ def _priority_score(rel_path: str) -> int:
         or "/build/" in p
         or "/.next/" in p
         or "/node_modules/" in p
+        or "/site-packages/" in p
+        or "/dist-packages/" in p
         or name in ("yarn.lock", "package-lock.json", "pnpm-lock.yaml", "Cargo.lock")
     )
     if dead:
