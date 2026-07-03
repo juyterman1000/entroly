@@ -274,12 +274,14 @@ class EvolutionDaemon:
                         # Map autotune config keys → archetype weight keys
                         updated_weights = self._archetype.current_weights()
                         weight_map = {
-                            "w_r": "w_recency", "w_f": "w_frequency",
-                            "w_s": "w_semantic", "w_e": "w_entropy",
+                            "weight_recency": "w_recency",
+                            "weight_frequency": "w_frequency",
+                            "weight_semantic_sim": "w_semantic",
+                            "weight_entropy": "w_entropy",
                         }
-                        for short, full in weight_map.items():
-                            if short in evolved_config:
-                                updated_weights[full] = evolved_config[short]
+                        for source, target in weight_map.items():
+                            if source in evolved_config:
+                                updated_weights[target] = evolved_config[source]
                         self._archetype.update_weights(updated_weights)
                         results["archetype_updated"] = True
                         logger.debug(

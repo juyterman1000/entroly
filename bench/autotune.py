@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .evaluate import evaluate, load_tuning_config
+from .evaluate import evaluate, load_tuning_config, validate_tuning_config
 
 
 # ── Tunable parameter definitions ──────────────────────────────────────
@@ -225,12 +225,23 @@ def autotune(
 
     rng = random.Random(seed)
 
-    # Snapshot current config before mutating (enables --rollback)
-    backup = snapshot_config(config_path)
+    # Snapshot only a known-good config. Invalid legacy files are repaired below
+    # and must never become rollback targets.
+    existing_valid = False
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+            existing_valid = not validate_tuning_config(existing)
+        except (json.JSONDecodeError, OSError, TypeError):
+            existing_valid = False
+    backup = snapshot_config(config_path) if existing_valid else None
     if backup and verbose:
         print(f"  Config snapshot saved: {backup}")
 
     best_config = load_tuning_config(config_path)
+    # Persist the validated baseline immediately. This repairs missing,
+    # unreadable, or legacy flat configs even when no mutation is kept.
+    save_config(best_config, config_path)
     best_result = evaluate(best_config, cases_path)
     best_score = best_result["composite_score"]
 

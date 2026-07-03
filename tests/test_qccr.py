@@ -39,6 +39,7 @@ def test_selects_query_relevant_file():
 
 def test_selected_fragments_keep_engine_contract_fields():
     frags = [{
+        "fragment_id": "native-relevant-1",
         "source": "relevant.py",
         "content": "def jaccard_similarity(a, b):\n    return len(a & b) / len(a | b)",
         "token_count": 15,
@@ -50,6 +51,7 @@ def test_selected_fragments_keep_engine_contract_fields():
     assert frag["fragment_id"] == frag["id"]
     assert isinstance(frag["relevance"], float)
     assert frag["relevance_score"] == frag["relevance"]
+    assert frag["source_fragment_ids"] == ["native-relevant-1"]
 
 
 def test_short_fragments_are_not_dropped_by_query_fallback():

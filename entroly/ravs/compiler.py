@@ -152,6 +152,26 @@ _COMPUTATION_PATTERNS = [
     re.compile(r'\b(?:convert|how many)\s+\w+\s+(?:to|in|per)\s+\w+', re.I),
 ]
 
+_NUMERIC_EXPRESSION_RE = re.compile(r"[\d\.\+\-\*\/\(\)\^%\s]+")
+
+
+def _computation_input(query: str, match: re.Match[str]) -> tuple[str, str]:
+    """Return an executable input and the cheapest safe executor for it."""
+    candidate = query[match.start():].strip().rstrip("?")
+    expression = re.sub(
+        r"^(?:calculate|compute|evaluate|what is|how much is|"
+        r"find the value of)\s+",
+        "",
+        candidate,
+        flags=re.I,
+    ).strip()
+    if (
+        _NUMERIC_EXPRESSION_RE.fullmatch(expression)
+        and re.search(r"[\+\-\*\/%^]", expression)
+    ):
+        return candidate, ExecutorType.PYTHON.value
+    return candidate, ExecutorType.SYMPY.value
+
 # Code inspection patterns: AST queries, signature lookups, dependency analysis
 _CODE_INSPECTION_PATTERNS = [
     re.compile(r'\b(?:what (?:does|is)|show me|list|find)\s+(?:the\s+)?(?:function|method|class|signature|parameters|arguments|return type|imports|dependencies)', re.I),
@@ -191,12 +211,13 @@ def detect_substeps(query: str, tools_used: list[str] | None = None) -> list[Pla
     for pattern in _COMPUTATION_PATTERNS:
         m = pattern.search(query)
         if m:
+            input_text, executor = _computation_input(query, m)
             nodes.append(PlanNode(
                 kind=NodeKind.COMPUTATION.value,
-                executor=ExecutorType.SYMPY.value,
+                executor=executor,
                 verifier=VerifierType.EXACT.value,
-                input_text=m.group(0).strip(),
-                input_span=(m.start(), m.end()),
+                input_text=input_text,
+                input_span=(m.start(), len(query)),
                 confidence=0.7,
             ))
             break  # one computation node per query (v2 conservative)

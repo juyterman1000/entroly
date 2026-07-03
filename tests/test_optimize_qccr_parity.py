@@ -87,3 +87,43 @@ def test_no_query_does_not_use_qccr():
     assert result.get("selector") != "qccr", (
         "the no-query path is query-agnostic importance selection, not qccr"
     )
+
+
+def test_query_path_keeps_pinned_fragments_exact():
+    eng = _clean_engine()
+    pinned = eng.ingest_fragment(
+        "Permanent project identity and safety constraints.",
+        "IDENTITY.md",
+        20,
+        is_pinned=True,
+    )
+    _ingest_haystack_plus_answer(eng)
+
+    result = eng.optimize_context(
+        token_budget=120, query="how does the rate limiter handle burst traffic"
+    )
+
+    selected = result["selected_fragments"]
+    identity = next(f for f in selected if f.get("source") == "IDENTITY.md")
+    assert identity["id"] == pinned["fragment_id"]
+    assert identity["content"] == "Permanent project identity and safety constraints."
+
+
+def test_query_path_applies_native_fragment_feedback():
+    eng = _clean_engine()
+    eng.ingest_fragment(
+        "The rate limiter uses a token bucket for burst traffic.",
+        "ratelimit.py",
+        20,
+    )
+
+    before = eng.optimize_context(256, "rate limiter burst traffic")[
+        "selected_fragments"
+    ][0]
+    eng.record_failure([before["id"]])
+    after = eng.optimize_context(256, "rate limiter burst traffic")[
+        "selected_fragments"
+    ][0]
+
+    assert after["relevance"] < before["relevance"]
+    assert before["source_fragment_ids"] == after["source_fragment_ids"]

@@ -5015,6 +5015,10 @@ impl EntrolyEngine {
                 d.set_item("frequency_score", frag.frequency_score)?;
                 d.set_item("semantic_score", frag.semantic_score)?;
                 d.set_item("entropy_score", frag.entropy_score)?;
+                d.set_item(
+                    "feedback_multiplier",
+                    self.feedback.learned_value(&frag.fragment_id),
+                )?;
                 d.set_item("turn_created", frag.turn_created)?;
                 d.set_item("turn_last_accessed", frag.turn_last_accessed)?;
                 d.set_item("access_count", frag.access_count)?;

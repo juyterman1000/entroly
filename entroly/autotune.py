@@ -7,7 +7,7 @@ hyperparameters. Each iteration mutates one parameter in tuning_config.json,
 evaluates the result on a fixed benchmark suite, and keeps improvements.
 
 For Entroly, the loop maps to:
-  - The mutable surface  = bench/tuning_config.json (the ONLY file we mutate)
+  - The mutable surface  = project-scoped learning_tuning_config.json
   - The evaluation step  = running optimize_context() on benchmark cases
   - The objective metric = context_efficiency (information_retained / tokens_used)
   - The keep/discard     = compare efficiency, keep improvements, revert regressions
@@ -21,7 +21,7 @@ Usage:
     python -m entroly.autotune --time-budget 60   # Max seconds per iteration
 
 Single-file mutation discipline:
-  - Only bench/tuning_config.json is modified
+  - Only the project's learning_tuning_config.json is modified
   - bench/cases.json is read-only (the fixed validation set)
   - This file (autotune.py) is read-only (the evaluation harness)
 """
@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import random
 import re
 import sys
@@ -40,6 +41,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .config import writable_tuning_config_path
 
 logger = logging.getLogger("entroly")
 
@@ -53,7 +56,7 @@ def _log(msg: str = "") -> None:
 
 BENCH_DIR = Path(__file__).parent.parent / "bench"
 CASES_PATH = BENCH_DIR / "cases.json"
-CONFIG_PATH = BENCH_DIR / "tuning_config.json"
+LEGACY_CONFIG_PATH = BENCH_DIR / "tuning_config.json"
 RESULTS_PATH = BENCH_DIR / "results.tsv"
 
 # Fixed time budget per benchmark evaluation.
@@ -94,30 +97,79 @@ def load_cases() -> list[dict[str, Any]]:
         return json.load(f)
 
 
-def load_config() -> dict[str, Any]:
-    """Load the current tuning config (the file we mutate).
+def runtime_config_path() -> Path:
+    """Return the project-local state file used by runtime learning."""
+    return writable_tuning_config_path().with_name("learning_tuning_config.json")
 
-    Returns default config if the file doesn't exist (pip-install mode).
+
+def _default_runtime_config() -> dict[str, Any]:
+    return {
+        "weight_recency": 0.30,
+        "weight_frequency": 0.25,
+        "weight_semantic_sim": 0.25,
+        "weight_entropy": 0.20,
+    }
+
+
+def _is_runtime_config(config: Any) -> bool:
+    return isinstance(config, dict) and any(key in config for key in TUNABLE_PARAMS)
+
+
+def load_config(config_path: Path | None = None) -> dict[str, Any]:
+    """Load project-scoped runtime learning state.
+
+    Older builds wrote the flat runtime schema into the benchmark harness file.
+    Migrate only that legacy flat schema; never consume the benchmark's nested
+    schema as runtime learning state.
     """
-    if not CONFIG_PATH.exists():
-        return {
-            "weight_recency": 0.30,
-            "weight_frequency": 0.25,
-            "weight_semantic_sim": 0.25,
-            "weight_entropy": 0.20,
-        }
-    with open(CONFIG_PATH) as f:
-        return json.load(f)
+    default_target = runtime_config_path()
+    target = Path(config_path) if config_path is not None else default_target
+    if target.exists():
+        try:
+            config = json.loads(target.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("runtime tuning config at %s is unreadable: %s", target, exc)
+            return _default_runtime_config()
+        if _is_runtime_config(config):
+            return config
+        logger.warning("runtime tuning config at %s has an incompatible schema", target)
+        return _default_runtime_config()
+
+    if target == default_target and LEGACY_CONFIG_PATH.exists():
+        try:
+            legacy = json.loads(LEGACY_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            legacy = None
+        if _is_runtime_config(legacy) and "weights" not in legacy:
+            save_config(legacy, target)
+            logger.info(
+                "migrated legacy runtime tuning config from %s to %s",
+                LEGACY_CONFIG_PATH,
+                target,
+            )
+            return legacy
+
+    return _default_runtime_config()
 
 
-def save_config(config: dict[str, Any]) -> None:
-    """Save tuning config (single-file mutation).
-
-    Creates parent directories if they don't exist.
-    """
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+def save_config(config: dict[str, Any], config_path: Path | None = None) -> None:
+    """Atomically persist project-scoped runtime learning state."""
+    target = Path(config_path) if config_path is not None else runtime_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=target.parent, delete=False, suffix=".tmp"
+        ) as handle:
+            json.dump(config, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        os.replace(temp_path, target)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def evaluate(config: dict[str, Any], cases: list[dict[str, Any]],
@@ -375,11 +427,12 @@ def run_autotune(iterations: int = 100,
       6. Log results
       7. Repeat
     """
+    config_path = runtime_config_path()
     cases = load_cases()
     if not cases:
         _log("Entroly Autotune -- no benchmark cases found (pip-install mode), skipping")
         return
-    config = load_config()
+    config = load_config(config_path)
 
     _log(f"Entroly Autotune -- {len(cases)} benchmark cases loaded")
     _log(f"Time budget per case: {time_budget}s")
@@ -437,7 +490,7 @@ def run_autotune(iterations: int = 100,
             improvements += 1
             best_score = score
             best_config = _ema_blend(best_config, candidate, alpha)
-            save_config(best_config)
+            save_config(best_config, config_path)
 
             # Update Polyak average
             polyak_count += 1
@@ -448,7 +501,7 @@ def run_autotune(iterations: int = 100,
               result.avg_wall_time_ms < baseline.avg_wall_time_ms):
             status = "keep"
             best_config = _ema_blend(best_config, candidate, ema_base_alpha * 0.5)
-            save_config(best_config)
+            save_config(best_config, config_path)
             marker = "  ="
         else:
             status = "discard"
@@ -484,10 +537,10 @@ def run_autotune(iterations: int = 100,
     delta_final = ((best_score - baseline_score) / max(baseline_score, 0.001)) * 100
     _log(f"Improvement: {delta_final:.1f}%")
     _log(f"Polyak samples: {polyak_count}")
-    _log(f"\nBest config saved to {CONFIG_PATH}")
+    _log(f"\nBest config saved to {config_path}")
     _log(f"Full results log: {RESULTS_PATH}")
 
-    save_config(best_config)
+    save_config(best_config, config_path)
 
 
 def main():
@@ -1125,7 +1178,7 @@ class DreamingLoop:
         engine: Any = None,
     ):
         self._journal = journal
-        self._config_path = config_path or CONFIG_PATH
+        self._config_path = config_path or runtime_config_path()
         self._max_iterations = max_iterations
         self._cooldown_s = cooldown_s
         self._last_activity: float = time.time()
@@ -1278,7 +1331,7 @@ class DreamingLoop:
         self._last_dream_at = t_start
         try:
             # Load current best config
-            config = load_config()
+            config = load_config(self._config_path)
             cases = load_cases()
             if not cases:
                 result = {"status": "no_cases", "dream_id": self._total_dreams}
@@ -1322,7 +1375,7 @@ class DreamingLoop:
                 if result.context_efficiency > self._best_efficiency:
                     self._best_efficiency = result.context_efficiency
                     config = mutated_config
-                    save_config(config)
+                    save_config(config, self._config_path)
                     improvements += 1
                     self._total_improvements += 1
 
