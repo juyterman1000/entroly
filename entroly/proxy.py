@@ -112,7 +112,7 @@ _COMMON_PROVIDER_HEADERS = {
     "user-agent",
 }
 
-_CERT_ENV_VARS = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS")
+_CERT_ENV_VARS = ("REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS")
 
 # ── Privacy utilities ───────────────────────────────────────────────────
 

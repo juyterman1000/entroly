@@ -348,19 +348,21 @@ def _py_knapsack_optimize(
         from dataclasses import replace as _dc_replace
 
         best_frag, best_rel, _ = max(scored, key=lambda x: x[1])
-        excerpt_tokens = max(1, min(int(token_budget), int(best_frag.token_count or token_budget)))
-        excerpt_chars = max(256, excerpt_tokens * 4)
-        selected = [
-            _dc_replace(
-                best_frag,
-                fragment_id=f"{best_frag.fragment_id}:excerpt",
-                content=best_frag.content[:excerpt_chars],
-                token_count=excerpt_tokens,
-            )
-        ]
-        used_tokens = excerpt_tokens
-        total_relevance = best_rel
-        method = "greedy_python+oversize_excerpt"
+        content = getattr(best_frag, "content", None)
+        if isinstance(content, str):
+            excerpt_tokens = max(1, min(int(token_budget), int(best_frag.token_count or token_budget)))
+            excerpt_chars = max(256, excerpt_tokens * 4)
+            selected = [
+                _dc_replace(
+                    best_frag,
+                    fragment_id=f"{best_frag.fragment_id}:excerpt",
+                    content=content[:excerpt_chars],
+                    token_count=excerpt_tokens,
+                )
+            ]
+            used_tokens = excerpt_tokens
+            total_relevance = best_rel
+            method = "greedy_python+oversize_excerpt"
 
     stats = {
         "total_tokens": used_tokens,
