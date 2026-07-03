@@ -19,6 +19,18 @@
     <priority>0.95</priority>
   </url>
   <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/prevent-ai-hallucinations.html</loc>
+    <lastmod>2026-07-03</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/cursor-token-usage-fix.html</loc>
+    <lastmod>2026-07-03</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
     <loc>https://juyterman1000.github.io/entroly/docs/prompt-compression.html</loc>
     <lastmod>2026-07-03</lastmod>
     <changefreq>weekly</changefreq>
