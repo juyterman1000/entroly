@@ -68,6 +68,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Ruff lint
         run: |
           python -m pip install ruff==0.12.9

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import tomllib
 from pathlib import Path
 
 
@@ -14,13 +13,55 @@ def _read_json(path: str) -> dict:
     return json.loads((ROOT / path).read_text(encoding="utf-8"))
 
 
-def _read_toml(path: str) -> dict:
-    return tomllib.loads((ROOT / path).read_text(encoding="utf-8"))
+def _read_project_metadata(path: str) -> dict[str, object]:
+    """Read the small pyproject surface guarded by these tests.
+
+    Python 3.10 does not ship ``tomllib``. Keeping this parser local avoids
+    making the release guard depend on an extra test dependency.
+    """
+    metadata: dict[str, object] = {
+        "optional-dependencies": {},
+    }
+    current_section = ""
+    current_list_key: str | None = None
+
+    for raw_line in (ROOT / path).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            current_section = line.strip("[]")
+            current_list_key = None
+            continue
+        if current_section == "project" and line.startswith("version"):
+            metadata["version"] = line.split("=", 1)[1].strip().strip('"')
+            continue
+        if current_section == "project" and line.startswith("dependencies"):
+            current_list_key = "dependencies"
+            metadata[current_list_key] = []
+            continue
+        if (
+            current_section == "project.optional-dependencies"
+            and "=" in line
+            and not line.startswith('"')
+        ):
+            key = line.split("=", 1)[0].strip()
+            current_list_key = key
+            metadata["optional-dependencies"][key] = []
+            continue
+        if current_list_key and line.startswith('"'):
+            value = line.rstrip(",").strip().strip('"')
+            if current_section == "project":
+                metadata[current_list_key].append(value)
+            elif current_section == "project.optional-dependencies":
+                metadata["optional-dependencies"][current_list_key].append(value)
+
+    return metadata
 
 
 def test_public_package_versions_are_1_0_42() -> None:
-    assert _read_toml("pyproject.toml")["project"]["version"] == RELEASE_VERSION
-    assert _read_toml("entroly/pyproject.toml")["project"]["version"] == RELEASE_VERSION
+    assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
+    assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm-alias/package.json")["version"] == RELEASE_VERSION
     assert _read_json("entroly-wasm/package.json")["version"] == RELEASE_VERSION
@@ -40,7 +81,7 @@ def test_mcp_registry_manifest_points_at_release_package() -> None:
 
 def test_native_engine_is_optional_for_first_time_install() -> None:
     for path in ("pyproject.toml", "entroly/pyproject.toml"):
-        project = _read_toml(path)["project"]
+        project = _read_project_metadata(path)
         hard_deps = project["dependencies"]
         native_deps = project["optional-dependencies"]["native"]
         full_deps = project["optional-dependencies"]["full"]
