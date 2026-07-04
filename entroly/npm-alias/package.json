@@ -1,7 +1,7 @@
 {
   "name": "entroly",
   "version": "1.0.42",
-  "description": "Compatibility alias for Entroly's Node/WASM runtime. Installs and delegates to entroly-wasm.",
+  "description": "Node/WASM Entroly runtime: local context optimization, MCP server tools, receipts, recovery, and verification without Python.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -26,6 +26,8 @@
     "entroly",
     "entroly-wasm",
     "context-optimization",
+    "context-receipts",
+    "local-context-os",
     "mcp",
     "mcp-server",
     "ai",

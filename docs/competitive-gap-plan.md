@@ -1,20 +1,22 @@
-# Entroly vs Headroom: Gap-Closing Plan
+# Entroly Competitive Gap Plan
 
-Goal: beat Headroom AI on compression proxy quality by a clear margin.
+Goal: make Entroly the most trusted local context OS for AI coding agents by
+winning on first-run success, recoverability, verification, and reproducible
+token savings.
 
 ## Honest current position
 
-Headroom is currently ahead in packaging:
+The market rewards products that feel polished immediately:
 
-- polished proxy command,
+- one-command setup,
 - agent wrapping,
 - dashboard,
 - public benchmark story,
-- Rust-backed JSON SmartCrusher,
-- CCR retrieval markers.
+- native speed,
+- exact recovery markers.
 
-Entroly's best differentiator is not blind compression. It is auditable,
-evidence-preserving compression:
+Entroly's strongest differentiator is not blind compression. It is auditable,
+evidence-preserving context control:
 
 - Evidence-Locked Compression (ELC),
 - Context Receipts,
@@ -23,8 +25,6 @@ evidence-preserving compression:
 - Memory Fabric.
 
 ## Winning thesis
-
-Headroom compresses context.
 
 Entroly should compress context with evidence locks, receipts, retrieval, and
 verification.
@@ -65,7 +65,7 @@ python benchmarks/compression_proxy_scoreboard.py --json
 pytest tests/test_compression_proxy.py tests/test_compression_proxy_scoreboard.py -v
 ```
 
-## Next milestones to beat Headroom across all points
+## Next milestones
 
 ### 1. Live proxy flag
 
@@ -118,8 +118,7 @@ Add:
 ELC -> compressed prompt -> answer -> WITNESS/EICV -> retrieve omitted span on failure -> retry once
 ```
 
-This is the margin Headroom does not clearly claim: compression plus evidence
-verification.
+This is the margin Entroly should own: compression plus evidence verification.
 
 ### 5. Rust fast path
 
@@ -133,7 +132,7 @@ Rust ELC for speed, Python ELC as audited reference implementation.
 
 ### 6. Public benchmark parity page
 
-Publish benchmarks matching Headroom categories:
+Publish benchmarks across:
 
 - JSON arrays,
 - build logs,
@@ -144,7 +143,7 @@ Publish benchmarks matching Headroom categories:
 - prompt-cache stability,
 - output token shaping.
 
-Do not claim victory until Entroly has reproducible numbers.
+Do not claim victory without reproducible numbers.
 
 ## Public claim allowed now
 
@@ -157,7 +156,7 @@ and measurable savings on heavy tool payloads.
 ## Public claim not allowed yet
 
 ```text
-Entroly beats Headroom AI across every benchmark.
+Entroly beats every context optimizer across every benchmark.
 ```
 
 That claim requires reproducible third-party parity benchmarks and live proxy

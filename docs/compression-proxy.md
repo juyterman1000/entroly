@@ -164,13 +164,12 @@ The scoreboard requires:
 - mean savings >= 70%,
 - local deterministic execution.
 
-## Positioning against Headroom
+## Product positioning
 
-Headroom's strongest idea is reversible compression through CCR. Entroly now has
-the equivalent recoverability foundation with a different thesis:
+Entroly's compression proxy is built around recoverability and auditability, not
+blind shrinking:
 
 ```text
-Headroom retrieves dropped context.
 Entroly retrieves dropped context and keeps auditable evidence receipts for what was compressed, why it was compressed, and how to recover it.
 ```
 

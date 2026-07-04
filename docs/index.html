@@ -14,15 +14,15 @@
     content="Your AI sees only a slice of your codebase and can hallucinate the rest. Entroly helps with context compression and evidence checks. Works with Cursor, Claude Code, Windsurf, and Cline.">
   <meta name="keywords"
     content="context engineering, AI coding, token optimization, context window, Cursor, Claude Code, Windsurf, Cline, AI hallucination, code context, LLM context, token savings, MCP server, AI developer tools, context compression">
-  <meta property="og:title" content="Entroly — Stop AI Hallucinations. Give It Your Entire Codebase.">
+  <meta property="og:title" content="Entroly — Local Context OS for AI Coding Agents">
   <meta property="og:description"
-    content="Your AI sees 5% of your code and hallucinates the rest. Entroly compresses your entire codebase into the context window. 95% fewer tokens. 100% visibility. Zero config.">
+    content="Entroly selects the right evidence first, compresses safely, keeps exact recovery handles, and verifies answers locally. Prove value before connecting a paid model.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://juyterman1000.github.io/entroly/">
   <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Entroly — Context Engineering for AI Coding">
-  <meta name="twitter:description" content="Your AI sees 5% of your codebase. Entroly shows it 100%. 95% fewer tokens.">
+  <meta name="twitter:description" content="Local context optimization, receipts, recovery, and verification for AI coding agents.">
   <link rel="canonical" href="https://juyterman1000.github.io/entroly/">
   <script type="application/ld+json">
   {
@@ -32,7 +32,7 @@
     "operatingSystem": "Windows, macOS, Linux",
     "applicationCategory": "DeveloperApplication",
     "applicationSubCategory": "AI Developer Tools & Prompt Optimization",
-    "description": "Open-source context engineering and prompt compression proxy for AI coding agents. Slashes token costs by 70–95% while keeping prefix caches hot and verifying outputs locally.",
+    "description": "Open-source local context OS for AI coding agents: token optimization, Context Receipts, exact recovery, MCP tools, proxy mode, and local verification.",
     "license": "https://opensource.org/licenses/Apache-2.0",
     "offers": {
       "@type": "Offer",
@@ -45,7 +45,7 @@
       "url": "https://github.com/juyterman1000/entroly"
     },
     "featureList": [
-      "Prompt Compression (70-95% token savings)",
+      "Prompt and context optimization",
       "KV-Cache Aligner (prefix cache discounts)",
       "WITNESS Hallucination Guard (local output audit)",
       "ModelContextProtocol (MCP) Server support",
@@ -940,15 +940,14 @@
   <div class="hero">
     <div class="hero-glow"></div>
     <div class="badge">Open Source Context Engineering</div>
-    <h1>Your AI is <span>Blind</span>.<br>Fix it in 30 seconds.</h1>
-    <p>AI coding tools often see only a slice of your codebase. Entroly gives compatible tools broader selected context — with <span
-        style="opacity:0.6;font-weight:400">70-</span><b style="color:var(--text);font-weight:800">95%</b> fewer tokens.
+    <h1>Your AI needs the <span>right evidence</span>.<br>Prove it locally first.</h1>
+    <p>Entroly is a local context OS for AI coding agents: selected context, exact recovery, receipts, memory, gateway controls, and verification with fewer input tokens.
     </p>
 
     <div id="install" class="install-cmd"
-      onclick="navigator.clipboard.writeText('pip install entroly[full] && entroly go')">
+      onclick="navigator.clipboard.writeText('pip install -U entroly && entroly verify-claims && entroly simulate')">
       <span class="prompt">$</span>
-      <span class="cmd">pip install entroly[full] && entroly go</span>
+      <span class="cmd">pip install -U entroly && entroly verify-claims && entroly simulate</span>
       <span class="copy">Click to copy</span>
     </div>
 
@@ -974,8 +973,7 @@
       </div>
     </div>
     <p class="video-caption">
-      See Entroly cut up to <b>99.5%</b> of tokens — a figure <b>measured</b> on the needle-in-a-haystack
-      benchmark with accuracy fully retained — while your AI sees <b>100%</b> of the code.
+      See Entroly select and compress context under budget with committed benchmark artifacts and local verification reports.
     </p>
     <div class="social-row">
       <a href="https://github.com/juyterman1000/entroly" aria-label="Star Entroly on GitHub">
@@ -1077,15 +1075,15 @@
     <div class="feat-grid">
       <div class="feat-card" data-reveal>
         <div class="icon">📦</div>
-        <h3>Zero-Config Install</h3>
-        <p>One command auto-detects your IDE, language, and project structure. No manual prompt engineering required.
+        <h3>Proof-First Install</h3>
+        <p>Run local verification and simulation before wiring a paid model. Then choose MCP, proxy, SDK, npm, or Docker.
         </p>
       </div>
       <div class="feat-card" data-reveal>
         <div class="icon">🦀</div>
         <h3>Rust Performance</h3>
-        <p>A high-performance Rust core (via PyO3) processes your entire codebase in under 10ms. Scale to millions of
-          lines.</p>
+        <p>A high-performance Rust core (via PyO3) accelerates ranking, selection, verification, cache, and memory
+          primitives when the native engine is installed.</p>
       </div>
       <div class="feat-card" data-reveal>
         <div class="icon">🧠</div>
@@ -1273,7 +1271,7 @@
     <a href="https://github.com/juyterman1000/entroly" class="btn btn-primary"
       style="padding: 12px 32px; font-size: 16px;">View on GitHub</a>
     <div style="margin-top: 24px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--green);">
-      pip install entroly && entroly go
+      pip install -U entroly && entroly verify-claims && entroly simulate
     </div>
   </div>
 

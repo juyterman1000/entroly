@@ -1,16 +1,35 @@
 # entroly-mcp
 
-An NPX bridge for Entroly, an auditable context control plane for AI agents.
-Entroly gives AI workflows a Context Receipt: what was used, what was omitted,
-why, and what risks remain.
+An NPX MCP bridge for Entroly, the local context OS for AI coding agents.
+Entroly gives AI workflows selected context, exact recovery handles, Context
+Receipts, local verification, and token optimization.
 
-## Installation & Usage
+## Which package should I use?
 
-This package is a universal `npx` bridge to the Entroly Python engine.
+| You want | Use |
+|---|---|
+| Full Python CLI/SDK/MCP/proxy path | `pip install -U entroly` |
+| Claude Code subscription setup | `claude mcp add entroly -- entroly` |
+| MCP from npm with no Python dependency | `npx -y entroly-wasm serve` |
+| MCP from npm, delegating to installed Python Entroly | `npx -y entroly-mcp serve` |
+| Global Node/WASM CLI | `npm install -g entroly` |
 
-You can use it directly in any MCP-compatible client like Cursor or Claude Desktop:
+The simplest first run for most users is still:
 
-### Method 1: entroly-wasm (Recommended — zero dependencies)
+```bash
+pip install -U entroly
+entroly verify-claims
+entroly simulate
+```
+
+Those commands run locally and do not call an LLM.
+
+## MCP usage
+
+Use one of these MCP configurations.
+
+### Option A: Node/WASM only, no Python
+
 ```json
 {
   "mcpServers": {
@@ -25,7 +44,11 @@ You can use it directly in any MCP-compatible client like Cursor or Claude Deskt
 }
 ```
 
-### Method 2: NPX Bridge to Python (requires `pip install entroly`)
+### Option B: NPX bridge to Python Entroly
+
+Use this when you already installed the Python package and want the npm bridge
+to delegate to it.
+
 ```json
 {
   "mcpServers": {
@@ -44,12 +67,24 @@ You can use it directly in any MCP-compatible client like Cursor or Claude Deskt
 }
 ```
 
-*Note: You must have the core Python engine installed on your system:*
 ```bash
-pip install entroly
-# or
+pip install -U entroly
+# or:
 pipx install entroly
 ```
+
+### Claude Code subscription users
+
+For Claude Code, the cleanest path is usually:
+
+```bash
+pip install -U entroly
+claude mcp add entroly -- entroly
+```
+
+Claude Code stays your client. Entroly adds local MCP tools; you do not need to
+run the proxy unless you control a provider API key and explicitly want proxy
+mode.
 
 ### Features
 

@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fix Claude Code Hallucinations — Full Codebase Context with Entroly</title>
-<meta name="description" content="Claude Code hallucinates because it can't see your full codebase. Learn how to give Claude Code 100% code visibility with Entroly. One command setup, 78% fewer tokens.">
+<title>Claude Code + Entroly — Local MCP Context, Receipts, and Verification</title>
+<meta name="description" content="Set up Entroly with Claude Code through MCP. Verify locally first, then add context optimization, receipts, exact recovery, and verification tools.">
 <meta name="keywords" content="Claude Code hallucination, Claude Code context, Claude Code MCP server, Claude Code setup, Claude Code full codebase, Claude Code token limit, Claude Code errors, fix Claude Code, Anthropic Claude Code, Claude Code tips">
-<meta property="og:title" content="Fix Claude Code Hallucinations — Give It Your Full Codebase">
-<meta property="og:description" content="Claude Code sees a fraction of your code. Entroly shows it everything. One command setup.">
+<meta property="og:title" content="Claude Code + Entroly MCP Setup">
+<meta property="og:description" content="Add local context optimization, receipts, recovery, and verification tools to Claude Code through MCP.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/claude-code-setup.html">
 <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Fix Claude Code Hallucinations — Give It Your Full Codebase">
-<meta name="twitter:description" content="Claude Code sees a fraction of your code. Entroly shows it everything. One command setup. 78% fewer tokens.">
+<meta name="twitter:title" content="Claude Code + Entroly MCP Setup">
+<meta name="twitter:description" content="Verify Entroly locally, then connect it to Claude Code through MCP.">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/claude-code-setup.html">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"TechArticle","headline":"Fix Claude Code Hallucinations — Full Codebase Context with Entroly","description":"Give Claude Code 100% codebase visibility with context engineering.","author":{"@type":"Organization","name":"Entroly","url":"https://github.com/juyterman1000/entroly"},"datePublished":"2026-04-05","dateModified":"2026-06-07","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/claude-code-setup.html"}
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Claude Code + Entroly MCP Setup","description":"Set up Entroly with Claude Code through MCP after a local first-run verification.","author":{"@type":"Organization","name":"Entroly","url":"https://github.com/juyterman1000/entroly"},"datePublished":"2026-04-05","dateModified":"2026-07-04","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/claude-code-setup.html"}
 </script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -52,13 +52,13 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 </nav>
 
 <article>
-<h1>Fix Claude Code Hallucinations — Full Codebase Context</h1>
+<h1>Claude Code + Entroly MCP Setup</h1>
 
-<p><strong>Last updated: April 2026</strong> | Reading time: 5 min</p>
+<p><strong>Last updated: July 2026</strong> | Reading time: 5 min</p>
 
 <p><strong>Claude Code</strong> is one of the most powerful AI coding tools available — Anthropic's Claude model is exceptional at reasoning about code. But even Claude Code has a critical blind spot: <strong>it can only see a fraction of your codebase at a time.</strong></p>
 
-<p>When Claude Code can't see the full picture, it hallucinates. It invents function signatures, misses config files, and breaks dependencies it doesn't know about. This guide shows you how to fix that with <strong>one command</strong>.</p>
+<p>When Claude Code does not have the right evidence, it can invent function signatures, miss config files, or break dependencies it did not inspect. This guide shows the clean setup: verify Entroly locally, then add it to Claude Code through MCP.</p>
 
 <h2>Why Claude Code Hallucinates</h2>
 
@@ -79,27 +79,31 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <table>
   <tr><th></th><th>Without Entroly</th><th>With Entroly</th></tr>
-  <tr><td><strong>Codebase visibility</strong></td><td class="warning">Partial (~5%)</td><td class="highlight">100% at variable resolution</td></tr>
-  <tr><td><strong>Tokens per request</strong></td><td class="warning">~186,000 (raw)</td><td class="highlight">~40,000 (78% less)</td></tr>
+  <tr><td><strong>Codebase visibility</strong></td><td class="warning">Manual search/read loop</td><td class="highlight">Selected context at variable resolution</td></tr>
+  <tr><td><strong>Tokens per request</strong></td><td class="warning">Raw files and repeated context</td><td class="highlight">Budgeted context; savings depend on repo and query</td></tr>
   <tr><td><strong>Dependency tracking</strong></td><td class="warning">Manual</td><td class="highlight">Automatic</td></tr>
   <tr><td><strong>Learns from usage</strong></td><td class="warning">No</td><td class="highlight">Yes (RL-based)</td></tr>
   <tr><td><strong>Duplicate detection</strong></td><td class="warning">None</td><td class="highlight">SimHash O(1)</td></tr>
 </table>
 
-<h2>Setup: One Command</h2>
+<h2>Setup</h2>
 
-<h3>Step 1: Install</h3>
-<pre>pip install entroly[full]</pre>
+<h3>Step 1: Install and verify locally</h3>
+<pre>pip install -U entroly
+entroly verify-claims
+entroly simulate</pre>
 
 <h3>Step 2: Connect to Claude Code</h3>
 <pre>claude mcp add entroly -- entroly</pre>
 
-<p>That's it. Claude Code now uses Entroly's MCP server for context. Every request gets optimized automatically.</p>
+<p>Claude Code stays your client. Entroly adds local MCP tools for context optimization, exact retrieval, receipts, feedback, and savings reports. You do not need proxy mode for this subscription workflow.</p>
 
-<h3>Step 3: Verify</h3>
-<pre>entroly demo</pre>
+<h3>Step 3: Inspect value anytime</h3>
+<pre>entroly simulate
+entroly status
+entroly doctor</pre>
 
-<p>See the before/after on your actual codebase. Check token savings, file coverage, and cost reduction.</p>
+<p>Use these commands to inspect local savings estimates, runtime status, and common setup issues without making an LLM call.</p>
 
 <h2>What Happens Behind the Scenes</h2>
 
@@ -112,16 +116,16 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
   <li><strong>Tracks what worked</strong> — reinforcement learning improves selection over time</li>
 </ol>
 
-<p>The entire pipeline takes <strong>less than 10ms</strong>. Claude Code gets better context, you get better answers, and you pay less for tokens.</p>
+<p>The goal is better evidence with fewer input tokens. Exact latency and savings depend on repo size, installed engine, query, and budget.</p>
 
 <h2>Advanced: Claude Code + Entroly Pro Tips</h2>
 
 <h3>Use quality presets for different tasks</h3>
-<pre># Quick fixes — speed matters
-entroly proxy --quality speed
+<pre># MCP path for Claude Code subscriptions
+claude mcp add entroly -- entroly
 
-# Architecture questions — quality matters
-entroly proxy --quality max</pre>
+# Proxy path only when you control a provider API key
+entroly proxy --quality balanced</pre>
 
 <h3>Check your savings</h3>
 <pre>entroly dashboard</pre>
@@ -145,9 +149,11 @@ entroly role fullstack # balanced</pre>
 <p><strong>Absolutely.</strong> CLAUDE.md gives Claude Code your project instructions. Entroly gives it your code context. They're complementary.</p>
 
 <div class="cta-box">
-  <h3>Make Claude Code see your entire codebase.</h3>
-  <p>One install. One command. Immediate results.</p>
-  <pre>pip install entroly[full]
+<h3>Give Claude Code local context tools.</h3>
+  <p>Verify locally first, then connect through MCP.</p>
+  <pre>pip install -U entroly
+entroly verify-claims
+entroly simulate
 claude mcp add entroly -- entroly</pre>
   <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
 </div>

@@ -42,7 +42,7 @@ Since Entroly operates as an MCP server (`entroly serve`), it qualifies for incl
   - **License:** `Open Source (Apache-2.0)`
   - **Platform:** `Mac`, `Windows`, `Linux`
   - **Short Tagline:** `Local context compression & verification gateway for AI coding agents.`
-  - **Alternatives to:** List `Headroom AI`, `LeanCTX`.
+  - **Alternatives to:** List categories such as `context engineering`, `prompt compression`, `MCP server`, and `local AI developer tools`.
   - **Description:** 
     ```text
     Entroly is an open-source, local-first context engineering gateway for developer AI workflows. It sits as a local proxy or MCP server between your coding client (such as Cursor, Claude Code, Cline, or Aider) and your LLM provider.
@@ -57,7 +57,7 @@ Since Entroly operates as an MCP server (`entroly serve`), it qualifies for incl
 ### B. LibHunt (Python Comparisons)
 - **URL:** [py.libhunt.com](https://py.libhunt.com)
 - **Action:** LibHunt automatically indexes repositories, but you can suggest comparisons or claim the project page once indexed.
-- **Suggested Comparison Title:** `Entroly vs Lean-CTX` or `Entroly vs Headroom`.
+- **Suggested Comparison Title:** `Entroly context engineering for AI coding agents`.
 
 ---
 

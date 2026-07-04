@@ -8,7 +8,7 @@ This document is the single source of truth for public launch posts, Discord out
 
 To preserve trust, compliance, and credibility, always adhere to the following rules:
 - **No Competitor Accusations:** Never claim a competitor copied, learned from, or is a subset of Entroly unless public, documented proof is cited.
-- **Truthful Branding:** Refer to competitors by their exact names: `Headroom` for the product (`chopratejas/headroom` for repo); `LeanCTX` for the product (`yvgude/lean-ctx` or `lean-ctx` for package/repo).
+- **Neutral Positioning:** Prefer Entroly-first proof, developer outcomes, and reproducible commands over competitor-specific comparison language.
 - **Telemetry Precision:** Never claim "zero telemetry." Instead, use **"no outbound analytics by default"** to distinguish local metrics from phone-home telemetry.
 - **Realistic Claims:** Do not present `entroly verify-claims` as a finance-grade ROI guarantee. Describe it as a **"bounded local smoke test."**
 - **Measure First:** Always invite developers to run measurements on their own codebases before trusting marketing figures.

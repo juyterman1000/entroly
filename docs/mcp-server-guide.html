@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MCP Server for Code Context — Entroly MCP Server Setup Guide</title>
-<meta name="description" content="Set up an MCP server that gives AI coding tools full codebase context. Works with Cursor, Claude Code, VS Code, Windsurf, and Cline. One command install.">
+<meta name="description" content="Set up Entroly as a local MCP server for AI coding tools. Verify locally first, then connect Claude Code, Cursor, VS Code, Windsurf, or Cline.">
 <meta name="keywords" content="MCP server, Model Context Protocol, MCP server Cursor, MCP server Claude Code, MCP context, MCP coding, MCP setup guide, MCP server setup, context MCP, code context MCP server, AI MCP server">
-<meta property="og:title" content="MCP Server for Full Codebase Context — Setup Guide">
-<meta property="og:description" content="Give supported MCP-compatible AI tools access to your codebase context. One command setup with Entroly.">
+<meta property="og:title" content="Entroly MCP Server Setup Guide">
+<meta property="og:description" content="Add local context optimization, receipts, recovery, and verification to supported MCP-compatible AI coding tools.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html">
 <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="MCP Server for Full Codebase Context — Setup Guide">
-<meta name="twitter:description" content="Give AI coding tools access to your full codebase context via MCP. Works with Cursor, Claude Code, VS Code. One command setup.">
+<meta name="twitter:title" content="Entroly MCP Server Setup Guide">
+<meta name="twitter:description" content="Verify Entroly locally, then connect it to Claude Code, Cursor, VS Code, Windsurf, or Cline via MCP.">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"TechArticle","headline":"MCP Server for Code Context — Setup Guide","description":"Set up an MCP server that gives AI coding tools full codebase context.","author":{"@type":"Organization","name":"Entroly","url":"https://github.com/juyterman1000/entroly"},"datePublished":"2026-04-05","dateModified":"2026-06-07","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html"}
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Entroly MCP Server Setup Guide","description":"Set up Entroly as a local MCP server for AI coding tools with context optimization, receipts, recovery, and verification.","author":{"@type":"Organization","name":"Entroly","url":"https://github.com/juyterman1000/entroly"},"datePublished":"2026-04-05","dateModified":"2026-07-04","mainEntityOfPage":"https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html"}
 </script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -52,13 +52,21 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 </nav>
 
 <article>
-<h1>MCP Server for Full Codebase Context — Setup Guide</h1>
+<h1>Entroly MCP Server Setup Guide</h1>
 
-<p><strong>Last updated: April 2026</strong> | Reading time: 6 min</p>
+<p><strong>Last updated: July 2026</strong> | Reading time: 6 min</p>
 
 <p>The <strong>Model Context Protocol (MCP)</strong> is the new standard for connecting AI coding tools to external context sources. Cursor, Claude Code, VS Code, Windsurf, and Cline all support MCP servers — but most MCP servers just expose basic file read/search operations.</p>
 
-<p><strong>Entroly's MCP server is different.</strong> It doesn't just serve files — it serves <strong>optimally selected, compressed, dependency-aware context</strong> that gives your AI tool broader visibility into your codebase.</p>
+<p><strong>Entroly's MCP server is different.</strong> It adds local context optimization, exact recovery, Context Receipts, feedback, and verification tools. The best first run proves this locally before you connect a paid model key or proxy.</p>
+
+<h2>Start Here</h2>
+
+<pre>pip install -U entroly
+entroly verify-claims
+entroly simulate</pre>
+
+<p>These commands run locally. They check SDK import, indexing, optimization under budget, exact recovery, and native-or-fallback engine mode. Then choose the integration path that matches how you work.</p>
 
 <h2>What is MCP?</h2>
 
@@ -71,7 +79,7 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 <table>
   <tr><th></th><th>Basic MCP Server</th><th>Entroly MCP Server</th></tr>
   <tr><td><strong>Serves</strong></td><td>Raw files</td><td>Optimally compressed context</td></tr>
-  <tr><td><strong>Coverage</strong></td><td>Files you ask for</td><td>Entire codebase at variable resolution</td></tr>
+  <tr><td><strong>Coverage</strong></td><td>Files you ask for</td><td>Selected workspace context at variable resolution</td></tr>
   <tr><td><strong>Dependencies</strong></td><td>Not tracked</td><td>Auto-included</td></tr>
   <tr><td><strong>Duplicates</strong></td><td>Sent as-is</td><td>Detected and merged (SimHash)</td></tr>
   <tr><td><strong>Token budget</strong></td><td>No awareness</td><td>Knapsack-optimal allocation</td></tr>
@@ -82,25 +90,30 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 <h2>Setup by AI Tool</h2>
 
 <h3>Cursor</h3>
-<pre>pip install entroly[full]
+<pre>pip install -U entroly
 entroly init</pre>
 <p>Entroly auto-detects Cursor and generates <code>.cursor/mcp.json</code>. Restart Cursor and the MCP server connects automatically.</p>
 
 <h3>Claude Code</h3>
-<pre>pip install entroly[full]
+<pre>pip install -U entroly
 claude mcp add entroly -- entroly</pre>
-<p>One command. Claude Code connects to Entroly's MCP server on the next session.</p>
+<p>Best path for Claude Code subscription users. Claude Code stays your client; Entroly adds local MCP tools without proxy/API-key assumptions.</p>
 
 <h3>VS Code / Windsurf / Cline</h3>
-<pre>pip install entroly[full]
+<pre>pip install -U entroly
 entroly init</pre>
 <p>Auto-detects your IDE and generates the appropriate MCP configuration.</p>
 
 <h3>Any MCP-Compatible Tool</h3>
-<pre>pip install entroly[full]
+<pre>pip install -U entroly
 entroly serve --transport stdio</pre>
 <p>Or with SSE transport for remote connections:</p>
 <pre>entroly serve --transport sse --port 9378</pre>
+
+<h3>Node/WASM, No Python</h3>
+<pre>npm install -g entroly
+entroly serve</pre>
+<p>Or use <code>npx -y entroly-wasm serve</code> in an MCP JSON config when you want a no-Python path.</p>
 
 <h2>MCP Tools Provided by Entroly</h2>
 
@@ -125,8 +138,8 @@ entroly serve --transport stdio</pre>
 <ol>
   <li>The AI tool calls <code>optimize_context</code> with the user's query and token budget</li>
   <li>Entroly's Rust engine scores and selects the optimal code fragments in &lt;10ms</li>
-  <li>The selected context is delivered at variable resolution — full, signatures, or references</li>
-  <li>The AI tool receives context covering <strong>supported files at variable resolution</strong> using <strong>78% fewer tokens</strong></li>
+  <li>The selected context is delivered at variable resolution — full text, signatures, or references</li>
+  <li>The AI tool receives broader useful context under a smaller token budget; exact savings depend on the repo, query, and budget</li>
   <li>After the AI responds, <code>record_outcome</code> feeds the learning loop</li>
 </ol>
 
@@ -158,6 +171,9 @@ entroly serve --quality speed       # fastest, lighter optimization</pre>
 <pre>entroly doctor</pre>
 <p>Runs 7 diagnostic checks including MCP connectivity, port availability, and config validation.</p>
 
+<h3>Not sure whether to use MCP or proxy?</h3>
+<p>Use MCP for Claude Code subscriptions and MCP-native IDEs. Use proxy mode only when you control a provider API key and want transparent Anthropic/OpenAI-compatible request optimization.</p>
+
 <h3>Cursor doesn't see the MCP server</h3>
 <p>Check that <code>.cursor/mcp.json</code> exists and restart Cursor. Entroly needs to be installed globally or in the same environment Cursor can access.</p>
 
@@ -165,9 +181,12 @@ entroly serve --quality speed       # fastest, lighter optimization</pre>
 <p>Switch to a faster quality preset: <code>entroly serve --quality speed</code>. Or install the Rust engine: <code>pip install entroly[native]</code>.</p>
 
 <div class="cta-box">
-  <h3>The smartest MCP server for AI coding.</h3>
-  <p>Broader codebase context. 78% fewer tokens. Works with supported MCP-compatible tools.</p>
-  <pre>pip install entroly[full] && entroly init</pre>
+  <h3>Local context OS for AI coding agents.</h3>
+  <p>Verify locally, then add MCP context optimization, receipts, recovery, and feedback tools to supported MCP-compatible clients.</p>
+  <pre>pip install -U entroly
+entroly verify-claims
+entroly simulate
+entroly init</pre>
   <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
 </div>
 

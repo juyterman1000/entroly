@@ -1,6 +1,6 @@
 # entroly
 
-Compatibility package for npm users.
+Node/WASM package for Entroly, the local context OS for AI coding agents.
 
 This package installs the current Node/WebAssembly Entroly runtime by depending
 on [`entroly-wasm`](https://www.npmjs.com/package/entroly-wasm), then exposes a
@@ -18,18 +18,45 @@ Equivalent direct package:
 npm install -g entroly-wasm
 ```
 
+For the fullest CLI/SDK/proxy path, use the Python package:
+
+```bash
+pip install -U entroly
+entroly verify-claims
+entroly simulate
+```
+
 ## Usage
 
 ```bash
+entroly demo
+entroly status
 entroly serve
 entroly optimize 8000 "fix the auth bug"
 entroly health
-entroly demo
 ```
 
-For Python users, use the PyPI package instead:
+## MCP setup
+
+For MCP clients that accept JSON config:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-wasm", "serve"]
+    }
+  }
+}
+```
+
+Claude Code subscription users usually get the smoothest path from the Python
+package:
 
 ```bash
-pip install entroly
-entroly go
+pip install -U entroly
+claude mcp add entroly -- entroly
 ```
+
+Proxy mode is optional and intended for users who control provider API keys.

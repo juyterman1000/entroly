@@ -1,7 +1,7 @@
 {
   "name": "entroly-wasm",
   "version": "1.0.42",
-  "description": "Auditable context control plane for AI agents: context receipts, local optimization, MCP, and app SDK helpers. Pure WebAssembly, no Python dependency.",
+  "description": "Pure WebAssembly local context OS for AI agents: context receipts, local optimization, MCP, app SDK helpers, and no Python dependency.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -51,7 +51,7 @@
     "test": "node test_wasm_e2e.js"
   },
   "keywords": [
-    "entroly", "context-receipts", "context-control-plane", "context-optimization", "mcp", "mcp-server", "ai", "agents",
+    "entroly", "context-receipts", "context-control-plane", "local-context-os", "context-optimization", "mcp", "mcp-server", "ai", "agents",
     "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
   ],
   "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },

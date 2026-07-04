@@ -2,7 +2,7 @@
   "name": "entroly-mcp",
   "version": "1.0.42",
   "mcpName": "io.github.juyterman1000/entroly",
-  "description": "NPX bridge for Entroly, an auditable context control plane with MCP tools, Context Receipts, and local optimization for AI agents.",
+  "description": "NPX MCP bridge for Entroly, the local context OS with receipts, recovery, verification, and token optimization for AI coding agents.",
   "main": "index.js",
   "bin": {
     "entroly-mcp": "./bin/entroly-mcp.js"
@@ -25,10 +25,13 @@
     "mcp",
     "context-receipts",
     "context-control-plane",
+    "local-context-os",
     "context-optimization",
     "entroly",
     "ai",
-    "agents"
+    "agents",
+    "claude-code",
+    "cursor"
   ],
   "author": "entroly",
   "license": "Apache-2.0"

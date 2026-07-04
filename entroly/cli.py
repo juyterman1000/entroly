@@ -171,16 +171,21 @@ def _check_first_run() -> None:
 {C.CYAN}{C.BOLD}  Welcome to Entroly{C.RESET} — information-theoretic context optimization
   for AI coding agents.
 
-  {C.BOLD}Get started in 60 seconds:{C.RESET}
+  {C.BOLD}Prove value locally first — no API key needed:{C.RESET}
 
-    {C.BOLD}Step 1:{C.RESET} {C.CYAN}entroly init{C.RESET}       Auto-detect your IDE and generate MCP config
-    {C.BOLD}Step 2:{C.RESET} {C.CYAN}entroly proxy{C.RESET}      Start the invisible prompt compiler proxy
-    {C.BOLD}Step 3:{C.RESET} Point your IDE's API base URL to {C.CYAN}http://localhost:9377{C.RESET}
+    {C.BOLD}Step 1:{C.RESET} {C.CYAN}entroly verify-claims{C.RESET}  Verify SDK, indexing, optimization, recovery
+    {C.BOLD}Step 2:{C.RESET} {C.CYAN}entroly simulate{C.RESET}       Estimate savings on this repo without an LLM call
 
-  {C.BOLD}See entroly in action:{C.RESET}
-    {C.CYAN}entroly demo{C.RESET}        Run a before/after comparison showing token savings
+  {C.BOLD}Best setup for subscriptions:{C.RESET}
+    {C.CYAN}claude mcp add entroly -- entroly{C.RESET}
+    Claude Code stays your client; Entroly adds local compression and retrieval tools.
+
+  {C.BOLD}Proxy mode for API-key users:{C.RESET}
+    {C.CYAN}entroly proxy{C.RESET}          Start the local proxy at {C.CYAN}http://localhost:9377{C.RESET}
+    {C.CYAN}entroly wrap claude{C.RESET}    Wrap a supported coding agent
 
   {C.BOLD}Useful commands:{C.RESET}
+    {C.CYAN}entroly demo{C.RESET}        Run a before/after comparison showing token savings
     {C.CYAN}entroly status{C.RESET}      Check if server/proxy is running
     {C.CYAN}entroly doctor{C.RESET}      Diagnose common issues
     {C.CYAN}entroly health{C.RESET}      Analyze codebase health (grade A-F)
