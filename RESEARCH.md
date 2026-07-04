@@ -1,20 +1,20 @@
 # The Mathematics of Verified Context
 
-> Entroly is the only context engine for AI coding agents built on substantive original algorithms — not a wrapper over standard RAG. This document names and explains each one. Every algorithm below is implemented and runs on the production path.
+> Entroly combines standard retrieval/selection machinery with several implemented verification, learning, memory, and routing primitives. This document names the main research surfaces, explains the mathematics behind them, and states where they are production-default, opt-in, or still an extension point.
 
 ---
 
 ## Why this page exists
 
-Most "context engines" do retrieval plus a token-budget knapsack and call it done. Entroly does that — and then **five more substantive things**, each one a research-grade contribution. The depth is why entroly is the only system that can *prove* a model stayed grounded, not just hope. This page is the canonical mathematical reference. Code citations point to actual implementations. Equations are reproducible from first principles.
+Most context engines combine retrieval, ranking, and token-budget allocation. Entroly does that, then adds local verification, recoverability, feedback learning, memory, and routing layers. The goal is not to claim perfect grounding; it is to make context selection inspectable, recoverable, and measurable. Code citations point to actual implementations, and limitations are called out in [docs/limitations.md](docs/limitations.md).
 
 A short summary of what's below:
 
 | Algorithm | What it does | Why it matters | Implementation |
 |---|---|---|---|
-| **BIPT** | Byte-level Kolmogorov-bounded provenance | First system to detect hallucinations by *information-theoretic* trace, not semantic guessing | [`verifiers/provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
+| **BIPT** | Byte-level provenance heuristic inspired by conditional information | Detects invented or weakly grounded identifiers in code-like output | [`verifiers/provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
 | **NKBE** | Nash-KKT multi-agent token budget allocation | Optimal split when N agents share one context window | [`entroly-core/src/nkbe.rs`](entroly-core/src/nkbe.rs) |
-| **Causal Context Graph** | Pearl-grade do-calculus on RAG | Removes coattail bias from RL signal — fragment values are *causal*, not correlated | [`entroly-core/src/causal.rs`](entroly-core/src/causal.rs) |
+| **Causal Context Graph** | Intervention-aware fragment feedback | Reduces co-selection bias in learned fragment values | [`entroly-core/src/causal.rs`](entroly-core/src/causal.rs) |
 | **Cognitive Bus** | ISA event routing with KL-divergence priority | Principled inter-agent communication substrate with hippocampus bridge | [`entroly-core/src/cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs) |
 | **Resonance Matrix** | Supermodular pairwise fragment learning | Captures combinatorial context value beyond what knapsack expresses | [`entroly-core/src/resonance.rs`](entroly-core/src/resonance.rs) |
 | **System 1 ↔ System 2 coupling** | Dual-process bridge (proxy ↔ vault) | Kahneman-grade architecture; verified beliefs flow into proxy context, outcomes flow back | [`entroly/coupling.py`](entroly/coupling.py) |
@@ -34,7 +34,7 @@ Every prior hallucination detector asks "Is this output *correct*?" BIPT asks a 
 
 If the LLM was given context **C** and produced output **O**, then every identifier, every API call, every constant in **O** must have a *provenance trail* back to **C**. Bytes with no provenance are **inventions** — and inventions in identifier positions are hallucinations.
 
-This is the first system to apply Kolmogorov complexity theory to hallucination detection.
+BIPT is a practical provenance heuristic inspired by conditional information: it asks how much of a code-like output can be traced back to byte sequences present in the supplied context.
 
 ### The math
 
@@ -61,7 +61,7 @@ The headline metric:
 
 ### Why it matters
 
-Standard hallucination detectors look at outputs *post hoc* and guess. BIPT works at the byte level — it gives you a **receipt**: which exact identifiers in the model's output came from your source, and which were invented. The latter set is your hallucination set, computed deterministically in O(\|C\| + \|O\|).
+Standard hallucination detectors look at outputs *post hoc* and infer semantic support. BIPT works at the byte level — it gives you a **receipt**: which identifiers in the model's output have byte-level provenance in your source, and which are weakly grounded or novel. It is deterministic and cheap, but it is not a proof of semantic correctness.
 
 ---
 
@@ -71,7 +71,7 @@ Standard hallucination detectors look at outputs *post hoc* and guess. BIPT work
 
 ### The problem
 
-When N AI agents share a global context budget B, what's the optimal split? Every other context engine: flat division. Entroly: **Nash bargaining over agent utility functions, with KKT bisection.**
+When N AI agents share a global context budget B, what's a principled split? Entroly includes a budget-allocation surface based on utility functions, KKT bisection, and Nash-style fairness refinements.
 
 ### The optimization
 
@@ -126,7 +126,7 @@ The gap reveals confounding bias:
 
 ### Why it matters
 
-This is Pearl-grade causal inference applied to retrieval-augmented generation. Nobody else has it. It's why entroly's RL loop converges to *correct* fragment values instead of correlated noise.
+This is an intervention-aware feedback model for retrieval-augmented generation. It is designed to reduce correlated-noise reinforcement, but it should be evaluated as a heuristic unless backed by task-specific causal benchmarks.
 
 ---
 
@@ -217,7 +217,7 @@ Real codebases have *compositional* context value — a struct definition is use
 | 4 | **PROVE** ([semantic_entropy](entroly/verifiers/semantic_entropy.py)) | Prose hallucination via causal-weighted predicate alignment (Kuhn / Gal / Farquhar, ICLR 2023) |
 | 5 | **CAVE** ([reasoning_chain](entroly/verifiers/reasoning_chain.py)) | Counterfactual decorative-premise ablation (Lightman 2023 PRM + Shi ICML 2023) |
 
-One detector misses; five don't. Every request runs all five by default.
+One detector misses; layered verification reduces blind spots. Cheap grounding checks can run on normal paths, while deeper checks and FORGE repair are risk-gated or explicit depending on configuration. See [docs/architecture.md](docs/architecture.md) and [docs/limitations.md](docs/limitations.md) for the production boundary.
 
 ---
 
@@ -255,15 +255,15 @@ Most systems have *either* fast retrieval *or* deliberate verification, never bo
 
 ## What this means for you
 
-Every algorithm above runs on every request, by default, with no extra wiring. You don't pick which one to enable — they all fire, and you see the result.
+These surfaces are available in the repo, but they do not all run on every request by default. The production posture is layered:
 
-- **Token savings 70–95%** — knapsack + entropy + dedup do the compression.
-- **Zero invented APIs** — BIPT + FORGE catch and repair fabrications.
-- **Causally correct learning** — Causal CG removes coattail bias from RL updates.
-- **Optimal multi-agent splits** — NKBE solves the budget allocation.
-- **Compositional context value** — Resonance learns pairwise dependencies.
+- **Token savings 70–95% on large eligible workloads** — knapsack + entropy + dedup reduce input context; small prompts should pass through.
+- **Invented-identifier detection** — BIPT can flag weakly grounded code identifiers; FORGE can attempt explicit, budgeted repair loops.
+- **Bias-aware learning** — Causal Context Graph reduces co-selection bias in fragment feedback.
+- **Multi-agent budget planning** — NKBE provides a principled allocation strategy when multiple agents share a context budget.
+- **Compositional context value** — Resonance learns pairwise dependencies from outcomes.
 
-No other context engine has any of these except #1 (compression). That's the substrate.
+The substrate is strongest when these claims are tied to committed tests, benchmark JSON, or local reports. Ambitious claims should be promoted only when the corresponding measurement is reproducible.
 
 ---
 
