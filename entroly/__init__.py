@@ -269,6 +269,22 @@ try:
 except ImportError:
     pass
 
+# Loop/harness session controls: receipt chaining, turn-budget envelopes, and
+# WITNESS taint propagation across multi-turn agent runs.
+try:
+    from .session_intelligence import (  # noqa: F401
+        HallucinationTaintTracker,
+        SessionBudgetDecision,
+        SessionReceiptChain,
+        SessionReceiptLink,
+        SuspectEntity,
+        TaintPropagationReport,
+        allocate_session_turn_budget,
+        extract_taint_entities,
+    )
+except ImportError:
+    pass
+
 
 # Cache-aware gateway control plane: deterministic prefixes, provider cache
 # leases, capability-safe failover, real usage accounting, and harness budgets.
