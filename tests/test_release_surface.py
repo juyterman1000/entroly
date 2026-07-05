@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.42"
+RELEASE_VERSION = "1.0.44"
 
 
 def _read_json(path: str) -> dict:
@@ -59,7 +59,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_42() -> None:
+def test_public_package_versions_are_1_0_44() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
