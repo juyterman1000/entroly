@@ -112,7 +112,7 @@ def test_no_orphaned_registered_commands():
         "clean", "export", "import", "drift", "profile", "doctor",
         "migrate", "role", "completions", "compile", "sync", "search",
         "docs", "share", "finetune", "learn", "verify", "verify-code",
-        "autotune", "digest", "health", "witness",
+        "autotune", "digest", "health", "witness", "audit",
     }
     orphaned = registered - readme_claimed - INTERNAL_ONLY
     assert not orphaned, (
@@ -166,7 +166,7 @@ def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
 @pytest.mark.parametrize("subcmd", [
     "wrap", "ravs", "proxy", "serve", "dashboard", "demo", "batch",
     "benchmark", "go", "daemon", "verify", "verify-code", "compile",
-    "doctor", "witness",
+    "doctor", "witness", "audit",
 ])
 def test_subcommand_help_runs(subcmd: str):
     """Every advertised subcommand must produce help without crashing."""

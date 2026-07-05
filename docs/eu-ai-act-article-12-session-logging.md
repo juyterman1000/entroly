@@ -1,0 +1,96 @@
+# EU AI Act Article 12 Session Logging Mapping
+
+This page maps Entroly session-chain artifacts to EU AI Act logging evidence.
+It is not legal advice and does not decide whether a deployment is high-risk.
+It is a technical evidence map for teams that need to review agentic AI logs.
+
+Primary legal anchors:
+
+- Article 12 requires high-risk AI systems to technically allow automatic event logging over the system lifetime, with traceability appropriate to the intended purpose.
+- Article 12(2) calls out logs relevant to risk situations, post-market monitoring, and operation monitoring.
+- Article 26(6) is the deployer-side retention obligation: deployers keep automatically generated logs under their control for an appropriate period of at least six months unless other law requires otherwise.
+
+Sources:
+
+- EU AI Act Service Desk, Article 12: https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-12
+- EU AI Act Service Desk, Article 26: https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-26
+
+## Entroly Artifacts
+
+| Artifact or field | What Entroly records | EU AI Act logging relevance | Evidence status | Boundary |
+|---|---|---|---|---|
+| `SessionReceiptChain.schema_version` | Session-chain schema version. | Supports traceability and stable interpretation of logs under Article 12(2). | Present in `session_chain.json`. | Schema versioning is evidence structure, not a legal conclusion. |
+| `SessionReceiptChain.session_id` | Stable identifier for one agentic session. | Helps identify each system use or agent run for Article 12 traceability. | Present in `session_chain.json` and `entroly audit`. | The deploying system should bind this to tenant, user, workflow, and environment metadata when required. |
+| `SessionReceiptChain.links[]` | Ordered list of per-turn receipt links. | Automatic event log across the agent loop under Article 12(1). | Present in `session_chain.json`. | Entroly records the chain; the host app decides when a session starts and ends. |
+| `SessionReceiptChain.head_receipt_id` | Current final chain receipt id. | Supports reconstruction of the latest session state. | Present in `session_chain.json`. | Must be retained with the session artifact. |
+| `SessionReceiptChain.head_receipt_hash` | Current final content hash. | Supports tamper-evident traceability. | Present in `session_chain.json`. | Hash integrity does not replace access control or secure storage. |
+| `SessionReceiptChain.chain_hash` | Strict canonical hash over the session-chain payload. | Supports tamper-evident export for Article 12 traceability and later review. | Verified by `SessionReceiptChain.verify_integrity()` and shown by `entroly audit`. | If the file is rewritten and the hash is recomputed by an attacker, external timestamping or signed storage is still needed. |
+| `SessionReceiptLink.turn_index` | Monotonic turn number. | Establishes event order for Article 12 traceability. | Verified as monotonic by append logic. | Wall-clock start and end times should be supplied by the host runtime when needed. |
+| `SessionReceiptLink.receipt_id` | Content-derived id: `cr_` plus receipt-hash prefix. | Prevents caller-supplied ids from splitting identity away from content. | Verified by `verify_integrity()`. | Prefix ids are convenient identifiers; the full `receipt_hash` is the stronger evidence. |
+| `SessionReceiptLink.receipt_hash` | Stable hash of the receipt payload. | Content-addresses each logged turn. | Verified for parent linkage and duplicate detection. | The original receipt payload must be retained if a reviewer must recompute the hash independently. |
+| `SessionReceiptLink.source_receipt_id` | Optional caller-provided id from an upstream receipt system. | Preserves integration traceability without trusting external ids as chain identity. | Present when supplied. | Not authoritative for chain integrity. |
+| `SessionReceiptLink.parent_receipt_id` | Previous turn's chain id. | Establishes chained event continuity. | Checked by `verify_integrity()`. | Only meaningful together with `parent_receipt_hash`. |
+| `SessionReceiptLink.parent_receipt_hash` | Previous turn's content hash. | Makes sequence tampering detectable across turns. | Checked by `verify_integrity()`. | External signing is recommended for adversarial storage environments. |
+| `SessionReceiptLink.query` | Task or query associated with the turn. | Helps monitor operation under Article 12(2)(c). | Present when supplied by the caller. | Sensitive prompts may need redaction, minimisation, or separate protected storage. |
+| `SessionReceiptLink.token_budget` | Per-turn token budget. | Records operational constraints applied to the AI system. | Present when supplied. | Not required by Article 12 text, but useful for reconstructing context constraints. |
+| `SessionReceiptLink.budget_decision` | Policy, allocated budget, remaining budget, and closing reserve. | Supports operational traceability and post-incident review under Article 12(2). | Present when generated by `allocate_session_turn_budget()`. | Budget records do not prove model quality; they prove the context envelope used. |
+| `SessionReceiptLink.risk_summary` | Per-turn risk metadata from the receipt path. | Supports Article 12(2)(a) risk-situation identification. | Present when the caller attaches risk data. | Risk meaning depends on the upstream verifier and policy configuration. |
+| `SessionReceiptLink.created_at` | Turn creation timestamp. | Supports reconstruction of period and sequence of use. | Present in each link. | Article 12(3)(a) for remote biometric identification requires start and end times of each use; Entroly stores event time, not full use-duration by itself. |
+| `HallucinationTaintTracker.suspects` | Suspect entities that originated from WITNESS-flagged claims. | Supports Article 12(2)(a) risk event identification. | Present in `session_taint.json` and shown by `entroly audit --taint`. | This is hallucination-risk evidence, not a final legal or factual determination. |
+| `SuspectEntity.origin_turn` | Turn where the suspect entity first appeared in WITNESS evidence. | Helps locate the origin of a risk-relevant event. | Present in taint JSON and audit report. | Requires WITNESS to be run and its output attached. |
+| `SuspectEntity.propagated_turns` | Later turns where the suspect entity reappeared. | Supports traceability of risk propagation through an agent loop. | Present in taint JSON and audit report. | Cross-agent propagation requires a future multi-agent chain. |
+| `SuspectEntity.risk` | Decayed suspect risk score. | Helps prioritize review of risk-relevant events under Article 12(2)(a). | Present in taint JSON and audit report. | Risk score is a technical signal, not a legal finding. |
+| `SuspectEntity.labels` | WITNESS labels such as unsupported or unknown. | Provides review context for monitoring and post-market analysis. | Present in taint JSON and audit report. | Label vocabulary depends on WITNESS policy. |
+| `SessionReceiptChain.write_json()` | Serializes the chain artifact. | Enables handoff of logs outside engineering runtime. | Produces `session_chain.json`. | Retention, access control, signing, and storage location are deployer responsibilities. |
+| `SessionReceiptChain.read_json()` | Reloads the chain artifact for review. | Supports later inspection and post-market monitoring. | Used by `entroly audit`. | File availability depends on storage retention. |
+| `SessionReceiptChain.verify_integrity()` | Checks hash-derived ids, duplicate hashes, parent linkage, and chain hash. | Provides tamper-evidence for Article 12 traceability. | Used by tests and `entroly audit`. | Tamper-evident is not the same as tamper-proof. |
+| `entroly audit SESSION_CHAIN_JSON` | Human-readable audit report for the session chain. | Converts raw logs into reviewer-facing evidence. | CLI command. | The command reports evidence; it does not certify legal compliance by itself. |
+
+## What Entroly Provides
+
+Entroly provides a technical logging artifact for agentic sessions:
+
+- content-derived receipt ids;
+- per-turn content hashes;
+- parent id and hash chaining;
+- session-level chain hash;
+- JSON persistence;
+- integrity verification;
+- budget-envelope traceability;
+- WITNESS-originated suspect entity propagation;
+- a human-readable audit report.
+
+## What Deployers Must Still Configure
+
+Entroly does not replace deployment governance. A deployer still needs to decide
+and document:
+
+- whether the use case is high-risk under the EU AI Act;
+- retention period and storage policy, including the Article 26(6) six-month floor where applicable;
+- tenant and user identity binding;
+- access control and audit-log read permissions;
+- data minimisation and redaction policy for prompts, context, and outputs;
+- region and residency controls;
+- incident review workflow;
+- external signing, timestamping, or WORM storage if adversarial tampering is in scope.
+
+## Annex III Remote Biometric Identification Note
+
+Article 12(3) has additional minimum logging fields for high-risk systems
+referred to in Annex III point 1(a), including period of each use, reference
+database, input data that led to a match, and natural persons involved in
+verification. Entroly's session chain can carry adjacent metadata, but it does
+not automatically collect biometric reference databases, match inputs, or human
+verifier identities unless the integrating system supplies those fields.
+
+## Recommended Product Language
+
+Use:
+
+> Entroly session chains provide tamper-evident, content-addressed logging
+> evidence for agentic AI sessions, with field-level traceability that can
+> support EU AI Act Article 12 logging reviews.
+
+Avoid:
+
+> Entroly makes your system EU AI Act compliant.

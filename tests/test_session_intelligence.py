@@ -272,6 +272,18 @@ def test_session_receipt_chain_detects_tampered_json() -> None:
     assert any("receipt_id is not hash-derived" in issue for issue in result["issues"])
 
 
+def test_session_receipt_chain_hash_survives_write_read_round_trip(tmp_path) -> None:
+    chain = SessionReceiptChain(session_id="round-trip")
+    chain.append({"receipt_id": "external_1", "query": "inspect"}, created_at=1.0)
+    chain.append({"receipt_id": "external_2", "query": "test"}, created_at=2.0)
+
+    output = chain.write_json(tmp_path / "session_chain.json")
+    loaded = SessionReceiptChain.read_json(output)
+
+    assert loaded.chain_hash() == chain.chain_hash()
+    assert loaded.verify_integrity()["valid"] is True
+
+
 def test_session_receipt_chain_rejects_duplicate_content_hashes() -> None:
     chain = SessionReceiptChain(session_id="agent-session-1")
     chain.append({"receipt_id": "external_1", "query": "same"}, created_at=1.0)

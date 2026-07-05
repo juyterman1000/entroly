@@ -12,6 +12,11 @@ from types import SimpleNamespace
 import pytest
 
 from entroly import cli
+from entroly.session_intelligence import (
+    HallucinationTaintTracker,
+    SessionReceiptChain,
+    allocate_session_turn_budget,
+)
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
@@ -253,6 +258,222 @@ def test_wrap_claude_subscription_dry_run_is_success(monkeypatch, capsys):
     assert cli.cmd_wrap(args) == 0
     out = capsys.readouterr().out
     assert "claude mcp add entroly -- entroly" in out
+
+
+def test_audit_command_renders_session_chain_and_taint(tmp_path, capsys):
+    chain = SessionReceiptChain(session_id="agent-session-abc123")
+    decision = allocate_session_turn_budget(
+        total_budget=100_000,
+        turn_index=0,
+        policy="flat",
+    )
+    chain.append(
+        {"receipt_id": "external-1", "query": "inspect", "token_budget": 2048},
+        budget_decision=decision,
+        created_at=1.0,
+    )
+    chain.append(
+        {"receipt_id": "external-2", "query": "fix", "token_budget": 1024},
+        created_at=2.0,
+    )
+    chain_path = chain.write_json(tmp_path / "session_chain.json")
+
+    tracker = HallucinationTaintTracker(risk_half_life_turns=1000.0)
+    tracker.observe_witness(
+        turn_index=3,
+        receipt_id="external-3",
+        witness_result={
+            "certificates": [
+                {
+                    "claim_text": "Call imaginary_api_client before deployment",
+                    "label": "unsupported",
+                    "risk": 0.92,
+                }
+            ]
+        },
+    )
+    tracker.observe_turn(
+        turn_index=4,
+        receipt_id="external-4",
+        response="imaginary_api_client appeared again",
+    )
+    taint_path = tracker.write_json(tmp_path / "session_taint.json")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(chain_path),
+            taint=str(taint_path),
+            json=False,
+        )
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Session: agent-session-abc123" in out
+    assert "Chain integrity: VALID" in out
+    assert "Article 12 logging evidence: FULL" in out
+    assert "Budget hotspot: turn 0 used" in out
+    assert "Turn budget ledger:" in out
+    assert "Context poisoning trail:" in out
+    assert "WITNESS flagged: imaginary_api_client" in out
+    assert "propagation detected" in out
+
+
+def test_audit_command_emits_json_with_cost_attribution(tmp_path, capsys):
+    chain = SessionReceiptChain(session_id="agent-session-json")
+    decision = allocate_session_turn_budget(
+        total_budget=100_000,
+        turn_index=0,
+        policy="flat",
+    )
+    chain.append(
+        {"receipt_id": "external-1", "query": "inspect", "token_budget": 2048},
+        budget_decision=decision,
+        created_at=1.0,
+    )
+    chain_path = chain.write_json(tmp_path / "session_chain.json")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(chain_path),
+            taint=None,
+            json=True,
+            input_price_per_million=6.0,
+            max_turns=20,
+        )
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["session_id"] == "agent-session-json"
+    assert payload["chain_integrity"] == "VALID"
+    assert payload["article_12_logging_evidence"] == "full"
+    assert payload["budget"]["estimated_input_cost_usd"] > 0
+    assert payload["budget"]["peak_turn"]["turn_index"] == 0
+    assert payload["budget"]["turns"][0]["query"] == "inspect"
+    assert payload["budget"]["consumed_tokens"] == payload["budget"]["turns"][0]["consumed_tokens"]
+
+
+def test_audit_command_reports_invalid_json(tmp_path, capsys):
+    chain_path = tmp_path / "session_chain.json"
+    chain_path.write_text("{not-json", encoding="utf-8")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(chain_path),
+            taint=None,
+            json=False,
+            input_price_per_million=0.0,
+            max_turns=20,
+        )
+    )
+
+    assert rc == 1
+    assert "Session chain is not valid JSON" in capsys.readouterr().err
+
+
+def test_audit_command_reports_auto_discovered_invalid_taint_json(tmp_path, capsys):
+    chain = SessionReceiptChain(session_id="invalid-taint")
+    chain.append({"receipt_id": "external-1", "query": "inspect"}, created_at=1.0)
+    chain_path = chain.write_json(tmp_path / "session_chain.json")
+    (tmp_path / "session_taint.json").write_text("{not-json", encoding="utf-8")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(chain_path),
+            taint=None,
+            json=False,
+            input_price_per_million=0.0,
+            max_turns=20,
+        )
+    )
+
+    assert rc == 1
+    assert "Taint tracker is not valid JSON" in capsys.readouterr().err
+
+
+def test_audit_article_12_evidence_levels_minimal_and_partial(tmp_path, capsys):
+    minimal = SessionReceiptChain(session_id="minimal")
+    minimal.append({"receipt_id": "external-1"}, created_at=1.0)
+    minimal_path = minimal.write_json(tmp_path / "minimal.json")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(minimal_path),
+            taint=None,
+            json=True,
+            input_price_per_million=0.0,
+            max_turns=20,
+        )
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["article_12_logging_evidence"] == "minimal"
+
+    partial = SessionReceiptChain(session_id="partial")
+    partial.append({"receipt_id": "external-1", "query": "inspect"}, created_at=1.0)
+    partial_path = partial.write_json(tmp_path / "partial.json")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(partial_path),
+            taint=None,
+            json=True,
+            input_price_per_million=0.0,
+            max_turns=20,
+        )
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["article_12_logging_evidence"] == "partial"
+
+
+def test_audit_article_12_evidence_level_needs_review_for_invalid_chain(tmp_path, capsys):
+    chain = SessionReceiptChain(session_id="tampered")
+    chain.append({"receipt_id": "external-1", "query": "inspect"}, created_at=1.0)
+    payload = chain.as_dict()
+    payload["links"][0]["receipt_hash"] = "0" * 64
+    chain_path = tmp_path / "tampered_chain.json"
+    chain_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(chain_path),
+            taint=None,
+            json=True,
+            input_price_per_million=0.0,
+            max_turns=20,
+        )
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["chain_integrity"] == "INVALID"
+    assert payload["article_12_logging_evidence"] == "needs_review"
+
+
+def test_audit_command_reports_formatting_failure(tmp_path, monkeypatch, capsys):
+    chain = SessionReceiptChain(session_id="format-failure")
+    chain.append({"receipt_id": "external-1", "query": "inspect"}, created_at=1.0)
+    chain_path = chain.write_json(tmp_path / "session_chain.json")
+
+    def fail_format(*_args, **_kwargs):
+        raise ValueError("missing expected audit field")
+
+    monkeypatch.setattr(cli, "_format_session_audit", fail_format)
+
+    rc = cli.cmd_audit(
+        SimpleNamespace(
+            session_chain=str(chain_path),
+            taint=None,
+            json=False,
+            input_price_per_million=0.0,
+            max_turns=20,
+        )
+    )
+
+    assert rc == 1
+    assert "Could not format audit report" in capsys.readouterr().err
 
 
 def test_telemetry_command_describes_local_preference(tmp_path, monkeypatch, capsys):

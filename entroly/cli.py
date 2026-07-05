@@ -15,6 +15,7 @@ Commands:
     entroly ingest      Ingest docs for Context Receipts
     entroly select      Select context and write a Context Receipt
     entroly receipt     Render a Context Receipt report
+    entroly audit       Render a session-chain audit report
     entroly explain     Explain receipt selection/omission decisions
     entroly simulate    Estimate local token savings without LLM calls
     entroly perf        Measure local optimizer savings/latency without LLM calls
@@ -3929,6 +3930,288 @@ def cmd_receipt(args):
         print(report, end="")
 
 
+def _load_session_taint(path: str | None, chain_path: Path):
+    from entroly.session_intelligence import HallucinationTaintTracker
+
+    candidates: list[Path] = []
+    if path:
+        candidates.append(Path(path))
+    else:
+        candidates.extend([
+            chain_path.with_name("session_taint.json"),
+            chain_path.with_name("taint.json"),
+        ])
+    for candidate in candidates:
+        if candidate.exists():
+            return HallucinationTaintTracker.read_json(candidate)
+    return None
+
+
+def _session_budget_summary(chain, *, input_price_per_million: float = 0.0) -> dict:
+    rows: list[dict] = []
+    total_budget = None
+    closing_reserve = None
+    estimated_cost = 0.0
+    consumed_tokens = 0
+    for link in chain.links:
+        decision = dict(link.budget_decision or {})
+        allocated = max(0, int(decision.get("allocated_budget") or 0))
+        token_budget = max(0, int(link.token_budget or 0))
+        consumed = allocated or token_budget
+        cost = (
+            round((consumed / 1_000_000.0) * input_price_per_million, 6)
+            if input_price_per_million > 0
+            else 0.0
+        )
+        rows.append(
+            {
+                "turn_index": link.turn_index,
+                "receipt_id": link.receipt_id,
+                "query": link.query,
+                "policy": str(decision.get("policy") or ""),
+                "allocated_budget": allocated,
+                "token_budget": token_budget,
+                "consumed_tokens": consumed,
+                "remaining_budget": max(0, int(decision.get("remaining_budget") or 0)),
+                "reserved_closing_budget": max(
+                    0,
+                    int(decision.get("reserved_closing_budget") or 0),
+                ),
+                "reason": str(decision.get("reason") or ""),
+                "estimated_input_cost_usd": cost,
+            }
+        )
+        consumed_tokens += consumed
+        estimated_cost += cost
+        if not decision:
+            continue
+        if decision.get("total_budget") is not None:
+            total_budget = int(decision["total_budget"])
+        if decision.get("reserved_closing_budget") is not None:
+            closing_reserve = int(decision["reserved_closing_budget"])
+    peak_turn = None
+    if rows:
+        peak_turn = max(rows, key=lambda row: (row["consumed_tokens"], row["turn_index"]))
+    return {
+        "consumed_tokens": consumed_tokens,
+        "total_budget": total_budget,
+        "closing_reserve_tokens": closing_reserve,
+        "estimated_input_cost_usd": round(estimated_cost, 6),
+        "input_price_per_million": input_price_per_million,
+        "peak_turn": peak_turn,
+        "turns": rows,
+    }
+
+
+def _session_taint_summary(tracker) -> dict:
+    if tracker is None:
+        return {"entities": 0, "propagated_turns": 0, "suspects": []}
+    suspects = [suspect.as_dict() for suspect in tracker.suspects.values()]
+    suspects.sort(key=lambda item: (item["origin_turn"], item["entity"]))
+    return {
+        "entities": len(suspects),
+        "propagated_turns": sum(
+            len(item.get("propagated_turns", [])) for item in suspects
+        ),
+        "suspects": suspects,
+    }
+
+
+def _article_12_evidence_level(chain, integrity: dict, budget: dict) -> str:
+    """Return the audit evidence completeness level, not a compliance verdict."""
+    if not integrity.get("valid"):
+        return "needs_review"
+    links = list(chain.links)
+    if not links:
+        return "minimal"
+    has_timestamp = any(getattr(link, "created_at", None) is not None for link in links)
+    has_query = any(bool((getattr(link, "query", "") or "").strip()) for link in links)
+    has_budget_decision = any(bool(row.get("policy")) for row in budget.get("turns", []))
+    if has_timestamp and has_query and has_budget_decision:
+        return "full"
+    if has_timestamp and (has_query or has_budget_decision):
+        return "partial"
+    return "minimal"
+
+
+def _format_session_audit(
+    chain,
+    tracker=None,
+    *,
+    json_output: bool = False,
+    input_price_per_million: float = 0.0,
+    max_turns: int = 20,
+) -> str:
+    integrity = chain.verify_integrity()
+    budget = _session_budget_summary(
+        chain,
+        input_price_per_million=max(0.0, float(input_price_per_million or 0.0)),
+    )
+    taint = _session_taint_summary(tracker)
+    chain_hash = chain.chain_hash()
+    status = "VALID" if integrity["valid"] else "INVALID"
+    evidence_level = _article_12_evidence_level(chain, integrity, budget)
+    summary = {
+        "session_id": chain.session_id,
+        "turns": len(chain.links),
+        "chain_integrity": status,
+        "chain_hash": chain_hash,
+        "integrity_issues": integrity["issues"],
+        "budget": budget,
+        "taint": taint,
+        "article_12_logging_evidence": evidence_level,
+    }
+    if json_output:
+        return json.dumps(summary, indent=2, sort_keys=True)
+
+    budget_line = f"{budget['consumed_tokens']:,}"
+    if budget["total_budget"] is not None:
+        budget_line += f" / {budget['total_budget']:,}"
+    else:
+        budget_line += " tokens"
+    if budget["closing_reserve_tokens"] is not None:
+        budget_line += f" (closing reserve: {budget['closing_reserve_tokens']:,})"
+
+    lines = [
+        f"Session: {chain.session_id}",
+        (
+            f"Turns: {len(chain.links)}  |  Chain integrity: {status}  |  "
+            f"Chain hash: {chain_hash}"
+        ),
+        (
+            "Taint events: "
+            f"{taint['entities']} entities, "
+            f"{taint['propagated_turns']} propagated turn references"
+        ),
+        f"Budget consumed: {budget_line}",
+        (
+            "Article 12 logging evidence: "
+            f"{summary['article_12_logging_evidence'].upper()}"
+        ),
+    ]
+    if budget["estimated_input_cost_usd"] > 0:
+        lines.append(
+            "Estimated input cost: "
+            f"${budget['estimated_input_cost_usd']:.6f} "
+            f"@ ${budget['input_price_per_million']:.4f}/1M input tokens"
+        )
+    peak = budget.get("peak_turn")
+    if peak:
+        lines.append(
+            "Budget hotspot: "
+            f"turn {peak['turn_index']} used {peak['consumed_tokens']:,} tokens"
+            + (f" for {peak['query']!r}" if peak.get("query") else "")
+        )
+    if integrity["issues"]:
+        lines.append("")
+        lines.append("Integrity issues:")
+        lines.extend(f"- {issue}" for issue in integrity["issues"])
+
+    if budget["turns"]:
+        shown_turns = len(budget["turns"]) if int(max_turns) < 0 else max(0, int(max_turns))
+        lines.append("")
+        lines.append("Turn budget ledger:")
+        for row in budget["turns"][:shown_turns]:
+            query = row["query"] or "(no query recorded)"
+            line = (
+                f"- Turn {row['turn_index']}: {row['consumed_tokens']:,} tokens"
+                f" | receipt {row['receipt_id']}"
+            )
+            if row["policy"]:
+                line += f" | policy {row['policy']}"
+            if row["estimated_input_cost_usd"] > 0:
+                line += f" | est. ${row['estimated_input_cost_usd']:.6f}"
+            line += f" | {query}"
+            lines.append(line)
+        remaining = len(budget["turns"]) - shown_turns
+        if remaining > 0:
+            lines.append(f"- ... {remaining} more turn(s). Re-run with --max-turns -1 for all.")
+
+    if taint["suspects"]:
+        lines.append("")
+        lines.append("Context poisoning trail:")
+        for suspect in taint["suspects"]:
+            labels = ", ".join(suspect.get("labels", [])) or "flagged"
+            lines.append(
+                f"Turn {suspect['origin_turn']}  WITNESS flagged: "
+                f"{suspect['entity']} (risk: {suspect['risk']:.2f}, "
+                f"labels: {labels})"
+            )
+            propagated = suspect.get("propagated_turns", [])
+            if propagated:
+                turn_list = ", ".join(str(turn) for turn in propagated)
+                lines.append(
+                    f"Turns {turn_list}  -> propagation detected "
+                    f"({len(propagated)} turn references)"
+                )
+    else:
+        lines.append("")
+        lines.append("No taint tracker evidence supplied or no suspect entities recorded.")
+
+    return "\n".join(lines)
+
+
+def cmd_audit(args):
+    """entroly audit SESSION_CHAIN_JSON - render a session-chain audit report."""
+    from entroly.session_intelligence import SessionReceiptChain
+
+    chain_path = Path(args.session_chain)
+    if not chain_path.exists():
+        print(f"Session chain not found: {chain_path}", file=sys.stderr)
+        return 1
+    try:
+        chain = SessionReceiptChain.read_json(chain_path)
+    except json.JSONDecodeError as exc:
+        print(
+            f"Session chain is not valid JSON: {chain_path} "
+            f"(line {exc.lineno}, column {exc.colno})",
+            file=sys.stderr,
+        )
+        return 1
+    except (KeyError, TypeError, ValueError) as exc:
+        print(f"Session chain schema mismatch: {chain_path}: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"Could not read session chain: {chain_path}: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        tracker = _load_session_taint(getattr(args, "taint", None), chain_path)
+    except json.JSONDecodeError as exc:
+        print(
+            f"Taint tracker is not valid JSON "
+            f"(line {exc.lineno}, column {exc.colno})",
+            file=sys.stderr,
+        )
+        return 1
+    except (KeyError, TypeError, ValueError) as exc:
+        print(f"Taint tracker schema mismatch: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"Could not read taint tracker: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        report = _format_session_audit(
+            chain,
+            tracker,
+            json_output=bool(getattr(args, "json", False)),
+            input_price_per_million=float(
+                getattr(args, "input_price_per_million", 0.0) or 0.0
+            ),
+            max_turns=int(getattr(args, "max_turns", 20)),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        print(f"Could not format audit report: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Unexpected audit formatting failure: {exc}", file=sys.stderr)
+        return 1
+
+    print(report)
+    return 0
+
+
 def cmd_explain(args):
     """entroly explain --why-omitted CHUNK_ID - explain an omitted receipt item."""
     from entroly.context_receipts import explain_omitted
@@ -4796,6 +5079,36 @@ def main():
     receipt_parser.add_argument("--json", action="store_true", help="Print normalized receipt JSON instead of Markdown")
     receipt_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
 
+    # entroly audit
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Render a multi-turn session-chain audit report",
+    )
+    audit_parser.add_argument("session_chain", type=str, help="session_chain.json path")
+    audit_parser.add_argument(
+        "--taint",
+        type=str,
+        default=None,
+        help="Optional hallucination taint JSON path (default: sibling session_taint.json or taint.json)",
+    )
+    audit_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON",
+    )
+    audit_parser.add_argument(
+        "--input-price-per-million",
+        type=float,
+        default=0.0,
+        help="Optional input-token price for estimated per-turn cost attribution",
+    )
+    audit_parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=20,
+        help="Maximum turns to show in the text ledger (default: 20; -1 = all, 0 = none)",
+    )
+
     # entroly explain
     explain_parser = subparsers.add_parser(
         "explain",
@@ -5348,6 +5661,7 @@ def main():
         "ingest": cmd_ingest,
         "select": cmd_select,
         "receipt": cmd_receipt,
+        "audit": cmd_audit,
         "explain": cmd_explain,
         "status": cmd_status,
         "config": cmd_config,
