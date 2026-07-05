@@ -193,6 +193,17 @@ try:
 except ImportError:
     pass
 
+# Ebbiforge bridge -- optional audit adapter for Ebbiforge Swarm provenance.
+try:
+    from .integrations.ebbiforge import (  # noqa: F401
+        EbbiforgeAuditResult,
+        EbbiforgeEntrolyBridge,
+        run_swarm_with_entroly,
+        summarize_ebbiforge_anomalies,
+    )
+except ImportError:
+    pass
+
 # ACF — Adversarial Context Firewall.
 # End-to-end content security: prompt injection detection (20+ patterns),
 # Unicode steganography detection, base64 payload detection, repetition

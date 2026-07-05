@@ -88,7 +88,7 @@ Entroly ships as a full local runtime, not one proxy command:
 
 | Surface | What users get |
 |---|---|
-| **CLI** | `verify-claims`, `simulate`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
+| **CLI** | `verify-claims`, `simulate`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
 | **SDK** | `compress`, `compress_messages`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
 | **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification |
 | **Proxy** | Anthropic/OpenAI-compatible local optimization path for API-key users and custom apps |
@@ -98,7 +98,7 @@ Entroly ships as a full local runtime, not one proxy command:
 | **Multimodal intake** | Diff, diagram, voice, image, and structured-context ingestion with provider-aware image token estimates and compliance-gated optimization |
 | **Gateway/accounting** | Provider capability planning, failover policy, redaction receipts, usage ledger, cache routing, spend math, and budget harnesses |
 | **Knowledge vault/CogOps** | Belief compilation, vault search, workspace change sync, epistemic routing, verification engines, and flow orchestration |
-| **Framework/event gateways** | LangChain helpers, AgentSkills export, Hermes, Slack, Discord, and Telegram gateway hooks for teams that want operational feedback loops |
+| **Framework/event gateways** | LangChain helpers, Ebbiforge provenance auditing, AgentSkills export, Hermes, Slack, Discord, and Telegram gateway hooks for teams that want operational feedback loops |
 | **Self-improvement** | PRISM/RAVS feedback, autotune, skill crystallization, promotion gates, evolution logging, and budget-gated skill synthesis |
 | **Observability** | Dashboard, daemon supervisor, control plane, health reports, value tracker, release-surface checks, and local JSON proof reports |
 
@@ -215,6 +215,7 @@ Entroly gives every AI answer a context receipt: what was used, what was omitted
 entroly ingest ./docs
 entroly select --query "Does this contract have a change-of-control clause?" --budget 8000
 entroly receipt .entroly/receipts/cr_example.json
+entroly audit .entroly/session_chain.json
 entroly explain --why-omitted chk_example --receipt .entroly/receipts/cr_example.json
 ```
 
