@@ -29,6 +29,7 @@ Give Claude, OpenAI, Gemini, Cursor, Codex, and Aider the right evidence with fe
 <p align="center">
   <img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="PyPI">
   <img src="https://img.shields.io/npm/v/entroly-wasm?color=red&label=npm" alt="npm">
+  <a href="https://juyterman1000.github.io/entroly/docs/discord.html"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
   <img src="https://img.shields.io/badge/Token_Savings-tested_70--95%25-brightgreen" alt="Token savings">
   <img src="https://img.shields.io/badge/Hallucination-HaluEval--QA_0.844_AUROC_·_%240-blueviolet" alt="Hallucination guard">
