@@ -7,14 +7,18 @@ What it does:
   - runs an Ebbiforge-style ``swarm.run(task)``;
   - reads ``swarm.get_belief_provenance(result)``;
   - turns provenance records into a tamper-evident Entroly session chain;
-  - tracks unverified claims as taint when they propagate to downstream agents;
+  - tracks Ebbiforge-reported unverified claims as taint when they propagate;
   - optionally writes ``session_chain.json`` and ``session_taint.json``.
+
+This bridge records Ebbiforge's own provenance/confidence reports. It does not
+independently run Entroly WITNESS over the swarm output.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -81,6 +85,9 @@ class EbbiforgeAuditResult:
     taint_tracker: HallucinationTaintTracker
     turns: tuple[EbbiforgeProvenanceTurn, ...]
     taint_reports: tuple[TaintPropagationReport, ...]
+    verification_source: str = "ebbiforge_provenance"
+    witness_mode: str = "not_run"
+    propagation_context_window: int = 8
     artifacts: Mapping[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
@@ -89,6 +96,9 @@ class EbbiforgeAuditResult:
             "turns": [turn.as_dict() for turn in self.turns],
             "session_chain": self.session_chain.as_dict(),
             "taint_reports": [report.as_dict() for report in self.taint_reports],
+            "verification_source": self.verification_source,
+            "witness_mode": self.witness_mode,
+            "propagation_context_window": self.propagation_context_window,
             "artifacts": dict(self.artifacts),
         }
 
@@ -103,24 +113,29 @@ class EbbiforgeEntrolyBridge:
         total_budget: int | None = None,
         budget_policy: str = "decay",
         risk_half_life_turns: float = 8.0,
+        propagation_context_window: int = 8,
     ) -> None:
+        if propagation_context_window < 0:
+            raise ValueError("propagation_context_window cannot be negative")
         self.session_chain = SessionReceiptChain(session_id=session_id)
         self.taint_tracker = HallucinationTaintTracker(
             risk_half_life_turns=risk_half_life_turns
         )
         self.total_budget = total_budget
         self.budget_policy = budget_policy
+        self.propagation_context_window = int(propagation_context_window)
 
     def run_swarm(
         self,
         swarm: Any,
         task: Any,
         *,
+        timeout: float | None = None,
         output_dir: str | Path | None = None,
     ) -> EbbiforgeAuditResult:
         """Run ``swarm`` and emit Entroly audit artifacts for its provenance."""
 
-        result = swarm.run(task)
+        result = _run_swarm(swarm, task, timeout=timeout)
         provenance = _get_provenance(swarm, result)
         turns = tuple(
             _renumber_turns(
@@ -131,7 +146,10 @@ class EbbiforgeEntrolyBridge:
         task_prompt = str(getattr(task, "prompt", "") or "")
 
         taint_reports: list[TaintPropagationReport] = []
-        prior_claims: list[str] = []
+        # The tracker carries cross-run suspect state. This bounded per-run
+        # window is only immediate textual propagation evidence, avoiding O(T^2)
+        # string reconstruction on long Ebbiforge tick/session histories.
+        prior_claims: deque[str] = deque(maxlen=self.propagation_context_window)
         spent_tokens = 0
         for turn in turns:
             decision = self._budget_decision(turn.turn_index, spent_tokens)
@@ -169,6 +187,7 @@ class EbbiforgeEntrolyBridge:
             taint_tracker=self.taint_tracker,
             turns=turns,
             taint_reports=tuple(taint_reports),
+            propagation_context_window=self.propagation_context_window,
             artifacts=artifacts,
         )
 
@@ -194,6 +213,8 @@ def run_swarm_with_entroly(
     session_id: str | None = None,
     total_budget: int | None = None,
     budget_policy: str = "decay",
+    timeout: float | None = None,
+    propagation_context_window: int = 8,
     output_dir: str | Path | None = None,
 ) -> EbbiforgeAuditResult:
     """Convenience wrapper for Ebbiforge users.
@@ -206,8 +227,9 @@ def run_swarm_with_entroly(
         session_id=session_id,
         total_budget=total_budget,
         budget_policy=budget_policy,
+        propagation_context_window=propagation_context_window,
     )
-    return bridge.run_swarm(swarm, task, output_dir=output_dir)
+    return bridge.run_swarm(swarm, task, timeout=timeout, output_dir=output_dir)
 
 
 def summarize_ebbiforge_anomalies(
@@ -241,6 +263,12 @@ def summarize_ebbiforge_anomalies(
             else "ebbiforge:rust_only"
         ),
     }
+
+
+def _run_swarm(swarm: Any, task: Any, *, timeout: float | None) -> Any:
+    if timeout is None:
+        return swarm.run(task)
+    return swarm.run(task, timeout=timeout)
 
 
 def _get_provenance(swarm: Any, result: Any) -> Any:
