@@ -484,7 +484,9 @@ This is the important distinction: Entroly does not just remember context. It ca
 - **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
 - **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, and what it does not guarantee.
 - **[Cookbook](cookbook/README.md)** — copy-paste recipes for common workflows.
-- **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
+- **[Discord Community](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
 <p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>
+
+<!-- mcp-name: io.github.juyterman1000/entroly -->
