@@ -1,0 +1,65 @@
+name: Commit Identity Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-identity:
+    name: Commit Identity Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify commit author and committer
+        env:
+          EXPECTED_NAME: juyterman1000
+          EXPECTED_EMAIL: 208309368+juyterman1000@users.noreply.github.com
+        run: |
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+
+          expected = (os.environ["EXPECTED_NAME"], os.environ["EXPECTED_EMAIL"])
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+
+          if event_name == "pull_request":
+              rev = f'{event["pull_request"]["base"]["sha"]}..{event["pull_request"]["head"]["sha"]}'
+          else:
+              before = event.get("before", "")
+              after = event["after"]
+              rev = after if not before or set(before) == {"0"} else f"{before}..{after}"
+
+          rows = subprocess.check_output(
+              ["git", "log", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1e", rev],
+              text=True,
+          )
+
+          failures = []
+          for row in rows.strip("\x1e\n").split("\x1e"):
+              if not row:
+                  continue
+              commit, an, ae, cn, ce = row.split("\x1f")
+              if (an, ae) != expected:
+                  failures.append(f"{commit[:12]} author is {an} <{ae}>")
+              if (cn, ce) != expected:
+                  failures.append(f"{commit[:12]} committer is {cn} <{ce}>")
+
+          if failures:
+              print("Commit identity guard failed.")
+              print("Expected: juyterman1000 <208309368+juyterman1000@users.noreply.github.com>")
+              for failure in failures:
+                  print(f"  - {failure}")
+              sys.exit(1)
+
+          print(f"Commit identity OK for {rev}")
+          PY
