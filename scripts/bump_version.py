@@ -107,7 +107,7 @@ def main(argv: list[str]) -> int:
 
     for path, updated in pending.items():
         path.write_text(updated, encoding="utf-8")
-    for rel in changed:
+    for rel in dict.fromkeys(changed):
         print(f"  {rel} -> {new}")
     print(f"bumped {replacement_count} target(s) across {len(pending)} file(s) to {new}")
     return 0

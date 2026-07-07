@@ -87,6 +87,7 @@ def test_bump_summary_reports_replacements_and_unique_files(tmp_path, monkeypatc
 
     output = capsys.readouterr().out
     assert "generated/package.json missing; skipping generated artifact" in output
+    assert output.count("manifest.toml -> 1.0.1") == 1
     assert "bumped 2 target(s) across 1 file(s) to 1.0.1" in output
 
 
