@@ -13,6 +13,34 @@ bump_version = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bump_version)
 
 
+def test_semver_validation_accepts_release_prerelease_and_build():
+    valid = [
+        "1.0.46",
+        "0.1.0-alpha.1",
+        "2.3.4-rc.1+build.7",
+    ]
+
+    for version in valid:
+        assert bump_version.SEMVER.fullmatch(version), version
+
+
+def test_semver_validation_rejects_malformed_release_versions():
+    invalid = [
+        "01.0.0",
+        "1.02.0",
+        "1.0.03",
+        "1.0",
+        "1.0.0-",
+        "1.0.0+",
+        "1.0.0-alpha..1",
+        "1.0.0-alpha 1",
+        "1.0.0-01",
+    ]
+
+    for version in invalid:
+        assert not bump_version.SEMVER.fullmatch(version), version
+
+
 def test_failed_bump_does_not_write_partial_changes(tmp_path, monkeypatch):
     manifest = tmp_path / "manifest.toml"
     original = 'version = "1.0.0"\ndep = "stable"\n'

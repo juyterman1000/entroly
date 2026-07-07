@@ -66,7 +66,14 @@ TARGETS = [
         r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', 'entroly-{v}.tar.gz'),
 ]
 
-SEMVER = re.compile(r"^\d+\.\d+\.\d+([-+].+)?$")
+_NUMERIC_ID = r"(?:0|[1-9][0-9]*)"
+_PRERELEASE_ID = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+_BUILD_ID = r"[0-9A-Za-z-]+"
+SEMVER = re.compile(
+    rf"^{_NUMERIC_ID}\.{_NUMERIC_ID}\.{_NUMERIC_ID}"
+    rf"(?:-{_PRERELEASE_ID}(?:\.{_PRERELEASE_ID})*)?"
+    rf"(?:\+{_BUILD_ID}(?:\.{_BUILD_ID})*)?$"
+)
 
 
 def main(argv: list[str]) -> int:
