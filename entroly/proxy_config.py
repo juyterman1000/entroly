@@ -213,6 +213,45 @@ QUALITY_PRESETS = {
 }
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logging.getLogger("entroly.proxy").warning(
+            "Invalid %s=%r; using default %s", name, raw, default
+        )
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logging.getLogger("entroly.proxy").warning(
+            "Invalid %s=%r; using default %s", name, raw, default
+        )
+        return default
+
+
+def _env_optional_float(name: str) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logging.getLogger("entroly.proxy").warning(
+            "Invalid %s=%r; ignoring override", name, raw
+        )
+        return None
+
+
 def resolve_quality(value: str) -> float:
     """Accept either a named preset or a float 0.0-1.0."""
     if value in QUALITY_PRESETS:
@@ -362,11 +401,10 @@ class ProxyConfig:
         Supports single-dial mode: set ENTROLY_QUALITY=0.0–1.0 to auto-derive
         all numeric params from Pareto-interpolated profiles.
         """
-        quality_env = os.environ.get("ENTROLY_QUALITY")
-        quality = float(quality_env) if quality_env else None
+        quality = _env_optional_float("ENTROLY_QUALITY")
 
         config = cls(
-            port=int(os.environ.get("ENTROLY_PROXY_PORT", "9377")),
+            port=_env_int("ENTROLY_PROXY_PORT", 9377),
             host=os.environ.get("ENTROLY_PROXY_HOST", "127.0.0.1"),
             quality=quality,
             openai_base_url=os.environ.get(
@@ -379,9 +417,7 @@ class ProxyConfig:
                 "ENTROLY_GEMINI_BASE",
                 "https://generativelanguage.googleapis.com",
             ),
-            context_fraction=float(
-                os.environ.get("ENTROLY_CONTEXT_FRACTION", "0.15")
-            ),
+            context_fraction=_env_float("ENTROLY_CONTEXT_FRACTION", 0.15),
             enable_trajectory_convergence=(
                 os.environ.get("ENTROLY_TRAJECTORY_CONVERGENCE", "1") != "0"
             ),
@@ -402,15 +438,9 @@ class ProxyConfig:
                 os.environ.get("ENTROLY_WITNESS_EMBED", "0") == "1"
             ),
             witness_profile=os.environ.get("ENTROLY_WITNESS_PROFILE", "auto"),
-            fisher_scale=float(
-                os.environ.get("ENTROLY_FISHER_SCALE", "0.55")
-            ),
-            trajectory_c_min=float(
-                os.environ.get("ENTROLY_TRAJECTORY_CMIN", "0.6")
-            ),
-            trajectory_lambda=float(
-                os.environ.get("ENTROLY_TRAJECTORY_LAMBDA", "0.07")
-            ),
+            fisher_scale=_env_float("ENTROLY_FISHER_SCALE", 0.55),
+            trajectory_c_min=_env_float("ENTROLY_TRAJECTORY_CMIN", 0.6),
+            trajectory_lambda=_env_float("ENTROLY_TRAJECTORY_LAMBDA", 0.07),
         )
 
         # Single-dial mode: auto-derive params from quality knob

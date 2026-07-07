@@ -725,6 +725,42 @@ class TestProxyConfigGemini:
 # T-14: IDE Realistic Scenarios
 # ═══════════════════════════════════════════════════════════════════════
 
+class TestProxyConfigEnvParsing:
+    """ProxyConfig.from_env tolerates malformed optional numeric knobs."""
+
+    def test_from_env_numeric_values_fall_back_when_invalid(self, monkeypatch):
+        monkeypatch.setenv("ENTROLY_PROXY_PORT", "not-an-int")
+        monkeypatch.setenv("ENTROLY_CONTEXT_FRACTION", "not-a-float")
+        monkeypatch.setenv("ENTROLY_QUALITY", "not-a-float")
+        monkeypatch.setenv("ENTROLY_FISHER_SCALE", "not-a-float")
+        monkeypatch.setenv("ENTROLY_TRAJECTORY_CMIN", "not-a-float")
+        monkeypatch.setenv("ENTROLY_TRAJECTORY_LAMBDA", "not-a-float")
+
+        config = ProxyConfig.from_env()
+
+        assert config.port == 9377
+        assert config.context_fraction == 0.15
+        assert config.quality is None
+        assert config.fisher_scale == 0.55
+        assert config.trajectory_c_min == 0.6
+        assert config.trajectory_lambda == 0.07
+
+    def test_from_env_numeric_values_keep_valid_overrides(self, monkeypatch):
+        monkeypatch.setenv("ENTROLY_PROXY_PORT", "9444")
+        monkeypatch.setenv("ENTROLY_CONTEXT_FRACTION", "0.2")
+        monkeypatch.setenv("ENTROLY_FISHER_SCALE", "0.7")
+        monkeypatch.setenv("ENTROLY_TRAJECTORY_CMIN", "0.8")
+        monkeypatch.setenv("ENTROLY_TRAJECTORY_LAMBDA", "0.03")
+
+        config = ProxyConfig.from_env()
+
+        assert config.port == 9444
+        assert config.context_fraction == 0.2
+        assert config.fisher_scale == 0.7
+        assert config.trajectory_c_min == 0.8
+        assert config.trajectory_lambda == 0.03
+
+
 class TestIDERealisticScenarios:
     """Real-world request patterns from major IDEs and tools.
 
