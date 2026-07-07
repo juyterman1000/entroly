@@ -46,6 +46,13 @@ _PULL_CACHE_FILE = _runtime_dir() / ".last_pull_ts"
 _DEFAULT_PULL_TTL = 3600  # 1 hour
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
 def _docker_available() -> bool:
     try:
         subprocess.run(
@@ -61,7 +68,7 @@ def _docker_available() -> bool:
 
 def _should_pull() -> bool:
     """Check if enough time has elapsed since the last successful pull."""
-    ttl = int(os.environ.get("ENTROLY_PULL_TTL", str(_DEFAULT_PULL_TTL)))
+    ttl = _env_int("ENTROLY_PULL_TTL", _DEFAULT_PULL_TTL)
     if ttl <= 0:
         return True  # TTL=0 means always pull
     try:
@@ -210,8 +217,8 @@ def launch() -> None:
     cmd += server_args
 
     # Configurable timeout for Docker run (default: None = no timeout for server)
-    docker_timeout_str = os.environ.get("ENTROLY_DOCKER_TIMEOUT", "0")
-    docker_timeout = int(docker_timeout_str) if docker_timeout_str != "0" else None
+    docker_timeout_seconds = _env_int("ENTROLY_DOCKER_TIMEOUT", 0)
+    docker_timeout = docker_timeout_seconds if docker_timeout_seconds > 0 else None
 
     try:
         result = subprocess.run(cmd, check=False, timeout=docker_timeout)

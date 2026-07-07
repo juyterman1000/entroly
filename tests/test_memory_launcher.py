@@ -95,3 +95,43 @@ def test_docker_launcher_keeps_serve_as_the_only_docker_command(monkeypatch) -> 
         _docker_launcher.launch()
 
     assert exc.value.code == 1
+
+
+def test_docker_pull_ttl_falls_back_when_env_is_invalid(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ENTROLY_PULL_TTL", "not-an-int")
+    monkeypatch.setattr(_docker_launcher, "_PULL_CACHE_FILE", tmp_path / ".last_pull_ts")
+
+    assert _docker_launcher._should_pull() is True
+
+
+def test_docker_timeout_falls_back_when_env_is_invalid(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_run(cmd, check=False, timeout=None):
+        calls.append({"cmd": cmd, "check": check, "timeout": timeout})
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setenv("ENTROLY_DOCKER_TIMEOUT", "not-an-int")
+    monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
+    monkeypatch.setattr(_docker_launcher.os.path, "exists", lambda _path: False)
+    monkeypatch.setattr(_docker_launcher, "_docker_available", lambda: True)
+    monkeypatch.setattr(_docker_launcher, "_pull_image", lambda: None)
+    monkeypatch.setattr(_docker_launcher.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["entroly", "serve"])
+
+    with pytest.raises(SystemExit) as exc:
+        _docker_launcher.launch()
+
+    assert exc.value.code == 0
+    assert len(calls) == 1
+    assert calls[0]["check"] is False
+    assert calls[0]["timeout"] is None
+    cmd = calls[0]["cmd"]
+    assert isinstance(cmd, list)
+    assert cmd[:4] == ["docker", "run", "--rm", "-i"]
+    assert "ghcr.io/juyterman1000/entroly:latest" in cmd
+    assert cmd[-1] == "serve"
