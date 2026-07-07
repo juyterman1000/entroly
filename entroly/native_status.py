@@ -37,6 +37,7 @@ class NativeStatus:
 def _version_tuple(value: str | None) -> tuple[int, ...]:
     if not value:
         return ()
+    value = value.split("+", 1)[0]
     parts: list[int] = []
     for chunk in value.replace("-", ".").split("."):
         if not chunk.isdigit():

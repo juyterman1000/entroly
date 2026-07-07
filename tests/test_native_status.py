@@ -36,3 +36,20 @@ def test_native_status_accepts_complete_current_module(monkeypatch):
 
     assert status.ok is True
     assert status.missing_symbols == ()
+
+
+def test_native_status_accepts_local_build_metadata(monkeypatch):
+    fake = ModuleType("entroly_core")
+    fake.py_qccr_expand_query = lambda query: [query]
+    fake.py_qccr_rank_files = lambda *_args: []
+    fake.py_qccr_select = lambda *_args: "[]"
+    monkeypatch.setitem(sys.modules, "entroly_core", fake)
+    monkeypatch.setattr(ns.metadata, "version", lambda _name: ns.MIN_ENTROLY_CORE_VERSION + "+local.1")
+
+    status = ns.native_status(ns.QCCR_SYMBOLS)
+
+    assert status.version_ok is True
+
+
+def test_native_status_leaves_unknown_versions_indeterminate():
+    assert ns._version_at_least("not-a-version", ns.MIN_ENTROLY_CORE_VERSION) is None
