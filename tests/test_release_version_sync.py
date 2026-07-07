@@ -42,6 +42,12 @@ def _native_min_version(text: str) -> str:
     return match.group(1)
 
 
+def _fallback_version(text: str, variable: str) -> str:
+    match = re.search(rf'{re.escape(variable)}\s*=\s*"([^"]+)"', text)
+    assert match is not None
+    return match.group(1)
+
+
 def _read(rel_path: str) -> str:
     return (ROOT / rel_path).read_text(encoding="utf-8")
 
@@ -61,6 +67,8 @@ def test_release_version_surfaces_match_package_version() -> None:
     assert _formula_version(_read("packaging/homebrew/entroly.rb")) == __version__
     assert _daemon_version(_read("entroly/daemon.py")) == __version__
     assert _native_min_version(_read("entroly/native_status.py")) == __version__
+    assert _fallback_version(_read("entroly/cli.py"), "__version__") == __version__
+    assert _fallback_version(_read("entroly/server.py"), "_version") == __version__
 
     npm_alias = _json(_read("entroly/npm-alias/package.json"))
     assert npm_alias["dependencies"]["entroly-wasm"] == __version__
