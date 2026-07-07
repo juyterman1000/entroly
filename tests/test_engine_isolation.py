@@ -305,6 +305,20 @@ def test_auto_index_size_cap_allows_large_hot_source_files(monkeypatch):
     assert fixture_cap == auto_index_module.MAX_FILE_BYTES
 
 
+def test_auto_index_env_limits_fall_back_when_invalid(monkeypatch):
+    monkeypatch.setenv("ENTROLY_MAX_SOURCE_FILE_BYTES", "not-an-int")
+    monkeypatch.setenv("ENTROLY_MAX_FILES", "not-an-int")
+
+    assert auto_index_module._resolve_source_file_soft_max_bytes() == 192 * 1024
+    assert auto_index_module._resolve_max_files() == 5000
+
+
+def test_auto_index_max_files_keeps_at_least_one_file(monkeypatch):
+    monkeypatch.setenv("ENTROLY_MAX_FILES", "0")
+
+    assert auto_index_module._resolve_max_files() == 1
+
+
 def test_auto_index_excludes_virtualenv_paths_from_first_run():
     rejected = [
         ".fresh/Lib/site-packages/pip/__init__.py",

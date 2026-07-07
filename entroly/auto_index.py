@@ -104,9 +104,25 @@ def _resolve_max_file_bytes() -> int:
         return 50 * 1024
 
 
+def _resolve_source_file_soft_max_bytes() -> int:
+    raw = os.environ.get("ENTROLY_MAX_SOURCE_FILE_BYTES", str(192 * 1024))
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 192 * 1024
+    return max(50 * 1024, min(value, 500 * 1024))
+
+
+def _resolve_max_files() -> int:
+    raw = os.environ.get("ENTROLY_MAX_FILES", "5000")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 5000
+
+
 MAX_FILE_BYTES = _resolve_max_file_bytes()
-SOURCE_FILE_SOFT_MAX_BYTES = int(os.environ.get("ENTROLY_MAX_SOURCE_FILE_BYTES", str(192 * 1024)))
-SOURCE_FILE_SOFT_MAX_BYTES = max(50 * 1024, min(SOURCE_FILE_SOFT_MAX_BYTES, 500 * 1024))
+SOURCE_FILE_SOFT_MAX_BYTES = _resolve_source_file_soft_max_bytes()
 
 # Hard ceiling for massive files (500 KB) — never even attempt to read
 ABSOLUTE_MAX_BYTES = 500 * 1024
@@ -146,7 +162,7 @@ LOW_VALUE_LARGE_PATH_MARKERS = (
 )
 
 # Max files to index in a single pass (configurable via ENTROLY_MAX_FILES)
-MAX_FILES = int(os.environ.get("ENTROLY_MAX_FILES", "5000"))
+MAX_FILES = _resolve_max_files()
 
 
 def _resolve_project_file(project_dir: str, rel_path: str) -> str | None:
