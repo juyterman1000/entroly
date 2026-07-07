@@ -52,6 +52,24 @@ from entroly.proxy import (  # noqa: E402
 
 
 class TestProviderForwardingPolicy:
+    def test_proxy_startup_numeric_env_values_fall_back_when_invalid(self, monkeypatch):
+        monkeypatch.setenv("ENTROLY_WITNESS", "0")
+        monkeypatch.setenv("ENTROLY_CONFIDENCE_THRESHOLD", "not-a-float")
+        monkeypatch.setenv("ENTROLY_RATE_LIMIT", "not-an-int")
+        monkeypatch.setenv("ENTROLY_WITNESS_STORE_MAX", "not-an-int")
+        monkeypatch.setenv("ENTROLY_AUTO_RECOVERY_MAX_FRAGMENTS", "not-an-int")
+        monkeypatch.setenv("ENTROLY_AUTO_RECOVERY_MAX_CANDIDATES", "not-an-int")
+        monkeypatch.setenv("ENTROLY_AUTO_RECOVERY_MAX_TOKENS", "not-an-int")
+
+        proxy = PromptCompilerProxy(object(), ProxyConfig(witness_mode="off"))
+
+        assert proxy._confidence_threshold == 0.15
+        assert proxy._rate_limiter is not None
+        assert proxy._witness_store_max == 500
+        assert proxy._auto_recovery_max_fragments == 6
+        assert proxy._auto_recovery_max_candidates == 8
+        assert proxy._auto_recovery_max_tokens == 12000
+
     def test_http_client_prefers_explicit_ca_bundle_env(self, monkeypatch, tmp_path):
         from entroly.proxy import _http_client_kwargs
 

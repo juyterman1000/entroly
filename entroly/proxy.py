@@ -89,6 +89,29 @@ from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %s", name, raw, default)
+        return default
+
+
 _HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -1075,9 +1098,7 @@ class PromptCompilerProxy:
         self._last_query: str = ""
 
         # Gap #36: Confidence threshold — below this, pass through unmodified
-        self._confidence_threshold = float(
-            os.environ.get("ENTROLY_CONFIDENCE_THRESHOLD", "0.15")
-        )
+        self._confidence_threshold = _env_float("ENTROLY_CONFIDENCE_THRESHOLD", 0.15)
 
         # Gap #37: Error budget — track how often optimization may have hurt
         self._outcome_success: int = 0
@@ -1090,7 +1111,7 @@ class PromptCompilerProxy:
         self._breaker = _CircuitBreaker(failure_threshold=3, cooldown_s=30.0)
 
         # Rate limiter — default 120 req/min if not set (Gap #39)
-        rate_limit = int(os.environ.get("ENTROLY_RATE_LIMIT", "120"))
+        rate_limit = _env_int("ENTROLY_RATE_LIMIT", 120)
         self._rate_limiter: _TokenBucket | None = None
         if rate_limit > 0:
             self._rate_limiter = _TokenBucket(
@@ -1121,8 +1142,8 @@ class PromptCompilerProxy:
             from .ravs.router import BayesianRouter
             self._ravs_router = BayesianRouter(
                 enabled=self._ravs_router_enabled,
-                min_samples=int(os.environ.get("ENTROLY_RAVS_MIN_SAMPLES", "10")),
-                ci_threshold=float(os.environ.get("ENTROLY_RAVS_CI_THRESHOLD", "0.80")),
+                min_samples=_env_int("ENTROLY_RAVS_MIN_SAMPLES", 10),
+                ci_threshold=_env_float("ENTROLY_RAVS_CI_THRESHOLD", 0.80),
             )
         except Exception as e:
             logger.debug("RAVS router init skipped: %s", e)
@@ -1140,8 +1161,8 @@ class PromptCompilerProxy:
             try:
                 from .ravs.ece import EpistemicCascadeEngine
                 self._ece = EpistemicCascadeEngine(
-                    curvature_threshold=float(
-                        os.environ.get("ENTROLY_ECE_CURVATURE_THRESHOLD", "0.4")
+                    curvature_threshold=_env_float(
+                        "ENTROLY_ECE_CURVATURE_THRESHOLD", 0.4
                     ),
                     enable_lyapunov=True,
                 )
@@ -1188,20 +1209,20 @@ class PromptCompilerProxy:
         self._witness_last: dict[str, Any] | None = None
         self._witness_embed = bool(getattr(self.config, "witness_embed", False))
         self._witness_certificates: collections.OrderedDict[str, dict[str, Any]] = collections.OrderedDict()
-        self._witness_store_max = int(os.environ.get("ENTROLY_WITNESS_STORE_MAX", "500"))
+        self._witness_store_max = _env_int("ENTROLY_WITNESS_STORE_MAX", 500)
         self._witness_feedback: dict[str, int] = collections.Counter()
 
         # If verification rejects an answer produced from compressed context,
         # retrieve exact CCR originals and retry once with a bounded expansion.
         self._auto_recovery_enabled = os.environ.get("ENTROLY_AUTO_RECOVERY", "1") != "0"
-        self._auto_recovery_max_fragments = int(
-            os.environ.get("ENTROLY_AUTO_RECOVERY_MAX_FRAGMENTS", "6")
+        self._auto_recovery_max_fragments = _env_int(
+            "ENTROLY_AUTO_RECOVERY_MAX_FRAGMENTS", 6
         )
-        self._auto_recovery_max_candidates = int(
-            os.environ.get("ENTROLY_AUTO_RECOVERY_MAX_CANDIDATES", "8")
+        self._auto_recovery_max_candidates = _env_int(
+            "ENTROLY_AUTO_RECOVERY_MAX_CANDIDATES", 8
         )
-        self._auto_recovery_max_tokens = int(
-            os.environ.get("ENTROLY_AUTO_RECOVERY_MAX_TOKENS", "12000")
+        self._auto_recovery_max_tokens = _env_int(
+            "ENTROLY_AUTO_RECOVERY_MAX_TOKENS", 12000
         )
         self._auto_recovery_attempted = 0
         self._auto_recovery_succeeded = 0
