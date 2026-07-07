@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.45"
+RELEASE_VERSION = "1.0.46"
 
 
 def _read_json(path: str) -> dict:
@@ -59,7 +59,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_45() -> None:
+def test_public_package_versions_are_1_0_46() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -115,4 +115,4 @@ def test_homebrew_formula_targets_release_sdist() -> None:
 
     assert f"entroly-{RELEASE_VERSION}.tar.gz" in text
     assert "packages/source/e/entroly/" in text
-    assert "f868201763bfe456186125679bb2fd5117dbf6016f322e649386a34799c69a35" in text
+    assert "94e54692b4e677e9261d2c667a30ecaec3c0f871729c1cc84256854361d9ec1e" in text
