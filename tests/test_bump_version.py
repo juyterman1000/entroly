@@ -72,6 +72,24 @@ def test_bump_chains_multiple_edits_to_the_same_file(tmp_path, monkeypatch):
     )
 
 
+def test_bump_summary_reports_replacements_and_unique_files(tmp_path, monkeypatch, capsys):
+    manifest = tmp_path / "manifest.toml"
+    manifest.write_text('version = "1.0.0"\ndep = "core>=1.0.0,<2"\n', encoding="utf-8")
+
+    monkeypatch.setattr(bump_version, "ROOT", tmp_path)
+    monkeypatch.setattr(bump_version, "TARGETS", [
+        ("manifest.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
+        ("manifest.toml", r'core>=[0-9]+\.[0-9]+\.[0-9]+,<2', 'core>={v},<2'),
+        ("generated/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ])
+
+    assert bump_version.main(["bump_version.py", "1.0.1"]) == 0
+
+    output = capsys.readouterr().out
+    assert "generated/package.json missing; skipping generated artifact" in output
+    assert "bumped 2 target(s) across 1 file(s) to 1.0.1" in output
+
+
 def test_homebrew_readme_targets_update_heading_and_command():
     text = (
         "Current release example version: `1.0.39`\n"

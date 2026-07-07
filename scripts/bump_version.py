@@ -83,6 +83,7 @@ def main(argv: list[str]) -> int:
     new = argv[1]
     pending: dict[Path, str] = {}
     changed: list[str] = []
+    replacement_count = 0
     for rel, pattern, template in TARGETS:
         path = ROOT / rel
         if not path.exists():
@@ -102,12 +103,13 @@ def main(argv: list[str]) -> int:
             return 1
         pending[path] = updated
         changed.append(rel)
+        replacement_count += n
 
     for path, updated in pending.items():
         path.write_text(updated, encoding="utf-8")
     for rel in changed:
         print(f"  {rel} -> {new}")
-    print(f"bumped {len(TARGETS)} files to {new}")
+    print(f"bumped {replacement_count} target(s) across {len(pending)} file(s) to {new}")
     return 0
 
 
