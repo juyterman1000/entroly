@@ -20,6 +20,10 @@ def _json_version(text: str) -> str:
     return str(json.loads(text)["version"])
 
 
+def _json(text: str) -> dict:
+    return json.loads(text)
+
+
 def _formula_version(text: str) -> str:
     match = re.search(r'url\s+"[^"]+/entroly-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz"', text)
     assert match is not None
@@ -28,6 +32,12 @@ def _formula_version(text: str) -> str:
 
 def _daemon_version(text: str) -> str:
     match = re.search(r'version:\s*str\s*=\s*"([^"]+)"', text)
+    assert match is not None
+    return match.group(1)
+
+
+def _native_min_version(text: str) -> str:
+    match = re.search(r'MIN_ENTROLY_CORE_VERSION\s*=\s*"([^"]+)"', text)
     assert match is not None
     return match.group(1)
 
@@ -41,9 +51,20 @@ def test_release_version_surfaces_match_package_version() -> None:
     assert _toml_version(_read("entroly/pyproject.toml")) == __version__
     assert _toml_version(_read("entroly-core/pyproject.toml")) == __version__
     assert _toml_version(_read("entroly-core/Cargo.toml")) == __version__
+    assert _toml_version(_read("entroly-qccr/Cargo.toml")) == __version__
     assert _toml_version(_read("entroly-wasm/Cargo.toml")) == __version__
     assert _json_version(_read("entroly/npm/package.json")) == __version__
     assert _json_version(_read("entroly/npm-alias/package.json")) == __version__
     assert _json_version(_read("entroly-wasm/package.json")) == __version__
+    assert _json_version(_read(".claude-plugin/manifest.json")) == __version__
+    assert _json_version(_read(".mcpb-build/manifest.json")) == __version__
     assert _formula_version(_read("packaging/homebrew/entroly.rb")) == __version__
     assert _daemon_version(_read("entroly/daemon.py")) == __version__
+    assert _native_min_version(_read("entroly/native_status.py")) == __version__
+
+    npm_alias = _json(_read("entroly/npm-alias/package.json"))
+    assert npm_alias["dependencies"]["entroly-wasm"] == __version__
+
+    server_manifest = _json(_read("server.json"))
+    assert server_manifest["version"] == __version__
+    assert {pkg["version"] for pkg in server_manifest["packages"]} == {__version__}
