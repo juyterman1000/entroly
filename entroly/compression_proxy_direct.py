@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .compression_proxy import ProxyCompressionResult, compress_proxy_payload
+from .compression_proxy import ProxyCompressionResult, _env_budget_tokens, compress_proxy_payload
 from .compression_retrieval_store import CompressionRetrievalStore
 from .proxy_transform import extract_user_message
 
@@ -29,7 +29,7 @@ def apply_elc_to_proxy_body(
     of monkey-patching `proxy_transform.compress_tool_messages`.
     """
     mode = os.environ.get("ENTROLY_COMPRESSION_PROXY_MODE", "off").strip().lower()
-    budget = budget_tokens or int(os.environ.get("ENTROLY_ELC_BUDGET_TOKENS", "1200"))
+    budget = budget_tokens if budget_tokens is not None else _env_budget_tokens()
     store_path = os.environ.get("ENTROLY_COMPRESSION_STORE")
     store = CompressionRetrievalStore(Path(store_path)) if store_path else None
     query = _extract_query(body)

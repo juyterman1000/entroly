@@ -80,3 +80,14 @@ def test_env_proxy_mode_defaults_to_off(monkeypatch) -> None:
 
     assert result.changed is False
     assert result.body == body
+
+
+def test_env_proxy_mode_ignores_invalid_budget_when_off(monkeypatch) -> None:
+    monkeypatch.delenv("ENTROLY_COMPRESSION_PROXY_MODE", raising=False)
+    monkeypatch.setenv("ENTROLY_ELC_BUDGET_TOKENS", "not-an-int")
+    body = {"messages": [{"role": "tool", "content": "x" * 5000}]}
+
+    result = compress_proxy_payload_from_env(body, query="anything")
+
+    assert result.changed is False
+    assert result.body == body

@@ -121,7 +121,7 @@ def compress_proxy_payload_from_env(
     ``ENTROLY_COMPRESSION_PROXY_MODE=elc`` is set.
     """
     mode = os.environ.get("ENTROLY_COMPRESSION_PROXY_MODE", "off").strip().lower()
-    budget = int(os.environ.get("ENTROLY_ELC_BUDGET_TOKENS", "1200"))
+    budget = _env_budget_tokens()
     compress_user = os.environ.get("ENTROLY_ELC_COMPRESS_USER", "0").lower() in {
         "1",
         "true",
@@ -139,6 +139,16 @@ def compress_proxy_payload_from_env(
         compress_user_messages=compress_user,
         retrieval_store=store,
     )
+
+
+def _env_budget_tokens(default: int = 1200) -> int:
+    raw = os.environ.get("ENTROLY_ELC_BUDGET_TOKENS")
+    if raw is None:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
 
 
 def compress_proxy_payload(

@@ -13,6 +13,17 @@ def test_direct_proxy_helper_respects_off_mode(monkeypatch) -> None:
     assert result.body == body
 
 
+def test_direct_proxy_helper_ignores_invalid_env_budget_when_off(monkeypatch) -> None:
+    monkeypatch.delenv("ENTROLY_COMPRESSION_PROXY_MODE", raising=False)
+    monkeypatch.setenv("ENTROLY_ELC_BUDGET_TOKENS", "not-an-int")
+    body = {"messages": [{"role": "tool", "content": "x" * 5000}]}
+
+    result = apply_elc_to_proxy_body(body, provider="openai")
+
+    assert result.changed is False
+    assert result.body == body
+
+
 def test_direct_proxy_helper_compresses_when_enabled(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ENTROLY_COMPRESSION_PROXY_MODE", "elc")
     monkeypatch.setenv("ENTROLY_ELC_BUDGET_TOKENS", "120")
