@@ -146,6 +146,40 @@ def test_live_sse_forward_records_terminal_usage_without_rewriting_bytes() -> No
     asyncio.run(run())
 
 
+def test_buffered_witness_stream_ignores_invalid_max_bytes(monkeypatch) -> None:
+    async def run() -> None:
+        monkeypatch.setenv("ENTROLY_WITNESS_STREAM_MAX_BYTES", "not-an-int")
+        transcript = b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+
+        async def upstream(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=transcript,
+            )
+
+        proxy = _proxy()
+        proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        try:
+            response = await proxy._buffered_witness_stream_response(
+                "https://provider.example/v1/chat/completions",
+                {},
+                {"model": "gpt-current", "messages": []},
+                provider="openai",
+                request_id="request-buffered-invalid-cap",
+            )
+            forwarded = b"".join([chunk async for chunk in response.body_iterator])
+
+            assert response.status_code == 200
+            assert response.headers["X-Entroly-Witness"] == "no-text"
+            assert forwarded == transcript
+        finally:
+            await proxy._client.aclose()
+            proxy._usage_ledger.close()
+
+    asyncio.run(run())
+
+
 def test_cache_economics_keep_a_large_warm_prefix_on_current_model() -> None:
     proxy = _proxy()
     body = {

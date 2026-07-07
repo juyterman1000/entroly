@@ -2923,7 +2923,7 @@ class PromptCompilerProxy:
                 headers={"Retry-After": str(int(self._breaker.cooldown_s))},
             )
 
-        max_bytes = int(os.environ.get("ENTROLY_WITNESS_STREAM_MAX_BYTES", str(2 * 1024 * 1024)))
+        max_bytes = _env_int("ENTROLY_WITNESS_STREAM_MAX_BYTES", 2 * 1024 * 1024)
         try:
             client = await self._ensure_client()
             chunks: list[bytes] = []
@@ -3112,10 +3112,9 @@ class PromptCompilerProxy:
                     # Re-issue to the stronger model
                     esc_client = await self._ensure_client()
                     esc_chunks: list[bytes] = []
-                    max_bytes = int(os.environ.get(
-                        "ENTROLY_WITNESS_STREAM_MAX_BYTES",
-                        str(2 * 1024 * 1024),
-                    ))
+                    max_bytes = _env_int(
+                        "ENTROLY_WITNESS_STREAM_MAX_BYTES", 2 * 1024 * 1024
+                    )
                     esc_total = 0
                     async with esc_client.stream(
                         "POST", url, json=escalated_body, headers=headers
@@ -3329,10 +3328,7 @@ class PromptCompilerProxy:
         _witness_enabled = self._witness_enabled and bool(self._witness_analyzer)
         _frag_ids = selected_frag_ids or []
         _buffer_cap = ImplicitFeedbackTracker._MAX_BUFFER_BYTES
-        try:
-            _usage_tail_cap = int(os.environ.get("ENTROLY_USAGE_SSE_TAIL_BYTES", "262144"))
-        except ValueError:
-            _usage_tail_cap = 262144
+        _usage_tail_cap = _env_int("ENTROLY_USAGE_SSE_TAIL_BYTES", 262144)
         _usage_tail_cap = max(16384, min(_usage_tail_cap, 1048576))
         # Capture selected fragments for per-variant utilization tracking (Change 4)
         _selected_frags = getattr(self, '_last_context_fragments', []) if _feedback_enabled else []
