@@ -55,7 +55,7 @@ full = [
     "uvicorn>=0.30",
 ]
 test = [
-    "pytest>=8,<10",
+    "pytest>=8,<9",
 ]
 
 [project.scripts]
