@@ -46,11 +46,22 @@ def _version_tuple(value: str | None) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def _is_prerelease(value: str | None) -> bool:
+    if not value:
+        return False
+    return "-" in value.split("+", 1)[0]
+
+
 def _version_at_least(value: str | None, minimum: str) -> bool | None:
     parsed = _version_tuple(value)
     if not parsed:
         return None
-    return parsed >= _version_tuple(minimum)
+    minimum_parsed = _version_tuple(minimum)
+    if parsed != minimum_parsed:
+        return parsed > minimum_parsed
+    if _is_prerelease(value) and not _is_prerelease(minimum):
+        return False
+    return True
 
 
 def native_status(required_symbols: tuple[str, ...] = ()) -> NativeStatus:
