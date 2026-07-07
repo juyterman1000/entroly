@@ -43,7 +43,15 @@ TARGETS = [
     ("entroly/cli.py", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly-core>={v}'),
     ("entroly/server.py", r'_version\s*=\s*"[^"]+"', '_version = "{v}"'),
     (".claude-plugin/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("server.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/daemon.py", r'version:\s*str\s*=\s*"[^"]+"', 'version: str = "{v}"'),
+    ("tests/test_release_surface.py",
+        r'RELEASE_VERSION\s*=\s*"[^"]+"',
+        'RELEASE_VERSION = "{v}"'),
+    ("tests/test_release_surface.py",
+        r'def test_public_package_versions_are_1_0_[0-9]+\(\)',
+        'def test_public_package_versions_are_{v_ident}()'),
     # Homebrew: URL pin only. The sha256 changes per-release and must be
     # updated manually after the PyPI tarball is published.
     ("packaging/homebrew/entroly.rb",
@@ -54,6 +62,8 @@ TARGETS = [
         'Current release example version: `{v}`'),
     ("packaging/homebrew/README.md",
         r'VER=[0-9]+\.[0-9]+\.[0-9]+', 'VER={v}'),
+    ("packaging/homebrew/README.md",
+        r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', 'entroly-{v}.tar.gz'),
 ]
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+([-+].+)?$")
@@ -74,7 +84,12 @@ def main(argv: list[str]) -> int:
         text = pending.get(path)
         if text is None:
             text = path.read_text(encoding="utf-8")
-        updated, n = re.subn(pattern, template.format(v=new), text, flags=re.MULTILINE)
+        updated, n = re.subn(
+            pattern,
+            template.format(v=new, v_ident=new.replace(".", "_")),
+            text,
+            flags=re.MULTILINE,
+        )
         if n == 0:
             print(f"!! no match in {rel}", file=sys.stderr)
             return 1

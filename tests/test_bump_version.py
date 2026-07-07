@@ -45,7 +45,11 @@ def test_bump_chains_multiple_edits_to_the_same_file(tmp_path, monkeypatch):
 
 
 def test_homebrew_readme_targets_update_heading_and_command():
-    text = "Current release example version: `1.0.39`\nSet VER=1.0.39\n"
+    text = (
+        "Current release example version: `1.0.39`\n"
+        "Set VER=1.0.39\n"
+        "Download entroly-1.0.39.tar.gz\n"
+    )
     targets = [
         (pattern, template)
         for path, pattern, template in bump_version.TARGETS
@@ -57,3 +61,4 @@ def test_homebrew_readme_targets_update_heading_and_command():
 
     assert "Current release example version: `1.0.40`" in text
     assert "VER=1.0.40" in text
+    assert "entroly-1.0.40.tar.gz" in text

@@ -3,12 +3,12 @@
   "name": "io.github.juyterman1000/entroly",
   "title": "Entroly",
   "description": "Local context engineering & prompt compression gateway for AI coding agents.",
-  "version": "1.0.44",
+  "version": "1.0.45",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "entroly",
-      "version": "1.0.44",
+      "version": "1.0.45",
       "transport": {
         "type": "stdio"
       }
@@ -16,7 +16,7 @@
     {
       "registryType": "npm",
       "identifier": "entroly-mcp",
-      "version": "1.0.44",
+      "version": "1.0.45",
       "transport": {
         "type": "stdio"
       }
