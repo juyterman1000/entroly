@@ -29,9 +29,10 @@ Give Claude, OpenAI, Gemini, Cursor, Codex, and Aider the right evidence with fe
 <p align="center">
   <img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="PyPI">
   <img src="https://img.shields.io/npm/v/entroly-wasm?color=red&label=npm" alt="npm">
+  <a href="https://github.com/juyterman1000/entroly/stargazers"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="GitHub stars"></a>
   <a href="https://juyterman1000.github.io/entroly/docs/discord.html"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
-  <img src="https://img.shields.io/badge/Token_Savings-tested_70--95%25-brightgreen" alt="Token savings">
+  <img src="https://img.shields.io/badge/Token_Savings-workload_dependent-brightgreen" alt="Token savings">
   <img src="https://img.shields.io/badge/Hallucination-HaluEval--QA_0.844_AUROC_·_%240-blueviolet" alt="Hallucination guard">
   <img src="https://img.shields.io/badge/Engine-Rust_+_WASM-orange?logo=rust" alt="Rust + WASM">
 </p>
@@ -54,6 +55,11 @@ Give Claude, OpenAI, Gemini, Cursor, Codex, and Aider the right evidence with fe
   <a href="https://huggingface.co/spaces/entroly/entroly-context-compression"><img src="https://img.shields.io/badge/▶_Try_it_live-no_install-FF4B4B?logo=huggingface&logoColor=white" alt="Live demo"></a>
   &nbsp;
   <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><img src="https://img.shields.io/badge/See_the_dashboard-live-2EA44F" alt="Dashboard"></a>
+</p>
+
+<p align="center">
+  <b>Deciding whether to star?</b> Run the no-key proof first: <code>entroly verify-claims && entroly simulate</code>.<br>
+  <sub>If it finds meaningful savings or gives you auditable receipts on your repo, star it so other agent builders can find it. If it does not, open an issue with the verification JSON.</sub>
 </p>
 
 ---
@@ -181,6 +187,7 @@ entroly wrap aider      # Aider
 entroly proxy                                   # http://localhost:9377
 ANTHROPIC_BASE_URL=http://localhost:9377     your-app
 OPENAI_BASE_URL=http://localhost:9377/v1     your-app
+GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta     your-app
 ```
 
 **7. Or measure it on your own repo first:**
@@ -274,7 +281,7 @@ Every number below is reproducible and backed by a committed JSON artifact you c
 
 ## Works with your stack
 
-`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a copy-paste endpoint hint.
+`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
 
 **Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
 

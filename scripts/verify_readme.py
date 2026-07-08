@@ -96,6 +96,18 @@ check(
         and "OK"
     ) or (_ for _ in ()).throw(Exception("Scope determinism claims to the tested local paths")),
 )
+check(
+    "README proof-first star CTA",
+    lambda: (
+        "img.shields.io/github/stars/juyterman1000/entroly?style=social" in README_TEXT
+        and "Deciding whether to star?" in README_TEXT
+        and "entroly verify-claims && entroly simulate" in README_TEXT
+        and "open an issue with the verification JSON" in README_TEXT
+        and "Token_Savings-tested_70--95%25" not in README_TEXT
+        and "Token_Savings-workload_dependent" in README_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("README must ask for stars through local proof, not broad first-fold claims")),
+)
 
 # === Proxy ===
 check("Proxy: PromptCompilerProxy", lambda: __import__("entroly.proxy", fromlist=["PromptCompilerProxy"]).PromptCompilerProxy and "OK")
