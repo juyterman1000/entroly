@@ -26,6 +26,8 @@ from pathlib import Path  # noqa: E402
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
+DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
+INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
 
 check("wrap claude", lambda: "claude" in _WRAP_AGENTS and "OK")
 check("wrap codex", lambda: "codex" in _WRAP_AGENTS and "OK")
@@ -107,6 +109,17 @@ check(
         and "Token_Savings-workload_dependent" in README_TEXT
         and "OK"
     ) or (_ for _ in ()).throw(Exception("README must ask for stars through local proof, not broad first-fold claims")),
+)
+check(
+    "community links avoid expired Discord invites",
+    lambda: (
+        "discord.gg/Xp7VwWnJNY" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
+        and "discord.gg/entroly" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
+        and "https://discord.gg/G833X5c7R6" in DOCS_DISCORD_TEXT
+        and "https://juyterman1000.github.io/entroly/docs/discord.html" in README_TEXT
+        and "https://juyterman1000.github.io/entroly/docs/discord.html" in INSTALL_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("Public community links must not route to expired Discord invites")),
 )
 
 # === Proxy ===
