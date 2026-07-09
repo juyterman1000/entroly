@@ -271,7 +271,7 @@ pub fn scan_anomalies(fragments: &[&ContextFragment]) -> AnomalyReport {
 fn basename(path: &str) -> &str {
     path.rsplit('/')
         .next()
-        .and_then(|s| if s.is_empty() { None } else { Some(s) })
+        .filter(|&s| !s.is_empty())
         .unwrap_or(path)
 }
 

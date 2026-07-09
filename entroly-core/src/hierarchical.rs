@@ -298,7 +298,7 @@ pub fn compute_pagerank(
             // Dangling node handling: if no outgoing, distribute to all
             if deps.is_empty() {
                 let share = d * score / n as f64;
-                for (_, v) in new_scores.iter_mut() {
+                for v in new_scores.values_mut() {
                     *v += share;
                 }
             }

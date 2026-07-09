@@ -1883,7 +1883,7 @@ impl EntrolyEngine {
                     .collect();
 
                 if !entities.is_empty() {
-                    for (_fid, frag) in self.fragments.iter_mut() {
+                    for frag in self.fragments.values_mut() {
                         let content = &frag.content;
                         let source_lower = frag.source.to_lowercase();
                         for entity in &entities {
@@ -3071,8 +3071,8 @@ impl EntrolyEngine {
                         "entropy_score",
                         (f.entropy_score * 10000.0).round() / 10000.0,
                     )?;
-                    d.set_item("preview", format!("[ref] {}", &f.source))?;
-                    d.set_item("content", format!("[ref] {}", &f.source))?;
+                    d.set_item("preview", format!("[ref] {}", f.source))?;
+                    d.set_item("content", format!("[ref] {}", f.source))?;
                     selected_list.append(d)?;
                 } else if resolution == Resolution::Belief {
                     // Belief: vault-compiled architectural summary — replaces raw code.
@@ -6062,8 +6062,8 @@ impl EntrolyEngine {
                         "reference" => {
                             let ref_tokens = (f.source.len() as u32 / 4).clamp(3, 10);
                             d.set_item("token_count", ref_tokens)?;
-                            d.set_item("preview", format!("[ref] {}", &f.source))?;
-                            d.set_item("content", format!("[ref] {}", &f.source))?;
+                            d.set_item("preview", format!("[ref] {}", f.source))?;
+                            d.set_item("content", format!("[ref] {}", f.source))?;
                         }
                         "belief" => {
                             // Belief: vault-compiled architectural summary (cache hit path)
