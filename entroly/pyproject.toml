@@ -68,6 +68,7 @@ Repository = "https://github.com/juyterman1000/entroly"
 entroly = "entroly._docker_launcher:launch"
 entroly-memory = "entroly.memory_cli:main"
 entroly-compression-mcp = "entroly.compression_mcp:main"
+entroly-models = "entroly.model_registry_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["entroly"]

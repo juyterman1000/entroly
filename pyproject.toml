@@ -62,6 +62,7 @@ test = [
 entroly = "entroly._docker_launcher:launch"
 entroly-memory = "entroly.memory_cli:main"
 entroly-compression-mcp = "entroly.compression_mcp:main"
+entroly-models = "entroly.model_registry_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

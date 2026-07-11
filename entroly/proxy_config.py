@@ -113,22 +113,21 @@ def provider_capability(provider: str) -> ProviderCapability:
     return PROVIDER_CAPABILITIES.get(provider, PROVIDER_CAPABILITIES["openai"])
 
 
-MODEL_CONTEXT_WINDOWS: dict[str, int] = {}
-for _capability in PROVIDER_CAPABILITIES.values():
-    MODEL_CONTEXT_WINDOWS.update(_capability.context_windows)
+# Compatibility snapshot for downstream imports. Runtime resolution uses the
+# provenance-aware registry below, not the provider transport dictionaries.
+from .model_registry import (
+    DEFAULT_UNKNOWN_CONTEXT_WINDOW,
+    bundled_context_windows as _bundled_context_windows,
+    context_window_for_model as _registry_context_window_for_model,
+)
 
-_DEFAULT_CONTEXT_WINDOW = 128_000
+MODEL_CONTEXT_WINDOWS: dict[str, int] = _bundled_context_windows()
+_DEFAULT_CONTEXT_WINDOW = DEFAULT_UNKNOWN_CONTEXT_WINDOW
 
 
 def context_window_for_model(model: str) -> int:
-    """Look up context window size for a model name, with fuzzy prefix matching."""
-    if model in MODEL_CONTEXT_WINDOWS:
-        return MODEL_CONTEXT_WINDOWS[model]
-    # Fuzzy: match by prefix (e.g. "gpt-4o-2024-08-06" matches "gpt-4o")
-    for prefix, size in MODEL_CONTEXT_WINDOWS.items():
-        if model.startswith(prefix):
-            return size
-    return _DEFAULT_CONTEXT_WINDOW
+    """Resolve a model through Entroly's provenance-aware intelligence registry."""
+    return _registry_context_window_for_model(model)
 
 
 # ══════════════════════════════════════════════════════════════════════

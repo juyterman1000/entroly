@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/juyterman1000/entroly/blob/main/entroly/models/schema.json",
+  "title": "Entroly Model Intelligence Registry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "registry_version",
+    "source",
+    "models"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "registry_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "payload_sha256"
+      ],
+      "properties": {
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "type": "object",
+          "required": [
+            "algorithm",
+            "public_key_base64",
+            "signature_base64"
+          ],
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "public_key_base64": {
+              "type": "string"
+            },
+            "signature_base64": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "match_prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "max_output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "supports_tools": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_vision": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_reasoning": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reasoning_levels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pricing": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "verified_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "status": {
+            "type": "string"
+          },
+          "local": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}
