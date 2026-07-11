@@ -1,0 +1,157 @@
+name: Publish Entroly to MCP Registry
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Entroly Docker Image"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: mcp-registry-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       (startsWith(github.event.workflow_run.head_commit.message, 'Release v') ||
+        startsWith(github.event.workflow_run.head_commit.message, 'Release ')))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout released source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate published package metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import time
+          import tomllib
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          root = pathlib.Path('.')
+          with (root / 'pyproject.toml').open('rb') as fh:
+              version = tomllib.load(fh)['project']['version']
+          server = json.loads((root / 'server.json').read_text(encoding='utf-8'))
+          expected_name = 'io.github.juyterman1000/entroly'
+
+          if server.get('name') != expected_name:
+              raise SystemExit(f"server.json name must be {expected_name!r}")
+          if server.get('version') != version:
+              raise SystemExit(
+                  f"server.json version {server.get('version')!r} does not match project version {version!r}"
+              )
+          for package in server.get('packages', []):
+              if package.get('version') != version:
+                  raise SystemExit(
+                      f"{package.get('identifier')} version {package.get('version')!r} "
+                      f"does not match project version {version!r}"
+                  )
+
+          def read_json(url: str) -> dict:
+              request = urllib.request.Request(
+                  url,
+                  headers={'User-Agent': 'entroly-mcp-registry-publisher'},
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          errors = []
+          for attempt in range(1, 21):
+              errors = []
+              try:
+                  pypi = read_json(
+                      f"https://pypi.org/pypi/entroly/{urllib.parse.quote(version)}/json"
+                  )
+                  description = pypi.get('info', {}).get('description') or ''
+                  marker = f"mcp-name: {expected_name}"
+                  if marker not in description:
+                      errors.append(f"PyPI README is missing {marker!r}")
+              except (urllib.error.URLError, urllib.error.HTTPError, ValueError) as exc:
+                  errors.append(f"PyPI entroly {version} is unavailable: {exc}")
+
+              try:
+                  npm = read_json(
+                      f"https://registry.npmjs.org/entroly-mcp/{urllib.parse.quote(version)}"
+                  )
+                  if npm.get('mcpName') != expected_name:
+                      errors.append(
+                          f"npm mcpName is {npm.get('mcpName')!r}, expected {expected_name!r}"
+                      )
+              except (urllib.error.URLError, urllib.error.HTTPError, ValueError) as exc:
+                  errors.append(f"npm entroly-mcp {version} is unavailable: {exc}")
+
+              if not errors:
+                  print(f"Validated Entroly {version} on PyPI and npm.")
+                  break
+              if attempt == 20:
+                  raise SystemExit('\n'.join(errors))
+              print(
+                  f"Package metadata not ready (attempt {attempt}/20): "
+                  + '; '.join(errors)
+              )
+              time.sleep(15)
+          PY
+
+      - name: Install MCP Registry publisher
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+          ./mcp-publisher --help
+
+      - name: Authenticate with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish Entroly
+        run: ./mcp-publisher publish
+
+      - name: Verify registry listing
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.parse
+          import urllib.request
+
+          name = 'io.github.juyterman1000/entroly'
+          version = json.load(open('server.json', encoding='utf-8'))['version']
+          url = (
+              'https://registry.modelcontextprotocol.io/v0.1/servers?search='
+              + urllib.parse.quote(name, safe='')
+          )
+
+          for attempt in range(1, 11):
+              request = urllib.request.Request(
+                  url,
+                  headers={'User-Agent': 'entroly-mcp-registry-publisher'},
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+              servers = payload.get('servers', [])
+              if any(
+                  item.get('server', item).get('name') == name
+                  and item.get('server', item).get('version') == version
+                  for item in servers
+              ):
+                  print(f"Verified {name} {version} in the MCP Registry.")
+                  break
+              if attempt == 10:
+                  raise SystemExit(f"Registry listing for {name} {version} was not visible")
+              time.sleep(10)
+          PY
