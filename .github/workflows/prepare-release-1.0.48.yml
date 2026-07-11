@@ -1,6 +1,6 @@
 name: Prepare Entroly 1.0.48 Release
 
-# Second push intentionally triggers the release preparation job.
+# A merged PR intentionally triggers this release preparation job.
 on:
   push:
     branches:
