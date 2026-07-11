@@ -50,6 +50,12 @@ jobs:
               text=True,
           )
 
+          def github_service_committer(name: str, email: str) -> bool:
+              return name in {"GitHub", "web-flow"} and (
+                  email == "noreply@github.com"
+                  or email.endswith("+web-flow@users.noreply.github.com")
+              )
+
           failures = []
           for row in rows.strip("\x1e\n").split("\x1e"):
               if not row:
@@ -57,12 +63,13 @@ jobs:
               commit, an, ae, cn, ce = row.split("\x1f")
               if (an, ae) != expected:
                   failures.append(f"{commit[:12]} author is {an} <{ae}>")
-              if (cn, ce) != expected:
+              if (cn, ce) != expected and not github_service_committer(cn, ce):
                   failures.append(f"{commit[:12]} committer is {cn} <{ce}>")
 
           if failures:
               print("Commit identity guard failed.")
-              print("Expected: juyterman1000 <208309368+juyterman1000@users.noreply.github.com>")
+              print("Required author: juyterman1000 <208309368+juyterman1000@users.noreply.github.com>")
+              print("Allowed committers: the same identity or GitHub's web-flow service identity")
               for failure in failures:
                   print(f"  - {failure}")
               sys.exit(1)
