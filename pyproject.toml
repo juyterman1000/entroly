@@ -65,3 +65,5 @@ entroly-compression-mcp = "entroly.compression_mcp:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# one-time-release-trigger: 1.0.47
