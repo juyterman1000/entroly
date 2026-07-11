@@ -116,7 +116,17 @@ def native_status_message(
     if status.missing_symbols:
         details.append(f"missing symbols: {', '.join(status.missing_symbols)}")
     suffix = f" ({'; '.join(details)})" if details else ""
+    if status.version_ok is False:
+        return (
+            f"{feature} requires a newer Entroly Rust engine{suffix}. "
+            f"Install entroly-core>={MIN_ENTROLY_CORE_VERSION},<2."
+        )
+    if status.missing_symbols:
+        return (
+            f"{feature} found the Rust engine but required symbols are missing{suffix}. "
+            f"Reinstall entroly-core>={MIN_ENTROLY_CORE_VERSION},<2."
+        )
     return (
-        f"{feature} requires a newer Entroly Rust engine{suffix}. "
+        f"{feature} found an incompatible Entroly Rust engine{suffix}. "
         f"Install entroly-core>={MIN_ENTROLY_CORE_VERSION},<2."
     )

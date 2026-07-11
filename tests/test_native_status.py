@@ -38,6 +38,22 @@ def test_native_status_accepts_complete_current_module(monkeypatch):
     assert status.missing_symbols == ()
 
 
+def test_native_status_distinguishes_missing_symbols_from_stale_version():
+    status = ns.NativeStatus(
+        available=True,
+        module=ModuleType("entroly_core"),
+        version=ns.MIN_ENTROLY_CORE_VERSION,
+        path="C:/fake/entroly_core.pyd",
+        missing_symbols=("py_qccr_select",),
+        version_ok=True,
+    )
+
+    message = ns.native_status_message(status, feature="QCCR")
+
+    assert "required symbols are missing" in message
+    assert "requires a newer" not in message
+
+
 def test_native_status_accepts_local_build_metadata(monkeypatch):
     fake = ModuleType("entroly_core")
     fake.py_qccr_expand_query = lambda query: [query]

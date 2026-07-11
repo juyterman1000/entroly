@@ -48,6 +48,18 @@ def test_content_addressed_handles_preserve_historical_versions():
     assert store.retrieve("file:auth.py")["retrieval_handle"] == new_handle
 
 
+def test_source_lookup_falls_back_when_refreshed_history_evicts_latest():
+    store = CompressedContextStore(max_entries=2)
+    old_handle = store.store("source", "old", "old", 1, 1)
+    new_handle = store.store("source", "new", "new", 1, 1)
+    assert store.retrieve(old_handle) is not None
+
+    store.store("other", "other", "other", 1, 1)
+
+    assert store.retrieve(new_handle) is None
+    assert store.retrieve("source")["retrieval_handle"] == old_handle
+
+
 def test_slice_recovery_content_preserves_lead_and_query_local_exact_window():
     content = (
         "Configuration reference\n"

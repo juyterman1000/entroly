@@ -80,3 +80,16 @@ def test_align_does_not_reuse_materially_changed_context():
     out, hit = a.align("conv2", different)
     assert hit is False
     assert out == different
+
+
+def test_align_treats_code_punctuation_as_token_boundaries():
+    aligner = CacheAligner(similarity_threshold=1.0)
+    original = "def calculate_total(items): return sum(items)"
+    aligner.align("code", original)
+
+    aligned, hit = aligner.align(
+        "code", "def calculate_total items return sum items"
+    )
+
+    assert hit is True
+    assert aligned == original

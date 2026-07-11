@@ -22,6 +22,7 @@ Thread-safe. Per-client tracking with LRU eviction.
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 from collections import OrderedDict
 from typing import Any
@@ -78,7 +79,7 @@ class CacheAligner:
             (aligned_context, cache_hit): The context to use and whether
             the previous cached version was reused.
         """
-        context_tokens = set(context.split())
+        context_tokens = set(re.findall(r'\w+', context))
 
         with self._lock:
             prev = self._cache.get(client_key)
