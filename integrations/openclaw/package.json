@@ -1,0 +1,48 @@
+{
+  "name": "entroly-openclaw",
+  "version": "1.0.46",
+  "description": "Auditable, budget-aware Entroly context engine for OpenClaw",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "files": [
+    "bridge-client.js",
+    "engine.js",
+    "index.js",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check bridge-client.js && node --check engine.js && node --check index.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.6.11"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ],
+    "install": {
+      "npmSpec": "entroly-openclaw",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.6.11"
+    },
+    "compat": {
+      "pluginApi": ">=2026.6.11"
+    },
+    "release": {
+      "publishToClawHub": true,
+      "publishToNpm": true,
+      "bundleRuntimeDependencies": false
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "id": "entroly",
+  "activation": {
+    "onStartup": true
+  },
+  "name": "Entroly Context Engine",
+  "description": "Selects and compresses context under budget while preserving protected messages and writing local audit receipts.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pythonCommand": {
+        "type": "string",
+        "minLength": 1,
+        "default": "python"
+      },
+      "preserveLastN": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 32,
+        "default": 4
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 30000,
+        "default": 5000
+      },
+      "receiptDir": {
+        "type": "string",
+        "minLength": 1
+      },
+      "writeReceipts": {
+        "type": "boolean",
+        "default": true
+      },
+      "distill": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  },
+  "uiHints": {
+    "pythonCommand": {
+      "label": "Python Command",
+      "help": "Python executable where the entroly package is installed."
+    },
+    "preserveLastN": {
+      "label": "Recent Messages Preserved",
+      "help": "Number of recent messages kept byte-for-byte unchanged."
+    },
+    "timeoutMs": {
+      "label": "Bridge Timeout (ms)",
+      "help": "Maximum time for one Entroly context assembly request."
+    },
+    "receiptDir": {
+      "label": "Receipt Directory",
+      "help": "Optional local directory for Entroly OpenClaw receipts."
+    },
+    "writeReceipts": {
+      "label": "Write Local Receipts",
+      "help": "Record context hashes, estimated savings, warnings, and decision metadata locally."
+    },
+    "distill": {
+      "label": "Distill Older Assistant Messages",
+      "help": "Remove filler from compressible older assistant responses before budget compression."
+    }
+  }
+}

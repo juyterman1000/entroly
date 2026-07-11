@@ -66,6 +66,7 @@ def test_release_version_surfaces_match_package_version() -> None:
     assert _json_version(_read("entroly/npm/package.json")) == __version__
     assert _json_version(_read("entroly/npm-alias/package.json")) == __version__
     assert _json_version(_read("entroly-wasm/package.json")) == __version__
+    assert _json_version(_read("integrations/openclaw/package.json")) == __version__
     assert _json_version(_read(".claude-plugin/manifest.json")) == __version__
     assert _json_version(_read(".mcpb-build/manifest.json")) == __version__
     assert _formula_version(_read("packaging/homebrew/entroly.rb")) == __version__
