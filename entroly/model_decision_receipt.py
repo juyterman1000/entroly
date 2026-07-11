@@ -1,7 +1,7 @@
 """Deterministic, privacy-safe receipts for model resolution and budgeting.
 
 A model decision receipt proves which registry snapshot and capability record
-Entroly used to budget a provider request.  It deliberately excludes raw
+Entroly used to budget a provider request. It deliberately excludes raw
 registry sources, aliases, prompts, credentials, and private override content.
 """
 
@@ -77,6 +77,23 @@ def _requested_output_tokens(body: Mapping[str, Any]) -> int | None:
     return None
 
 
+def _effective_output_reserve(
+    resolution: ModelResolution,
+    requested_output_tokens: int | None,
+) -> int:
+    """Mirror the output reservation used by ``effective_input_budget`` exactly."""
+    model_limit = (
+        resolution.capability.max_output_tokens
+        if resolution.capability is not None
+        else None
+    )
+    if requested_output_tokens is None:
+        return model_limit or 0
+    if model_limit is not None:
+        return min(requested_output_tokens, model_limit)
+    return requested_output_tokens
+
+
 def _warning_code(resolution: ModelResolution) -> str:
     if resolution.capability is None:
         return "unknown_model"
@@ -101,6 +118,7 @@ class ModelDecisionReceipt:
     context_window: int
     safe_input_budget: int
     requested_output_tokens: int | None
+    output_reserve_tokens: int
     warning_code: str
     registry_digest: str
     base_registry_digest: str
@@ -119,6 +137,7 @@ class ModelDecisionReceipt:
             "context_window": self.context_window,
             "safe_input_budget": self.safe_input_budget,
             "requested_output_tokens": self.requested_output_tokens,
+            "output_reserve_tokens": self.output_reserve_tokens,
             "warning_code": self.warning_code,
             "registry_digest": self.registry_digest,
             "base_registry_digest": self.base_registry_digest,
@@ -141,7 +160,8 @@ class ModelDecisionReceipt:
             "entroly_model_fallback": "true" if self.fallback_used else "false",
             "entroly_model_context_window": str(self.context_window),
             "entroly_model_input_budget": str(self.safe_input_budget),
-            "entroly_model_output_reserve": str(self.requested_output_tokens or 0),
+            "entroly_model_output_requested": str(self.requested_output_tokens or 0),
+            "entroly_model_output_reserve": str(self.output_reserve_tokens),
             "entroly_model_warning": self.warning_code,
             "entroly_registry_digest": self.registry_digest,
             "entroly_registry_base_digest": self.base_registry_digest,
@@ -157,7 +177,7 @@ def build_model_decision_receipt(
 ) -> ModelDecisionReceipt | None:
     """Resolve a request model and produce a reproducible decision receipt.
 
-    ``None`` means the request has no model-bearing surface.  Resolution errors
+    ``None`` means the request has no model-bearing surface. Resolution errors
     are handled by :func:`model_decision_tags` so proxy traffic remains fail-open.
     """
     payload = body or {}
@@ -167,6 +187,7 @@ def build_model_decision_receipt(
 
     requested_output = _requested_output_tokens(payload)
     resolution = resolve_model(requested_model)
+    output_reserve = _effective_output_reserve(resolution, requested_output)
     safe_input_budget = resolution.effective_input_budget(
         requested_output_tokens=requested_output,
         safety_fraction=safety_fraction,
@@ -186,6 +207,7 @@ def build_model_decision_receipt(
         "context_window": resolution.context_window,
         "safe_input_budget": safe_input_budget,
         "requested_output_tokens": requested_output,
+        "output_reserve_tokens": output_reserve,
         "warning_code": _warning_code(resolution),
         "registry_digest": resolution.registry_digest,
         "base_registry_digest": resolution.base_registry_digest,
