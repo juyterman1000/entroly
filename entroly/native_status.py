@@ -7,7 +7,7 @@ from importlib import metadata
 from types import ModuleType
 
 
-MIN_ENTROLY_CORE_VERSION = "1.0.46"
+MIN_ENTROLY_CORE_VERSION = "1.0.47"
 QCCR_SYMBOLS = (
     "py_qccr_expand_query",
     "py_qccr_rank_files",
