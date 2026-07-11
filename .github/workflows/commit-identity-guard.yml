@@ -40,7 +40,13 @@ jobs:
               rev = after if not before or set(before) == {"0"} else f"{before}..{after}"
 
           rows = subprocess.check_output(
-              ["git", "log", "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1e", rev],
+              [
+                  "git",
+                  "log",
+                  "--first-parent",
+                  "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1e",
+                  rev,
+              ],
               text=True,
           )
 
