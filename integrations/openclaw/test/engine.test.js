@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createEntrolyContextEngine, formatEntrolyStatus } from "../engine.js";
+import {
+  createEntrolyContextEngine,
+  formatEntrolyDoctor,
+  formatEntrolyStatus,
+} from "../engine.js";
 
 test("assemble delegates to Entroly and reports assembled authority", async () => {
   const messages = [{ role: "user", content: "hello" }];
@@ -70,13 +74,30 @@ test("status output labels estimates and exposes the receipt", () => {
     changed: true,
     assembly_strategy: "query_aware_evidence_pinning",
     evidence_pinned: 2,
+    evidence_pin_blocked: 1,
     receipt_id: "ocr_test",
     warnings: ["Token counts are estimates."],
   });
   assert.match(output, /Estimated tokens: 1,000 -> 400/);
   assert.match(output, /Evidence pinned verbatim: 2 message/);
+  assert.match(output, /Evidence pins blocked by firewall: 1/);
   assert.match(output, /Estimated reduction: 60.0%/);
   assert.match(output, /Receipt:/);
   assert.doesNotMatch(output, /\/workspace/);
   assert.match(output, /Warnings:/);
+});
+
+test("doctor output is actionable without exposing multiline errors", () => {
+  const ready = formatEntrolyDoctor({ ok: true, pythonCommand: "python3" });
+  assert.match(ready, /doctor: ready/);
+  assert.match(ready, /python3/);
+
+  const failed = formatEntrolyDoctor({
+    ok: false,
+    pythonCommand: "missing-python",
+    error: new Error("spawn failed\nwith details"),
+  });
+  assert.match(failed, /doctor: not ready/);
+  assert.match(failed, /pip install -U entroly/);
+  assert.doesNotMatch(failed, /failed\nwith/);
 });

@@ -1,6 +1,10 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { EntrolyBridgeClient } from "./bridge-client.js";
-import { createEntrolyContextEngine, formatEntrolyStatus } from "./engine.js";
+import {
+  createEntrolyContextEngine,
+  formatEntrolyDoctor,
+  formatEntrolyStatus,
+} from "./engine.js";
 
 export default definePluginEntry({
   id: "entroly",
@@ -23,13 +27,34 @@ export default definePluginEntry({
     );
     api.registerCommand({
       name: "entroly-context",
-      description: "Show Entroly context savings, warnings, and the latest receipt.",
-      acceptsArgs: false,
-      handler: (ctx) => ({
-        text: formatEntrolyStatus(
-          ctx.sessionId ? statusBySession.get(ctx.sessionId) : undefined,
-        ),
-      }),
+      description: "Show Entroly context savings or run `doctor`.",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        if (ctx.args?.trim().toLowerCase() === "doctor") {
+          try {
+            await bridge.health();
+            return {
+              text: formatEntrolyDoctor({
+                ok: true,
+                pythonCommand: config.pythonCommand ?? "python",
+              }),
+            };
+          } catch (error) {
+            return {
+              text: formatEntrolyDoctor({
+                ok: false,
+                error,
+                pythonCommand: config.pythonCommand ?? "python",
+              }),
+            };
+          }
+        }
+        return {
+          text: formatEntrolyStatus(
+            ctx.sessionId ? statusBySession.get(ctx.sessionId) : undefined,
+          ),
+        };
+      },
     });
   },
 });

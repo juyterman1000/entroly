@@ -76,7 +76,7 @@ def _message_relevance(
     )
 
     ranked: list[dict[str, Any]] = []
-    for terms in documents:
+    for index, terms in enumerate(documents):
         frequencies = Counter(terms)
         document_length = max(1, len(terms))
         matched = sorted(term for term in query_terms if frequencies.get(term, 0))
@@ -94,11 +94,39 @@ def _message_relevance(
                 frequency + 1.2 * normalization
             )
         coverage = len(matched) / max(1, len(query_terms))
+        pin_eligible = True
+        security_flags: list[str] = []
+        pin_blocked_reason: str | None = None
+        if matched:
+            try:
+                from .context_firewall import scan
+
+                scan_result = scan(
+                    str(messages[index].get("content", "")),
+                    source=f"openclaw_message_{index}",
+                    check_repetition=False,
+                )
+                security_flags = sorted(
+                    {
+                        f"{threat.severity}:{threat.threat_type}"
+                        for threat in scan_result.threats
+                    }
+                )
+                pin_eligible = scan_result.is_safe
+                if not pin_eligible:
+                    pin_blocked_reason = "context_firewall"
+            except Exception:
+                pin_eligible = False
+                security_flags = ["critical:scanner_error"]
+                pin_blocked_reason = "context_firewall_error"
         ranked.append(
             {
                 "score": round(score * (1.0 + coverage), 6),
                 "matched_terms": matched,
                 "token_count": len(terms),
+                "pin_eligible": pin_eligible,
+                "security_flags": security_flags,
+                "pin_blocked_reason": pin_blocked_reason,
             }
         )
     return ranked
@@ -139,7 +167,11 @@ def _compress_message_bodies(
         range(len(messages)),
         key=lambda item: (-relevance[item]["score"], text_tokens[item], item),
     ):
-        if relevance[index]["score"] <= 0 or not relevance[index]["matched_terms"]:
+        if (
+            relevance[index]["score"] <= 0
+            or not relevance[index]["matched_terms"]
+            or not relevance[index]["pin_eligible"]
+        ):
             continue
         if text_tokens[index] <= pin_budget:
             pinned.add(index)
@@ -255,6 +287,9 @@ def _write_receipt(
                 "relevance_score": evidence_item.get("score"),
                 "matched_query_terms": evidence_item.get("matched_terms", []),
                 "allocated_tokens": evidence_item.get("allocated_tokens"),
+                "pin_eligible": evidence_item.get("pin_eligible"),
+                "security_flags": evidence_item.get("security_flags", []),
+                "pin_blocked_reason": evidence_item.get("pin_blocked_reason"),
             }
         )
     identity = _canonical_json(
@@ -289,6 +324,9 @@ def _write_receipt(
         "assembly_strategy": strategy,
         "evidence_pinned_count": sum(
             1 for item in evidence.values() if item.get("evidence_pinned")
+        ),
+        "evidence_pin_blocked_count": sum(
+            1 for item in evidence.values() if item.get("pin_blocked_reason")
         ),
         "recovery_source": "openclaw_transcript_unmodified",
         "warnings": warnings,
@@ -386,6 +424,14 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
                 }
 
     assembled_tokens = estimate_messages_tokens(assembled)
+    blocked_count = sum(
+        1 for item in evidence.values() if item.get("pin_blocked_reason")
+    )
+    if blocked_count:
+        warnings.append(
+            f"Context firewall blocked verbatim evidence pinning for {blocked_count} "
+            "message(s); those messages remained subject to normal compression."
+        )
     if assembled_tokens > budget and assembled != messages:
         warnings.append(
             "Structured message overhead kept the assembled estimate above budget; "
@@ -417,6 +463,7 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         "receipt_path": receipt_path,
         "assembly_strategy": strategy,
         "evidence_pinned": len(pinned_indexes),
+        "evidence_pin_blocked": blocked_count,
         "pinned_message_indexes": pinned_indexes,
         "warnings": warnings,
     }

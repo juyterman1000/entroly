@@ -19,6 +19,7 @@ export function formatEntrolyStatus(status) {
     "Entroly protected the last context assembly",
     `Strategy: ${status.assembly_strategy ?? "budgeted_context"}`,
     `Evidence pinned verbatim: ${status.evidence_pinned ?? 0} message(s)`,
+    `Evidence pins blocked by firewall: ${status.evidence_pin_blocked ?? 0}`,
     `Estimated tokens: ${source.toLocaleString()} -> ${assembled.toLocaleString()}`,
     `Estimated reduction: ${reduction}% (${saved.toLocaleString()} tokens)`,
     `Changed: ${status.changed ? "yes" : "no"}`,
@@ -26,6 +27,25 @@ export function formatEntrolyStatus(status) {
   if (status.receipt_id) lines.push(`Receipt: ${status.receipt_id}`);
   if (status.warnings?.length) lines.push(`Warnings: ${status.warnings.join(" | ")}`);
   return lines.join("\n");
+}
+
+export function formatEntrolyDoctor({ ok, error, pythonCommand = "python" }) {
+  if (ok) {
+    return [
+      "Entroly doctor: ready",
+      `Python command: ${pythonCommand}`,
+      "Bridge: responsive",
+      "Local-only context assembly: available",
+    ].join("\n");
+  }
+  const reason = String(error?.message ?? error ?? "unknown error").replace(/\s+/g, " ");
+  return [
+    "Entroly doctor: not ready",
+    `Python command: ${pythonCommand}`,
+    `Reason: ${reason}`,
+    "Fix: install Entroly into that Python environment with `python -m pip install -U entroly`,",
+    "or set plugins.entries.entroly.config.pythonCommand to the correct Python executable.",
+  ].join("\n");
 }
 
 export function createEntrolyContextEngine({

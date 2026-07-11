@@ -48,6 +48,8 @@ openclaw plugins doctor
 
 After the first agent turn, run `/entroly-context` in any connected channel to
 see the estimated before/after context size, reduction, warnings, and receipt.
+Run `/entroly-context doctor` to verify the configured Python executable and
+local JSONL bridge before inviting users onto the Gateway.
 
 ## Reproduce the evidence-pinning control
 
