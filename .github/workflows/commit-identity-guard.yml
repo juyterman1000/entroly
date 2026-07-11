@@ -22,13 +22,18 @@ jobs:
       - name: Verify commit author and committer
         env:
           EXPECTED_NAME: juyterman1000
-          EXPECTED_EMAIL: 208309368+juyterman1000@users.noreply.github.com
+          EXPECTED_NOREPLY_EMAIL: 208309368+juyterman1000@users.noreply.github.com
+          EXPECTED_ACCOUNT_EMAIL: fastrunner10090@gmail.com
         run: |
           python - <<'PY'
           import json, os, subprocess, sys
           from pathlib import Path
 
-          expected = (os.environ["EXPECTED_NAME"], os.environ["EXPECTED_EMAIL"])
+          expected_name = os.environ["EXPECTED_NAME"]
+          owner_emails = {
+              os.environ["EXPECTED_NOREPLY_EMAIL"],
+              os.environ["EXPECTED_ACCOUNT_EMAIL"],
+          }
           event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
           event_name = os.environ["GITHUB_EVENT_NAME"]
 
@@ -50,6 +55,9 @@ jobs:
               text=True,
           )
 
+          def owner_identity(name: str, email: str) -> bool:
+              return name == expected_name and email in owner_emails
+
           def github_service_committer(name: str, email: str) -> bool:
               return name in {"GitHub", "web-flow"} and (
                   email == "noreply@github.com"
@@ -61,15 +69,15 @@ jobs:
               if not row:
                   continue
               commit, an, ae, cn, ce = row.split("\x1f")
-              if (an, ae) != expected:
+              if not owner_identity(an, ae):
                   failures.append(f"{commit[:12]} author is {an} <{ae}>")
-              if (cn, ce) != expected and not github_service_committer(cn, ce):
+              if not owner_identity(cn, ce) and not github_service_committer(cn, ce):
                   failures.append(f"{commit[:12]} committer is {cn} <{ce}>")
 
           if failures:
               print("Commit identity guard failed.")
-              print("Required author: juyterman1000 <208309368+juyterman1000@users.noreply.github.com>")
-              print("Allowed committers: the same identity or GitHub's web-flow service identity")
+              print(f"Required author: {expected_name} with a verified owner email")
+              print("Allowed committers: the same owner identity or GitHub's web-flow service identity")
               for failure in failures:
                   print(f"  - {failure}")
               sys.exit(1)
