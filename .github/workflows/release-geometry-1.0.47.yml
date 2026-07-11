@@ -1,7 +1,6 @@
 name: Release Entroly 1.0.47 Geometry Fix
 
-# This second commit intentionally triggers the workflow after its definition
-# already exists on the default branch.
+# A merged PR intentionally triggers this workflow as a normal main-branch push.
 on:
   push:
     branches: [main]
