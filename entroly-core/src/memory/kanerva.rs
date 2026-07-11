@@ -10,7 +10,7 @@
 //! - XOR+POPCNT inner loop: ~15ns per location comparison
 
 use super::episode::hamming_distance;
-use rand::Rng;
+use rand::RngExt;
 
 /// Width of the content counter array.
 const COUNTER_WIDTH: usize = 64;
@@ -55,13 +55,13 @@ impl KanervaSDM {
     /// - `activation_radius`: Max Hamming distance for activation (300–450
     ///   typical for 1024-bit addresses; ~40-45% of bits).
     pub fn new(n_locations: usize, activation_radius: u32) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut locations = Vec::with_capacity(n_locations);
 
         for _ in 0..n_locations {
             let mut address = [0u64; 16];
             for word in address.iter_mut() {
-                *word = rng.gen();
+                *word = rng.random();
             }
             locations.push(HardLocation {
                 address,
