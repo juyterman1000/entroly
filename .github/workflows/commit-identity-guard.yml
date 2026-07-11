@@ -21,7 +21,7 @@ jobs:
 
       - name: Verify commit author and committer
         env:
-          EXPECTED_NAME: juyterman1000
+          EXPECTED_LOGIN: juyterman1000
           EXPECTED_NOREPLY_EMAIL: 208309368+juyterman1000@users.noreply.github.com
           EXPECTED_ACCOUNT_EMAIL: fastrunner10090@gmail.com
         run: |
@@ -29,7 +29,7 @@ jobs:
           import json, os, subprocess, sys
           from pathlib import Path
 
-          expected_name = os.environ["EXPECTED_NAME"]
+          expected_login = os.environ["EXPECTED_LOGIN"]
           owner_emails = {
               os.environ["EXPECTED_NOREPLY_EMAIL"],
               os.environ["EXPECTED_ACCOUNT_EMAIL"],
@@ -55,8 +55,11 @@ jobs:
               text=True,
           )
 
-          def owner_identity(name: str, email: str) -> bool:
-              return name == expected_name and email in owner_emails
+          def owner_identity(_name: str, email: str) -> bool:
+              # GitHub may preserve a user-configured display name, but commits
+              # associated with the repository owner use one of these verified
+              # addresses and render in GitHub as juyterman1000.
+              return email in owner_emails
 
           def github_service_committer(name: str, email: str) -> bool:
               return name in {"GitHub", "web-flow"} and (
@@ -76,8 +79,8 @@ jobs:
 
           if failures:
               print("Commit identity guard failed.")
-              print(f"Required author: {expected_name} with a verified owner email")
-              print("Allowed committers: the same owner identity or GitHub's web-flow service identity")
+              print(f"Required author account: {expected_login} via a verified owner email")
+              print("Allowed committers: the owner account or GitHub's web-flow service identity")
               for failure in failures:
                   print(f"  - {failure}")
               sys.exit(1)
