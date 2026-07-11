@@ -7,8 +7,11 @@ recall() bug silently degraded retrieval.
 
 from __future__ import annotations
 
+import pytest
+
 from entroly.file_localizer import localize_files, localize_fragments
 from entroly.localization import Tier0Localizer, _module_to_paths, _split_ident
+from entroly.native_status import QCCR_SYMBOLS, native_status
 from entroly.server import EntrolyEngine
 
 MINI_REPO = {
@@ -298,6 +301,9 @@ def test_base_ranked_localization_skips_unused_corpus_tokenization(monkeypatch):
 
 
 def test_optimize_context_applies_engine_s6_once_inside_qccr(monkeypatch):
+    if not native_status(QCCR_SYMBOLS).ok:
+        pytest.skip("installed native engine does not expose the QCCR contract")
+
     file_calls = []
     fragment_calls = []
 
