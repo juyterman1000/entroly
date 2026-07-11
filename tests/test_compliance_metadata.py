@@ -61,3 +61,16 @@ def test_rust_packages_declare_apache_license_metadata():
         manifest = (ROOT / rel).read_text(encoding="utf-8")
         assert 'license = "Apache-2.0"' in manifest
         assert 'repository = "https://github.com/juyterman1000/entroly"' in manifest
+
+
+def test_root_license_is_entroly_apache_2_only():
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+
+    assert "Apache License" in license_text
+    assert "Version 2.0, January 2004" in license_text
+    assert "Copyright 2026 Entroly" in license_text
+
+    # Prevent accidentally restoring the MCP project's transitional license text.
+    assert "The MCP project is undergoing a licensing transition" not in license_text
+    assert "MIT License" not in license_text
+    assert "CC-BY-4.0" not in license_text
