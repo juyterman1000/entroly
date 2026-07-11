@@ -1,0 +1,62 @@
+name: Prepare Entroly 1.0.48 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prepare-release-1.0.48.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-entroly-1.0.48
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build synchronized release branch
+        run: |
+          git checkout -B release/1.0.48
+          python scripts/bump_version.py 1.0.48
+          mkdir -p docs/releases
+          cat > docs/releases/v1.0.48.md <<'EOF'
+          # Entroly 1.0.48
+
+          Entroly 1.0.48 introduces replayable Context Commits: portable,
+          content-addressed records of the exact evidence selected, omitted, and
+          retained for recovery for an AI-agent request.
+
+          This release adds public create, replay, and fail-closed verification
+          APIs; CLI creation and verification; deterministic conformance fixtures;
+          exact omission recovery checks; and tamper-detection benchmarks.
+
+          The committed local benchmark reports 128/128 deterministic replays,
+          576/576 exact omitted-chunk recoveries, and 768/768 detected mutations.
+          These results measure artifact integrity and replay, not model-answer quality.
+          EOF
+          git rm .github/workflows/prepare-release-1.0.48.yml
+          git diff --check
+          python -m pip install pytest
+          python -m pytest tests/test_bump_version.py tests/test_release_surface.py tests/test_release_version_sync.py tests/test_context_commit.py tests/test_context_commit_benchmark.py -q
+
+      - name: Commit release branch
+        env:
+          GIT_AUTHOR_NAME: juyterman1000
+          GIT_AUTHOR_EMAIL: fastrunner10090@gmail.com
+          GIT_COMMITTER_NAME: juyterman1000
+          GIT_COMMITTER_EMAIL: fastrunner10090@gmail.com
+        run: |
+          git config user.name "$GIT_AUTHOR_NAME"
+          git config user.email "$GIT_AUTHOR_EMAIL"
+          git add -A
+          git commit -m "Release v1.0.48: add replayable Context Commits"
+          git push --force-with-lease origin HEAD:release/1.0.48
