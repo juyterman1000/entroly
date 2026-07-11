@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from entroly.control_plane import stable_request_fingerprint
 from entroly.model_decision_receipt import (
     MODEL_DECISION_SCHEMA,
+    _effective_output_reserve,
     build_model_decision_receipt,
     model_decision_tags,
 )
@@ -29,9 +32,20 @@ def test_verified_model_receipt_is_deterministic_and_self_verifying() -> None:
     assert left.fallback_used is False
     assert left.context_window == 128_000
     assert left.requested_output_tokens == 4096
+    assert left.output_reserve_tokens == 4096
     assert left.safe_input_budget == 117_504
     assert len(left.receipt_digest) == 64
     assert left.verify() is True
+
+
+def test_actual_output_reserve_clamps_to_model_limit() -> None:
+    resolution = SimpleNamespace(
+        capability=SimpleNamespace(max_output_tokens=4096)
+    )
+
+    assert _effective_output_reserve(resolution, None) == 4096
+    assert _effective_output_reserve(resolution, 1024) == 1024
+    assert _effective_output_reserve(resolution, 8192) == 4096
 
 
 def test_receipt_digest_changes_when_budget_decision_changes() -> None:
@@ -60,6 +74,7 @@ def test_unknown_model_is_explicit_conservative_fallback() -> None:
     assert receipt.fallback_used is True
     assert receipt.warning_code == "unknown_model"
     assert receipt.context_window == 128_000
+    assert receipt.output_reserve_tokens == 2048
     assert receipt.safe_input_budget == 119_552
     assert receipt.verify() is True
 
@@ -90,6 +105,7 @@ def test_gemini_path_model_and_output_reserve_are_detected() -> None:
     assert receipt.resolved_model == "google/gemini-2.5-pro"
     assert receipt.context_window == 1_048_576
     assert receipt.requested_output_tokens == 8192
+    assert receipt.output_reserve_tokens == 8192
     assert receipt.safe_input_budget == 987_956
 
 
@@ -129,6 +145,7 @@ def test_control_plane_fingerprint_exports_model_receipt_tags() -> None:
     assert tags["entroly_model_receipt_status"] == "verified"
     assert tags["entroly_model_resolved"] == "openai/gpt-4o"
     assert tags["entroly_model_context_window"] == "128000"
+    assert tags["entroly_model_output_requested"] == "2048"
     assert tags["entroly_model_output_reserve"] == "2048"
     assert len(tags["entroly_model_receipt"]) == 64
     assert len(tags["entroly_registry_digest"]) == 64
