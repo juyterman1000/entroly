@@ -7,22 +7,21 @@
 //!
 //! Optimized for context fragments with multi-table LSH bucketing.
 //!
+use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-/// Hash a token to a 64-bit integer using FNV-1a.
+/// Hash a token to a stable 64-bit integer using MD5.
 ///
-/// FNV-1a is ~10× faster than MD5 with equivalent hash quality for
-/// SimHash features (which need uniform bit distribution, not
-/// cryptographic preimage resistance).
+/// The established bit geometry is part of the persisted SimHash/LSH behavior;
+/// swapping hash families can make previously reachable fragments miss every
+/// LSH band even when their semantic tokens still match.
 #[inline]
 fn hash_token(token: &str) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
-    for &b in token.as_bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3); // FNV-1a prime
-    }
-    h
+    let mut hasher = Md5::new();
+    hasher.update(token.as_bytes());
+    let digest = hasher.finalize();
+    u64::from_le_bytes(digest[..8].try_into().expect("MD5 digest is 16 bytes"))
 }
 
 /// Hash normalized content so duplicate verification can distinguish
