@@ -7,6 +7,9 @@
 //! would be pathologically large). Honors the non-annihilation contract:
 //! non-empty input + positive budget never yields empty output.
 
+/// Model capability and budget resolution shared with the standalone Rust API.
+pub mod model_registry;
+
 use crate::entropy::information_score;
 
 /// Approximate token count (~4 chars/token — the project-wide heuristic).
