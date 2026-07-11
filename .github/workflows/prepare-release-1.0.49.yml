@@ -1,11 +1,12 @@
 name: Prepare Entroly 1.0.49 Release
-# Trigger revision: 1
 
 on:
-  push:
+  pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
     paths:
-      - .github/workflows/prepare-release-1.0.49.yml
+      - docs/releases/.prepare-1.0.49
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,6 +17,7 @@ concurrency:
 
 jobs:
   prepare:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'generate/1.0.49'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
@@ -27,6 +29,8 @@ jobs:
       - name: Build synchronized release branch
         run: |
           git checkout -B release/1.0.49
+          git show 3205ab01c547a160db3aba0d6c593fb52b0f29dd:.github/workflows/docker-publish.yml > .github/workflows/docker-publish.yml
+          sed -i '/^# Release preparation .*1.0.49/d' pyproject.toml
           python scripts/bump_version.py 1.0.49
           mkdir -p docs/releases
           cat > docs/releases/v1.0.49.md <<'EOF'
@@ -43,7 +47,7 @@ jobs:
           runtime, lockfile, Homebrew URL, and release-test version surfaces are
           generated together by the canonical bump script.
           EOF
-          git rm .github/workflows/prepare-release-1.0.49.yml
+          git rm -f .github/workflows/prepare-release-1.0.49.yml || true
           git diff --check
           python -m pip install pytest
           python -m pytest \
