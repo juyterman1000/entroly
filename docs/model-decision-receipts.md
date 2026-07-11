@@ -18,7 +18,7 @@ A Model Decision Receipt binds the decision to:
 - exact versus prefix resolution;
 - whether a conservative fallback was used;
 - effective context window;
-- output-token reservation;
+- requested output tokens and the actual model-clamped output reserve;
 - safe input ceiling;
 - effective and bundled registry SHA-256 fingerprints.
 
@@ -39,11 +39,17 @@ X-Entroly-Model-Exact: true
 X-Entroly-Model-Fallback: false
 X-Entroly-Model-Context-Window: 128000
 X-Entroly-Model-Input-Budget: 120576
+X-Entroly-Model-Output-Requested: 1024
 X-Entroly-Model-Output-Reserve: 1024
 X-Entroly-Model-Warning: none
 X-Entroly-Registry-Digest: <sha256>
 X-Entroly-Registry-Base-Digest: <sha256>
 ```
+
+When a request asks for more output than the registry's model limit, the receipt
+preserves both numbers: `Output-Requested` records caller intent and
+`Output-Reserve` records the clamped value actually used in the input-budget
+equation.
 
 Header names are generated from control-plane tags, so the same contract applies
 to optimized, observed, bypassed, JSON, and streaming responses handled by the
