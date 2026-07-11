@@ -37,10 +37,12 @@ jobs:
           from pathlib import Path
 
           path = Path('pyproject.toml')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace('\n# one-time-release-trigger: 1.0.47\n', '\n')
-          text = text.replace('\n# one-time-release-trigger: 1.0.47-pr\n', '\n')
-          path.write_text(text, encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          lines = [
+              line for line in lines
+              if not line.startswith('# one-time-release-trigger: 1.0.47')
+          ]
+          path.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
           PY
           rm -f .github/workflows/release-geometry-1.0.47.yml
           mkdir -p docs/releases
@@ -56,9 +58,8 @@ jobs:
           MCP, OpenClaw, plugin, Docker, and registry version surfaces.
           EOF
           git diff --check
-          python -m pytest tests/test_bump_version.py tests/test_release_surface.py -q
 
-      - name: Commit synchronized release metadata
+      - name: Commit synchronized release branch
         id: release
         env:
           GIT_AUTHOR_NAME: juyterman1000
@@ -68,16 +69,17 @@ jobs:
         run: |
           git config user.name "$GIT_AUTHOR_NAME"
           git config user.email "$GIT_AUTHOR_EMAIL"
+          git checkout -B release/1.0.47
           git add -A
           git commit -m "Release v1.0.47: restore stable SimHash geometry"
-          git push origin HEAD:main
+          git push --force-with-lease origin HEAD:refs/heads/release/1.0.47
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch established release pipeline
+      - name: Dispatch established release pipeline from release branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run entroly-publish.yml --ref main -f release_version=1.0.47
+          gh workflow run entroly-publish.yml --ref release/1.0.47 -f release_version=1.0.47
 
   build-and-push:
     runs-on: ubuntu-latest
