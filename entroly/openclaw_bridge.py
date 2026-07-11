@@ -6,12 +6,15 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, TextIO
 
+from .context_receipts.retrieval import tokenize
 from .sdk import compress
 
 BRIDGE_SCHEMA = "entroly.openclaw.bridge.v1"
@@ -52,18 +55,123 @@ def _protected_message(message: dict[str, Any]) -> bool:
     return not isinstance(content, str)
 
 
-def _compress_message_bodies(
-    messages: list[dict[str, Any]], *, content_budget: int, distill: bool
+def _message_relevance(
+    messages: list[dict[str, Any]], query: str
 ) -> list[dict[str, Any]]:
+    query_terms = sorted(set(tokenize(query)))
+    if not query_terms:
+        return [
+            {"score": 0.0, "matched_terms": [], "token_count": 0}
+            for _ in messages
+        ]
+
+    documents = [tokenize(str(message.get("content", ""))) for message in messages]
+    document_frequency: dict[str, int] = defaultdict(int)
+    for terms in documents:
+        for term in set(terms):
+            document_frequency[term] += 1
+    document_count = max(1, len(documents))
+    average_length = max(
+        1.0, sum(len(terms) for terms in documents) / document_count
+    )
+
+    ranked: list[dict[str, Any]] = []
+    for terms in documents:
+        frequencies = Counter(terms)
+        document_length = max(1, len(terms))
+        matched = sorted(term for term in query_terms if frequencies.get(term, 0))
+        score = 0.0
+        for term in matched:
+            frequency = frequencies[term]
+            frequency_docs = document_frequency[term]
+            inverse_frequency = math.log(
+                1.0
+                + (document_count - frequency_docs + 0.5)
+                / (frequency_docs + 0.5)
+            )
+            normalization = 1.0 - 0.75 + 0.75 * document_length / average_length
+            score += inverse_frequency * (frequency * 2.2) / (
+                frequency + 1.2 * normalization
+            )
+        coverage = len(matched) / max(1, len(query_terms))
+        ranked.append(
+            {
+                "score": round(score * (1.0 + coverage), 6),
+                "matched_terms": matched,
+                "token_count": len(terms),
+            }
+        )
+    return ranked
+
+
+def _query_for_request(
+    request: dict[str, Any], messages: list[dict[str, Any]]
+) -> str:
+    prompt = request.get("prompt")
+    if isinstance(prompt, str) and prompt.strip():
+        return prompt.strip()
+    for message in reversed(messages):
+        if message.get("role") not in {"user", "human"}:
+            continue
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+    return ""
+
+
+def _compress_message_bodies(
+    messages: list[dict[str, Any]],
+    *,
+    content_budget: int,
+    distill: bool,
+    query: str,
+) -> tuple[list[dict[str, Any]], set[int], list[dict[str, Any]]]:
     text_tokens = [
         max(1, _estimate_value_tokens(message.get("content", ""))) for message in messages
     ]
-    total_text_tokens = max(1, sum(text_tokens))
+    relevance = _message_relevance(messages, query)
+    reserve_for_compression = min(int(content_budget * 0.35), len(messages) * 8)
+    pin_budget = min(
+        int(content_budget * 0.65), max(0, content_budget - reserve_for_compression)
+    )
+    pinned: set[int] = set()
+    for index in sorted(
+        range(len(messages)),
+        key=lambda item: (-relevance[item]["score"], text_tokens[item], item),
+    ):
+        if relevance[index]["score"] <= 0 or not relevance[index]["matched_terms"]:
+            continue
+        if text_tokens[index] <= pin_budget:
+            pinned.add(index)
+            pin_budget -= text_tokens[index]
+
+    unpinned = [index for index in range(len(messages)) if index not in pinned]
+    remaining_budget = max(
+        0, content_budget - sum(text_tokens[index] for index in pinned)
+    )
+    allocations = {index: text_tokens[index] for index in pinned}
+    if unpinned:
+        distributable = max(0, remaining_budget - len(unpinned))
+        max_score = max((relevance[index]["score"] for index in unpinned), default=0.0)
+        weights = {
+            index: math.sqrt(text_tokens[index])
+            * (1.0 + 2.0 * relevance[index]["score"] / max(1.0, max_score))
+            for index in unpinned
+        }
+        total_weight = max(1.0, sum(weights.values()))
+        for index in unpinned:
+            allocations[index] = 1 + int(
+                distributable * weights[index] / total_weight
+            )
+
     result: list[dict[str, Any]] = []
-    for message, token_count in zip(messages, text_tokens, strict=True):
+    for index, message in enumerate(messages):
         raw_content = message.get("content", "")
         if not isinstance(raw_content, str):
             # Structured content (lists, dicts) must not be coerced to repr.
+            result.append(copy.deepcopy(message))
+            continue
+        if index in pinned:
             result.append(copy.deepcopy(message))
             continue
         content = raw_content
@@ -74,11 +182,14 @@ def _compress_message_bodies(
                 content, _, _ = distill_response(content, mode="full")
             except Exception:
                 pass
-        allocation = max(1, int(content_budget * token_count / total_text_tokens))
         compressed_message = copy.deepcopy(message)
-        compressed_message["content"] = compress(content, budget=allocation)
+        compressed_message["content"] = compress(
+            content, budget=max(1, allocations[index])
+        )
         result.append(compressed_message)
-    return result
+    for index, item in enumerate(relevance):
+        item["allocated_tokens"] = allocations[index]
+    return result, pinned, relevance
 
 
 def _safe_session_name(session_id: str) -> str:
@@ -103,6 +214,8 @@ def _write_receipt(
     source_tokens: int,
     assembled_tokens: int,
     warnings: list[str],
+    evidence: dict[int, dict[str, Any]],
+    strategy: str,
 ) -> tuple[str, str | None]:
     source_hash = hashlib.sha256(_canonical_json(source_messages).encode("utf-8")).hexdigest()
     assembled_hash = hashlib.sha256(
@@ -116,12 +229,16 @@ def _write_receipt(
         assembled_content = assembled.get("content")
         source_content_json = _canonical_json(source_content)
         assembled_content_json = _canonical_json(assembled_content)
+        evidence_item = evidence.get(index, {})
+        is_pinned = bool(evidence_item.get("evidence_pinned"))
         message_decisions.append(
             {
                 "message_index": index,
                 "role": source.get("role"),
                 "action": (
-                    "preserved"
+                    "evidence_pinned"
+                    if is_pinned
+                    else "preserved"
                     if source_content_json == assembled_content_json
                     else "compressed"
                 ),
@@ -135,6 +252,9 @@ def _write_receipt(
                 "assembled_chars": (
                     len(assembled_content) if isinstance(assembled_content, str) else None
                 ),
+                "relevance_score": evidence_item.get("score"),
+                "matched_query_terms": evidence_item.get("matched_terms", []),
+                "allocated_tokens": evidence_item.get("allocated_tokens"),
             }
         )
     identity = _canonical_json(
@@ -166,6 +286,10 @@ def _write_receipt(
         "assembled_sha256": assembled_hash,
         "changed": source_hash != assembled_hash,
         "message_decisions": message_decisions,
+        "assembly_strategy": strategy,
+        "evidence_pinned_count": sum(
+            1 for item in evidence.values() if item.get("evidence_pinned")
+        ),
         "recovery_source": "openclaw_transcript_unmodified",
         "warnings": warnings,
         "local_only": True,
@@ -201,9 +325,17 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
     preserve_last_n = max(0, int(preserve_last_n))
 
     source_tokens = estimate_messages_tokens(messages)
+    evidence_pinning = request.get("evidence_pinning", True) is not False
+    query = _query_for_request(request, messages) if evidence_pinning else ""
+    strategy = (
+        "query_aware_evidence_pinning"
+        if evidence_pinning
+        else "uniform_budget_compression"
+    )
     warnings = [
         "Token counts are deterministic estimates, not provider-billed usage."
     ]
+    evidence: dict[int, dict[str, Any]] = {}
     protected_indexes = {
         index for index, message in enumerate(messages) if _protected_message(message)
     }
@@ -237,16 +369,21 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
                 "Entroly returned the exact original context."
             )
         else:
-            compressed = _compress_message_bodies(
+            compressed, pinned, relevance = _compress_message_bodies(
                 compressible,
                 content_budget=content_budget,
                 distill=bool(request.get("distill", True)),
+                query=query,
             )
             assembled = copy.deepcopy(messages)
-            for index, compressed_message in zip(
-                compressible_indexes, compressed, strict=True
+            for local_index, (index, compressed_message) in enumerate(
+                zip(compressible_indexes, compressed, strict=True)
             ):
                 assembled[index] = compressed_message
+                evidence[index] = {
+                    **relevance[local_index],
+                    "evidence_pinned": local_index in pinned,
+                }
 
     assembled_tokens = estimate_messages_tokens(assembled)
     if assembled_tokens > budget and assembled != messages:
@@ -262,6 +399,11 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         source_tokens=source_tokens,
         assembled_tokens=assembled_tokens,
         warnings=warnings,
+        evidence=evidence,
+        strategy=strategy,
+    )
+    pinned_indexes = sorted(
+        index for index, item in evidence.items() if item.get("evidence_pinned")
     )
     return {
         "schema_version": BRIDGE_SCHEMA,
@@ -273,6 +415,9 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         "changed": assembled != messages,
         "receipt_id": receipt_id,
         "receipt_path": receipt_path,
+        "assembly_strategy": strategy,
+        "evidence_pinned": len(pinned_indexes),
+        "pinned_message_indexes": pinned_indexes,
         "warnings": warnings,
     }
 

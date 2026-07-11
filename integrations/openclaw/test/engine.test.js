@@ -68,10 +68,13 @@ test("status output labels estimates and exposes the receipt", () => {
     estimated_tokens: 400,
     tokens_saved: 600,
     changed: true,
+    assembly_strategy: "query_aware_evidence_pinning",
+    evidence_pinned: 2,
     receipt_id: "ocr_test",
     warnings: ["Token counts are estimates."],
   });
   assert.match(output, /Estimated tokens: 1,000 -> 400/);
+  assert.match(output, /Evidence pinned verbatim: 2 message/);
   assert.match(output, /Estimated reduction: 60.0%/);
   assert.match(output, /Receipt:/);
   assert.doesNotMatch(output, /\/workspace/);

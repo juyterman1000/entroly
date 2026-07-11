@@ -37,6 +37,10 @@
       "distill": {
         "type": "boolean",
         "default": true
+      },
+      "evidencePinning": {
+        "type": "boolean",
+        "default": true
       }
     }
   },
@@ -64,6 +68,10 @@
     "distill": {
       "label": "Distill Older Assistant Messages",
       "help": "Remove filler from compressible older assistant responses before budget compression."
+    },
+    "evidencePinning": {
+      "label": "Query-Aware Evidence Pinning",
+      "help": "Keep older messages that match the current request verbatim when they fit the bounded evidence reserve."
     }
   }
 }

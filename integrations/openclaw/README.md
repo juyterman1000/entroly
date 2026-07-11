@@ -3,6 +3,12 @@
 Entroly provides budget-aware, auditable context assembly for OpenClaw while
 leaving OpenClaw's persisted transcript untouched.
 
+Unlike uniform history summarization, Entroly scores older messages against the
+current request, reserves a bounded part of the context budget for matching
+evidence, and keeps evidence messages verbatim when they fit. Lower-value
+history is compressed around those evidence pins. The receipt records every
+score, matched query term, allocation, and transformation.
+
 ## Install
 
 After the package is published:
@@ -42,6 +48,17 @@ openclaw plugins doctor
 
 After the first agent turn, run `/entroly-context` in any connected channel to
 see the estimated before/after context size, reduction, warnings, and receipt.
+
+## Reproduce the evidence-pinning control
+
+```bash
+python -m benchmarks.openclaw_evidence_pinning
+```
+
+The committed synthetic workload compares query-aware evidence pinning with
+uniform budget compression at the same estimated token budget. See the
+[result JSON](../../benchmarks/results/openclaw_evidence_pinning.json). It uses
+no model calls and does not claim downstream task accuracy.
 
 Receipts are written under `<workspace>/.entroly/receipts/openclaw/` unless
 `receiptDir` is configured. They record per-message hashes and decisions,

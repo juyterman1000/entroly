@@ -17,6 +17,8 @@ export function formatEntrolyStatus(status) {
   const reduction = source > 0 ? ((saved / source) * 100).toFixed(1) : "0.0";
   const lines = [
     "Entroly protected the last context assembly",
+    `Strategy: ${status.assembly_strategy ?? "budgeted_context"}`,
+    `Evidence pinned verbatim: ${status.evidence_pinned ?? 0} message(s)`,
     `Estimated tokens: ${source.toLocaleString()} -> ${assembled.toLocaleString()}`,
     `Estimated reduction: ${reduction}% (${saved.toLocaleString()} tokens)`,
     `Changed: ${status.changed ? "yes" : "no"}`,
@@ -72,6 +74,7 @@ export function createEntrolyContextEngine({
           receipt_dir: config.receiptDir,
           write_receipt: config.writeReceipts !== false,
           distill: config.distill !== false,
+          evidence_pinning: config.evidencePinning !== false,
         });
         statusBySession.set(sessionId, result);
         return {

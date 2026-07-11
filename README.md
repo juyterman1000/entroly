@@ -281,6 +281,30 @@ Every number below is reproducible and backed by a committed JSON artifact you c
 
 ## Works with your stack
 
+### OpenClaw: keep the evidence uniform compression drops
+
+The beta OpenClaw context engine scores older messages against the current
+request. Matching evidence is pinned verbatim when it fits a bounded reserve;
+lower-value history is compressed around it, and every decision is written to
+a local receipt.
+
+In the committed synthetic, no-model control below, both strategies fit the
+same 1,800-token estimated budget. Uniform compression lost the exact old
+authentication instruction; evidence pinning retained it byte-for-byte.
+
+| Strategy | Estimated assembled tokens | Exact evidence retained |
+|---|---:|---:|
+| Uniform budget compression | 1,797 | No |
+| Entroly evidence pinning | 1,794 | **Yes** |
+
+Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
+[Benchmark JSON](benchmarks/results/openclaw_evidence_pinning.json) ·
+[Plugin setup](integrations/openclaw/README.md)
+
+<sub>Synthetic deterministic workload, 23,114 estimated source tokens, 11
+messages, zero model calls. Token counts are estimates, not billed usage, and
+this result does not establish downstream model accuracy.</sub>
+
 `entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
 
 **Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.

@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 
+from benchmarks.openclaw_evidence_pinning import run as run_openclaw_benchmark
 from entroly.openclaw_bridge import assemble, handle_request, serve
 
 
@@ -88,6 +89,94 @@ def test_protected_context_over_budget_fails_open_with_warning(tmp_path):
     assert any("exact original context" in warning for warning in result["warnings"])
 
 
+def test_query_relevant_old_message_is_pinned_verbatim(tmp_path):
+    evidence = {
+        "role": "assistant",
+        "content": (
+            "Architecture notes. "
+            + "background detail " * 80
+            + "AUTH_EVIDENCE: refresh token rotation requires revoking the prior token. "
+            + "additional implementation detail " * 60
+        ),
+    }
+    distractor = {
+        "role": "assistant",
+        "content": "unrelated dashboard styling and color tokens " * 450,
+    }
+    latest = {
+        "role": "user",
+        "content": "How must authentication refresh token rotation work?",
+    }
+    result = assemble(
+        {
+            "operation": "assemble",
+            "session_id": "evidence-session",
+            "messages": [evidence, distractor, latest],
+            "prompt": latest["content"],
+            "token_budget": 1500,
+            "preserve_last_n": 1,
+            "receipt_dir": str(tmp_path),
+            "distill": False,
+        }
+    )
+    assert result["messages"][0] == evidence
+    assert len(result["messages"][1]["content"]) < len(distractor["content"])
+    assert result["evidence_pinned"] == 1
+    assert result["pinned_message_indexes"] == [0]
+    receipt = json.loads(Path(result["receipt_path"]).read_text(encoding="utf-8"))
+    decision = receipt["message_decisions"][0]
+    assert decision["action"] == "evidence_pinned"
+    assert {"refresh", "token", "rotation"}.issubset(
+        set(decision["matched_query_terms"])
+    )
+
+
+def test_evidence_pinning_is_deterministic_without_receipt_writes():
+    messages = [
+        {"role": "assistant", "content": "database migration rollback " * 100},
+        {"role": "assistant", "content": "css typography spacing " * 300},
+        {"role": "user", "content": "Explain the database migration rollback."},
+    ]
+    request = {
+        "operation": "assemble",
+        "session_id": "deterministic",
+        "messages": messages,
+        "prompt": messages[-1]["content"],
+        "token_budget": 500,
+        "preserve_last_n": 1,
+        "write_receipt": False,
+        "distill": False,
+    }
+    first = assemble(request)
+    second = assemble(request)
+    assert first["messages"] == second["messages"]
+    assert first["receipt_id"] == second["receipt_id"]
+    assert first["pinned_message_indexes"] == second["pinned_message_indexes"]
+
+
+def test_evidence_pinning_can_be_disabled_for_control_measurements():
+    messages = [
+        {"role": "assistant", "content": "database migration rollback " * 100},
+        {"role": "assistant", "content": "css typography spacing " * 300},
+        {"role": "user", "content": "Explain the database migration rollback."},
+    ]
+    result = assemble(
+        {
+            "operation": "assemble",
+            "session_id": "control",
+            "messages": messages,
+            "prompt": messages[-1]["content"],
+            "token_budget": 500,
+            "preserve_last_n": 1,
+            "write_receipt": False,
+            "evidence_pinning": False,
+            "distill": False,
+        }
+    )
+    assert result["assembly_strategy"] == "uniform_budget_compression"
+    assert result["evidence_pinned"] == 0
+
+
 def test_jsonl_server_correlates_success_and_error(tmp_path):
     requests = [
         {"request_id": "1", "operation": "health"},
@@ -102,3 +191,13 @@ def test_jsonl_server_correlates_success_and_error(tmp_path):
     assert responses[1]["request_id"] == "2"
     assert responses[1]["ok"] is False
     assert "unsupported operation" in responses[1]["error"]
+
+
+def test_committed_openclaw_benchmark_matches_runtime():
+    root = Path(__file__).resolve().parents[1]
+    expected = json.loads(
+        (root / "benchmarks/results/openclaw_evidence_pinning.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert run_openclaw_benchmark() == expected
