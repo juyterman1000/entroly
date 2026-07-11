@@ -57,6 +57,8 @@ jobs:
 
       - name: Test OpenClaw plugin package
         working-directory: integrations/openclaw
+        env:
+          ENTROLY_TEST_PYTHON: python
         run: |
           npm test
           npm run check

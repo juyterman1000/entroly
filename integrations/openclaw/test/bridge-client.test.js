@@ -57,3 +57,22 @@ test("timeout kills a wedged bridge and the next request restarts", async () => 
   assert.equal(spawnCount, 2);
   await client.dispose();
 });
+
+test(
+  "real Python bridge completes the health contract",
+  { skip: !process.env.ENTROLY_TEST_PYTHON },
+  async () => {
+    const client = new EntrolyBridgeClient({
+      pythonCommand: process.env.ENTROLY_TEST_PYTHON,
+      timeoutMs: 10_000,
+    });
+    try {
+      const result = await client.health();
+      assert.equal(result.ok, true);
+      assert.equal(result.status, "ready");
+      assert.equal(result.schema_version, "entroly.openclaw.bridge.v1");
+    } finally {
+      await client.dispose();
+    }
+  },
+);
