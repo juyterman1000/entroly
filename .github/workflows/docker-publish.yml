@@ -18,7 +18,7 @@ env:
 
 jobs:
   prepare-geometry-release:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Trigger Entroly 1.0.47 publication'
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Trigger Entroly 1.0.47 publication')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -39,6 +39,7 @@ jobs:
           path = Path('pyproject.toml')
           text = path.read_text(encoding='utf-8')
           text = text.replace('\n# one-time-release-trigger: 1.0.47\n', '\n')
+          text = text.replace('\n# one-time-release-trigger: 1.0.47-pr\n', '\n')
           path.write_text(text, encoding='utf-8')
           PY
           rm -f .github/workflows/release-geometry-1.0.47.yml
