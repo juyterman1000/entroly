@@ -15,8 +15,8 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<p align="center"><b>The local context OS for AI coding agents.</b><br>
-Give Claude, OpenAI, Gemini, Cursor, Codex, and Aider the right evidence with fewer tokens, recoverable context, receipts, memory, gateway controls, and a <b>$0 hallucination guard</b>.</p>
+<p align="center"><b>Know exactly what your AI agent saw.</b><br>
+Entroly creates replayable <b>Context Commits</b>: content-addressed proof of the evidence selected, omitted, and kept recoverable for each model request.</p>
 
 <p align="center">
   <sub>Drop-in for <b>Cursor, Claude Code, Codex, Aider + 34 more</b> and custom providers — 60s, no code changes.</sub>
@@ -35,6 +35,7 @@ Give Claude, OpenAI, Gemini, Cursor, Codex, and Aider the right evidence with fe
   <img src="https://img.shields.io/badge/Token_Savings-workload_dependent-brightgreen" alt="Token savings">
   <img src="https://img.shields.io/badge/Hallucination-HaluEval--QA_0.844_AUROC_·_%240-blueviolet" alt="Hallucination guard">
   <img src="https://img.shields.io/badge/Engine-Rust_+_WASM-orange?logo=rust" alt="Rust + WASM">
+  <img src="https://img.shields.io/badge/Context_Commits-128%2F128_replayed_+_768%2F768_tamper_detected-0A7B83" alt="Context Commit conformance">
 </p>
 
 <p align="center">
@@ -95,7 +96,7 @@ Entroly ships as a full local runtime, not one proxy command:
 
 | Surface | What users get |
 |---|---|
-| **CLI** | `verify-claims`, `simulate`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
+| **CLI** | `context-commit`, `verify-claims`, `simulate`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
 | **SDK** | `compress`, `compress_messages`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
 | **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification |
 | **Proxy** | Anthropic/OpenAI-compatible local optimization path for API-key users and custom apps |
@@ -215,6 +216,39 @@ If your repo is tiny or already under budget, Entroly should say so and pass thr
 
 ---
 
+## Context Commits
+
+A Context Commit is a portable JSON artifact for the exact context selected for
+an agent request. It binds the ordered selected text, omitted evidence, exact
+recovery data, engine/version identity, and optional parent lineage to one
+content-addressed `ctx_...` identifier.
+
+```bash
+entroly context-commit ./repo --query "Where is token rotation enforced?" \
+  --budget 8000 --out context-commit.json
+entroly context-commit --verify context-commit.json
+```
+
+```python
+from entroly import create_context_commit, replay_context, verify_context_commit
+
+commit = create_context_commit(
+    [("auth.py", open("auth.py", encoding="utf-8").read())],
+    query="Where is token rotation enforced?",
+    token_budget=8000,
+)
+assert verify_context_commit(commit).valid
+exact_context = replay_context(commit)
+```
+
+The artifact is self-contained and therefore may contain source text in its
+recovery bundle. Keep it under the same access and retention policy as the
+source repository. Content addressing proves mutation, not signer identity;
+use Entroly's optional Ed25519 attestation and Merkle-log APIs when custody or
+operator identity matters. [Contract and threat model](docs/context-commits.md).
+
+---
+
 ## Context Receipts
 
 Entroly gives every AI answer a context receipt: what was used, what was omitted, why, and what risks remain. This is built for hard multi-document work such as contracts, policies, addenda, code reviews, and audit evidence where "top-k chunks" is not enough.
@@ -244,6 +278,20 @@ Examples:
 ---
 
 ## Proof
+
+**Context Commit conformance** (synthetic deterministic code fixtures, local,
+no model or network calls):
+
+| Integrity property | Committed result |
+|---|---:|
+| Deterministic replay across Python + Rust modes | **128 / 128** |
+| Exact recovery of omitted chunks | **576 / 576** |
+| Tamper mutations detected | **768 / 768** |
+
+Reproduce: `python -m benchmarks.context_commit_conformance`.
+[Raw JSON](benchmarks/results/context_commit_conformance.json). These numbers
+measure artifact integrity, replay, and recovery on the committed fixtures;
+they do not measure model-answer quality or claim identical Python/Rust selection.
 
 Every number below is reproducible and backed by a committed JSON artifact you can audit — not a screenshot.
 
@@ -497,6 +545,7 @@ This is the important distinction: Entroly does not just remember context. It ca
 | `entroly demo` | Before/after token + cost estimate on your repo |
 | `entroly ingest` | Ingest documents into a local Context Receipt index |
 | `entroly select` | Select context under budget and write a Context Receipt |
+| `entroly context-commit` | Create or verify a replayable, recoverable context artifact |
 | `entroly receipt` | Render a Context Receipt as a Markdown report |
 | `entroly explain` | Explain why a chunk was selected or omitted |
 | `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
