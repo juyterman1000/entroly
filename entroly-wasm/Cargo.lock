@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-qccr"
-version = "1.0.47"
+version = "1.0.48"
 dependencies = [
  "regex-lite",
  "serde",
@@ -69,7 +69,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-wasm"
-version = "1.0.47"
+version = "1.0.48"
 dependencies = [
  "entroly-qccr",
  "flate2",

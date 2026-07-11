@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.47"
+version = "1.0.48"
 
 description = "Local context OS for AI coding agents: token optimization, MCP tools, receipts, exact recovery, verification, HTTP proxy, and Python SDK."
 readme = "README.md"
@@ -42,14 +42,14 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=1.0.47,<2",
+    "entroly-core>=1.0.48,<2",
 ]
 receipt-proof = [
     "cryptography>=42",
 ]
 full = [
     "cryptography>=42",
-    "entroly-core>=1.0.47,<2",
+    "entroly-core>=1.0.48,<2",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",
