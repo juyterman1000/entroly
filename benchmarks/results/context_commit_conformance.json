@@ -1,0 +1,63 @@
+{
+  "aggregate": {
+    "cases": 128,
+    "deterministic_replay_rate": 1.0,
+    "engine_modes": 2,
+    "exact_context_replay_rate": 1.0,
+    "exact_omission_recovery_rate": 1.0,
+    "omitted_chunks_verified": 576,
+    "tamper_detection_rate": 1.0,
+    "tamper_trials": 768,
+    "valid_commit_rate": 1.0
+  },
+  "benchmark": "entroly-context-commit-conformance",
+  "caveats": [
+    "Synthetic deterministic code fixtures; no LLM or network calls.",
+    "Measures artifact integrity, replay, and recovery, not answer quality.",
+    "Does not claim Python and Rust select identical context.",
+    "Content addressing detects mutation; signer identity requires optional attestation APIs.",
+    "Recovery bundles contain source text and must follow the user's data-retention policy."
+  ],
+  "configuration": {
+    "cases_per_engine": 64,
+    "chunk_tokens": 80,
+    "overlap_tokens": 12,
+    "tamper_mutations_per_case": 6,
+    "token_budget": 120
+  },
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.8"
+  },
+  "modes": [
+    {
+      "actual_engine": "python",
+      "cases": 64,
+      "deterministic_replays": 64,
+      "exact_context_replays": 64,
+      "exact_omission_recoveries": 320,
+      "median_artifact_bytes": 18207,
+      "median_create_ms": 9.719,
+      "omitted_chunks": 320,
+      "requested_engine": "python",
+      "tamper_detections": 384,
+      "tamper_trials": 384,
+      "valid_commits": 64
+    },
+    {
+      "actual_engine": "rust",
+      "cases": 64,
+      "deterministic_replays": 64,
+      "exact_context_replays": 64,
+      "exact_omission_recoveries": 256,
+      "median_artifact_bytes": 17544,
+      "median_create_ms": 113.051,
+      "omitted_chunks": 256,
+      "requested_engine": "rust",
+      "tamper_detections": 384,
+      "tamper_trials": 384,
+      "valid_commits": 64
+    }
+  ],
+  "schema_version": "entroly.benchmark.context-commit.v1"
+}
