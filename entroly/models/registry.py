@@ -33,15 +33,16 @@ class ModelCapability:
     aliases: tuple[str, ...]
     context_window: int | None
     max_output_tokens: int | None
-    supports_tools: bool
-    supports_vision: bool
-    supports_reasoning: bool
+    supports_tools: bool | None
+    supports_vision: bool | None
+    supports_reasoning: bool | None
     reasoning_levels: tuple[str, ...]
     input_price_per_million: float | None
     output_price_per_million: float | None
     trust: RegistryTrust
     source: str
     verified_at: str | None
+    observed_at: str | None
 
     @classmethod
     def from_mapping(
@@ -80,15 +81,16 @@ class ModelCapability:
             aliases=aliases,
             context_window=context,
             max_output_tokens=output,
-            supports_tools=bool(value.get("supports_tools", True)),
-            supports_vision=bool(value.get("supports_vision", False)),
-            supports_reasoning=bool(value.get("supports_reasoning", False)),
+            supports_tools=_optional_bool(value.get("supports_tools")),
+            supports_vision=_optional_bool(value.get("supports_vision")),
+            supports_reasoning=_optional_bool(value.get("supports_reasoning")),
             reasoning_levels=tuple(str(item) for item in value.get("reasoning_levels", ())),
             input_price_per_million=_optional_float(value.get("input_price_per_million")),
             output_price_per_million=_optional_float(value.get("output_price_per_million")),
             trust=RegistryTrust(value.get("trust", default_trust.value)),
-            source=str(value.get("source", "unknown")),
-            verified_at=value.get("verified_at"),
+            source=str(value.get("source", "unknown")).strip() or "unknown",
+            verified_at=_optional_iso_date(value.get("verified_at"), field="verified_at"),
+            observed_at=_optional_iso_date(value.get("observed_at"), field="observed_at"),
         )
 
     def estimated_cost_usd(self, input_tokens: int, output_tokens: int) -> float | None:
@@ -102,6 +104,25 @@ class ModelCapability:
             + output_tokens * self.output_price_per_million
         ) / 1_000_000.0
 
+    def fingerprint_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "provider": self.provider,
+            "aliases": sorted(self.aliases),
+            "context_window": self.context_window,
+            "max_output_tokens": self.max_output_tokens,
+            "supports_tools": self.supports_tools,
+            "supports_vision": self.supports_vision,
+            "supports_reasoning": self.supports_reasoning,
+            "reasoning_levels": list(self.reasoning_levels),
+            "input_price_per_million": self.input_price_per_million,
+            "output_price_per_million": self.output_price_per_million,
+            "trust": self.trust.value,
+            "source": self.source,
+            "verified_at": self.verified_at,
+            "observed_at": self.observed_at,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ModelResolution:
@@ -112,6 +133,7 @@ class ModelResolution:
     trust: RegistryTrust
     warning: str | None
     registry_digest: str
+    base_registry_digest: str
 
     @property
     def model_id(self) -> str:
@@ -175,7 +197,7 @@ class ModelRegistry:
         if fallback_context_window <= 0:
             raise ValueError("fallback_context_window must be positive")
         self._fallback_context_window = fallback_context_window
-        self._registry_digest = registry_digest
+        self._base_registry_digest = registry_digest
         self._discovery_warnings = tuple(discovery_warnings)
         self._by_id: dict[str, ModelCapability] = {}
         self._aliases: dict[str, str] = {}
@@ -183,10 +205,20 @@ class ModelRegistry:
         for collection in (bundled, discovered, overrides):
             for capability in collection:
                 self._install(capability)
+        self._registry_digest = _effective_registry_digest(
+            self._by_id.values(),
+            fallback_context_window=self._fallback_context_window,
+        )
 
     @property
     def registry_digest(self) -> str:
+        """Fingerprint of the effective bundled + discovered + override registry."""
         return self._registry_digest
+
+    @property
+    def base_registry_digest(self) -> str:
+        """Fingerprint of the immutable bundled snapshot before runtime layers."""
+        return self._base_registry_digest
 
     @property
     def discovery_warnings(self) -> tuple[str, ...]:
@@ -214,6 +246,7 @@ class ModelRegistry:
             counts[capability.trust.value] += 1
         return {
             "registry_digest": self._registry_digest,
+            "base_registry_digest": self._base_registry_digest,
             "models": len(self._by_id),
             "trust_counts": counts,
             "discovery_warnings": list(self._discovery_warnings),
@@ -224,10 +257,18 @@ class ModelRegistry:
         canonical = self._aliases.get(requested)
         exact = canonical is not None
         if canonical is None:
-            matches = [alias for alias in self._aliases if requested.startswith(alias)]
+            matches = [
+                alias
+                for alias in self._aliases
+                if _is_prefix_alias(alias) and requested.startswith(alias)
+            ]
             if matches:
                 longest = max(len(alias) for alias in matches)
-                candidate_ids = {self._aliases[alias] for alias in matches if len(alias) == longest}
+                candidate_ids = {
+                    self._aliases[alias]
+                    for alias in matches
+                    if len(alias) == longest
+                }
                 if len(candidate_ids) == 1:
                     canonical = candidate_ids.pop()
                 else:
@@ -262,6 +303,7 @@ class ModelRegistry:
                     f"using conservative {self._fallback_context_window:,}-token fallback."
                 ),
                 registry_digest=self._registry_digest,
+                base_registry_digest=self._base_registry_digest,
             )
         return ModelResolution(
             requested_model=model,
@@ -271,6 +313,7 @@ class ModelRegistry:
             trust=capability.trust,
             warning=None,
             registry_digest=self._registry_digest,
+            base_registry_digest=self._base_registry_digest,
         )
 
     def _fallback_resolution(self, model: str, *, warning: str) -> ModelResolution:
@@ -282,6 +325,7 @@ class ModelRegistry:
             trust=RegistryTrust.FALLBACK,
             warning=warning,
             registry_digest=self._registry_digest,
+            base_registry_digest=self._base_registry_digest,
         )
 
 
@@ -294,6 +338,20 @@ def _normalise_name(value: object) -> str:
     return str(value or "").strip().lower()
 
 
+def _is_prefix_alias(alias: str) -> bool:
+    # Prefix behavior must be explicit. Bare aliases are exact-only so a model
+    # such as "gpt-4xyz" cannot accidentally inherit the gpt-4 context limit.
+    return alias.endswith(("-", "/", ":", "."))
+
+
+def _optional_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ValueError(f"capability flags must be boolean or null, got {value!r}")
+    return value
+
+
 def _optional_float(value: object) -> float | None:
     if value is None:
         return None
@@ -301,6 +359,38 @@ def _optional_float(value: object) -> float | None:
     if result < 0:
         raise ValueError("price metadata cannot be negative")
     return result
+
+
+def _optional_iso_date(value: object, *, field: str) -> str | None:
+    if value in {None, ""}:
+        return None
+    result = str(value)
+    try:
+        date.fromisoformat(result)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an ISO date, got {result!r}") from exc
+    return result
+
+
+def _effective_registry_digest(
+    capabilities: Iterable[ModelCapability],
+    *,
+    fallback_context_window: int,
+) -> str:
+    payload = {
+        "fallback_context_window": fallback_context_window,
+        "models": [
+            capability.fingerprint_payload()
+            for capability in sorted(capabilities, key=lambda item: item.id)
+        ],
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _load_json(path: Path, *, default_trust: RegistryTrust) -> list[ModelCapability]:
@@ -361,6 +451,10 @@ def _json_request(
     payload: dict[str, Any] | None = None,
     max_bytes: int = 2 * 1024 * 1024,
 ) -> Any:
+    if timeout <= 0:
+        raise ValueError("discovery timeout must be positive")
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -397,6 +491,8 @@ def discover_ollama_models(
     max_models: int = 64,
     inspect_context: bool = False,
 ) -> DiscoveryReport:
+    if max_models <= 0:
+        raise ValueError("max_models must be positive")
     base = _loopback_base_url(base_url)
     warnings: list[str] = []
     try:
@@ -430,15 +526,16 @@ def discover_ollama_models(
                 aliases=(name,),
                 context_window=context,
                 max_output_tokens=None,
-                supports_tools=False,
-                supports_vision=False,
-                supports_reasoning=False,
+                supports_tools=None,
+                supports_vision=None,
+                supports_reasoning=None,
                 reasoning_levels=(),
-                input_price_per_million=0.0,
-                output_price_per_million=0.0,
+                input_price_per_million=None,
+                output_price_per_million=None,
                 trust=RegistryTrust.DISCOVERED,
                 source=f"{base}/api/tags",
-                verified_at=date.today().isoformat(),
+                verified_at=None,
+                observed_at=date.today().isoformat(),
             )
         )
     return DiscoveryReport(tuple(models), tuple(warnings))
@@ -451,6 +548,8 @@ def discover_openai_compatible_models(
     max_models: int = 64,
     provider: str = "lmstudio",
 ) -> DiscoveryReport:
+    if max_models <= 0:
+        raise ValueError("max_models must be positive")
     base = _loopback_base_url(base_url)
     try:
         payload = _json_request(f"{base}/v1/models", timeout=timeout)
@@ -472,15 +571,16 @@ def discover_openai_compatible_models(
                 aliases=(name,),
                 context_window=None,
                 max_output_tokens=None,
-                supports_tools=True,
-                supports_vision=False,
-                supports_reasoning=False,
+                supports_tools=None,
+                supports_vision=None,
+                supports_reasoning=None,
                 reasoning_levels=(),
-                input_price_per_million=0.0,
-                output_price_per_million=0.0,
+                input_price_per_million=None,
+                output_price_per_million=None,
                 trust=RegistryTrust.DISCOVERED,
                 source=f"{base}/v1/models",
-                verified_at=date.today().isoformat(),
+                verified_at=None,
+                observed_at=date.today().isoformat(),
             )
         )
     return DiscoveryReport(tuple(models), ())
