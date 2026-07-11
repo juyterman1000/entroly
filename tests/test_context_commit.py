@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import copy
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 from entroly.context_commit import (
     CONTEXT_COMMIT_SCHEMA,
@@ -99,3 +104,55 @@ def test_context_commit_verification_fails_closed_on_non_mapping():
 
     assert result.valid is False
     assert result.errors == ("commit is not a mapping",)
+
+
+def test_context_commit_cli_create_and_verify(tmp_path: Path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for path, text in DOCUMENTS:
+        (docs / path).write_text(text, encoding="utf-8")
+    output = tmp_path / "commit.json"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+
+    created = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "entroly.cli",
+            "context-commit",
+            str(docs),
+            "--query",
+            "How often should credentials rotate?",
+            "--budget",
+            "25",
+            "--python",
+            "--out",
+            str(output),
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert created.returncode == 0, created.stderr + created.stdout
+    assert output.exists()
+
+    verified = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "entroly.cli",
+            "context-commit",
+            "--verify",
+            str(output),
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert verified.returncode == 0, verified.stderr + verified.stdout
+    assert json.loads(verified.stdout)["valid"] is True
