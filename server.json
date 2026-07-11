@@ -7,12 +7,12 @@
     "url": "https://github.com/juyterman1000/entroly",
     "source": "github"
   },
-  "version": "1.0.47",
+  "version": "1.0.48",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "entroly",
-      "version": "1.0.47",
+      "version": "1.0.48",
       "transport": {
         "type": "stdio"
       }
@@ -20,7 +20,7 @@
     {
       "registryType": "npm",
       "identifier": "entroly-mcp",
-      "version": "1.0.47",
+      "version": "1.0.48",
       "transport": {
         "type": "stdio"
       }
