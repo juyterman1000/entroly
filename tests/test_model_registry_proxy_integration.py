@@ -25,6 +25,7 @@ def test_proxy_budget_lookup_resolves_frontier_models_with_provenance():
     assert resolution.context_window == 1_000_000
     assert resolution.trust.value == "announced"
     assert len(resolution.registry_digest) == 64
+    assert len(resolution.base_registry_digest) == 64
 
 
 def test_proxy_unknown_model_warning_is_visible_but_deduplicated(caplog):
@@ -34,7 +35,11 @@ def test_proxy_unknown_model_warning_is_visible_but_deduplicated(caplog):
     assert context_window_for_model("lab/unknown-model") == 128_000
     assert context_window_for_model("lab/unknown-model") == 128_000
 
-    warnings = [record for record in caplog.records if "Unknown model" in record.message]
+    warnings = [
+        record
+        for record in caplog.records
+        if "Unknown model" in record.getMessage()
+    ]
     assert len(warnings) == 1
 
 
@@ -47,3 +52,10 @@ def test_proxy_safe_input_budget_reserves_output_capacity():
 
     assert input_budget < context - 10_000
     assert input_budget > 900_000
+
+
+def test_bare_aliases_do_not_accidentally_match_unrelated_models():
+    resolution = model_resolution_for_model("gpt-4xyz")
+
+    assert resolution.trust.value == "fallback"
+    assert resolution.capability is None
