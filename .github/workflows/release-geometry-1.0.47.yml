@@ -1,5 +1,7 @@
 name: Release Entroly 1.0.47 Geometry Fix
 
+# This second commit intentionally triggers the workflow after its definition
+# already exists on the default branch.
 on:
   push:
     branches: [main]
@@ -12,7 +14,7 @@ permissions:
 
 concurrency:
   group: release-entroly-1.0.47
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   prepare-and-release:
@@ -95,7 +97,7 @@ jobs:
         run: |
           git config user.name "$GIT_AUTHOR_NAME"
           git config user.email "$GIT_AUTHOR_EMAIL"
-          git rm .github/workflows/release-geometry-1.0.47.yml
+          git rm -f .github/workflows/release-geometry-1.0.47.yml
           git add -A
           git commit -m "Release v1.0.47: restore stable SimHash geometry"
           git push origin HEAD:main
