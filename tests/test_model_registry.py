@@ -14,7 +14,7 @@ from entroly.models.registry import (
 )
 
 
-def test_bundled_registry_resolves_exact_and_prefixed_models():
+def test_bundled_registry_resolves_exact_and_explicit_prefix_models():
     registry = get_model_registry()
 
     exact = registry.resolve("gemini-2.5-pro")
@@ -23,11 +23,16 @@ def test_bundled_registry_resolves_exact_and_prefixed_models():
     assert exact.warning is None
     assert exact.trust is RegistryTrust.VERIFIED
     assert len(exact.registry_digest) == 64
+    assert len(exact.base_registry_digest) == 64
 
     dated = registry.resolve("gpt-4o-2024-08-06")
     assert dated.context_window == 128_000
     assert dated.capability is not None
     assert dated.capability.id == "openai/gpt-4o"
+
+    unrelated = registry.resolve("gpt-4xyz")
+    assert unrelated.capability is None
+    assert unrelated.trust is RegistryTrust.FALLBACK
 
 
 def test_announced_model_is_recognized_without_inventing_context_metadata():
@@ -49,7 +54,9 @@ def test_unknown_model_fails_visibly_with_conservative_fallback():
     assert "Unknown model" in (result.warning or "")
 
 
-def test_override_precedence_allows_private_and_new_models(tmp_path, monkeypatch):
+def test_override_precedence_changes_effective_registry_digest(tmp_path, monkeypatch):
+    base_digest = get_model_registry().registry_digest
+    base_snapshot_digest = get_model_registry().base_registry_digest
     override = tmp_path / "models.json"
     override.write_text(
         json.dumps(
@@ -72,10 +79,13 @@ def test_override_precedence_allows_private_and_new_models(tmp_path, monkeypatch
     monkeypatch.setenv("ENTROLY_MODEL_REGISTRY", str(override))
     get_model_registry.cache_clear()
     try:
-        result = get_model_registry().resolve("model-x")
+        registry = get_model_registry()
+        result = registry.resolve("model-x")
         assert result.context_window == 262_144
         assert result.trust is RegistryTrust.USER
         assert result.warning is None
+        assert registry.registry_digest != base_digest
+        assert registry.base_registry_digest == base_snapshot_digest
     finally:
         get_model_registry.cache_clear()
 
@@ -160,6 +170,12 @@ def test_ollama_discovery_can_inspect_context_without_external_dependencies(monk
     assert capability.id == "ollama/llama3.2:latest"
     assert capability.context_window == 131_072
     assert capability.trust is RegistryTrust.DISCOVERED
+    assert capability.supports_tools is None
+    assert capability.supports_vision is None
+    assert capability.input_price_per_million is None
+    assert capability.output_price_per_million is None
+    assert capability.observed_at is not None
+    assert capability.verified_at is None
 
 
 def test_registry_diagnostics_report_provenance_counts():
@@ -169,3 +185,4 @@ def test_registry_diagnostics_report_provenance_counts():
     assert diagnostics["trust_counts"]["verified"] > 0
     assert diagnostics["trust_counts"]["announced"] > 0
     assert len(diagnostics["registry_digest"]) == 64
+    assert len(diagnostics["base_registry_digest"]) == 64
