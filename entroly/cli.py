@@ -3930,6 +3930,73 @@ def cmd_receipt(args):
         print(report, end="")
 
 
+def cmd_context_commit(args):
+    """Create or verify a portable Context Commit artifact."""
+    from entroly.context_commit import create_context_commit, verify_context_commit
+    from entroly.context_receipts.ingest import (
+        read_documents_from_path,
+        supported_documents_hint,
+    )
+    from entroly.context_receipts.store import read_json, write_json
+
+    if args.verify:
+        commit = read_json(args.verify)
+        result = verify_context_commit(commit)
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return 0 if result.valid else 1
+
+    if not args.path or not args.query:
+        print(
+            f"  {C.RED}PATH and --query are required when creating a Context Commit.{C.RESET}",
+            file=sys.stderr,
+        )
+        return 2
+    docs = read_documents_from_path(args.path)
+    if not docs:
+        print(
+            f"  {C.RED}No supported documents found.{C.RESET} "
+            f"{supported_documents_hint()}",
+            file=sys.stderr,
+        )
+        return 1
+    commit = create_context_commit(
+        docs,
+        query=args.query,
+        token_budget=args.budget,
+        chunk_tokens=args.chunk_tokens,
+        overlap_tokens=args.overlap_tokens,
+        parent_commit_id=args.parent,
+        prefer_rust=not args.python,
+    )
+    verification = verify_context_commit(commit)
+    if not verification.valid:
+        print(
+            f"  {C.RED}Context Commit self-verification failed:{C.RESET} "
+            + ", ".join(verification.errors),
+            file=sys.stderr,
+        )
+        return 1
+    output = (
+        Path(args.out)
+        if args.out
+        else Path(".entroly") / "context-commits" / f"{commit['commit_id']}.json"
+    )
+    write_json(output, commit)
+    if args.json:
+        print(json.dumps(commit, indent=2, sort_keys=True, ensure_ascii=False))
+    else:
+        print(f"  {C.GREEN}Context Commit {commit['commit_id']} created.{C.RESET}")
+        print(
+            "  Selected: {selected}; omitted and recoverable: {omitted}; engine: {engine}".format(
+                selected=verification.selected_chunks,
+                omitted=verification.omitted_chunks,
+                engine=commit["engine"]["implementation"],
+            )
+        )
+        print(f"  JSON: {output}")
+    return 0
+
+
 def _load_session_taint(path: str | None, chain_path: Path):
     from entroly.session_intelligence import HallucinationTaintTracker
 
@@ -5079,6 +5146,27 @@ def main():
     receipt_parser.add_argument("--json", action="store_true", help="Print normalized receipt JSON instead of Markdown")
     receipt_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
 
+    context_commit_parser = subparsers.add_parser(
+        "context-commit",
+        help="Create or verify a portable proof of the exact selected context",
+    )
+    context_commit_parser.add_argument(
+        "path", nargs="?", default=None, help="Document file or directory"
+    )
+    context_commit_parser.add_argument(
+        "--query", "-q", default=None, help="Question/task to select context for"
+    )
+    context_commit_parser.add_argument(
+        "--budget", "-b", type=int, default=8000, help="Token budget (default: 8000)"
+    )
+    context_commit_parser.add_argument("--out", type=str, default=None, help="Commit JSON output path")
+    context_commit_parser.add_argument("--parent", type=str, default=None, help="Parent Context Commit ID")
+    context_commit_parser.add_argument("--verify", type=str, default=None, help="Verify an existing commit JSON")
+    context_commit_parser.add_argument("--chunk-tokens", type=int, default=360)
+    context_commit_parser.add_argument("--overlap-tokens", type=int, default=32)
+    context_commit_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
+    context_commit_parser.add_argument("--json", action="store_true", help="Print the created JSON artifact")
+
     # entroly audit
     audit_parser = subparsers.add_parser(
         "audit",
@@ -5661,6 +5749,7 @@ def main():
         "ingest": cmd_ingest,
         "select": cmd_select,
         "receipt": cmd_receipt,
+        "context-commit": cmd_context_commit,
         "audit": cmd_audit,
         "explain": cmd_explain,
         "status": cmd_status,
