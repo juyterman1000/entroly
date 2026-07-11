@@ -39,6 +39,17 @@ try:
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 
+# Context Commit: portable, content-addressed proof of what an agent received.
+try:
+    from .context_commit import (  # noqa: F401
+        ContextCommitVerification,
+        create_context_commit,
+        replay_context,
+        verify_context_commit,
+    )
+except ImportError:
+    pass
+
 # engine_s6 — public file-localization API (used internally by SDK / MCP /
 # proxy / CLI; also callable directly for advanced agent integrations).
 try:
