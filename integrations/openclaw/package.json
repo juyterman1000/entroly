@@ -1,6 +1,6 @@
 {
   "name": "entroly-openclaw",
-  "version": "1.0.46",
+  "version": "1.0.47",
   "description": "Auditable, budget-aware Entroly context engine for OpenClaw",
   "type": "module",
   "license": "Apache-2.0",
