@@ -12,7 +12,10 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+
+from .models.registry import ModelResolution, get_model_registry, resolve_model
 
 
 @dataclass(frozen=True)
@@ -113,22 +116,51 @@ def provider_capability(provider: str) -> ProviderCapability:
     return PROVIDER_CAPABILITIES.get(provider, PROVIDER_CAPABILITIES["openai"])
 
 
+# Compatibility view for callers that inspect the old flat map. The live budget
+# path below resolves through the provenance-aware registry instead.
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {}
-for _capability in PROVIDER_CAPABILITIES.values():
-    MODEL_CONTEXT_WINDOWS.update(_capability.context_windows)
+for _provider in PROVIDER_CAPABILITIES.values():
+    MODEL_CONTEXT_WINDOWS.update(_provider.context_windows)
+for _model in get_model_registry().all():
+    if _model.context_window is None:
+        continue
+    for _alias in (_model.id, *_model.aliases):
+        MODEL_CONTEXT_WINDOWS[_alias] = _model.context_window
 
-_DEFAULT_CONTEXT_WINDOW = 128_000
+_DEFAULT_CONTEXT_WINDOW = int(os.environ.get("ENTROLY_UNKNOWN_MODEL_CONTEXT", "128000"))
+
+
+@lru_cache(maxsize=512)
+def _warn_model_resolution_once(model_id: str, warning: str) -> None:
+    logging.getLogger("entroly.proxy").warning(
+        "Model intelligence warning for %s: %s", model_id, warning
+    )
+
+
+def model_resolution_for_model(model: str) -> ModelResolution:
+    """Resolve model metadata with provenance and a visible fallback warning."""
+    resolution = resolve_model(model)
+    if resolution.warning:
+        _warn_model_resolution_once(resolution.model_id, resolution.warning)
+    return resolution
 
 
 def context_window_for_model(model: str) -> int:
-    """Look up context window size for a model name, with fuzzy prefix matching."""
-    if model in MODEL_CONTEXT_WINDOWS:
-        return MODEL_CONTEXT_WINDOWS[model]
-    # Fuzzy: match by prefix (e.g. "gpt-4o-2024-08-06" matches "gpt-4o")
-    for prefix, size in MODEL_CONTEXT_WINDOWS.items():
-        if model.startswith(prefix):
-            return size
-    return _DEFAULT_CONTEXT_WINDOW
+    """Return the authoritative context window for a model or safe fallback."""
+    return model_resolution_for_model(model).context_window
+
+
+def model_input_budget_for_model(
+    model: str,
+    *,
+    requested_output_tokens: int | None = None,
+    safety_fraction: float = 0.05,
+) -> int:
+    """Return a safe input ceiling after output and uncertainty reservation."""
+    return model_resolution_for_model(model).effective_input_budget(
+        requested_output_tokens=requested_output_tokens,
+        safety_fraction=safety_fraction,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -457,7 +489,6 @@ class ProxyConfig:
         Derives all numeric tuning parameters from the quality knob
         via linear interpolation between speed (q=0) and quality (q=1)
         profiles on the Pareto front of the speed-accuracy tradeoff.
-
         Boolean features are enabled when quality >= their threshold.
         """
         q = max(0.0, min(1.0, quality))
@@ -476,7 +507,7 @@ class ProxyConfig:
 
         logger = logging.getLogger("entroly.proxy")
         logger.info(f"Single-dial quality={q:.2f}: context_fraction={self.context_fraction:.3f}, "
-                     f"ecdb_min_budget={self.ecdb_min_budget}, diversity={self.enable_ios_diversity}")
+                    f"ecdb_min_budget={self.ecdb_min_budget}, diversity={self.enable_ios_diversity}")
 
     def _load_tuned_coefficients(self) -> None:
         """Load tunable coefficients from tuning_config.json if present.
