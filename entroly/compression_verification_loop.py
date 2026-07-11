@@ -124,7 +124,7 @@ def _select_recovery_spans(
             continue
         receipt_id = str(retrieval.get("receipt_id", ""))
         for span_id in retrieval.get("span_ids", []) or []:
-            span = store.get_span(receipt_id, str(span_id))
+            span = store.retrieve_span(receipt_id, str(span_id))
             if span is None:
                 continue
             key = (span.receipt_id, span.span_id)
@@ -136,7 +136,7 @@ def _select_recovery_spans(
 
     # Then search by verifier reason/query.
     if query:
-        for span in store.search(query, limit=limit):
+        for span in store.search(query, limit=limit, record_retrieval=True):
             key = (span.receipt_id, span.span_id)
             if key not in seen:
                 spans.append(span)

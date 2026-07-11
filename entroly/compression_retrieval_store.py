@@ -8,18 +8,22 @@ Headroom-style reversible compression requires two pieces:
 This module provides the second piece for Entroly. It is deterministic,
 dependency-free, local-first, and intentionally small enough to audit.
 
-The store also records omitted-span retrievals so Entroly reports net realized
-savings rather than inflated gross compression savings.
+The store records gross compression once and debits every span returned to an
+agent. Explicit retrieval IDs make those debits idempotent across retries.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .optimization_ledger import OptimizationLedger
 
 
 @dataclass(slots=True)
@@ -34,18 +38,33 @@ class StoredSpan:
     retrieval_count: int = 0
     retrieved_tokens: int = 0
     last_retrieved_ns: int = 0
+    retrieval_ids: list[str] = field(default_factory=list)
 
     @property
     def token_estimate(self) -> int:
         return _estimate_tokens(self.content)
 
-    def record_retrieval(self, *, tokens: int | None = None, retrieved_ns: int | None = None) -> None:
+    def record_retrieval(
+        self,
+        *,
+        tokens: int | None = None,
+        retrieved_ns: int | None = None,
+        retrieval_id: str | None = None,
+    ) -> bool:
+        if retrieval_id is not None and retrieval_id in self.retrieval_ids:
+            return False
         self.retrieval_count += 1
         self.retrieved_tokens += max(0, self.token_estimate if tokens is None else int(tokens))
         self.last_retrieved_ns = time.time_ns() if retrieved_ns is None else int(retrieved_ns)
+        if retrieval_id is not None:
+            self.retrieval_ids.append(retrieval_id)
+        return True
 
-    def as_dict(self) -> dict[str, object]:
-        return asdict(self)
+    def as_dict(self, *, include_internal: bool = False) -> dict[str, object]:
+        data = asdict(self)
+        if not include_internal:
+            data.pop("retrieval_ids", None)
+        return data
 
 
 @dataclass(slots=True)
@@ -57,6 +76,9 @@ class StoredCompression:
     spans: list[StoredSpan]
     metadata: dict[str, object] = field(default_factory=dict)
     created_ns: int = field(default_factory=time.time_ns)
+    retrieval_count: int = 0
+    last_retrieved_ns: int | None = None
+    savings_tier: str = "measured"
 
     @property
     def gross_saved_tokens(self) -> int:
@@ -95,20 +117,51 @@ class StoredCompression:
             "confidence": confidence,
         }
 
-    def as_dict(self) -> dict[str, object]:
+    @property
+    def gross_tokens_saved(self) -> int:
+        return self.gross_saved_tokens
+
+    @property
+    def net_tokens_saved(self) -> int:
+        return self.net_realized_saved_tokens
+
+    def as_dict(self, *, include_internal: bool = False) -> dict[str, object]:
         data = asdict(self)
-        data["spans"] = [span.as_dict() for span in self.spans]
+        data["spans"] = [
+            span.as_dict(include_internal=include_internal) for span in self.spans
+        ]
+        data["gross_tokens_saved"] = self.gross_tokens_saved
+        data["net_tokens_saved"] = self.net_tokens_saved
         return data
 
 
 class CompressionRetrievalStore:
-    """Local store for compressed omitted spans."""
+    """Thread-safe local store with retrieval-adjusted savings accounting."""
 
-    def __init__(self, path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        optimization_ledger: OptimizationLedger | None = None,
+    ) -> None:
         self.path = Path(path) if path is not None else None
+        self.optimization_ledger = optimization_ledger
         self._items: dict[str, StoredCompression] = {}
+        self._lock = threading.RLock()
         if self.path is not None and self.path.exists():
             self._load()
+        if self.optimization_ledger is not None:
+            for item in self._items.values():
+                self._record_compression(item)
+                for span in item.spans:
+                    token_count = _estimate_tokens(span.content)
+                    for retrieval_id in span.retrieval_ids:
+                        self._record_retrieval(
+                            item.receipt_id,
+                            span.span_id,
+                            token_count,
+                            retrieval_id=retrieval_id,
+                        )
 
     def put(
         self,
@@ -118,11 +171,7 @@ class CompressionRetrievalStore:
         receipt: dict[str, Any],
         metadata: dict[str, object] | None = None,
     ) -> StoredCompression:
-        """Store omitted spans from an ELC receipt.
-
-        The receipt must contain ``omitted_spans`` with 1-based line ranges.
-        The original text never leaves the local store.
-        """
+        """Store omitted spans and record measured gross savings once."""
         original_hash = _sha256_text(original_text)
         receipt_id = _short_hash(
             json.dumps(receipt, sort_keys=True, default=str) + original_hash
@@ -157,60 +206,107 @@ class CompressionRetrievalStore:
             spans=spans,
             metadata={"savings_confidence": "measured", **dict(metadata or {})},
         )
-        self._items[receipt_id] = stored
-        self._persist()
+        with self._lock:
+            previous = self._items.get(receipt_id)
+            if previous is not None:
+                return previous
+            self._items[receipt_id] = stored
+            self._persist()
+        self._record_compression(stored)
         return stored
 
     def get_receipt(self, receipt_id: str) -> StoredCompression | None:
-        return self._items.get(receipt_id)
+        with self._lock:
+            return self._items.get(receipt_id)
 
     def get_span(
         self,
         receipt_id: str,
         span_id: str,
         *,
-        record_retrieval: bool = True,
+        record_retrieval: bool = False,
     ) -> StoredSpan | None:
-        item = self._items.get(receipt_id)
-        if item is None:
-            return None
-        for span in item.spans:
-            if span.span_id == span_id:
-                if record_retrieval:
-                    span.record_retrieval()
-                    self._persist()
-                return span
-        return None
+        with self._lock:
+            item = self._items.get(receipt_id)
+            if item is None:
+                return None
+            span = next((entry for entry in item.spans if entry.span_id == span_id), None)
+        if span is None or not record_retrieval:
+            return span
+        return self.retrieve_span(receipt_id, span_id)
 
+    def retrieve_span(
+        self,
+        receipt_id: str,
+        span_id: str,
+        *,
+        retrieval_id: str | None = None,
+    ) -> StoredSpan | None:
+        """Return a span and debit its tokens from measured gross savings."""
+        with self._lock:
+            span = self.get_span(receipt_id, span_id, record_retrieval=False)
+            item = self._items.get(receipt_id)
+            if span is None or item is None:
+                return None
+            token_count = _estimate_tokens(span.content)
+            now_ns = time.time_ns()
+            effective_id = retrieval_id or (
+                f"{receipt_id}:{span_id}:{span.retrieval_count + 1}"
+            )
+            if effective_id in span.retrieval_ids:
+                return span
+            if not span.record_retrieval(
+                tokens=token_count,
+                retrieved_ns=now_ns,
+                retrieval_id=effective_id,
+            ):
+                return span
+            item.retrieval_count += 1
+            item.last_retrieved_ns = now_ns
+            self._persist()
+        self._record_retrieval(
+            receipt_id,
+            span_id,
+            token_count,
+            retrieval_id=effective_id,
+        )
+        return span
     def search(
         self,
         query: str,
         *,
         limit: int = 5,
-        record_retrieval: bool = True,
+        record_retrieval: bool = False,
+        retrieval_id: str | None = None,
     ) -> list[StoredSpan]:
         terms = {part.lower() for part in query.split() if len(part) >= 3}
-        scored: list[tuple[int, StoredSpan]] = []
-        for item in self._items.values():
-            for span in item.spans:
-                text = span.content.lower()
-                score = sum(1 for term in terms if term in text)
-                if score:
-                    scored.append((score, span))
-        scored.sort(key=lambda pair: (pair[0], pair[1].created_ns), reverse=True)
-        spans = [span for _score, span in scored[:limit]]
-        if record_retrieval:
-            for span in spans:
-                span.record_retrieval()
-            if spans:
-                self._persist()
-        return spans
+        with self._lock:
+            scored: list[tuple[int, StoredSpan]] = []
+            for item in self._items.values():
+                for span in item.spans:
+                    text = span.content.lower()
+                    score = sum(1 for term in terms if term in text)
+                    if score:
+                        scored.append((score, span))
+            scored.sort(key=lambda pair: (pair[0], pair[1].created_ns), reverse=True)
+            selected = [span for _score, span in scored[: max(0, int(limit))]]
+        if not record_retrieval:
+            return selected
+        base_id = retrieval_id or f"search:{_short_hash(query)}:{time.time_ns()}"
+        recorded: list[StoredSpan] = []
+        for index, span in enumerate(selected):
+            returned = self.retrieve_span(
+                span.receipt_id,
+                span.span_id,
+                retrieval_id=f"{base_id}:{index}",
+            )
+            if returned is not None:
+                recorded.append(returned)
+        return recorded
 
     def realized_savings(self, receipt_id: str) -> dict[str, object] | None:
         item = self._items.get(receipt_id)
-        if item is None:
-            return None
-        return item.savings_record()
+        return item.savings_record() if item is not None else None
 
     def realized_savings_summary(self) -> dict[str, object]:
         records = [item.savings_record() for item in self._items.values()]
@@ -249,27 +345,100 @@ class CompressionRetrievalStore:
         return total
 
     def list_receipts(self) -> list[dict[str, object]]:
-        return [
-            {
-                "receipt_id": item.receipt_id,
-                "original_tokens": item.original_tokens,
-                "compressed_tokens": item.compressed_tokens,
-                "gross_saved_tokens": item.gross_saved_tokens,
-                "retrieved_tokens": item.retrieved_tokens,
-                "repeated_expansion_tokens": item.repeated_expansion_tokens,
-                "net_realized_saved_tokens": item.net_realized_saved_tokens,
-                "span_count": len(item.spans),
-                "created_ns": item.created_ns,
-                "metadata": item.metadata,
-            }
-            for item in sorted(self._items.values(), key=lambda i: i.created_ns, reverse=True)
-        ]
+        with self._lock:
+            return [
+                {
+                    "receipt_id": item.receipt_id,
+                    "original_tokens": item.original_tokens,
+                    "compressed_tokens": item.compressed_tokens,
+                    "gross_tokens_saved": item.gross_tokens_saved,
+                    "retrieved_tokens": item.retrieved_tokens,
+                    "net_tokens_saved": item.net_tokens_saved,
+                    "gross_saved_tokens": item.gross_saved_tokens,
+                    "repeated_expansion_tokens": item.repeated_expansion_tokens,
+                    "net_realized_saved_tokens": item.net_realized_saved_tokens,
+                    "retrieval_count": item.retrieval_count,
+                    "savings_tier": item.savings_tier,
+                    "span_count": len(item.spans),
+                    "created_ns": item.created_ns,
+                    "metadata": item.metadata,
+                }
+                for item in sorted(
+                    self._items.values(), key=lambda entry: entry.created_ns, reverse=True
+                )
+            ]
+
+    def savings_summary(self) -> dict[str, int | str]:
+        with self._lock:
+            gross = sum(item.gross_tokens_saved for item in self._items.values())
+            retrieved = sum(item.retrieved_tokens for item in self._items.values())
+        return {
+            "tier": "measured",
+            "gross_tokens_saved": gross,
+            "retrieved_tokens": retrieved,
+            "net_tokens_saved": max(0, gross - retrieved),
+        }
+
+    def _record_compression(self, item: StoredCompression) -> None:
+        if self.optimization_ledger is None:
+            return
+        from .optimization_ledger import OptimizationEvent, SavingsTier
+
+        self.optimization_ledger.record(
+            OptimizationEvent(
+                event_id=f"compression:{item.receipt_id}",
+                feature="evidence_locked_compression",
+                tier=SavingsTier.MEASURED,
+                gross_tokens_saved=max(0, item.gross_tokens_saved),
+                session_id=str(item.metadata.get("session_id", "")),
+                conversation_id=str(item.metadata.get("conversation_id", "")),
+                provider=str(item.metadata.get("provider", "")),
+                model=str(item.metadata.get("model", "")),
+                metadata={"receipt_id": item.receipt_id},
+            )
+        )
+
+    def _record_retrieval(
+        self,
+        receipt_id: str,
+        span_id: str,
+        token_count: int,
+        *,
+        retrieval_id: str,
+    ) -> None:
+        if self.optimization_ledger is None:
+            return
+        from .optimization_ledger import OptimizationAdjustment
+
+        self.optimization_ledger.adjust(
+            OptimizationAdjustment(
+                adjustment_id=retrieval_id,
+                event_id=f"compression:{receipt_id}",
+                tokens_reexpanded=token_count,
+                metadata={"receipt_id": receipt_id, "span_id": span_id},
+            )
+        )
 
     def _load(self) -> None:
         assert self.path is not None
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         for item in raw.get("items", []):
-            spans = [StoredSpan(**span) for span in item.get("spans", [])]
+            spans = [
+                StoredSpan(
+                    span_id=span["span_id"],
+                    receipt_id=span["receipt_id"],
+                    start_line=int(span["start_line"]),
+                    end_line=int(span["end_line"]),
+                    content=str(span.get("content", "")),
+                    reason=str(span.get("reason", "budget")),
+                    created_ns=int(span.get("created_ns", time.time_ns())),
+                    retrieval_count=int(span.get("retrieval_count", 0)),
+                    retrieved_tokens=int(span.get("retrieved_tokens", 0)),
+                    last_retrieved_ns=span.get("last_retrieved_ns"),
+                    retrieval_ids=[str(value) for value in span.get("retrieval_ids", [])],
+                )
+                for span in item.get("spans", [])
+            ]
             stored = StoredCompression(
                 receipt_id=item["receipt_id"],
                 original_hash=item["original_hash"],
@@ -278,6 +447,9 @@ class CompressionRetrievalStore:
                 spans=spans,
                 metadata=dict(item.get("metadata", {})),
                 created_ns=int(item.get("created_ns", time.time_ns())),
+                retrieval_count=int(item.get("retrieval_count", 0)),
+                last_retrieved_ns=item.get("last_retrieved_ns"),
+                savings_tier=str(item.get("savings_tier", "measured")),
             )
             self._items[stored.receipt_id] = stored
 
@@ -285,7 +457,12 @@ class CompressionRetrievalStore:
         if self.path is None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"items": [item.as_dict() for item in self._items.values()]}
+        payload = {
+            "schema_version": 2,
+            "items": [
+                item.as_dict(include_internal=True) for item in self._items.values()
+            ],
+        }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         tmp.replace(self.path)
@@ -303,8 +480,4 @@ def _short_hash(text: str) -> str:
     return _sha256_text(text)[:16]
 
 
-__all__ = [
-    "CompressionRetrievalStore",
-    "StoredCompression",
-    "StoredSpan",
-]
+__all__ = ["CompressionRetrievalStore", "StoredCompression", "StoredSpan"]

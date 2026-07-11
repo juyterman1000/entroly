@@ -62,10 +62,10 @@ def test_retrieval_store_records_net_realized_savings(tmp_path) -> None:
     )
     span_id = stored.spans[0].span_id
 
-    span = store.get_span(stored.receipt_id, span_id)
+    span = store.retrieve_span(stored.receipt_id, span_id)
     assert span is not None
     assert span.retrieval_count == 1
-    again = store.get_span(stored.receipt_id, span_id)
+    again = store.retrieve_span(stored.receipt_id, span_id)
     assert again is not None
     assert again.retrieval_count == 2
 
@@ -95,7 +95,7 @@ def test_search_records_retrieved_spans_once_per_result(tmp_path) -> None:
         },
     )
 
-    hits = store.search("needle", limit=5)
+    hits = store.search("needle", limit=5, record_retrieval=True)
 
     assert len(hits) == 1
     assert hits[0].retrieval_count == 1
