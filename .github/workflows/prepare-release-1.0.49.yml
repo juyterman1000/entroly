@@ -1,4 +1,5 @@
 name: Prepare Entroly 1.0.49 Release
+# Trigger revision: 1
 
 on:
   push:
