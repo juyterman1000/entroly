@@ -32,6 +32,7 @@ def _resolution_payload(result, *, output_tokens: int | None, safety_fraction: f
         "trust": result.trust.value,
         "warning": result.warning,
         "registry_digest": result.registry_digest,
+        "base_registry_digest": result.base_registry_digest,
         "capability": _capability_payload(result.capability),
     }
 
@@ -98,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         payload = {
             "registry_digest": registry.registry_digest,
+            "base_registry_digest": registry.base_registry_digest,
             "models": [_capability_payload(item) for item in capabilities],
         }
     else:
