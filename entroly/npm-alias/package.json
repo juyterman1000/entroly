@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.48",
+  "version": "1.0.49",
   "description": "Node/WASM Entroly runtime: local context optimization, MCP server tools, receipts, recovery, and verification without Python.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -16,7 +16,7 @@
     "README.md"
   ],
   "dependencies": {
-    "entroly-wasm": "1.0.48"
+    "entroly-wasm": "1.0.49"
   },
   "repository": {
     "type": "git",
