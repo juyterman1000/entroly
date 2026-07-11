@@ -1,0 +1,21 @@
+{
+  "caveat": "Synthetic deterministic benchmark; token counts are estimates, not billed usage.",
+  "evidence_pinning": {
+    "assembled_tokens_estimated": 1794,
+    "evidence_pinned": 1,
+    "exact_needle_retained": true,
+    "tokens_saved_estimated": 21320
+  },
+  "message_count": 11,
+  "model_calls": 0,
+  "receipt_reproducibility_hash": "8a358370bb37388e5b62410a2a3c12846804bb75dea1a12d6f46b889d74e2ba7",
+  "source_tokens_estimated": 23114,
+  "token_budget_estimated": 1800,
+  "uniform_control": {
+    "assembled_tokens_estimated": 1797,
+    "evidence_pinned": 0,
+    "exact_needle_retained": false,
+    "tokens_saved_estimated": 21317
+  },
+  "workload": "synthetic long-running OpenClaw session"
+}

@@ -35,6 +35,7 @@ TARGETS = [
     ("entroly/npm/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"entroly-wasm"\s*:\s*"[^"]+"', '"entroly-wasm": "{v}"'),
+    ("integrations/openclaw/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{v}"'),
     ("entroly/native_status.py",
         r'MIN_ENTROLY_CORE_VERSION\s*=\s*"[^"]+"',

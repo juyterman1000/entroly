@@ -65,6 +65,7 @@ def test_public_package_versions_are_1_0_46() -> None:
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm-alias/package.json")["version"] == RELEASE_VERSION
     assert _read_json("entroly-wasm/package.json")["version"] == RELEASE_VERSION
+    assert _read_json("integrations/openclaw/package.json")["version"] == RELEASE_VERSION
     assert _read_json(".claude-plugin/manifest.json")["version"] == RELEASE_VERSION
     assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
 
@@ -100,6 +101,7 @@ def test_no_stale_package_advertising_versions() -> None:
         "entroly/npm/package.json",
         "entroly/npm-alias/package.json",
         "entroly-wasm/package.json",
+        "integrations/openclaw/package.json",
         "pyproject.toml",
         "entroly/pyproject.toml",
     ):
