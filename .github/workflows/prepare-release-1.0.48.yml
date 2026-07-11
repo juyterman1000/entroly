@@ -1,6 +1,6 @@
 name: Prepare Entroly 1.0.48 Release
 
-# Second main-branch merge intentionally starts the registered workflow.
+# Final clean trigger after resetting the release branch onto current main.
 on:
   push:
     branches: [main]
