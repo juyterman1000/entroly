@@ -81,7 +81,10 @@ def test_native_status_rejects_prerelease_of_minimum(monkeypatch):
 
 
 def test_native_status_accepts_prerelease_above_minimum():
-    assert ns._version_at_least("1.0.47-rc.1", ns.MIN_ENTROLY_CORE_VERSION) is True
+    major, minor, patch = map(int, ns.MIN_ENTROLY_CORE_VERSION.split("."))
+    newer_prerelease = f"{major}.{minor}.{patch + 1}-rc.1"
+
+    assert ns._version_at_least(newer_prerelease, ns.MIN_ENTROLY_CORE_VERSION) is True
 
 
 def test_native_status_leaves_unknown_versions_indeterminate():
