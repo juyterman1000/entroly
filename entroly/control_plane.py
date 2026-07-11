@@ -15,6 +15,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .model_decision_receipt import model_decision_tags
+
 Provider = Literal["openai", "anthropic", "gemini", "unknown"]
 Action = Literal["compress", "observe", "passthrough"]
 
@@ -332,12 +334,20 @@ def stable_request_fingerprint(
         "provider_controls": provider_controls,
         "tool_contract": tool_contract,
     }
-    return {
+    tags = {
         "entroly_request_fingerprint": _fingerprint(payload),
         "entroly_protocol_fingerprint": _fingerprint(protocol),
         "entroly_tool_fingerprint": _fingerprint(tool_contract),
         "entroly_header_fingerprint": _fingerprint(sticky_headers),
     }
+    tags.update(
+        model_decision_tags(
+            payload,
+            provider=detected_provider,
+            path=path,
+        )
+    )
+    return tags
 
 
 def infer_provider(
