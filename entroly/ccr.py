@@ -166,7 +166,18 @@ class CompressedContextStore:
                 evicted_handle, evicted = self._store.popitem(last=False)
                 source_key = evicted["source"]
                 if self._latest_by_source.get(source_key) == evicted_handle:
-                    del self._latest_by_source[source_key]
+                    # An earlier handle for the same source may still live in
+                    # _store if retrieve(handle) refreshed its LRU position.
+                    # Scan newest-first for a surviving handle before orphaning.
+                    replacement = None
+                    for h in reversed(self._store):
+                        if self._store[h]["source"] == source_key:
+                            replacement = h
+                            break
+                    if replacement is not None:
+                        self._latest_by_source[source_key] = replacement
+                    else:
+                        del self._latest_by_source[source_key]
         return handle
 
     def retrieve(self, source_or_handle: str) -> dict[str, Any] | None:
