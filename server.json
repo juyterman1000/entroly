@@ -2,7 +2,11 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.juyterman1000/entroly",
   "title": "Entroly",
-  "description": "Local context engineering & prompt compression gateway for AI coding agents.",
+  "description": "Local context OS for AI coding agents with token optimization, receipts, exact recovery, memory, and verification.",
+  "repository": {
+    "url": "https://github.com/juyterman1000/entroly",
+    "source": "github"
+  },
   "version": "1.0.46",
   "packages": [
     {
