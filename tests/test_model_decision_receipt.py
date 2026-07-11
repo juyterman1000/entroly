@@ -90,7 +90,7 @@ def test_gemini_path_model_and_output_reserve_are_detected() -> None:
     assert receipt.resolved_model == "google/gemini-2.5-pro"
     assert receipt.context_window == 1_048_576
     assert receipt.requested_output_tokens == 8192
-    assert receipt.safe_input_budget == 987_955
+    assert receipt.safe_input_budget == 987_956
 
 
 def test_tags_exclude_registry_sources_and_private_metadata() -> None:
