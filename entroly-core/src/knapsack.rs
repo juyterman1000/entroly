@@ -414,6 +414,7 @@ fn soft_bisection_select(
 
     // Compute exact KKT probabilities at λ*.
     // Sorting by p_i ≡ sorting by reduced cost (s_i − λ*·tokens_i) — LP duality ordering.
+    let score_map: HashMap<usize, f64> = scored.iter().copied().collect();
     let mut with_probs: Vec<(usize, f64)> = scored
         .iter()
         .map(|&(idx, score)| {
@@ -434,23 +435,11 @@ fn soft_bisection_select(
         if tc <= remaining {
             selected.push(idx);
             remaining -= tc;
-            // Primal contribution: p_i · s_i (soft selection value)
-            let tc_f = tc as f64;
-            let p_final = sigmoid(
-                (scored
-                    .iter()
-                    .find(|&&(i, _)| i == idx)
-                    .map(|&(_, s)| s)
-                    .unwrap_or(0.0)
-                    - lambda_star * tc_f)
-                    / tau,
-            );
-            primal_value += p_final
-                * scored
-                    .iter()
-                    .find(|&&(i, _)| i == idx)
-                    .map(|&(_, s)| s)
-                    .unwrap_or(0.0);
+            // Primal value: realized hard-selection objective Σ s_i.
+            // Previous code used p_i·s_i (soft relaxation), which systematically
+            // underestimates the primal and inflates the ADGT dual gap.
+            let s_i = score_map.get(&idx).copied().unwrap_or(0.0);
+            primal_value += s_i;
         }
         if remaining == 0 {
             break;
@@ -537,6 +526,7 @@ fn knapsack_dp(scored: &[(usize, f64)], fragments: &[ContextFragment], budget: u
         prev = curr;
     }
 
+    let free_count = free_items.len();
     let mut selected = free_items;
     let mut w = qb;
     for i in (0..n).rev() {
@@ -546,6 +536,18 @@ fn knapsack_dp(scored: &[(usize, f64)], fragments: &[ContextFragment], budget: u
             w -= cost;
         }
     }
+
+    // Post-DP budget guard: floor-division quantization can let the real
+    // token total exceed the hard budget by up to K×(g−1) tokens. Trim
+    // last-selected DP items (lowest backtrace priority) until it fits.
+    while selected.len() > free_count {
+        let real: u32 = selected.iter().map(|&i| fragments[i].token_count).sum();
+        if real <= budget {
+            break;
+        }
+        selected.pop();
+    }
+
     selected
 }
 
@@ -815,6 +817,21 @@ mod tests {
             result.total_tokens,
             budget
         );
+    }
+
+    #[test]
+    fn test_quantized_dp_respects_real_token_budget() {
+        let fragments = vec![
+            ContextFragment::new("a".into(), "a".into(), 1001, "".into()),
+            ContextFragment::new("b".into(), "b".into(), 1001, "".into()),
+        ];
+        let selected = knapsack_dp(&[(0, 1.0), (1, 0.9)], &fragments, 2000);
+        let real_tokens: u32 = selected
+            .iter()
+            .map(|&index| fragments[index].token_count)
+            .sum();
+
+        assert!(real_tokens <= 2000, "selected {real_tokens} real tokens");
     }
 
     #[test]

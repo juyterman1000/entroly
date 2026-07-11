@@ -146,9 +146,9 @@ impl LshIndex {
     }
 }
 
-#[cfg(test)]
 impl LshIndex {
     /// Remove a fragment entry (called on eviction).
+    #[allow(dead_code)]
     pub fn remove(&mut self, fp: u64, idx: usize) {
         for table in &mut self.tables {
             let key = table.hash_key(fp);
