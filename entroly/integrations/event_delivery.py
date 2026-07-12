@@ -302,6 +302,8 @@ class EventDeliveryStore:
     def claim_due(
         self,
         *,
+        channel: str,
+        destination_hash: str,
         limit: int = 32,
         lease_seconds: float = 30.0,
     ) -> list[DeliveryEvent]:
@@ -313,13 +315,15 @@ class EventDeliveryStore:
             rows = connection.execute(
                 """
                 SELECT event_id FROM delivery_events
-                WHERE state = 'pending'
+                WHERE channel = ?
+                  AND destination_hash = ?
+                  AND state = 'pending'
                   AND not_before <= ?
                   AND (lease_until IS NULL OR lease_until <= ?)
                 ORDER BY created_at, event_id
                 LIMIT ?
                 """,
-                (now, now, limit),
+                (channel, destination_hash, now, now, limit),
             ).fetchall()
             event_ids = [str(row["event_id"]) for row in rows]
             if event_ids:
@@ -547,6 +551,8 @@ class ReliableEventDispatcher:
         try:
             outcomes: list[DeliveryOutcome] = []
             for event in self.store.claim_due(
+                channel=self.channel,
+                destination_hash=self.destination_hash,
                 limit=limit,
                 lease_seconds=self._lease_seconds,
             ):
