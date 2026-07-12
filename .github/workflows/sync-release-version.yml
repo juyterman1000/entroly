@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Semantic release version, for example 1.0.51
+        description: 'Semantic release version, for example 1.2.3'
         required: true
         type: string
 
@@ -47,8 +47,17 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Synchronize tracked release surfaces
+      - name: Synchronize approved release surfaces
         run: python scripts/sync_release_version.py "${{ steps.version.outputs.version }}"
+
+      - name: Assert workflow definitions were not rewritten
+        shell: bash
+        run: |
+          if ! git diff --quiet -- .github/workflows/; then
+            echo "::error::Release synchronization must never modify workflow definitions."
+            git diff -- .github/workflows/
+            exit 1
+          fi
 
       - name: Validate release contract
         run: |
