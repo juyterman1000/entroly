@@ -67,6 +67,8 @@ Each invocation writes one JSON object conforming to
   `[0, 1]` and use the scorer named in the pairing key.
 - Failures, timeouts, refusals, and malformed tool calls remain in the sample
   and receive the preregistered failure score. They are not silently discarded.
+- Every task-replicate must contain the same condition matrix. The analyzer
+  rejects incomplete matrices rather than comparing unequal task subsets.
 
 ## Initial workload matrix
 

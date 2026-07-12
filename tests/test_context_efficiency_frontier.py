@@ -111,6 +111,17 @@ def test_analyzer_rejects_unpaired_or_duplicate_trials():
         analyze_frontier([raw, raw, entroly_only], bootstrap_samples=10)
 
 
+def test_analyzer_rejects_incomplete_condition_matrix():
+    trials = [
+        Trial.from_dict(_record(1, "raw")),
+        Trial.from_dict(_record(1, "entroly")),
+        Trial.from_dict(_record(2, "raw")),
+    ]
+
+    with pytest.raises(ValueError, match="incomplete condition matrix"):
+        analyze_frontier(trials, bootstrap_samples=10)
+
+
 def test_load_trials_reports_the_invalid_line(tmp_path):
     path = tmp_path / "trials.jsonl"
     path.write_text(

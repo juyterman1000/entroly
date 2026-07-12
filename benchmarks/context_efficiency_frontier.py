@@ -183,8 +183,16 @@ def _paired(trials: Iterable[Trial]) -> dict[tuple[Any, ...], dict[str, Trial]]:
     for key, conditions in pairs.items():
         if BASELINE not in conditions:
             raise ValueError(f"pair {key!r} is missing the raw baseline")
-    if not any(len(conditions) > 1 for conditions in pairs.values()):
+    expected_conditions = set().union(*(set(conditions) for conditions in pairs.values()))
+    if expected_conditions == {BASELINE}:
         raise ValueError("at least one paired non-baseline trial is required")
+    for key, conditions in pairs.items():
+        missing = expected_conditions.difference(conditions)
+        if missing:
+            raise ValueError(
+                f"pair {key!r} has an incomplete condition matrix; "
+                f"missing {sorted(missing)!r}"
+            )
     return pairs
 
 
