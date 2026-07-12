@@ -16,6 +16,8 @@
     "usage_source",
     "cost_source",
     "cost_source_reference",
+    "outcome",
+    "error_type",
     "replicate",
     "condition",
     "scorer",
@@ -63,6 +65,7 @@
         "provider_response",
         "provider_log",
         "provider_ledger",
+        "provider_error",
         "deterministic_fixture"
       ]
     },
@@ -78,6 +81,18 @@
       "type": "string",
       "minLength": 1,
       "description": "Immutable invoice, ledger, or pricing-snapshot URL/hash used for billed_cost_usd."
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "error"
+      ]
+    },
+    "error_type": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "replicate": {
       "type": "integer",
@@ -112,7 +127,7 @@
     },
     "context_tokens": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 0
     },
     "reasoning_tokens": {
       "type": "integer",
@@ -158,6 +173,36 @@
           "context_commit_id": {
             "type": "string",
             "pattern": "^ctx_"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "context_tokens": {
+            "minimum": 1
+          },
+          "error_type": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "error_type": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }

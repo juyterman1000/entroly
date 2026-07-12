@@ -41,16 +41,17 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Operating Points",
         "",
-        "| Condition | Trials | Task score | Evidence recall | Unsupported claims | Context tokens | Cost (USD) | Latency (ms) | Pareto |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Condition | Trials | Errors | Task score | Evidence recall | Unsupported claims | Context tokens | Cost (USD) | Latency (ms) | Pareto |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     frontier = set(report.get("pareto_frontier", []))
     for condition, aggregate in aggregates.items():
         lines.append(
-            "| {condition} | {trials} | {score:.3f} | {evidence:.3f} | "
+            "| {condition} | {trials} | {errors} | {score:.3f} | {evidence:.3f} | "
             "{unsupported:.3f} | {context:,.0f} | {cost:.6f} | {latency:,.1f} | {pareto} |".format(
                 condition=condition,
                 trials=aggregate["trials"],
+                errors=aggregate["errors"],
                 score=aggregate["mean_task_score"],
                 evidence=aggregate["mean_evidence_recall"],
                 unsupported=aggregate["mean_unsupported_claim_rate"],

@@ -23,8 +23,10 @@ USAGE_SOURCES = (
     "provider_response",
     "provider_log",
     "provider_ledger",
+    "provider_error",
     "deterministic_fixture",
 )
+OUTCOMES = ("success", "error")
 COST_SOURCES = (
     "provider_invoice",
     "provider_ledger",
@@ -68,6 +70,8 @@ class Trial:
     usage_source: str
     cost_source: str
     cost_source_reference: str
+    outcome: str
+    error_type: str | None
     replicate: int
     condition: str
     scorer: str
@@ -107,6 +111,19 @@ class Trial:
         cost_source = _text(payload, "cost_source")
         if cost_source not in COST_SOURCES:
             raise ValueError(f"cost_source must be one of {COST_SOURCES}")
+        outcome = _text(payload, "outcome")
+        if outcome not in OUTCOMES:
+            raise ValueError(f"outcome must be one of {OUTCOMES}")
+        error_type = payload.get("error_type")
+        if outcome == "success":
+            if error_type is not None:
+                raise ValueError("successful trials must not set error_type")
+            minimum_context_tokens = 1
+        else:
+            if not isinstance(error_type, str) or not error_type.strip():
+                raise ValueError("error trials require error_type")
+            error_type = error_type.strip()
+            minimum_context_tokens = 0
 
         scores = {
             name: _number(payload, name)
@@ -126,13 +143,17 @@ class Trial:
             usage_source=usage_source,
             cost_source=cost_source,
             cost_source_reference=_text(payload, "cost_source_reference"),
+            outcome=outcome,
+            error_type=error_type,
             replicate=replicate,
             condition=condition,
             scorer=_text(payload, "scorer"),
             task_score=scores["task_score"],
             evidence_recall=scores["evidence_recall"],
             unsupported_claim_rate=scores["unsupported_claim_rate"],
-            context_tokens=_integer(payload, "context_tokens", minimum=1),
+            context_tokens=_integer(
+                payload, "context_tokens", minimum=minimum_context_tokens
+            ),
             reasoning_tokens=_integer(payload, "reasoning_tokens"),
             output_tokens=_integer(payload, "output_tokens"),
             billed_cost_usd=_number(payload, "billed_cost_usd"),
@@ -238,6 +259,7 @@ def _reduction(candidate: float, baseline: float) -> float:
 def _aggregate(trials: list[Trial]) -> dict[str, Any]:
     return {
         "trials": len(trials),
+        "errors": sum(t.outcome == "error" for t in trials),
         "mean_task_score": round(_mean(t.task_score for t in trials), 6),
         "mean_evidence_recall": round(_mean(t.evidence_recall for t in trials), 6),
         "mean_unsupported_claim_rate": round(

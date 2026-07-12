@@ -8,6 +8,7 @@ import pytest
 from benchmarks.context_efficiency_frontier import (
     CONDITIONS,
     COST_SOURCES,
+    OUTCOMES,
     SCHEMA_VERSION,
     USAGE_SOURCES,
     Trial,
@@ -29,6 +30,8 @@ def _record(task: int, condition: str, **overrides):
         "usage_source": "deterministic_fixture",
         "cost_source": "zero_cost_fixture",
         "cost_source_reference": "fixture://zero-cost",
+        "outcome": "success",
+        "error_type": None,
         "replicate": 0,
         "condition": condition,
         "scorer": "exact-match-v1",
@@ -96,6 +99,35 @@ def test_trial_rejects_fractional_token_counts():
 
     with pytest.raises(ValueError, match="context_tokens must be an integer"):
         Trial.from_dict(payload)
+
+
+def test_error_trial_can_record_zero_provider_usage():
+    payload = _record(
+        1,
+        "entroly",
+        outcome="error",
+        error_type="APITimeoutError",
+        usage_source="provider_error",
+        context_tokens=0,
+        reasoning_tokens=0,
+        output_tokens=0,
+        billed_cost_usd=0.0,
+        task_score=0.0,
+        evidence_recall=0.0,
+        unsupported_claim_rate=1.0,
+    )
+
+    trial = Trial.from_dict(payload)
+
+    assert trial.outcome == "error"
+    assert trial.context_tokens == 0
+
+
+def test_success_trial_rejects_error_metadata_and_zero_context():
+    with pytest.raises(ValueError, match="must not set error_type"):
+        Trial.from_dict(_record(1, "raw", error_type="unexpected"))
+    with pytest.raises(ValueError, match="context_tokens must be an integer >= 1"):
+        Trial.from_dict(_record(1, "raw", context_tokens=0))
 
 
 def test_trial_rejects_unverifiable_usage_provenance():
@@ -173,3 +205,4 @@ def test_public_json_schema_matches_python_trial_contract():
     assert tuple(schema["properties"]["condition"]["enum"]) == CONDITIONS
     assert tuple(schema["properties"]["usage_source"]["enum"]) == USAGE_SOURCES
     assert tuple(schema["properties"]["cost_source"]["enum"]) == COST_SOURCES
+    assert tuple(schema["properties"]["outcome"]["enum"]) == OUTCOMES
