@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://entroly.com/schemas/context-efficiency-trial.v1.json",
+  "title": "Entroly Context Efficiency Trial",
+  "description": "One provider-observed task trial in a paired context-efficiency experiment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workload",
+    "workload_version",
+    "task_id",
+    "provider",
+    "model",
+    "provider_request_id",
+    "usage_source",
+    "cost_source",
+    "replicate",
+    "condition",
+    "scorer",
+    "task_score",
+    "evidence_recall",
+    "unsupported_claim_rate",
+    "context_tokens",
+    "reasoning_tokens",
+    "output_tokens",
+    "billed_cost_usd",
+    "latency_ms",
+    "context_commit_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "entroly.context-efficiency-trial.v1"
+    },
+    "workload": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workload_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_request_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Provider request ID or a stable redacted hash of it."
+    },
+    "usage_source": {
+      "enum": [
+        "provider_response",
+        "provider_log",
+        "provider_ledger",
+        "deterministic_fixture"
+      ]
+    },
+    "cost_source": {
+      "enum": [
+        "provider_invoice",
+        "provider_ledger",
+        "pricing_snapshot",
+        "zero_cost_fixture"
+      ]
+    },
+    "replicate": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "condition": {
+      "enum": [
+        "raw",
+        "native_compaction",
+        "entroly",
+        "combined"
+      ]
+    },
+    "scorer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_recall": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "unsupported_claim_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "context_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reasoning_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "output_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "billed_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "latency_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "context_commit_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^ctx_"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "condition": {
+            "enum": [
+              "entroly",
+              "combined"
+            ]
+          }
+        },
+        "required": [
+          "condition"
+        ]
+      },
+      "then": {
+        "properties": {
+          "context_commit_id": {
+            "type": "string",
+            "pattern": "^ctx_"
+          }
+        }
+      }
+    }
+  ]
+}

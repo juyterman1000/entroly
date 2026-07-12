@@ -293,6 +293,16 @@ Reproduce: `python -m benchmarks.context_commit_conformance`.
 measure artifact integrity, replay, and recovery on the committed fixtures;
 they do not measure model-answer quality or claim identical Python/Rust selection.
 
+**Context Efficiency Frontier research:** Entroly includes a paired,
+model-neutral benchmark for the question token-savings tables cannot answer:
+does less context preserve real task quality? The preregistered protocol
+compares raw context, model-native compaction, Entroly, and their combination
+using provider-observed tokens, cost, latency, task success, evidence recall,
+and unsupported claims.
+
+[Read the preregistered protocol](docs/benchmarks/context-efficiency-frontier.md).
+No headline result is claimed until the paired confidence bounds pass.
+
 Every number below is reproducible and backed by a committed JSON artifact you can audit — not a screenshot.
 
 **Token savings** (this repo, `entroly verify-claims`, local, no API):
