@@ -1,0 +1,89 @@
+name: Prepare Entroly 1.0.50
+
+on:
+  push:
+    branches:
+      - release/1.0.50
+
+permissions:
+  contents: write
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v6
+        with:
+          ref: release/1.0.50
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Synchronize every version surface
+        run: python scripts/bump_version.py 1.0.50
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          cat > docs/releases/v1.0.50.md <<'EOF'
+          # Entroly 1.0.50
+
+          Entroly 1.0.50 completes the frontier context-control milestone across
+          model intelligence, native parity, cryptographic auditability, and
+          reliable operational delivery.
+
+          Highlights:
+
+          - provenance-aware model intelligence with conservative unknown-model
+            handling, local-model discovery, output-aware context budgeting, and
+            effective registry fingerprints;
+          - Rust-native model resolution and budgeting parity with the Python
+            control plane;
+          - deterministic Model Decision Receipts proving the model metadata and
+            budget assumptions used for each model-bearing proxy request;
+          - durable, idempotent Slack, Discord, and Telegram event delivery with
+            SQLite persistence, restart replay, bounded retries, dead-letter
+            recovery, destination isolation, redaction, and verifiable receipts;
+          - synchronized release metadata across Python, Rust, QCCR, WASM, npm,
+            MCP, OpenClaw, plugins, generated manifests, lockfiles, Homebrew, and
+            release verification tests.
+
+          This release preserves Entroly's scope as the local context, memory,
+          verification, security, and operational control plane for AI agents.
+          EOF
+
+      - name: Verify synchronized release contract
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest tests/test_release_surface.py -q
+          git diff --check
+          python - <<'PY'
+          import pathlib
+          import tomllib
+
+          root = pathlib.Path('.')
+          expected = '1.0.50'
+          with (root / 'pyproject.toml').open('rb') as fh:
+              actual = tomllib.load(fh)['project']['version']
+          if actual != expected:
+              raise SystemExit(f'root version is {actual!r}, expected {expected!r}')
+          note = root / 'docs' / 'releases' / f'v{expected}.md'
+          if not note.exists():
+              raise SystemExit(f'missing release note: {note}')
+          print(f'Verified synchronized Entroly {expected} release surfaces.')
+          PY
+
+      - name: Commit synchronized release
+        shell: bash
+        run: |
+          git rm .github/workflows/prepare-release-1-0-50.yml
+          git config user.name 'juyterman1000'
+          git config user.email 'fastrunner10090@gmail.com'
+          git add -A
+          git commit -m 'Synchronize release version 1.0.50'
+          git push origin HEAD:release/1.0.50
