@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.51"
+CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
+CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
 
 def _read_json(path: str) -> dict:
@@ -35,6 +37,9 @@ def _read_project_metadata(path: str) -> dict[str, object]:
             continue
         if current_section == "project" and line.startswith("version"):
             metadata["version"] = line.split("=", 1)[1].strip().strip('"')
+            continue
+        if current_section == "project" and line.startswith("readme"):
+            metadata["readme"] = line.split("=", 1)[1].strip().strip('"')
             continue
         if current_section == "project" and line.startswith("dependencies"):
             current_list_key = "dependencies"
@@ -78,6 +83,38 @@ def test_mcp_registry_manifest_points_at_release_package() -> None:
     assert packages
     assert packages[0]["identifier"] == "entroly"
     assert packages[0]["version"] == RELEASE_VERSION
+
+
+def test_mcp_registry_identity_is_canonical_and_non_squattable() -> None:
+    manifest = _read_json("server.json")
+    npm_manifest = _read_json("entroly/npm/package.json")
+
+    assert manifest["name"] == CANONICAL_MCP_NAME
+    assert manifest["websiteUrl"] == CANONICAL_REPOSITORY
+    assert manifest["repository"] == {
+        "url": CANONICAL_REPOSITORY,
+        "source": "github",
+    }
+    assert npm_manifest["mcpName"] == CANONICAL_MCP_NAME
+    assert _read_project_metadata("pyproject.toml")["readme"] == "PYPI_README.md"
+    assert f"mcp-name: {CANONICAL_MCP_NAME}" in (
+        ROOT / "PYPI_README.md"
+    ).read_text(encoding="utf-8")
+
+    expected = {
+        ("pypi", "entroly", "uvx", ("serve",)),
+        ("npm", "entroly-mcp", "npx", ("serve",)),
+    }
+    actual = {
+        (
+            package["registryType"],
+            package["identifier"],
+            package["runtimeHint"],
+            tuple(argument["value"] for argument in package["packageArguments"]),
+        )
+        for package in manifest["packages"]
+    }
+    assert actual == expected
 
 
 def test_native_engine_is_optional_for_first_time_install() -> None:
