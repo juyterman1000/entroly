@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "entroly"
 version = "1.0.51"
 description = "Local context OS for AI coding agents: token optimization, MCP tools, receipts, exact recovery, verification, and SDK helpers."
-readme = "README.md"
+readme = "PYPI_README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 logo = { file = "docs/assets/logo.png", content-type = "image/png" }
@@ -16,7 +16,7 @@ authors = [
 ]
 keywords = [
     "context-receipts", "context-control-plane", "local-context-os", "token-saving", "context-compression", "reduce-llm-costs", "llm-proxy",
-    "mcp", "agentic-ai", "cursor", "claude-code", "copilot", "llm",
+    "mcp", "mcp-server", "github-copilot", "agentic-ai", "cursor", "claude-code", "copilot", "llm",
     "knapsack", "entropy", "context-optimization", "token-reduction", "hallucination-detection"
 ]
 classifiers = [
