@@ -4,6 +4,14 @@ Entroly's Slack, Discord, and Telegram adapters are operational notification
 channels, not full conversational messaging platforms. Their job is to deliver
 Entroly events reliably and make failure visible.
 
+## P3 acceptance criteria
+
+P3 is complete when all three gateways share one tested delivery contract that
+provides persistence before network I/O, stable idempotency, restart replay,
+bounded retries, dead-letter recovery, privacy-safe receipts, no persisted
+channel credentials, and gateway-level verification of deduplication and queued
+failure behavior.
+
 ## Guarantees
 
 Outbound events are written to a local SQLite queue before network I/O. The
