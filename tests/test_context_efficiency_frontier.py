@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from benchmarks.context_efficiency_frontier import (
+    CONDITIONS,
+    COST_SOURCES,
     SCHEMA_VERSION,
+    USAGE_SOURCES,
     Trial,
     analyze_frontier,
     load_trials,
@@ -153,3 +157,17 @@ def test_public_report_exposes_pass_rule_and_caveats():
 def test_public_report_rejects_unknown_schema():
     with pytest.raises(ValueError, match="schema_version"):
         render_markdown({"schema_version": "future"})
+
+
+def test_public_json_schema_matches_python_trial_contract():
+    root = Path(__file__).resolve().parents[1]
+    schema = json.loads(
+        (root / "benchmarks/context_efficiency_trial.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert set(schema["required"]) == {"schema_version", *Trial.__dataclass_fields__}
+    assert tuple(schema["properties"]["condition"]["enum"]) == CONDITIONS
+    assert tuple(schema["properties"]["usage_source"]["enum"]) == USAGE_SOURCES
+    assert tuple(schema["properties"]["cost_source"]["enum"]) == COST_SOURCES
