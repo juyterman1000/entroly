@@ -105,6 +105,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Quality tolerance: {_percent(methodology['quality_tolerance'])}",
             f"- Usage sources: {', '.join(report['provenance']['usage_sources'])}",
             f"- Cost sources: {', '.join(report['provenance']['cost_sources'])}",
+            "- Cost source references: "
+            + ", ".join(report["provenance"]["cost_source_references"]),
             "",
             "## Caveats",
             "",

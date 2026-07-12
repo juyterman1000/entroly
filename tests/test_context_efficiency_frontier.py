@@ -28,6 +28,7 @@ def _record(task: int, condition: str, **overrides):
         "provider_request_id": f"fixture-request-{task}-{condition}",
         "usage_source": "deterministic_fixture",
         "cost_source": "zero_cost_fixture",
+        "cost_source_reference": "fixture://zero-cost",
         "replicate": 0,
         "condition": condition,
         "scorer": "exact-match-v1",
@@ -151,6 +152,7 @@ def test_public_report_exposes_pass_rule_and_caveats():
     assert "**PASS**" in markdown
     assert "95% paired-bootstrap bounds" in markdown
     assert "Usage sources: deterministic_fixture" in markdown
+    assert "Cost source references: fixture://zero-cost" in markdown
     assert "Context Commit IDs prove artifact integrity" in markdown
 
 

@@ -15,6 +15,7 @@
     "provider_request_id",
     "usage_source",
     "cost_source",
+    "cost_source_reference",
     "replicate",
     "condition",
     "scorer",
@@ -72,6 +73,11 @@
         "pricing_snapshot",
         "zero_cost_fixture"
       ]
+    },
+    "cost_source_reference": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Immutable invoice, ledger, or pricing-snapshot URL/hash used for billed_cost_usd."
     },
     "replicate": {
       "type": "integer",

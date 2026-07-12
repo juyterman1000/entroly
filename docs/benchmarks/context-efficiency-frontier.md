@@ -59,8 +59,9 @@ Each invocation writes one JSON object conforming to
   provider response or an auditable provider log, not a local tokenizer.
 - `billed_cost_usd` comes from an invoice, provider usage ledger, or a declared
   immutable pricing snapshot. Reports must identify which source was used.
-- `usage_source`, `cost_source`, and `provider_request_id` make that provenance
-  machine-readable. A request ID may be replaced by a stable redacted hash.
+- `usage_source`, `cost_source`, `cost_source_reference`, and
+  `provider_request_id` make that provenance machine-readable. A request ID may
+  be replaced by a stable redacted hash.
 - `latency_ms` is wall-clock request latency measured at the same boundary for
   all conditions.
 - `task_score`, `evidence_recall`, and `unsupported_claim_rate` are bounded in

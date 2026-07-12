@@ -67,6 +67,7 @@ class Trial:
     provider_request_id: str
     usage_source: str
     cost_source: str
+    cost_source_reference: str
     replicate: int
     condition: str
     scorer: str
@@ -124,6 +125,7 @@ class Trial:
             provider_request_id=_text(payload, "provider_request_id"),
             usage_source=usage_source,
             cost_source=cost_source,
+            cost_source_reference=_text(payload, "cost_source_reference"),
             replicate=replicate,
             condition=condition,
             scorer=_text(payload, "scorer"),
@@ -393,6 +395,9 @@ def analyze_frontier(
             "models": sorted({t.model for t in materialized}),
             "usage_sources": sorted({t.usage_source for t in materialized}),
             "cost_sources": sorted({t.cost_source for t in materialized}),
+            "cost_source_references": sorted(
+                {t.cost_source_reference for t in materialized}
+            ),
         },
         "aggregates": aggregates,
         "comparisons_to_raw": comparisons,
