@@ -8,6 +8,7 @@ bootstrap intervals, and reports the quality/context Pareto frontier.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -61,6 +62,17 @@ def _integer(payload: dict[str, Any], name: str, *, minimum: int = 0) -> int:
     return value
 
 
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _sha256(payload: dict[str, Any], name: str) -> str:
+    value = _text(payload, name).lower()
+    if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise ValueError(f"{name} must be a lowercase SHA-256 hex digest")
+    return value
+
+
 @dataclass(frozen=True)
 class Trial:
     workload: str
@@ -74,6 +86,9 @@ class Trial:
     cost_source_reference: str
     outcome: str
     error_type: str | None
+    context_sha256: str
+    response_text: str | None
+    response_sha256: str | None
     replicate: int
     condition: str
     scorer: str
@@ -121,11 +136,21 @@ class Trial:
             if error_type is not None:
                 raise ValueError("successful trials must not set error_type")
             minimum_context_tokens = 1
+            response_text = payload.get("response_text")
+            if not isinstance(response_text, str):
+                raise ValueError("successful trials require response_text")
+            response_sha256 = _sha256(payload, "response_sha256")
+            if response_sha256 != _sha256_text(response_text):
+                raise ValueError("response_sha256 does not match response_text")
         else:
             if not isinstance(error_type, str) or not error_type.strip():
                 raise ValueError("error trials require error_type")
             error_type = error_type.strip()
             minimum_context_tokens = 0
+            response_text = payload.get("response_text")
+            response_sha256 = payload.get("response_sha256")
+            if response_text is not None or response_sha256 is not None:
+                raise ValueError("error trials must not contain a provider response")
 
         scores = {
             name: _number(payload, name)
@@ -147,6 +172,9 @@ class Trial:
             cost_source_reference=_text(payload, "cost_source_reference"),
             outcome=outcome,
             error_type=error_type,
+            context_sha256=_sha256(payload, "context_sha256"),
+            response_text=response_text,
+            response_sha256=response_sha256,
             replicate=replicate,
             condition=condition,
             scorer=_text(payload, "scorer"),

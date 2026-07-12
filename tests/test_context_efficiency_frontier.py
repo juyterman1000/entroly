@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,9 @@ def _record(task: int, condition: str, **overrides):
         "cost_source_reference": "fixture://zero-cost",
         "outcome": "success",
         "error_type": None,
+        "context_sha256": hashlib.sha256(b"fixture context").hexdigest(),
+        "response_text": "fixture answer",
+        "response_sha256": hashlib.sha256(b"fixture answer").hexdigest(),
         "replicate": 0,
         "condition": condition,
         "scorer": "exact-match-v1",
@@ -115,6 +119,8 @@ def test_error_trial_can_record_zero_provider_usage():
         task_score=0.0,
         evidence_recall=0.0,
         unsupported_claim_rate=1.0,
+        response_text=None,
+        response_sha256=None,
     )
 
     trial = Trial.from_dict(payload)
@@ -128,6 +134,13 @@ def test_success_trial_rejects_error_metadata_and_zero_context():
         Trial.from_dict(_record(1, "raw", error_type="unexpected"))
     with pytest.raises(ValueError, match="context_tokens must be an integer >= 1"):
         Trial.from_dict(_record(1, "raw", context_tokens=0))
+
+
+def test_trial_rejects_response_tampering():
+    payload = _record(1, "raw", response_text="tampered")
+
+    with pytest.raises(ValueError, match="does not match response_text"):
+        Trial.from_dict(payload)
 
 
 def test_trial_rejects_unverifiable_usage_provenance():

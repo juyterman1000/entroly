@@ -68,6 +68,10 @@ Each invocation writes one JSON object conforming to
   all conditions.
 - `task_score`, `evidence_recall`, and `unsupported_claim_rate` are bounded in
   `[0, 1]` and use the scorer named in the pairing key.
+- `context_sha256`, `response_text`, and `response_sha256` bind each score to
+  the exact evaluated response. Private reports may redact response text only
+  in a separate license-safe manifest; a public headline requires auditable
+  scorer inputs.
 - Failures, timeouts, refusals, and malformed tool calls remain in the sample
   and receive the preregistered failure score. They are not silently discarded.
 - Failed provider requests use `outcome: error`, preserve the error class, and

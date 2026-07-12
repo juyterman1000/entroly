@@ -228,6 +228,11 @@ def _success_trial(
             "cost_source_reference": provider.cost_source_reference,
             "outcome": "success",
             "error_type": None,
+            "context_sha256": hashlib.sha256(selected_context.encode("utf-8")).hexdigest(),
+            "response_text": observation.response_text,
+            "response_sha256": hashlib.sha256(
+                observation.response_text.encode("utf-8")
+            ).hexdigest(),
             "replicate": 0,
             "condition": condition,
             "scorer": "longbench-hotpotqa-answer-only-v1",
@@ -274,6 +279,9 @@ def _error_trial(
             "cost_source_reference": provider.cost_source_reference,
             "outcome": "error",
             "error_type": error_type,
+            "context_sha256": hashlib.sha256(selected_context.encode("utf-8")).hexdigest(),
+            "response_text": None,
+            "response_sha256": None,
             "replicate": 0,
             "condition": condition,
             "scorer": "longbench-hotpotqa-answer-only-v1",
