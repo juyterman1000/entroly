@@ -4,33 +4,56 @@ on:
   workflow_run:
     workflows: ["Build and Push Entroly Docker Image"]
     types: [completed]
-  workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: mcp-registry-${{ github.event.workflow_run.head_sha || github.sha }}
+  group: mcp-registry-production
   cancel-in-progress: false
 
 jobs:
   publish:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       (startsWith(github.event.workflow_run.head_commit.message, 'Release v') ||
-        startsWith(github.event.workflow_run.head_commit.message, 'Release ')))
+      github.repository == 'juyterman1000/entroly' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == 'juyterman1000/entroly' &&
+      github.event.workflow_run.actor.login == 'juyterman1000' &&
+      (startsWith(github.event.workflow_run.head_commit.message, 'Release v') ||
+       startsWith(github.event.workflow_run.head_commit.message, 'Release '))
     runs-on: ubuntu-latest
+    environment:
+      name: mcp-registry-production
+      url: https://registry.modelcontextprotocol.io/?q=io.github.juyterman1000%2Fentroly
 
     steps:
-      - name: Checkout released source
+      - name: Checkout exact released source
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Validate published package metadata
+      - name: Assert canonical publisher and immutable release source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "juyterman1000/entroly"
+          test "$GITHUB_REPOSITORY_OWNER" = "juyterman1000"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          case "$RELEASE_MESSAGE" in
+            "Release v"*|"Release "*) ;;
+            *) echo "::error::Refusing non-release commit: $RELEASE_MESSAGE"; exit 2 ;;
+          esac
+
+      - name: Validate canonical MCP identity and published packages
         shell: bash
         run: |
           python - <<'PY'
@@ -43,84 +66,122 @@ jobs:
           import urllib.request
 
           root = pathlib.Path('.')
-          with (root / 'pyproject.toml').open('rb') as fh:
-              version = tomllib.load(fh)['project']['version']
-          server = json.loads((root / 'server.json').read_text(encoding='utf-8'))
-          expected_name = 'io.github.juyterman1000/entroly'
+          canonical_repo = 'https://github.com/juyterman1000/entroly'
+          canonical_name = 'io.github.juyterman1000/entroly'
+          expected_packages = {
+              ('pypi', 'entroly'): ('uvx', ['serve']),
+              ('npm', 'entroly-mcp'): ('npx', ['serve']),
+          }
 
-          if server.get('name') != expected_name:
-              raise SystemExit(f"server.json name must be {expected_name!r}")
+          with (root / 'pyproject.toml').open('rb') as fh:
+              project = tomllib.load(fh)['project']
+          version = project['version']
+          if project.get('readme') != 'PYPI_README.md':
+              raise SystemExit('PyPI must publish the dedicated canonical MCP README')
+
+          marker = f'mcp-name: {canonical_name}'
+          pypi_readme = (root / 'PYPI_README.md').read_text(encoding='utf-8')
+          if marker not in pypi_readme:
+              raise SystemExit(f'PYPI_README.md is missing {marker!r}')
+
+          server = json.loads((root / 'server.json').read_text(encoding='utf-8'))
+          if server.get('name') != canonical_name:
+              raise SystemExit(f'server name must be {canonical_name!r}')
+          repository = server.get('repository') or {}
+          if repository.get('url') != canonical_repo or repository.get('source') != 'github':
+              raise SystemExit('server repository identity is not canonical')
+          if server.get('websiteUrl') != canonical_repo:
+              raise SystemExit('server websiteUrl is not canonical')
           if server.get('version') != version:
-              raise SystemExit(
-                  f"server.json version {server.get('version')!r} does not match project version {version!r}"
-              )
+              raise SystemExit('server.json and pyproject.toml versions differ')
+
+          actual_packages = {}
           for package in server.get('packages', []):
+              key = (package.get('registryType'), package.get('identifier'))
+              args = [item.get('value') for item in package.get('packageArguments', [])]
+              actual_packages[key] = (package.get('runtimeHint'), args)
               if package.get('version') != version:
-                  raise SystemExit(
-                      f"{package.get('identifier')} version {package.get('version')!r} "
-                      f"does not match project version {version!r}"
-                  )
+                  raise SystemExit(f'{key} does not match release version {version}')
+          if actual_packages != expected_packages:
+              raise SystemExit(
+                  f'canonical package set changed: {actual_packages!r}; '
+                  f'expected {expected_packages!r}'
+              )
+
+          npm_manifest = json.loads(
+              (root / 'entroly/npm/package.json').read_text(encoding='utf-8')
+          )
+          if npm_manifest.get('name') != 'entroly-mcp':
+              raise SystemExit('unexpected npm MCP package name')
+          if npm_manifest.get('mcpName') != canonical_name:
+              raise SystemExit('npm mcpName does not match canonical registry identity')
+          if npm_manifest.get('version') != version:
+              raise SystemExit('npm MCP package version does not match release')
 
           def read_json(url: str) -> dict:
               request = urllib.request.Request(
                   url,
-                  headers={'User-Agent': 'entroly-mcp-registry-publisher'},
+                  headers={'User-Agent': 'entroly-canonical-mcp-publisher'},
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   return json.load(response)
 
-          errors = []
           for attempt in range(1, 21):
               errors = []
               try:
                   pypi = read_json(
-                      f"https://pypi.org/pypi/entroly/{urllib.parse.quote(version)}/json"
+                      f'https://pypi.org/pypi/entroly/{urllib.parse.quote(version)}/json'
                   )
                   description = pypi.get('info', {}).get('description') or ''
-                  marker = f"mcp-name: {expected_name}"
                   if marker not in description:
-                      errors.append(f"PyPI README is missing {marker!r}")
+                      errors.append(f'PyPI README is missing {marker!r}')
               except (urllib.error.URLError, urllib.error.HTTPError, ValueError) as exc:
-                  errors.append(f"PyPI entroly {version} is unavailable: {exc}")
+                  errors.append(f'PyPI entroly {version} is unavailable: {exc}')
 
               try:
                   npm = read_json(
-                      f"https://registry.npmjs.org/entroly-mcp/{urllib.parse.quote(version)}"
+                      f'https://registry.npmjs.org/entroly-mcp/{urllib.parse.quote(version)}'
                   )
-                  if npm.get('mcpName') != expected_name:
-                      errors.append(
-                          f"npm mcpName is {npm.get('mcpName')!r}, expected {expected_name!r}"
-                      )
+                  if npm.get('mcpName') != canonical_name:
+                      errors.append('npm package is missing the canonical mcpName')
+                  repository_url = (npm.get('repository') or {}).get('url', '')
+                  if canonical_repo not in repository_url:
+                      errors.append('npm package repository is not canonical')
               except (urllib.error.URLError, urllib.error.HTTPError, ValueError) as exc:
-                  errors.append(f"npm entroly-mcp {version} is unavailable: {exc}")
+                  errors.append(f'npm entroly-mcp {version} is unavailable: {exc}')
 
               if not errors:
-                  print(f"Validated Entroly {version} on PyPI and npm.")
+                  print(f'Validated canonical Entroly {version} packages.')
                   break
               if attempt == 20:
                   raise SystemExit('\n'.join(errors))
               print(
-                  f"Package metadata not ready (attempt {attempt}/20): "
+                  f'Package metadata not ready (attempt {attempt}/20): '
                   + '; '.join(errors)
               )
               time.sleep(15)
           PY
 
-      - name: Install MCP Registry publisher
+      - name: Install pinned MCP Registry publisher
         shell: bash
+        env:
+          MCP_PUBLISHER_VERSION: v1.7.9
         run: |
-          curl --fail --location --silent --show-error \
-            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
-            | tar xz mcp-publisher
-          ./mcp-publisher --help
+          set -euo pipefail
+          platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_${platform}_${arch}.tar.gz"
+          curl --fail --location --silent --show-error "$url" | tar xz mcp-publisher
+          test -x ./mcp-publisher
+          ./mcp-publisher --help >/dev/null
 
-      - name: Authenticate with GitHub OIDC
+      - name: Authenticate canonical GitHub repository with OIDC
         run: ./mcp-publisher login github-oidc
 
-      - name: Publish Entroly
+      - name: Publish canonical Entroly identity
         run: ./mcp-publisher publish
 
-      - name: Verify registry listing
+      - name: Verify exact registry ownership and listing
         shell: bash
         run: |
           python - <<'PY'
@@ -130,28 +191,43 @@ jobs:
           import urllib.request
 
           name = 'io.github.juyterman1000/entroly'
+          repository = 'https://github.com/juyterman1000/entroly'
+          expected_packages = {('pypi', 'entroly'), ('npm', 'entroly-mcp')}
           version = json.load(open('server.json', encoding='utf-8'))['version']
           url = (
               'https://registry.modelcontextprotocol.io/v0.1/servers?search='
               + urllib.parse.quote(name, safe='')
           )
 
-          for attempt in range(1, 11):
+          for attempt in range(1, 16):
               request = urllib.request.Request(
                   url,
-                  headers={'User-Agent': 'entroly-mcp-registry-publisher'},
+                  headers={'User-Agent': 'entroly-canonical-mcp-publisher'},
               )
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.load(response)
-              servers = payload.get('servers', [])
-              if any(
-                  item.get('server', item).get('name') == name
-                  and item.get('server', item).get('version') == version
-                  for item in servers
-              ):
-                  print(f"Verified {name} {version} in the MCP Registry.")
+
+              match = None
+              for item in payload.get('servers', []):
+                  server = item.get('server', item)
+                  if server.get('name') == name and server.get('version') == version:
+                      match = server
+                      break
+
+              if match is not None:
+                  repo = match.get('repository') or {}
+                  packages = {
+                      (package.get('registryType'), package.get('identifier'))
+                      for package in match.get('packages', [])
+                  }
+                  if repo.get('url') != repository:
+                      raise SystemExit('registry listing points to a non-canonical repository')
+                  if packages != expected_packages:
+                      raise SystemExit(f'registry package set is unexpected: {packages!r}')
+                  print(f'Verified exclusive canonical listing {name} {version}.')
                   break
-              if attempt == 10:
-                  raise SystemExit(f"Registry listing for {name} {version} was not visible")
+
+              if attempt == 15:
+                  raise SystemExit(f'Registry listing for {name} {version} was not visible')
               time.sleep(10)
           PY
