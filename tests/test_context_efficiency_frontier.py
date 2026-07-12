@@ -10,6 +10,7 @@ from benchmarks.context_efficiency_frontier import (
     analyze_frontier,
     load_trials,
 )
+from benchmarks.context_efficiency_report import render_markdown
 
 
 def _record(task: int, condition: str, **overrides):
@@ -107,3 +108,24 @@ def test_load_trials_reports_the_invalid_line(tmp_path):
 
     with pytest.raises(ValueError, match=r"trials\.jsonl:2"):
         load_trials(path)
+
+
+def test_public_report_exposes_pass_rule_and_caveats():
+    trials = [
+        Trial.from_dict(_record(task, condition))
+        for task in range(4)
+        for condition in ("raw", "entroly")
+    ]
+    report = analyze_frontier(trials, bootstrap_samples=50)
+
+    markdown = render_markdown(report)
+
+    assert "| entroly | 4 |" in markdown
+    assert "**PASS**" in markdown
+    assert "95% paired-bootstrap bounds" in markdown
+    assert "Context Commit IDs prove artifact integrity" in markdown
+
+
+def test_public_report_rejects_unknown_schema():
+    with pytest.raises(ValueError, match="schema_version"):
+        render_markdown({"schema_version": "future"})
