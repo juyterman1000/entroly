@@ -1,9 +1,13 @@
 name: Consolidate Open PR Fixes
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/consolidate-open-prs
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
@@ -11,8 +15,8 @@ permissions:
 jobs:
   consolidate:
     if: >-
-      github.actor == 'juyterman1000' &&
-      github.event.head_commit.message == 'Bootstrap consolidated remediation'
+      github.event.pull_request.head.repo.full_name == 'juyterman1000/entroly' &&
+      github.event.pull_request.head.ref == 'agent/consolidate-open-prs'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -20,14 +24,28 @@ jobs:
       - name: Checkout remediation branch
         uses: actions/checkout@v6
         with:
+          ref: agent/consolidate-open-prs
           fetch-depth: 0
 
+      - name: Check one-shot remediation marker
+        id: guard
+        shell: bash
+        run: |
+          if [[ -f .github/consolidate-open-prs.pending ]]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo 'Remediation is already complete.'
+          fi
+
       - name: Set up Python
+        if: steps.guard.outputs.run == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Import the reviewed Context Efficiency Frontier implementation
+        if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -46,6 +64,7 @@ jobs:
           done
 
       - name: Apply current-main documentation and MCP registry fixes
+        if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -53,7 +72,6 @@ jobs:
           from __future__ import annotations
 
           import json
-          import re
           from pathlib import Path
 
           readme = Path('README.md')
@@ -174,6 +192,7 @@ jobs:
           PYTEST
 
       - name: Refresh Rust regex lockfiles deterministically
+        if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -189,6 +208,7 @@ jobs:
           done
 
       - name: Validate consolidated changes
+        if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -206,12 +226,14 @@ jobs:
           cargo test --manifest-path entroly-core/Cargo.toml --lib --locked
 
       - name: Commit as canonical repository owner
+        if: steps.guard.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
 
+          git rm .github/consolidate-open-prs.pending
           git add \
             README.md \
             server.json \
