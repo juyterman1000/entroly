@@ -45,12 +45,12 @@ def test_gateway_send_uses_durable_dispatcher(
             "42",
             delivery_db_path=db,
         )
-        monkeypatch.setattr(
-            gateway,
-            "_call",
-            lambda method, **params: calls.append(str(params.get("text", "")))
-            or {"ok": True, "status": 200},
-        )
+
+        def telegram_call(method: str, **params: Any) -> dict[str, Any]:
+            calls.append(str(params.get("text", "")))
+            return {"ok": True, "status": 200}
+
+        monkeypatch.setattr(gateway, "_call", telegram_call)
 
     first = gateway.send("event", event_key="event:1")
     second = gateway.send("event", event_key="event:1")
@@ -105,7 +105,10 @@ def test_daemon_counter_event_is_not_resent_after_gateway_restart(
     assert restarted.delivery_stats()["delivered"] == 1
 
 
-def test_failed_gateway_send_returns_queued_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_failed_gateway_send_returns_queued_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     gateway = DiscordGateway(
         "https://discord.com/api/webhooks/outage",
         delivery_db_path=tmp_path / "delivery.sqlite3",
