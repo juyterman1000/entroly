@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://entroly.dev/schemas/context-check-v1.schema.json",
+  "title": "Entroly Context Check v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task",
+    "context_commit",
+    "comparison",
+    "corpus",
+    "metrics",
+    "risk",
+    "warnings",
+    "interpretation",
+    "check_id"
+  ],
+  "properties": {
+    "schema_version": {"const": "entroly.context-check.v1"},
+    "task": {"type": "string", "minLength": 1},
+    "check_id": {"type": "string", "pattern": "^cck_[0-9a-f]{24}$"},
+    "context_commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_id", "schema_version", "receipt_id", "engine", "selected_context_digest", "recovery_bundle_digest"],
+      "properties": {
+        "commit_id": {"type": "string", "pattern": "^ctx_[0-9a-f]{24}$"},
+        "schema_version": {"const": "entroly.context-commit.v1"},
+        "receipt_id": {"type": "string", "pattern": "^cr_[0-9a-f]{12}$"},
+        "engine": {"type": "object", "additionalProperties": {"type": "string"}},
+        "selected_context_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "recovery_bundle_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "changed_files", "changed_files_selected", "changed_files_missing", "changed_files_not_indexed"],
+      "properties": {
+        "status": {"enum": ["measured", "not_measured"]},
+        "changed_files": {"$ref": "#/$defs/pathList"},
+        "changed_files_selected": {"$ref": "#/$defs/pathList"},
+        "changed_files_missing": {"$ref": "#/$defs/pathList"},
+        "changed_files_not_indexed": {"$ref": "#/$defs/pathList"}
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported_files_found", "files_indexed", "indexed_files", "selected_files"],
+      "properties": {
+        "supported_files_found": {"type": "integer", "minimum": 0},
+        "files_indexed": {"type": "integer", "minimum": 0},
+        "indexed_files": {"$ref": "#/$defs/pathList"},
+        "selected_files": {"$ref": "#/$defs/pathList"}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed_file_recall", "indexed_changed_file_recall", "changed_file_precision", "selected_chunks", "omitted_chunks", "token_budget"],
+      "properties": {
+        "changed_file_recall": {"$ref": "#/$defs/nullableRatio"},
+        "indexed_changed_file_recall": {"$ref": "#/$defs/nullableRatio"},
+        "changed_file_precision": {"$ref": "#/$defs/nullableRatio"},
+        "selected_chunks": {"type": "integer", "minimum": 0},
+        "omitted_chunks": {"type": "integer", "minimum": 0},
+        "token_budget": {"type": "integer", "minimum": 1}
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "receipt_review_level", "flags"],
+      "properties": {
+        "level": {"enum": ["low", "medium", "high", "unknown"]},
+        "receipt_review_level": {"type": "string"},
+        "flags": {"type": "array", "items": {"$ref": "#/$defs/riskFlag"}}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "interpretation": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "pathList": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "nullableRatio": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "riskFlag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "files"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["low", "medium", "high", "unknown"]},
+        "message": {"type": "string", "minLength": 1},
+        "files": {"$ref": "#/$defs/pathList"}
+      }
+    }
+  }
+}
