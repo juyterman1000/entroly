@@ -1,6 +1,6 @@
 [package]
 name = "entroly-wasm"
-version = "1.0.52"
+version = "1.0.53"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/juyterman1000/entroly"

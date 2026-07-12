@@ -1,6 +1,6 @@
 {
   "name": "entroly-mcp",
-  "version": "1.0.52",
+  "version": "1.0.53",
   "mcpName": "io.github.juyterman1000/entroly",
   "description": "NPX MCP bridge for Entroly, the local context OS with receipts, recovery, verification, and token optimization for AI coding agents.",
   "main": "index.js",
