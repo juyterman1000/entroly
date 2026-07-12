@@ -23,7 +23,9 @@ class FakeClock:
         self.value += seconds
 
 
-def test_idempotency_key_deduplicates_same_event_and_rejects_drift(tmp_path: Path) -> None:
+def test_idempotency_key_deduplicates_same_event_and_rejects_drift(
+    tmp_path: Path,
+) -> None:
     store = EventDeliveryStore(tmp_path / "delivery.sqlite3")
     first, inserted_first = store.enqueue(
         channel="slack",
@@ -51,7 +53,9 @@ def test_idempotency_key_deduplicates_same_event_and_rejects_drift(tmp_path: Pat
         )
 
 
-def test_failed_delivery_survives_restart_and_replays_once_due(tmp_path: Path) -> None:
+def test_failed_delivery_survives_restart_and_replays_once_due(
+    tmp_path: Path,
+) -> None:
     clock = FakeClock()
     db = tmp_path / "delivery.sqlite3"
     calls: list[str] = []
@@ -74,10 +78,14 @@ def test_failed_delivery_survives_restart_and_replays_once_due(tmp_path: Path) -
     pending = failing.store.get(event_id)
     assert pending is not None
 
+    def deliver(event):
+        calls.append(event.payload["text"])
+        return {"ok": True, "status": 204}
+
     succeeding = ReliableEventDispatcher(
         channel="discord",
         destination_identity="https://discord.com/api/webhooks/secret",
-        sender=lambda event: calls.append(event.payload["text"]) or {"ok": True, "status": 204},
+        sender=deliver,
         db_path=db,
         base_delay_s=10.0,
         max_delay_s=60.0,
@@ -130,7 +138,9 @@ def test_retry_exhaustion_moves_event_to_dead_letter(tmp_path: Path) -> None:
     assert dispatcher.stats()["pending"] == 1
 
 
-def test_queue_never_persists_destination_or_common_credentials(tmp_path: Path) -> None:
+def test_queue_never_persists_destination_or_common_credentials(
+    tmp_path: Path,
+) -> None:
     db = tmp_path / "delivery.sqlite3"
     webhook = "https://hooks.slack.com/services/T000/B000/VERYSECRET"
     telegram_token = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
@@ -141,25 +151,22 @@ def test_queue_never_persists_destination_or_common_credentials(tmp_path: Path) 
         db_path=db,
     )
 
-    dispatcher.publish(
+    result = dispatcher.publish(
         f"webhook={webhook} token={telegram_token}",
         idempotency_key="secret-test",
     )
 
-    persisted = b"".join(path.read_bytes() for path in tmp_path.glob("delivery.sqlite3*"))
+    persisted = b"".join(
+        path.read_bytes() for path in tmp_path.glob("delivery.sqlite3*")
+    )
     assert webhook.encode() not in persisted
     assert telegram_token.encode() not in persisted
-    event = next(iter(dispatcher.store.claim_due(limit=1)), None)
-    assert event is None  # the failed first attempt is waiting for backoff
-    queued = dispatcher.store.get(
-        dispatcher.publish(
-            "safe duplicate",
-            idempotency_key="safe-event",
-            immediate=False,
-        )["event_id"]
-    )
+    queued = dispatcher.store.get(result["event_id"])
     assert queued is not None
+    assert queued.state == "pending"
     assert "VERYSECRET" not in str(queued.payload)
+    assert telegram_token not in str(queued.payload)
+    assert "[REDACTED]" in str(queued.payload)
 
 
 def test_receipt_detects_tampering(tmp_path: Path) -> None:
