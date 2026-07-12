@@ -32,6 +32,7 @@ COST_SOURCES = (
     "provider_invoice",
     "provider_ledger",
     "pricing_snapshot",
+    "self_hosted_no_api_fee",
     "zero_cost_fixture",
 )
 
@@ -428,6 +429,7 @@ def analyze_frontier(
         "caveats": [
             "A frontier win applies only to the recorded models, workloads, and scorer.",
             "Provider token and cost fields must come from actual response usage or invoices.",
+            "Self-hosted zero API cost excludes hardware, energy, operations, and depreciation.",
             "Context Commit IDs prove artifact integrity, not task-score validity or signer identity.",
             "A non-dominated point is not necessarily statistically better than every alternative.",
         ],

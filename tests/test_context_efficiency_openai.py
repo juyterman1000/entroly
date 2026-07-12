@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from benchmarks.context_efficiency_frontier import analyze_frontier, load_trials
 from benchmarks.context_efficiency_openai import (
     DEFAULT_MODEL,
+    ProviderConfig,
     WorkloadItem,
     call_openai,
     run_trials,
@@ -148,3 +149,34 @@ def test_resume_does_not_rebill_completed_conditions(tmp_path):
 
     assert len(resumed) == 2
     assert second.fake_completions.requests == []
+
+
+def test_self_hosted_provider_records_zero_api_fee_without_claiming_zero_compute(tmp_path):
+    output = tmp_path / "trials.jsonl"
+    provider = ProviderConfig(
+        name="ollama",
+        cost_source="self_hosted_no_api_fee",
+        cost_source_reference="ollama:model=digest;hardware-cost=unmeasured",
+        input_usd_per_million=0.0,
+        cached_input_usd_per_million=0.0,
+        output_usd_per_million=0.0,
+    )
+    client = _client(
+        [
+            _response("ORCHID-17", "local-one", 900),
+            _response("ORCHID-17", "local-two", 500),
+        ]
+    )
+
+    trials = run_trials(
+        items=[_item()],
+        client=client,
+        output=output,
+        model="local-model",
+        token_budget=120,
+        provider=provider,
+    )
+
+    assert {trial.provider for trial in trials} == {"ollama"}
+    assert {trial.cost_source for trial in trials} == {"self_hosted_no_api_fee"}
+    assert all(trial.billed_cost_usd == 0.0 for trial in trials)

@@ -59,6 +59,8 @@ Each invocation writes one JSON object conforming to
   provider response or an auditable provider log, not a local tokenizer.
 - `billed_cost_usd` comes from an invoice, provider usage ledger, or a declared
   immutable pricing snapshot. Reports must identify which source was used.
+- Self-hosted runs may report zero API fees, but must mark hardware, energy,
+  operations, and depreciation as unmeasured rather than calling inference free.
 - `usage_source`, `cost_source`, `cost_source_reference`, and
   `provider_request_id` make that provenance machine-readable. A request ID may
   be replaced by a stable redacted hash.

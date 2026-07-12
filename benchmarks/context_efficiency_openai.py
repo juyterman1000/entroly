@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import time
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from benchmarks.context_efficiency_frontier import (
+    COST_SOURCES,
     SCHEMA_VERSION,
     Trial,
     analyze_frontier,
@@ -58,6 +60,26 @@ class ProviderObservation:
     reasoning_tokens: int
     completion_tokens: int
     latency_ms: float
+
+
+@dataclass(frozen=True)
+class ProviderConfig:
+    name: str
+    cost_source: str
+    cost_source_reference: str
+    input_usd_per_million: float
+    cached_input_usd_per_million: float
+    output_usd_per_million: float
+
+
+OPENAI_PROVIDER = ProviderConfig(
+    name="openai",
+    cost_source="pricing_snapshot",
+    cost_source_reference=PRICING_REFERENCE,
+    input_usd_per_million=INPUT_USD_PER_MILLION,
+    cached_input_usd_per_million=CACHED_INPUT_USD_PER_MILLION,
+    output_usd_per_million=OUTPUT_USD_PER_MILLION,
+)
 
 
 def _stable_digest(payload: object) -> str:
@@ -171,12 +193,12 @@ def call_openai(client: Any, *, model: str, context: str, question: str) -> Prov
     )
 
 
-def _cost_usd(observation: ProviderObservation) -> float:
+def _cost_usd(observation: ProviderObservation, provider: ProviderConfig) -> float:
     uncached = observation.prompt_tokens - observation.cached_prompt_tokens
     return (
-        uncached * INPUT_USD_PER_MILLION
-        + observation.cached_prompt_tokens * CACHED_INPUT_USD_PER_MILLION
-        + observation.completion_tokens * OUTPUT_USD_PER_MILLION
+        uncached * provider.input_usd_per_million
+        + observation.cached_prompt_tokens * provider.cached_input_usd_per_million
+        + observation.completion_tokens * provider.output_usd_per_million
     ) / 1_000_000
 
 
@@ -189,6 +211,7 @@ def _success_trial(
     selected_context: str,
     commit_id: str | None,
     observation: ProviderObservation,
+    provider: ProviderConfig,
 ) -> Trial:
     correct = _answer_present(observation.response_text, item.answers)
     return Trial.from_dict(
@@ -197,12 +220,12 @@ def _success_trial(
             "workload": "LongBench HotpotQA",
             "workload_version": version,
             "task_id": item.task_id,
-            "provider": "openai",
+            "provider": provider.name,
             "model": model,
             "provider_request_id": observation.request_id,
             "usage_source": "provider_response",
-            "cost_source": "pricing_snapshot",
-            "cost_source_reference": PRICING_REFERENCE,
+            "cost_source": provider.cost_source,
+            "cost_source_reference": provider.cost_source_reference,
             "outcome": "success",
             "error_type": None,
             "replicate": 0,
@@ -214,7 +237,7 @@ def _success_trial(
             "context_tokens": observation.prompt_tokens,
             "reasoning_tokens": observation.reasoning_tokens,
             "output_tokens": observation.completion_tokens,
-            "billed_cost_usd": _cost_usd(observation),
+            "billed_cost_usd": _cost_usd(observation, provider),
             "latency_ms": observation.latency_ms,
             "context_commit_id": commit_id,
         }
@@ -230,6 +253,7 @@ def _error_trial(
     selected_context: str,
     commit_id: str | None,
     error: Exception,
+    provider: ProviderConfig,
 ) -> Trial:
     error_type = type(error).__name__
     error_id = _stable_digest(
@@ -242,12 +266,12 @@ def _error_trial(
             "workload": "LongBench HotpotQA",
             "workload_version": version,
             "task_id": item.task_id,
-            "provider": "openai",
+            "provider": provider.name,
             "model": model,
             "provider_request_id": f"error_{error_id}",
             "usage_source": usage_source,
-            "cost_source": "pricing_snapshot",
-            "cost_source_reference": PRICING_REFERENCE,
+            "cost_source": provider.cost_source,
+            "cost_source_reference": provider.cost_source_reference,
             "outcome": "error",
             "error_type": error_type,
             "replicate": 0,
@@ -285,6 +309,7 @@ def run_trials(
     token_budget: int = DEFAULT_BUDGET,
     seed: int = DEFAULT_SEED,
     resume: bool = False,
+    provider: ProviderConfig = OPENAI_PROVIDER,
 ) -> list[Trial]:
     if token_budget < 1:
         raise ValueError("token_budget must be positive")
@@ -293,7 +318,12 @@ def run_trials(
     existing = load_trials(output) if output.exists() else []
     completed = {(trial.task_id, trial.condition) for trial in existing}
     version = workload_version(items)
-    if any(trial.workload_version != version or trial.model != model for trial in existing):
+    if any(
+        trial.workload_version != version
+        or trial.model != model
+        or trial.provider != provider.name
+        for trial in existing
+    ):
         raise ValueError("existing trials do not match this workload/model configuration")
 
     commits_dir = output.parent / f"{output.stem}_context_commits"
@@ -341,6 +371,7 @@ def run_trials(
                     selected_context=selected_context,
                     commit_id=commit_id,
                     observation=observation,
+                    provider=provider,
                 )
             except Exception as error:  # Every failed request remains in the matrix.
                 trial = _error_trial(
@@ -351,6 +382,7 @@ def run_trials(
                     selected_context=selected_context,
                     commit_id=commit_id,
                     error=error,
+                    provider=provider,
                 )
             _append_trial(output, trial)
             existing.append(trial)
@@ -376,21 +408,51 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--base-url")
+    parser.add_argument("--provider")
+    parser.add_argument("--api-key-env")
+    parser.add_argument("--cost-source", choices=COST_SOURCES)
+    parser.add_argument("--cost-source-reference")
+    parser.add_argument("--input-usd-per-million", type=float)
+    parser.add_argument("--cached-input-usd-per-million", type=float)
+    parser.add_argument("--output-usd-per-million", type=float)
     args = parser.parse_args()
     if args.samples < 1:
         parser.error("--samples must be positive")
 
     from openai import OpenAI
 
+    if args.base_url:
+        if not args.provider:
+            parser.error("--provider is required with --base-url")
+        if not args.cost_source_reference:
+            parser.error("--cost-source-reference is required with --base-url")
+        if args.api_key_env and not os.environ.get(args.api_key_env):
+            parser.error(f"environment variable {args.api_key_env!r} is not set")
+        api_key = os.environ[args.api_key_env] if args.api_key_env else "no-auth"
+        client = OpenAI(base_url=args.base_url, api_key=api_key, max_retries=0)
+        provider = ProviderConfig(
+            name=args.provider,
+            cost_source=args.cost_source or "self_hosted_no_api_fee",
+            cost_source_reference=args.cost_source_reference,
+            input_usd_per_million=args.input_usd_per_million or 0.0,
+            cached_input_usd_per_million=args.cached_input_usd_per_million or 0.0,
+            output_usd_per_million=args.output_usd_per_million or 0.0,
+        )
+    else:
+        client = OpenAI(max_retries=2)
+        provider = OPENAI_PROVIDER
+
     items = _load_longbench(args.samples)
     trials = run_trials(
         items=items,
-        client=OpenAI(max_retries=2),
+        client=client,
         output=args.output,
         model=args.model,
         token_budget=args.budget,
         seed=args.seed,
         resume=args.resume,
+        provider=provider,
     )
     report = analyze_frontier(trials)
     report_path = args.output.with_suffix(".report.json")

@@ -75,6 +75,7 @@
         "provider_invoice",
         "provider_ledger",
         "pricing_snapshot",
+        "self_hosted_no_api_fee",
         "zero_cost_fixture"
       ]
     },
