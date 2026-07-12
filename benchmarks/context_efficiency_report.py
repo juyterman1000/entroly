@@ -103,6 +103,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Confidence interval: {methodology['confidence_interval']}",
             f"- Bootstrap samples: {methodology['bootstrap_samples']}",
             f"- Quality tolerance: {_percent(methodology['quality_tolerance'])}",
+            f"- Usage sources: {', '.join(report['provenance']['usage_sources'])}",
+            f"- Cost sources: {', '.join(report['provenance']['cost_sources'])}",
             "",
             "## Caveats",
             "",

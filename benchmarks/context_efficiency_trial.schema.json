@@ -12,6 +12,9 @@
     "task_id",
     "provider",
     "model",
+    "provider_request_id",
+    "usage_source",
+    "cost_source",
     "replicate",
     "condition",
     "scorer",
@@ -48,6 +51,27 @@
     "model": {
       "type": "string",
       "minLength": 1
+    },
+    "provider_request_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Provider request ID or a stable redacted hash of it."
+    },
+    "usage_source": {
+      "enum": [
+        "provider_response",
+        "provider_log",
+        "provider_ledger",
+        "deterministic_fixture"
+      ]
+    },
+    "cost_source": {
+      "enum": [
+        "provider_invoice",
+        "provider_ledger",
+        "pricing_snapshot",
+        "zero_cost_fixture"
+      ]
     },
     "replicate": {
       "type": "integer",

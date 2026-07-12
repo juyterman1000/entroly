@@ -21,6 +21,9 @@ def _record(task: int, condition: str, **overrides):
         "task_id": f"task-{task}",
         "provider": "fixture",
         "model": "fixture-model",
+        "provider_request_id": f"fixture-request-{task}-{condition}",
+        "usage_source": "deterministic_fixture",
+        "cost_source": "zero_cost_fixture",
         "replicate": 0,
         "condition": condition,
         "scorer": "exact-match-v1",
@@ -54,6 +57,7 @@ def test_frontier_reports_paired_quality_preserving_win():
     assert comparison["mean_billed_cost_reduction"] == 0.5
     assert comparison["quality_preserving_context_win"] is True
     assert report["pareto_frontier"] == ["entroly"]
+    assert report["provenance"]["usage_sources"] == ["deterministic_fixture"]
 
 
 def test_frontier_refuses_to_call_context_savings_a_quality_win():
@@ -86,6 +90,14 @@ def test_trial_rejects_fractional_token_counts():
     payload["context_tokens"] = 999.5
 
     with pytest.raises(ValueError, match="context_tokens must be an integer"):
+        Trial.from_dict(payload)
+
+
+def test_trial_rejects_unverifiable_usage_provenance():
+    payload = _record(1, "raw")
+    payload["usage_source"] = "local_estimate"
+
+    with pytest.raises(ValueError, match="usage_source must be one of"):
         Trial.from_dict(payload)
 
 
@@ -123,6 +135,7 @@ def test_public_report_exposes_pass_rule_and_caveats():
     assert "| entroly | 4 |" in markdown
     assert "**PASS**" in markdown
     assert "95% paired-bootstrap bounds" in markdown
+    assert "Usage sources: deterministic_fixture" in markdown
     assert "Context Commit IDs prove artifact integrity" in markdown
 
 

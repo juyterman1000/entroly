@@ -19,6 +19,18 @@ SCHEMA_VERSION = "entroly.context-efficiency-trial.v1"
 REPORT_VERSION = "entroly.context-efficiency-frontier.v1"
 BASELINE = "raw"
 CONDITIONS = ("raw", "native_compaction", "entroly", "combined")
+USAGE_SOURCES = (
+    "provider_response",
+    "provider_log",
+    "provider_ledger",
+    "deterministic_fixture",
+)
+COST_SOURCES = (
+    "provider_invoice",
+    "provider_ledger",
+    "pricing_snapshot",
+    "zero_cost_fixture",
+)
 
 
 def _number(payload: dict[str, Any], name: str, *, minimum: float = 0.0) -> float:
@@ -52,6 +64,9 @@ class Trial:
     task_id: str
     provider: str
     model: str
+    provider_request_id: str
+    usage_source: str
+    cost_source: str
     replicate: int
     condition: str
     scorer: str
@@ -85,6 +100,13 @@ class Trial:
         if condition in {"entroly", "combined"} and commit_id is None:
             raise ValueError(f"{condition} trials require context_commit_id")
 
+        usage_source = _text(payload, "usage_source")
+        if usage_source not in USAGE_SOURCES:
+            raise ValueError(f"usage_source must be one of {USAGE_SOURCES}")
+        cost_source = _text(payload, "cost_source")
+        if cost_source not in COST_SOURCES:
+            raise ValueError(f"cost_source must be one of {COST_SOURCES}")
+
         scores = {
             name: _number(payload, name)
             for name in ("task_score", "evidence_recall", "unsupported_claim_rate")
@@ -99,6 +121,9 @@ class Trial:
             task_id=_text(payload, "task_id"),
             provider=_text(payload, "provider"),
             model=_text(payload, "model"),
+            provider_request_id=_text(payload, "provider_request_id"),
+            usage_source=usage_source,
+            cost_source=cost_source,
             replicate=replicate,
             condition=condition,
             scorer=_text(payload, "scorer"),
@@ -354,6 +379,13 @@ def analyze_frontier(
             "quality_tolerance": quality_tolerance,
         },
         "pair_count": len(pairs),
+        "provenance": {
+            "workloads": sorted({t.workload for t in materialized}),
+            "providers": sorted({t.provider for t in materialized}),
+            "models": sorted({t.model for t in materialized}),
+            "usage_sources": sorted({t.usage_source for t in materialized}),
+            "cost_sources": sorted({t.cost_source for t in materialized}),
+        },
         "aggregates": aggregates,
         "comparisons_to_raw": comparisons,
         "pareto_frontier": frontier,
