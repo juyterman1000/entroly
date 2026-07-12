@@ -24,6 +24,7 @@ USAGE_SOURCES = (
     "provider_log",
     "provider_ledger",
     "provider_error",
+    "runner_error",
     "deterministic_fixture",
 )
 OUTCOMES = ("success", "error")
