@@ -18,6 +18,9 @@ jobs:
     if: github.repository == 'juyterman1000/entroly' && github.head_ref == 'feature/lobehub-score-remediation'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      ENTROLY_NO_DOCKER: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,8 +32,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install focused validation dependencies
-        run: python -m pip install --disable-pip-version-check 'mcp>=1.6.0' pytest
+      - name: Install Entroly and focused validation dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install --disable-pip-version-check -e . pytest
 
       - name: Add exact LobeHub ownership badge
         run: python .github/scripts/add_lobehub_badge.py
