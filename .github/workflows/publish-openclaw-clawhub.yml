@@ -5,6 +5,11 @@ on:
     paths:
       - "integrations/openclaw/**"
       - ".github/workflows/publish-openclaw-clawhub.yml"
+  push:
+    branches: [main]
+    paths:
+      - "integrations/openclaw/**"
+      - ".github/workflows/publish-openclaw-clawhub.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,10 +28,10 @@ jobs:
 
   publish:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
       github.repository == 'juyterman1000/entroly' &&
       github.ref == 'refs/heads/main' &&
-      github.actor == 'juyterman1000'
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'juyterman1000'))
     permissions:
       contents: read
       id-token: write
