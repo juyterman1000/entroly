@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: openclaw/clawhub
-          ref: 873b7e9a3403dbaa2c66ef15b655803562bd63c0
+          ref: v0.23.1
           path: clawhub-source
 
       - name: Install ClawHub validator dependencies
@@ -61,7 +61,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@873b7e9a3403dbaa2c66ef15b655803562bd63c0
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1
     with:
       source: ./integrations/openclaw
       dry_run: true
@@ -76,7 +76,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@873b7e9a3403dbaa2c66ef15b655803562bd63c0
+    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1
     with:
       source: ./integrations/openclaw
       dry_run: false
