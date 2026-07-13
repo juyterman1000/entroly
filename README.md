@@ -387,8 +387,15 @@ from entroly import compress, compress_messages, optimize
 
 compressed = compress(api_response, budget=2000)          # query-agnostic
 messages   = compress_messages(messages, budget=30000)    # whole conversation
+gentle     = compress_messages(messages, target_ratio=0.90)  # smooth relative operating point
 context    = optimize(fragments, budget=8000, query="fix the login bug")  # task-conditioned
 ```
+
+`compress_messages` infers the final user turn as the task and uses it to
+prioritize answer-relevant evidence in older context. `target_ratio` is based on
+Entroly's dependency-free token estimate; measure provider-observed tokens with
+the [Context Efficiency Frontier](docs/benchmarks/context-efficiency-frontier.md)
+before publishing a savings claim.
 
 **In CI** — fail the build if a prompt blows the token budget:
 

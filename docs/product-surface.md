@@ -112,6 +112,11 @@ from entroly import create_context_receipt, render_context_receipt
 from entroly import explain_receipt_omission, context_receipt_from_path
 ```
 
+`compress_messages(..., target_ratio=0.90)` exposes a gentle relative operating
+point instead of forcing users to choose between a no-op and a deep fixed-budget
+cut. The `safe` and `balanced` profiles use the final user turn to rank older
+evidence; `max` keeps the fastest structural path for explicitly aggressive use.
+
 Advanced local control:
 
 ```python
