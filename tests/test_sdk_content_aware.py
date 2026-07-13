@@ -138,6 +138,133 @@ def test_compress_messages_compresses_huge_recent_context_to_budget():
     assert len(out[1]["content"]) < len(messages[1]["content"])
 
 
+def test_compress_messages_has_gentle_relative_operating_point():
+    distractors = "\n\n".join(
+        f"Archive {i}: The Cedar service uses routine key-{i} for batch cleanup."
+        for i in range(80)
+    )
+    evidence = (
+        "Orchid protocol deployment notes: the Orchid protocol uses the "
+        "sapphire key for production recovery."
+    )
+    messages = [
+        {"role": "user", "content": f"{distractors}\n\n{evidence}"},
+        {"role": "user", "content": "Which key does the Orchid protocol use?"},
+    ]
+    before = sum(len(message["content"]) // 4 for message in messages)
+
+    out = sdk.compress_messages(
+        messages,
+        target_ratio=0.90,
+        preserve_last_n=2,
+        distill=False,
+    )
+
+    after = sum(len(message["content"]) // 4 for message in out)
+    reduction = 1.0 - after / before
+    assert 0.08 <= reduction <= 0.20
+    assert "sapphire key" in out[0]["content"]
+    assert out[-1] == messages[-1]
+
+
+def test_compress_messages_balanced_profile_keeps_query_evidence_under_budget():
+    context = "\n\n".join(
+        [
+            *(
+                f"Unrelated service {i} is deployed in region-{i % 7}."
+                for i in range(160)
+            ),
+            (
+                "Orchid protocol incident record: production recovery requires "
+                "the sapphire key and approval from the incident commander."
+            ),
+            *(
+                f"Historical service {i} completed a routine migration."
+                for i in range(160, 260)
+            ),
+        ]
+    )
+    messages = [
+        {"role": "user", "content": context},
+        {"role": "user", "content": "Which key is required by the Orchid protocol?"},
+    ]
+
+    out = sdk.compress_messages(
+        messages,
+        budget=220,
+        preserve_last_n=2,
+        distill=False,
+        profile="balanced",
+    )
+
+    assert "sapphire key" in out[0]["content"]
+    assert out[-1] == messages[-1]
+    assert sum(len(message["content"]) // 4 for message in out) <= 220
+
+
+@pytest.mark.parametrize("target_ratio", [0, -0.1, 1.01])
+def test_compress_messages_rejects_invalid_target_ratio(target_ratio):
+    with pytest.raises(ValueError, match="target_ratio"):
+        sdk.compress_messages(
+            [{"role": "user", "content": "hello"}],
+            target_ratio=target_ratio,
+        )
+
+
+def test_compress_messages_target_ratio_one_is_exact_passthrough():
+    messages = [
+        {"role": "tool", "content": "old tool evidence " * 200},
+        {"role": "assistant", "content": "intermediate analysis"},
+        {"role": "user", "content": "What happened?"},
+    ]
+
+    out = sdk.compress_messages(
+        messages,
+        target_ratio=1,
+        preserve_last_n=1,
+    )
+
+    assert out is messages
+
+
+def test_compress_messages_rejects_unknown_profile_even_when_in_budget():
+    with pytest.raises(ValueError, match="Unknown profile"):
+        sdk.compress_messages(
+            [{"role": "user", "content": "hello"}],
+            profile="reckless",
+        )
+
+
+def test_compress_messages_safe_profile_skips_assistant_distillation(monkeypatch):
+    def unexpected_distillation(*args, **kwargs):
+        raise AssertionError("safe profile must not distill assistant evidence")
+
+    monkeypatch.setattr(
+        "entroly.proxy_transform.distill_response",
+        unexpected_distillation,
+    )
+    messages = [
+        {
+            "role": "assistant",
+            "content": (
+                "Orchid protocol evidence says the sapphire key is required.\n\n"
+                * 120
+            ),
+        },
+        {"role": "user", "content": "Which key does Orchid require?"},
+    ]
+
+    out = sdk.compress_messages(
+        messages,
+        budget=180,
+        preserve_last_n=1,
+        profile="safe",
+    )
+
+    assert out[-1] == messages[-1]
+    assert "sapphire key" in out[0]["content"]
+
+
 def test_universal_compress_code_uses_code_path():
     from entroly.universal_compress import universal_compress
 
