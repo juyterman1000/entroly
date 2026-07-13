@@ -1,0 +1,160 @@
+name: Verify Entroly ClawHub Listing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integrations/openclaw/**"
+      - ".github/workflows/publish-openclaw-clawhub.yml"
+      - ".github/workflows/verify-clawhub-listing.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: verify-entroly-clawhub
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify exact public package, search result, and artifact
+        id: verify
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import pathlib
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          package_name = "entroly-openclaw"
+          expected_version = json.loads(
+              pathlib.Path("integrations/openclaw/package.json").read_text(encoding="utf-8")
+          )["version"]
+          base = "https://clawhub.ai/api/v1"
+          headers = {"User-Agent": "entroly-clawhub-verifier/1.0"}
+          last_error = "ClawHub listing did not become publicly verifiable"
+
+          def read_json(url: str) -> dict:
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f"HTTP {response.status} for {url}")
+                  return json.load(response)
+
+          for attempt in range(1, 41):
+              try:
+                  detail = read_json(
+                      f"{base}/packages/{urllib.parse.quote(package_name, safe='')}"
+                  )
+                  package = detail.get("package") or {}
+                  if package.get("name") != package_name:
+                      raise RuntimeError(f"unexpected package identity: {package.get('name')!r}")
+                  if package.get("family") != "code-plugin":
+                      raise RuntimeError(f"unexpected package family: {package.get('family')!r}")
+                  if package.get("latestVersion") != expected_version:
+                      raise RuntimeError(
+                          f"latest version is {package.get('latestVersion')!r}, "
+                          f"expected {expected_version!r}"
+                      )
+
+                  version = read_json(
+                      f"{base}/packages/{urllib.parse.quote(package_name, safe='')}"
+                      f"/versions/{urllib.parse.quote(expected_version, safe='')}"
+                  )
+                  version_payload = version.get("version") or {}
+                  if version_payload.get("version") != expected_version:
+                      raise RuntimeError("exact public version is unavailable")
+                  artifact = version_payload.get("artifact") or {}
+                  if not artifact.get("sha256"):
+                      raise RuntimeError("public release artifact is not downloadable yet")
+
+                  search = read_json(
+                      f"{base}/plugins/search?q="
+                      + urllib.parse.quote(package_name, safe="")
+                      + "&limit=20"
+                  )
+                  names = {
+                      (entry.get("package") or {}).get("name")
+                      for entry in search.get("results", [])
+                  }
+                  if package_name not in names:
+                      raise RuntimeError("package exists but is not discoverable in plugin search yet")
+
+                  result = {
+                      "package": package_name,
+                      "version": expected_version,
+                      "family": package.get("family"),
+                      "channel": package.get("channel"),
+                      "scan_status": package.get("scanStatus"),
+                      "verification_tier": (package.get("verification") or {}).get("tier"),
+                      "artifact_sha256": artifact.get("sha256"),
+                      "public_url": f"https://clawhub.ai/plugins/{package_name}",
+                  }
+                  pathlib.Path("clawhub-verification.json").write_text(
+                      json.dumps(result, indent=2, sort_keys=True) + "\n",
+                      encoding="utf-8",
+                  )
+                  print(json.dumps(result, indent=2, sort_keys=True))
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                      output.write("state=success\n")
+                      output.write(f"description=ClawHub {package_name} {expected_version} is public\n")
+                      output.write(f"target_url=https://clawhub.ai/plugins/{package_name}\n")
+                  raise SystemExit(0)
+              except (urllib.error.HTTPError, urllib.error.URLError, ValueError, RuntimeError) as exc:
+                  last_error = str(exc)
+                  print(f"Attempt {attempt}/40: {last_error}")
+                  if attempt < 40:
+                      time.sleep(15)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("state=failure\n")
+              output.write("description=Entroly is not publicly verifiable in ClawHub yet\n")
+              output.write("target_url=https://clawhub.ai/plugins/entroly-openclaw\n")
+          pathlib.Path("clawhub-verification-error.txt").write_text(
+              last_error + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Record public verification status
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const state = '${{ steps.verify.outputs.state }}' || 'failure';
+            const description = '${{ steps.verify.outputs.description }}' || 'ClawHub verification did not complete';
+            const targetUrl = '${{ steps.verify.outputs.target_url }}' || 'https://clawhub.ai/plugins/entroly-openclaw';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              context: 'ClawHub Public Listing',
+              description: description.slice(0, 140),
+              target_url: targetUrl,
+            });
+            if (state !== 'success') {
+              core.setFailed(description);
+            }
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-public-verification
+          path: |
+            clawhub-verification.json
+            clawhub-verification-error.txt
+          if-no-files-found: ignore
