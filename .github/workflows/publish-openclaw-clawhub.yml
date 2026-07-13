@@ -16,7 +16,47 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Entroly
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
+        with:
+          bun-version: 1.3.10
+
+      - name: Checkout pinned ClawHub validator
+        uses: actions/checkout@v6
+        with:
+          repository: openclaw/clawhub
+          ref: v0.12.0
+          path: clawhub-source
+
+      - name: Install ClawHub validator dependencies
+        working-directory: clawhub-source
+        run: bun install --frozen-lockfile
+
+      - name: Validate OpenClaw package metadata and artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" \
+            package validate "$GITHUB_WORKSPACE/integrations/openclaw" \
+            --json | tee "$RUNNER_TEMP/clawhub-package-validate.json"
+
+      - name: Upload ClawHub validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-package-validation
+          path: ${{ runner.temp }}/clawhub-package-validate.json
+          if-no-files-found: ignore
+
   dry-run:
+    needs: validate
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -27,6 +67,7 @@ jobs:
       dry_run: true
 
   publish:
+    needs: validate
     if: >-
       github.repository == 'juyterman1000/entroly' &&
       github.ref == 'refs/heads/main' &&
