@@ -13,9 +13,12 @@ permissions:
 jobs:
   dry-run:
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      id-token: write
     uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
     with:
-      source_path: integrations/openclaw
+      source: ./integrations/openclaw
       dry_run: true
 
   publish:
@@ -29,7 +32,7 @@ jobs:
       id-token: write
     uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.12.0
     with:
-      source_path: integrations/openclaw
+      source: ./integrations/openclaw
       dry_run: false
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
