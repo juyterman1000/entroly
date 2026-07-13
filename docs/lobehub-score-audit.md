@@ -7,21 +7,39 @@ Target listing:
 
 `https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score`
 
-## Scoring contract
+## Verified public baseline
+
+A GitHub-hosted audit fetched and decoded the public page on 2026-07-13. The
+listing currently reports:
+
+- **45/100, grade F**;
+- **2/4 required items**;
+- version **0.4.0**, last updated **2026-05-14**;
+- `isValidated=false` and `isClaimed=false`;
+- `toolsCount=0`, `promptsCount=0`, and `resourcesCount=0`;
+- two deployment methods (`python` and `manual`);
+- a non-empty README; and
+- stale MIT metadata even though the current repository is Apache-2.0.
+
+The 45 points are exactly deployment (15), non-manual installation (12),
+license detection (8), and README (10). Tools and validation are required and
+are the two missing required items.
+
+## Scoring contract and deduction map
 
 LobeHub's current public implementation assigns 100 points:
 
-| Criterion | Weight | Required | Entroly evidence | Classification | Current state |
+| Criterion | Weight | Required | Public observation | Repository evidence | Classification/action |
 | --- | ---: | :---: | --- | --- | --- |
-| Claimed listing | 4 | No | LobeHub's detail score currently hardcodes `isClaimed: false` | External implementation limitation | Blocked externally |
-| Non-manual deployment | 12 | No | `server.json` publishes PyPI/`uvx` and npm/`npx` install paths | Packaging/discovery | Repository-ready; public ingestion pending |
-| Any deployment | 15 | Yes | Two canonical package deployment options in `server.json` | Packaging/discovery | Repository-ready; public ingestion pending |
-| Detected license | 8 | No | Apache-2.0 repository and package metadata | Metadata | Repository-ready; public detection pending |
-| MCP prompts | 8 | No | Context optimization and verification workflows | Product capability | Implemented on this branch; protocol verification required |
-| README | 10 | Yes | Repository and package READMEs | Documentation | Repository-ready; public ingestion pending |
-| MCP resources | 8 | No | Bounded health and aggregate-stat resources | Product capability/security | Implemented on this branch; protocol verification required |
-| MCP tools | 15 | Yes | Production FastMCP tool surface including optimization, recovery, receipts, and verification | Product capability | Existing; protocol tests present |
-| Runtime validation | 20 | Yes | Clean-install startup plus MCP initialize/list/call protocol tests | External validation | Local readiness testable; LobeHub result pending |
+| Claimed listing | 4 | No | False; page instructs owners to add the exact LobeHub GitHub badge and check claim status | Exact ownership badge added to the primary README on this branch | Legitimate ownership proof; public claim check still required |
+| Non-manual deployment | 12 | No | Passing | `server.json` publishes PyPI/`uvx` and npm/`npx` paths | No product change required |
+| Any deployment | 15 | Yes | Passing; two methods | Two canonical package deployment options | No product change required |
+| Detected license | 8 | No | Passing but stale as MIT | Current repository and packages are Apache-2.0 | Metadata refresh required; current score already receives the points |
+| MCP prompts | 8 | No | Zero | Context optimization and verification workflows | Genuine capability added and protocol-tested |
+| README | 10 | Yes | Passing but stale | Current primary and package READMEs | Metadata refresh required; current score already receives the points |
+| MCP resources | 8 | No | Zero | Bounded `entroly://health` and `entroly://stats` resources | Genuine read-only capability added and protocol-tested |
+| MCP tools | 15 | Yes | Zero despite the existing production tool surface | FastMCP tools for optimization, exact recovery, receipts, memory, and verification | Stale/failed external validation; clean published-artifact validation required |
+| Runtime validation | 20 | Yes | False | Stdio initialize/list/get/read/call protocol tests | External validation must be re-run after publishing |
 
 A required criterion missing causes grade F regardless of percentage. If all
 required criteria pass, 80% or higher is A, 60-79% is B, and lower is F.
@@ -40,7 +58,7 @@ added resources expose only bounded, read-only operational summaries. They do
 not expose source content, receipt bodies, filesystem paths, credentials, or
 unbounded logs.
 
-The protocol tests must prove that a fresh stdio server can:
+Protocol tests prove that a fresh stdio server can:
 
 1. initialize successfully;
 2. list the two prompts;
@@ -49,16 +67,22 @@ The protocol tests must prove that a fresh stdio server can:
 5. read and parse the bounded health resource; and
 6. continue exposing the existing tool surface.
 
-## External blockers
+The repository audit script separately computes local readiness and labels it
+as local evidence rather than the public score. With protocol validation in the
+same CI run, the repository is capable of 96/100 before the external claim
+point. That number is **not** a claim about the current LobeHub page.
 
-The following cannot be honestly inferred from repository code:
+## Remaining external gates
 
-- the exact score currently rendered by LobeHub;
-- whether LobeHub's crawler has refreshed the latest package metadata;
-- whether LobeHub has completed runtime validation;
-- whether the listing's deployment options were normalized correctly; and
-- the claimed-listing point while the detail page hardcodes the claim flag off.
+The work is not complete until all of these are visibly confirmed:
 
-These remain `pending` until the public score page or marketplace API visibly
-confirms them. No release note or PR may claim an improved LobeHub score before
-that confirmation.
+- publish a patch release containing the prompts, resources, tests, and badge;
+- refresh LobeHub's stale 0.4.0 metadata to the new release;
+- make LobeHub install and start the published package successfully;
+- verify non-zero tool, prompt, and resource counts;
+- confirm `isValidated=true`;
+- invoke LobeHub's badge-based claim check and confirm `isClaimed=true`; and
+- capture the resulting public score page.
+
+No release note or PR may claim an improved LobeHub score before that public
+confirmation.
