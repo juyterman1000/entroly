@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.2",
   "name": "entroly",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "description": "Open-source context control plane for AI coding agents. Compresses prompts 70-95%, stabilizes KV-cache prefixes, routes tasks to cheaper models, and verifies answers locally with WITNESS.",
   "author": {
     "name": "juyterman1000",
