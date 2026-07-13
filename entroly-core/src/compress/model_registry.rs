@@ -112,8 +112,7 @@ impl ModelCapability {
         let input_price = self.input_price_per_million?;
         let output_price = self.output_price_per_million?;
         Some(
-            (input_tokens as f64 * input_price + output_tokens as f64 * output_price)
-                / 1_000_000.0,
+            (input_tokens as f64 * input_price + output_tokens as f64 * output_price) / 1_000_000.0,
         )
     }
 
@@ -180,9 +179,8 @@ impl ModelResolution {
             (None, Some(model_max)) => model_max,
             (None, None) => 0,
         };
-        let safety = minimum_safety_tokens.max(
-            (self.context_window as f64 * safety_fraction).floor() as u64,
-        );
+        let safety = minimum_safety_tokens
+            .max((self.context_window as f64 * safety_fraction).floor() as u64);
         Ok(self
             .context_window
             .saturating_sub(output_reserve)
@@ -286,7 +284,9 @@ impl ModelRegistry {
             let matches: Vec<(&String, &String)> = self
                 .aliases
                 .iter()
-                .filter(|(alias, _)| is_prefix_alias(alias) && requested.starts_with(alias.as_str()))
+                .filter(|(alias, _)| {
+                    is_prefix_alias(alias) && requested.starts_with(alias.as_str())
+                })
                 .collect();
             if matches.is_empty() {
                 None
@@ -431,21 +431,25 @@ mod tests {
     }
 
     #[test]
-    fn preserves_uncertainty_for_announced_frontier_models() {
+    fn resolves_verified_gpt_5_6_metadata() {
         let registry = ModelRegistry::bundled().unwrap();
         let resolution = registry.resolve("gpt-5.6-sol");
         assert_eq!(resolution.model_id(), "openai/gpt-5.6-sol");
-        assert_eq!(resolution.trust, RegistryTrust::Announced);
-        assert_eq!(resolution.context_window, DEFAULT_FALLBACK_CONTEXT);
-        assert!(resolution.warning.unwrap().contains("unverified"));
+        assert_eq!(resolution.trust, RegistryTrust::Verified);
+        assert_eq!(resolution.context_window, 1_050_000);
+        assert!(resolution.warning.is_none());
     }
 
     #[test]
-    fn resolves_nemotron_one_million_context() {
+    fn resolves_nemotron_native_context_safely() {
         let registry = ModelRegistry::bundled().unwrap();
-        let resolution = registry.resolve("nemotron-super");
-        assert_eq!(resolution.model_id(), "nvidia/nemotron-super");
-        assert_eq!(resolution.context_window, 1_000_000);
+        let resolution = registry.resolve("nemotron-3-ultra");
+        assert_eq!(resolution.model_id(), "nvidia/nemotron-3-ultra-550b-a55b");
+        assert_eq!(resolution.context_window, 262_144);
+
+        let provisional = registry.resolve("nemotron-super");
+        assert_eq!(provisional.trust, RegistryTrust::Announced);
+        assert_eq!(provisional.context_window, DEFAULT_FALLBACK_CONTEXT);
     }
 
     #[test]
@@ -467,7 +471,10 @@ mod tests {
         assert_eq!(first.registry_digest(), second.registry_digest());
         assert_eq!(first.registry_digest().len(), 64);
         assert_eq!(first.base_registry_digest().len(), 64);
-        assert!(first.registry_digest().chars().all(|ch| ch.is_ascii_hexdigit()));
+        assert!(first
+            .registry_digest()
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit()));
     }
 
     #[test]

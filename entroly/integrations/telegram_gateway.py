@@ -54,6 +54,7 @@ class TelegramGateway:
         self._stop = threading.Event()
         self._update_offset = 0
         self._last_stats: dict[str, Any] = {}
+        self._startup_replay: tuple[dict[str, Any], ...] = ()
         db_path = delivery_db_path or os.environ.get(
             "ENTROLY_DELIVERY_DB", ".entroly/event-delivery.sqlite3"
         )
@@ -72,6 +73,14 @@ class TelegramGateway:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        replayed = self._delivery.flush()
+        self._startup_replay = tuple(outcome.to_dict() for outcome in replayed)
+        failed = [outcome for outcome in replayed if not outcome.ok]
+        if failed:
+            logger.warning(
+                "Telegram gateway startup replay left %d event(s) queued or dead",
+                len(failed),
+            )
         self._thread = threading.Thread(
             target=self._loop, name="entroly-tg-gateway", daemon=True
         )
@@ -159,6 +168,10 @@ class TelegramGateway:
 
     def delivery_stats(self) -> dict[str, int]:
         return self._delivery.stats()
+
+    def startup_replay(self) -> tuple[dict[str, Any], ...]:
+        """Return immutable outcomes from the synchronous restart replay."""
+        return self._startup_replay
 
     def _get_updates(self) -> list[dict[str, Any]]:
         response = self._call("getUpdates", offset=self._update_offset, timeout=0)

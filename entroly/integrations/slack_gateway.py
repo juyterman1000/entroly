@@ -44,6 +44,7 @@ class SlackGateway:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._last_stats: dict[str, Any] = {}
+        self._startup_replay: tuple[dict[str, Any], ...] = ()
         db_path = delivery_db_path or os.environ.get(
             "ENTROLY_DELIVERY_DB", ".entroly/event-delivery.sqlite3"
         )
@@ -62,6 +63,14 @@ class SlackGateway:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        replayed = self._delivery.flush()
+        self._startup_replay = tuple(outcome.to_dict() for outcome in replayed)
+        failed = [outcome for outcome in replayed if not outcome.ok]
+        if failed:
+            logger.warning(
+                "Slack gateway startup replay left %d event(s) queued or dead",
+                len(failed),
+            )
         self._thread = threading.Thread(
             target=self._loop, name="entroly-slack-gateway", daemon=True
         )
@@ -128,6 +137,10 @@ class SlackGateway:
 
     def delivery_stats(self) -> dict[str, int]:
         return self._delivery.stats()
+
+    def startup_replay(self) -> tuple[dict[str, Any], ...]:
+        """Return immutable outcomes from the synchronous restart replay."""
+        return self._startup_replay
 
     def _loop(self) -> None:
         while not self._stop.is_set():

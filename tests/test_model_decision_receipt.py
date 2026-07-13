@@ -81,12 +81,12 @@ def test_unknown_model_is_explicit_conservative_fallback() -> None:
 
 def test_recognized_unverified_frontier_model_is_not_misrepresented() -> None:
     receipt = build_model_decision_receipt(
-        {"model": "gpt-5.6-terra", "max_output_tokens": 4096},
+        {"model": "muse-spark-1.1", "max_output_tokens": 4096},
         provider="openai",
     )
 
     assert receipt is not None
-    assert receipt.resolved_model == "openai/gpt-5.6-terra"
+    assert receipt.resolved_model == "meta/muse-spark-1.1"
     assert receipt.trust == "announced"
     assert receipt.fallback_used is True
     assert receipt.warning_code == "unverified_context_window"

@@ -10,6 +10,7 @@ from entroly.models.registry import (
     ModelRegistry,
     RegistryTrust,
     discover_ollama_models,
+    discover_openrouter_models,
     get_model_registry,
 )
 
@@ -35,14 +36,18 @@ def test_bundled_registry_resolves_exact_and_explicit_prefix_models():
     assert unrelated.trust is RegistryTrust.FALLBACK
 
 
-def test_announced_model_is_recognized_without_inventing_context_metadata():
+def test_gpt_5_6_uses_verified_context_pricing_and_reasoning_metadata():
     result = get_model_registry().resolve("gpt-5.6-sol")
 
     assert result.capability is not None
     assert result.capability.id == "openai/gpt-5.6-sol"
-    assert result.trust is RegistryTrust.ANNOUNCED
-    assert result.context_window == 128_000
-    assert "unverified" in (result.warning or "")
+    assert result.trust is RegistryTrust.VERIFIED
+    assert result.context_window == 1_050_000
+    assert result.warning is None
+    assert result.capability.max_output_tokens == 128_000
+    assert result.capability.input_price_per_million == 5.0
+    assert result.capability.output_price_per_million == 30.0
+    assert result.capability.supports_reasoning is True
 
 
 def test_unknown_model_fails_visibly_with_conservative_fallback():
@@ -121,6 +126,34 @@ def test_later_layers_override_bundled_capabilities_and_remove_stale_aliases():
     assert registry.resolve("new-name").context_window == 200
 
 
+def test_discovery_overlay_preserves_bundled_aliases():
+    base = ModelCapability.from_mapping(
+        {
+            "id": "vendor/model",
+            "provider": "vendor",
+            "aliases": ["stable-alias"],
+            "context_window": 100,
+            "source": "bundled",
+        },
+        default_trust=RegistryTrust.VERIFIED,
+    )
+    discovered = ModelCapability.from_mapping(
+        {
+            "id": "vendor/model",
+            "provider": "router",
+            "aliases": ["router/vendor/model"],
+            "context_window": 200,
+            "source": "router",
+        },
+        default_trust=RegistryTrust.DISCOVERED,
+    )
+
+    registry = ModelRegistry([base], discovered=[discovered])
+
+    assert registry.resolve("stable-alias").context_window == 200
+    assert registry.resolve("router/vendor/model").context_window == 200
+
+
 def test_effective_input_budget_reserves_output_and_uncertainty_margin():
     result = get_model_registry().resolve("openai/o1")
 
@@ -152,7 +185,9 @@ def test_ollama_discovery_is_loopback_only():
 
 
 def test_ollama_discovery_can_inspect_context_without_external_dependencies(monkeypatch):
-    def fake_request(url, *, timeout, payload=None, max_bytes=2 * 1024 * 1024):
+    def fake_request(
+        url, *, timeout, payload=None, headers=None, max_bytes=2 * 1024 * 1024
+    ):
         assert timeout == 0.1
         assert max_bytes > 0
         if url.endswith("/api/tags"):
@@ -176,6 +211,98 @@ def test_ollama_discovery_can_inspect_context_without_external_dependencies(monk
     assert capability.output_price_per_million is None
     assert capability.observed_at is not None
     assert capability.verified_at is None
+
+
+def test_openrouter_discovery_requires_an_explicit_api_key(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    report = discover_openrouter_models()
+
+    assert report.models == ()
+    assert "unset" in report.warnings[0]
+
+
+def test_openrouter_discovery_maps_live_metadata_without_persisting_credentials(monkeypatch):
+    seen = {}
+
+    def fake_request(url, *, timeout, payload=None, headers=None, max_bytes=2 * 1024 * 1024):
+        seen.update(url=url, timeout=timeout, payload=payload, headers=headers)
+        return {
+            "data": [
+                {
+                    "id": "meta/muse-spark-1.1",
+                    "context_length": 1_000_000,
+                    "pricing": {"prompt": "0.0000015", "completion": "0.000006"},
+                    "supported_parameters": ["tools", "reasoning"],
+                    "architecture": {"input_modalities": ["text", "image"]},
+                    "top_provider": {"max_completion_tokens": 65536},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(registry_module, "_json_request", fake_request)
+    report = discover_openrouter_models("super-secret", timeout=0.5)
+
+    assert report.warnings == ()
+    assert seen == {
+        "url": "https://openrouter.ai/api/v1/models",
+        "timeout": 0.5,
+        "payload": None,
+        "headers": {"Authorization": "Bearer super-secret"},
+    }
+    capability = report.models[0]
+    assert capability.id == "meta/muse-spark-1.1"
+    assert capability.provider == "openrouter"
+    assert capability.context_window == 1_000_000
+    assert capability.max_output_tokens == 65_536
+    assert capability.supports_tools is True
+    assert capability.supports_vision is True
+    assert capability.supports_reasoning is True
+    assert capability.input_price_per_million == pytest.approx(1.5)
+    assert capability.output_price_per_million == pytest.approx(6.0)
+    assert capability.trust is RegistryTrust.DISCOVERED
+
+
+def test_openrouter_discovery_does_not_invent_missing_or_impossible_metadata(monkeypatch):
+    def fake_request(url, *, timeout, payload=None, headers=None, max_bytes=2 * 1024 * 1024):
+        return {
+            "data": [
+                {
+                    "id": "vendor/incomplete",
+                    "context_length": 4096,
+                    "pricing": {"prompt": "NaN", "completion": "Infinity"},
+                    "top_provider": {"max_completion_tokens": 8192},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(registry_module, "_json_request", fake_request)
+    report = discover_openrouter_models("ephemeral-key")
+
+    assert len(report.models) == 1
+    capability = report.models[0]
+    assert capability.max_output_tokens is None
+    assert capability.supports_tools is None
+    assert capability.supports_vision is None
+    assert capability.supports_reasoning is None
+    assert capability.input_price_per_million is None
+    assert capability.output_price_per_million is None
+    assert "outside its context window" in report.warnings[0]
+
+
+def test_nemotron_registry_distinguishes_verified_native_and_unverified_alias():
+    registry = get_model_registry()
+
+    official = registry.resolve("nemotron-3-ultra")
+    assert official.capability is not None
+    assert official.capability.id == "nvidia/nemotron-3-ultra-550b-a55b"
+    assert official.context_window == 262_144
+    assert official.trust is RegistryTrust.VERIFIED
+
+    provisional = registry.resolve("nemotron-super")
+    assert provisional.capability is not None
+    assert provisional.context_window == 128_000
+    assert provisional.trust is RegistryTrust.ANNOUNCED
+    assert "unverified" in (provisional.warning or "")
 
 
 def test_registry_diagnostics_report_provenance_counts():
