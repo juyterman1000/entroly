@@ -1,6 +1,6 @@
 {
   "name": "entroly-openclaw",
-  "version": "1.0.53",
+  "version": "1.0.54",
   "description": "Auditable, budget-aware Entroly context engine for OpenClaw",
   "type": "module",
   "license": "Apache-2.0",
@@ -41,6 +41,7 @@
       "./index.js"
     ],
     "install": {
+      "clawhubSpec": "clawhub:entroly-openclaw",
       "npmSpec": "entroly-openclaw",
       "defaultChoice": "npm",
       "minHostVersion": ">=2026.6.11"

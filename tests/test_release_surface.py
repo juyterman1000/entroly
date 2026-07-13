@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.53"
+RELEASE_VERSION = "1.0.54"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -64,7 +64,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_53() -> None:
+def test_public_package_versions_are_1_0_54() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -73,6 +73,18 @@ def test_public_package_versions_are_1_0_53() -> None:
     assert _read_json("integrations/openclaw/package.json")["version"] == RELEASE_VERSION
     assert _read_json(".claude-plugin/manifest.json")["version"] == RELEASE_VERSION
     assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
+
+
+def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
+    package = _read_json("integrations/openclaw/package.json")
+    openclaw = package["openclaw"]
+    install = openclaw["install"]
+
+    assert openclaw["release"]["publishToClawHub"] is True
+    assert install["clawhubSpec"] == f"clawhub:{package['name']}"
+    assert install["npmSpec"] == package["name"]
+    assert install["defaultChoice"] == "npm"
+    assert install["minHostVersion"] == openclaw["compat"]["pluginApi"]
 
 
 def test_mcp_registry_manifest_points_at_release_package() -> None:
