@@ -1,0 +1,40 @@
+name: Apply LobeHub Ownership Badge
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/add_lobehub_badge.py
+      - .github/workflows/apply-lobehub-badge-pr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.repository == 'juyterman1000/entroly' && github.head_ref == 'feature/lobehub-score-remediation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/lobehub-score-remediation
+          fetch-depth: 0
+      - name: Add exact LobeHub ownership badge
+        run: python .github/scripts/add_lobehub_badge.py
+      - name: Validate badge and score audit
+        shell: bash
+        run: |
+          grep -F 'https://lobehub.com/badge/mcp/juyterman1000-entroly' README.md
+          python scripts/audit_lobehub_score.py --protocol-validated --require-local-completeness --output lobehub-readiness.json
+          python -m pytest tests/test_lobehub_score_audit.py -q --tb=short
+      - name: Commit README and remove temporary inspectors
+        shell: bash
+        run: |
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git rm -f \
+            .github/scripts/add_lobehub_badge.py \
+            .github/workflows/apply-lobehub-badge-pr.yml \
+            .github/workflows/inspect-lobehub-public.yml
+          git add README.md
+          git commit -m "Add LobeHub ownership badge"
+          git push origin HEAD:feature/lobehub-score-remediation
