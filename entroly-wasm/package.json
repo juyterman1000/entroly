@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "1.0.53",
+  "version": "1.0.54",
   "description": "Pure WebAssembly local context OS for AI agents: context receipts, local optimization, MCP, app SDK helpers, and no Python dependency.",
   "main": "index.js",
   "types": "index.d.ts",
