@@ -75,6 +75,18 @@ def test_public_package_versions_are_1_0_54() -> None:
     assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
 
 
+def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
+    package = _read_json("integrations/openclaw/package.json")
+    openclaw = package["openclaw"]
+    install = openclaw["install"]
+
+    assert openclaw["release"]["publishToClawHub"] is True
+    assert install["clawhubSpec"] == f"clawhub:{package['name']}"
+    assert install["npmSpec"] == package["name"]
+    assert install["defaultChoice"] == "npm"
+    assert install["minHostVersion"] == openclaw["compat"]["pluginApi"]
+
+
 def test_mcp_registry_manifest_points_at_release_package() -> None:
     manifest = _read_json("server.json")
 
