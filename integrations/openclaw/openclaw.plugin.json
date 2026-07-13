@@ -5,6 +5,7 @@
   },
   "name": "Entroly Context Engine",
   "description": "Selects and compresses context under budget while preserving protected messages and writing local audit receipts.",
+  "icon": "https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly_wordmark.svg",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
