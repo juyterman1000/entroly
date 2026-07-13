@@ -15,6 +15,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: clawhub-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLAWHUB_CLI_VERSION: 0.23.1
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -23,48 +30,38 @@ jobs:
       - name: Checkout Entroly
         uses: actions/checkout@v6
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
-          bun-version: 1.3.10
+          node-version: "22"
 
-      - name: Checkout pinned ClawHub validator
-        uses: actions/checkout@v6
-        with:
-          repository: openclaw/clawhub
-          ref: v0.23.1
-          path: clawhub-source
-
-      - name: Install ClawHub validator dependencies
-        working-directory: clawhub-source
-        run: bun install --frozen-lockfile
+      - name: Install pinned ClawHub CLI
+        run: npm install --global "clawhub@${CLAWHUB_CLI_VERSION}"
 
       - name: Validate OpenClaw package metadata and artifact
         shell: bash
         run: |
           set -euo pipefail
-          bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" \
-            package validate "$GITHUB_WORKSPACE/integrations/openclaw" \
+          clawhub package validate "$GITHUB_WORKSPACE/integrations/openclaw" \
             --json | tee "$RUNNER_TEMP/clawhub-package-validate.json"
+
+      - name: Dry-run package publication
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          clawhub package publish "$GITHUB_WORKSPACE/integrations/openclaw" \
+            --dry-run --json | tee "$RUNNER_TEMP/clawhub-package-publish-dry-run.json"
 
       - name: Upload ClawHub validation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: clawhub-package-validation
-          path: ${{ runner.temp }}/clawhub-package-validate.json
+          path: |
+            ${{ runner.temp }}/clawhub-package-validate.json
+            ${{ runner.temp }}/clawhub-package-publish-dry-run.json
           if-no-files-found: ignore
-
-  dry-run:
-    needs: validate
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1
-    with:
-      source: ./integrations/openclaw
-      dry_run: true
 
   publish:
     needs: validate
@@ -73,12 +70,45 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.actor == 'juyterman1000'))
-    permissions:
-      contents: read
-      id-token: write
-    uses: openclaw/clawhub/.github/workflows/package-publish.yml@v0.23.1
-    with:
-      source: ./integrations/openclaw
-      dry_run: false
-    secrets:
-      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Entroly
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install pinned ClawHub CLI
+        run: npm install --global "clawhub@${CLAWHUB_CLI_VERSION}"
+
+      - name: Authenticate to ClawHub
+        shell: bash
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLAWHUB_TOKEN"
+          echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
+          CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-config.json" \
+            clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+
+      - name: Publish Entroly OpenClaw plugin
+        shell: bash
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          clawhub package publish "$GITHUB_WORKSPACE/integrations/openclaw" \
+            --manual-override-reason "GitHub Actions release from juyterman1000/entroly" \
+            --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
+
+      - name: Upload ClawHub publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-package-publish
+          path: ${{ runner.temp }}/clawhub-package-publish.json
+          if-no-files-found: ignore
