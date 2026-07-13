@@ -14,7 +14,7 @@ jobs:
   apply:
     if: github.repository == 'juyterman1000/entroly' && github.head_ref == 'feature/lobehub-score-remediation'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -27,8 +27,8 @@ jobs:
       - name: Validate discovery surfaces
         run: |
           python -m compileall -q entroly/server.py tests/test_mcp_discovery_surfaces.py
-          python -m pip install -q 'mcp>=1.6.0' pytest
-          pytest tests/test_mcp_discovery_surfaces.py -q --tb=short
+          python -m pip install -q -e . 'mcp>=1.6.0' pytest
+          PYTHONPATH="$GITHUB_WORKSPACE" pytest tests/test_mcp_discovery_surfaces.py -q --tb=short
 
       - name: Commit source and remove bootstrap helpers
         shell: bash
@@ -39,7 +39,8 @@ jobs:
             .github/scripts/apply_lobehub_mcp_surfaces.py \
             .github/workflows/apply-lobehub-mcp-surfaces.yml \
             .github/workflows/apply-lobehub-mcp-surfaces-v2.yml \
-            .github/workflows/apply-lobehub-mcp-surfaces-pr.yml
+            .github/workflows/apply-lobehub-mcp-surfaces-pr.yml \
+            .github/workflows/debug-lobehub-mcp-surfaces.yml
           git add entroly/server.py tests/test_mcp_discovery_surfaces.py
           git commit -m "Add useful MCP prompts and bounded resources"
           git push origin HEAD:feature/lobehub-score-remediation
