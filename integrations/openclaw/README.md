@@ -9,13 +9,21 @@ evidence, and keeps evidence messages verbatim when they fit. Lower-value
 history is compressed around those evidence pins. The receipt records every
 score, matched query term, allocation, and transformation.
 
-## Install
+## Install from ClawHub
 
-After the package is published:
+Install the Python engine, then install the plugin from OpenClaw's official
+ClawHub registry:
 
 ```bash
 pip install entroly
-openclaw plugins install entroly-openclaw
+openclaw plugins install clawhub:entroly-openclaw
+openclaw plugins enable entroly
+```
+
+The npm-only fallback remains available as:
+
+```bash
+openclaw plugins install npm:entroly-openclaw
 openclaw plugins enable entroly
 ```
 
