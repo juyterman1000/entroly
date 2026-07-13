@@ -202,6 +202,45 @@ def test_compress_messages_balanced_profile_keeps_query_evidence_under_budget():
     assert sum(len(message["content"]) // 4 for message in out) <= 220
 
 
+def test_compress_messages_reconstructs_answer_split_across_receipt_overlap():
+    pages = (
+        "FoxNews, CNN, ESPN, New York Times, Time magazine, Huffington Post "
+        "Weird News, The Guardian, Cartoon Network, Cooking Light, Home Cooking "
+        "Adventure, Justin Bieber, Nickelodeon, Spongebob, Disney"
+    )
+    background = " ".join(
+        f"Background record {i} discusses reactions, training, and evaluation."
+        for i in range(38)
+    )
+    later_analysis = " ".join(
+        f"Later analysis {i} discusses model features and evaluation."
+        for i in range(50)
+    )
+    context = (
+        f"{background} The final collection of Facebook pages is: {pages}. "
+        f"{later_analysis}"
+    )
+    messages = [
+        {"role": "system", "content": context},
+        {
+            "role": "user",
+            "content": "Which Facebook pages did they look at? Answer concisely.",
+        },
+    ]
+    before = sum(len(message["content"]) // 4 for message in messages)
+
+    out = sdk.compress_messages(
+        messages,
+        target_ratio=0.90,
+        preserve_last_n=1,
+        distill=False,
+    )
+
+    assert pages in out[0]["content"]
+    assert out[0]["content"].count("New York Times") == 1
+    assert sum(len(message["content"]) // 4 for message in out) <= int(before * 0.90)
+
+
 @pytest.mark.parametrize("target_ratio", [0, -0.1, 1.01])
 def test_compress_messages_rejects_invalid_target_ratio(target_ratio):
     with pytest.raises(ValueError, match="target_ratio"):

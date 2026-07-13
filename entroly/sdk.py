@@ -375,6 +375,70 @@ def _has_evidence_query(query: str) -> bool:
     return bool(terms - _QUERY_INSTRUCTION_TERMS)
 
 
+def _expand_source_span(
+    source: bytes,
+    byte_start: int,
+    byte_end: int,
+    *,
+    lookaround: int = 512,
+) -> tuple[int, int]:
+    """Extend a receipt chunk to nearby sentence boundaries.
+
+    Receipt chunks deliberately overlap and may end in the middle of an
+    assertion.  Emitting their text independently can therefore split a fact
+    across distant relevance-ranked positions.  Keep the receipt's byte
+    coordinates authoritative, but include a small amount of source text so a
+    selected assertion remains complete.
+    """
+    start = max(0, min(byte_start, len(source)))
+    end = max(start, min(byte_end, len(source)))
+
+    prefix_start = max(0, start - lookaround)
+    prefix = source[prefix_start:start]
+    previous_boundaries = [
+        prefix.rfind(marker) + len(marker)
+        for marker in (b"\n", b". ", b"? ", b"! ")
+        if prefix.rfind(marker) >= 0
+    ]
+    if previous_boundaries:
+        start = prefix_start + max(previous_boundaries)
+
+    suffix_end = min(len(source), end + lookaround)
+    suffix = source[end:suffix_end]
+    next_boundaries: list[int] = []
+    for marker in (b"\n", b". ", b"? ", b"! "):
+        position = suffix.find(marker)
+        if position >= 0:
+            # Keep terminal punctuation, but not the whitespace that begins
+            # the following sentence or paragraph.
+            terminal_length = 0 if marker == b"\n" else 1
+            next_boundaries.append(end + position + terminal_length)
+    if next_boundaries:
+        end = min(next_boundaries)
+
+    return start, max(start, end)
+
+
+def _merge_source_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Return source-ordered, overlap-free byte spans."""
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _render_source_spans(source: bytes, spans: list[tuple[int, int]]) -> str:
+    """Reconstruct selected receipt spans from the original source."""
+    return "\n\n".join(
+        source[start:end].decode("utf-8") for start, end in spans
+    ).strip()
+
+
 def _compress_message_content(
     content: str,
     *,
@@ -430,40 +494,75 @@ def _compress_message_content(
             return compress(content, budget=budget, profile=profile)
 
         char_budget = max(1, budget * 4)
-        chosen = [
-            (item.chunk_id, item.byte_start, item.text)
-            for item in selection.selected
-        ]
-        chosen_ids = {item[0] for item in chosen}
-        chosen_chars = (
-            sum(len(item[2]) for item in chosen)
-            + max(0, len(chosen) - 1) * 2
-        )
+        source = content.encode("utf-8")
+        chosen_spans: list[tuple[int, int]] = []
+        attempted_ids: set[str] = set()
 
-        if chosen_chars <= char_budget:
-            # The receipt selector intentionally stops after the positive-score
-            # evidence frontier. For a gentle relative target, use the remaining
-            # budget to backfill source-order context instead of jumping from a
-            # no-op directly to a deep cut. Evidence stays pinned; surrounding
-            # narrative returns until the requested operating point is reached.
-            for chunk in sorted(index.chunks, key=lambda item: item.byte_start):
-                if chunk.chunk_id in chosen_ids:
-                    continue
-                extra = len(chunk.text) + (2 if chosen else 0)
-                if chosen_chars + extra > char_budget:
-                    continue
-                chosen.append((chunk.chunk_id, chunk.byte_start, chunk.text))
-                chosen_ids.add(chunk.chunk_id)
-                chosen_chars += extra
+        def add_if_fits(
+            chunk_id: str,
+            byte_start: int,
+            byte_end: int,
+        ) -> bool:
+            nonlocal chosen_spans
+            attempted_ids.add(chunk_id)
+            candidate = _expand_source_span(source, byte_start, byte_end)
+            trial = _merge_source_spans([*chosen_spans, candidate])
+            if len(_render_source_spans(source, trial)) <= char_budget:
+                chosen_spans = trial
+                return True
+            return False
 
-            # Once the relevant chunks are secured, source order is friendlier
-            # to multi-hop reading and summarization than relevance order.
-            chosen.sort(key=lambda item: item[1])
-            selected = "\n\n".join(item[2] for item in chosen).strip()
-        else:
-            # Under an extremely small budget, keep relevance order so the hard
-            # ceiling retains the best evidence rather than a document prefix.
-            selected = "\n\n".join(item.text for item in selection.selected).strip()
+        # Relevance order controls admission under pressure, but accepted
+        # receipt coordinates are reconstructed from the original source. This
+        # removes duplicated overlap and prevents a long assertion from being
+        # split between distant score-ranked chunks.
+        for item in selection.selected:
+            add_if_fits(item.chunk_id, item.byte_start, item.byte_end)
+
+        # The receipt selector intentionally stops after its evidence frontier.
+        # Fill a gentle relative target with surrounding source context while
+        # keeping every already-admitted evidence span pinned.
+        for chunk in sorted(index.chunks, key=lambda item: item.byte_start):
+            if chunk.chunk_id in attempted_ids:
+                continue
+            add_if_fits(chunk.chunk_id, chunk.byte_start, chunk.byte_end)
+
+        # Whole receipt chunks are deliberately coarse. If one skipped chunk
+        # leaves meaningful room at a gentle target, backfill only complete
+        # source sentences from the uncovered ranges. This approaches the
+        # requested operating point without reintroducing a mid-assertion cut.
+        uncovered: list[tuple[int, int]] = []
+        cursor = 0
+        for start, end in chosen_spans:
+            if cursor < start:
+                uncovered.append((cursor, start))
+            cursor = max(cursor, end)
+        if cursor < len(source):
+            uncovered.append((cursor, len(source)))
+
+        for start, end in uncovered:
+            rendered_length = len(_render_source_spans(source, chosen_spans))
+            available = char_budget - rendered_length - (2 if chosen_spans else 0)
+            if available < 40:
+                break
+            gap = source[start:end].decode("utf-8")
+            prefix = gap[:available]
+            boundary_ends = [
+                position + (0 if marker == "\n" else 1)
+                for marker in ("\n", ". ", "? ", "! ")
+                if (position := prefix.rfind(marker)) >= 0
+            ]
+            if not boundary_ends:
+                continue
+            prefix = prefix[: max(boundary_ends)].rstrip()
+            if len(prefix) < 40:
+                continue
+            prefix_end = start + len(prefix.encode("utf-8"))
+            trial = _merge_source_spans([*chosen_spans, (start, prefix_end)])
+            if len(_render_source_spans(source, trial)) <= char_budget:
+                chosen_spans = trial
+
+        selected = _render_source_spans(source, chosen_spans)
 
         selected = _ensure_non_empty(selected, content, budget, 1.0)
         return _enforce_budget(selected, budget)
