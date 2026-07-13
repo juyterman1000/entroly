@@ -41,6 +41,7 @@
       "./index.js"
     ],
     "install": {
+      "clawhubSpec": "clawhub:entroly-openclaw",
       "npmSpec": "entroly-openclaw",
       "defaultChoice": "npm",
       "minHostVersion": ">=2026.6.11"
