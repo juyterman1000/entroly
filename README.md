@@ -28,6 +28,7 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 
 <p align="center">
   <img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="PyPI">
+  <a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="Entroly on LobeHub"></a>
   <img src="https://img.shields.io/npm/v/entroly-wasm?color=red&label=npm" alt="npm">
   <a href="https://github.com/juyterman1000/entroly/stargazers"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="GitHub stars"></a>
   <a href="https://juyterman1000.github.io/entroly/docs/discord.html"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
