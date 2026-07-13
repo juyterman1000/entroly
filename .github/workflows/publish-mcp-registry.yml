@@ -4,6 +4,18 @@ on:
   workflow_run:
     workflows: ["Build and Push Entroly Docker Image"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact Entroly version to publish, for example 1.0.53"
+        required: false
+        type: string
+  # Recovery trigger: changing this workflow on main with the guarded retry
+  # commit prefix starts an immediate, package-aware registry publication.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-mcp-registry.yml"
 
 permissions:
   contents: read
@@ -17,47 +29,77 @@ jobs:
   publish:
     if: >-
       github.repository == 'juyterman1000/entroly' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == 'juyterman1000/entroly' &&
-      github.event.workflow_run.actor.login == 'juyterman1000' &&
-      (startsWith(github.event.workflow_run.head_commit.message, 'Release v') ||
-       startsWith(github.event.workflow_run.head_commit.message, 'Release '))
+      github.actor == 'juyterman1000' &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == 'juyterman1000/entroly' &&
+          github.event.workflow_run.actor.login == 'juyterman1000' &&
+          (startsWith(github.event.workflow_run.head_commit.message, 'Release v') ||
+           startsWith(github.event.workflow_run.head_commit.message, 'Release '))
+        ) ||
+        (
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          startsWith(github.event.head_commit.message, 'Retry MCP Registry publication')
+        ) ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment:
       name: mcp-registry-production
       url: https://registry.modelcontextprotocol.io/?q=io.github.juyterman1000%2Fentroly
 
+    env:
+      SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      RELEASE_MESSAGE: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_commit.message || github.event.head_commit.message || 'manual MCP registry publication' }}
+      REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+
     steps:
-      - name: Checkout exact released source
+      - name: Checkout exact canonical source
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Assert canonical publisher and immutable release source
+      - name: Assert canonical publisher and immutable source
         shell: bash
-        env:
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-          RELEASE_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "juyterman1000/entroly"
           test "$GITHUB_REPOSITORY_OWNER" = "juyterman1000"
+          test "$GITHUB_ACTOR" = "juyterman1000"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$SOURCE_SHA" origin/main
-          case "$RELEASE_MESSAGE" in
-            "Release v"*|"Release "*) ;;
-            *) echo "::error::Refusing non-release commit: $RELEASE_MESSAGE"; exit 2 ;;
+
+          case "$GITHUB_EVENT_NAME" in
+            workflow_run)
+              case "$RELEASE_MESSAGE" in
+                "Release v"*|"Release "*) ;;
+                *) echo "::error::Refusing non-release workflow source: $RELEASE_MESSAGE"; exit 2 ;;
+              esac
+              ;;
+            push)
+              case "$RELEASE_MESSAGE" in
+                "Retry MCP Registry publication"*) ;;
+                *) echo "::error::Refusing unguarded push source: $RELEASE_MESSAGE"; exit 2 ;;
+              esac
+              ;;
+            workflow_dispatch) ;;
+            *) echo "::error::Unsupported event: $GITHUB_EVENT_NAME"; exit 2 ;;
           esac
 
-      - name: Validate canonical MCP identity and published packages
+      - name: Validate canonical MCP identity and wait for published packages
         shell: bash
         run: |
           python - <<'PY'
           import json
+          import os
           import pathlib
           import time
           import tomllib
@@ -76,6 +118,11 @@ jobs:
           with (root / 'pyproject.toml').open('rb') as fh:
               project = tomllib.load(fh)['project']
           version = project['version']
+          requested = os.environ.get('REQUESTED_VERSION', '').strip()
+          if requested and requested != version:
+              raise SystemExit(
+                  f'requested version {requested!r} does not match canonical source {version!r}'
+              )
           if project.get('readme') != 'PYPI_README.md':
               raise SystemExit('PyPI must publish the dedicated canonical MCP README')
 
@@ -87,6 +134,8 @@ jobs:
           server = json.loads((root / 'server.json').read_text(encoding='utf-8'))
           if server.get('name') != canonical_name:
               raise SystemExit(f'server name must be {canonical_name!r}')
+          if not 1 <= len(server.get('description', '')) <= 100:
+              raise SystemExit('server description violates MCP Registry schema bounds')
           repository = server.get('repository') or {}
           if repository.get('url') != canonical_repo or repository.get('source') != 'github':
               raise SystemExit('server repository identity is not canonical')
@@ -102,6 +151,8 @@ jobs:
               actual_packages[key] = (package.get('runtimeHint'), args)
               if package.get('version') != version:
                   raise SystemExit(f'{key} does not match release version {version}')
+              if package.get('transport') != {'type': 'stdio'}:
+                  raise SystemExit(f'{key} must use stdio transport')
           if actual_packages != expected_packages:
               raise SystemExit(
                   f'canonical package set changed: {actual_packages!r}; '
@@ -126,7 +177,9 @@ jobs:
               with urllib.request.urlopen(request, timeout=30) as response:
                   return json.load(response)
 
-          for attempt in range(1, 21):
+          # Native wheels and package indexes can take longer than the Docker job.
+          # Wait up to 30 minutes, with exact ownership metadata verification.
+          for attempt in range(1, 121):
               errors = []
               try:
                   pypi = read_json(
@@ -153,16 +206,67 @@ jobs:
               if not errors:
                   print(f'Validated canonical Entroly {version} packages.')
                   break
-              if attempt == 20:
+              if attempt == 120:
                   raise SystemExit('\n'.join(errors))
               print(
-                  f'Package metadata not ready (attempt {attempt}/20): '
+                  f'Package metadata not ready (attempt {attempt}/120): '
                   + '; '.join(errors)
               )
               time.sleep(15)
           PY
 
+      - name: Detect an existing canonical registry version
+        id: registry_state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          name = 'io.github.juyterman1000/entroly'
+          repository = 'https://github.com/juyterman1000/entroly'
+          expected_packages = {('pypi', 'entroly'), ('npm', 'entroly-mcp')}
+          version = json.load(open('server.json', encoding='utf-8'))['version']
+          url = (
+              'https://registry.modelcontextprotocol.io/v0.1/servers?search='
+              + urllib.parse.quote(name, safe='')
+          )
+          request = urllib.request.Request(
+              url,
+              headers={'User-Agent': 'entroly-canonical-mcp-publisher'},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+
+          already_published = False
+          for item in payload.get('servers', []):
+              server = item.get('server', item)
+              if server.get('name') != name or server.get('version') != version:
+                  continue
+              repo = server.get('repository') or {}
+              packages = {
+                  (package.get('registryType'), package.get('identifier'))
+                  for package in server.get('packages', [])
+              }
+              if repo.get('url') != repository:
+                  raise SystemExit('existing registry version points to a non-canonical repository')
+              if packages != expected_packages:
+                  raise SystemExit(f'existing registry package set is unexpected: {packages!r}')
+              already_published = True
+              break
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'already_published={str(already_published).lower()}\n')
+          print(
+              f'Entroly {version} is '
+              + ('already registered canonically.' if already_published else 'not registered yet.')
+          )
+          PY
+
       - name: Install pinned MCP Registry publisher
+        if: steps.registry_state.outputs.already_published != 'true'
         shell: bash
         env:
           MCP_PUBLISHER_VERSION: v1.7.9
@@ -176,9 +280,11 @@ jobs:
           ./mcp-publisher --help >/dev/null
 
       - name: Authenticate canonical GitHub repository with OIDC
+        if: steps.registry_state.outputs.already_published != 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish canonical Entroly identity
+        if: steps.registry_state.outputs.already_published != 'true'
         run: ./mcp-publisher publish
 
       - name: Verify exact registry ownership and listing
@@ -199,7 +305,7 @@ jobs:
               + urllib.parse.quote(name, safe='')
           )
 
-          for attempt in range(1, 16):
+          for attempt in range(1, 61):
               request = urllib.request.Request(
                   url,
                   headers={'User-Agent': 'entroly-canonical-mcp-publisher'},
@@ -227,7 +333,7 @@ jobs:
                   print(f'Verified exclusive canonical listing {name} {version}.')
                   break
 
-              if attempt == 15:
+              if attempt == 60:
                   raise SystemExit(f'Registry listing for {name} {version} was not visible')
               time.sleep(10)
           PY
