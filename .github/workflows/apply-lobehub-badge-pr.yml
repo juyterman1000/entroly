@@ -1,4 +1,4 @@
-name: Apply LobeHub Ownership Badge
+name: Finalize LobeHub Remediation Branch
 
 on:
   pull_request:
@@ -9,32 +9,60 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: finalize-lobehub-${{ github.head_ref }}
+  cancel-in-progress: false
+
 jobs:
-  apply:
+  finalize:
     if: github.repository == 'juyterman1000/entroly' && github.head_ref == 'feature/lobehub-score-remediation'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
           ref: feature/lobehub-score-remediation
           fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install focused validation dependencies
+        run: python -m pip install --disable-pip-version-check 'mcp>=1.6.0' pytest
+
       - name: Add exact LobeHub ownership badge
         run: python .github/scripts/add_lobehub_badge.py
-      - name: Validate badge and score audit
+
+      - name: Validate real MCP capabilities and score evidence
         shell: bash
         run: |
+          set -euo pipefail
           grep -F 'https://lobehub.com/badge/mcp/juyterman1000-entroly' README.md
-          python scripts/audit_lobehub_score.py --protocol-validated --require-local-completeness --output lobehub-readiness.json
-          python -m pytest tests/test_lobehub_score_audit.py -q --tb=short
-      - name: Commit README and remove temporary inspectors
+          python -m compileall -q entroly/server.py scripts/audit_lobehub_score.py tests/test_mcp_discovery_surfaces.py tests/test_lobehub_score_audit.py
+          python -m pytest \
+            tests/test_mcp_discovery_surfaces.py \
+            tests/test_mcp_protocol.py \
+            tests/test_lobehub_score_audit.py \
+            -q --tb=short
+          python scripts/audit_lobehub_score.py \
+            --protocol-validated \
+            --require-local-completeness \
+            --output lobehub-readiness.json
+          git diff --check
+
+      - name: Commit durable changes and remove bootstrap helpers
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
-          git rm -f \
+          git rm -f --ignore-unmatch \
             .github/scripts/add_lobehub_badge.py \
             .github/workflows/apply-lobehub-badge-pr.yml \
             .github/workflows/inspect-lobehub-public.yml
           git add README.md
-          git commit -m "Add LobeHub ownership badge"
+          git diff --cached --check
+          git commit -m "Finalize LobeHub MCP discovery remediation"
           git push origin HEAD:feature/lobehub-score-remediation
