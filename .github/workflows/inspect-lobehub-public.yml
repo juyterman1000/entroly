@@ -1,0 +1,73 @@
+name: Inspect Public LobeHub Listing
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/inspect-lobehub-public.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.head_ref == 'feature/lobehub-score-remediation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch public LobeHub page
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/lobehub"
+          curl --fail-with-body --location --retry 3 --retry-all-errors \
+            --connect-timeout 20 --max-time 90 \
+            --user-agent 'entroly-public-audit/1.0' \
+            --dump-header "$RUNNER_TEMP/lobehub/headers.txt" \
+            'https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score' \
+            --output "$RUNNER_TEMP/lobehub/page.html"
+
+      - name: Extract machine-readable evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path(__import__('os').environ['RUNNER_TEMP']) / 'lobehub'
+          html = (root / 'page.html').read_text(encoding='utf-8', errors='replace')
+          needles = [
+              'juyterman1000-entroly', 'isValidated', 'toolsCount', 'promptsCount',
+              'resourcesCount', 'deploymentOptions', 'github', 'readme', 'license',
+              'score', 'validated', 'entroly'
+          ]
+          snippets = {}
+          for needle in needles:
+              matches = []
+              for match in re.finditer(re.escape(needle), html, flags=re.IGNORECASE):
+                  start = max(0, match.start() - 400)
+                  end = min(len(html), match.end() + 1000)
+                  matches.append(html[start:end])
+                  if len(matches) == 10:
+                      break
+              snippets[needle] = matches
+          evidence = {
+              'bytes': len(html.encode('utf-8')),
+              'title': (re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S).group(1)
+                        if re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S) else None),
+              'snippets': snippets,
+          }
+          (root / 'evidence.json').write_text(
+              json.dumps(evidence, indent=2, ensure_ascii=False), encoding='utf-8'
+          )
+          print(json.dumps({'bytes': evidence['bytes'], 'title': evidence['title'],
+                            'matches': {k: len(v) for k, v in snippets.items()}}, indent=2))
+          PY
+
+      - name: Upload public evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lobehub-public-listing-evidence
+          path: ${{ runner.temp }}/lobehub
+          if-no-files-found: error
