@@ -60,6 +60,13 @@ test = [
 benchmark = [
     "tiktoken>=0.9,<0.10",
 ]
+neural = [
+    "sentence-transformers>=5.1,<6",
+]
+neural-benchmark = [
+    "datasets>=4,<5",
+    "sentence-transformers>=5.1,<6",
+]
 
 [project.scripts]
 entroly = "entroly._docker_launcher:launch"

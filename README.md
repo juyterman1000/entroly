@@ -329,6 +329,24 @@ Context Efficiency Frontier above is the required gate for a real-model claim.</
   <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and Headroom same-input compression gauntlet with evidence-retention caveat"></a>
 </p>
 
+**PRISM-R neural research preview:** a generic MiniLM encoder did **not** beat
+BM25 as a primary paragraph scorer (97.7% versus 99.0% held-out evidence
+recall), so Entroly rejects that neural-primary claim. A disagreement guard
+reached 99.3% while selecting 1.02 of 16 passages on average. In a separate
+200-pair query-shift pilot at a nominal 25% active budget, PRISM-R retained
+87.0% of current-query evidence versus lexical selection's 60.5%; when a
+different future question was revealed, exact receipt-backed rehydration raised
+its evidence retention from 9.0% to 90.5%. Active plus recovered context was
+50.6% of the original.
+
+[Research design and prior art](docs/research/prism-r-neural-compression.md) ·
+[held-out retrieval artifact](benchmarks/results/neural_evidence_frontier.json) ·
+[query-shift artifact](benchmarks/results/neural_query_shift.json).
+
+<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets, not
+downstream answer-quality, latency, production-savings, or general neural
+superiority claims. PRISM-R remains opt-in research code.</sub>
+
 The tables below link each reported number to its committed result. Treat them
 as evidence for those specific datasets, budgets, models, and commits—not as a
 guarantee for another repository. `entroly simulate` uses a local token

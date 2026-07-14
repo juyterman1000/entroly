@@ -34,6 +34,10 @@ class StoredSpan:
     end_line: int
     content: str
     reason: str = "budget"
+    source_id: str = ""
+    start_char: int | None = None
+    end_char: int | None = None
+    content_sha256: str = ""
     created_ns: int = field(default_factory=time.time_ns)
     retrieval_count: int = 0
     retrieved_tokens: int = 0
@@ -211,7 +215,166 @@ class CompressionRetrievalStore:
             if previous is not None:
                 return previous
             self._items[receipt_id] = stored
-            self._persist()
+            try:
+                self._persist()
+            except Exception:
+                self._items.pop(receipt_id, None)
+                raise
+        self._record_compression(stored)
+        return stored
+
+    def put_exact_spans(
+        self,
+        *,
+        original_text: str,
+        compressed_text: str,
+        receipt: dict[str, Any],
+        spans: list[dict[str, Any]],
+        metadata: dict[str, object] | None = None,
+    ) -> StoredCompression:
+        """Atomically persist exact character-addressed omitted source spans.
+
+        Every span is validated against ``original_text`` before any state is
+        mutated. This prevents a stale offset or forged content hash from
+        creating a partially recoverable receipt.
+        """
+        original_hash = _sha256_text(original_text)
+        receipt_id = _short_hash(
+            json.dumps(receipt, sort_keys=True, default=str) + original_hash
+        )
+        receipt_spans = receipt.get("spans")
+        if not isinstance(receipt_spans, list):
+            raise ValueError("exact span persistence requires receipt span records")
+        receipt_by_id: dict[str, dict[str, Any]] = {}
+        expected_omitted_ids: set[str] = set()
+        selected_records: list[dict[str, Any]] = []
+        for record in receipt_spans:
+            if not isinstance(record, dict):
+                raise ValueError("receipt span records must be objects")
+            span_id = str(record.get("span_id", ""))
+            if not span_id or span_id in receipt_by_id:
+                raise ValueError(
+                    "receipt spans require unique non-empty span_id values"
+                )
+            start = int(record.get("start_char", -1))
+            end_value = record.get("end_char")
+            end = int(end_value) if end_value is not None else -1
+            if start < 0 or end <= start or end > len(original_text):
+                raise ValueError(f"invalid receipt character range for span {span_id}")
+            content_hash = _sha256_text(original_text[start:end])
+            if str(record.get("content_sha256", "")) != content_hash:
+                raise ValueError(f"receipt content hash mismatch for span {span_id}")
+            receipt_by_id[span_id] = record
+            if bool(record.get("selected")):
+                selected_records.append(record)
+            else:
+                expected_omitted_ids.add(span_id)
+
+        expected_input_tokens = sum(
+            int(record["token_count"]) for record in receipt_spans
+        )
+        expected_selected_tokens = sum(
+            int(record["token_count"]) for record in selected_records
+        )
+        if int(receipt.get("input_tokens", -1)) != expected_input_tokens:
+            raise ValueError("receipt input token count does not match its spans")
+        if int(receipt.get("selected_tokens", -1)) != expected_selected_tokens:
+            raise ValueError("receipt selected token count does not match its spans")
+        ordered_selected = sorted(
+            selected_records,
+            key=lambda record: (
+                int(record.get("ordinal", 0)),
+                str(record.get("source", "")),
+                int(record.get("start_char", 0)),
+                str(record.get("span_id", "")),
+            ),
+        )
+        expected_compressed_text = "\n\n".join(
+            original_text[int(record["start_char"]) : int(record["end_char"])]
+            for record in ordered_selected
+        )
+        if compressed_text != expected_compressed_text:
+            raise ValueError(
+                "compressed text does not match receipt-selected source spans"
+            )
+
+        supplied_ids = {str(raw.get("span_id", "")) for raw in spans}
+        if supplied_ids != expected_omitted_ids or len(supplied_ids) != len(spans):
+            raise ValueError("supplied exact spans do not match every receipt omission")
+        validated: list[StoredSpan] = []
+        seen_ids: set[str] = set()
+        for raw in spans:
+            span_id = str(raw.get("span_id", ""))
+            if not span_id or span_id in seen_ids:
+                raise ValueError("exact spans require unique non-empty span_id values")
+            seen_ids.add(span_id)
+            start = int(raw.get("start_char", -1))
+            end = int(raw.get("end_char", -1))
+            if start < 0 or end <= start or end > len(original_text):
+                raise ValueError(f"invalid character range for span {span_id}")
+            content = original_text[start:end]
+            expected_hash = str(raw.get("content_sha256", ""))
+            actual_hash = _sha256_text(content)
+            if not expected_hash or expected_hash != actual_hash:
+                raise ValueError(f"content hash mismatch for span {span_id}")
+            receipt_record = receipt_by_id[span_id]
+            receipt_contract = {
+                "source": str(receipt_record.get("source", "")),
+                "start_char": int(receipt_record["start_char"]),
+                "end_char": int(receipt_record["end_char"]),
+                "content_sha256": str(receipt_record["content_sha256"]),
+            }
+            supplied_contract = {
+                "source": str(raw.get("source", "")),
+                "start_char": start,
+                "end_char": end,
+                "content_sha256": expected_hash,
+            }
+            if supplied_contract != receipt_contract:
+                raise ValueError(f"span {span_id} does not match its receipt record")
+            start_line = original_text.count("\n", 0, start) + 1
+            end_line = original_text.count("\n", 0, end - 1) + 1
+            validated.append(
+                StoredSpan(
+                    span_id=span_id,
+                    receipt_id=receipt_id,
+                    start_line=start_line,
+                    end_line=max(start_line, end_line),
+                    content=content,
+                    reason=str(raw.get("reason", "neural_budget")),
+                    source_id=str(raw.get("source", "")),
+                    start_char=start,
+                    end_char=end,
+                    content_sha256=actual_hash,
+                )
+            )
+
+        stored = StoredCompression(
+            receipt_id=receipt_id,
+            original_hash=original_hash,
+            original_tokens=int(
+                receipt.get("input_tokens", receipt.get("original_tokens", 0))
+            ),
+            compressed_tokens=int(
+                receipt.get("selected_tokens", receipt.get("compressed_tokens", 0))
+            ),
+            spans=validated,
+            metadata={
+                "savings_confidence": "measured",
+                "compressed_sha256": _sha256_text(compressed_text),
+                **dict(metadata or {}),
+            },
+        )
+        with self._lock:
+            previous = self._items.get(receipt_id)
+            if previous is not None:
+                return previous
+            self._items[receipt_id] = stored
+            try:
+                self._persist()
+            except Exception:
+                self._items.pop(receipt_id, None)
+                raise
         self._record_compression(stored)
         return stored
 
@@ -255,6 +418,13 @@ class CompressionRetrievalStore:
             )
             if effective_id in span.retrieval_ids:
                 return span
+            previous_span_state = (
+                span.retrieval_count,
+                span.retrieved_tokens,
+                span.last_retrieved_ns,
+                list(span.retrieval_ids),
+            )
+            previous_item_state = (item.retrieval_count, item.last_retrieved_ns)
             if not span.record_retrieval(
                 tokens=token_count,
                 retrieved_ns=now_ns,
@@ -263,7 +433,17 @@ class CompressionRetrievalStore:
                 return span
             item.retrieval_count += 1
             item.last_retrieved_ns = now_ns
-            self._persist()
+            try:
+                self._persist()
+            except Exception:
+                (
+                    span.retrieval_count,
+                    span.retrieved_tokens,
+                    span.last_retrieved_ns,
+                    span.retrieval_ids,
+                ) = previous_span_state
+                item.retrieval_count, item.last_retrieved_ns = previous_item_state
+                raise
         self._record_retrieval(
             receipt_id,
             span_id,
@@ -422,6 +602,12 @@ class CompressionRetrievalStore:
     def _load(self) -> None:
         assert self.path is not None
         raw = json.loads(self.path.read_text(encoding="utf-8"))
+        schema_version = int(raw.get("schema_version", 1))
+        if schema_version not in {1, 2, 3}:
+            raise ValueError(
+                f"unsupported recovery store schema_version {schema_version}"
+            )
+        loaded: dict[str, StoredCompression] = {}
         for item in raw.get("items", []):
             spans = [
                 StoredSpan(
@@ -431,6 +617,18 @@ class CompressionRetrievalStore:
                     end_line=int(span["end_line"]),
                     content=str(span.get("content", "")),
                     reason=str(span.get("reason", "budget")),
+                    source_id=str(span.get("source_id", "")),
+                    start_char=(
+                        int(span["start_char"])
+                        if span.get("start_char") is not None
+                        else None
+                    ),
+                    end_char=(
+                        int(span["end_char"])
+                        if span.get("end_char") is not None
+                        else None
+                    ),
+                    content_sha256=str(span.get("content_sha256", "")),
                     created_ns=int(span.get("created_ns", time.time_ns())),
                     retrieval_count=int(span.get("retrieval_count", 0)),
                     retrieved_tokens=int(span.get("retrieved_tokens", 0)),
@@ -439,6 +637,19 @@ class CompressionRetrievalStore:
                 )
                 for span in item.get("spans", [])
             ]
+            for span in spans:
+                if span.receipt_id != item["receipt_id"]:
+                    raise ValueError(
+                        f"stored span {span.span_id} belongs to a different receipt"
+                    )
+                if span.content_sha256 and span.content_sha256 != _sha256_text(
+                    span.content
+                ):
+                    raise ValueError(
+                        f"stored span content hash mismatch for {span.span_id}"
+                    )
+            if len({span.span_id for span in spans}) != len(spans):
+                raise ValueError(f"duplicate span ids in receipt {item['receipt_id']}")
             stored = StoredCompression(
                 receipt_id=item["receipt_id"],
                 original_hash=item["original_hash"],
@@ -451,21 +662,28 @@ class CompressionRetrievalStore:
                 last_retrieved_ns=item.get("last_retrieved_ns"),
                 savings_tier=str(item.get("savings_tier", "measured")),
             )
-            self._items[stored.receipt_id] = stored
+            if stored.receipt_id in loaded:
+                raise ValueError(f"duplicate recovery receipt {stored.receipt_id}")
+            loaded[stored.receipt_id] = stored
+        self._items = loaded
 
     def _persist(self) -> None:
         if self.path is None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "items": [
                 item.as_dict(include_internal=True) for item in self._items.values()
             ],
         }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        tmp.replace(self.path)
+        try:
+            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+            tmp.replace(self.path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
 
 
 def _estimate_tokens(text: str) -> int:

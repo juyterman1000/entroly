@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -19,6 +20,10 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from benchmarks.neural_query_shift import verify_report as verify_query_shift_report  # noqa: E402
 
 CANONICAL_LINKS = {
     "Entroly on PyPI": "https://pypi.org/project/entroly/",
@@ -72,6 +77,11 @@ RETIRED_SETUP_PAGES = (
     "docs/claude-code-setup.html",
 )
 
+PRISM_R_PUBLIC_FILES = {
+    "README.md": "benchmarks/results/neural_query_shift.json",
+    "docs/public-evidence.md": "../benchmarks/results/neural_query_shift.json",
+}
+
 
 class _BadgeParser(HTMLParser):
     def __init__(self) -> None:
@@ -95,6 +105,91 @@ class _BadgeParser(HTMLParser):
 
 def _read_json(path: str) -> Any:
     return json.loads((ROOT / path).read_text(encoding="utf-8"))
+
+
+def _collect_prism_r_public_failures(
+    prominent_text: dict[str, str], report: dict[str, Any]
+) -> list[str]:
+    """Bind the bounded PRISM-R pilot copy to its recomputable artifact.
+
+    ``87.0%`` was historically banned as an unsupported aggregate savings
+    headline.  The PRISM-R artifact also happens to produce 87.0%, but for a
+    narrower exact-evidence metric.  Scope and provenance must therefore be
+    checked together instead of treating the numeric string as the claim.
+    """
+
+    failures: list[str] = []
+    try:
+        verify_query_shift_report(report)
+    except (KeyError, TypeError, ValueError) as exc:
+        return [f"PRISM-R query-shift artifact failed internal verification: {exc}"]
+
+    metrics = report["metrics"]
+    protocol = report["protocol"]
+    expected_protocol = {
+        "active_ratio": 0.25,
+        "dataset": "rajpurkar/squad_v2",
+        "offline_only": True,
+        "query_shift": "q2 is a different question with an answer in a different sentence",
+        "trials": 200,
+    }
+    for key, expected in expected_protocol.items():
+        if protocol.get(key) != expected:
+            failures.append(
+                f"PRISM-R query-shift protocol {key}={protocol.get(key)!r}, "
+                f"expected {expected!r}"
+            )
+    if report.get("pilot_gate_passed") is not True:
+        failures.append("PRISM-R public pilot requires pilot_gate_passed=true")
+    if report.get("headline_eligible") is not False:
+        failures.append("PRISM-R pilot must remain headline_eligible=false")
+
+    rendered_metrics = {
+        f"{metrics['prism_r_q1_retention']:.1%}": "current-query exact evidence",
+        f"{metrics['lexical_q1_retention']:.1%}": "lexical current-query evidence",
+        f"{metrics['prism_r_future_q2_retention']:.1%}": "unseen future evidence",
+        f"{metrics['prism_r_q2_after_exact_rehydration']:.1%}": (
+            "future evidence after exact rehydration"
+        ),
+        f"{metrics['active_plus_rehydration_ratio_approx']:.1%}": (
+            "approximate active plus recovered context"
+        ),
+    }
+    required_scope = {
+        "README.md": (
+            "offline exact-evidence pilots",
+            "not\ndownstream answer-quality",
+            "opt-in research code",
+        ),
+        "docs/public-evidence.md": (
+            "exact answer-string retention",
+            "do not measure generated answers",
+            "not the default compressor",
+        ),
+    }
+    for path, artifact_link in PRISM_R_PUBLIC_FILES.items():
+        text = prominent_text.get(path, "")
+        if "PRISM-R" not in text:
+            failures.append(f"{path} is missing the scoped PRISM-R pilot section")
+            continue
+        if artifact_link not in text:
+            failures.append(f"{path} does not link the PRISM-R query-shift artifact")
+        for rendered, label in rendered_metrics.items():
+            if rendered not in text:
+                failures.append(
+                    f"{path} is missing artifact-backed PRISM-R value {rendered} ({label})"
+                )
+        for phrase in required_scope[path]:
+            if phrase not in text:
+                failures.append(f"{path} is missing PRISM-R scope language {phrase!r}")
+
+    for path, text in prominent_text.items():
+        if path not in PRISM_R_PUBLIC_FILES and "87.0%" in text:
+            failures.append(
+                f"{path} contains unscoped public claim '87.0%'; "
+                "only the artifact-bound PRISM-R pilot may use it"
+            )
+    return failures
 
 
 def collect_offline_failures() -> list[str]:
@@ -124,7 +219,6 @@ def collect_offline_failures() -> list[str]:
         "70–95%": "universal savings range has no single supporting artifact",
         "99.1%": "unsupported aggregate token headline",
         "96.7%": "unsupported aggregate token headline",
-        "87.0%": "unsupported aggregate token headline",
         "0.844": "STAVE exploratory protocol is not the faithful headline",
     }
     for phrase, reason in banned_readme_claims.items():
@@ -140,7 +234,6 @@ def collect_offline_failures() -> list[str]:
         "70-95%": "universal savings range",
         "99.1%": "unsupported aggregate token headline",
         "96.7%": "unsupported aggregate token headline",
-        "87.0%": "unsupported aggregate token headline",
         "statistically ties": "unsupported cross-protocol comparison",
         "AUROC 0.84": "exploratory STAVE result used as a headline",
         "~3 ms": "latency headline without the matching protocol",
@@ -152,6 +245,11 @@ def collect_offline_failures() -> list[str]:
         for phrase, reason in banned_prominent_claims.items():
             if phrase in text:
                 failures.append(f"{path} contains banned public claim {phrase!r}: {reason}")
+
+    neural_query_shift = _read_json("benchmarks/results/neural_query_shift.json")
+    failures.extend(
+        _collect_prism_r_public_failures(prominent_text, neural_query_shift)
+    )
 
     mcp_guide = prominent_text["docs/mcp-server-guide.html"]
     unsupported_serve_flags = (
