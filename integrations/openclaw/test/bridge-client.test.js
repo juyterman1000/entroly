@@ -111,7 +111,8 @@ test(
   { skip: !process.env.ENTROLY_TEST_PYTHON },
   async () => {
     const receiptDir = await mkdtemp(join(tmpdir(), "entroly-openclaw-test-"));
-    const signingKeyPath = `${receiptDir}.signing-key`;
+    const signingKeyDir = await mkdtemp(join(tmpdir(), "entroly-openclaw-key-"));
+    const signingKeyPath = join(signingKeyDir, "signing.key");
     const client = new EntrolyBridgeClient({
       pythonCommand: process.env.ENTROLY_TEST_PYTHON,
       timeoutMs: 10_000,
@@ -182,7 +183,7 @@ test(
     } finally {
       await client.dispose();
       await rm(receiptDir, { recursive: true, force: true });
-      await rm(signingKeyPath, { force: true });
+      await rm(signingKeyDir, { recursive: true, force: true });
     }
   },
 );
