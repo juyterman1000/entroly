@@ -2,23 +2,14 @@ name: Release Binary (entroly-rs)
 
 # Builds the standalone single-binary proxy for each platform and attaches the
 # artifacts to the GitHub Release for the tag. Triggered by the same
-# `entroly-v*` tags as the PyPI/npm publish (or manually).
+# coordinated Entroly release workflow after its release and quality gates.
 #
 # Native builds only: entroly-core links pyo3, which needs libpython at build
 # time, so cross-compilation is impractical. Each target is built on a matching
 # native runner with Python set up. (linux-aarch64 is a documented follow-on.)
 
 on:
-  push:
-    tags:
-      - 'entroly-v*'
   workflow_call:
-    inputs:
-      tag:
-        description: Existing GitHub Release tag to attach binaries to
-        required: false
-        type: string
-  workflow_dispatch:
     inputs:
       tag:
         description: Existing GitHub Release tag to attach binaries to
@@ -58,16 +49,16 @@ jobs:
       - name: Resolve release tag
         id: release
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            TAG="$GITHUB_REF_NAME"
-          elif [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-            TAG="entroly-v${VERSION}"
+          set -euo pipefail
+          SEMVER_RE='^entroly-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$RELEASE_TAG" =~ $SEMVER_RE ]]; then
+            echo "Invalid coordinated release tag: $RELEASE_TAG" >&2
+            exit 1
           fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build entroly-rs (--features proxy)
         working-directory: entroly-core

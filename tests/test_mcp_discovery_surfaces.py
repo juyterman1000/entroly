@@ -10,8 +10,12 @@ import sys
 import tempfile
 import threading
 import time
+from pathlib import Path
 
 import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _send(proc, method: str, params: dict | None = None, request_id: int | None = 1) -> None:
@@ -49,6 +53,9 @@ def _read(proc, timeout: float = 30.0) -> dict | None:
 @pytest.fixture(scope="module")
 def initialized_server():
     scratch = tempfile.mkdtemp(prefix="entroly-mcp-discovery-")
+    python_path = os.pathsep.join(
+        value for value in (str(ROOT), os.environ.get("PYTHONPATH", "")) if value
+    )
     proc = subprocess.Popen(
         [sys.executable, "-m", "entroly.server"],
         stdin=subprocess.PIPE,
@@ -56,7 +63,11 @@ def initialized_server():
         stderr=subprocess.PIPE,
         text=True,
         cwd=scratch,
-        env={**os.environ, "ENTROLY_NO_DOCKER": "1"},
+        env={
+            **os.environ,
+            "ENTROLY_NO_DOCKER": "1",
+            "PYTHONPATH": python_path,
+        },
     )
     time.sleep(2)
     if proc.poll() is not None:

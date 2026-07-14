@@ -1,17 +1,36 @@
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 
+export const ENTROLY_BRIDGE_SCHEMA = "entroly.openclaw.bridge.v2";
+
+export function validateBridgeHealth(result) {
+  if (
+    !result ||
+    result.ok !== true ||
+    result.schema_version !== ENTROLY_BRIDGE_SCHEMA ||
+    result.provider_independent !== true ||
+    result.receipt_commit_protocol !== "two_phase"
+  ) {
+    throw new Error(
+      "Incompatible Entroly Python bridge; install entroly>=1.0.57 with `python -m pip install -U entroly`",
+    );
+  }
+  return result;
+}
+
 export class EntrolyBridgeClient {
   constructor({
     pythonCommand = "python",
     timeoutMs = 5000,
     logger = console,
     spawnProcess = spawn,
+    environment = process.env,
   } = {}) {
     this.pythonCommand = pythonCommand;
     this.timeoutMs = timeoutMs;
     this.logger = logger;
     this.spawnProcess = spawnProcess;
+    this.environment = environment;
     this.nextId = 1;
     this.pending = new Map();
     this.process = undefined;
@@ -24,7 +43,11 @@ export class EntrolyBridgeClient {
     const child = this.spawnProcess(
       this.pythonCommand,
       ["-m", "entroly.openclaw_bridge", "--jsonl"],
-      { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+        env: this.environment,
+      },
     );
     this.process = child;
     const lines = readline.createInterface({ input: child.stdout });
@@ -61,8 +84,15 @@ export class EntrolyBridgeClient {
     });
   }
 
-  health() {
-    return this.request({ operation: "health" });
+  async health({ workspaceDir, receiptDir, writeReceipts = true } = {}) {
+    return validateBridgeHealth(
+      await this.request({
+        operation: "health",
+        workspace_dir: workspaceDir,
+        receipt_dir: receiptDir,
+        write_receipt: writeReceipts,
+      }),
+    );
   }
 
   #onLine(line) {

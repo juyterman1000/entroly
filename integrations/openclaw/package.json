@@ -1,7 +1,7 @@
 {
   "name": "entroly-openclaw",
-  "version": "1.0.56",
-  "description": "Auditable, budget-aware Entroly context engine for OpenClaw",
+  "version": "1.0.57",
+  "description": "Provider-independent, auditable context optimization for every OpenClaw model route",
   "type": "module",
   "license": "Apache-2.0",
   "homepage": "https://github.com/juyterman1000/entroly#entroly-for-openclaw",

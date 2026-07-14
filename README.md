@@ -348,6 +348,8 @@ Every number below is reproducible and backed by a committed JSON artifact you c
 
 OpenClaw remains the conversation and agent runtime. Attach Entroly as its context control plane with `entroly attach create --client openclaw --project . --ttl 4h --install`.
 
+The OpenClaw context-engine plugin is provider-independent: one Entroly assembly path boosts OpenAI, Anthropic, Gemini, Nemotron, OpenRouter, Ollama, and custom routes because OpenClaw owns provider routing/authentication and supplies the resolved prompt budget. Entroly preserves opaque provider blocks and delegates `/compact` and overflow recovery back to OpenClaw.
+
 The beta OpenClaw context engine scores older messages against the current
 request. Matching evidence is pinned verbatim when it fits a bounded reserve;
 lower-value history is compressed around it, and every decision is written to
@@ -360,13 +362,13 @@ authentication instruction; evidence pinning retained it byte-for-byte.
 | Strategy | Estimated assembled tokens | Exact evidence retained |
 |---|---:|---:|
 | Uniform budget compression | 1,797 | No |
-| Entroly evidence pinning | 1,794 | **Yes** |
+| Entroly evidence pinning | 1,793 | **Yes** |
 
 Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
 [Benchmark JSON](benchmarks/results/openclaw_evidence_pinning.json) ·
 [Plugin setup](integrations/openclaw/README.md)
 
-<sub>Synthetic deterministic workload, 23,114 estimated source tokens, 11
+<sub>Synthetic deterministic normalized multi-provider workload, 23,089 estimated source tokens, 11
 messages, zero model calls. Token counts are estimates, not billed usage, and
 this result does not establish downstream model accuracy.</sub>
 

@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "Entroly Context Engine",
-  "description": "Selects and compresses context under budget while preserving protected messages and writing local audit receipts.",
+  "description": "Provider-independent context assembly for every OpenClaw model route, with protected blocks, recovery delegation, and local audit receipts.",
   "icon": "https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly_wordmark.svg",
   "configSchema": {
     "type": "object",
@@ -27,9 +27,26 @@
         "maximum": 30000,
         "default": 5000
       },
+      "fallbackTokenBudget": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 4000000
+      },
       "receiptDir": {
         "type": "string",
         "minLength": 1
+      },
+      "receiptMaxFiles": {
+        "type": "integer",
+        "minimum": 8,
+        "maximum": 10000,
+        "default": 512
+      },
+      "receiptMaxBytes": {
+        "type": "integer",
+        "minimum": 1048576,
+        "maximum": 1073741824,
+        "default": 67108864
       },
       "writeReceipts": {
         "type": "boolean",
@@ -58,9 +75,21 @@
       "label": "Bridge Timeout (ms)",
       "help": "Maximum time for one Entroly context assembly request."
     },
+    "fallbackTokenBudget": {
+      "label": "Fallback Prompt Token Budget",
+      "help": "Optional operator-approved budget used only when OpenClaw cannot resolve a finite model prompt budget."
+    },
     "receiptDir": {
       "label": "Receipt Directory",
       "help": "Optional local directory for Entroly OpenClaw receipts."
+    },
+    "receiptMaxFiles": {
+      "label": "Receipt File Limit",
+      "help": "Fail safely instead of writing when this append-only receipt count is reached."
+    },
+    "receiptMaxBytes": {
+      "label": "Receipt Byte Limit",
+      "help": "Fail safely instead of allowing the receipt directory to exceed this byte quota."
     },
     "writeReceipts": {
       "label": "Write Local Receipts",

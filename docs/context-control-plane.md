@@ -2,6 +2,28 @@
 
 Entroly is the context control plane around an existing agent runtime. Claude Code, Codex, or OpenClaw still owns the conversation and executes the agent; Entroly selects, remembers, verifies, and proves the context delivered to it.
 
+For OpenClaw, this boundary is provider-independent. OpenClaw resolves the
+provider, model, authentication, failover, normalized messages, and prompt
+budget. Entroly transforms only eligible unsigned text before each model call.
+Signed text, thinking blocks, images, tool calls, tool-result identifiers and
+metadata, provider signatures, message metadata, and recent turns remain
+exact. Eligible unsigned text inside an older tool result may be compressed. If
+OpenClaw cannot provide a finite budget and the operator has not configured a
+fallback, Entroly returns the original context with an actionable diagnostic.
+
+OpenClaw receipts do not persist the plaintext request, matched query terms, or
+reversible per-term digests; they retain only lengths and counts. Append-only
+proposals have unique nonces and immutable payload digests. A proposed receipt
+becomes accepted only after the plugin validates its message structure and
+reveals a precommitted 256-bit challenge. Entroly persists an HMAC signature
+from a private key outside the workspace receipt, never the challenge secret.
+All content digests are keyed too, so receipts do not become offline prompt
+guessing oracles. That verifiable state proves context-engine validation, not
+delivery by the downstream model provider.
+Default workspace stores reject symlink escapes, atomically persist private
+files, and reserve the same byte count before and after acceptance. A hard
+file/byte quota refuses new writes without deleting old audit history.
+
 ## Model metadata with explicit trust
 
 The bundled registry records context limits, output limits, prices, capabilities, aliases, and a trust state. Verified entries are backed by first-party provider documentation. Announced or discovered entries remain visibly labelled and may omit fields that have not been verified.

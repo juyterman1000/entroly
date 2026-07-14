@@ -35,9 +35,13 @@ jobs:
       - name: Resolve target version
         id: version
         shell: bash
+        env:
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            version="${{ inputs.version }}"
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$DISPATCH_VERSION"
           else
             version="${GITHUB_REF_NAME#release/v}"
           fi
@@ -67,6 +71,8 @@ jobs:
 
       - name: Commit synchronized surfaces
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           if git diff --quiet && git diff --cached --quiet && [[ -z "$(git status --porcelain)" ]]; then
             echo "Release surfaces are already synchronized."
@@ -75,5 +81,5 @@ jobs:
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add -A
-          git commit -m "Synchronize release version ${{ steps.version.outputs.version }}"
+          git commit -m "Synchronize release version $RELEASE_VERSION"
           git push origin HEAD
