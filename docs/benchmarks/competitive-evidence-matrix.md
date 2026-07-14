@@ -6,9 +6,12 @@ recovery, latency, provider behavior, reliability, security, packaging, cost,
 and operator experience are reported separately. A win in one dimension cannot
 hide a loss in another.
 
-The machine-readable source of truth is
+The first machine-readable source of truth is
 [`benchmarks/competitive_evidence_protocol.json`](../../benchmarks/competitive_evidence_protocol.json).
-Thresholds and holdout parameters are frozen before results are inspected.
+It is immutable because it is embedded in the recovery artifacts. Later
+dimensions use their own immutable protocol files rather than rewriting prior
+evidence. Thresholds and holdout parameters are frozen before results are
+inspected.
 
 ## Claim rules
 
@@ -28,7 +31,7 @@ Thresholds and holdout parameters are frozen before results are inspected.
 | Active-context quality | matched caps, exact outputs, paired statistics | implemented |
 | Recovery resilience | restart replay, concurrent writers, exact bytes | implemented |
 | End-to-end model recovery | model-triggered retrieval and final answer | planned |
-| Compression latency | warm/cold p50 and p95 by content type | planned |
+| Compression latency | warm/cold p50 and p95 by content type | [implemented](compression-latency.md) |
 | Provider conformance | Anthropic, OpenAI Chat/Responses, Gemini shapes | planned |
 | Interruption recovery | crash, retry, replay, idempotency | planned |
 | Security | secret logs, marker injection, path and tenant isolation | planned |

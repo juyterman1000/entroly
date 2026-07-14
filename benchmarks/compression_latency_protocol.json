@@ -1,0 +1,57 @@
+{
+  "schema_version": "entroly.compression-latency-protocol.v1",
+  "frozen_at": "2026-07-14T12:12:00Z",
+  "participants": {
+    "entroly": {
+      "package": "entroly",
+      "version": "1.0.59",
+      "source": "merged main source"
+    },
+    "headroom": {
+      "package": "headroom-ai",
+      "version": "0.31.0",
+      "source": "published PyPI wheel"
+    }
+  },
+  "fixture_source": "benchmarks.compression_gauntlet.build_scenarios",
+  "model": "gpt-4o",
+  "entroly_budget_tokens": 1200,
+  "headroom_savings_profile": "agent-90",
+  "shared_tokenizer": "o200k_base",
+  "quality_gates": {
+    "complete_matrix": true,
+    "deterministic_output": true,
+    "evidence_recall": 1.0,
+    "maximum_token_inflation": 0.0
+  },
+  "claim_policy": {
+    "aggregate_product_score_allowed": false,
+    "failures_remain_in_sample": true,
+    "per_mode_claims_only": true,
+    "universal_superiority_claim_allowed": false,
+    "minimum_bootstrap_lower_speedup": 1.0,
+    "confidence_level": 0.95
+  },
+  "phases": {
+    "development": {
+      "warmups": 2,
+      "warm_runs_per_fixture": 8,
+      "cold_runs_per_fixture": 3,
+      "bootstrap_iterations": 2000,
+      "seed": 20260716
+    },
+    "holdout": {
+      "warmups": 5,
+      "warm_runs_per_fixture": 30,
+      "cold_runs_per_fixture": 10,
+      "bootstrap_iterations": 10000,
+      "seed": 20260717
+    }
+  },
+  "definitions": {
+    "warm_call_latency": "Public compressor call after the preregistered warm-up count; process startup and provider latency excluded.",
+    "cold_latency": "Product import plus the first public compressor call in a fresh isolated Python process; interpreter startup and provider latency excluded.",
+    "overall_speedup": "Geometric mean of the four per-fixture comparator-median divided by Entroly-median latency ratios.",
+    "bootstrap": "Within each fixture and participant, resample raw latency observations with replacement, recompute medians and the four-fixture geometric mean, then take the 2.5th and 97.5th percentiles."
+  }
+}
