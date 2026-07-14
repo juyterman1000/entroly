@@ -22,6 +22,7 @@ check("SDK: compress works", lambda: f"{len(__import__('entroly').compress('hell
 # === CLI: wrap ===
 from entroly.cli import _WRAP_AGENTS  # noqa: E402
 from pathlib import Path  # noqa: E402
+from verify_public_trust import collect_offline_failures  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
@@ -101,12 +102,13 @@ check(
 check(
     "README proof-first star CTA",
     lambda: (
-        "img.shields.io/github/stars/juyterman1000/entroly?style=social" in README_TEXT
+        'href="https://github.com/juyterman1000/entroly"' in README_TEXT
+        and "img.shields.io/github/stars/juyterman1000/entroly?style=social" in README_TEXT
         and "Deciding whether to star?" in README_TEXT
         and "entroly verify-claims && entroly simulate" in README_TEXT
         and "open an issue with the verification JSON" in README_TEXT
         and "Token_Savings-tested_70--95%25" not in README_TEXT
-        and "Token_Savings-workload_dependent" in README_TEXT
+        and "Token_savings-measure_your_workload" in README_TEXT
         and "OK"
     ) or (_ for _ in ()).throw(Exception("README must ask for stars through local proof, not broad first-fold claims")),
 )
@@ -120,6 +122,13 @@ check(
         and "https://juyterman1000.github.io/entroly/docs/discord.html" in INSTALL_TEXT
         and "OK"
     ) or (_ for _ in ()).throw(Exception("Public community links must not route to expired Discord invites")),
+)
+check(
+    "prominent public trust contracts",
+    lambda: (
+        not (failures := collect_offline_failures())
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("; ".join(failures))),
 )
 
 # === Proxy ===
@@ -163,6 +172,7 @@ print(f"  PASSED: {passed}  |  FAILED: {failed}")
 if failed:
     print(f"  README has {failed} unverified claim(s)!")
 else:
-    print("  All README claims verified!")
+    print("  Automated README contracts passed.")
+    print("  This does not certify every product or benchmark claim.")
 print(f"{'='*50}")
 sys.exit(1 if failed else 0)

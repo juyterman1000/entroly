@@ -45,7 +45,7 @@
       "url": "https://github.com/juyterman1000/entroly"
     },
     "featureList": [
-      "Prompt Compression (70-95% token savings)",
+      "Budgeted context selection with workload-specific measurement",
       "KV-Cache Aligner (prefix cache discounts)",
       "WITNESS Hallucination Guard (local output audit)",
       "ModelContextProtocol (MCP) Server support",
@@ -957,14 +957,14 @@
     </div>
 
     <div style="margin-top: 12px; font-size: 13px; color: var(--muted); max-width: 620px;">
-      Then the <b style="color:var(--accent)">Cache Aligner</b> holds your prefix stable so provider caches actually hit —
-      <b style="color:var(--text)">90% off</b> cached reads on Anthropic, <b style="color:var(--text)">50% off</b> on OpenAI (provider-set rates).
+      The <b style="color:var(--accent)">Cache Aligner</b> keeps eligible prompt prefixes byte-stable. Whether a request
+      receives a cache hit or discount is determined by the provider; verify it from provider-reported usage.
     </div>
 
     <div class="preview" role="button" tabindex="0" aria-label="Play Entroly demo video"
          onclick="openDemo()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDemo();}">
       <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg"
-        alt="Entroly Demo — 70-95% token savings"
+        alt="Entroly context-selection and receipt demo"
         loading="eager" decoding="async">
       <div class="play-overlay">
         <div class="play-btn" aria-hidden="true">
@@ -989,6 +989,9 @@
       <a href="https://pypi.org/project/entroly/" aria-label="View Entroly on PyPI">
         <img src="https://img.shields.io/pypi/v/entroly?style=for-the-badge&logo=pypi&logoColor=white&color=4ade80&labelColor=0e0e15" alt="PyPI version">
       </a>
+      <a href="https://www.npmjs.com/package/entroly" aria-label="View Entroly on npm">
+        <img src="https://img.shields.io/npm/v/entroly?style=for-the-badge&logo=npm&logoColor=white&color=ef4444&labelColor=0e0e15" alt="npm version">
+      </a>
       <a href="https://github.com/juyterman1000/entroly/blob/main/LICENSE" aria-label="View license">
         <img src="https://img.shields.io/badge/license-Apache--2.0-818cf8?style=for-the-badge&labelColor=0e0e15" alt="License: Apache-2.0">
       </a>
@@ -1001,7 +1004,7 @@
       <button class="lightbox-close" onclick="closeDemo()" aria-label="Close demo">×</button>
       <img id="demoVideoFull"
         src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/demo.svg"
-        alt="Entroly Demo — 70-95% token savings"
+        alt="Entroly context-selection and receipt demo"
         style="width:100%;height:100%;object-fit:contain;display:block;background:#050508;">
     </div>
   </div>
@@ -1022,49 +1025,53 @@
 
   <div class="stats-grid">
     <div class="stat-card">
-      <div class="val"><span style="opacity:0.4;font-size:0.6em;font-weight:400">70-</span>95%</div>
-      <div class="label">Token Reduction</div>
+      <div class="val">128/128</div>
+      <div class="label">Context Replays</div>
     </div>
     <div class="stat-card">
-      <div class="val">100%</div>
-      <div class="label">Code Visibility</div>
+      <div class="val">768/768</div>
+      <div class="label">Tamper Trials Detected</div>
     </div>
     <div class="stat-card">
-      <div class="val">&lt;8ms</div>
-      <div class="label">Engine Latency</div>
+      <div class="val">20,000</div>
+      <div class="label">Faithful HaluEval Decisions</div>
     </div>
     <div class="stat-card">
-      <div class="val">436</div>
-      <div class="label">Tests Passing</div>
+      <div class="val">3 paths</div>
+      <div class="label">Python · Optional Rust · WASM</div>
     </div>
   </div>
+
+  <p class="video-caption">
+    Integrity counts: <a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/context_commit_conformance.json">Context Commit conformance JSON</a>.
+    WITNESS count: <a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/halueval_qa_faithful.json">faithful HaluEval-QA JSON</a>.
+    These results are protocol-scoped, not production guarantees.
+  </p>
 
   <section id="why">
     <div class="section-header">
       <span class="tag">The Problem</span>
-      <h2>RAG isn't enough for coding.</h2>
+      <h2>Selection needs an audit trail.</h2>
     </div>
 
     <div class="comp-grid">
       <div class="comp-card bad" data-reveal>
-        <h3>Standard Context</h3>
-        <div class="row"><span class="lbl">Files visible</span><span class="val">5-10 files</span></div>
-        <div class="row"><span class="lbl">Visibility</span><span class="val">~5%</span></div>
-        <div class="row"><span class="lbl">Tokens used</span><span class="val">186,420 (Raw)</span></div>
-        <div class="row"><span class="lbl">Cost / 1K Req</span><span class="val">$560.00</span></div>
-        <div class="row" style="border:0"><span class="lbl">Quality</span><span class="val">Hallucination risk</span>
+        <h3>Uncontrolled Context</h3>
+        <div class="row"><span class="lbl">Budget</span><span class="val">Implicit or absent</span></div>
+        <div class="row"><span class="lbl">Omissions</span><span class="val">Often unexplained</span></div>
+        <div class="row"><span class="lbl">Recovery</span><span class="val">Integration-dependent</span></div>
+        <div class="row"><span class="lbl">Measurement</span><span class="val">Provider usage required</span></div>
+        <div class="row" style="border:0"><span class="lbl">Trust question</span><span class="val">What evidence was used?</span>
         </div>
       </div>
 
       <div class="comp-card good" data-reveal>
-        <h3>With Entroly</h3>
-        <div class="row"><span class="lbl">Files visible</span><span class="val">ALL 847 files</span></div>
-        <div class="row"><span class="lbl">Visibility</span><span class="val">100%</span></div>
-        <div class="row"><span class="lbl">Tokens used</span><span class="val"><span
-              style="opacity:0.5;font-weight:400">9,300 -</span> 55,000</span></div>
-        <div class="row"><span class="lbl">Cost / 1K Req</span><span class="val"><span
-              style="opacity:0.5;font-weight:400">$28 -</span> $168</span></div>
-        <div class="row" style="border:0"><span class="lbl">Quality</span><span class="val">Dependency Aware</span>
+        <h3>Entroly-Controlled Context</h3>
+        <div class="row"><span class="lbl">Budget</span><span class="val">Explicit</span></div>
+        <div class="row"><span class="lbl">Omissions</span><span class="val">Recorded in receipts</span></div>
+        <div class="row"><span class="lbl">Recovery</span><span class="val">Available while recovery state is retained</span></div>
+        <div class="row"><span class="lbl">Measurement</span><span class="val">Local estimate + provider pilot</span></div>
+        <div class="row" style="border:0"><span class="lbl">Trust answer</span><span class="val">Inspect and replay the receipt</span>
         </div>
       </div>
     </div>
@@ -1092,13 +1099,14 @@
       <div class="feat-card" data-reveal>
         <div class="icon">🧠</div>
         <h3>PRISM Optimizer</h3>
-        <p>Reinforcement Learning adjusts context weights based on AI response quality. Gets smarter every time you
-          code.</p>
+        <p>Recorded outcomes can adjust local context weights. Candidate changes remain subject to promotion and
+          rollback policy; adaptation is not an accuracy guarantee.</p>
       </div>
       <div class="feat-card" data-reveal>
         <div class="icon">🔒</div>
         <h3>Built-in Security</h3>
-        <p>55 SAST rules catch hardcoded secrets and SQL injection before they reach the AI. Security by design.</p>
+        <p>Local SAST and prompt-injection checks can flag configured patterns before context is selected. Review
+          findings; these checks are not a substitute for a security audit.</p>
       </div>
       <div class="feat-card" data-reveal>
         <div class="icon">📊</div>
@@ -1116,13 +1124,13 @@
 
   <section id="levers" class="levers">
     <div class="section-header">
-      <span class="tag">Why it compounds</span>
-      <h2>19 cost-saving levers. One install.</h2>
+      <span class="tag">Inspectable controls</span>
+      <h2>19 mechanisms. Source-linked.</h2>
       <p>
         Most context tools optimize a <b style="color:var(--text)">single</b> lever — input compression.
         Entroly ships <b style="color:var(--text)">19 distinct mechanisms</b> across input, inference, output,
-        verification, and learning. Most are <b style="color:var(--text)">multiplicative</b>, not additive — and
-        every one reads from a real source file you can open and audit.
+        verification, and learning. Their effects must be measured separately and end to end; each source file can
+        be opened and audited.
       </p>
     </div>
 
@@ -1132,16 +1140,16 @@
         <h3>Cache Aligner</h3>
         <p>Compressors re-rank context on every call, which busts the provider's KV cache. The aligner hashes the
           injected context and holds the prefix stable so cache hits actually land.</p>
-        <div class="metric">90% / 50%</div>
-        <div class="src">Anthropic cached-read · OpenAI · entroly/cache_aligner.py</div>
+        <div class="metric">Byte-stable prefix</div>
+        <div class="src">Confirm hits from provider usage · entroly/cache_aligner.py</div>
       </div>
       <div class="lever-hi" data-reveal>
-        <div class="kicker">$0 hallucination guard</div>
-        <h3>WITNESS + STAVE</h3>
-        <p>Deterministic faithfulness verifier — no second LLM, no API call. Statistically ties a modern LLM judge on
-          HaluEval-QA at zero marginal cost.</p>
-        <div class="metric">AUROC 0.84</div>
-        <div class="src">~3 ms/decision · entroly/witness.py · stave.py</div>
+        <div class="kicker">Local grounding-risk signal</div>
+        <h3>WITNESS</h3>
+        <p>Deterministic verifier with no second model call. The committed faithful HaluEval-QA run reports scope,
+          sample size, held-out accuracy, and uncertainty; it does not establish general hallucination prevention.</p>
+        <div class="metric">AUROC 0.7976</div>
+        <div class="src">20,000 decisions · <a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/halueval_qa_faithful.json">raw result</a></div>
       </div>
       <div class="lever-hi" data-reveal>
         <div class="kicker">Pay for the model you need</div>
@@ -1155,12 +1163,12 @@
 
     <div class="lever-grid">
       <div class="lever" data-reveal><div class="num">01</div><h4>Context compression</h4><p>Knapsack DP + 9 specialized compressors + a dep-graph pick the most information-dense fragments that fit your budget.</p><span class="src">proxy_transform.py</span></div>
-      <div class="lever" data-reveal><div class="num">02</div><h4>WITNESS + STAVE</h4><p>Deterministic $0 faithfulness verifier — no second LLM, no API call.</p><span class="src">witness.py · stave.py</span></div>
-      <div class="lever" data-reveal><div class="num">03</div><h4>Cache Aligner</h4><p>Holds the prefix stable so Anthropic's 90% / OpenAI's 50% cached-read discount actually lands.</p><span class="src">cache_aligner.py</span></div>
+      <div class="lever" data-reveal><div class="num">02</div><h4>WITNESS + STAVE</h4><p>Local grounding-risk signals with separately documented evaluation protocols.</p><span class="src">witness.py · stave.py</span></div>
+      <div class="lever" data-reveal><div class="num">03</div><h4>Cache Aligner</h4><p>Holds eligible prefix bytes stable; provider-reported usage determines whether a cache hit occurred.</p><span class="src">cache_aligner.py</span></div>
       <div class="lever" data-reveal><div class="num">04</div><h4>Escalation cascade</h4><p>Cheap model first; escalate only when verifier risk demands it. Bounded regret via split-conformal coverage.</p><span class="src">escalation.py</span></div>
       <div class="lever" data-reveal><div class="num">05</div><h4>Conformal cascade</h4><p>Two-verifier cascade with a measured Pareto frontier vs. either verifier alone.</p><span class="src">conformal_cascade.py</span></div>
       <div class="lever" data-reveal><div class="num">06</div><h4>RAVS Bayesian router</h4><p>Per-task model routing — cheap when capable, strong when needed. Fail-closed.</p><span class="src">ravs/router.py</span></div>
-      <div class="lever" data-reveal><div class="num">07</div><h4>Fast-path skills</h4><p>Queries that match a proven crystallized skill short-circuit the whole pipeline — 100% LLM cost saved.</p><span class="src">fast_path.py</span></div>
+      <div class="lever" data-reveal><div class="num">07</div><h4>Fast-path skills</h4><p>Queries that match an accepted cache key can reuse the recorded result under the configured policy.</p><span class="src">fast_path.py</span></div>
       <div class="lever" data-reveal><div class="num">08</div><h4>Adaptive Compression Budget</h4><p>Learns the right token budget per query so easy questions don't overspend.</p><span class="src">adaptive_budget.py</span></div>
       <div class="lever" data-reveal><div class="num">09</div><h4>Entropic Conversation Pruning</h4><p>Compresses chat history each turn so long conversations don't bloat the input.</p><span class="src">proxy_transform.py</span></div>
       <div class="lever" data-reveal><div class="num">10</div><h4>Shell-output compression</h4><p>Targeted fast paths for git, builds, logs, JSON, and test output — 60–95% smaller.</p><span class="src">proxy_transform.py</span></div>
@@ -1247,11 +1255,11 @@
             <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/squad_accuracy.json">squad_accuracy.json</a></td>
           </tr>
           <tr>
-            <td>WITNESS+STAVE hallucination (HaluEval-QA)</td>
-            <td class="num">AUROC 0.84</td>
-            <td class="num">~3 ms · $0/call</td>
-            <td class="num">2,000</td>
-            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/stave_benchmark.json">stave_benchmark.json</a></td>
+            <td>WITNESS grounding-risk benchmark (HaluEval-QA)</td>
+            <td class="num">AUROC 0.7976</td>
+            <td class="num">84.92% held-out accuracy</td>
+            <td class="num">20,000 decisions</td>
+            <td><a href="https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/halueval_qa_faithful.json">halueval_qa_faithful.json</a></td>
           </tr>
         </tbody>
       </table>
@@ -1270,8 +1278,8 @@
   </section>
 
   <div class="cta-banner" data-reveal>
-    <h2>Stop paying for boilerplate.</h2>
-    <p>Free your AI from context blindness today.</p>
+    <h2>Measure it before you trust it.</h2>
+    <p>Run the local package, recovery, and workload-estimate checks first.</p>
     <a href="https://github.com/juyterman1000/entroly" class="btn btn-primary"
       style="padding: 12px 32px; font-size: 16px;">View on GitHub</a>
     <div style="margin-top: 24px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--green);">
@@ -1282,15 +1290,11 @@
   <footer>
     <p>Entroly — Apache-2.0 Licensed · Context Intelligence, Not Compression</p>
     <p style="margin-top: 16px;">
-      <a href="/entroly/docs/reduce-llm-api-costs.html">Reduce LLM API Costs</a>
-      <a href="/entroly/docs/prompt-compression.html">Prompt Compression</a>
-      <a href="/entroly/docs/hallucination-guard.html">Hallucination Guard</a>
-      <a href="/entroly/docs/token-optimization.html">Token Optimization</a>
-      <a href="/entroly/docs/context-engineering.html">Context Engineering</a>
-      <a href="/entroly/docs/cursor-context-guide.html">Cursor Guide</a>
-      <a href="/entroly/docs/claude-code-setup.html">Claude Code Guide</a>
+      <a href="https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md">Public Evidence</a>
+      <a href="https://github.com/juyterman1000/entroly/blob/main/docs/first-run-trust.md">First-Run Trust</a>
+      <a href="https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md">Limitations</a>
+      <a href="https://github.com/juyterman1000/entroly/blob/main/docs/product-surface.md">Product Surface</a>
       <a href="/entroly/docs/mcp-server-guide.html">MCP Server</a>
-      <a href="/entroly/docs/dashboard.html">Live Dashboard</a>
     </p>
     <p style="margin-top: 12px;">
       <a href="https://github.com/juyterman1000/entroly">GitHub</a>

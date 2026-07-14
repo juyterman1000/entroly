@@ -61,7 +61,7 @@ entroly wrap cursor
 entroly wrap codex
 entroly wrap aider
 entroly proxy
-entroly serve
+entroly serve  # Docker-first; use ENTROLY_NO_DOCKER=1 for installed Python
 entroly daemon
 ```
 

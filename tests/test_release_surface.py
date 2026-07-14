@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.57"
+RELEASE_VERSION = "1.0.58"
 HOMEBREW_FORMULA_VERSION = "1.0.57"
 HOMEBREW_FORMULA_SHA256 = "fef09c6b5e2616a09333a911f48fdef70b94747e22c56d9cc44a41832271c9b4"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
@@ -66,7 +66,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_57() -> None:
+def test_public_package_versions_are_1_0_58() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -116,15 +116,15 @@ def test_mcp_registry_identity_is_canonical_and_non_squattable() -> None:
     ).read_text(encoding="utf-8")
 
     expected = {
-        ("pypi", "entroly", "uvx", ("serve",)),
-        ("npm", "entroly-mcp", "npx", ("serve",)),
+        ("pypi", "entroly", "uvx", ()),
+        ("npm", "entroly-mcp", "npx", ()),
     }
     actual = {
         (
             package["registryType"],
             package["identifier"],
             package["runtimeHint"],
-            tuple(argument["value"] for argument in package["packageArguments"]),
+            tuple(argument["value"] for argument in package.get("packageArguments", [])),
         )
         for package in manifest["packages"]
     }

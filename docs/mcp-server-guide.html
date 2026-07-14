@@ -105,10 +105,14 @@ entroly init</pre>
 <p>Auto-detects your IDE and generates the appropriate MCP configuration.</p>
 
 <h3>Any MCP-Compatible Tool</h3>
-<pre>pip install -U entroly
-entroly serve --transport stdio</pre>
-<p>Or with SSE transport for remote connections:</p>
-<pre>entroly serve --transport sse --port 9378</pre>
+<pre>{
+  "mcpServers": {
+    "entroly": { "command": "entroly", "args": [] }
+  }
+}</pre>
+<p>Install with <code>pip install -U entroly</code>, then register the bare
+<code>entroly</code> command. An MCP client's stdio pipe starts the installed
+Python server without requiring Docker.</p>
 
 <h3>Node/WASM, No Python</h3>
 <pre>npm install -g entroly
@@ -137,7 +141,7 @@ entroly serve</pre>
 
 <ol>
   <li>The AI tool calls <code>optimize_context</code> with the user's query and token budget</li>
-  <li>Entroly's Rust engine scores and selects the optimal code fragments in &lt;10ms</li>
+  <li>The installed engine scores and selects context under the requested budget; the base package can use its pure-Python path and the optional native extra enables supported Rust paths</li>
   <li>The selected context is delivered at variable resolution — full text, signatures, or references</li>
   <li>The AI tool receives broader useful context under a smaller token budget; exact savings depend on the repo, query, and budget</li>
   <li>After the AI responds, <code>record_outcome</code> feeds the learning loop</li>
@@ -146,22 +150,23 @@ entroly serve</pre>
 <h2>Configuration</h2>
 
 <h3>Transport Options</h3>
-<pre># stdio (default — for local IDE connections)
-entroly serve --transport stdio
+<pre># stdio (default): register this command in the MCP client
+entroly
 
-# SSE (for remote / multi-client setups)
-entroly serve --transport sse --port 9378</pre>
+# installed Python runtime in a POSIX shell
+ENTROLY_NO_DOCKER=1 entroly serve
 
-<h3>Quality Presets</h3>
-<pre>entroly serve --quality balanced    # recommended
-entroly serve --quality max         # best context, slightly more latency
-entroly serve --quality speed       # fastest, lighter optimization</pre>
+# SSE through the installed Python runtime
+ENTROLY_NO_DOCKER=1 ENTROLY_MCP_TRANSPORT=sse ENTROLY_MCP_PORT=9379 entroly serve</pre>
+<p><code>entroly serve</code> is Docker-first unless <code>ENTROLY_NO_DOCKER=1</code>
+is set. The CLI does not accept <code>--transport</code>, <code>--port</code>, or
+<code>--quality</code> on the <code>serve</code> command.</p>
 
 <h3>Environment Variables</h3>
 <table>
   <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
   <tr><td><code>ENTROLY_MCP_TRANSPORT</code></td><td>stdio</td><td>Transport mode</td></tr>
-  <tr><td><code>ENTROLY_QUALITY</code></td><td>0.5</td><td>Quality dial (0.0-1.0)</td></tr>
+  <tr><td><code>ENTROLY_MCP_PORT</code></td><td>9379</td><td>SSE port when MCP transport is <code>sse</code></td></tr>
   <tr><td><code>ENTROLY_MAX_FILES</code></td><td>5000</td><td>Max files to index</td></tr>
 </table>
 
@@ -169,7 +174,7 @@ entroly serve --quality speed       # fastest, lighter optimization</pre>
 
 <h3>MCP server not connecting</h3>
 <pre>entroly doctor</pre>
-<p>Runs 7 diagnostic checks including MCP connectivity, port availability, and config validation.</p>
+<p>Checks the installed package, configuration, optional Docker availability, local index state, and verifier imports. Read the output for warnings; a passing doctor run is not an end-to-end client or model test.</p>
 
 <h3>Not sure whether to use MCP or proxy?</h3>
 <p>Use MCP for Claude Code subscriptions and MCP-native IDEs. Use proxy mode only when you control a provider API key and want transparent Anthropic/OpenAI-compatible request optimization.</p>
@@ -178,7 +183,10 @@ entroly serve --quality speed       # fastest, lighter optimization</pre>
 <p>Check that <code>.cursor/mcp.json</code> exists and restart Cursor. Entroly needs to be installed globally or in the same environment Cursor can access.</p>
 
 <h3>High latency</h3>
-<p>Switch to a faster quality preset: <code>entroly serve --quality speed</code>. Or install the Rust engine: <code>pip install entroly[native]</code>.</p>
+<p>The first tool call can include indexing work. Confirm the indexed scope and
+engine mode with <code>entroly verify-claims</code>. Install the optional Rust
+engine with <code>pip install 'entroly[native]'</code> where a compatible wheel is
+available, then re-run verification instead of assuming acceleration is active.</p>
 
 <div class="cta-box">
   <h3>Local context OS for AI coding agents.</h3>

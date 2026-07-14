@@ -121,8 +121,8 @@ jobs:
           canonical_repo = 'https://github.com/juyterman1000/entroly'
           canonical_name = 'io.github.juyterman1000/entroly'
           expected_packages = {
-              ('pypi', 'entroly'): ('uvx', ['serve']),
-              ('npm', 'entroly-mcp'): ('npx', ['serve']),
+              ('pypi', 'entroly'): ('uvx', []),
+              ('npm', 'entroly-mcp'): ('npx', []),
           }
 
           with (root / 'pyproject.toml').open('rb') as fh:
