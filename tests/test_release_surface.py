@@ -7,8 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.58"
-HOMEBREW_FORMULA_VERSION = "1.0.57"
-HOMEBREW_FORMULA_SHA256 = "fef09c6b5e2616a09333a911f48fdef70b94747e22c56d9cc44a41832271c9b4"
+HOMEBREW_FORMULA_VERSION = "1.0.58"
+HOMEBREW_FORMULA_SHA256 = "f2d561e7316cf12c07ffffadeff0b8f26368538564d776eee86b4b76a896959e"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -202,6 +202,10 @@ def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
     assert "group: sync-homebrew-main" in text
     assert "if target_tuple < current_tuple:" in text
     assert "refusing to downgrade Homebrew" in text
+    assert "pull-requests: write" in text
+    assert 'BRANCH="agent/homebrew-${VERSION}"' in text
+    assert "gh pr create --base main" in text
+    assert "git push origin HEAD:main" not in text
 
 
 def test_release_artifacts_have_one_quality_gated_publisher() -> None:
