@@ -1,9 +1,95 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+import time
+
 import pytest
 
 from entroly.compression_proxy import compress_proxy_payload, compress_proxy_payload_from_env
 from entroly.compression_retrieval_store import CompressionRetrievalStore
+
+
+_CONCURRENT_WRITER = r"""
+import json
+import sys
+import time
+from pathlib import Path
+
+from entroly.compression_retrieval_store import CompressionRetrievalStore
+
+store_path = Path(sys.argv[1])
+coordination_dir = Path(sys.argv[2])
+worker_id = int(sys.argv[3])
+entries = int(sys.argv[4])
+store = CompressionRetrievalStore(store_path)
+(coordination_dir / f"ready-{worker_id}").write_text("ready", encoding="utf-8")
+start = coordination_dir / "start"
+deadline = time.monotonic() + 30
+while not start.exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError("test writer timed out waiting for start")
+    time.sleep(0.005)
+
+references = []
+for entry_index in range(entries):
+    payload = (
+        f"worker={worker_id} entry={entry_index}\n"
+        + (f"exact concurrent payload {worker_id}:{entry_index} " * 20).strip()
+    )
+    stored = store.put(
+        original_text=payload,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": len(payload) // 4,
+            "compressed_tokens": 3,
+            "omitted_spans": [{"start_line": 1, "end_line": 2}],
+        },
+    )
+    references.append(
+        {
+            "receipt_id": stored.receipt_id,
+            "span_id": stored.spans[0].span_id,
+            "payload": payload,
+        }
+    )
+(coordination_dir / f"result-{worker_id}.json").write_text(
+    json.dumps(references), encoding="utf-8"
+)
+"""
+
+
+_CONCURRENT_RETRIEVER = r"""
+import sys
+import time
+from pathlib import Path
+
+from entroly.compression_retrieval_store import CompressionRetrievalStore
+
+store_path = Path(sys.argv[1])
+coordination_dir = Path(sys.argv[2])
+worker_id = int(sys.argv[3])
+receipt_id = sys.argv[4]
+span_id = sys.argv[5]
+store = CompressionRetrievalStore(store_path)
+(coordination_dir / f"retrieval-ready-{worker_id}").write_text(
+    "ready", encoding="utf-8"
+)
+start = coordination_dir / "retrieval-start"
+deadline = time.monotonic() + 30
+while not start.exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError("test retriever timed out waiting for start")
+    time.sleep(0.005)
+span = store.retrieve_span(
+    receipt_id,
+    span_id,
+    retrieval_id=f"concurrent-retrieval-{worker_id}",
+)
+if span is None:
+    raise RuntimeError("stored span disappeared")
+"""
 
 
 def test_retrieval_store_saves_and_fetches_omitted_spans(tmp_path) -> None:
@@ -38,6 +124,132 @@ def test_retrieval_store_saves_and_fetches_omitted_spans(tmp_path) -> None:
     restored_span = restored.get_span(receipt_id, span_id)
     assert restored_span is not None
     assert restored_span.content == span.content
+
+
+def test_long_lived_reader_observes_another_store_commit(tmp_path) -> None:
+    path = tmp_path / "shared.json"
+    reader = CompressionRetrievalStore(path)
+    writer = CompressionRetrievalStore(path)
+    original = "line one\nline two"
+
+    stored = writer.put(
+        original_text=original,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": 4,
+            "compressed_tokens": 2,
+            "omitted_spans": [{"start_line": 1, "end_line": 2}],
+        },
+    )
+
+    observed = reader.get_span(stored.receipt_id, stored.spans[0].span_id)
+    assert observed is not None
+    assert observed.content == original
+
+
+def test_independent_concurrent_writers_preserve_every_payload(tmp_path) -> None:
+    store_path = tmp_path / "shared.json"
+    workers = 4
+    entries = 5
+    processes: list[subprocess.Popen[str]] = []
+    for worker_id in range(workers):
+        processes.append(
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    _CONCURRENT_WRITER,
+                    str(store_path),
+                    str(tmp_path),
+                    str(worker_id),
+                    str(entries),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        )
+
+    for _attempt in range(600):
+        if len(list(tmp_path.glob("ready-*"))) == workers:
+            break
+        if any(process.poll() is not None for process in processes):
+            break
+        time.sleep(0.01)
+    assert len(list(tmp_path.glob("ready-*"))) == workers
+    (tmp_path / "start").write_text("start", encoding="utf-8")
+
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=30)
+        assert process.returncode == 0, f"stdout={stdout}\nstderr={stderr}"
+
+    restored = CompressionRetrievalStore(store_path)
+    references = []
+    for worker_id in range(workers):
+        references.extend(
+            json.loads(
+                (tmp_path / f"result-{worker_id}.json").read_text(encoding="utf-8")
+            )
+        )
+    assert len(restored.list_receipts()) == workers * entries
+    for reference in references:
+        span = restored.get_span(reference["receipt_id"], reference["span_id"])
+        assert span is not None
+        assert span.content == reference["payload"]
+
+
+def test_independent_retrievers_preserve_every_accounting_debit(tmp_path) -> None:
+    store_path = tmp_path / "shared.json"
+    original = "first line\nsecond line"
+    stored = CompressionRetrievalStore(store_path).put(
+        original_text=original,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": 6,
+            "compressed_tokens": 2,
+            "omitted_spans": [{"start_line": 1, "end_line": 2}],
+        },
+    )
+    workers = 4
+    processes = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                _CONCURRENT_RETRIEVER,
+                str(store_path),
+                str(tmp_path),
+                str(worker_id),
+                stored.receipt_id,
+                stored.spans[0].span_id,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for worker_id in range(workers)
+    ]
+    for _attempt in range(600):
+        if len(list(tmp_path.glob("retrieval-ready-*"))) == workers:
+            break
+        if any(process.poll() is not None for process in processes):
+            break
+        time.sleep(0.01)
+    assert len(list(tmp_path.glob("retrieval-ready-*"))) == workers
+    (tmp_path / "retrieval-start").write_text("start", encoding="utf-8")
+
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=30)
+        assert process.returncode == 0, f"stdout={stdout}\nstderr={stderr}"
+
+    restored = CompressionRetrievalStore(store_path)
+    span = restored.get_span(stored.receipt_id, stored.spans[0].span_id)
+    receipt = restored.get_receipt(stored.receipt_id)
+    assert span is not None
+    assert receipt is not None
+    assert span.retrieval_count == workers
+    assert len(span.retrieval_ids) == workers
+    assert receipt.retrieval_count == workers
 
 
 def test_retrieval_store_searches_omitted_spans() -> None:

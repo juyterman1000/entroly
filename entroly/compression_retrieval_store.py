@@ -14,13 +14,16 @@ agent. Explicit retrieval IDs make those debits idempotent across retries.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import os
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from .optimization_ledger import OptimizationLedger
@@ -140,7 +143,7 @@ class StoredCompression:
 
 
 class CompressionRetrievalStore:
-    """Thread-safe local store with retrieval-adjusted savings accounting."""
+    """Process-safe local store with retrieval-adjusted savings accounting."""
 
     def __init__(
         self,
@@ -152,6 +155,7 @@ class CompressionRetrievalStore:
         self.optimization_ledger = optimization_ledger
         self._items: dict[str, StoredCompression] = {}
         self._lock = threading.RLock()
+        self._disk_signature: tuple[int, int, int] | None = None
         if self.path is not None and self.path.exists():
             self._load()
         if self.optimization_ledger is not None:
@@ -166,6 +170,69 @@ class CompressionRetrievalStore:
                             token_count,
                             retrieval_id=retrieval_id,
                         )
+
+    @property
+    def _lock_path(self) -> Path | None:
+        if self.path is None:
+            return None
+        return self.path.with_name(self.path.name + ".lock")
+
+    @staticmethod
+    def _signature(stat: os.stat_result) -> tuple[int, int, int]:
+        return (int(stat.st_mtime_ns), int(stat.st_size), int(stat.st_ino))
+
+    @contextmanager
+    def _interprocess_lock(self) -> Iterator[None]:
+        """Serialize disk mutations across independent Entroly processes."""
+        lock_path = self._lock_path
+        if lock_path is None:
+            yield
+            return
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                deadline = time.monotonic() + 30.0
+                delay = 0.001
+                while True:
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError as error:
+                        if error.errno not in {errno.EACCES, errno.EAGAIN}:
+                            raise
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f"timed out acquiring recovery-store lock {lock_path}"
+                            ) from error
+                        time.sleep(delay)
+                        delay = min(0.05, delay * 1.5)
+                try:
+                    yield
+                finally:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _refresh_if_changed(self, *, force: bool = False) -> None:
+        if self.path is None or not self.path.exists():
+            return
+        current = self._signature(self.path.stat())
+        if force or current != self._disk_signature:
+            self._load()
 
     def put(
         self,
@@ -211,15 +278,17 @@ class CompressionRetrievalStore:
             metadata={"savings_confidence": "measured", **dict(metadata or {})},
         )
         with self._lock:
-            previous = self._items.get(receipt_id)
-            if previous is not None:
-                return previous
-            self._items[receipt_id] = stored
-            try:
-                self._persist()
-            except Exception:
-                self._items.pop(receipt_id, None)
-                raise
+            with self._interprocess_lock():
+                self._refresh_if_changed(force=True)
+                previous = self._items.get(receipt_id)
+                if previous is not None:
+                    return previous
+                self._items[receipt_id] = stored
+                try:
+                    self._persist()
+                except Exception:
+                    self._items.pop(receipt_id, None)
+                    raise
         self._record_compression(stored)
         return stored
 
@@ -366,20 +435,23 @@ class CompressionRetrievalStore:
             },
         )
         with self._lock:
-            previous = self._items.get(receipt_id)
-            if previous is not None:
-                return previous
-            self._items[receipt_id] = stored
-            try:
-                self._persist()
-            except Exception:
-                self._items.pop(receipt_id, None)
-                raise
+            with self._interprocess_lock():
+                self._refresh_if_changed(force=True)
+                previous = self._items.get(receipt_id)
+                if previous is not None:
+                    return previous
+                self._items[receipt_id] = stored
+                try:
+                    self._persist()
+                except Exception:
+                    self._items.pop(receipt_id, None)
+                    raise
         self._record_compression(stored)
         return stored
 
     def get_receipt(self, receipt_id: str) -> StoredCompression | None:
         with self._lock:
+            self._refresh_if_changed()
             return self._items.get(receipt_id)
 
     def get_span(
@@ -390,6 +462,7 @@ class CompressionRetrievalStore:
         record_retrieval: bool = False,
     ) -> StoredSpan | None:
         with self._lock:
+            self._refresh_if_changed()
             item = self._items.get(receipt_id)
             if item is None:
                 return None
@@ -407,43 +480,50 @@ class CompressionRetrievalStore:
     ) -> StoredSpan | None:
         """Return a span and debit its tokens from measured gross savings."""
         with self._lock:
-            span = self.get_span(receipt_id, span_id, record_retrieval=False)
-            item = self._items.get(receipt_id)
-            if span is None or item is None:
-                return None
-            token_count = _estimate_tokens(span.content)
-            now_ns = time.time_ns()
-            effective_id = retrieval_id or (
-                f"{receipt_id}:{span_id}:{span.retrieval_count + 1}"
-            )
-            if effective_id in span.retrieval_ids:
-                return span
-            previous_span_state = (
-                span.retrieval_count,
-                span.retrieved_tokens,
-                span.last_retrieved_ns,
-                list(span.retrieval_ids),
-            )
-            previous_item_state = (item.retrieval_count, item.last_retrieved_ns)
-            if not span.record_retrieval(
-                tokens=token_count,
-                retrieved_ns=now_ns,
-                retrieval_id=effective_id,
-            ):
-                return span
-            item.retrieval_count += 1
-            item.last_retrieved_ns = now_ns
-            try:
-                self._persist()
-            except Exception:
-                (
+            with self._interprocess_lock():
+                self._refresh_if_changed(force=True)
+                item = self._items.get(receipt_id)
+                if item is None:
+                    return None
+                span = next(
+                    (entry for entry in item.spans if entry.span_id == span_id),
+                    None,
+                )
+                if span is None:
+                    return None
+                token_count = _estimate_tokens(span.content)
+                now_ns = time.time_ns()
+                effective_id = retrieval_id or (
+                    f"{receipt_id}:{span_id}:{span.retrieval_count + 1}"
+                )
+                if effective_id in span.retrieval_ids:
+                    return span
+                previous_span_state = (
                     span.retrieval_count,
                     span.retrieved_tokens,
                     span.last_retrieved_ns,
-                    span.retrieval_ids,
-                ) = previous_span_state
-                item.retrieval_count, item.last_retrieved_ns = previous_item_state
-                raise
+                    list(span.retrieval_ids),
+                )
+                previous_item_state = (item.retrieval_count, item.last_retrieved_ns)
+                if not span.record_retrieval(
+                    tokens=token_count,
+                    retrieved_ns=now_ns,
+                    retrieval_id=effective_id,
+                ):
+                    return span
+                item.retrieval_count += 1
+                item.last_retrieved_ns = now_ns
+                try:
+                    self._persist()
+                except Exception:
+                    (
+                        span.retrieval_count,
+                        span.retrieved_tokens,
+                        span.last_retrieved_ns,
+                        span.retrieval_ids,
+                    ) = previous_span_state
+                    item.retrieval_count, item.last_retrieved_ns = previous_item_state
+                    raise
         self._record_retrieval(
             receipt_id,
             span_id,
@@ -451,6 +531,7 @@ class CompressionRetrievalStore:
             retrieval_id=effective_id,
         )
         return span
+
     def search(
         self,
         query: str,
@@ -461,6 +542,7 @@ class CompressionRetrievalStore:
     ) -> list[StoredSpan]:
         terms = {part.lower() for part in query.split() if len(part) >= 3}
         with self._lock:
+            self._refresh_if_changed()
             scored: list[tuple[int, StoredSpan]] = []
             for item in self._items.values():
                 for span in item.spans:
@@ -485,11 +567,15 @@ class CompressionRetrievalStore:
         return recorded
 
     def realized_savings(self, receipt_id: str) -> dict[str, object] | None:
-        item = self._items.get(receipt_id)
-        return item.savings_record() if item is not None else None
+        with self._lock:
+            self._refresh_if_changed()
+            item = self._items.get(receipt_id)
+            return item.savings_record() if item is not None else None
 
     def realized_savings_summary(self) -> dict[str, object]:
-        records = [item.savings_record() for item in self._items.values()]
+        with self._lock:
+            self._refresh_if_changed()
+            records = [item.savings_record() for item in self._items.values()]
         total = {
             "receipts": len(records),
             "gross_saved_tokens": 0,
@@ -526,6 +612,7 @@ class CompressionRetrievalStore:
 
     def list_receipts(self) -> list[dict[str, object]]:
         with self._lock:
+            self._refresh_if_changed()
             return [
                 {
                     "receipt_id": item.receipt_id,
@@ -550,6 +637,7 @@ class CompressionRetrievalStore:
 
     def savings_summary(self) -> dict[str, int | str]:
         with self._lock:
+            self._refresh_if_changed()
             gross = sum(item.gross_tokens_saved for item in self._items.values())
             retrieved = sum(item.retrieved_tokens for item in self._items.values())
         return {
@@ -601,7 +689,9 @@ class CompressionRetrievalStore:
 
     def _load(self) -> None:
         assert self.path is not None
-        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        with self.path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+            signature = self._signature(os.fstat(handle.fileno()))
         schema_version = int(raw.get("schema_version", 1))
         if schema_version not in {1, 2, 3}:
             raise ValueError(
@@ -666,6 +756,7 @@ class CompressionRetrievalStore:
                 raise ValueError(f"duplicate recovery receipt {stored.receipt_id}")
             loaded[stored.receipt_id] = stored
         self._items = loaded
+        self._disk_signature = signature
 
     def _persist(self) -> None:
         if self.path is None:
@@ -677,13 +768,32 @@ class CompressionRetrievalStore:
                 item.as_dict(include_internal=True) for item in self._items.values()
             ],
         }
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        tmp = self.path.with_name(
+            f".{self.path.name}.{os.getpid()}.{threading.get_ident()}."
+            f"{time.time_ns()}.tmp"
+        )
         try:
-            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-            tmp.replace(self.path)
+            with tmp.open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(serialized)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self.path)
+            self._disk_signature = self._signature(self.path.stat())
+            self._sync_parent_directory()
         except Exception:
             tmp.unlink(missing_ok=True)
             raise
+
+    def _sync_parent_directory(self) -> None:
+        """Durably record the atomic rename where the platform permits it."""
+        if self.path is None or os.name == "nt":
+            return
+        descriptor = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 def _estimate_tokens(text: str) -> int:
