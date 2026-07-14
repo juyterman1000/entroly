@@ -1,0 +1,104 @@
+name: Validate Entroly OpenClaw Plugin for ClawHub
+
+on:
+  pull_request:
+    paths:
+      - "integrations/openclaw/**"
+      - "entroly/openclaw_bridge.py"
+      - "tests/test_openclaw_bridge.py"
+      - "benchmarks/openclaw_evidence_pinning.py"
+      - "benchmarks/results/openclaw_evidence_pinning.json"
+      - ".github/workflows/publish-openclaw-clawhub.yml"
+  push:
+    branches: [main]
+    paths:
+      - "integrations/openclaw/**"
+      - "entroly/openclaw_bridge.py"
+      - "tests/test_openclaw_bridge.py"
+      - "benchmarks/openclaw_evidence_pinning.py"
+      - "benchmarks/results/openclaw_evidence_pinning.json"
+      - ".github/workflows/publish-openclaw-clawhub.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clawhub-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLAWHUB_CLI_VERSION: 0.23.1
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Entroly
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.19.0"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Test Python bridge contract
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+          pytest tests/test_openclaw_bridge.py -q
+
+      - name: Test OpenClaw plugin package
+        working-directory: integrations/openclaw
+        env:
+          ENTROLY_TEST_PYTHON: python
+        run: |
+          npm test
+          npm run check
+          npm pack --dry-run
+
+      - name: Test minimum supported OpenClaw host
+        working-directory: integrations/openclaw
+        run: |
+          smoke_dir="$RUNNER_TEMP/entroly-openclaw-host-smoke"
+          mkdir -p "$smoke_dir"
+          plugin_tarball="$(npm pack --pack-destination "$smoke_dir")"
+          npm install --prefix "$smoke_dir" --no-save --ignore-scripts --package-lock=false openclaw@2026.6.11 "$smoke_dir/$plugin_tarball"
+          node --input-type=module -e "await import('file://$smoke_dir/node_modules/entroly-openclaw/index.js')"
+
+      - name: Install pinned ClawHub CLI
+        run: npm install --global "clawhub@${CLAWHUB_CLI_VERSION}"
+
+      - name: Validate OpenClaw package metadata and artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          clawhub package validate "$GITHUB_WORKSPACE/integrations/openclaw" \
+            --json | tee "$RUNNER_TEMP/clawhub-package-validate.json"
+
+      - name: Dry-run package publication
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          clawhub package publish "$GITHUB_WORKSPACE/integrations/openclaw" \
+            --dry-run --json | tee "$RUNNER_TEMP/clawhub-package-publish-dry-run.json"
+
+      - name: Upload ClawHub validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-package-validation
+          path: |
+            ${{ runner.temp }}/clawhub-package-validate.json
+            ${{ runner.temp }}/clawhub-package-publish-dry-run.json
+          if-no-files-found: ignore
+
+  # Production publication is intentionally coordinated in entroly-publish.yml
+  # after the matching Python bridge is live and capability-probed on PyPI.

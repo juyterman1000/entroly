@@ -18,12 +18,13 @@ def test_proxy_budget_lookup_preserves_legacy_catalog():
     assert MODEL_CONTEXT_WINDOWS["gemini-1.5-pro"] == 2_097_152
 
 
-def test_proxy_budget_lookup_resolves_frontier_models_with_provenance():
+def test_proxy_budget_lookup_keeps_unverified_frontier_limits_conservative():
     resolution = model_resolution_for_model("nemotron-super")
 
     assert resolution.model_id == "nvidia/nemotron-super"
-    assert resolution.context_window == 1_000_000
+    assert resolution.context_window == 128_000
     assert resolution.trust.value == "announced"
+    assert "unverified" in (resolution.warning or "")
     assert len(resolution.registry_digest) == 64
     assert len(resolution.base_registry_digest) == 64
 

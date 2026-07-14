@@ -310,6 +310,269 @@ def compress(
     return out
 
 
+_QUERY_INSTRUCTION_TERMS = frozenset({
+    "above",
+    "answer",
+    "briefly",
+    "concise",
+    "concisely",
+    "context",
+    "document",
+    "documents",
+    "exact",
+    "exactly",
+    "passage",
+    "passages",
+    "question",
+    "reply",
+    "shortest",
+    "span",
+    "summarize",
+    "summary",
+})
+
+
+def _message_tokens(messages: list[dict[str, Any]]) -> int:
+    """Return the SDK's stable, dependency-free message token estimate."""
+    return sum(
+        len(message.get("content", "")) // 4
+        for message in messages
+        if isinstance(message.get("content"), str)
+    )
+
+
+def _infer_compression_query(messages: list[dict[str, Any]]) -> str:
+    """Use the last user turn as the evidence-selection query.
+
+    A lone user message is often the entire document rather than a question, so
+    only infer a task when another textual message precedes it. Callers that
+    need task-conditioned compression for a single blob should use ``optimize``.
+    """
+    textual = [
+        (index, message)
+        for index, message in enumerate(messages)
+        if isinstance(message.get("content"), str)
+        and message.get("content", "").strip()
+    ]
+    if len(textual) < 2:
+        return ""
+    for _, message in reversed(textual):
+        if message.get("role") in ("user", "human"):
+            return message["content"]
+    return ""
+
+
+def _has_evidence_query(query: str) -> bool:
+    """Return whether a query contains terms that can rank source evidence."""
+    if not query.strip():
+        return False
+    try:
+        from .context_receipts.retrieval import tokenize
+
+        terms = set(tokenize(query))
+    except Exception:
+        terms = {term.lower() for term in re.findall(r"[A-Za-z0-9_-]{3,}", query)}
+    return bool(terms - _QUERY_INSTRUCTION_TERMS)
+
+
+def _expand_source_span(
+    source: bytes,
+    byte_start: int,
+    byte_end: int,
+    *,
+    lookaround: int = 512,
+) -> tuple[int, int]:
+    """Extend a receipt chunk to nearby sentence boundaries.
+
+    Receipt chunks deliberately overlap and may end in the middle of an
+    assertion.  Emitting their text independently can therefore split a fact
+    across distant relevance-ranked positions.  Keep the receipt's byte
+    coordinates authoritative, but include a small amount of source text so a
+    selected assertion remains complete.
+    """
+    start = max(0, min(byte_start, len(source)))
+    end = max(start, min(byte_end, len(source)))
+
+    prefix_start = max(0, start - lookaround)
+    prefix = source[prefix_start:start]
+    previous_boundaries = [
+        prefix.rfind(marker) + len(marker)
+        for marker in (b"\n", b". ", b"? ", b"! ")
+        if prefix.rfind(marker) >= 0
+    ]
+    if previous_boundaries:
+        start = prefix_start + max(previous_boundaries)
+
+    suffix_end = min(len(source), end + lookaround)
+    suffix = source[end:suffix_end]
+    next_boundaries: list[int] = []
+    for marker in (b"\n", b". ", b"? ", b"! "):
+        position = suffix.find(marker)
+        if position >= 0:
+            # Keep terminal punctuation, but not the whitespace that begins
+            # the following sentence or paragraph.
+            terminal_length = 0 if marker == b"\n" else 1
+            next_boundaries.append(end + position + terminal_length)
+    if next_boundaries:
+        end = min(next_boundaries)
+
+    return start, max(start, end)
+
+
+def _merge_source_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Return source-ordered, overlap-free byte spans."""
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _render_source_spans(source: bytes, spans: list[tuple[int, int]]) -> str:
+    """Reconstruct selected receipt spans from the original source."""
+    return "\n\n".join(
+        source[start:end].decode("utf-8") for start, end in spans
+    ).strip()
+
+
+def _compress_message_content(
+    content: str,
+    *,
+    budget: int,
+    query: str,
+    profile: str,
+) -> str:
+    """Compress one message, preferring task-conditioned evidence selection.
+
+    ``compress`` is intentionally query-agnostic. Conversation compression is
+    not: when a distinct final user turn exists, the older context can be
+    chunked and ranked against that task. This avoids buying a large token cut
+    by silently dropping the answer-bearing passage.
+    """
+    if (
+        profile == "max"
+        or not _has_evidence_query(query)
+        or len(content) < 200
+        or len(content) // 4 <= budget
+    ):
+        return compress(content, budget=budget, profile=profile)
+
+    try:
+        from .context_receipts.ingest import ingest_documents
+        from .context_receipts.retrieval import rank_chunks
+        from .context_receipts.selection import select_context
+
+        preferred_chunk_tokens = 160 if profile == "safe" else 240
+        chunk_tokens = max(
+            40,
+            min(preferred_chunk_tokens, max(40, budget // 4)),
+        )
+        overlap_tokens = min(
+            chunk_tokens - 1,
+            48 if profile == "safe" else 24,
+        )
+        index = ingest_documents(
+            [("conversation-context.txt", content)],
+            chunk_tokens=chunk_tokens,
+            overlap_tokens=overlap_tokens,
+        )
+        if len(index.chunks) < 2:
+            return compress(content, budget=budget, profile=profile)
+
+        ranked = rank_chunks(index, query)
+        selection = select_context(
+            index,
+            ranked,
+            [],
+            token_budget=max(1, budget),
+        )
+        if not selection.selected:
+            return compress(content, budget=budget, profile=profile)
+
+        char_budget = max(1, budget * 4)
+        source = content.encode("utf-8")
+        chosen_spans: list[tuple[int, int]] = []
+        attempted_ids: set[str] = set()
+
+        def add_if_fits(
+            chunk_id: str,
+            byte_start: int,
+            byte_end: int,
+        ) -> bool:
+            nonlocal chosen_spans
+            attempted_ids.add(chunk_id)
+            candidate = _expand_source_span(source, byte_start, byte_end)
+            trial = _merge_source_spans([*chosen_spans, candidate])
+            if len(_render_source_spans(source, trial)) <= char_budget:
+                chosen_spans = trial
+                return True
+            return False
+
+        # Relevance order controls admission under pressure, but accepted
+        # receipt coordinates are reconstructed from the original source. This
+        # removes duplicated overlap and prevents a long assertion from being
+        # split between distant score-ranked chunks.
+        for item in selection.selected:
+            add_if_fits(item.chunk_id, item.byte_start, item.byte_end)
+
+        # The receipt selector intentionally stops after its evidence frontier.
+        # Fill a gentle relative target with surrounding source context while
+        # keeping every already-admitted evidence span pinned.
+        for chunk in sorted(index.chunks, key=lambda item: item.byte_start):
+            if chunk.chunk_id in attempted_ids:
+                continue
+            add_if_fits(chunk.chunk_id, chunk.byte_start, chunk.byte_end)
+
+        # Whole receipt chunks are deliberately coarse. If one skipped chunk
+        # leaves meaningful room at a gentle target, backfill only complete
+        # source sentences from the uncovered ranges. This approaches the
+        # requested operating point without reintroducing a mid-assertion cut.
+        uncovered: list[tuple[int, int]] = []
+        cursor = 0
+        for start, end in chosen_spans:
+            if cursor < start:
+                uncovered.append((cursor, start))
+            cursor = max(cursor, end)
+        if cursor < len(source):
+            uncovered.append((cursor, len(source)))
+
+        for start, end in uncovered:
+            rendered_length = len(_render_source_spans(source, chosen_spans))
+            available = char_budget - rendered_length - (2 if chosen_spans else 0)
+            if available < 40:
+                break
+            gap = source[start:end].decode("utf-8")
+            prefix = gap[:available]
+            boundary_ends = [
+                position + (0 if marker == "\n" else 1)
+                for marker in ("\n", ". ", "? ", "! ")
+                if (position := prefix.rfind(marker)) >= 0
+            ]
+            if not boundary_ends:
+                continue
+            prefix = prefix[: max(boundary_ends)].rstrip()
+            if len(prefix) < 40:
+                continue
+            prefix_end = start + len(prefix.encode("utf-8"))
+            trial = _merge_source_spans([*chosen_spans, (start, prefix_end)])
+            if len(_render_source_spans(source, trial)) <= char_budget:
+                chosen_spans = trial
+
+        selected = _render_source_spans(source, chosen_spans)
+
+        selected = _ensure_non_empty(selected, content, budget, 1.0)
+        return _enforce_budget(selected, budget)
+    except Exception:
+        # The public SDK remains fail-open if optional receipt machinery is not
+        # importable in a minimal package. The established structural path is
+        # still bounded and deterministic.
+        return compress(content, budget=budget, profile=profile)
+
+
 def compress_messages(
     messages: list[dict[str, Any]],
     budget: int = 50_000,
@@ -318,6 +581,7 @@ def compress_messages(
     client_key: str | None = None,
     distill: bool = True,
     profile: str = "balanced",
+    target_ratio: float | None = None,
 ) -> list[dict[str, Any]]:
     """Compress a conversation message list to fit within a token budget.
 
@@ -331,6 +595,11 @@ def compress_messages(
         model: Optional provider model name used to cap the context budget
         client_key: Optional stable key for reusing nearly-identical older context
         distill: Strip filler from older assistant responses before compression
+        profile: ``safe`` and ``balanced`` use task-conditioned evidence
+            selection; ``max`` uses the fastest structural compression path
+        target_ratio: Optional relative keep ratio for a smooth operating point
+            (0.90 keeps about 90% of the original estimated message tokens).
+            The stricter of ``budget`` and this relative target is enforced.
 
     Returns:
         Compressed message list.
@@ -350,6 +619,16 @@ def compress_messages(
     if not messages:
         return messages
 
+    # Validate public controls even when the input is already in budget so a
+    # bad configuration is visible instead of silently becoming a no-op.
+    get_profile(profile)
+    if target_ratio is not None and not 0 < target_ratio <= 1:
+        raise ValueError("target_ratio must be greater than 0 and at most 1")
+
+    source_tokens = _message_tokens(messages)
+    if target_ratio is not None:
+        budget = min(budget, max(1, int(source_tokens * target_ratio)))
+
     # ── Provider-aware budget ──
     # When a model is named, cap the budget to its context window (leaving
     # ~20% headroom for the response) so the request stays provider-correct.
@@ -361,6 +640,9 @@ def compress_messages(
                 budget = min(budget, int(window * 0.8))
         except Exception:
             pass  # Unknown model — keep the caller's budget.
+
+    if target_ratio == 1 and source_tokens <= budget:
+        return messages
 
     # Pre-pass: collapse aged tool outputs to one-line digests. This is
     # near-free and orthogonal to the budget-driven compression below
@@ -375,12 +657,11 @@ def compress_messages(
         pass  # Never block compress_messages on the pre-pass.
 
     # Estimate total tokens
-    total_tokens = sum(
-        len(m.get("content", "")) // 4
-        for m in messages if isinstance(m.get("content"), str)
-    )
+    total_tokens = _message_tokens(messages)
     if total_tokens <= budget:
         return messages  # Already within budget
+
+    query = _infer_compression_query(messages)
 
     # Adaptive preserve_last_n: shrink if there aren't enough
     # older messages to compress
@@ -399,11 +680,21 @@ def compress_messages(
     # If recent alone busts budget, compress even recent messages
     # (except the very last user message)
     if recent_tokens > budget:
-        return _compress_all_messages(messages, budget)
+        return _compress_all_messages(
+            messages,
+            budget,
+            query=query,
+            profile=profile,
+        )
 
     if not older:
         # All messages are "recent" — compress all except the last
-        return _compress_all_messages(messages, budget)
+        return _compress_all_messages(
+            messages,
+            budget,
+            query=query,
+            profile=profile,
+        )
 
     # Compute per-message compression ratio
     older_tokens = sum(
@@ -423,7 +714,7 @@ def compress_messages(
 
         # ── Distillation ── strip filler from assistant responses before
         # budget compression (code blocks + technical content preserved).
-        if distill and role == "assistant":
+        if distill and profile != "safe" and role == "assistant":
             try:
                 from .proxy_transform import distill_response
                 content, _, _ = distill_response(content, mode="full")
@@ -434,7 +725,12 @@ def compress_messages(
         msg_ratio = ratio * 0.5 if role in ("tool", "function") else ratio
 
         msg_budget = max(1, int((len(content) // 4) * msg_ratio))
-        compressed_content = compress(content, budget=msg_budget)
+        compressed_content = _compress_message_content(
+            content,
+            budget=msg_budget,
+            query=query,
+            profile=profile,
+        )
         new_msg = dict(msg)
         new_msg["content"] = compressed_content
         result.append(new_msg)
@@ -481,7 +777,11 @@ def _cache_align_older(
 
 
 def _compress_all_messages(
-    messages: list[dict[str, Any]], budget: int
+    messages: list[dict[str, Any]],
+    budget: int,
+    *,
+    query: str = "",
+    profile: str = "balanced",
 ) -> list[dict[str, Any]]:
     """Compress all messages proportionally, preserving the last user message.
 
@@ -523,7 +823,12 @@ def _compress_all_messages(
         msg_ratio = ratio * 0.3 if role in ("tool", "function") else ratio
 
         msg_budget = max(1, int((len(content) // 4) * msg_ratio))
-        compressed_content = compress(content, budget=msg_budget)
+        compressed_content = _compress_message_content(
+            content,
+            budget=msg_budget,
+            query=query,
+            profile=profile,
+        )
         new_msg = dict(msg)
         new_msg["content"] = compressed_content
         result.append(new_msg)

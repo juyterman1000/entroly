@@ -23,7 +23,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger("entroly.dashboard")
 
@@ -682,8 +682,32 @@ tr:hover td{background:rgba(255,255,255,0.015);}
   background:var(--glass);border:1px solid var(--border);color:var(--dim);transition:all 0.2s;}
 .trends-tab.active{background:var(--emerald-glow);color:var(--emerald);border-color:rgba(52,211,153,0.3);}
 .trends-tab:hover{border-color:var(--border2);}
+.context-shell{margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;}
+.context-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--border);}
+.context-head h2{font-size:16px;font-weight:800;}.context-position{font-size:11px;color:var(--cyan);margin-top:4px;}
+.context-search{width:min(360px,45vw);padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--glass);color:var(--text);outline:none;}
+.context-search:focus{border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-glow);}
+.context-grid{display:grid;grid-template-columns:330px minmax(0,1fr);min-height:420px;}
+.context-list{border-right:1px solid var(--border);max-height:680px;overflow:auto;padding:10px;}
+.context-row{padding:12px;border:1px solid transparent;border-radius:10px;cursor:pointer;margin-bottom:6px;transition:all .15s;}
+.context-row:hover,.context-row.active{background:var(--glass2);border-color:var(--border2);}
+.context-row.active{border-left:3px solid var(--cyan);}.context-row-title{font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.context-row-query{font-size:11px;color:var(--dim);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.context-row-meta{display:flex;gap:8px;flex-wrap:wrap;font-size:10px;color:var(--dim);margin-top:8px;}
+.context-detail{padding:20px;min-width:0;}.context-overview{display:grid;grid-template-columns:150px minmax(0,1fr);gap:20px;align-items:center;}
+.context-ring{--ring:0%;width:130px;height:130px;border-radius:50%;background:conic-gradient(var(--emerald) var(--ring),rgba(255,255,255,.06) 0);position:relative;display:grid;place-items:center;}
+.context-ring::after{content:'';position:absolute;inset:12px;border-radius:50%;background:#0b0d13;}
+.context-ring-value{z-index:1;text-align:center;font-size:24px;font-weight:900;}.context-ring-value small{display:block;font-size:9px;color:var(--dim);font-weight:600;letter-spacing:1px;}
+.context-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;}.context-kpi{padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--glass);min-width:0;}
+.context-kpi label{display:block;color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px;}.context-kpi strong{display:block;margin-top:5px;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.context-section{margin-top:18px;border-top:1px solid var(--border);padding-top:14px;}.context-section h3{font-size:12px;margin-bottom:10px;}
+.receipt-turns{display:flex;gap:7px;overflow:auto;padding-bottom:4px;}.receipt-turn{padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:10px;color:var(--dim);white-space:nowrap;}
+.evidence-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}.evidence-item{padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--glass);min-width:0;}
+.evidence-path{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.evidence-reason{font-size:10px;color:var(--dim);margin-top:5px;}.evidence-excerpt{font-size:11px;color:#aab2c0;margin-top:8px;line-height:1.45;white-space:pre-wrap;max-height:90px;overflow:auto;}
+.context-diagnostic{padding:10px 12px;margin:10px;border:1px solid rgba(251,191,36,.3);background:var(--amber-glow);color:var(--amber);border-radius:9px;font-size:11px;}
 @media(max-width:1100px){.hero-metrics{grid-template-columns:1fr 1fr;}.grid3{grid-template-columns:1fr 1fr;}.ba-panel{grid-template-columns:1fr;}.cache-kpis{grid-template-columns:1fr 1fr;}.cache-split{grid-template-columns:1fr;}}
-@media(max-width:768px){.hero-metrics,.grid2,.grid3,.cache-kpis{grid-template-columns:1fr;}.main{padding:16px;}.hero-big{font-size:48px;}}
+@media(max-width:900px){.context-grid{grid-template-columns:1fr}.context-list{border-right:0;border-bottom:1px solid var(--border);max-height:240px}.context-overview{grid-template-columns:1fr}.context-ring{margin:auto}.context-kpis{grid-template-columns:1fr 1fr}}
+@media(max-width:768px){.hero-metrics,.grid2,.grid3,.cache-kpis{grid-template-columns:1fr;}.main{padding:16px;}.hero-big{font-size:48px;}.context-head{align-items:flex-start;flex-direction:column}.context-search{width:100%}.evidence-grid{grid-template-columns:1fr}.topbar{padding:12px 16px;gap:8px}.brand{gap:8px}.brand h1{font-size:20px}.brand .btag{font-size:9px;padding:3px 7px}.topbar>div:last-child{gap:8px;flex-wrap:wrap;justify-content:flex-end}.live{display:none}.whisper{display:block;line-height:1.55;overflow-wrap:anywhere}.whisper code{display:inline;white-space:normal;overflow-wrap:anywhere}.whisper .dismiss{float:right;margin-left:8px}}
 </style>
 </head>
 <body>
@@ -701,6 +725,13 @@ tr:hover td{background:rgba(255,255,255,0.015);}
     <span class="dismiss" onclick="this.parentElement.style.display='none'">✕</span>
   </div>
   <div id="errBanner" style="display:none;margin-bottom:16px;padding:12px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.4);border-radius:10px;color:#fecaca;font-size:13px;line-height:1.5;"></div>
+  <section class="context-shell" aria-labelledby="contextTitle">
+    <div class="context-head">
+      <div><h2 id="contextTitle">Context Sessions</h2><div class="context-position">Agents run the conversation. Entroly controls, remembers, verifies, and proves the context.</div></div>
+      <input id="contextSearch" class="context-search" type="search" placeholder="Search sessions, tasks, receipts, models…" oninput="scheduleContextSearch(this.value)" aria-label="Search context sessions">
+    </div>
+    <div class="context-grid"><div id="contextList" class="context-list"><div class="empty">Loading context receipts…</div></div><div id="contextDetail" class="context-detail"><div class="empty">Select a session to inspect its context proof.</div></div></div>
+  </section>
   <div class="hero" id="hero"></div>
   <div id="valueTrends"></div>
   <div id="ba"></div>
@@ -987,6 +1018,42 @@ let sparkData=[];
 function escHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+let contextSelectedKey='',contextSearchTimer=null;
+const contextPct=v=>Math.max(0,Math.min(100,Math.round(Number(v||0)*100)));
+const contextDate=ts=>ts?new Date(Number(ts)*1000).toLocaleString():'Unknown time';
+function scheduleContextSearch(value){clearTimeout(contextSearchTimer);contextSearchTimer=setTimeout(()=>refreshContextSessions(value),180);}
+async function refreshContextSessions(query){
+  const q=query==null?(document.getElementById('contextSearch').value||''):query;
+  const list=document.getElementById('contextList');
+  try{
+    const response=await fetch('/api/context/sessions?q='+encodeURIComponent(q));
+    if(!response.ok)throw new Error('Session index returned '+response.status);
+    const payload=await response.json(),sessions=payload.sessions||[];
+    const diagnostics=(payload.diagnostics||[]).slice(0,2).map(item=>'<div class="context-diagnostic">'+escHtml(item.message||item.type)+'</div>').join('');
+    if(!sessions.length){list.innerHTML=diagnostics+'<div class="empty">No context receipts found. Create a Context Receipt to make selection and omission decisions inspectable.</div>';document.getElementById('contextDetail').innerHTML='<div class="empty">Nothing is hidden: unreadable artifacts appear as diagnostics here.</div>';contextSelectedKey='';return;}
+    list.innerHTML=diagnostics+sessions.map(s=>{
+      const active=s.key===contextSelectedKey?' active':'';const valid=(s.integrity||{}).valid;
+      return '<div class="context-row'+active+'" onclick="loadContextSession(\''+s.key+'\')"><div class="context-row-title">'+escHtml(s.session_id)+'</div><div class="context-row-query">'+escHtml(s.query||'No task recorded')+'</div><div class="context-row-meta"><span>'+s.turn_count+' turn'+(s.turn_count===1?'':'s')+'</span><span>'+fmt(s.selected_tokens||0)+' selected</span><span style="color:'+(valid?'var(--emerald)':'var(--rose)')+'">'+(valid?'verified':'integrity issue')+'</span></div></div>';
+    }).join('');
+    if(!contextSelectedKey||!sessions.some(s=>s.key===contextSelectedKey))await loadContextSession(sessions[0].key);
+  }catch(error){list.innerHTML='<div class="context-diagnostic">Context session index unavailable: '+escHtml(error.message||error)+'</div>';}
+}
+async function loadContextSession(key){
+  contextSelectedKey=key;const detail=document.getElementById('contextDetail');detail.innerHTML='<div class="empty">Loading receipt proof…</div>';
+  try{
+    const response=await fetch('/api/context/sessions/'+key);if(!response.ok)throw new Error('Session detail returned '+response.status);
+    renderContextSession(await response.json());refreshContextSessions();
+  }catch(error){detail.innerHTML='<div class="context-diagnostic">Unable to read this session: '+escHtml(error.message||error)+'</div>';}
+}
+function renderContextSession(data){
+  const summary=data.summary||{},receipts=data.receipts||[],latest=receipts[receipts.length-1]||{},model=latest.model||{},integrity=data.integrity||{};
+  const ratio=contextPct(latest.selection_ratio),cost=model.request_estimate_usd!=null?'$'+Number(model.request_estimate_usd).toFixed(4):(model.context_input_estimate_usd!=null?'$'+Number(model.context_input_estimate_usd).toFixed(4)+' context*':'Unknown');
+  const turns=receipts.map(r=>'<div class="receipt-turn">Turn '+escHtml(r.turn_index)+' · '+escHtml(r.receipt_id||'missing body')+' · '+contextDate(r.created_at)+'</div>').join('');
+  const selected=(latest.selected||[]).map(item=>'<div class="evidence-item"><div class="evidence-path">'+escHtml(item.source_path||item.chunk_id)+'</div><div class="evidence-reason">'+fmt(item.token_count||0)+' tokens · '+escHtml((item.reasons||[]).join(' · ')||'selected')+'</div><div class="evidence-excerpt">'+escHtml(item.excerpt||'No excerpt stored')+'</div></div>').join('');
+  const omitted=(latest.omitted||[]).map(item=>'<div class="evidence-item"><div class="evidence-path">'+escHtml(item.source_path||item.chunk_id)+'</div><div class="evidence-reason"><span class="tag '+(item.recoverable?'t-green':'t-amber')+'">'+(item.recoverable?'recoverable':'preview only')+'</span> '+fmt(item.token_count||0)+' tokens · '+escHtml(item.omission_reason||'omitted')+'</div><div class="evidence-excerpt">'+escHtml(item.excerpt||'No preview stored')+'</div></div>').join('');
+  const issues=(integrity.issues||[]).map(x=>escHtml(x)).join(' · ');
+  document.getElementById('contextDetail').innerHTML='<div class="context-overview"><div class="context-ring" style="--ring:'+ratio+'%"><div class="context-ring-value">'+ratio+'%<small>CONTEXT KEPT</small></div></div><div><div style="font-size:18px;font-weight:800;margin-bottom:4px">'+escHtml(summary.query||summary.session_id)+'</div><div style="font-size:11px;color:'+(integrity.valid?'var(--emerald)':'var(--rose)')+'">'+(integrity.valid?'Chain and receipt integrity verified':'Integrity requires attention: '+issues)+'</div><div class="context-kpis" style="margin-top:13px"><div class="context-kpi"><label>Model</label><strong title="'+escHtml(model.model||'Unknown')+'">'+escHtml(model.model||'Unknown')+'</strong></div><div class="context-kpi"><label>Selected / budget</label><strong>'+fmt(latest.selected_tokens||0)+' / '+fmt(latest.token_budget||0)+'</strong></div><div class="context-kpi"><label>Omitted evidence</label><strong>'+fmt(latest.omitted_count||0)+' items · '+fmt(latest.omitted_tokens||0)+'</strong></div><div class="context-kpi"><label>Cost</label><strong title="'+escHtml(model.pricing_note||'')+'">'+cost+'</strong></div></div></div></div><div class="context-section"><h3>Receipt timeline</h3><div class="receipt-turns">'+(turns||'<span class="empty">No receipt links</span>')+'</div></div><div class="context-section"><h3>Selected evidence</h3><div class="evidence-grid">'+(selected||'<div class="empty">No selected evidence body stored.</div>')+'</div></div><div class="context-section"><h3>Omitted-evidence explorer</h3><div class="evidence-grid">'+(omitted||'<div class="empty">No omitted evidence recorded.</div>')+'</div></div>';
+}
 function renderWitness(d){
   const w=d.witness||{},el=document.getElementById('witness'),b=document.getElementById('wb');
   if(!el||!b)return;
@@ -1163,7 +1230,7 @@ async function refresh(){
     renderErrors([{section:'fetch',type:e.name||'Error',message:e.message||String(e)}]);
   }
 }
-refresh();setInterval(refresh,3000);
+refresh();setInterval(refresh,3000);refreshContextSessions();setInterval(()=>refreshContextSessions(),15000);
 </script>
 </body>
 </html>
@@ -1204,27 +1271,63 @@ class DashboardHandler(BaseHTTPRequestHandler):
     }
 
     def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
         # Static HTML
-        if self.path in ("/", "/dashboard"):
+        if path in ("/", "/dashboard"):
             self._send_html(DASHBOARD_HTML)
-        elif self.path == "/controls":
+        elif path == "/controls":
             from entroly.controls_html import CONTROLS_HTML
             self._send_html(CONTROLS_HTML)
         # JSON read APIs (CORS so other localhost dashboards can query)
-        elif self.path == "/api/metrics":
+        elif path == "/api/metrics":
             self._send_json(200, _get_full_snapshot())
-        elif self.path == "/api/trends":
+        elif path == "/api/trends":
             self._send_json(200, self._safe_tracker_call("get_trends"))
-        elif self.path == "/api/confidence":
+        elif path == "/api/confidence":
             self._send_json(200, self._safe_tracker_call("get_confidence"))
-        elif self.path == "/health":
+        elif path == "/api/context/sessions":
+            self._handle_context_sessions(parse_qs(parsed.query))
+        elif path.startswith("/api/context/sessions/"):
+            self._handle_context_session(path.removeprefix("/api/context/sessions/"))
+        elif path == "/health":
             # Health probe — no CORS, kept tight for internal liveness checks.
             self._respond(200, "application/json", b'{"status":"ok","service":"entroly-dashboard"}')
         # Control API reads
-        elif self.path in self._CONTROL_GET_ROUTES:
-            self._handle_control_get(self._CONTROL_GET_ROUTES[self.path])
+        elif path in self._CONTROL_GET_ROUTES:
+            self._handle_control_get(self._CONTROL_GET_ROUTES[path])
         else:
-            self._send_json(404, {"error": "not found", "path": self.path})
+            self._send_json(404, {"error": "not found", "path": path})
+
+    def _handle_context_sessions(self, query: dict[str, list[str]]) -> None:
+        from entroly.context_sessions import ContextSessionIndex
+
+        raw_limit = query.get("limit", ["50"])[0]
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            self._send_json(400, {"error": "limit must be an integer between 1 and 100"})
+            return
+        if not 1 <= limit <= 100:
+            self._send_json(400, {"error": "limit must be between 1 and 100"})
+            return
+        index = ContextSessionIndex()
+        self._send_json(
+            200,
+            index.list_sessions(query=query.get("q", [""])[0], limit=limit),
+        )
+
+    def _handle_context_session(self, key: str) -> None:
+        from entroly.context_sessions import ContextSessionIndex, re_key
+
+        if not re_key(key):
+            self._send_json(400, {"error": "invalid context session key"})
+            return
+        session = ContextSessionIndex().get_session(key)
+        if session is None:
+            self._send_json(404, {"error": "context session not found"})
+            return
+        self._send_json(200, session)
 
     @staticmethod
     def _safe_tracker_call(method: str) -> dict:

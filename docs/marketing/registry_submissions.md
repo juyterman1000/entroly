@@ -1,76 +1,66 @@
-# Developer Directories & MCP Registry Submissions
+# Marketplace and directory submission copy
 
-To increase search engine authority (backlinks) and user adoption, submit Entroly to high-traffic registries and directories. This document lists targets, URLs, submission steps, and copy-paste templates.
+Use these templates only after checking the published package and the target
+listing. A marketplace is a discovery surface, not evidence that Entroly was
+installed, validated, or benchmarked successfully.
 
----
+## Canonical facts to verify before submission
 
-## 1. MCP Server Registries
+- Repository: `https://github.com/juyterman1000/entroly`
+- License: Apache-2.0
+- Python package: `https://pypi.org/project/entroly/`
+- Node/WASM package: `https://www.npmjs.com/package/entroly`
+- npm bridge to an installed Python runtime: `https://www.npmjs.com/package/entroly-mcp`
+- MCP identity: `io.github.juyterman1000/entroly`
+- Python MCP command: `entroly` with no arguments
+- Package-runner command: `uvx --from entroly entroly` with no `serve` argument
+- npm bridge command: `npx -y entroly-mcp` with no `serve` argument
 
-Since Entroly operates as an MCP server (`entroly serve`), it qualifies for inclusion in directories cataloging MCP integrations.
+Confirm that the versions on PyPI, npm, `server.json`, and the release tag agree
+before copying any version into an external form.
 
-### A. Glama MCP Registry
-- **URL:** [glama.ai/mcp/servers](https://glama.ai/mcp/servers)
-- **Action:** Click "Submit Server" / login with GitHub.
-- **Form Values:**
-  - **Name:** `Entroly`
-  - **Category:** `Developer Tools` / `Context Engineering`
-  - **GitHub URL:** `https://github.com/juyterman1000/entroly`
-  - **MCP Command:** `npx -y @juyterman1000/entroly-mcp` or `pip install entroly && entroly serve`
-  - **Short Description:** `Local context engineering & prompt compression proxy for AI coding agents. Reduces input tokens by 70–95% while preserving KV cache alignment and validating answers locally.`
-  - **Details:** `An open-source (Apache-2.0) local gateway and MCP server that optimizes prompt context for Cursor, Cline, and Claude Code. Features a prompt prefix Cache Aligner, Content-Compressed Retrieval (CCR) handles, and WITNESS—a local Natural Language Inference (NLI) verifier that checks model output against source files.`
+## Short description
 
-### B. Awesome MCP Servers (GitHub List)
-- **URL:** [github.com/punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers)
-- **Action:** Fork the repository and open a Pull Request.
-- **Section:** `Developer Tools` or `Utilities`
-- **Markdown Line to Insert:**
-  ```markdown
-  * [Entroly](https://github.com/juyterman1000/entroly) - A local context-engineering and prompt compression gateway that stabilizes prompt prefixes for KV caching discounts, generates exact-recovery CCR handles, and audits model responses locally.
-  ```
+> Local context control for AI agents with budgeted selection, recoverable
+> omissions, Context Receipts, and optional answer verification.
 
----
+## Long description
 
-## 2. Open-Source Comparison & Alternative Directories
+> Entroly is an Apache-2.0 local context-control plane for AI agents. It can
+> select context under a token budget, record selected and omitted evidence,
+> retain recovery handles, and expose those capabilities through Python, MCP,
+> proxy, and Node/WASM integrations. The base Python package includes a
+> pure-Python path; Rust acceleration is optional. Token reduction and answer
+> quality depend on the workload, model, budget, and integration. Reproducible
+> results and caveats are linked from the repository's public evidence policy.
 
-### A. AlternativeTo
-- **URL:** [alternativeto.net/software/entroly/](https://alternativeto.net)
-- **Action:** Log in and select "Add an application".
-- **Form Values:**
-  - **Title:** `Entroly`
-  - **Official Website:** `https://juyterman1000.github.io/entroly/`
-  - **GitHub Repository:** `https://github.com/juyterman1000/entroly`
-  - **License:** `Open Source (Apache-2.0)`
-  - **Platform:** `Mac`, `Windows`, `Linux`
-  - **Short Tagline:** `Local context compression & verification gateway for AI coding agents.`
-  - **Alternatives to:** List categories such as `context engineering`, `prompt compression`, `MCP server`, and `local AI developer tools`.
-  - **Description:** 
-    ```text
-    Entroly is an open-source, local-first context engineering gateway for developer AI workflows. It sits as a local proxy or MCP server between your coding client (such as Cursor, Claude Code, Cline, or Aider) and your LLM provider.
+## Submission rules
 
-    Key Features:
-    - Token Savings: Slashes input tokens by 70-95% on large codebases.
-    - Cache Aligner: Stabilizes prompt prefixes to secure Anthropic's 90% and OpenAI's 50% caching discounts.
-    - Recoverable Retrieval: Uses CCR handles to let models query full-resolution code fragments if needed.
-    - Zero Hallucinations: Includes a local, deterministic NLI verifier (WITNESS) that checks model claims against repository evidence at $0 cost.
-    ```
+1. Do not publish a universal token-savings or bill-reduction percentage.
+2. Do not describe WITNESS as preventing or eliminating hallucinations.
+3. Do not claim that cache alignment guarantees a provider cache hit or discount.
+4. Do not call the base PyPI install Rust-backed without runtime verification.
+5. Do not claim a marketplace score, ownership state, or validation result from
+   repository-local tests.
+6. Link measured claims to the exact result file, not the results directory.
+7. Recheck every third-party listing after publication and record its visible
+   version, capability counts, ownership state, and validation state.
 
-### B. LibHunt (Python Comparisons)
-- **URL:** [py.libhunt.com](https://py.libhunt.com)
-- **Action:** LibHunt automatically indexes repositories, but you can suggest comparisons or claim the project page once indexed.
-- **Suggested Comparison Title:** `Entroly context engineering for AI coding agents`.
+## LobeHub-specific status
 
----
+The ownership badge must remain in the primary README for LobeHub's external
+claim workflow, but it belongs in the contextualized marketplace section rather
+than the top evidence row. The dated
+[LobeHub score audit](../lobehub-score-audit.md) is repository evidence only.
+Use the
+[live score page](https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score)
+for current external status, and do not report an improvement until that page
+shows the published version and successful external validation.
 
-## 3. General AI Developer Platforms
+## Other directory targets
 
-### A. There's An AI For That (TAAFT)
-- **URL:** [theresanaiforthat.com](https://theresanaiforthat.com)
-- **Action:** Submit tool via their standard submission form.
-- **Title:** `Entroly`
-- **Category:** `Developer Tools`, `LLM cost optimization`
-- **Pricing:** `Free & Open Source`
-
-### B. Toolify.ai
-- **URL:** [toolify.ai](https://www.toolify.ai)
-- **Action:** Click "Submit Tool".
-- **Short Info:** `A local context-engineering tool that slashes AI coding costs by stabilizing prompt caching and compressing repository assets.`
+For Glama, awesome lists, AlternativeTo, LibHunt, and similar directories, use
+the canonical facts and descriptions above. Treat each form as untrusted until
+the resulting public page is reviewed. If a directory rewrites the package
+name, command, license, version, or benchmark language, request correction or
+remove the listing from release messaging.

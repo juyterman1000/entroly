@@ -1,0 +1,11 @@
+# Canonical package and MCP Registry identity.
+# Enforce owner review for these paths in the main branch protection rule.
+/server.json @juyterman1000
+/PYPI_README.md @juyterman1000
+/pyproject.toml @juyterman1000
+/entroly/npm/package.json @juyterman1000
+/.github/workflows/publish-mcp-registry.yml @juyterman1000
+/.github/workflows/entroly-publish.yml @juyterman1000
+/.github/workflows/publish-core-wheels.yml @juyterman1000
+/scripts/sync_release_version.py @juyterman1000
+/tests/test_release_surface.py @juyterman1000

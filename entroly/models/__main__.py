@@ -57,13 +57,13 @@ def _parser() -> argparse.ArgumentParser:
 
     discover = subparsers.add_parser(
         "discover",
-        help="Discover loopback-only Ollama or LM Studio models for this invocation",
+        help="Discover Ollama, LM Studio, or authenticated OpenRouter metadata",
     )
     discover.add_argument(
         "providers",
         nargs="?",
         default="ollama,lmstudio",
-        help="Comma-separated providers: ollama,lmstudio",
+        help="Comma-separated providers: ollama,lmstudio,openrouter",
     )
     discover.add_argument("--inspect-ollama-context", action="store_true")
 
@@ -74,7 +74,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
 
     if args.command == "discover":
-        os.environ["ENTROLY_DISCOVER_LOCAL_MODELS"] = args.providers
+        providers = {item.strip().lower() for item in args.providers.split(",") if item.strip()}
+        local = providers & {"ollama", "lmstudio"}
+        remote = providers & {"openrouter"}
+        os.environ["ENTROLY_DISCOVER_LOCAL_MODELS"] = ",".join(sorted(local))
+        os.environ["ENTROLY_DISCOVER_REMOTE_MODELS"] = ",".join(sorted(remote))
         if args.inspect_ollama_context:
             os.environ["ENTROLY_OLLAMA_INSPECT_CONTEXT"] = "1"
         get_model_registry.cache_clear()

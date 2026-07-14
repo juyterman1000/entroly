@@ -51,7 +51,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.50"
+    __version__ = "1.0.58"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -524,6 +524,79 @@ def cmd_serve(args):
     # Import and run
     from entroly.server import main
     main()
+
+
+def cmd_attach(args):
+    """Issue, inspect, revoke, or serve a scoped MCP attachment."""
+    from entroly.session_attach import (
+        AttachmentStore,
+        format_command,
+        install_attachment,
+        parse_ttl,
+        serve_attachment,
+        uninstall_attachment,
+    )
+
+    state_dir = Path(args.state_dir).expanduser() if args.state_dir else _ENTROLY_DIR
+    if args.attach_action == "serve":
+        serve_attachment(
+            grant_id=args.grant_id,
+            token_file=args.token_file,
+            state_dir=state_dir,
+        )
+        return 0
+
+    store = AttachmentStore(state_dir)
+    if args.attach_action == "create":
+        issued = store.create(
+            client=args.client,
+            project_root=args.project,
+            scopes=args.scope,
+            ttl_seconds=parse_ttl(args.ttl),
+            session_id=args.session,
+        )
+        if args.install:
+            install_attachment(issued, store=store)
+        if args.json_output:
+            print(json.dumps(issued.public_payload(), indent=2, sort_keys=True))
+        else:
+            print(f"\n  {C.GREEN}Attachment created:{C.RESET} {issued.grant.grant_id}")
+            print(f"  {C.GRAY}Client:{C.RESET} {issued.grant.client}")
+            print(f"  {C.GRAY}Project:{C.RESET} {issued.grant.project_root}")
+            print(f"  {C.GRAY}Expires:{C.RESET} {time.ctime(issued.grant.expires_at)}")
+            print(f"  {C.GRAY}Scopes:{C.RESET} {', '.join(issued.grant.scopes)}")
+            if args.install:
+                print(f"  {C.GREEN}Client configuration installed.{C.RESET}")
+            else:
+                print("\n  Run the client configuration command:")
+                for command in issued.install_commands:
+                    print(f"    {format_command(command)}")
+        return 0
+    if args.attach_action == "list":
+        grants = store.list(include_inactive=args.all)
+        payload = [grant.public_payload() for grant in grants]
+        if args.json_output:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        elif not grants:
+            print("No active Entroly attachments.")
+        else:
+            for grant in grants:
+                print(
+                    f"{grant.grant_id}  {grant.status:<7}  {grant.client:<8}  "
+                    f"{grant.project_root}"
+                )
+        return 0
+    if args.attach_action == "revoke":
+        grant = store.revoke(args.grant_id)
+        if args.uninstall:
+            uninstall_attachment(grant)
+        if args.json_output:
+            print(json.dumps(grant.public_payload(), indent=2, sort_keys=True))
+        else:
+            suffix = " and removed its client configuration" if args.uninstall else ""
+            print(f"Revoked Entroly attachment {grant.grant_id}{suffix}.")
+        return 0
+    raise ValueError("choose an attach action: create, list, or revoke")
 
 
 def cmd_dashboard(args):
@@ -3091,10 +3164,19 @@ def cmd_doctor(args):
         version = f" {native.version}" if native.version else ""
         print(f"  {C.GREEN}+{C.RESET} Rust engine (entroly-core{version}) loaded")
         checks_passed += 1
+    elif not native.available:
+        print(
+            f"  {C.GRAY}-{C.RESET} Optional Rust acceleration not installed "
+            f"{C.GRAY}— pure-Python engine is active{C.RESET}"
+        )
+        print(
+            f"    {C.GRAY}Enable when wanted: python -m pip install "
+            f"\"entroly[native]\"{C.RESET}"
+        )
+        checks_passed += 1
     else:
-        status = "not loaded" if not native.available else "stale or incomplete"
-        print(f"  {C.RED}x{C.RESET} Rust engine (entroly-core) {status} "
-              f"{C.GRAY}— optional; core features still work{C.RESET}")
+        print(f"  {C.RED}x{C.RESET} Installed Rust engine is stale or incomplete "
+              f"{C.GRAY}— pure-Python fallback remains available{C.RESET}")
         if native.version:
             print(f"    {C.GRAY}Loaded version: {native.version}{C.RESET}")
         if native.path:
@@ -3107,7 +3189,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.50\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.58\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4625,7 +4707,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.50\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.58\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -4668,7 +4750,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.50\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.58\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -4971,6 +5053,48 @@ def main():
         "--debug", action="store_true",
         help="Enable debug-level logging (all subsystem details to stderr)",
     )
+
+    # entroly attach
+    attach_parser = subparsers.add_parser(
+        "attach",
+        help="Grant scoped, expiring MCP access to an existing agent client",
+    )
+    attach_subparsers = attach_parser.add_subparsers(dest="attach_action", required=True)
+    attach_create = attach_subparsers.add_parser("create", help="Create a local attachment grant")
+    attach_create.add_argument("--client", choices=["claude", "codex", "openclaw"], required=True)
+    attach_create.add_argument("--project", default=".", help="Project root bound to the grant")
+    attach_create.add_argument("--session", default=None, help="Optional client session label")
+    attach_create.add_argument("--ttl", default="1h", help="Grant lifetime, for example 30m or 4h")
+    attach_create.add_argument(
+        "--scope",
+        action="append",
+        default=[],
+        choices=["observe", "context", "receipts", "verify", "remember", "record", "vault"],
+        help="Allowed tool group; repeat to combine groups",
+    )
+    attach_create.add_argument("--install", action="store_true", help="Run the client MCP configuration command")
+    attach_create.add_argument("--json", dest="json_output", action="store_true")
+    attach_create.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
+    attach_list = attach_subparsers.add_parser("list", help="List attachment grants")
+    attach_list.add_argument("--all", action="store_true", help="Include expired and revoked grants")
+    attach_list.add_argument("--json", dest="json_output", action="store_true")
+    attach_list.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
+    attach_revoke = attach_subparsers.add_parser("revoke", help="Revoke a grant immediately")
+    attach_revoke.add_argument("grant_id")
+    attach_revoke.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Also remove the generated MCP entry from the client",
+    )
+    attach_revoke.add_argument("--json", dest="json_output", action="store_true")
+    attach_revoke.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
+    attach_serve = attach_subparsers.add_parser(
+        "serve",
+        help="Internal grant-bound MCP transport",
+    )
+    attach_serve.add_argument("--grant-id", required=True)
+    attach_serve.add_argument("--token-file", required=True)
+    attach_serve.add_argument("--state-dir", required=True)
 
     # entroly dashboard
     dash_parser = subparsers.add_parser(
@@ -5728,16 +5852,20 @@ def main():
 
     args = parser.parse_args()
 
-    # First-run welcome + update check (non-blocking)
-    _check_first_run()
-    if args.command not in (None, "completions"):
-        _check_for_update()
+    # First-run output would corrupt the stdio JSON-RPC stream used by an
+    # attached MCP server, so the internal serve action stays protocol-clean.
+    internal_attach_serve = args.command == "attach" and args.attach_action == "serve"
+    if not internal_attach_serve:
+        _check_first_run()
+        if args.command not in (None, "completions"):
+            _check_for_update()
 
     _dispatch = {
         "optimize": cmd_optimize,
         "feedback": cmd_feedback,
         "init": cmd_init,
         "serve": cmd_serve,
+        "attach": cmd_attach,
         "go": cmd_go,
         "dashboard": cmd_dashboard,
         "health": cmd_health,

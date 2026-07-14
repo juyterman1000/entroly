@@ -53,7 +53,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: "22.19.0"
 
       - name: Test OpenClaw plugin package
         working-directory: integrations/openclaw
@@ -63,6 +63,15 @@ jobs:
           npm test
           npm run check
           npm pack --dry-run
+
+      - name: Test minimum supported OpenClaw host
+        working-directory: integrations/openclaw
+        run: |
+          smoke_dir="$RUNNER_TEMP/entroly-openclaw-host-smoke"
+          mkdir -p "$smoke_dir"
+          plugin_tarball="$(npm pack --pack-destination "$smoke_dir")"
+          npm install --prefix "$smoke_dir" --no-save --ignore-scripts --package-lock=false openclaw@2026.6.11 "$smoke_dir/$plugin_tarball"
+          node --input-type=module -e "await import('file://$smoke_dir/node_modules/entroly-openclaw/index.js')"
 
   memory-os:
     name: MemoryOS Production Gate

@@ -17,3 +17,4 @@ ignore = [
 
 [lint.per-file-ignores]
 "tests/*" = ["F811"]  # Redefined names in test fixtures
+"entroly/context_check.py" = ["E731"]  # Local formatter lambda is intentionally compact
