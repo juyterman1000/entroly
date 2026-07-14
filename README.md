@@ -385,6 +385,24 @@ claims.
 | [holdout artifact](benchmarks/results/recovery_resilience_holdout.json) |
 [original failing artifact](benchmarks/results/recovery_resilience_development_before.json).
 
+**Quality-gated compression latency holdout:** on the same four deterministic
+agent-tool fixtures and public entry points as the gauntlet, Entroly 1.0.59
+source was **2.94x faster** than published Headroom 0.31.0 for warm compressor
+calls (95% bootstrap CI **2.74x–3.13x**) and **2.39x faster** for product import
+plus the first call in a fresh process (**1.89x–2.70x**). Both systems completed
+every fixture, retained 100% of preregistered evidence, remained deterministic,
+and never inflated tokens.
+
+[Protocol, per-fixture timings, and limits](docs/benchmarks/compression-latency.md)
+| [full holdout artifact](benchmarks/results/compression_latency_holdout.json)
+| [development artifact](benchmarks/results/compression_latency_development.json).
+
+<sub>Scope: Windows/Python 3.10, synthetic local compression, 120 warm and 40
+cold observations per participant. Cold excludes interpreter startup and
+includes product import plus first call. This is not provider latency,
+downstream answer quality, neural superiority, or universal product
+superiority.</sub>
+
 **PRISM-R neural research preview:** a generic MiniLM encoder did **not** beat
 BM25 as a primary paragraph scorer (97.7% versus 99.0% held-out evidence
 recall), so Entroly rejects that neural-primary claim. A disagreement guard
