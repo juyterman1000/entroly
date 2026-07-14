@@ -6,6 +6,8 @@ import os
 
 import pytest
 
+pytest.importorskip("tiktoken", reason="compression gauntlet requires benchmark extras")
+
 from benchmarks.compression_gauntlet import (
     SCHEMA_VERSION,
     _implementation_sha256,
