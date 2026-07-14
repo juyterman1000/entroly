@@ -1,0 +1,83 @@
+{
+  "schema_version": "entroly.competitive-evidence-protocol.v1",
+  "frozen_at": "2026-07-14T11:30:00Z",
+  "comparison": {
+    "entroly": "1.0.59 merged source",
+    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+  },
+  "claim_policy": {
+    "aggregate_score_allowed": false,
+    "failures_remain_in_sample": true,
+    "negative_results_are_published": true,
+    "per_dimension_claims_only": true,
+    "universal_superiority_claim_allowed": false
+  },
+  "dimensions": [
+    {
+      "id": "active_context_quality",
+      "status": "implemented",
+      "evidence": "benchmarks/results/compression_frontier.json"
+    },
+    {
+      "id": "recovery_resilience",
+      "status": "implemented",
+      "evidence": "benchmarks/recovery_resilience.py"
+    },
+    {
+      "id": "end_to_end_model_recovery",
+      "status": "planned"
+    },
+    {
+      "id": "compression_latency",
+      "status": "planned"
+    },
+    {
+      "id": "provider_protocol_conformance",
+      "status": "planned"
+    },
+    {
+      "id": "interruption_recovery",
+      "status": "planned"
+    },
+    {
+      "id": "security_and_secret_handling",
+      "status": "planned"
+    },
+    {
+      "id": "packaging_and_first_run",
+      "status": "planned"
+    },
+    {
+      "id": "operator_ux_and_diagnostics",
+      "status": "planned"
+    },
+    {
+      "id": "provider_observed_cost",
+      "status": "planned"
+    }
+  ],
+  "suites": {
+    "recovery_resilience": {
+      "development": {
+        "workers": 4,
+        "entries_per_worker": 8,
+        "seed": 20260714
+      },
+      "holdout": {
+        "workers": 6,
+        "entries_per_worker": 11,
+        "seed": 20260715
+      },
+      "gates": {
+        "worker_exit_success_rate": 1.0,
+        "write_success_rate": 1.0,
+        "restart_recovery_rate": 1.0,
+        "exact_byte_recovery_rate": 1.0,
+        "incorrect_payloads": 0
+      },
+      "latency_policy": "Report per-system p50 and p95 store/retrieve latency descriptively; correctness gates cannot be traded for speed.",
+      "development_policy": "Development results may guide implementation and remain visible but cannot support a public leadership claim.",
+      "holdout_policy": "Run once after implementation. A scoped public claim requires the complete holdout matrix and a passing verifier."
+    }
+  }
+}

@@ -366,6 +366,25 @@ Context Efficiency Frontier above is the required gate for a real-model claim.</
   <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and Headroom same-input compression gauntlet with evidence-retention caveat"></a>
 </p>
 
+**Cross-process recovery holdout:** the preregistered six-writer test first
+exposed a serious Entroly failure (only 8/32 development payloads survived),
+which is preserved in the evidence. After the durability repair, Entroly 1.0.59
+source and published Headroom 0.31.0 both wrote and recovered **66/66** holdout
+payloads byte-exactly after restart with zero wrong payloads. This closes the
+integrity gap; it does not establish recovery superiority.
+
+On this Windows/Python 3.10 run, Headroom had lower store-call latency
+(0.797 ms versus 22.606 ms p50). Entroly had lower retrieval latency (0.042 ms
+versus 0.279 ms p50) and a smaller live state footprint (95,438 versus
+1,581,416 bytes). Headroom used SQLite WAL with `synchronous=NORMAL`; Entroly
+fsynced its state file on each commit, so this is not a matched power-loss
+durability comparison. These are scoped workload measurements, not universal
+claims.
+
+[Frozen protocol and full result table](docs/benchmarks/competitive-evidence-matrix.md)
+| [holdout artifact](benchmarks/results/recovery_resilience_holdout.json) |
+[original failing artifact](benchmarks/results/recovery_resilience_development_before.json).
+
 **PRISM-R neural research preview:** a generic MiniLM encoder did **not** beat
 BM25 as a primary paragraph scorer (97.7% versus 99.0% held-out evidence
 recall), so Entroly rejects that neural-primary claim. A disagreement guard
