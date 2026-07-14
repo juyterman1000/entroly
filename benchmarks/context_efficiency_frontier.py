@@ -8,6 +8,7 @@ bootstrap intervals, and reports the quality/context Pareto frontier.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -23,12 +24,16 @@ USAGE_SOURCES = (
     "provider_response",
     "provider_log",
     "provider_ledger",
+    "provider_error",
+    "runner_error",
     "deterministic_fixture",
 )
+OUTCOMES = ("success", "error")
 COST_SOURCES = (
     "provider_invoice",
     "provider_ledger",
     "pricing_snapshot",
+    "self_hosted_no_api_fee",
     "zero_cost_fixture",
 )
 
@@ -57,6 +62,17 @@ def _integer(payload: dict[str, Any], name: str, *, minimum: int = 0) -> int:
     return value
 
 
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _sha256(payload: dict[str, Any], name: str) -> str:
+    value = _text(payload, name).lower()
+    if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise ValueError(f"{name} must be a lowercase SHA-256 hex digest")
+    return value
+
+
 @dataclass(frozen=True)
 class Trial:
     workload: str
@@ -67,6 +83,12 @@ class Trial:
     provider_request_id: str
     usage_source: str
     cost_source: str
+    cost_source_reference: str
+    outcome: str
+    error_type: str | None
+    context_sha256: str
+    response_text: str | None
+    response_sha256: str | None
     replicate: int
     condition: str
     scorer: str
@@ -106,6 +128,29 @@ class Trial:
         cost_source = _text(payload, "cost_source")
         if cost_source not in COST_SOURCES:
             raise ValueError(f"cost_source must be one of {COST_SOURCES}")
+        outcome = _text(payload, "outcome")
+        if outcome not in OUTCOMES:
+            raise ValueError(f"outcome must be one of {OUTCOMES}")
+        error_type = payload.get("error_type")
+        if outcome == "success":
+            if error_type is not None:
+                raise ValueError("successful trials must not set error_type")
+            minimum_context_tokens = 1
+            response_text = payload.get("response_text")
+            if not isinstance(response_text, str):
+                raise ValueError("successful trials require response_text")
+            response_sha256 = _sha256(payload, "response_sha256")
+            if response_sha256 != _sha256_text(response_text):
+                raise ValueError("response_sha256 does not match response_text")
+        else:
+            if not isinstance(error_type, str) or not error_type.strip():
+                raise ValueError("error trials require error_type")
+            error_type = error_type.strip()
+            minimum_context_tokens = 0
+            response_text = payload.get("response_text")
+            response_sha256 = payload.get("response_sha256")
+            if response_text is not None or response_sha256 is not None:
+                raise ValueError("error trials must not contain a provider response")
 
         scores = {
             name: _number(payload, name)
@@ -124,13 +169,21 @@ class Trial:
             provider_request_id=_text(payload, "provider_request_id"),
             usage_source=usage_source,
             cost_source=cost_source,
+            cost_source_reference=_text(payload, "cost_source_reference"),
+            outcome=outcome,
+            error_type=error_type,
+            context_sha256=_sha256(payload, "context_sha256"),
+            response_text=response_text,
+            response_sha256=response_sha256,
             replicate=replicate,
             condition=condition,
             scorer=_text(payload, "scorer"),
             task_score=scores["task_score"],
             evidence_recall=scores["evidence_recall"],
             unsupported_claim_rate=scores["unsupported_claim_rate"],
-            context_tokens=_integer(payload, "context_tokens", minimum=1),
+            context_tokens=_integer(
+                payload, "context_tokens", minimum=minimum_context_tokens
+            ),
             reasoning_tokens=_integer(payload, "reasoning_tokens"),
             output_tokens=_integer(payload, "output_tokens"),
             billed_cost_usd=_number(payload, "billed_cost_usd"),
@@ -236,6 +289,7 @@ def _reduction(candidate: float, baseline: float) -> float:
 def _aggregate(trials: list[Trial]) -> dict[str, Any]:
     return {
         "trials": len(trials),
+        "errors": sum(t.outcome == "error" for t in trials),
         "mean_task_score": round(_mean(t.task_score for t in trials), 6),
         "mean_evidence_recall": round(_mean(t.evidence_recall for t in trials), 6),
         "mean_unsupported_claim_rate": round(
@@ -393,6 +447,9 @@ def analyze_frontier(
             "models": sorted({t.model for t in materialized}),
             "usage_sources": sorted({t.usage_source for t in materialized}),
             "cost_sources": sorted({t.cost_source for t in materialized}),
+            "cost_source_references": sorted(
+                {t.cost_source_reference for t in materialized}
+            ),
         },
         "aggregates": aggregates,
         "comparisons_to_raw": comparisons,
@@ -400,6 +457,7 @@ def analyze_frontier(
         "caveats": [
             "A frontier win applies only to the recorded models, workloads, and scorer.",
             "Provider token and cost fields must come from actual response usage or invoices.",
+            "Self-hosted zero API cost excludes hardware, energy, operations, and depreciation.",
             "Context Commit IDs prove artifact integrity, not task-score validity or signer identity.",
             "A non-dominated point is not necessarily statistically better than every alternative.",
         ],

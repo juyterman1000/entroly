@@ -118,7 +118,12 @@ def json_array_scenario() -> ScenarioScore:
         "deep JSON array",
         json.dumps(rows),
         "find auth refresh timeout failure",
-        ["json evidence-locked compression", "query_matches", "outliers"],
+        [
+            '"id": 667',
+            '"latency_ms": 9912',
+            '"message": "refresh timeout at retry boundary"',
+            '"status": "failed"',
+        ],
     )
 
 

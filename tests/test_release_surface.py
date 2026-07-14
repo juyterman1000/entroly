@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.58"
+RELEASE_VERSION = "1.0.59"
 HOMEBREW_FORMULA_VERSION = "1.0.58"
 HOMEBREW_FORMULA_SHA256 = "f2d561e7316cf12c07ffffadeff0b8f26368538564d776eee86b4b76a896959e"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
@@ -66,7 +66,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_58() -> None:
+def test_public_package_versions_are_1_0_59() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION

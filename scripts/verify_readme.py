@@ -1,5 +1,10 @@
 """Verify every README claim against actual codebase."""
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 passed = 0
 failed = 0
@@ -21,7 +26,6 @@ check("SDK: compress works", lambda: f"{len(__import__('entroly').compress('hell
 
 # === CLI: wrap ===
 from entroly.cli import _WRAP_AGENTS  # noqa: E402
-from pathlib import Path  # noqa: E402
 from verify_public_trust import collect_offline_failures  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")

@@ -59,14 +59,24 @@ Each invocation writes one JSON object conforming to
   provider response or an auditable provider log, not a local tokenizer.
 - `billed_cost_usd` comes from an invoice, provider usage ledger, or a declared
   immutable pricing snapshot. Reports must identify which source was used.
-- `usage_source`, `cost_source`, and `provider_request_id` make that provenance
-  machine-readable. A request ID may be replaced by a stable redacted hash.
+- Self-hosted runs may report zero API fees, but must mark hardware, energy,
+  operations, and depreciation as unmeasured rather than calling inference free.
+- `usage_source`, `cost_source`, `cost_source_reference`, and
+  `provider_request_id` make that provenance machine-readable. A request ID may
+  be replaced by a stable redacted hash.
 - `latency_ms` is wall-clock request latency measured at the same boundary for
   all conditions.
 - `task_score`, `evidence_recall`, and `unsupported_claim_rate` are bounded in
   `[0, 1]` and use the scorer named in the pairing key.
+- `context_sha256`, `response_text`, and `response_sha256` bind each score to
+  the exact evaluated response. Private reports may redact response text only
+  in a separate license-safe manifest; a public headline requires auditable
+  scorer inputs.
 - Failures, timeouts, refusals, and malformed tool calls remain in the sample
   and receive the preregistered failure score. They are not silently discarded.
+- Failed provider requests use `outcome: error`, preserve the error class, and
+  report zero usage when no provider response exists. Positive usage is never
+  fabricated from a local tokenizer.
 - Every task-replicate must contain the same condition matrix. The analyzer
   rejects incomplete matrices rather than comparing unequal task subsets.
 

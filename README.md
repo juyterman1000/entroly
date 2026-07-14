@@ -298,7 +298,7 @@ Reproduce: `python -m benchmarks.context_commit_conformance`.
 measure artifact integrity, replay, and recovery on the committed fixtures;
 they do not measure model-answer quality or claim identical Python/Rust selection.
 
-**Context Efficiency Frontier research:** Entroly includes a paired,
+**Context Efficiency Frontier research:** Entroly is building a paired,
 model-neutral benchmark for the question token-savings tables cannot answer:
 does less context preserve real task quality? The preregistered protocol
 compares raw context, model-native compaction, Entroly, and their combination
@@ -306,7 +306,83 @@ using provider-observed tokens, cost, latency, task success, evidence recall,
 and unsupported claims.
 
 [Read the preregistered protocol](docs/benchmarks/context-efficiency-frontier.md).
-No headline result is claimed until the paired confidence bounds pass.
+No headline result will be claimed until the paired confidence bounds pass.
+
+**Matched token-cap active-context quality frontier (1.0.59 source candidate):**
+across 60 frozen SQuAD v2 long-context RAG/tool-result trials, without expanding
+Headroom's CCR retrieval pointers, Entroly retained **95.0%**,
+**93.3%**, and **88.3%** of accepted answers at the 2x, 4x, and 8x token caps.
+Published Headroom 0.31.0 retained **1.7%** at each cap. The paired two-sided
+exact McNemar tests pass at every point (`p <= 4.45e-16`). Entroly met all 180
+caps; Headroom met the 2x/4x caps but missed all 60 8x caps, keeping 18.6% of
+tokens instead of at most 12.5%.
+
+| Maximum token cap | Entroly answer retained / actual kept | Headroom answer retained / actual kept |
+|---:|---:|---:|
+| 2x (50%) | **95.0% / 39.3%** | 1.7% / 18.6% |
+| 4x (25%) | **93.3% / 19.2%** | 1.7% / 18.6% |
+| 8x (12.5%) | **88.3% / 10.4%** | 1.7% / 18.6% (cap missed) |
+
+A separate eight-question, randomized local `qwen2.5:1.5b` guard at 4x scored
+raw context at 62.5% exact match, Entroly at **87.5%**, and Headroom at 12.5%,
+with no errors. This small local-model sample is a veto guard, not the headline
+or a frontier-model claim.
+
+[Generated report](benchmarks/results/compression_frontier.md) ·
+[full auditable artifact](benchmarks/results/compression_frontier.json) ·
+[protocol and reproduction](docs/benchmarks/compression-frontier.md). Verify it
+with `python -m benchmarks.compression_frontier verify benchmarks/results/compression_frontier.json`.
+
+<sub>Scope: extractive answer retention in structured SQuAD-v2 RAG results.
+Headroom's CCR pointers remain in its output, but retrieval recovery is not run;
+this measures immediately visible active context, not Headroom's end-to-end CCR
+workflow. Entroly is measured from the 1.0.59 source
+candidate; do not call this a released-package result until 1.0.59 is
+published. This does not establish superiority for every task, model,
+compressor, or production workload.</sub>
+
+<p align="center">
+  <a href="benchmarks/results/compression_frontier.md"><img src="docs/assets/compression_frontier.svg" width="900" alt="Entroly 1.0.59 candidate and Headroom 0.31.0 matched token-cap answer-retention frontier"></a>
+</p>
+
+**Same-input compression gauntlet:** on four deterministic agent-tool fixtures,
+current Entroly source (package version `1.0.59`) and Headroom `0.31.0`
+both retained **100% of the preregistered answer evidence**. Under the shared
+`o200k_base` tokenizer, Entroly reduced weighted input tokens by **95.1%** versus
+**31.4%** for Headroom's public `compress()` pipeline with its documented
+`agent-90` high-savings profile. Entroly compressed all four fixtures; Headroom
+compressed two and safely passed two through.
+
+[Generated report](benchmarks/results/compression_gauntlet.md) ·
+[raw inputs and outputs](benchmarks/results/compression_gauntlet.json) ·
+[protocol and reproduction](docs/benchmarks/compression-gauntlet.md). Verify the
+artifact with `python -m benchmarks.compression_gauntlet verify benchmarks/results/compression_gauntlet.json`.
+
+<sub>This is a synthetic, no-model compression/evidence result. It does not
+measure downstream answer quality or establish neural/ML superiority. The
+Context Efficiency Frontier above is the required gate for a real-model claim.</sub>
+
+<p align="center">
+  <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and Headroom same-input compression gauntlet with evidence-retention caveat"></a>
+</p>
+
+**PRISM-R neural research preview:** a generic MiniLM encoder did **not** beat
+BM25 as a primary paragraph scorer (97.7% versus 99.0% held-out evidence
+recall), so Entroly rejects that neural-primary claim. A disagreement guard
+reached 99.3% while selecting 1.02 of 16 passages on average. In a separate
+200-pair query-shift pilot at a nominal 25% active budget, PRISM-R retained
+87.0% of current-query evidence versus lexical selection's 60.5%; when a
+different future question was revealed, exact receipt-backed rehydration raised
+its evidence retention from 9.0% to 90.5%. Active plus recovered context was
+50.6% of the original.
+
+[Research design and prior art](docs/research/prism-r-neural-compression.md) ·
+[held-out retrieval artifact](benchmarks/results/neural_evidence_frontier.json) ·
+[query-shift artifact](benchmarks/results/neural_query_shift.json).
+
+<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets, not
+downstream answer-quality, latency, production-savings, or general neural
+superiority claims. PRISM-R remains opt-in research code.</sub>
 
 The tables below link each reported number to its committed result. Treat them
 as evidence for those specific datasets, budgets, models, and commits—not as a

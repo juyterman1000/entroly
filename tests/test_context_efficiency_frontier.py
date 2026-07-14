@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from benchmarks.context_efficiency_frontier import (
     CONDITIONS,
     COST_SOURCES,
+    OUTCOMES,
     SCHEMA_VERSION,
     USAGE_SOURCES,
     Trial,
@@ -28,6 +30,12 @@ def _record(task: int, condition: str, **overrides):
         "provider_request_id": f"fixture-request-{task}-{condition}",
         "usage_source": "deterministic_fixture",
         "cost_source": "zero_cost_fixture",
+        "cost_source_reference": "fixture://zero-cost",
+        "outcome": "success",
+        "error_type": None,
+        "context_sha256": hashlib.sha256(b"fixture context").hexdigest(),
+        "response_text": "fixture answer",
+        "response_sha256": hashlib.sha256(b"fixture answer").hexdigest(),
         "replicate": 0,
         "condition": condition,
         "scorer": "exact-match-v1",
@@ -97,6 +105,44 @@ def test_trial_rejects_fractional_token_counts():
         Trial.from_dict(payload)
 
 
+def test_error_trial_can_record_zero_provider_usage():
+    payload = _record(
+        1,
+        "entroly",
+        outcome="error",
+        error_type="APITimeoutError",
+        usage_source="provider_error",
+        context_tokens=0,
+        reasoning_tokens=0,
+        output_tokens=0,
+        billed_cost_usd=0.0,
+        task_score=0.0,
+        evidence_recall=0.0,
+        unsupported_claim_rate=1.0,
+        response_text=None,
+        response_sha256=None,
+    )
+
+    trial = Trial.from_dict(payload)
+
+    assert trial.outcome == "error"
+    assert trial.context_tokens == 0
+
+
+def test_success_trial_rejects_error_metadata_and_zero_context():
+    with pytest.raises(ValueError, match="must not set error_type"):
+        Trial.from_dict(_record(1, "raw", error_type="unexpected"))
+    with pytest.raises(ValueError, match="context_tokens must be an integer >= 1"):
+        Trial.from_dict(_record(1, "raw", context_tokens=0))
+
+
+def test_trial_rejects_response_tampering():
+    payload = _record(1, "raw", response_text="tampered")
+
+    with pytest.raises(ValueError, match="does not match response_text"):
+        Trial.from_dict(payload)
+
+
 def test_trial_rejects_unverifiable_usage_provenance():
     payload = _record(1, "raw")
     payload["usage_source"] = "local_estimate"
@@ -151,6 +197,7 @@ def test_public_report_exposes_pass_rule_and_caveats():
     assert "**PASS**" in markdown
     assert "95% paired-bootstrap bounds" in markdown
     assert "Usage sources: deterministic_fixture" in markdown
+    assert "Cost source references: fixture://zero-cost" in markdown
     assert "Context Commit IDs prove artifact integrity" in markdown
 
 
@@ -171,3 +218,4 @@ def test_public_json_schema_matches_python_trial_contract():
     assert tuple(schema["properties"]["condition"]["enum"]) == CONDITIONS
     assert tuple(schema["properties"]["usage_source"]["enum"]) == USAGE_SOURCES
     assert tuple(schema["properties"]["cost_source"]["enum"]) == COST_SOURCES
+    assert tuple(schema["properties"]["outcome"]["enum"]) == OUTCOMES

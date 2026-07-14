@@ -15,6 +15,12 @@
     "provider_request_id",
     "usage_source",
     "cost_source",
+    "cost_source_reference",
+    "outcome",
+    "error_type",
+    "context_sha256",
+    "response_text",
+    "response_sha256",
     "replicate",
     "condition",
     "scorer",
@@ -62,6 +68,8 @@
         "provider_response",
         "provider_log",
         "provider_ledger",
+        "provider_error",
+        "runner_error",
         "deterministic_fixture"
       ]
     },
@@ -70,8 +78,43 @@
         "provider_invoice",
         "provider_ledger",
         "pricing_snapshot",
+        "self_hosted_no_api_fee",
         "zero_cost_fixture"
       ]
+    },
+    "cost_source_reference": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Immutable invoice, ledger, or pricing-snapshot URL/hash used for billed_cost_usd."
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "error"
+      ]
+    },
+    "error_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "context_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "response_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "response_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
     },
     "replicate": {
       "type": "integer",
@@ -106,7 +149,7 @@
     },
     "context_tokens": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 0
     },
     "reasoning_tokens": {
       "type": "integer",
@@ -152,6 +195,49 @@
           "context_commit_id": {
             "type": "string",
             "pattern": "^ctx_"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "context_tokens": {
+            "minimum": 1
+          },
+          "error_type": {
+            "type": "null"
+          },
+          "response_text": {
+            "type": "string"
+          },
+          "response_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "error_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "response_text": {
+            "type": "null"
+          },
+          "response_sha256": {
+            "type": "null"
           }
         }
       }

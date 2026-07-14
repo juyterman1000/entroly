@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from entroly.compression_proxy import compress_proxy_payload, compress_proxy_payload_from_env
 from entroly.compression_retrieval_store import CompressionRetrievalStore
 
@@ -54,6 +56,41 @@ def test_retrieval_store_searches_omitted_spans() -> None:
     matches = store.search("payment worker")
     assert matches
     assert "payment worker" in matches[0].content
+
+
+def test_retrieval_accounting_rolls_back_when_persistence_fails(
+    tmp_path, monkeypatch
+) -> None:
+    store = CompressionRetrievalStore(tmp_path / "store.json")
+    heavy = "\n".join(
+        ["payment worker heartbeat" for _ in range(400)] + ["ERROR auth outage INC-777"]
+    )
+    result = compress_proxy_payload(
+        {"messages": [{"role": "tool", "content": heavy}]},
+        query="auth outage",
+        budget_tokens=120,
+        retrieval_store=store,
+    )
+    retrieval = result.receipt.receipts[0]["retrieval"]
+    receipt_id = retrieval["receipt_id"]
+    span_id = retrieval["span_ids"][0]
+    monkeypatch.setattr(
+        store,
+        "_persist",
+        lambda: (_ for _ in ()).throw(OSError("simulated disk failure")),
+    )
+
+    with pytest.raises(OSError, match="simulated disk failure"):
+        store.retrieve_span(receipt_id, span_id, retrieval_id="failed-retrieval")
+
+    span = store.get_span(receipt_id, span_id)
+    receipt = store.get_receipt(receipt_id)
+    assert span is not None
+    assert receipt is not None
+    assert span.retrieval_count == 0
+    assert span.retrieved_tokens == 0
+    assert span.retrieval_ids == []
+    assert receipt.retrieval_count == 0
 
 
 def test_env_proxy_mode_uses_store_when_enabled(tmp_path, monkeypatch) -> None:

@@ -79,6 +79,52 @@ Use `entroly simulate` for a no-network local estimate. Use provider-observed
 request usage and the [Context Efficiency Frontier protocol](benchmarks/context-efficiency-frontier.md)
 before publishing a production or billing claim.
 
+### Same-input compression gauntlet
+
+The committed no-model gauntlet sends four byte-identical generated agent-tool
+fixtures through current Entroly source (package version `1.0.58`) and the
+released Headroom `0.31.0[proxy]` public `compress()` entry point with its
+documented `agent-90` high-savings profile. Both systems retain 100% of the
+preregistered answer strings. Under the shared
+`tiktoken==0.9.0` `o200k_base` counter, Entroly records 95.2% weighted token
+reduction and Headroom records 31.4%. Pass-through is valid and earns zero
+savings; Headroom passes two fixtures through.
+
+This is reproducible-measurement evidence for the named synthetic fixtures. It
+is not production-outcome evidence, downstream model-answer evidence, or proof
+of neural/ML superiority.
+
+- Generated report: [`compression_gauntlet.md`](../benchmarks/results/compression_gauntlet.md)
+- Raw inputs, outputs, hashes, versions, and runtime metadata: [`compression_gauntlet.json`](../benchmarks/results/compression_gauntlet.json)
+- Protocol: [`compression-gauntlet.md`](benchmarks/compression-gauntlet.md)
+- Verify: `python -m benchmarks.compression_gauntlet verify benchmarks/results/compression_gauntlet.json`
+
+### PRISM-R neural research pilot
+
+PRISM-R is an opt-in research prototype, not the default compressor. On the
+held-out half of a frozen 600-trial SQuAD v2 paragraph-retrieval experiment, a
+generic local MiniLM encoder underperformed deterministic BM25 as the primary
+selector (97.7% versus 99.0%). The repository therefore rejects a
+neural-primary claim. Retaining both champions only when the systems disagreed
+reached 99.3% evidence recall while selecting 1.02 of 16 passages on average.
+
+In a separate 200-pair same-document query-shift pilot at a nominal 25% active
+budget, PRISM-R retained 87.0% of current-query exact evidence versus 60.5% for
+lexical selection. A different future question was revealed only after
+compression; exact locally stored span recovery raised future evidence
+retention from 9.0% to 90.5%. Active plus recovered text was approximately
+50.6% of the original.
+
+These results measure exact answer-string retention on short SQuAD paragraphs.
+They do not measure generated answers, general neural superiority, long-agent
+memory, production latency, or billing savings.
+
+- Research design and prior art: [`prism-r-neural-compression.md`](research/prism-r-neural-compression.md)
+- Held-out retrieval artifact: [`neural_evidence_frontier.json`](../benchmarks/results/neural_evidence_frontier.json)
+- Query-shift artifact: [`neural_query_shift.json`](../benchmarks/results/neural_query_shift.json)
+- Verify: `python -m benchmarks.neural_evidence_frontier verify benchmarks/results/neural_evidence_frontier.json`
+- Verify: `python -m benchmarks.neural_query_shift verify benchmarks/results/neural_query_shift.json`
+
 ## Marketplace status
 
 The LobeHub listing is an external discovery surface. The dated

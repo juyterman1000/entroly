@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="610" viewBox="0 0 1400 610" role="img" aria-labelledby="title desc">
+  <title id="title">Entroly and Headroom matched token-cap quality frontier</title>
+  <desc id="desc">Entroly wins every matched token-cap quality gate against Headroom. Results show retained-answer recall and actual tokens kept.</desc>
+  <rect width="1400" height="610" rx="28" fill="#07111f"/>
+  <style>
+    text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; fill: #e5eef8; }
+    .eyebrow { font-size: 20px; font-weight: 750; letter-spacing: 2px; fill: #6ee7b7; }
+    .title { font-size: 42px; font-weight: 780; }
+    .subtitle { font-size: 19px; fill: #9fb1c7; }
+    .header { font-size: 20px; font-weight: 750; }
+    .target { font-size: 22px; font-weight: 700; fill: #b8c8db; }
+    .value { font-size: 24px; font-weight: 760; fill: #6ee7b7; }
+    .muted { fill: #c3cedb; }
+    .foot { font-size: 17px; fill: #8da2ba; }
+  </style>
+  <text x="70" y="64" class="eyebrow">EVIDENCE GATE PASSED</text>
+  <text x="70" y="119" class="title">Matched token-cap quality frontier</text>
+  <text x="70" y="157" class="subtitle">60 frozen SQuAD v2 long-context trials · achieved o200k token ratios · exact retained answers</text>
+  <line x1="70" y1="187" x2="1330" y2="187" stroke="#24364b"/>
+  <text x="410" y="211" class="header">Entroly 1.0.59 candidate</text>
+  <text x="890" y="211" class="header">Headroom 0.31.0 release</text>
+  <text x="70" y="244" class="target">2× target</text><text x="410" y="244" class="value">95% recall · 39.3% kept</text><text x="890" y="244" class="value muted">2% recall · 18.6% kept</text><text x="70" y="312" class="target">4× target</text><text x="410" y="312" class="value">93% recall · 19.2% kept</text><text x="890" y="312" class="value muted">2% recall · 18.6% kept</text><text x="70" y="380" class="target">8× target</text><text x="410" y="380" class="value">88% recall · 10.4% kept</text><text x="890" y="380" class="value muted">2% recall · 18.6% kept</text>
+  <rect x="70" y="458" width="1260" height="62" rx="14" fill="#0d1b2c" stroke="#20344b"/>
+  <text x="98" y="497" class="header">Local answer EM @ 4×: Entroly 88% · Headroom 12% · n=8</text>
+  <text x="70" y="558" class="foot">Scope: extractive answer retention + local-model guard. Not a claim about all tasks, models, or production cost.</text>
+  <text x="70" y="585" class="foot">Artifact: benchmarks/results/compression_frontier.json · fail-closed verifier included</text>
+</svg>
