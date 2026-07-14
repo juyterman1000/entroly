@@ -39,7 +39,7 @@
         "dependencies": {
           "tiktoken": "0.9.0"
         },
-        "implementation_sha256": "3844f046306f8c47232bb747233ed5c1ae94ec359c89998d917dbeaf666ea1d1",
+        "implementation_sha256": "d8108107a095632af95dd012d8a708a08845bb266d1e2b6b3b0683259858ec00",
         "import_origin": "repository source checkout",
         "native_acceleration_used": false,
         "python": "3.10.0"
@@ -16197,5 +16197,5 @@
     "Headroom is measured through its released public compress() API and declared config.",
     "Entroly is a 1.0.59 source candidate; publication must follow before claiming released-package parity."
   ],
-  "payload_sha256": "3659c60b64c4554dd581318a2ae8dae38aa3d5a9953065dfa4a9d3808b689fd8"
+  "payload_sha256": "671819dc599215aeee234c0525e1a5ab03f7879732cbca314a9863fcbbefe5df"
 }

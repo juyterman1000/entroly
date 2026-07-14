@@ -8,6 +8,7 @@ import pytest
 
 from benchmarks.compression_gauntlet import (
     SCHEMA_VERSION,
+    _implementation_sha256,
     _subprocess_env,
     analyze,
     build_scenarios,
@@ -16,6 +17,17 @@ from benchmarks.compression_gauntlet import (
     run_adapter,
     verify_report,
 )
+
+
+def test_implementation_fingerprint_is_line_ending_independent(tmp_path) -> None:
+    windows = tmp_path / "windows" / "impl.py"
+    linux = tmp_path / "linux" / "impl.py"
+    windows.parent.mkdir()
+    linux.parent.mkdir()
+    windows.write_bytes(b"first = 1\r\nsecond = 2\r\n")
+    linux.write_bytes(b"first = 1\nsecond = 2\n")
+
+    assert _implementation_sha256((windows,)) == _implementation_sha256((linux,))
 
 
 def _payload():

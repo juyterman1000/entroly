@@ -92,7 +92,10 @@ def _implementation_sha256(paths: tuple[Path, ...]) -> str:
     for path in paths:
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        # Git may materialize text files with CRLF on Windows and LF in CI.
+        # Fingerprint source semantics rather than checkout-specific newlines.
+        source = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        digest.update(source)
         digest.update(b"\0")
     return digest.hexdigest()
 

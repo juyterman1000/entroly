@@ -47,4 +47,4 @@ python -m benchmarks.compression_frontier verify benchmarks/results/compression_
 - Headroom is measured through its released public compress() API and declared config.
 - Entroly is a 1.0.59 source candidate; publication must follow before claiming released-package parity.
 
-Payload SHA-256: `3659c60b64c4554dd581318a2ae8dae38aa3d5a9953065dfa4a9d3808b689fd8`
+Payload SHA-256: `671819dc599215aeee234c0525e1a5ab03f7879732cbca314a9863fcbbefe5df`

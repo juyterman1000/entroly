@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("tiktoken", reason="compression frontier requires benchmark extras")
+
 from benchmarks.compression_frontier import (
     Trial,
     _canonical_sha256,
