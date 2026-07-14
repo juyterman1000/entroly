@@ -1,0 +1,42 @@
+name: Public Trust Contracts
+
+on:
+  pull_request:
+    paths:
+      - README.md
+      - PYPI_README.md
+      - server.json
+      - benchmarks/results/context_commit_conformance.json
+      - benchmarks/results/halueval_qa_faithful.json
+      - docs/discord.html
+      - docs/public-evidence.md
+      - scripts/verify_public_trust.py
+      - .github/workflows/public-trust.yml
+  schedule:
+    - cron: "23 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify public claims against committed evidence
+        run: python scripts/verify_public_trust.py
+
+  online-destinations:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check canonical public destinations
+        run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20

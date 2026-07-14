@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="refresh" content="0; url=https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md">
+<link rel="canonical" href="https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Prompt Compression & Context Compression for LLMs — Entroly</title>
@@ -209,8 +212,8 @@ compressed = compress(log_output, budget=2000)
 context = optimize(fragments, budget=8000, query="fix the login bug")</pre>
 
 <h3>As an MCP Server</h3>
-<pre>entroly serve   # starts MCP server
-# then add to Cursor, Claude Code, VS Code config via: entroly init</pre>
+<pre>entroly init    # generate a supported MCP client configuration
+# or register "entroly" with no arguments as the client's stdio command</pre>
 
 <div class="cta-box">
   <h3>Start Compressing Your Prompts</h3>

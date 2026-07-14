@@ -60,9 +60,7 @@ def test_mcp_registry_identity_and_package_contract() -> None:
         assert package["version"] == version
         assert package["runtimeHint"] == expected_runtime[key]
         assert package["transport"] == {"type": "stdio"}
-        assert package["packageArguments"] == [
-            {"type": "positional", "value": "serve"}
-        ]
+        assert package.get("packageArguments", []) == []
 
 
 def test_registry_package_ownership_proofs_are_canonical() -> None:

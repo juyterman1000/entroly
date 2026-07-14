@@ -24,18 +24,25 @@ entroly simulate
 
 ## MCP server
 
-Start the stdio MCP server directly:
+For an MCP client, register the installed `entroly` command with no arguments.
+When an MCP client launches it with a stdio pipe, Entroly starts the installed
+Python server directly:
 
 ```bash
-entroly serve
+entroly
 ```
 
-Or use a package runner:
+Or register a package runner, also with no `serve` argument:
 
 ```bash
-uvx --from entroly entroly serve
-npx -y entroly-mcp serve
+uvx --from entroly entroly
+npx -y entroly-mcp
 ```
+
+`entroly serve` is a different deployment path: it uses the Entroly Docker
+image by default. For the installed Python runtime in an interactive shell, use
+`ENTROLY_NO_DOCKER=1 entroly serve` on macOS/Linux or set
+`ENTROLY_NO_DOCKER=1` in the client environment.
 
 Entroly works with GitHub Copilot in VS Code, Claude Code, Cursor, Windsurf,
 Cline, Continue, Zed, and other MCP-compatible clients.
@@ -50,19 +57,20 @@ Create `.vscode/mcp.json`:
     "entroly": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "entroly", "entroly", "serve"]
+      "args": ["--from", "entroly", "entroly"]
     }
   }
 }
 ```
 
-Or install through the MCP gallery after the official registry listing becomes
-available by searching for **Entroly**.
+External MCP galleries can lag a release. Direct stdio registration above is
+the canonical setup; confirm a gallery entry's package version and validation
+status before relying on it.
 
 ### Claude Code
 
 ```bash
-claude mcp add entroly -- uvx --from entroly entroly serve
+claude mcp add entroly -- uvx --from entroly entroly
 ```
 
 ### Generic MCP configuration
@@ -72,7 +80,7 @@ claude mcp add entroly -- uvx --from entroly entroly serve
   "mcpServers": {
     "entroly": {
       "command": "uvx",
-      "args": ["--from", "entroly", "entroly", "serve"]
+      "args": ["--from", "entroly", "entroly"]
     }
   }
 }
@@ -86,7 +94,7 @@ claude mcp add entroly -- uvx --from entroly entroly serve
 - **Exact recovery** of compressed fragments through stable handles
 - **Local verification** through WITNESS and receipt checks
 - **Context Check** coverage evidence for changed files and CI risk gates
-- **Rust and WASM engines** with a pure-Python fallback
+- **Pure-Python base runtime**, optional Rust acceleration, and a separate npm/WASM runtime
 - **Local-first operation** with no outbound analytics by default
 
 ## Links
@@ -94,7 +102,9 @@ claude mcp add entroly -- uvx --from entroly entroly serve
 - Repository: https://github.com/juyterman1000/entroly
 - Documentation: https://juyterman1000.github.io/entroly/
 - PyPI: https://pypi.org/project/entroly/
+- npm runtime: https://www.npmjs.com/package/entroly
 - npm MCP bridge: https://www.npmjs.com/package/entroly-mcp
+- Public evidence policy: https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md
 
 ## MCP Registry identity
 

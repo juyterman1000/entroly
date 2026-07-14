@@ -51,7 +51,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.57"
+    __version__ = "1.0.58"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -3164,10 +3164,19 @@ def cmd_doctor(args):
         version = f" {native.version}" if native.version else ""
         print(f"  {C.GREEN}+{C.RESET} Rust engine (entroly-core{version}) loaded")
         checks_passed += 1
+    elif not native.available:
+        print(
+            f"  {C.GRAY}-{C.RESET} Optional Rust acceleration not installed "
+            f"{C.GRAY}— pure-Python engine is active{C.RESET}"
+        )
+        print(
+            f"    {C.GRAY}Enable when wanted: python -m pip install "
+            f"\"entroly[native]\"{C.RESET}"
+        )
+        checks_passed += 1
     else:
-        status = "not loaded" if not native.available else "stale or incomplete"
-        print(f"  {C.RED}x{C.RESET} Rust engine (entroly-core) {status} "
-              f"{C.GRAY}— optional; core features still work{C.RESET}")
+        print(f"  {C.RED}x{C.RESET} Installed Rust engine is stale or incomplete "
+              f"{C.GRAY}— pure-Python fallback remains available{C.RESET}")
         if native.version:
             print(f"    {C.GRAY}Loaded version: {native.version}{C.RESET}")
         if native.path:
@@ -3180,7 +3189,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.57\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.58\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4698,7 +4707,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.57\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.58\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -4741,7 +4750,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.57\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.58\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")

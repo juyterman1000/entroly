@@ -1,3 +1,5 @@
+> **Archived translation:** This file is not aligned with the current evidence-backed README and may contain outdated or unsupported claims. Use the [canonical README](../../README.md) and [public evidence policy](../public-evidence.md).
+
 <p align="center">
   <a href="../../README.md">🇬🇧 English</a> •
   <a href="README.zh-CN.md">🇨🇳 中文</a> •

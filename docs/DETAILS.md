@@ -118,7 +118,7 @@ pip install entroly && entroly demo    # see savings on YOUR codebase
 
 ---
 
-## 30-Second Install
+## Install options
 
 **Python:**
 ```bash
@@ -143,9 +143,13 @@ entroly optimize 8000 "fix the auth bug"
 entroly demo
 ```
 
-Both npm packages run the full Rust engine natively in Node.js — **no Python required**.
+Both npm commands use the Node/WASM runtime and do not require Python. They are
+not evidence that the optional PyO3 extension is installed in a Python setup.
 
-**That's it.** `entroly go` (Python) or `entroly serve` / `npx entroly-wasm serve` (Node.js) auto-detects your IDE, starts the engine, and begins optimizing. Point your AI tool to `http://localhost:9377/v1`.
+For Python MCP clients, `entroly init` generates supported client configuration,
+or the client can launch `entroly` with no arguments over stdio. The Node/WASM
+commands above start their MCP server. `http://localhost:9377/v1` belongs to the
+separate Python `entroly proxy` path; an MCP server is not an HTTP proxy.
 
 ### Or step by step
 

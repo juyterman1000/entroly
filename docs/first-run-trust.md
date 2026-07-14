@@ -55,7 +55,7 @@ The simulation is not a quality benchmark and does not claim provider-bill parit
 | User type | Recommended path | Why |
 |---|---|---|
 | Claude Code subscription user | `claude mcp add entroly -- entroly` | Keeps Claude Code as the client and adds Entroly tools without proxy billing assumptions |
-| Cursor, VS Code, Windsurf, or MCP-native IDE user | `entroly init` or `entroly serve` | Adds local context, recovery, receipts, and feedback tools through MCP |
+| Cursor, VS Code, Windsurf, or MCP-native IDE user | `entroly init`, or register `entroly` with no arguments | Adds the installed Python MCP runtime without a Docker requirement |
 | Pay-as-you-go API user | `entroly proxy` | Transparent optimization for Anthropic/OpenAI-compatible clients |
 | Python SDK user | `from entroly import compress, compress_messages, optimize` | Direct library control |
 | Node/npm user | `npm install -g entroly` | WASM runtime path without Python-first setup |
