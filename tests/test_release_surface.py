@@ -257,3 +257,24 @@ def test_mcp_registry_follows_every_anchored_parent_release() -> None:
     assert 'if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]' in text
     assert 'echo "should_publish=false" >> "$GITHUB_OUTPUT"' in text
     assert "if: steps.release_guard.outputs.should_publish == 'true'" in text
+
+
+def test_clawhub_verifier_follows_coordinated_release() -> None:
+    text = (ROOT / ".github/workflows/verify-clawhub-listing.yml").read_text(
+        encoding="utf-8"
+    )
+    triggers = text.split("permissions:", 1)[0]
+
+    assert 'workflows: ["Build and Push Entroly Docker Image"]' in triggers
+    assert "workflow_run:" in triggers
+    assert "\n  push:" not in triggers
+    assert "github.event.workflow_run.conclusion == 'success'" in text
+    assert "github.event.workflow_run.head_sha || github.sha" in text
+    assert "ref: ${{ env.SOURCE_SHA }}" in text
+    assert "sha: process.env.SOURCE_SHA" in text
+    assert "const description = process.env.CLAWHUB_DESCRIPTION" in text
+    assert "const description = '${{ steps.verify.outputs.description }}'" not in text
+    assert (
+        "https://clawhub.ai/juyterman1000/plugins/entroly-openclaw" in text
+    )
+    assert "ClawHub {expected_version} unavailable: {safe_error}" in text
