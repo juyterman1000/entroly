@@ -34,11 +34,8 @@ jobs:
         (
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_branch == 'main' &&
           github.event.workflow_run.head_repository.full_name == 'juyterman1000/entroly' &&
-          github.event.workflow_run.actor.login == 'juyterman1000' &&
-          (startsWith(github.event.workflow_run.head_commit.message, 'Release v') ||
-           startsWith(github.event.workflow_run.head_commit.message, 'Release '))
+          github.event.workflow_run.actor.login == 'juyterman1000'
         ) ||
         (
           github.event_name == 'push' &&
@@ -67,6 +64,7 @@ jobs:
           persist-credentials: false
 
       - name: Assert canonical publisher and immutable source
+        id: release_guard
         shell: bash
         run: |
           set -euo pipefail
@@ -79,10 +77,20 @@ jobs:
 
           case "$GITHUB_EVENT_NAME" in
             workflow_run)
-              case "$RELEASE_MESSAGE" in
-                "Release v"*|"Release "*) ;;
-                *) echo "::error::Refusing non-release workflow source: $RELEASE_MESSAGE"; exit 2 ;;
-              esac
+              VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+              EXPECTED_TAG="entroly-v${VERSION}"
+              git fetch --force --tags origin
+              if ! git show-ref --verify --quiet "refs/tags/${EXPECTED_TAG}"; then
+                echo "should_publish=false" >> "$GITHUB_OUTPUT"
+                echo "Successful parent run has no canonical release tag; MCP publication skipped."
+                exit 0
+              fi
+              TAG_SHA="$(git rev-parse "${EXPECTED_TAG}^{commit}")"
+              if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]; then
+                echo "should_publish=false" >> "$GITHUB_OUTPUT"
+                echo "Canonical tag ${EXPECTED_TAG} targets ${TAG_SHA}, not this Docker-only source; MCP publication skipped."
+                exit 0
+              fi
               ;;
             push)
               case "$RELEASE_MESSAGE" in
@@ -93,8 +101,10 @@ jobs:
             workflow_dispatch) ;;
             *) echo "::error::Unsupported event: $GITHUB_EVENT_NAME"; exit 2 ;;
           esac
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Validate canonical MCP identity and wait for published packages
+        if: steps.release_guard.outputs.should_publish == 'true'
         shell: bash
         run: |
           python - <<'PY'
@@ -216,6 +226,7 @@ jobs:
           PY
 
       - name: Detect an existing canonical registry version
+        if: steps.release_guard.outputs.should_publish == 'true'
         id: registry_state
         shell: bash
         run: |
@@ -266,7 +277,7 @@ jobs:
           PY
 
       - name: Install pinned MCP Registry publisher
-        if: steps.registry_state.outputs.already_published != 'true'
+        if: steps.release_guard.outputs.should_publish == 'true' && steps.registry_state.outputs.already_published != 'true'
         shell: bash
         env:
           MCP_PUBLISHER_VERSION: v1.7.9
@@ -280,14 +291,15 @@ jobs:
           ./mcp-publisher --help >/dev/null
 
       - name: Authenticate canonical GitHub repository with OIDC
-        if: steps.registry_state.outputs.already_published != 'true'
+        if: steps.release_guard.outputs.should_publish == 'true' && steps.registry_state.outputs.already_published != 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish canonical Entroly identity
-        if: steps.registry_state.outputs.already_published != 'true'
+        if: steps.release_guard.outputs.should_publish == 'true' && steps.registry_state.outputs.already_published != 'true'
         run: ./mcp-publisher publish
 
       - name: Verify exact registry ownership and listing
+        if: steps.release_guard.outputs.should_publish == 'true'
         shell: bash
         run: |
           python - <<'PY'

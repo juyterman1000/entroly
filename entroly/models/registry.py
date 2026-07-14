@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from enum import Enum
 from functools import lru_cache
@@ -202,9 +203,16 @@ class ModelRegistry:
         self._by_id: dict[str, ModelCapability] = {}
         self._aliases: dict[str, str] = {}
         self._aliases_by_id: dict[str, set[str]] = {}
-        for collection in (bundled, discovered, overrides):
-            for capability in collection:
-                self._install(capability)
+        for capability in bundled:
+            self._install(capability)
+        for capability in discovered:
+            # Runtime discovery refines an existing route. Preserve its known
+            # bundled aliases so enabling discovery cannot break callers that
+            # use the canonical provider alias. Explicit user overrides retain
+            # replacement semantics and may intentionally retire aliases.
+            self._install(capability, preserve_aliases=True)
+        for capability in overrides:
+            self._install(capability)
         self._registry_digest = _effective_registry_digest(
             self._by_id.values(),
             fallback_context_window=self._fallback_context_window,
@@ -224,10 +232,21 @@ class ModelRegistry:
     def discovery_warnings(self) -> tuple[str, ...]:
         return self._discovery_warnings
 
-    def _install(self, capability: ModelCapability) -> None:
+    def _install(
+        self,
+        capability: ModelCapability,
+        *,
+        preserve_aliases: bool = False,
+    ) -> None:
         # Replacing a record must remove aliases no longer present; otherwise an
         # older layer can remain reachable through a stale alias.
-        for old_alias in self._aliases_by_id.get(capability.id, set()):
+        old_aliases = self._aliases_by_id.get(capability.id, set())
+        if preserve_aliases and old_aliases:
+            capability = replace(
+                capability,
+                aliases=tuple(sorted((old_aliases | set(capability.aliases)) - {capability.id})),
+            )
+        for old_alias in old_aliases:
             if self._aliases.get(old_alias) == capability.id:
                 self._aliases.pop(old_alias, None)
 
@@ -449,6 +468,7 @@ def _json_request(
     *,
     timeout: float,
     payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
     max_bytes: int = 2 * 1024 * 1024,
 ) -> Any:
     if timeout <= 0:
@@ -456,11 +476,14 @@ def _json_request(
     if max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
+    request_headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
     request = Request(
         url,
         data=data,
         method="GET" if payload is None else "POST",
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        headers=request_headers,
     )
     opener = build_opener(_NoRedirect())
     with opener.open(request, timeout=timeout) as response:
@@ -468,6 +491,27 @@ def _json_request(
     if len(raw) > max_bytes:
         raise ValueError(f"local model discovery response exceeded {max_bytes} bytes")
     return json.loads(raw.decode("utf-8"))
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        result = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return result if result > 0 else None
+
+
+def _openrouter_price_per_million(value: object) -> float | None:
+    """Convert OpenRouter's dollars-per-token strings to dollars per million."""
+    if value in {None, ""}:
+        return None
+    try:
+        result = float(value) * 1_000_000
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return result if math.isfinite(result) and result >= 0 else None
 
 
 def _ollama_context_length(payload: Any) -> int | None:
@@ -586,6 +630,107 @@ def discover_openai_compatible_models(
     return DiscoveryReport(tuple(models), ())
 
 
+def discover_openrouter_models(
+    api_key: str | None = None,
+    *,
+    timeout: float = 3.0,
+    max_models: int = 512,
+) -> DiscoveryReport:
+    """Discover current OpenRouter metadata without trusting it as a bundled fact.
+
+    The endpoint is intentionally fixed: unlike local discovery, callers cannot
+    redirect the bearer credential to an arbitrary host. The API key is never
+    persisted and is excluded from diagnostics and error messages.
+    """
+    if max_models <= 0:
+        raise ValueError("max_models must be positive")
+    key = (api_key or os.environ.get("OPENROUTER_API_KEY", "")).strip()
+    if not key:
+        return DiscoveryReport((), ("OpenRouter discovery skipped: OPENROUTER_API_KEY is unset",))
+
+    endpoint = "https://openrouter.ai/api/v1/models"
+    try:
+        payload = _json_request(
+            endpoint,
+            timeout=timeout,
+            headers={"Authorization": f"Bearer {key}"},
+        )
+    except (HTTPError, URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return DiscoveryReport((), (f"OpenRouter discovery unavailable: {exc}",))
+
+    records = payload.get("data", []) if isinstance(payload, dict) else []
+    if not isinstance(records, list):
+        return DiscoveryReport((), ("OpenRouter discovery returned an invalid model list",))
+
+    observed_at = date.today().isoformat()
+    models: list[ModelCapability] = []
+    warnings: list[str] = []
+    for record in records[:max_models]:
+        if not isinstance(record, dict):
+            continue
+        model_id = _normalise_name(record.get("id"))
+        if not model_id or "/" not in model_id:
+            continue
+
+        parameters = record.get("supported_parameters")
+        has_parameters = isinstance(parameters, list)
+        supported = {
+            _normalise_name(item)
+            for item in parameters
+            if isinstance(item, str)
+        } if isinstance(parameters, list) else set()
+        architecture = record.get("architecture")
+        input_modalities = architecture.get("input_modalities") \
+            if isinstance(architecture, dict) else None
+        has_modalities = isinstance(input_modalities, list)
+        modalities = {
+            _normalise_name(item)
+            for item in input_modalities
+            if isinstance(item, str)
+        } if isinstance(input_modalities, list) else set()
+        top_provider = record.get("top_provider")
+        context_window = _positive_int(record.get("context_length"))
+        max_output = _positive_int(top_provider.get("max_completion_tokens")) \
+            if isinstance(top_provider, dict) else None
+        if context_window is not None and max_output is not None and max_output >= context_window:
+            warnings.append(
+                f"OpenRouter model {model_id!r} reported max completion tokens "
+                "outside its context window; output limit ignored"
+            )
+            max_output = None
+        pricing = record.get("pricing")
+        pricing = pricing if isinstance(pricing, dict) else {}
+
+        models.append(
+            ModelCapability(
+                id=model_id,
+                provider="openrouter",
+                aliases=(f"openrouter/{model_id}",),
+                context_window=context_window,
+                max_output_tokens=max_output,
+                supports_tools=(
+                    bool(supported & {"tools", "tool_choice"}) if has_parameters else None
+                ),
+                supports_vision=("image" in modalities if has_modalities else None),
+                supports_reasoning=(
+                    bool(supported & {"reasoning", "reasoning_effort", "include_reasoning"})
+                    if has_parameters
+                    else None
+                ),
+                reasoning_levels=(),
+                input_price_per_million=_openrouter_price_per_million(pricing.get("prompt")),
+                output_price_per_million=_openrouter_price_per_million(
+                    pricing.get("completion")
+                ),
+                trust=RegistryTrust.DISCOVERED,
+                source=endpoint,
+                verified_at=None,
+                observed_at=observed_at,
+            )
+        )
+    return DiscoveryReport(tuple(models), tuple(warnings))
+
+
 def discover_local_models() -> DiscoveryReport:
     raw = os.environ.get("ENTROLY_DISCOVER_LOCAL_MODELS", "").strip().lower()
     if not raw:
@@ -624,18 +769,42 @@ def discover_local_models() -> DiscoveryReport:
     return DiscoveryReport(tuple(models), tuple(warnings))
 
 
+def discover_remote_models() -> DiscoveryReport:
+    raw = os.environ.get("ENTROLY_DISCOVER_REMOTE_MODELS", "").strip().lower()
+    if not raw:
+        return DiscoveryReport((), ())
+    requested = {item.strip() for item in raw.split(",") if item.strip()}
+    if requested & {"1", "true", "yes", "all"}:
+        requested = {"openrouter"}
+
+    timeout = float(os.environ.get("ENTROLY_REMOTE_MODEL_DISCOVERY_TIMEOUT", "3.0"))
+    max_models = int(os.environ.get("ENTROLY_MODEL_DISCOVERY_MAX", "512"))
+    models: list[ModelCapability] = []
+    warnings: list[str] = []
+    if "openrouter" in requested:
+        report = discover_openrouter_models(timeout=timeout, max_models=max_models)
+        models.extend(report.models)
+        warnings.extend(report.warnings)
+
+    unknown = requested - {"openrouter"}
+    if unknown:
+        warnings.append(f"Unknown remote model discovery providers: {', '.join(sorted(unknown))}")
+    return DiscoveryReport(tuple(models), tuple(warnings))
+
+
 @lru_cache(maxsize=1)
 def get_model_registry() -> ModelRegistry:
     fallback = int(os.environ.get("ENTROLY_UNKNOWN_MODEL_CONTEXT", "128000"))
     bundled, digest = _bundled_models()
-    discovery = discover_local_models()
+    local_discovery = discover_local_models()
+    remote_discovery = discover_remote_models()
     return ModelRegistry(
         bundled,
         overrides=_override_models(),
-        discovered=discovery.models,
+        discovered=(*local_discovery.models, *remote_discovery.models),
         fallback_context_window=fallback,
         registry_digest=digest,
-        discovery_warnings=discovery.warnings,
+        discovery_warnings=(*local_discovery.warnings, *remote_discovery.warnings),
     )
 
 

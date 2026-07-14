@@ -30,6 +30,12 @@ def _formula_version(text: str) -> str:
     return match.group(1)
 
 
+def _formula_sha256(text: str) -> str:
+    match = re.search(r'sha256\s+"([0-9a-f]{64})"', text)
+    assert match is not None
+    return match.group(1)
+
+
 def _daemon_version(text: str) -> str:
     match = re.search(r'version:\s*str\s*=\s*"([^"]+)"', text)
     assert match is not None
@@ -118,7 +124,11 @@ def test_release_version_surfaces_match_package_version() -> None:
     if generated_wasm_package.exists():
         assert _json_version(generated_wasm_package.read_text(encoding="utf-8")) == __version__
 
-    assert _formula_version(_read("packaging/homebrew/entroly.rb")) == __version__
+    # The canonical formula advances only after PyPI exposes the live sdist and
+    # the post-release workflow can update its URL and checksum atomically.
+    formula = _read("packaging/homebrew/entroly.rb")
+    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", _formula_version(formula))
+    assert re.fullmatch(r"[0-9a-f]{64}", _formula_sha256(formula))
     assert _homebrew_runbook_versions(_read("packaging/homebrew/README.md")) == {
         __version__
     }

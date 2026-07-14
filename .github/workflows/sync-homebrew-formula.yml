@@ -1,60 +1,142 @@
-name: Sync Homebrew Formula
+name: Synchronize Homebrew After Release
 
 on:
   workflow_run:
-    workflows: ["Build and Push Entroly Docker Image"]
-    types: [completed]
+    workflows:
+      - Build and Push Entroly Docker Image
+    types:
+      - completed
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: Exact released version to repair; must match the selected commit.
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: sync-homebrew-formula
-  cancel-in-progress: true
+  group: sync-homebrew-main
+  cancel-in-progress: false
 
 jobs:
-  sync:
+  synchronize:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main
+      - name: Checkout current main with release history
         uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
 
-      - name: Resolve published sdist and update formula
-        id: formula
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Resolve pinned release and update formula
+        id: release
+        shell: python
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ github.event.inputs.release_version }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          python - <<'PY'
           from __future__ import annotations
 
           import hashlib
           import json
+          import os
           import pathlib
           import re
+          import subprocess
           import time
+          import tomllib
           import urllib.error
           import urllib.request
 
           root = pathlib.Path('.')
-          pyproject = (root / 'pyproject.toml').read_text(encoding='utf-8')
-          version_match = re.search(
-              r'^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"',
-              pyproject,
-              flags=re.MULTILINE,
-          )
-          if version_match is None:
-              raise SystemExit('Could not read the Entroly version from pyproject.toml')
-          version = version_match.group(1)
+          release_sha = os.environ['RELEASE_SHA'].strip()
+          if not re.fullmatch(r'[0-9a-f]{40}', release_sha):
+              raise SystemExit(f'invalid triggering release SHA: {release_sha!r}')
 
-          metadata_url = f'https://pypi.org/pypi/entroly/{version}/json'
+          pyproject_bytes = subprocess.check_output(
+              ['git', 'show', f'{release_sha}:pyproject.toml']
+          )
+          commit_version = tomllib.loads(pyproject_bytes.decode('utf-8'))['project']['version']
+          manual_version = os.environ.get('MANUAL_VERSION', '').strip()
+          version = manual_version or commit_version
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+              raise SystemExit(f'invalid canonical release version: {version!r}')
+          if version != commit_version:
+              raise SystemExit(
+                  f'requested version {version} does not match {release_sha} package version {commit_version}'
+              )
+
+          subject = subprocess.check_output(
+              ['git', 'show', '-s', '--format=%s', release_sha],
+              text=True,
+          ).strip()
+          tags = set(
+              subprocess.check_output(
+                  ['git', 'tag', '--points-at', release_sha],
+                  text=True,
+              ).splitlines()
+          )
+          is_release = (
+              os.environ['EVENT_NAME'] == 'workflow_dispatch'
+              or subject.startswith('Release v')
+              or f'entroly-v{version}' in tags
+          )
+          output_path = pathlib.Path(os.environ['GITHUB_OUTPUT'])
+          if not is_release:
+              with output_path.open('a', encoding='utf-8') as output:
+                  output.write('skipped=true\n')
+              print(f'{release_sha} is not an Entroly release; Homebrew sync skipped.')
+              raise SystemExit(0)
+
+          ancestor = subprocess.run(
+              ['git', 'merge-base', '--is-ancestor', release_sha, 'origin/main'],
+              check=False,
+          )
+          if ancestor.returncode != 0:
+              raise SystemExit('triggering release commit is not contained in origin/main')
+
+          formula_path = root / 'packaging/homebrew/entroly.rb'
+          formula = formula_path.read_text(encoding='utf-8')
+          test_path = root / 'tests/test_release_surface.py'
+          test_text = test_path.read_text(encoding='utf-8')
+          formula_version_match = re.search(
+              r'entroly-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz',
+              formula,
+          )
+          test_version_match = re.search(
+              r'HOMEBREW_FORMULA_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"',
+              test_text,
+          )
+          if formula_version_match is None or test_version_match is None:
+              raise SystemExit('could not determine the current Homebrew release version')
+          current_version = formula_version_match.group(1)
+          if test_version_match.group(1) != current_version:
+              raise SystemExit('Homebrew formula and release assertion versions disagree')
+          target_tuple = tuple(int(part) for part in version.split('.'))
+          current_tuple = tuple(int(part) for part in current_version.split('.'))
+          if target_tuple < current_tuple:
+              with output_path.open('a', encoding='utf-8') as output:
+                  output.write('skipped=true\n')
+              print(
+                  f'refusing to downgrade Homebrew from {current_version} to {version}'
+              )
+              raise SystemExit(0)
+
+          endpoint = f'https://pypi.org/pypi/entroly/{version}/json'
           payload = None
           for attempt in range(1, 21):
               try:
                   request = urllib.request.Request(
-                      metadata_url,
+                      endpoint,
                       headers={'User-Agent': 'entroly-homebrew-sync'},
                   )
                   with urllib.request.urlopen(request, timeout=30) as response:
@@ -67,68 +149,80 @@ jobs:
                       )
                   time.sleep(15)
 
-          sdist = next(
-              item for item in payload['urls']
+          sdists = [
+              item for item in payload.get('urls', [])
               if item.get('packagetype') == 'sdist'
-          )
+          ]
+          if len(sdists) != 1:
+              raise SystemExit(
+                  f'expected exactly one PyPI sdist for {version}, found {len(sdists)}'
+              )
+          sdist = sdists[0]
           request = urllib.request.Request(
               sdist['url'],
               headers={'User-Agent': 'entroly-homebrew-sync'},
           )
           with urllib.request.urlopen(request, timeout=60) as response:
               digest = hashlib.sha256(response.read()).hexdigest()
+          metadata_digest = sdist.get('digests', {}).get('sha256')
+          if digest != metadata_digest:
+              raise SystemExit('downloaded sdist checksum does not match PyPI metadata')
 
-          formula_path = root / 'packaging/homebrew/entroly.rb'
-          formula = formula_path.read_text(encoding='utf-8')
-          formula = re.sub(
+          formula, url_count = re.subn(
               r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz',
               f'entroly-{version}.tar.gz',
               formula,
+              count=1,
           )
-          formula, sha_count = re.subn(
+          formula, digest_count = re.subn(
               r'sha256 "[0-9a-f]{64}"',
               f'sha256 "{digest}"',
               formula,
               count=1,
           )
-          if sha_count != 1:
-              raise SystemExit('Could not update the Homebrew sha256')
+          if url_count != 1 or digest_count != 1:
+              raise SystemExit('could not update the Homebrew URL and checksum atomically')
           formula_path.write_text(formula, encoding='utf-8')
 
-          release_test_path = root / 'tests/test_release_surface.py'
-          release_test = release_test_path.read_text(encoding='utf-8')
-          release_test, test_count = re.subn(
-              r'assert "[0-9a-f]{64}" in text',
-              f'assert "{digest}" in text',
-              release_test,
+          test_text, version_count = re.subn(
+              r'HOMEBREW_FORMULA_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"',
+              f'HOMEBREW_FORMULA_VERSION = "{version}"',
+              test_text,
               count=1,
           )
-          if test_count != 1:
-              raise SystemExit('Could not update the release checksum assertion')
-          release_test_path.write_text(release_test, encoding='utf-8')
+          test_text, test_digest_count = re.subn(
+              r'HOMEBREW_FORMULA_SHA256 = "[0-9a-f]{64}"',
+              f'HOMEBREW_FORMULA_SHA256 = "{digest}"',
+              test_text,
+              count=1,
+          )
+          if version_count != 1 or test_digest_count != 1:
+              raise SystemExit('could not update Homebrew release assertions')
+          test_path.write_text(test_text, encoding='utf-8')
 
-          print(f'Entroly {version} sdist sha256: {digest}')
-          with open('homebrew-sync.env', 'w', encoding='utf-8') as output:
-              output.write(f'VERSION={version}\nSHA256={digest}\n')
-          PY
+          with output_path.open('a', encoding='utf-8') as output:
+              output.write(f'version={version}\nsha256={digest}\n')
+          print(f'Homebrew metadata synchronized for pinned release {version}: {digest}')
 
-          cat homebrew-sync.env >> "$GITHUB_OUTPUT"
-          rm homebrew-sync.env
+      - name: Validate synchronized release surface
+        if: steps.release.outputs.sha256 != ''
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_release_surface.py -q
           git diff --check
 
-      - name: Commit synchronized checksum
-        env:
-          GIT_AUTHOR_NAME: juyterman1000
-          GIT_AUTHOR_EMAIL: fastrunner10090@gmail.com
-          GIT_COMMITTER_NAME: juyterman1000
-          GIT_COMMITTER_EMAIL: fastrunner10090@gmail.com
+      - name: Commit synchronized formula
+        if: steps.release.outputs.sha256 != ''
+        shell: bash
         run: |
+          set -euo pipefail
           if git diff --quiet -- packaging/homebrew/entroly.rb tests/test_release_surface.py; then
-            echo "Homebrew formula already matches Entroly ${{ steps.formula.outputs.VERSION }}."
+            echo "Homebrew formula already matches Entroly ${{ steps.release.outputs.version }}."
             exit 0
           fi
-          git config user.name "$GIT_AUTHOR_NAME"
-          git config user.email "$GIT_AUTHOR_EMAIL"
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add packaging/homebrew/entroly.rb tests/test_release_surface.py
-          git commit -m "Update Homebrew digest for ${{ steps.formula.outputs.VERSION }}"
+          git commit -m "Update Homebrew formula for ${{ steps.release.outputs.version }}"
+          git pull --rebase origin main
           git push origin HEAD:main

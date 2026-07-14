@@ -160,41 +160,50 @@
     {
       "id": "openai/gpt-5.6-sol",
       "provider": "openai",
-      "aliases": ["gpt-5.6-sol", "gpt-5.6-sol-"],
-      "context_window": null,
+      "aliases": ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-sol-"],
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
       "supports_tools": true,
       "supports_vision": true,
       "supports_reasoning": true,
-      "reasoning_levels": ["low", "medium", "high", "max"],
-      "trust": "announced",
-      "source": "https://github.com/openclaw/openclaw/releases/tag/v2026.7.1-beta.5",
-      "verified_at": "2026-07-11"
+      "reasoning_levels": ["none", "low", "medium", "high", "xhigh", "max"],
+      "input_price_per_million": 5.0,
+      "output_price_per_million": 30.0,
+      "trust": "verified",
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+      "verified_at": "2026-07-13"
     },
     {
       "id": "openai/gpt-5.6-terra",
       "provider": "openai",
       "aliases": ["gpt-5.6-terra", "gpt-5.6-terra-"],
-      "context_window": null,
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
       "supports_tools": true,
       "supports_vision": true,
       "supports_reasoning": true,
-      "reasoning_levels": ["low", "medium", "high", "max"],
-      "trust": "announced",
-      "source": "https://github.com/openclaw/openclaw/releases/tag/v2026.7.1-beta.5",
-      "verified_at": "2026-07-11"
+      "reasoning_levels": ["none", "low", "medium", "high", "xhigh", "max"],
+      "input_price_per_million": 2.5,
+      "output_price_per_million": 15.0,
+      "trust": "verified",
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+      "verified_at": "2026-07-13"
     },
     {
       "id": "openai/gpt-5.6-luna",
       "provider": "openai",
       "aliases": ["gpt-5.6-luna", "gpt-5.6-luna-"],
-      "context_window": null,
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
       "supports_tools": true,
       "supports_vision": true,
       "supports_reasoning": true,
-      "reasoning_levels": ["low", "medium", "high", "max"],
-      "trust": "announced",
-      "source": "https://github.com/openclaw/openclaw/releases/tag/v2026.7.1-beta.5",
-      "verified_at": "2026-07-11"
+      "reasoning_levels": ["none", "low", "medium", "high", "xhigh", "max"],
+      "input_price_per_million": 1.0,
+      "output_price_per_million": 6.0,
+      "trust": "verified",
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+      "verified_at": "2026-07-13"
     },
     {
       "id": "anthropic/claude-opus-4.6",
@@ -354,12 +363,23 @@
       "id": "nvidia/nemotron-super",
       "provider": "openai",
       "aliases": ["nemotron-super", "nvidia/nemotron-super"],
-      "context_window": 1000000,
+      "context_window": null,
       "supports_tools": true,
       "supports_reasoning": true,
       "trust": "announced",
       "source": "https://github.com/openclaw/openclaw/releases/tag/v2026.7.1-beta.5",
-      "verified_at": "2026-07-11"
+      "verified_at": null
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b",
+      "provider": "openai",
+      "aliases": ["nemotron-3-ultra", "nemotron-3-ultra-550b-a55b"],
+      "context_window": 262144,
+      "supports_tools": true,
+      "supports_reasoning": true,
+      "trust": "verified",
+      "source": "https://docs.nvidia.com/nim/large-language-models/latest/day-0/get-started-nemotron-3-ultra.html",
+      "verified_at": "2026-07-13"
     },
     {
       "id": "meta/muse-spark-1.1",
@@ -370,7 +390,7 @@
       "supports_reasoning": true,
       "trust": "announced",
       "source": "https://github.com/openclaw/openclaw/releases/tag/v2026.7.1-beta.5",
-      "verified_at": "2026-07-11"
+      "verified_at": null
     },
     {
       "id": "clawrouter/auto",

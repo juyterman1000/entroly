@@ -53,11 +53,9 @@ TARGETS = [
     ("tests/test_release_surface.py",
         r'def test_public_package_versions_are_[0-9]+_[0-9]+_[0-9]+\(\)',
         'def test_public_package_versions_are_{v_ident}()'),
-    # Homebrew: URL pin only. The sha256 changes per-release and is updated
-    # automatically after the matching PyPI sdist becomes available.
-    ("packaging/homebrew/entroly.rb",
-        r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz', 'entroly-{v}.tar.gz'),
-    # Homebrew release runbook (example bash). Two `VER=...` lines.
+    # Keep the canonical Homebrew formula on the last verified sdist until the
+    # post-PyPI workflow can update its URL and checksum atomically. The release
+    # runbook may still point at the version being prepared.
     ("packaging/homebrew/README.md",
         r'Current release example version: `[0-9]+\.[0-9]+\.[0-9]+`',
         'Current release example version: `{v}`'),

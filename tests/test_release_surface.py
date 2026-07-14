@@ -6,7 +6,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.55"
+RELEASE_VERSION = "1.0.57"
+HOMEBREW_FORMULA_VERSION = "1.0.54"
+HOMEBREW_FORMULA_SHA256 = "db87e6f9e1b5a311a177cc1083c6e9ea5ace6c98d2178828f7c9f91f427a08fd"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -64,7 +66,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_55() -> None:
+def test_public_package_versions_are_1_0_57() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -164,6 +166,94 @@ def test_no_stale_package_advertising_versions() -> None:
 def test_homebrew_formula_targets_release_sdist() -> None:
     text = (ROOT / "packaging/homebrew/entroly.rb").read_text(encoding="utf-8")
 
-    assert f"entroly-{RELEASE_VERSION}.tar.gz" in text
+    assert f"entroly-{HOMEBREW_FORMULA_VERSION}.tar.gz" in text
     assert "packages/source/e/entroly/" in text
-    assert "94e54692b4e677e9261d2c667a30ecaec3c0f871729c1cc84256854361d9ec1e" in text
+    assert HOMEBREW_FORMULA_SHA256 in text
+
+
+def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> None:
+    text = (ROOT / ".github/workflows/entroly-publish.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert text.count("github.event.inputs.release_version") == 1
+    assert "SEMVER_RE=" in text
+    assert "needs.release-metadata.outputs.version" in text
+    assert "probe-pypi-openclaw-bridge:" in text
+    assert "probe-npm-openclaw:" in text
+    assert "needs: [release-metadata, probe-npm-openclaw]" in text
+    assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+
+
+def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
+    assert not (ROOT / ".github/workflows/sync-homebrew-after-release.yml").exists()
+    text = (ROOT / ".github/workflows/sync-homebrew-formula.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "github.event.workflow_run.head_sha || github.sha" in text
+    assert "git', 'show', f'{release_sha}:pyproject.toml'" in text
+    assert "merge-base', '--is-ancestor', release_sha, 'origin/main'" in text
+    assert "group: sync-homebrew-main" in text
+    assert "if target_tuple < current_tuple:" in text
+    assert "refusing to downgrade Homebrew" in text
+
+
+def test_release_artifacts_have_one_quality_gated_publisher() -> None:
+    assert not (ROOT / ".github/workflows/docker-publish.yml").exists()
+
+    coordinated = (ROOT / ".github/workflows/entroly-publish.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "platforms: linux/amd64,linux/arm64" in coordinated
+    assert (
+        "type=raw,value=${{ needs.release-metadata.outputs.version }},"
+        "enable=${{ needs.release-metadata.outputs.should_publish == 'true' }}"
+        in coordinated
+    )
+    assert "needs: [release-metadata, quality-gate]" in coordinated
+    assert "needs: [release-metadata, quality-gate, release-anchor]" in coordinated
+    assert "needs: [release-metadata, quality-gate, github-release]" in coordinated
+    assert "tag: ${{ needs.release-metadata.outputs.tag }}" in coordinated
+    assert '"Release v${PACKAGE_VERSION}"' in coordinated
+    assert "group: entroly-production-publication" in coordinated
+    assert "Create or verify the canonical release tag" in coordinated
+    assert "GitHub Actions coordinated Entroly" in coordinated
+    anchor = coordinated.split("  release-anchor:", 1)[1].split(
+        "  publish-core:", 1
+    )[0]
+    assert anchor.index("git merge-base --is-ancestor") < anchor.index(
+        'if [[ "$SHOULD_PUBLISH" != "true" ]]'
+    )
+
+    for workflow in ("publish-core-wheels.yml", "release-binary.yml"):
+        definition = (ROOT / ".github/workflows" / workflow).read_text(
+            encoding="utf-8"
+        )
+        triggers = definition.split("jobs:", 1)[0]
+        assert "workflow_call:" in triggers
+        assert "\n  push:" not in triggers
+        assert "\n  workflow_dispatch:" not in triggers
+
+
+def test_release_version_dispatch_input_is_validated_via_environment() -> None:
+    text = (ROOT / ".github/workflows/sync-release-version.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "DISPATCH_VERSION: ${{ github.event.inputs.version }}" in text
+    assert 'version="$DISPATCH_VERSION"' in text
+    assert '${{ inputs.version }}' not in text
+
+
+def test_mcp_registry_follows_every_anchored_parent_release() -> None:
+    text = (ROOT / ".github/workflows/publish-mcp-registry.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "github.event.workflow_run.head_branch == 'main'" not in text
+    assert 'EXPECTED_TAG="entroly-v${VERSION}"' in text
+    assert 'TAG_SHA="$(git rev-parse "${EXPECTED_TAG}^{commit}")"' in text
+    assert 'if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]' in text
+    assert 'echo "should_publish=false" >> "$GITHUB_OUTPUT"' in text
+    assert "if: steps.release_guard.outputs.should_publish == 'true'" in text

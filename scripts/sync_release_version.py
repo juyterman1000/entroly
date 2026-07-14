@@ -41,7 +41,6 @@ RELEASE_SURFACES: tuple[str, ...] = (
     "entroly/server.py",
     "integrations/openclaw/package.json",
     "packaging/homebrew/README.md",
-    "packaging/homebrew/entroly.rb",
     "pyproject.toml",
     "server.json",
     "tests/test_release_surface.py",

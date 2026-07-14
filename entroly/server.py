@@ -28,13 +28,15 @@ from __future__ import annotations
 
 import gc
 import gzip
+import inspect
 import json
 import logging
 import os
 import sys
 import threading
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .adaptive_pruner import EntrolyPruner, FragmentGuard
 from .autotune import ComponentFeedbackBus, DreamingLoop, FeedbackJournal, TaskProfileOptimizer
@@ -2078,8 +2080,56 @@ class EntrolyEngine:
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
 
+def _apply_mcp_access_policy(
+    mcp: Any,
+    *,
+    allowed_tools: set[str] | None,
+    authorize_tool: Callable[[str], None] | None,
+) -> None:
+    """Remove ungranted tools and guard every remaining invocation."""
+    tools = mcp._tool_manager._tools
+    if allowed_tools is not None:
+        missing = allowed_tools - tools.keys()
+        if missing:
+            raise RuntimeError(
+                "attachment scope references unavailable MCP tools: "
+                + ", ".join(sorted(missing))
+            )
+        # Attached servers expose only explicitly granted, reauthorized tools.
+        # Static prompts and even bounded resources would otherwise remain
+        # callable after a grant was revoked because FastMCP 1.x has no public
+        # per-resource authorization hook.
+        mcp._resource_manager._resources.clear()
+        mcp._resource_manager._templates.clear()
+        mcp._prompt_manager._prompts.clear()
+    for name, tool in list(tools.items()):
+        if allowed_tools is not None and name not in allowed_tools:
+            mcp.remove_tool(name)
+            continue
+        if authorize_tool is None:
+            continue
+        original = tool.fn
+        if inspect.iscoroutinefunction(original):
+            @wraps(original)
+            async def secured_async(*args, _name=name, _original=original, **kwargs):
+                authorize_tool(_name)
+                return await _original(*args, **kwargs)
+
+            tool.fn = secured_async
+        else:
+            @wraps(original)
+            def secured(*args, _name=name, _original=original, **kwargs):
+                authorize_tool(_name)
+                return _original(*args, **kwargs)
+
+            tool.fn = secured
+
+
 def create_mcp_server(
     engine: EntrolyEngine | None = None,
+    *,
+    allowed_tools: set[str] | None = None,
+    authorize_tool: Callable[[str], None] | None = None,
 ):
     """
     Create the MCP server with all tools registered.
@@ -4863,6 +4913,11 @@ def create_mcp_server(
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+    _apply_mcp_access_policy(
+        mcp,
+        allowed_tools=allowed_tools,
+        authorize_tool=authorize_tool,
+    )
     return mcp, engine
 
 
@@ -5006,7 +5061,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.55"
+        _version = "1.0.57"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

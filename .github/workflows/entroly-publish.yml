@@ -16,9 +16,66 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/entroly
 
+concurrency:
+  group: entroly-production-publication
+  cancel-in-progress: false
+
 jobs:
-  build-and-push:
+  release-metadata:
     runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.release.outputs.should_publish }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Resolve and validate release metadata
+        id: release
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ github.event.inputs.release_version }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          REF_NAME_SAFE: ${{ github.ref_name }}
+          REF_SAFE: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          VERSION="$PACKAGE_VERSION"
+          SHOULD_PUBLISH=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$DISPATCH_VERSION" ]]; then
+            VERSION="$DISPATCH_VERSION"
+            SHOULD_PUBLISH=true
+          elif [[ "$REF_SAFE" == refs/tags/entroly-v* ]]; then
+            VERSION="${REF_NAME_SAFE#entroly-v}"
+            SHOULD_PUBLISH=true
+          elif [[ "$EVENT_NAME" == "push" && "$HEAD_MESSAGE" == "Release v${PACKAGE_VERSION}" ]]; then
+            SHOULD_PUBLISH=true
+          fi
+          SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$VERSION" =~ $SEMVER_RE ]]; then
+            echo "Release version must be canonical major.minor.patch semver: $VERSION" >&2
+            exit 1
+          fi
+          if [[ "$SHOULD_PUBLISH" == true && "$VERSION" != "$PACKAGE_VERSION" ]]; then
+            echo "Release version $VERSION does not match committed package version $PACKAGE_VERSION" >&2
+            exit 1
+          fi
+          echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=entroly-v$VERSION" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: [release-metadata, quality-gate, release-anchor]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -40,11 +97,14 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=match,pattern=entroly-v(.*),group=1
+            type=raw,value=${{ needs.release-metadata.outputs.version }},enable=${{ needs.release-metadata.outputs.should_publish == 'true' }}
             type=raw,value=latest
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU for ARM64
+        uses: docker/setup-qemu-action@v4
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -52,6 +112,7 @@ jobs:
           context: .
           file: ./Dockerfile.entroly
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -88,17 +149,64 @@ jobs:
       - name: Test suite
         run: .venv/bin/pytest tests/ -q --tb=short -x --timeout=60
 
+  release-anchor:
+    needs: [release-metadata, quality-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout immutable release source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create or verify the canonical release tag
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+          SHOULD_PUBLISH: ${{ needs.release-metadata.outputs.should_publish }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
+            echo "Production source ${RELEASE_SHA} is not contained in canonical main." >&2
+            exit 1
+          fi
+          if [[ "$SHOULD_PUBLISH" != "true" ]]; then
+            echo "This is a quality-gated Docker build, not a coordinated release."
+            exit 0
+          fi
+          git fetch --force --tags origin
+          if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            TAG_SHA="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            if [[ "$TAG_SHA" != "$RELEASE_SHA" ]]; then
+              echo "Release tag ${RELEASE_TAG} already targets ${TAG_SHA}, not ${RELEASE_SHA}." >&2
+              exit 1
+            fi
+            echo "Verified ${RELEASE_TAG} at ${RELEASE_SHA}."
+          else
+            git tag "$RELEASE_TAG" "$RELEASE_SHA"
+            git push origin "refs/tags/${RELEASE_TAG}"
+          fi
+
   # Build and publish the native dependency in this release run. Tags created
   # with GITHUB_TOKEN do not start a second workflow, so relying on a tag-only
   # core workflow can leave the public Python package uninstallable.
   publish-core:
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, quality-gate, release-anchor]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/publish-core-wheels.yml
     secrets: inherit
 
   publish-pypi:
-    needs: [build-and-push, quality-gate, publish-core]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, build-and-push, quality-gate, publish-core]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -111,21 +219,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Extract release version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            VERSION="${{ github.event.inputs.release_version }}"
-          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#entroly-v}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Update version in pyproject.toml
         run: |
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.VERSION }}\"/" pyproject.toml
+          sed -i "s/^version = .*/version = \"${RELEASE_VERSION}\"/" pyproject.toml
 
       - name: Build PyPI package
         run: |
@@ -138,9 +234,50 @@ jobs:
           skip-existing: true
           password: ${{ secrets.TESTING_API_TOKEN }}
 
+  probe-pypi-openclaw-bridge:
+    needs: [release-metadata, publish-pypi]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Probe the live PyPI bridge capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            probe_dir="$(mktemp -d)"
+            python -m venv "$probe_dir"
+            if "$probe_dir/bin/python" -m pip install --no-cache-dir --index-url https://pypi.org/simple "entroly==${RELEASE_VERSION}" && \
+               "$probe_dir/bin/python" - <<'PY'
+          from entroly.openclaw_bridge import handle_request
+          health = handle_request({"operation": "health"})
+          assert health["schema_version"] == "entroly.openclaw.bridge.v2"
+          assert health["receipt_commit_protocol"] == "two_phase"
+          assert health["provider_independent"] is True
+          PY
+            then
+              exit 0
+            fi
+            echo "PyPI bridge capability not visible yet (attempt $attempt/20)."
+            sleep 15
+          done
+          echo "Published Entroly bridge did not expose the required OpenClaw protocol." >&2
+          exit 1
+
   publish-npm:
-    needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, build-and-push, quality-gate]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -163,28 +300,16 @@ jobs:
           source ~/.cargo/env
           wasm-pack build --target nodejs --out-dir pkg
 
-      - name: Extract release version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            VERSION="${{ github.event.inputs.release_version }}"
-          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#entroly-v}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Update package.json version
         working-directory: entroly-wasm
         run: |
-          node -e "const p=require('./package.json'); p.version='${{ steps.version.outputs.VERSION }}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          node -e "const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
 
       - name: Publish to npm
         working-directory: entroly-wasm
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="$RELEASE_VERSION"
           if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
             echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
             exit 0
@@ -194,8 +319,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
   publish-npm-mcp:
-    needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, build-and-push, quality-gate]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -206,28 +333,16 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Extract release version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            VERSION="${{ github.event.inputs.release_version }}"
-          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#entroly-v}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Update package.json version
         working-directory: entroly/npm
         run: |
-          node -e "const p=require('./package.json'); p.version='${{ steps.version.outputs.VERSION }}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          node -e "const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
 
       - name: Publish entroly-mcp to npm
         working-directory: entroly/npm
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="$RELEASE_VERSION"
           if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
             echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
             exit 0
@@ -237,8 +352,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
   publish-npm-alias:
-    needs: [build-and-push, quality-gate, publish-npm]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, build-and-push, quality-gate, publish-npm]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -249,28 +366,16 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Extract release version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            VERSION="${{ github.event.inputs.release_version }}"
-          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#entroly-v}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Update package.json version
         working-directory: entroly/npm-alias
         run: |
-          node -e "const fs=require('fs'); const p=require('./package.json'); p.version='${{ steps.version.outputs.VERSION }}'; p.dependencies['entroly-wasm']='${{ steps.version.outputs.VERSION }}'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          node -e "const fs=require('fs'); const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; p.dependencies['entroly-wasm']=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
 
       - name: Publish entroly alias to npm
         working-directory: entroly/npm-alias
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="$RELEASE_VERSION"
           if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
             echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
             exit 0
@@ -280,8 +385,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
   publish-npm-openclaw:
-    needs: [build-and-push, quality-gate]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, build-and-push, quality-gate, probe-pypi-openclaw-bridge]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -289,34 +396,41 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '22.19.0'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Extract release version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            VERSION="${{ github.event.inputs.release_version }}"
-          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#entroly-v}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install the capability-probed Python bridge
+        run: python -m pip install --no-cache-dir --index-url https://pypi.org/simple "entroly==${RELEASE_VERSION}"
 
       - name: Update and validate OpenClaw plugin
         working-directory: integrations/openclaw
+        env:
+          ENTROLY_TEST_PYTHON: python
         run: |
-          node -e "const fs=require('fs'); const p=require('./package.json'); p.version='${{ steps.version.outputs.VERSION }}'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          node -e "const fs=require('fs'); const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
           npm test
           npm run check
           npm pack --dry-run
+
+      - name: Test minimum supported OpenClaw host
+        working-directory: integrations/openclaw
+        run: |
+          smoke_dir="$RUNNER_TEMP/entroly-openclaw-host-smoke"
+          mkdir -p "$smoke_dir"
+          plugin_tarball="$(npm pack --pack-destination "$smoke_dir")"
+          npm install --prefix "$smoke_dir" --no-save --ignore-scripts --package-lock=false openclaw@2026.6.11 "$smoke_dir/$plugin_tarball"
+          node --input-type=module -e "await import('file://$smoke_dir/node_modules/entroly-openclaw/index.js')"
 
       - name: Publish entroly-openclaw to npm
         working-directory: integrations/openclaw
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="$RELEASE_VERSION"
           if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
             echo "${PACKAGE_NAME}@${VERSION} is already published; skipping."
             exit 0
@@ -325,15 +439,117 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
-  publish-binaries:
-    needs: [github-release]
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
-    uses: ./.github/workflows/release-binary.yml
+  probe-npm-openclaw:
+    needs: [release-metadata, publish-npm-openclaw]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.19.0'
 
-  # The source release must not be blocked by external package registries.
-  # PyPI/npm remain quality-gated independently and are idempotent.
+      - name: Probe the published npm plugin and minimum OpenClaw host
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            probe_dir="$(mktemp -d)"
+            if npm install --prefix "$probe_dir" --no-save --ignore-scripts --package-lock=false \
+                 "openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"; then
+              PLUGIN_DIR="$probe_dir/node_modules/entroly-openclaw" \
+                node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { pathToFileURL } from "node:url";
+          const root = process.env.PLUGIN_DIR;
+          await import(pathToFileURL(`${root}/index.js`));
+          const bridge = await import(pathToFileURL(`${root}/bridge-client.js`));
+          assert.equal(bridge.ENTROLY_BRIDGE_SCHEMA, "entroly.openclaw.bridge.v2");
+          NODE
+              exit 0
+            fi
+            rm -rf "$probe_dir"
+            echo "npm OpenClaw plugin not visible yet (attempt $attempt/20)."
+            sleep 15
+          done
+          echo "Published npm plugin did not expose the required OpenClaw bridge." >&2
+          exit 1
+
+  publish-clawhub-openclaw:
+    needs: [release-metadata, probe-npm-openclaw]
+    if: github.repository == 'juyterman1000/entroly' && needs.release-metadata.outputs.should_publish == 'true'
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.19.0'
+
+      - name: Update and validate OpenClaw plugin
+        working-directory: integrations/openclaw
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const fs=require('fs'); const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          npm install --global "clawhub@0.23.1"
+          clawhub package validate . --json | tee "$RUNNER_TEMP/clawhub-package-validate.json"
+
+      - name: Authenticate to ClawHub
+        shell: bash
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLAWHUB_TOKEN"
+          echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
+          CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-config.json" \
+            clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+
+      - name: Publish Entroly OpenClaw plugin
+        working-directory: integrations/openclaw
+        shell: bash
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          clawhub package publish . \
+            --manual-override-reason "GitHub Actions coordinated Entroly ${RELEASE_VERSION} release after live PyPI and npm probes" \
+            --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
+
+      - name: Upload ClawHub publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-package-publish
+          path: |
+            ${{ runner.temp }}/clawhub-package-validate.json
+            ${{ runner.temp }}/clawhub-package-publish.json
+          if-no-files-found: ignore
+
+  publish-binaries:
+    needs: [release-metadata, quality-gate, github-release]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-binary.yml
+    with:
+      tag: ${{ needs.release-metadata.outputs.tag }}
+
+  # Create a release only after the source and native implementation pass.
+  # External registries remain independently retryable and idempotent.
   github-release:
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_version != '') || (github.event_name == 'push' && (startsWith(github.event.head_commit.message, 'Release v') || startsWith(github.event.head_commit.message, 'Release ')))
+    needs: [release-metadata, quality-gate, release-anchor]
+    if: needs.release-metadata.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -346,22 +562,22 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.release_version }}" ]; then
-            VERSION="${{ github.event.inputs.release_version }}"
-            TAG="entroly-v${VERSION}"
-          elif [[ "$GITHUB_REF" == refs/tags/entroly-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#entroly-v}"
-            TAG="${GITHUB_REF_NAME}"
-          else
-            VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-            TAG="entroly-v${VERSION}"
+          set -euo pipefail
+          git fetch --force --tags origin
+          TAG_SHA="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          if [[ "$TAG_SHA" != "$RELEASE_SHA" ]]; then
+            echo "Release tag ${RELEASE_TAG} targets ${TAG_SHA}, not ${RELEASE_SHA}." >&2
+            exit 1
           fi
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "Release ${TAG} already exists; skipping."
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists at verified source ${RELEASE_SHA}; skipping."
           else
-            gh release create "${TAG}" \
-              --title "v${VERSION}" \
+            gh release create "${RELEASE_TAG}" \
+              --title "v${RELEASE_VERSION}" \
               --target "${GITHUB_SHA}" \
               --generate-notes
           fi

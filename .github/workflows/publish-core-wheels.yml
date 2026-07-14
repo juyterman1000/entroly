@@ -1,10 +1,6 @@
 name: Publish entroly-core wheels to PyPI
 
 on:
-  push:
-    tags:
-      - 'entroly-v*'
-  workflow_dispatch:
   workflow_call:
 
 jobs:
@@ -107,7 +103,6 @@ jobs:
     name: Publish to PyPI
     needs: [rust-gate, linux-x86_64, linux-aarch64, macos-universal, windows]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/entroly-v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release v'))
     permissions:
       id-token: write
     steps:

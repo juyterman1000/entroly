@@ -70,6 +70,8 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 
 Entroly is an auditable context control plane for AI agents. It decides what context to send, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.
 
+**OpenClaw runs the agents and conversations. Entroly controls, remembers, verifies, and proves the context those agents received.** The same boundary applies to Claude Code and Codex: Entroly augments the agent you already use instead of becoming another chat client.
+
 Most compression tools shrink whatever text the agent already chose. Entroly starts one step earlier: it chooses the highest-value evidence first, compresses only after selection, keeps originals recoverable, then verifies the answer against the evidence.
 
 - **Receipts** - every selection run can explain selected chunks, omitted nearby evidence, dependency links, fingerprints, token ratio, and residual risks.
@@ -97,7 +99,7 @@ Entroly ships as a full local runtime, not one proxy command:
 
 | Surface | What users get |
 |---|---|
-| **CLI** | `context-commit`, `verify-claims`, `simulate`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
+| **CLI** | `attach`, `context-commit`, `verify-claims`, `simulate`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
 | **SDK** | `compress`, `compress_messages`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
 | **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification |
 | **Proxy** | Anthropic/OpenAI-compatible local optimization path for API-key users and custom apps |
@@ -106,6 +108,7 @@ Entroly ships as a full local runtime, not one proxy command:
 | **Memory/session intelligence** | Memory OS, Memory Fabric, long-term memory, session digests, checkpoint relevance, cache-retention forecasting, and lifetime value tracking |
 | **Multimodal intake** | Diff, diagram, voice, image, and structured-context ingestion with provider-aware image token estimates and compliance-gated optimization |
 | **Gateway/accounting** | Provider capability planning, failover policy, redaction receipts, usage ledger, cache routing, spend math, and budget harnesses |
+| **Model intelligence** | Bundled trust-labelled model metadata plus opt-in OpenRouter and local Ollama/LM Studio discovery; remote credentials are never persisted |
 | **Knowledge vault/CogOps** | Belief compilation, vault search, workspace change sync, epistemic routing, verification engines, and flow orchestration |
 | **Framework/event gateways** | LangChain helpers, Ebbiforge provenance auditing, AgentSkills export, Hermes, Slack, Discord, and Telegram gateway hooks for teams that want operational feedback loops |
 | **Self-improvement** | PRISM/RAVS feedback, autotune, skill crystallization, promotion gates, evolution logging, and budget-gated skill synthesis |
@@ -153,7 +156,8 @@ entroly simulate           # local no-LLM savings estimate on your current repo
 
 | You are using | Run this | Why |
 |---|---|---|
-| Claude Code subscription | `claude mcp add entroly -- entroly` | Adds Entroly tools without proxy/API-key assumptions |
+| Claude Code subscription | `entroly attach create --client claude --project . --ttl 4h --install` | Installs scoped, expiring MCP access without placing a bearer token in process arguments |
+| Codex or OpenClaw | `entroly attach create --client codex --project . --ttl 4h --install` | Binds Entroly to this project with revocable least-privilege access; replace `codex` with `openclaw` as needed |
 | Cursor, VS Code, Windsurf, or another MCP client | `entroly init` or `entroly serve` | Local MCP tools for context, receipts, recovery, and feedback |
 | Pay-as-you-go API keys or a custom app | `entroly proxy` | Transparent Anthropic/OpenAI-compatible optimization path |
 | Python app | `from entroly import compress, compress_messages, optimize` | Direct SDK control |
@@ -163,10 +167,10 @@ entroly simulate           # local no-LLM savings estimate on your current repo
 **3. Best setup for Claude Code subscription users:**
 
 ```bash
-claude mcp add entroly -- entroly
+entroly attach create --client claude --project . --ttl 4h --install
 ```
 
-Claude Code stays your client. Entroly adds local tools for compression, retrieval, receipts, and savings reports.
+Claude Code stays your client. Entroly adds only the granted tools for compression, retrieval, receipts, and verification. Revoke access at any time with `entroly attach revoke <grant-id> --uninstall`; every tool call re-checks the grant, expiry, project, and scope.
 
 **4. One command — auto-detects your IDE, wraps your agent, opens the dashboard:**
 
@@ -342,6 +346,10 @@ Every number below is reproducible and backed by a committed JSON artifact you c
 
 ### OpenClaw: keep the evidence uniform compression drops
 
+OpenClaw remains the conversation and agent runtime. Attach Entroly as its context control plane with `entroly attach create --client openclaw --project . --ttl 4h --install`.
+
+The OpenClaw context-engine plugin is provider-independent: one Entroly assembly path boosts OpenAI, Anthropic, Gemini, Nemotron, OpenRouter, Ollama, and custom routes because OpenClaw owns provider routing/authentication and supplies the resolved prompt budget. Entroly preserves opaque provider blocks and delegates `/compact` and overflow recovery back to OpenClaw.
+
 The beta OpenClaw context engine scores older messages against the current
 request. Matching evidence is pinned verbatim when it fits a bounded reserve;
 lower-value history is compressed around it, and every decision is written to
@@ -354,13 +362,13 @@ authentication instruction; evidence pinning retained it byte-for-byte.
 | Strategy | Estimated assembled tokens | Exact evidence retained |
 |---|---:|---:|
 | Uniform budget compression | 1,797 | No |
-| Entroly evidence pinning | 1,794 | **Yes** |
+| Entroly evidence pinning | 1,793 | **Yes** |
 
 Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
 [Benchmark JSON](benchmarks/results/openclaw_evidence_pinning.json) ·
 [Plugin setup](integrations/openclaw/README.md)
 
-<sub>Synthetic deterministic workload, 23,114 estimated source tokens, 11
+<sub>Synthetic deterministic normalized multi-provider workload, 23,089 estimated source tokens, 11
 messages, zero model calls. Token counts are estimates, not billed usage, and
 this result does not establish downstream model accuracy.</sub>
 
@@ -549,6 +557,8 @@ This is the important distinction: Entroly does not just remember context. It ca
 
 ## Docs & community
 
+- **[Context control plane](docs/context-control-plane.md)** — model metadata, secure attachment, gateway recovery, and context-session UI guarantees.
+
 <details>
 <summary><b>Command reference</b></summary>
 
@@ -556,6 +566,7 @@ This is the important distinction: Entroly does not just remember context. It ca
 |---|---|
 | `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
 | `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
+| `entroly attach create/list/revoke` | Grant, inspect, or revoke scoped and expiring MCP access for Claude Code, Codex, or OpenClaw |
 | `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
 | `entroly serve` | Start the MCP server |
 | `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
