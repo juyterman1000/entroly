@@ -79,6 +79,26 @@ Use `entroly simulate` for a no-network local estimate. Use provider-observed
 request usage and the [Context Efficiency Frontier protocol](benchmarks/context-efficiency-frontier.md)
 before publishing a production or billing claim.
 
+### Same-input compression gauntlet
+
+The committed no-model gauntlet sends four byte-identical generated agent-tool
+fixtures through current Entroly source (package version `1.0.58`) and the
+released Headroom `0.31.0[proxy]` public `compress()` entry point with its
+documented `agent-90` high-savings profile. Both systems retain 100% of the
+preregistered answer strings. Under the shared
+`tiktoken==0.9.0` `o200k_base` counter, Entroly records 95.2% weighted token
+reduction and Headroom records 31.4%. Pass-through is valid and earns zero
+savings; Headroom passes two fixtures through.
+
+This is reproducible-measurement evidence for the named synthetic fixtures. It
+is not production-outcome evidence, downstream model-answer evidence, or proof
+of neural/ML superiority.
+
+- Generated report: [`compression_gauntlet.md`](../benchmarks/results/compression_gauntlet.md)
+- Raw inputs, outputs, hashes, versions, and runtime metadata: [`compression_gauntlet.json`](../benchmarks/results/compression_gauntlet.json)
+- Protocol: [`compression-gauntlet.md`](benchmarks/compression-gauntlet.md)
+- Verify: `python -m benchmarks.compression_gauntlet verify benchmarks/results/compression_gauntlet.json`
+
 ## Marketplace status
 
 The LobeHub listing is an external discovery surface. The dated

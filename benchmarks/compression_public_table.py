@@ -47,8 +47,8 @@ def render_markdown() -> str:
             "## Reproduce",
             "",
             "```bash",
-            "python benchmarks/compression_public_table.py --write docs/benchmarks/compression-proxy-table.md",
-            "python benchmarks/compression_proxy_scoreboard.py --json",
+            "python -m benchmarks.compression_public_table --write docs/benchmarks/compression-proxy-table.md",
+            "python -m benchmarks.compression_proxy_scoreboard --json",
             "```",
         ]
     )

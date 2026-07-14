@@ -10,7 +10,7 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 </p>
 
 <p align="center">
-  <sub>Auditable context control plane Â· receipt-producing selection paths record what was used, what was omitted, and residual risks Â· local-first Â· Python with optional Rust acceleration Â· Node/WASM runtime</sub>
+  <sub>Auditable context control plane · receipt-producing selection paths record what was used, what was omitted, and residual risks · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
 </p>
 
 <!-- Distribution and licensing: registry badges report live package metadata. -->
@@ -41,12 +41,12 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 </p>
 
 <p align="center">
-  <a href="#get-started"><b>Get started</b></a> Â·
-  <a href="#proof"><b>Proof</b></a> Â·
-  <a href="#works-with-your-stack"><b>Integrations</b></a> Â·
-  <a href="#whats-inside"><b>What's inside</b></a> Â·
-  <a href="docs/DETAILS.md"><b>Architecture</b></a> Â·
-  <a href="docs/for-teams.md"><b>For teams</b></a> Â·
+  <a href="#get-started"><b>Get started</b></a> ·
+  <a href="#proof"><b>Proof</b></a> ·
+  <a href="#works-with-your-stack"><b>Integrations</b></a> ·
+  <a href="#whats-inside"><b>What's inside</b></a> ·
+  <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
+  <a href="docs/for-teams.md"><b>For teams</b></a> ·
   <a href="docs/limitations.md"><b>Limitations</b></a>
 </p>
 
@@ -118,13 +118,13 @@ See the full code-derived map in [docs/product-surface.md](docs/product-surface.
 ## How it works (30 seconds)
 
 ```
-your agent  â”€â”€â–º  Entroly (local)  â”€â”€â–º  LLM provider
-                 â”‚
-                 â”œâ”€ rank the repo        (BM25 + entropy + dep-graph)
-                 â”œâ”€ select under budget  (knapsack, reversible)
-                 â”œâ”€ emit receipt         (included, omitted, risks)
-                 â”œâ”€ cache-align prefix    (keep provider cache hot)
-                 â””â”€ verify the reply      (WITNESS hallucination guard)
+your agent  ──►  Entroly (local)  ──►  LLM provider
+                 │
+                 ├─ rank the repo        (BM25 + entropy + dep-graph)
+                 ├─ select under budget  (knapsack, reversible)
+                 ├─ emit receipt         (included, omitted, risks)
+                 ├─ cache-align prefix    (keep provider cache hot)
+                 └─ verify the reply      (WITNESS hallucination guard)
 ```
 
 Critical files go in full. Supporting files can become signatures. Other material can become a reference that can be expanded on demand. Exact recovery is available only while the corresponding receipt and recovery store are retained; deleting that state deletes Entroly's recovery path.
@@ -137,7 +137,7 @@ The best first run is local and proof-driven. It should work before you connect
 an API key, proxy, paid model, or enterprise setup.
 
 ```bash
-pip install -U entroly     # or: npm i -g entroly  Â·  brew install juyterman1000/entroly/entroly
+pip install -U entroly     # or: npm i -g entroly  ·  brew install juyterman1000/entroly/entroly
 ```
 
 **1. Prove the package works on your machine:**
@@ -167,7 +167,7 @@ entroly attach create --client claude --project . --ttl 4h --install
 
 Claude Code stays your client. Entroly adds only the granted tools for compression, retrieval, receipts, and verification. Revoke access at any time with `entroly attach revoke <grant-id> --uninstall`; every tool call re-checks the grant, expiry, project, and scope.
 
-**4. One command â€” auto-detects your IDE, wraps your agent, opens the dashboard:**
+**4. One command — auto-detects your IDE, wraps your agent, opens the dashboard:**
 
 ```bash
 cd /your/repo && entroly go
@@ -182,7 +182,7 @@ entroly wrap codex      # Codex CLI
 entroly wrap aider      # Aider
 ```
 
-**6. Or run the proxy â€” best for pay-as-you-go API keys and custom apps:**
+**6. Or run the proxy — best for pay-as-you-go API keys and custom apps:**
 
 ```bash
 entroly proxy                                   # http://localhost:9377
@@ -308,17 +308,33 @@ and unsupported claims.
 [Read the preregistered protocol](docs/benchmarks/context-efficiency-frontier.md).
 No headline result will be claimed until the paired confidence bounds pass.
 
-Every number below is reproducible and backed by a committed JSON artifact you can audit â€” not a screenshot.
+**Same-input compression gauntlet:** on four deterministic agent-tool fixtures,
+current Entroly source (package version `1.0.58`) and Headroom `0.31.0[proxy]`
+both retained **100% of the preregistered answer evidence**. Under the shared
+`o200k_base` tokenizer, Entroly reduced weighted input tokens by **95.2%** versus
+**31.4%** for Headroom's public `compress()` pipeline with its documented
+`agent-90` high-savings profile. Entroly compressed all four fixtures; Headroom
+compressed two and safely passed two through.
 
-[Read the preregistered protocol](docs/benchmarks/context-efficiency-frontier.md).
-No headline result is claimed until the paired confidence bounds pass.
+[Generated report](benchmarks/results/compression_gauntlet.md) ·
+[raw inputs and outputs](benchmarks/results/compression_gauntlet.json) ·
+[protocol and reproduction](docs/benchmarks/compression-gauntlet.md). Verify the
+artifact with `python -m benchmarks.compression_gauntlet verify benchmarks/results/compression_gauntlet.json`.
+
+<sub>This is a synthetic, no-model compression/evidence result. It does not
+measure downstream answer quality or establish neural/ML superiority. The
+Context Efficiency Frontier above is the required gate for a real-model claim.</sub>
+
+<p align="center">
+  <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and Headroom same-input compression gauntlet with evidence-retention caveat"></a>
+</p>
 
 The tables below link each reported number to its committed result. Treat them
-as evidence for those specific datasets, budgets, models, and commitsâ€”not as a
+as evidence for those specific datasets, budgets, models, and commits—not as a
 guarantee for another repository. `entroly simulate` uses a local token
 estimate; use provider-observed usage for a billing or production claim.
 
-**Accuracy retention** â€” does compression hurt answers? Measured with `gpt-4o-mini`; intervals are Wilson 95% CIs. Each row links its raw result file.
+**Accuracy retention** — does compression hurt answers? Measured with `gpt-4o-mini`; intervals are Wilson 95% CIs. Each row links its raw result file.
 
 | Benchmark | n | Budget | Baseline | With Entroly | Retention | Token savings |
 |---|---|---|---|---|---|---|
@@ -330,7 +346,7 @@ estimate; use provider-observed usage for a billing or production claim.
 
 <sub>*pass-through: context already fit the budget, so Entroly left it unchanged. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`). Full table + MMLU/TruthfulQA in [DETAILS](docs/DETAILS.md).</sub>
 
-**Hallucination detection** â€” committed [HaluEval-QA](https://github.com/RUCAIBox/HaluEval)
+**Hallucination detection** — committed [HaluEval-QA](https://github.com/RUCAIBox/HaluEval)
 balanced, both-answers-scored run:
 
 | Result | Decisions | Accuracy | AUROC | Scope |
@@ -376,16 +392,16 @@ authentication instruction; evidence pinning retained it byte-for-byte.
 | Entroly evidence pinning | 1,793 | **Yes** |
 
 Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
-[Benchmark JSON](benchmarks/results/openclaw_evidence_pinning.json) Â·
+[Benchmark JSON](benchmarks/results/openclaw_evidence_pinning.json) ·
 [Plugin setup](integrations/openclaw/README.md)
 
 <sub>Synthetic deterministic normalized multi-provider workload, 23,089 estimated source tokens, 11
 messages, zero model calls. Token counts are estimates, not billed usage, and
 this result does not establish downstream model accuracy.</sub>
 
-`entroly wrap <agent>` picks the best integration for each tool â€” proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
+`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
 
-**Wrap in one command:** `claude` Â· `cursor` Â· `codex` Â· `aider` Â· `gemini` Â· `windsurf` Â· `vscode` Â· `zed` Â· `cline` Â· `continue` and **28 more**.
+**Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
 
 <details>
 <summary><b>Full agent list (38 targets)</b></summary>
@@ -416,7 +432,7 @@ Entroly's dependency-free token estimate; measure provider-observed tokens with
 the [Context Efficiency Frontier](docs/benchmarks/context-efficiency-frontier.md)
 before publishing a savings claim.
 
-**In CI** â€” fail the build if a prompt blows the token budget:
+**In CI** — fail the build if a prompt blows the token budget:
 
 ```yaml
 - run: pip install entroly && entroly batch --budget 8000 --fail-over-budget
@@ -424,7 +440,7 @@ before publishing a savings claim.
 
 ---
 
-## When to use it Â· when to skip
+## When to use it · when to skip
 
 **Great fit**
 - Large repos where the agent only sees a few files at a time
@@ -494,7 +510,7 @@ npm install -g entroly         # WASM runtime, no Python needed
 docker pull ghcr.io/juyterman1000/entroly:latest
 ```
 
-**Single binary, no Python** â€” a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
+**Single binary, no Python** — a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
 
 ```bash
 cd entroly/entroly-core && cargo build --release --bin entroly-rs --features proxy
@@ -504,7 +520,7 @@ cd entroly/entroly-core && cargo build --release --bin entroly-rs --features pro
 
 ---
 
-## WITNESS â€” check answers before you trust them
+## WITNESS — check answers before you trust them
 
 ```bash
 entroly witness --context-file evidence.txt --output-file answer.txt --mode strict
@@ -570,13 +586,13 @@ This is the important distinction: Entroly does not just remember context. It ca
 | Is an embeddings API required? | No for the default local selection path |
 | Is answer verification automatic everywhere? | No. WITNESS must be enabled on a supported integration path |
 
-> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses â€” so the model gets structure, not just fewer tokens.
+> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
 
 ---
 
 ## Docs & community
 
-- **[Context control plane](docs/context-control-plane.md)** â€” model metadata, secure attachment, gateway recovery, and context-session UI guarantees.
+- **[Context control plane](docs/context-control-plane.md)** — model metadata, secure attachment, gateway recovery, and context-session UI guarantees.
 
 <details>
 <summary><b>Command reference</b></summary>
@@ -600,22 +616,22 @@ This is the important distinction: Entroly does not just remember context. It ca
 | `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
 | `entroly perf` | Local no-LLM savings and optimizer latency |
 | `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
-| `entroly health` | Codebase health grade (Aâ€“F) |
+| `entroly health` | Codebase health grade (A–F) |
 | `entroly cache stats` | Persistent cross-session cache stats |
 | `entroly ravs report` | Model-routing cost-savings report |
 | `entroly witness` | Check an answer against supplied evidence |
-| `entroly verify-claims` | Run the packaged self-test â†’ JSON report |
+| `entroly verify-claims` | Run the packaged self-test → JSON report |
 
 </details>
 
-- **[Architecture & full spec](docs/DETAILS.md)** â€” Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
-- **[Product surface map](docs/product-surface.md)** â€” CLI, SDK, MCP, proxy, npm/WASM, verification, memory, and security surfaces.
-- **[First-run trust guide](docs/first-run-trust.md)** â€” exactly what a new user should run before wiring a paid model.
-- **[For teams](docs/for-teams.md)** â€” ROI, security, deployment one-pager.
-- **[Limitations](docs/limitations.md)** â€” where Entroly helps, where it passes through, and what it does not guarantee.
-- **[Public evidence policy](docs/public-evidence.md)** â€” claim tiers, benchmark scope, package links, and marketplace status.
-- **[Cookbook](cookbook/README.md)** â€” copy-paste recipes for common workflows.
-- **[Discord Community](https://juyterman1000.github.io/entroly/docs/discord.html)** Â· **[Discussions](https://github.com/juyterman1000/entroly/discussions)** Â· **[Issues](https://github.com/juyterman1000/entroly/issues)**
+- **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
+- **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, npm/WASM, verification, memory, and security surfaces.
+- **[First-run trust guide](docs/first-run-trust.md)** — exactly what a new user should run before wiring a paid model.
+- **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
+- **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, and what it does not guarantee.
+- **[Public evidence policy](docs/public-evidence.md)** — claim tiers, benchmark scope, package links, and marketplace status.
+- **[Cookbook](cookbook/README.md)** — copy-paste recipes for common workflows.
+- **[Discord Community](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
 ### Marketplace status
 
@@ -629,7 +645,7 @@ install from PyPI or npm using the instructions above.
 
 <a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="Current external Entroly status on LobeHub"></a>
 
-<p align="center"><sub>Apache-2.0 Â· local-first Â· no outbound analytics by default</sub></p>
+<p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>
 
 <!-- mcp-name: io.github.juyterman1000/entroly -->

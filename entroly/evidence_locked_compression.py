@@ -395,18 +395,19 @@ def _json_schema(obj: Any, *, depth: int, max_depth: int) -> Any:
 def _json_query_matches(obj: Any, query_terms: set[str], *, limit: int) -> list[Any]:
     if not query_terms:
         return []
-    matches: list[Any] = []
-    for item in _walk_json(obj):
-        if len(matches) >= limit:
-            break
-        rendered = json.dumps(item, ensure_ascii=False, sort_keys=True)[:2000].lower()
-        if any(term in rendered for term in query_terms):
-            matches.append(_compact_json_value(item))
-    return matches
+    ranked: list[tuple[int, int, Any]] = []
+    for order, item in enumerate(_walk_json_records(obj)):
+        rendered = json.dumps(item, ensure_ascii=False, sort_keys=True).lower()
+        words = {word.lower() for word in _WORD_RE.findall(rendered)}
+        coverage = len(query_terms.intersection(words))
+        if coverage:
+            ranked.append((coverage, order, item))
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    return [_compact_json_value(item) for _, _, item in ranked[:limit]]
 
 
 def _json_outliers(obj: Any, *, limit: int) -> list[Any]:
-    rows = list(_walk_json(obj))
+    rows = list(_walk_json_records(obj))
     if not rows:
         return []
     scored = sorted(
@@ -432,8 +433,52 @@ def _walk_json(obj: Any) -> Iterable[Any]:
             yield from _walk_json(value)
 
 
-def _compact_json_value(value: Any) -> Any:
-    return _json_schema(value, depth=0, max_depth=3)
+def _walk_json_records(obj: Any) -> Iterable[dict[str, Any]]:
+    """Yield record-like objects without treating container roots as evidence."""
+    if isinstance(obj, dict):
+        yield obj
+        for value in obj.values():
+            if isinstance(value, (dict, list)):
+                yield from _walk_json_records(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            if isinstance(value, (dict, list)):
+                yield from _walk_json_records(value)
+
+
+def _compact_json_value(value: Any, *, depth: int = 0, max_depth: int = 3) -> Any:
+    """Bound evidence size while preserving answer-critical scalar values."""
+    if depth > max_depth:
+        return "<max-depth>"
+    if isinstance(value, dict):
+        items = list(value.items())
+        compact = {
+            str(key): _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+            for key, item in items[:30]
+        }
+        if len(items) > 30:
+            compact["<omitted_keys>"] = len(items) - 30
+        return compact
+    if isinstance(value, list):
+        if len(value) <= 8:
+            return [
+                _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+                for item in value
+            ]
+        return {
+            "items": len(value),
+            "first": [
+                _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+                for item in value[:3]
+            ],
+            "last": [
+                _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+                for item in value[-3:]
+            ],
+        }
+    if isinstance(value, str) and len(value) > 240:
+        return f"{value[:200]}...<truncated:{len(value) - 200}>"
+    return value
 
 
 def _query_terms(query: str) -> set[str]:

@@ -57,6 +57,9 @@ full = [
 test = [
     "pytest>=8,<9",
 ]
+benchmark = [
+    "tiktoken>=0.9,<0.10",
+]
 
 [project.scripts]
 entroly = "entroly._docker_launcher:launch"

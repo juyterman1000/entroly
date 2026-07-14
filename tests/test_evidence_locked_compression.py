@@ -68,7 +68,10 @@ def test_elc_json_keeps_schema_query_matches_and_outliers() -> None:
     assert result.changed
     assert "json evidence-locked compression" in result.compressed
     assert "query_matches" in result.compressed
-    assert "refresh timeout" in result.compressed or "<str:" in result.compressed
+    assert "refresh timeout" in result.compressed
+    assert '"id": 77' in result.compressed
+    assert '"latency_ms": 9912' in result.compressed
+    assert '"status": "failed"' in result.compressed
     assert "outliers" in result.compressed
     assert result.receipt.content_type == "json"
     assert result.receipt.anchors_preserved["schema"] == 1

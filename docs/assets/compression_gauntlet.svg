@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+<title id="title">Entroly Agent Context Compression Gauntlet</title>
+<desc id="desc">Same-input synthetic compression comparison with evidence retention gates.</desc>
+<rect width="1200" height="630" fill="#09111F"/>
+<rect x="38" y="38" width="1124" height="554" rx="28" fill="#0D192B" stroke="#213552" stroke-width="2"/>
+<style>
+text{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#F4F8FC}
+.eyebrow{font-size:20px;font-weight:700;letter-spacing:2px;fill:#35D0BA}
+.headline{font-size:46px;font-weight:800}
+.subhead{font-size:22px;fill:#B7C4D6}
+.system{font-size:27px;font-weight:750}
+.version{font-size:17px;fill:#8FA2B9}
+.value{font-size:32px;font-weight:800}
+.detail{font-size:17px;fill:#AFC0D3}
+.footer{font-size:16px;fill:#8FA2B9}
+</style>
+<text x="90" y="105" class="eyebrow">AGENT CONTEXT COMPRESSION GAUNTLET</text>
+<text x="90" y="165" class="headline">Same inputs. Same evidence. Fewer tokens.</text>
+<text x="90" y="207" class="subhead">Weighted token reduction · shared o200k_base tokenizer</text>
+<text x="90" y="275" class="system">Entroly</text>
+<text x="90" y="309" class="version">v1.0.58</text>
+<rect x="330" y="242" width="700" height="48" rx="12" fill="#17253A"/>
+<rect x="330" y="242" width="666.6" height="48" rx="12" fill="#35D0BA"/>
+<text x="1065" y="278" class="value" text-anchor="end">95.2%</text>
+<text x="330" y="318" class="detail">100% evidence retained · 4/4 fixtures compressed</text>
+<text x="90" y="395" class="system">Headroom</text>
+<text x="90" y="429" class="version">v0.31.0</text>
+<rect x="330" y="362" width="700" height="48" rx="12" fill="#17253A"/>
+<rect x="330" y="362" width="220.0" height="48" rx="12" fill="#8A9BB0"/>
+<text x="1065" y="398" class="value" text-anchor="end">31.4%</text>
+<text x="330" y="438" class="detail">100% evidence retained · 2/4 fixtures compressed</text>
+<line x1="90" y1="520" x2="1110" y2="520" stroke="#213552" stroke-width="2"/>
+<text x="90" y="557" class="footer">4 deterministic agent-tool fixtures · 5 measured runs after 2 warm-ups</text>
+<text x="90" y="582" class="footer">Synthetic, no-model result — not downstream answer quality or ML superiority · raw artifacts committed</text>
+</svg>

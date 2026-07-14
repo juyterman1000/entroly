@@ -4,8 +4,19 @@ on:
   pull_request:
     paths:
       - 'bench/**'
+      - 'benchmarks/compression_gauntlet.py'
+      - 'benchmarks/compression_proxy_scoreboard.py'
+      - 'benchmarks/results/compression_gauntlet.json'
+      - 'benchmarks/results/compression_gauntlet.md'
       - 'entroly/**'
       - 'entroly-core/**'
+      - 'tests/test_compression_gauntlet.py'
+      - 'tests/test_evidence_locked_compression.py'
+      - 'tests/test_compression_proxy_scoreboard.py'
+      - 'docs/benchmarks/compression-gauntlet.md'
+      - 'docs/assets/compression_gauntlet.svg'
+      - 'README.md'
+      - 'pyproject.toml'
       - 'BENCHMARKS.md'
       - '.github/workflows/benchmark.yml'
   workflow_dispatch:
@@ -26,7 +37,17 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true
+        run: pip install -e ".[test,benchmark]"
+
+      - name: Verify compression evidence artifact
+        run: |
+          pytest \
+            tests/test_compression_gauntlet.py \
+            tests/test_evidence_locked_compression.py \
+            tests/test_compression_proxy_scoreboard.py \
+            -q
+          python -m benchmarks.compression_gauntlet verify \
+            benchmarks/results/compression_gauntlet.json
 
       - name: Run competitive benchmark with regression guard
         run: |
