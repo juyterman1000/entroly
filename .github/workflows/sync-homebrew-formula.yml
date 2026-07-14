@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: sync-homebrew-main
@@ -211,18 +212,42 @@ jobs:
           python -m pytest tests/test_release_surface.py -q
           git diff --check
 
-      - name: Commit synchronized formula
+      - name: Open synchronized formula pull request
         if: steps.release.outputs.sha256 != ''
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
           if git diff --quiet -- packaging/homebrew/entroly.rb tests/test_release_surface.py; then
-            echo "Homebrew formula already matches Entroly ${{ steps.release.outputs.version }}."
+            echo "Homebrew formula already matches Entroly ${VERSION}."
             exit 0
           fi
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add packaging/homebrew/entroly.rb tests/test_release_surface.py
-          git commit -m "Update Homebrew formula for ${{ steps.release.outputs.version }}"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git commit -m "Update Homebrew formula for ${VERSION}"
+
+          BRANCH="agent/homebrew-${VERSION}"
+          if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+            git push --force-with-lease="refs/heads/${BRANCH}" \
+              origin "HEAD:refs/heads/${BRANCH}"
+          else
+            git push origin "HEAD:refs/heads/${BRANCH}"
+          fi
+
+          PR_URL="$(gh pr list --base main --head "${BRANCH}" --state open \
+            --json url --jq '.[0].url // empty')"
+          BODY="Synchronizes the Homebrew formula to the exact PyPI ${VERSION} sdist and verified SHA-256 after the coordinated release completed."
+          if [[ -n "${PR_URL}" ]]; then
+            gh pr edit "${PR_URL}" \
+              --title "Update Homebrew formula for ${VERSION}" \
+              --body "${BODY}"
+            echo "Updated ${PR_URL}"
+          else
+            gh pr create --base main --head "${BRANCH}" \
+              --title "Update Homebrew formula for ${VERSION}" \
+              --body "${BODY}"
+          fi

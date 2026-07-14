@@ -7,8 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.58"
-HOMEBREW_FORMULA_VERSION = "1.0.57"
-HOMEBREW_FORMULA_SHA256 = "fef09c6b5e2616a09333a911f48fdef70b94747e22c56d9cc44a41832271c9b4"
+HOMEBREW_FORMULA_VERSION = "1.0.58"
+HOMEBREW_FORMULA_SHA256 = "f2d561e7316cf12c07ffffadeff0b8f26368538564d776eee86b4b76a896959e"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -183,6 +183,11 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "probe-npm-openclaw:" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
     assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+    openclaw_publisher = text.split("  publish-npm-openclaw:", 1)[1].split(
+        "  probe-npm-openclaw:", 1
+    )[0]
+    assert "for attempt in $(seq 1 20)" in openclaw_publisher
+    assert "waiting for PyPI propagation" in openclaw_publisher
 
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
@@ -197,6 +202,10 @@ def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
     assert "group: sync-homebrew-main" in text
     assert "if target_tuple < current_tuple:" in text
     assert "refusing to downgrade Homebrew" in text
+    assert "pull-requests: write" in text
+    assert 'BRANCH="agent/homebrew-${VERSION}"' in text
+    assert "gh pr create --base main" in text
+    assert "git push origin HEAD:main" not in text
 
 
 def test_release_artifacts_have_one_quality_gated_publisher() -> None:
@@ -257,3 +266,24 @@ def test_mcp_registry_follows_every_anchored_parent_release() -> None:
     assert 'if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]' in text
     assert 'echo "should_publish=false" >> "$GITHUB_OUTPUT"' in text
     assert "if: steps.release_guard.outputs.should_publish == 'true'" in text
+
+
+def test_clawhub_verifier_follows_coordinated_release() -> None:
+    text = (ROOT / ".github/workflows/verify-clawhub-listing.yml").read_text(
+        encoding="utf-8"
+    )
+    triggers = text.split("permissions:", 1)[0]
+
+    assert 'workflows: ["Build and Push Entroly Docker Image"]' in triggers
+    assert "workflow_run:" in triggers
+    assert "\n  push:" not in triggers
+    assert "github.event.workflow_run.conclusion == 'success'" in text
+    assert "github.event.workflow_run.head_sha || github.sha" in text
+    assert "ref: ${{ env.SOURCE_SHA }}" in text
+    assert "sha: process.env.SOURCE_SHA" in text
+    assert "const description = process.env.CLAWHUB_DESCRIPTION" in text
+    assert "const description = '${{ steps.verify.outputs.description }}'" not in text
+    assert (
+        "https://clawhub.ai/juyterman1000/plugins/entroly-openclaw" in text
+    )
+    assert "ClawHub {expected_version} unavailable: {safe_error}" in text

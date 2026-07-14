@@ -1,12 +1,9 @@
 name: Verify Entroly ClawHub Listing
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "integrations/openclaw/**"
-      - ".github/workflows/publish-openclaw-clawhub.yml"
-      - ".github/workflows/verify-clawhub-listing.yml"
+  workflow_run:
+    workflows: ["Build and Push Entroly Docker Image"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -19,10 +16,27 @@ concurrency:
 
 jobs:
   verify:
+    if: >-
+      github.repository == 'juyterman1000/entroly' &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_repository.full_name == 'juyterman1000/entroly' &&
+          github.event.workflow_run.actor.login == 'juyterman1000'
+        ) ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout exact release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
 
       - name: Verify exact public package, search result, and artifact
         id: verify
@@ -40,6 +54,8 @@ jobs:
           import urllib.request
 
           package_name = "entroly-openclaw"
+          package_owner = "juyterman1000"
+          public_url = f"https://clawhub.ai/{package_owner}/plugins/{package_name}"
           expected_version = json.loads(
               pathlib.Path("integrations/openclaw/package.json").read_text(encoding="utf-8")
           )["version"]
@@ -101,7 +117,7 @@ jobs:
                       "scan_status": package.get("scanStatus"),
                       "verification_tier": (package.get("verification") or {}).get("tier"),
                       "artifact_sha256": artifact.get("sha256"),
-                      "public_url": f"https://clawhub.ai/plugins/{package_name}",
+                      "public_url": public_url,
                   }
                   pathlib.Path("clawhub-verification.json").write_text(
                       json.dumps(result, indent=2, sort_keys=True) + "\n",
@@ -111,7 +127,7 @@ jobs:
                   with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                       output.write("state=success\n")
                       output.write(f"description=ClawHub {package_name} {expected_version} is public\n")
-                      output.write(f"target_url=https://clawhub.ai/plugins/{package_name}\n")
+                      output.write(f"target_url={public_url}\n")
                   raise SystemExit(0)
               except (urllib.error.HTTPError, urllib.error.URLError, ValueError, RuntimeError) as exc:
                   last_error = str(exc)
@@ -119,10 +135,13 @@ jobs:
                   if attempt < 40:
                       time.sleep(15)
 
+          safe_error = " ".join(last_error.split())
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write("state=failure\n")
-              output.write("description=Entroly is not publicly verifiable in ClawHub yet\n")
-              output.write("target_url=https://clawhub.ai/plugins/entroly-openclaw\n")
+              output.write(
+                  f"description=ClawHub {expected_version} unavailable: {safe_error}\n"
+              )
+              output.write(f"target_url={public_url}\n")
           pathlib.Path("clawhub-verification-error.txt").write_text(
               last_error + "\n", encoding="utf-8"
           )
@@ -131,15 +150,19 @@ jobs:
       - name: Record public verification status
         if: always()
         uses: actions/github-script@v8
+        env:
+          CLAWHUB_STATE: ${{ steps.verify.outputs.state }}
+          CLAWHUB_DESCRIPTION: ${{ steps.verify.outputs.description }}
+          CLAWHUB_TARGET_URL: ${{ steps.verify.outputs.target_url }}
         with:
           script: |
-            const state = '${{ steps.verify.outputs.state }}' || 'failure';
-            const description = '${{ steps.verify.outputs.description }}' || 'ClawHub verification did not complete';
-            const targetUrl = '${{ steps.verify.outputs.target_url }}' || 'https://clawhub.ai/plugins/entroly-openclaw';
+            const state = process.env.CLAWHUB_STATE || 'failure';
+            const description = process.env.CLAWHUB_DESCRIPTION || 'ClawHub verification did not complete';
+            const targetUrl = process.env.CLAWHUB_TARGET_URL || 'https://clawhub.ai/juyterman1000/plugins/entroly-openclaw';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: context.sha,
+              sha: process.env.SOURCE_SHA,
               state,
               context: 'ClawHub Public Listing',
               description: description.slice(0, 140),
