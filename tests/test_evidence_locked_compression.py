@@ -6,6 +6,7 @@ from entroly.evidence_locked_compression import (
     compress_evidence_locked,
     compress_payload_messages,
     detect_heavy_content_type,
+    estimate_tokens,
 )
 
 
@@ -110,3 +111,33 @@ def test_elc_short_content_passes_through() -> None:
 def test_elc_detects_json_and_log() -> None:
     assert detect_heavy_content_type('[{"a": 1}]') == "json"
     assert detect_heavy_content_type("2026-01-01 INFO starting\nERROR failed") == "log"
+
+
+def test_elc_json_keeps_query_centered_long_scalar_within_budget() -> None:
+    documents = [
+        {
+            "document_id": "noise",
+            "text": "Routine unrelated material. " * 120,
+        },
+        {
+            "document_id": "gold",
+            "text": (
+                "A long introduction discussed unrelated planning details. " * 30
+                + "The Aurora mission launched on March 7, 2012 from the coastal pad. "
+                + "Later reports focused on its scientific instruments. " * 20
+            ),
+        },
+    ]
+    text = json.dumps({"query_result": {"documents": documents, "returned": 2}})
+
+    result = compress_evidence_locked(
+        text,
+        query="When did the Aurora mission launch?",
+        budget_tokens=180,
+    )
+
+    assert result.changed
+    assert "March 7, 2012" in result.compressed
+    assert '"document_id": "gold"' in result.compressed
+    assert estimate_tokens(result.compressed) <= 180
+    assert result.receipt.anchors_preserved["query"] >= 1

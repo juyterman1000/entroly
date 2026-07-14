@@ -5,11 +5,14 @@ on:
     paths:
       - 'bench/**'
       - 'benchmarks/compression_gauntlet.py'
+      - 'benchmarks/compression_frontier.py'
       - 'benchmarks/compression_proxy_scoreboard.py'
       - 'benchmarks/neural_evidence_frontier.py'
       - 'benchmarks/neural_query_shift.py'
       - 'benchmarks/results/compression_gauntlet.json'
       - 'benchmarks/results/compression_gauntlet.md'
+      - 'benchmarks/results/compression_frontier.json'
+      - 'benchmarks/results/compression_frontier.md'
       - 'benchmarks/results/neural_evidence_frontier.json'
       - 'benchmarks/results/neural_evidence_frontier.md'
       - 'benchmarks/results/neural_query_shift*.json'
@@ -17,13 +20,16 @@ on:
       - 'entroly/**'
       - 'entroly-core/**'
       - 'tests/test_compression_gauntlet.py'
+      - 'tests/test_compression_frontier.py'
       - 'tests/test_evidence_locked_compression.py'
       - 'tests/test_compression_proxy_scoreboard.py'
       - 'tests/test_neural_evidence_frontier.py'
       - 'tests/test_neural_evidence_selector.py'
       - 'tests/test_neural_query_shift.py'
       - 'docs/benchmarks/compression-gauntlet.md'
+      - 'docs/benchmarks/compression-frontier.md'
       - 'docs/assets/compression_gauntlet.svg'
+      - 'docs/assets/compression_frontier.svg'
       - 'docs/research/prism-r-neural-compression.md'
       - 'README.md'
       - 'pyproject.toml'
@@ -53,6 +59,7 @@ jobs:
         run: |
           pytest \
             tests/test_compression_gauntlet.py \
+            tests/test_compression_frontier.py \
             tests/test_evidence_locked_compression.py \
             tests/test_compression_proxy_scoreboard.py \
             tests/test_neural_evidence_frontier.py \
@@ -61,6 +68,8 @@ jobs:
             -q
           python -m benchmarks.compression_gauntlet verify \
             benchmarks/results/compression_gauntlet.json
+          python -m benchmarks.compression_frontier verify \
+            benchmarks/results/compression_frontier.json
           python -m benchmarks.neural_evidence_frontier verify \
             benchmarks/results/neural_evidence_frontier.json
           python -m benchmarks.neural_query_shift verify \

@@ -21,7 +21,7 @@ import math
 import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 _CHARS_PER_TOKEN = 3.6
 _DEFAULT_BUDGET = 1200
@@ -36,8 +36,34 @@ _ANCHOR_RE = re.compile(
 _PATH_RE = re.compile(r"(?:[\w./-]+\.(?:py|rs|ts|tsx|js|jsx|java|kt|go|c|cpp|h|hpp|json|ya?ml|toml))(?:[:#]\d+)?")
 _ID_RE = re.compile(r"\b(?:[A-Fa-f0-9]{7,40}|[A-Z]{2,}-\d+|[\w.-]+@[\w.-]+)\b")
 _WORD_RE = re.compile(r"\b[\w.-]{3,}\b")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _HARD_LOCK_REASONS = {"anchor", "query", "boundary", "path", "id"}
 _RECEIPT_REASONS = _HARD_LOCK_REASONS | {"outlier"}
+_QUERY_STOPWORDS = {
+    "and",
+    "are",
+    "did",
+    "does",
+    "for",
+    "from",
+    "has",
+    "have",
+    "how",
+    "its",
+    "that",
+    "the",
+    "their",
+    "this",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+}
 
 
 @dataclass(slots=True)
@@ -331,20 +357,66 @@ def _compress_json(text: str, *, query: str, budget_tokens: int) -> CompressionR
 
     query_terms = _query_terms(query)
     schema = _json_schema(data, depth=0, max_depth=4)
-    matches = _json_query_matches(data, query_terms, limit=5)
-    outliers = _json_outliers(data, limit=5)
-    summary = {
+    excerpt_chars = max(180, min(900, int(budget_tokens * 1.8)))
+    matches = _json_query_matches(
+        data,
+        query_terms,
+        limit=8,
+        excerpt_chars=excerpt_chars,
+    )
+    outliers = _json_outliers(data, limit=5, excerpt_chars=excerpt_chars)
+    rich_base = {
         "elc": "json evidence-locked compression",
         "schema": schema,
-        "query_matches": matches,
-        "outliers": outliers,
         "counts": _json_counts(data),
     }
-    compressed = json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True)
+    compact_base = {
+        "elc": "json evidence-locked compression",
+        "schema": _json_schema(data, depth=0, max_depth=2),
+        "counts": _json_counts(data),
+    }
+    minimal_base = {
+        "elc": "json evidence-locked compression",
+        "schema": {"root": type(data).__name__},
+        "counts": _json_counts(data),
+    }
+    required_matches = matches[:1]
+    base = minimal_base
+    for candidate_base in (rich_base, compact_base, minimal_base):
+        candidate = _render_json_summary(candidate_base, required_matches, [])
+        if estimate_tokens(candidate) <= budget_tokens:
+            base = candidate_base
+            break
+
+    kept_matches: list[Any] = []
+    for match in matches:
+        candidate = _render_json_summary(base, [*kept_matches, match], [])
+        if estimate_tokens(candidate) <= budget_tokens:
+            kept_matches.append(match)
+
+    kept_outliers: list[Any] = []
+    match_hashes = {_stable_json(value) for value in kept_matches}
+    for outlier in outliers:
+        if _stable_json(outlier) in match_hashes:
+            continue
+        candidate = _render_json_summary(
+            base,
+            kept_matches,
+            [*kept_outliers, outlier],
+        )
+        if estimate_tokens(candidate) <= budget_tokens:
+            kept_outliers.append(outlier)
+
+    compressed = _render_json_summary(base, kept_matches, kept_outliers)
     if estimate_tokens(compressed) > budget_tokens:
-        summary["query_matches"] = matches[:2]
-        summary["outliers"] = outliers[:2]
-        compressed = json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True)
+        # Tiny budgets may not fit schema plus one evidence record. Preserve a
+        # valid, explicit receipt rather than silently returning an oversized
+        # payload or malformed JSON.
+        compressed = _render_json_summary(
+            {"elc": "json evidence-locked compression"},
+            [],
+            [],
+        )
 
     compressed_tokens = estimate_tokens(compressed)
     receipt = CompressionReceipt(
@@ -354,9 +426,9 @@ def _compress_json(text: str, *, query: str, budget_tokens: int) -> CompressionR
         compression_level=3,
         content_type="json",
         anchors_preserved={
-            "schema": 1,
-            "query": len(matches),
-            "outlier": len(outliers),
+            "schema": int("schema" in base),
+            "query": len(kept_matches),
+            "outlier": len(kept_outliers),
         },
         omitted_spans=[OmittedSpan(1, max(1, text.count("\n") + 1), text.count("\n") + 1, "json_values")],
         recoverable=True,
@@ -392,7 +464,28 @@ def _json_schema(obj: Any, *, depth: int, max_depth: int) -> Any:
     return f"<{type(obj).__name__}>"
 
 
-def _json_query_matches(obj: Any, query_terms: set[str], *, limit: int) -> list[Any]:
+def _render_json_summary(
+    base: dict[str, Any], matches: Sequence[Any], outliers: Sequence[Any]
+) -> str:
+    summary = {
+        **base,
+        "query_matches": list(matches),
+        "outliers": list(outliers),
+    }
+    return json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True)
+
+
+def _stable_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _json_query_matches(
+    obj: Any,
+    query_terms: set[str],
+    *,
+    limit: int,
+    excerpt_chars: int = 900,
+) -> list[Any]:
     if not query_terms:
         return []
     ranked: list[tuple[int, int, Any]] = []
@@ -403,10 +496,19 @@ def _json_query_matches(obj: Any, query_terms: set[str], *, limit: int) -> list[
         if coverage:
             ranked.append((coverage, order, item))
     ranked.sort(key=lambda row: (-row[0], row[1]))
-    return [_compact_json_value(item) for _, _, item in ranked[:limit]]
+    return [
+        _compact_json_value(
+            item,
+            query_terms=query_terms,
+            excerpt_chars=excerpt_chars,
+        )
+        for _, _, item in ranked[:limit]
+    ]
 
 
-def _json_outliers(obj: Any, *, limit: int) -> list[Any]:
+def _json_outliers(
+    obj: Any, *, limit: int, excerpt_chars: int = 900
+) -> list[Any]:
     rows = list(_walk_json_records(obj))
     if not rows:
         return []
@@ -415,7 +517,10 @@ def _json_outliers(obj: Any, *, limit: int) -> list[Any]:
         key=lambda value: len(json.dumps(value, ensure_ascii=False, sort_keys=True)),
         reverse=True,
     )
-    return [_compact_json_value(value) for value in scored[:limit]]
+    return [
+        _compact_json_value(value, excerpt_chars=excerpt_chars)
+        for value in scored[:limit]
+    ]
 
 
 def _json_counts(obj: Any) -> dict[str, int]:
@@ -436,7 +541,8 @@ def _walk_json(obj: Any) -> Iterable[Any]:
 def _walk_json_records(obj: Any) -> Iterable[dict[str, Any]]:
     """Yield record-like objects without treating container roots as evidence."""
     if isinstance(obj, dict):
-        yield obj
+        if not any(isinstance(value, (dict, list)) for value in obj.values()):
+            yield obj
         for value in obj.values():
             if isinstance(value, (dict, list)):
                 yield from _walk_json_records(value)
@@ -446,14 +552,27 @@ def _walk_json_records(obj: Any) -> Iterable[dict[str, Any]]:
                 yield from _walk_json_records(value)
 
 
-def _compact_json_value(value: Any, *, depth: int = 0, max_depth: int = 3) -> Any:
+def _compact_json_value(
+    value: Any,
+    *,
+    depth: int = 0,
+    max_depth: int = 3,
+    query_terms: set[str] | None = None,
+    excerpt_chars: int = 900,
+) -> Any:
     """Bound evidence size while preserving answer-critical scalar values."""
     if depth > max_depth:
         return "<max-depth>"
     if isinstance(value, dict):
         items = list(value.items())
         compact = {
-            str(key): _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+            str(key): _compact_json_value(
+                item,
+                depth=depth + 1,
+                max_depth=max_depth,
+                query_terms=query_terms,
+                excerpt_chars=excerpt_chars,
+            )
             for key, item in items[:30]
         }
         if len(items) > 30:
@@ -462,27 +581,76 @@ def _compact_json_value(value: Any, *, depth: int = 0, max_depth: int = 3) -> An
     if isinstance(value, list):
         if len(value) <= 8:
             return [
-                _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+                _compact_json_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    query_terms=query_terms,
+                    excerpt_chars=excerpt_chars,
+                )
                 for item in value
             ]
         return {
             "items": len(value),
             "first": [
-                _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+                _compact_json_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    query_terms=query_terms,
+                    excerpt_chars=excerpt_chars,
+                )
                 for item in value[:3]
             ],
             "last": [
-                _compact_json_value(item, depth=depth + 1, max_depth=max_depth)
+                _compact_json_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    query_terms=query_terms,
+                    excerpt_chars=excerpt_chars,
+                )
                 for item in value[-3:]
             ],
         }
-    if isinstance(value, str) and len(value) > 240:
-        return f"{value[:200]}...<truncated:{len(value) - 200}>"
+    if isinstance(value, str) and len(value) > excerpt_chars:
+        return _relevant_text_excerpt(value, query_terms or set(), excerpt_chars)
     return value
 
 
+def _relevant_text_excerpt(text: str, query_terms: set[str], max_chars: int) -> str:
+    """Keep query-centered sentence windows from a long JSON scalar."""
+    sentences = [part.strip() for part in _SENTENCE_RE.split(text) if part.strip()]
+    if not sentences:
+        return text[:max_chars]
+    scored: list[tuple[int, float, int]] = []
+    for index, sentence in enumerate(sentences):
+        words = {word.lower() for word in _WORD_RE.findall(sentence)}
+        overlap = len(query_terms.intersection(words))
+        density = overlap / max(1, len(words))
+        scored.append((overlap, density, index))
+    best_overlap, _, best_index = max(scored, key=lambda row: (row[0], row[1], -row[2]))
+    if best_overlap == 0:
+        return f"{text[:max_chars]}...<truncated:{max(0, len(text) - max_chars)}>"
+
+    selected: list[int] = []
+    for radius in (0, 1, 2):
+        for index in range(max(0, best_index - radius), min(len(sentences), best_index + radius + 1)):
+            if index not in selected:
+                candidate = " ".join(sentences[value] for value in sorted([*selected, index]))
+                if len(candidate) <= max_chars:
+                    selected.append(index)
+    excerpt = " ".join(sentences[index] for index in sorted(selected))
+    omitted = max(0, len(text) - len(excerpt))
+    return f"{excerpt} ...<query-centered; omitted:{omitted}>"
+
+
 def _query_terms(query: str) -> set[str]:
-    return {w.lower() for w in _WORD_RE.findall(query or "") if len(w) >= 3}
+    return {
+        word.lower()
+        for word in _WORD_RE.findall(query or "")
+        if len(word) >= 3 and word.lower() not in _QUERY_STOPWORDS
+    }
 
 
 def _entropy(text: str) -> float:

@@ -3,18 +3,18 @@
     "entroly": {
       "compressed_scenarios": 4,
       "evidence_recall": 1.0,
-      "macro_savings_ratio": 0.948079,
-      "p50_latency_ms": 26.95,
+      "macro_savings_ratio": 0.947029,
+      "p50_latency_ms": 28.415,
       "passed": true,
       "scenarios": 4,
       "valid_scenarios": 4,
-      "weighted_savings_ratio": 0.952328
+      "weighted_savings_ratio": 0.950618
     },
     "headroom": {
       "compressed_scenarios": 2,
       "evidence_recall": 1.0,
       "macro_savings_ratio": 0.266598,
-      "p50_latency_ms": 53.032,
+      "p50_latency_ms": 55.988,
       "passed": true,
       "scenarios": 4,
       "valid_scenarios": 4,
@@ -87,7 +87,7 @@
       "scenario_id": "code-search-middle"
     }
   ],
-  "generated_at": "2026-07-14T07:37:54.152254+00:00",
+  "generated_at": "2026-07-14T10:08:00.325120+00:00",
   "headline_eligible": true,
   "participants": {
     "entroly": {
@@ -101,13 +101,13 @@
         "dependencies": {
           "tiktoken": "0.9.0"
         },
-        "implementation_sha256": "588a21b1a2c381939e454a0a2b828b612bc7338359acb4400c884fff1f084b0f",
+        "implementation_sha256": "823c226e3635a3996e7e48154402b0bc173a23329976a7b60a240b989c3d3d80",
         "import_origin": "repository source checkout",
         "native_acceleration_used": false,
         "python": "3.10.0"
       },
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "version": "1.0.58"
+      "version": "1.0.59"
     },
     "headroom": {
       "algorithm": "released public compress() pipeline with agent-90 profile",
@@ -121,14 +121,12 @@
         "dependencies": {
           "headroom-ai": "0.31.0",
           "litellm": "1.92.0",
-          "onnxruntime": "1.23.2",
-          "tiktoken": "0.13.0",
-          "transformers": "5.13.1"
+          "tiktoken": "0.13.0"
         },
-        "distribution_record_sha256": "f983d538e333ba56f1cdfd9e570950c007c36a328b4cb14ca4f62d990ecb6d64",
+        "distribution_record_sha256": "c36fc867ca306fae3074d138e9dfed86701eebc48d5948b8671b87203ed1c216",
         "python": "3.10.0"
       },
-      "stderr_sha256": "ae15c850d21c0bc5f176a1b2dd46570da8fecb78abb626d258ecc1746c6940ff",
+      "stderr_sha256": "9128f5dbb96760e71b3ddd880e81ee69712f332150fa3e07f38bb563b9f37ad5",
       "version": "0.31.0"
     }
   },
@@ -137,10 +135,10 @@
     "fixture_sha256": "ba27689ecfeb0ab97ac6ff5a745dbf46b56c7eda58ec4ea06754c11a95dac490",
     "fixture_version": "agent-tool-evidence-v1",
     "model": "gpt-4o",
-    "runs": 5,
+    "runs": 3,
     "tokenizer": "o200k_base",
     "tokenizer_package": "tiktoken==0.9.0",
-    "warmups": 2,
+    "warmups": 1,
     "winner_gate": "complete matrix + deterministic output + 100% preregistered evidence retention + no token inflation"
   },
   "results": [
@@ -159,14 +157,12 @@
       "input_sha256": "3412f621e8c8a3c2eab2632083d7b7477b106dc101efd6789e69d530056d542b",
       "input_tokens": 30850,
       "latency_ms": {
-        "p50": 35.226,
-        "p95": 45.378,
+        "p50": 35.163,
+        "p95": 35.718,
         "samples": [
-          35.836,
-          47.764,
-          35.226,
-          33.224,
-          31.891
+          26.546,
+          35.163,
+          35.78
         ]
       },
       "native_metrics": {
@@ -198,14 +194,12 @@
       "input_sha256": "2858d3a0fc86e93cc49bba6e7ac44a483ab73770d14729b3a59fb2fb6eb83f88",
       "input_tokens": 51809,
       "latency_ms": {
-        "p50": 18.674,
-        "p95": 29.665,
+        "p50": 21.789,
+        "p95": 22.585,
         "samples": [
-          30.95,
-          18.674,
-          18.415,
-          24.524,
-          18.043
+          22.673,
+          21.789,
+          20.616
         ]
       },
       "native_metrics": {
@@ -213,13 +207,13 @@
         "compressed_blocks": 1,
         "receipt_count": 1
       },
-      "output_sha256": "0ef972a2d36c5b9609a8684dc142739a60e0974f6a914de1c6565d41c39ab340",
-      "output_text": "{\n  \"counts\": {\n    \"dict\": 900,\n    \"int\": 1800,\n    \"list\": 1,\n    \"str\": 3601\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [\n    {\n      \"id\": 667,\n      \"incident_id\": \"INC-JSON-667\",\n      \"latency_ms\": 9912,\n      \"message\": \"refresh timeout at retry boundary\",\n      \"payload\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz...<truncated:800>\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"id\": 100,\n      \"latency_ms\": 100,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 101,\n      \"latency_ms\": 101,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 103,\n      \"latency_ms\": 103,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 104,\n      \"latency_ms\": 104,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"query_matches\": [\n    {\n      \"id\": 667,\n      \"incident_id\": \"INC-JSON-667\",\n      \"latency_ms\": 9912,\n      \"message\": \"refresh timeout at retry boundary\",\n      \"payload\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz...<truncated:800>\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"id\": 0,\n      \"latency_ms\": 0,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 3,\n      \"latency_ms\": 3,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 6,\n      \"latency_ms\": 6,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 9,\n      \"latency_ms\": 9,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"id\": \"<int>\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"normal request completed\",\n      \"payload\": \"<str:60>\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    \"items\": 900,\n    \"last\": {\n      \"id\": \"<int>\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"normal request completed\",\n      \"payload\": \"<str:60>\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    \"type\": \"array\"\n  }\n}",
-      "output_tokens": 994,
-      "savings_ratio": 0.980814,
+      "output_sha256": "b64c6bb408f343f10ba1887757fc3100e6b47d6deec18b2bdf58a5686c6f8c01",
+      "output_text": "{\n  \"counts\": {\n    \"dict\": 900,\n    \"int\": 1800,\n    \"list\": 1,\n    \"str\": 3601\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [\n    {\n      \"id\": 100,\n      \"latency_ms\": 100,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 101,\n      \"latency_ms\": 101,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 103,\n      \"latency_ms\": 103,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 104,\n      \"latency_ms\": 104,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"query_matches\": [\n    {\n      \"id\": 667,\n      \"incident_id\": \"INC-JSON-667\",\n      \"latency_ms\": 9912,\n      \"message\": \"refresh timeout at retry boundary\",\n      \"payload\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz...<truncated:100>\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"id\": 0,\n      \"latency_ms\": 0,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 3,\n      \"latency_ms\": 3,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 6,\n      \"latency_ms\": 6,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 9,\n      \"latency_ms\": 9,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 12,\n      \"latency_ms\": 12,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 15,\n      \"latency_ms\": 15,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"id\": 18,\n      \"latency_ms\": 18,\n      \"message\": \"normal request completed\",\n      \"payload\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"id\": \"<int>\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"normal request completed\",\n      \"payload\": \"<str:60>\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    \"items\": 900,\n    \"last\": {\n      \"id\": \"<int>\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"normal request completed\",\n      \"payload\": \"<str:60>\",\n      \"service\": \"billing\",\n      \"status\": \"ok\"\n    },\n    \"type\": \"array\"\n  }\n}",
+      "output_tokens": 1345,
+      "savings_ratio": 0.974039,
       "scenario_id": "json-incident-middle",
       "system": "entroly",
-      "tokens_saved": 50815,
+      "tokens_saved": 50464,
       "valid": true
     },
     {
@@ -237,14 +231,12 @@
       "input_sha256": "8691deafbc7c82202e37f58c1d02ae98166db0e3fe8de8a46abebc66ea726e0c",
       "input_tokens": 36087,
       "latency_ms": {
-        "p50": 40.612,
-        "p95": 102.033,
+        "p50": 35.04,
+        "p95": 41.767,
         "samples": [
-          40.612,
-          41.752,
-          117.103,
-          40.082,
-          37.571
+          35.04,
+          34.686,
+          42.514
         ]
       },
       "native_metrics": {
@@ -276,14 +268,12 @@
       "input_sha256": "8e985dc329078bae17d63e9b3f49123f347836c111417913517fc00caaeea9de",
       "input_tokens": 34530,
       "latency_ms": {
-        "p50": 15.698,
-        "p95": 21.011,
+        "p50": 20.179,
+        "p95": 20.455,
         "samples": [
-          15.698,
-          21.493,
-          19.085,
-          15.322,
-          15.602
+          19.987,
+          20.485,
+          20.179
         ]
       },
       "native_metrics": {
@@ -291,13 +281,13 @@
         "compressed_blocks": 1,
         "receipt_count": 1
       },
-      "output_sha256": "745546c6615c8430a91a42a426dbc140df2afe420211d50f470aebd4d6eb3b2c",
-      "output_text": "{\n  \"counts\": {\n    \"dict\": 1000,\n    \"float\": 1000,\n    \"int\": 1,\n    \"list\": 1,\n    \"str\": 3002\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [\n    {\n      \"commit\": \"9f4c2ab\",\n      \"incident\": \"AUTH-RACE-771\",\n      \"path\": \"src/oauth/refresh_state.py:219\",\n      \"retry_epoch\": 184467,\n      \"score\": 0.1337,\n      \"snippet\": \"compare_and_swap_refresh_token prevents the OAuth refresh race\",\n      \"symbol\": \"compare_and_swap_refresh_token\"\n    },\n    {\n      \"path\": \"src/components/component_0001.py\",\n      \"score\": 0.9995,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0001\"\n    },\n    {\n      \"path\": \"src/components/component_0003.py\",\n      \"score\": 0.9985,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0003\"\n    },\n    {\n      \"path\": \"src/components/component_0005.py\",\n      \"score\": 0.9975,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0005\"\n    },\n    {\n      \"path\": \"src/components/component_0007.py\",\n      \"score\": 0.9965,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0007\"\n    }\n  ],\n  \"query_matches\": [\n    {\n      \"commit\": \"9f4c2ab\",\n      \"incident\": \"AUTH-RACE-771\",\n      \"path\": \"src/oauth/refresh_state.py:219\",\n      \"retry_epoch\": 184467,\n      \"score\": 0.1337,\n      \"snippet\": \"compare_and_swap_refresh_token prevents the OAuth refresh race\",\n      \"symbol\": \"compare_and_swap_refresh_token\"\n    },\n    {\n      \"path\": \"src/components/component_0000.py\",\n      \"score\": 1.0,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0000\"\n    },\n    {\n      \"path\": \"src/components/component_0001.py\",\n      \"score\": 0.9995,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0001\"\n    },\n    {\n      \"path\": \"src/components/component_0002.py\",\n      \"score\": 0.999,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0002\"\n    },\n    {\n      \"path\": \"src/components/component_0003.py\",\n      \"score\": 0.9985,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0003\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"path\": \"src/components/component_0000.py\",\n      \"score\": \"<float>\",\n      \"snippet\": \"<str:41>\",\n      \"symbol\": \"render_component_0000\"\n    },\n    \"items\": 1000,\n    \"last\": {\n      \"path\": \"src/components/component_0999.py\",\n      \"score\": \"<float>\",\n      \"snippet\": \"<str:41>\",\n      \"symbol\": \"render_component_0999\"\n    },\n    \"type\": \"array\"\n  }\n}",
-      "output_tokens": 771,
-      "savings_ratio": 0.977672,
+      "output_sha256": "b8622093b01e703f59842e9d428579b0b155e4b8b0d3299b36efb683fc23923e",
+      "output_text": "{\n  \"counts\": {\n    \"dict\": 1000,\n    \"float\": 1000,\n    \"int\": 1,\n    \"list\": 1,\n    \"str\": 3002\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [\n    {\n      \"path\": \"src/components/component_0007.py\",\n      \"score\": 0.9965,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0007\"\n    }\n  ],\n  \"query_matches\": [\n    {\n      \"commit\": \"9f4c2ab\",\n      \"incident\": \"AUTH-RACE-771\",\n      \"path\": \"src/oauth/refresh_state.py:219\",\n      \"retry_epoch\": 184467,\n      \"score\": 0.1337,\n      \"snippet\": \"compare_and_swap_refresh_token prevents the OAuth refresh race\",\n      \"symbol\": \"compare_and_swap_refresh_token\"\n    },\n    {\n      \"path\": \"src/components/component_0000.py\",\n      \"score\": 1.0,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0000\"\n    },\n    {\n      \"path\": \"src/components/component_0001.py\",\n      \"score\": 0.9995,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0001\"\n    },\n    {\n      \"path\": \"src/components/component_0002.py\",\n      \"score\": 0.999,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0002\"\n    },\n    {\n      \"path\": \"src/components/component_0003.py\",\n      \"score\": 0.9985,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0003\"\n    },\n    {\n      \"path\": \"src/components/component_0004.py\",\n      \"score\": 0.998,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0004\"\n    },\n    {\n      \"path\": \"src/components/component_0005.py\",\n      \"score\": 0.9975,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0005\"\n    },\n    {\n      \"path\": \"src/components/component_0006.py\",\n      \"score\": 0.997,\n      \"snippet\": \"def render_component(state): return state\",\n      \"symbol\": \"render_component_0006\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"path\": \"src/components/component_0000.py\",\n      \"score\": \"<float>\",\n      \"snippet\": \"<str:41>\",\n      \"symbol\": \"render_component_0000\"\n    },\n    \"items\": 1000,\n    \"last\": {\n      \"path\": \"src/components/component_0999.py\",\n      \"score\": \"<float>\",\n      \"snippet\": \"<str:41>\",\n      \"symbol\": \"render_component_0999\"\n    },\n    \"type\": \"array\"\n  }\n}",
+      "output_tokens": 682,
+      "savings_ratio": 0.980249,
       "scenario_id": "code-search-middle",
       "system": "entroly",
-      "tokens_saved": 33759,
+      "tokens_saved": 33848,
       "valid": true
     },
     {
@@ -315,14 +305,12 @@
       "input_sha256": "3412f621e8c8a3c2eab2632083d7b7477b106dc101efd6789e69d530056d542b",
       "input_tokens": 30850,
       "latency_ms": {
-        "p50": 52.351,
-        "p95": 53.814,
+        "p50": 64.644,
+        "p95": 64.758,
         "samples": [
-          52.351,
-          53.956,
-          44.553,
-          50.617,
-          53.247
+          64.771,
+          63.977,
+          64.644
         ]
       },
       "native_metrics": {
@@ -356,14 +344,12 @@
       "input_sha256": "2858d3a0fc86e93cc49bba6e7ac44a483ab73770d14729b3a59fb2fb6eb83f88",
       "input_tokens": 51809,
       "latency_ms": {
-        "p50": 132.317,
-        "p95": 136.552,
+        "p50": 147.303,
+        "p95": 157.847,
         "samples": [
-          124.487,
-          120.116,
-          133.826,
-          132.317,
-          137.233
+          147.303,
+          159.018,
+          126.951
         ]
       },
       "native_metrics": {
@@ -397,14 +383,12 @@
       "input_sha256": "8691deafbc7c82202e37f58c1d02ae98166db0e3fe8de8a46abebc66ea726e0c",
       "input_tokens": 36087,
       "latency_ms": {
-        "p50": 53.712,
-        "p95": 57.97,
+        "p50": 47.332,
+        "p95": 49.843,
         "samples": [
-          53.712,
-          55.246,
-          52.852,
-          58.651,
-          52.553
+          50.122,
+          47.332,
+          46.239
         ]
       },
       "native_metrics": {
@@ -438,14 +422,12 @@
       "input_sha256": "8e985dc329078bae17d63e9b3f49123f347836c111417913517fc00caaeea9de",
       "input_tokens": 34530,
       "latency_ms": {
-        "p50": 50.474,
-        "p95": 55.714,
+        "p50": 41.947,
+        "p95": 43.828,
         "samples": [
-          50.474,
-          53.423,
-          50.32,
-          56.286,
-          50.095
+          44.037,
+          40.184,
+          41.947
         ]
       },
       "native_metrics": {
@@ -468,5 +450,5 @@
   "runner_up": "headroom",
   "schema_version": "entroly.compression-gauntlet.v1",
   "suite_winner": "entroly",
-  "winner_margin": 0.637974
+  "winner_margin": 0.636264
 }

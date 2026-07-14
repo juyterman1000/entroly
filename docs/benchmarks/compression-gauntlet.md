@@ -26,7 +26,7 @@ change Entroly's runtime:
 
 ```bash
 python -m venv .venv-headroom
-.venv-headroom/bin/python -m pip install "headroom-ai[proxy]==0.31.0"
+.venv-headroom/bin/python -m pip install "headroom-ai==0.31.0"
 
 python -m benchmarks.compression_gauntlet run \
   --headroom-python .venv-headroom/bin/python \
