@@ -183,6 +183,11 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "probe-npm-openclaw:" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
     assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+    openclaw_publisher = text.split("  publish-npm-openclaw:", 1)[1].split(
+        "  probe-npm-openclaw:", 1
+    )[0]
+    assert "for attempt in $(seq 1 20)" in openclaw_publisher
+    assert "waiting for PyPI propagation" in openclaw_publisher
 
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
