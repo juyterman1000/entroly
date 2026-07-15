@@ -107,4 +107,3 @@ Maintainers score proposals on user impact, trust risk, reproducibility,
 maintenance cost, interoperability, and whether a simpler solution exists.
 Security, data-loss, install, and silent-failure regressions outrank roadmap
 features. Governance is described in [GOVERNANCE.md](GOVERNANCE.md).
-

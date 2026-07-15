@@ -76,4 +76,3 @@ Pin versions in production, read [CHANGELOG.md](CHANGELOG.md), test the upgrade
 against retained receipts, and keep a documented exact-passthrough path. Scoped
 attachment should be revocable; wrappers and base-URL changes should have a
 tested uninstall or reset procedure.
-

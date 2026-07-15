@@ -108,4 +108,3 @@ state safely. See [docs/limitations.md](docs/limitations.md).
 
 Use [SUPPORT.md](SUPPORT.md). Security vulnerabilities must be reported
 privately according to [SECURITY.md](SECURITY.md).
-

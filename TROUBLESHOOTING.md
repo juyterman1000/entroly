@@ -148,4 +148,3 @@ Minimal synthetic reproduction:
 
 Use the [Entroly bug form](https://github.com/juyterman1000/entroly/issues/new?template=bug_report.yml)
 or [SUPPORT.md](SUPPORT.md) for the appropriate channel.
-

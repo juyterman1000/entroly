@@ -118,4 +118,3 @@ Changes to receipt schemas, network boundaries, provider mutation, persistent
 state, public APIs, or trust invariants require a linked issue or RFC, migration
 and rollback plans, focused failure tests, and review from the corresponding
 code owner. Governance is described in [GOVERNANCE.md](GOVERNANCE.md).
-

@@ -33,4 +33,3 @@ command -> result
 ## Rollback
 
 <!-- How can maintainers disable or revert this safely? -->
-

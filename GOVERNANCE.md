@@ -60,4 +60,3 @@ coordinated fix is available.
 Governance changes require a pull request, a linked public Discussion, and
 approval from all active maintainers. The change must explain its effect on
 contributors and include a rollback or transition plan.
-

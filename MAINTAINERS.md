@@ -19,4 +19,3 @@ Review ownership for release-critical paths is enforced through
 Maintainer status and succession follow [GOVERNANCE.md](GOVERNANCE.md). This
 file should be updated in the same pull request that grants, changes, or removes
 repository authority.
-

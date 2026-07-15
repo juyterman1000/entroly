@@ -83,4 +83,3 @@ Use a concise imperative subject, optionally with a conventional scope, such as
 `fix(proxy): preserve upstream status on retry exhaustion`. Keep generated
 artifacts with the source change that produced them. Pull-request expectations
 are in [CONTRIBUTING.md](CONTRIBUTING.md).
-

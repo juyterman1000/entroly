@@ -29,4 +29,3 @@ Maintainers prioritize data loss, security, silent corruption, broken installs,
 and regressions in supported paths. Response times are goals, not paid support
 SLAs. Community members are encouraged to answer questions and confirm
 reproductions.
-

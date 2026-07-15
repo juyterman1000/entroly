@@ -109,4 +109,3 @@ if recovery is not straightforward.
 - [API reference](API_REFERENCE.md)
 - [Architecture](ARCHITECTURE.md)
 - [Limitations](docs/limitations.md)
-

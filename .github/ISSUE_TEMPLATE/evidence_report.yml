@@ -55,4 +55,3 @@ body:
           required: true
         - label: I did not include credentials or private data.
           required: true
-

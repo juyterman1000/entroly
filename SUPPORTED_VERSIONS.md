@@ -45,4 +45,3 @@ one minor release when practical and emit an actionable migration message.
 Security fixes may remove unsafe behavior without a full deprecation window.
 Breaking changes require a major release and an entry in
 [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md).
-

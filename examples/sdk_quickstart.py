@@ -42,4 +42,3 @@ INFO worker-5 waiting for retry
 
 if __name__ == "__main__":
     main()
-
