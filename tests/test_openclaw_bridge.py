@@ -87,7 +87,123 @@ def test_health_contract():
         "provider_mode": "openclaw_managed",
         "provider_independent": True,
         "requires_host_token_budget": True,
+        "supports_context_budget_discovery": True,
         "receipt_commit_protocol": "two_phase",
+    }
+
+
+def test_context_budget_discovery_uses_verified_metadata_and_reserves_output():
+    result = handle_request(
+        {
+            "operation": "resolve_context_budget",
+            "model": "openai/gpt-5.6-sol",
+        }
+    )
+
+    assert result["status"] == "resolved"
+    assert result["budget_source"] == "entroly_model_registry"
+    assert result["trust"] == "verified"
+    assert result["model_id"] == "openai/gpt-5.6-sol"
+    assert result["context_window"] == 1_050_000
+    assert result["output_reserve_tokens"] == 128_000
+    assert result["safety_tokens"] == 52_500
+    assert result["token_budget"] == 869_500
+    assert len(result["registry_digest"]) == 64
+    assert result["source"].startswith("https://")
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "openai/gpt-5.6-sol",
+        "anthropic/claude-opus-4-6",
+        "google/gemini-2.5-pro",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+    ],
+)
+def test_context_budget_discovery_resolves_verified_openclaw_routes(model):
+    result = handle_request(
+        {"operation": "resolve_context_budget", "model": model}
+    )
+
+    assert result["status"] == "resolved"
+    assert result["trust"] == "verified"
+    assert result["token_budget"] >= 1024
+    assert (
+        result["token_budget"]
+        + result["output_reserve_tokens"]
+        + result["safety_tokens"]
+        <= result["context_window"]
+    )
+
+
+def test_context_budget_discovery_refuses_unknown_and_announced_limits():
+    unknown = handle_request(
+        {"operation": "resolve_context_budget", "model": "private/model-x"}
+    )
+    announced = handle_request(
+        {"operation": "resolve_context_budget", "model": "gpt-4o-mini"}
+    )
+
+    assert unknown["status"] == "unavailable"
+    assert unknown["trust"] == "fallback"
+    assert "token_budget" not in unknown
+    assert announced["status"] == "unavailable"
+    assert announced["trust"] == "announced"
+    assert "token_budget" not in announced
+
+
+def test_discovered_context_budget_provenance_is_bound_into_receipt(tmp_path):
+    discovery = handle_request(
+        {
+            "operation": "resolve_context_budget",
+            "model": "openai/gpt-5.6-sol",
+            "requested_output_tokens": 32_000,
+        }
+    )
+    messages = [{"role": "user", "content": "Explain the current context."}]
+    result = assemble(
+        {
+            "operation": "assemble",
+            "session_id": "auto-discovery",
+            "messages": messages,
+            "token_budget": discovery["token_budget"],
+            "budget_source": discovery["budget_source"],
+            "receipt_dir": str(tmp_path),
+            "receipt_commit_challenge_sha256": _RECEIPT_COMMIT_CHALLENGE,
+            "openclaw_runtime": {
+                "model": {"resolved": "openai/gpt-5.6-sol", "provider": "openai"},
+                "limits": {"max_output_tokens": 32_000},
+                "context_discovery": {
+                    "status": discovery["status"],
+                    "trust": discovery["trust"],
+                    "model_id": discovery["model_id"],
+                    "exact": discovery["exact"],
+                    "context_window": discovery["context_window"],
+                    "output_reserve_tokens": discovery["output_reserve_tokens"],
+                    "safety_tokens": discovery["safety_tokens"],
+                    "registry_digest": discovery["registry_digest"],
+                    "source": discovery["source"],
+                },
+            },
+        }
+    )
+
+    assert result["context_discovery_status"] == "resolved"
+    assert result["context_discovery_trust"] == "verified"
+    assert result["context_window"] == 1_050_000
+    receipt = _commit_and_read_receipt(result, workspace_dir=Path.cwd())
+    assert receipt["budget_authority"] == "entroly_verified_registry"
+    assert receipt["openclaw_runtime"]["context_discovery"] == {
+        "status": "resolved",
+        "trust": "verified",
+        "model_id": "openai/gpt-5.6-sol",
+        "exact": True,
+        "context_window": 1_050_000,
+        "output_reserve_tokens": 32_000,
+        "safety_tokens": 52_500,
+        "registry_digest": discovery["registry_digest"],
+        "source": discovery["source"],
     }
 
 

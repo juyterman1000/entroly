@@ -269,6 +269,131 @@ test("explicit host budget wins and an operator fallback is opt-in", async () =>
   assert.equal(requests[1].budget_source, "operator_fallback");
 });
 
+test("missing host budget auto-discovers a trusted model ceiling", async () => {
+  const requests = [];
+  const messages = [{ role: "user", content: "use the active model safely" }];
+  const engine = createTestEngine({
+    bridge: {
+      request: async (request) => {
+        requests.push(request);
+        if (request.operation === "resolve_context_budget") {
+          return {
+            schema_version: ENTROLY_BRIDGE_SCHEMA,
+            ok: true,
+            status: "resolved",
+            token_budget: 170000,
+            budget_source: "entroly_model_registry",
+            model_id: "openai/o1",
+            trust: "verified",
+            exact: true,
+            context_window: 200000,
+            output_reserve_tokens: 20000,
+            safety_tokens: 10000,
+            registry_digest: "a".repeat(64),
+            source: "https://platform.openai.com/docs/models",
+          };
+        }
+        return {
+          schema_version: ENTROLY_BRIDGE_SCHEMA,
+          ok: true,
+          messages,
+          estimated_tokens: 8,
+          source_tokens: 8,
+          tokens_saved: 0,
+          changed: false,
+          budget_source: request.budget_source,
+          context_discovery_status: "resolved",
+          context_discovery_trust: "verified",
+          context_discovery_model: "openai/o1",
+          context_window: 200000,
+          context_output_reserve: 20000,
+          context_safety_tokens: 10000,
+        };
+      },
+      dispose: async () => {},
+    },
+  });
+
+  const result = await engine.assemble({
+    sessionId: "auto-budget",
+    messages,
+    model: "openai/o1",
+  });
+
+  assert.equal(result.promptAuthority, "assembled");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].operation, "resolve_context_budget");
+  assert.equal(requests[0].model, "openai/o1");
+  assert.equal(requests[1].operation, "assemble");
+  assert.equal(requests[1].token_budget, 170000);
+  assert.equal(requests[1].budget_source, "entroly_model_registry");
+  assert.equal(requests[1].openclaw_runtime.context_discovery.trust, "verified");
+  assert.equal(engine.getStatus("auto-budget").context_window, 200000);
+});
+
+test("an explicit operator fallback outranks automatic model discovery", async () => {
+  const requests = [];
+  const messages = [{ role: "user", content: "keep this exact" }];
+  const engine = createTestEngine({
+    bridge: {
+      request: async (request) => {
+        requests.push(request);
+        return {
+          schema_version: ENTROLY_BRIDGE_SCHEMA,
+          ok: true,
+          messages,
+          estimated_tokens: 4,
+          budget_source: request.budget_source,
+        };
+      },
+      dispose: async () => {},
+    },
+    config: { fallbackTokenBudget: 4096 },
+    logger: { warn: () => {} },
+  });
+
+  await engine.assemble({ sessionId: "fallback-after-discovery", messages, model: "future/model" });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].operation, "assemble");
+  assert.equal(requests[0].token_budget, 4096);
+  assert.equal(requests[0].budget_source, "operator_fallback");
+  assert.equal(requests[0].openclaw_runtime.context_discovery, null);
+});
+
+test("malformed discovery fails open without forwarding context to the bridge", async () => {
+  const messages = [{ role: "user", content: "do not guess" }];
+  let calls = 0;
+  const engine = createTestEngine({
+    bridge: {
+      request: async () => {
+        calls += 1;
+        return {
+          schema_version: ENTROLY_BRIDGE_SCHEMA,
+          ok: true,
+          status: "resolved",
+          token_budget: 999999,
+          budget_source: "entroly_model_registry",
+          model_id: "bad/model",
+          trust: "verified",
+          context_window: 1000,
+          output_reserve_tokens: 100,
+          safety_tokens: 100,
+          registry_digest: "c".repeat(64),
+        };
+      },
+      dispose: async () => {},
+    },
+    logger: { warn: () => {} },
+  });
+
+  const result = await engine.assemble({ sessionId: "bad-discovery", messages, model: "bad/model" });
+
+  assert.strictEqual(result.messages, messages);
+  assert.equal(result.promptAuthority, "preassembly_may_overflow");
+  assert.equal(calls, 1);
+});
+
 test("missing host budget fails open without calling the bridge", async () => {
   const messages = [{ role: "user", content: "never guess my model window" }];
   const warnings = [];

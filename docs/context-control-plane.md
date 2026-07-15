@@ -7,9 +7,12 @@ provider, model, authentication, failover, normalized messages, and prompt
 budget. Entroly transforms only eligible unsigned text before each model call.
 Signed text, thinking blocks, images, tool calls, tool-result identifiers and
 metadata, provider signatures, message metadata, and recent turns remain
-exact. Eligible unsigned text inside an older tool result may be compressed. If
-OpenClaw cannot provide a finite budget and the operator has not configured a
-fallback, Entroly returns the original context with an actionable diagnostic.
+exact. Eligible unsigned text inside an older tool result may be compressed.
+If OpenClaw cannot provide a finite budget, Entroly may derive a conservative
+input ceiling from verified, operator-supplied, or explicitly discovered model
+metadata. Announced and unknown limits are refused. If neither trusted discovery
+nor an operator fallback is available, Entroly returns the original context with
+an actionable diagnostic.
 
 OpenClaw receipts do not persist the plaintext request, matched query terms, or
 reversible per-term digests; they retain only lengths and counts. Append-only

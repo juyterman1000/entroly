@@ -208,7 +208,11 @@
     {
       "id": "anthropic/claude-opus-4.6",
       "provider": "anthropic",
-      "aliases": ["claude-opus-4-6", "claude-opus-4.6"],
+      "aliases": [
+        "anthropic/claude-opus-4-6",
+        "claude-opus-4-6",
+        "claude-opus-4.6"
+      ],
       "context_window": 200000,
       "supports_tools": true,
       "supports_vision": true,

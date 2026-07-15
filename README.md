@@ -576,9 +576,13 @@ OpenClaw remains the conversation and agent runtime. Attach Entroly as its conte
 The OpenClaw context-engine plugin keeps context assembly separate from provider
 routing. The same assembly path can be used with OpenAI, Anthropic, Gemini,
 Nemotron, OpenRouter, Ollama, and custom routes because OpenClaw owns routing
-and authentication and supplies the resolved prompt budget. Entroly preserves
-opaque provider blocks and delegates `/compact` and overflow recovery back to
-OpenClaw.
+and authentication. Its resolved prompt budget is authoritative; when an older
+or degraded host omits that value, Entroly can derive a conservative input
+ceiling from verified, operator-supplied, or explicitly discovered model
+metadata. Unknown and announced limits fail safely instead of being guessed.
+The receipt binds the discovery trust, registry digest, source, output reserve,
+and safety margin to the assembly decision. Entroly preserves opaque provider
+blocks and delegates `/compact` and overflow recovery back to OpenClaw.
 
 The beta OpenClaw context engine scores older messages against the current
 request. Matching evidence is pinned verbatim when it fits a bounded reserve;

@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.60"
+RELEASE_VERSION = "1.0.61"
 HOMEBREW_FORMULA_VERSION = "1.0.60"
 HOMEBREW_FORMULA_SHA256 = "8ba88b9be492e5af54ef98fc0ce0aeb34282213c37f8f1b3f7425487a70a2868"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
@@ -66,7 +66,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_60() -> None:
+def test_public_package_versions_are_1_0_61() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -79,6 +79,7 @@ def test_public_package_versions_are_1_0_60() -> None:
 
 def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
     package = _read_json("integrations/openclaw/package.json")
+    manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
     openclaw = package["openclaw"]
     install = openclaw["install"]
 
@@ -87,6 +88,11 @@ def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
     assert install["npmSpec"] == package["name"]
     assert install["defaultChoice"] == "npm"
     assert install["minHostVersion"] == openclaw["compat"]["pluginApi"]
+    discovery = manifest["configSchema"]["properties"]["autoDiscoverContextBudget"]
+    assert discovery == {"type": "boolean", "default": True}
+    assert "No remote discovery is enabled automatically" in manifest["uiHints"][
+        "autoDiscoverContextBudget"
+    ]["help"]
 
 
 def test_mcp_registry_manifest_points_at_release_package() -> None:

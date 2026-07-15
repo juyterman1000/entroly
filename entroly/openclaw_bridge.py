@@ -29,6 +29,7 @@ PROVIDER_MODE = "openclaw_managed"
 _BUDGET_SOURCES = {
     "openclaw_token_budget",
     "openclaw_runtime_settings",
+    "entroly_model_registry",
     "operator_fallback",
 }
 DEFAULT_RECEIPT_MAX_FILES = 512
@@ -353,6 +354,11 @@ def _runtime_audit_metadata(request: dict[str, Any]) -> dict[str, Any]:
     runtime = raw.get("runtime") if isinstance(raw.get("runtime"), dict) else {}
     model = raw.get("model") if isinstance(raw.get("model"), dict) else {}
     limits = raw.get("limits") if isinstance(raw.get("limits"), dict) else {}
+    discovery = (
+        raw.get("context_discovery")
+        if isinstance(raw.get("context_discovery"), dict)
+        else {}
+    )
     resolved = _bounded_text(model.get("resolved"), 256)
     if resolved is None:
         resolved = _bounded_text(request.get("model"), 256)
@@ -378,6 +384,114 @@ def _runtime_audit_metadata(request: dict[str, Any]) -> dict[str, Any]:
                 limits.get("max_output_tokens")
             ),
         },
+        "context_discovery": {
+            "status": _bounded_text(discovery.get("status"), 32),
+            "trust": _bounded_text(discovery.get("trust"), 32),
+            "model_id": _bounded_text(discovery.get("model_id"), 256),
+            "exact": discovery.get("exact") if isinstance(discovery.get("exact"), bool) else None,
+            "context_window": _positive_int_or_none(discovery.get("context_window")),
+            "output_reserve_tokens": _positive_int_or_none(
+                discovery.get("output_reserve_tokens")
+            ),
+            "safety_tokens": _positive_int_or_none(discovery.get("safety_tokens")),
+            "registry_digest": _bounded_text(discovery.get("registry_digest"), 64),
+            "source": _bounded_text(discovery.get("source"), 512),
+        },
+    }
+
+
+def _resolve_context_budget(request: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a safe prompt budget from trusted, local model metadata.
+
+    This is a fallback for OpenClaw hosts that cannot provide a finite prompt
+    budget. It never accepts announced or generic fallback metadata and never
+    enables remote discovery by itself. Remote discovery remains an explicit
+    Entroly operator opt-in through the model-registry environment controls.
+    """
+    model = _bounded_text(request.get("model"), 256)
+    if model is None:
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "status": "unavailable",
+            "warning": "OpenClaw did not identify the active model route.",
+        }
+
+    from .models.registry import RegistryTrust, resolve_model
+
+    resolution = resolve_model(model)
+    capability = resolution.capability
+    accepted_trust = {
+        RegistryTrust.VERIFIED,
+        RegistryTrust.USER,
+        RegistryTrust.DISCOVERED,
+    }
+    if (
+        capability is None
+        or capability.context_window is None
+        or resolution.trust not in accepted_trust
+    ):
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "status": "unavailable",
+            "model": model,
+            "trust": resolution.trust.value,
+            "warning": resolution.warning
+            or (
+                f"Model metadata for {model!r} is {resolution.trust.value}; "
+                "Entroly requires verified, user-supplied, or directly discovered limits."
+            ),
+            "registry_digest": resolution.registry_digest,
+        }
+
+    context_window = capability.context_window
+    requested_output = _positive_int_or_none(request.get("requested_output_tokens"))
+    if requested_output is not None:
+        output_reserve = requested_output
+        if capability.max_output_tokens is not None:
+            output_reserve = min(output_reserve, capability.max_output_tokens)
+    elif capability.max_output_tokens is not None:
+        output_reserve = capability.max_output_tokens
+    else:
+        # Unknown output limits must not turn the native context window into an
+        # input budget. Reserve 10% (at least 4K) in addition to the 5% safety
+        # margin used below.
+        output_reserve = max(4096, math.ceil(context_window * 0.10))
+
+    safety_tokens = max(512, math.ceil(context_window * 0.05))
+    token_budget = context_window - output_reserve - safety_tokens
+    if token_budget < 1024:
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "status": "unavailable",
+            "model": model,
+            "trust": resolution.trust.value,
+            "warning": "Trusted model limits leave less than 1,024 prompt tokens after reserves.",
+            "registry_digest": resolution.registry_digest,
+        }
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "status": "resolved",
+        "token_budget": token_budget,
+        "budget_source": "entroly_model_registry",
+        "requested_model": model,
+        "model_id": capability.id,
+        "provider": capability.provider,
+        "trust": resolution.trust.value,
+        "exact": resolution.exact,
+        "context_window": context_window,
+        "max_output_tokens": capability.max_output_tokens,
+        "output_reserve_tokens": output_reserve,
+        "safety_tokens": safety_tokens,
+        "registry_digest": resolution.registry_digest,
+        "base_registry_digest": resolution.base_registry_digest,
+        "source": capability.source,
+        "verified_at": capability.verified_at,
+        "observed_at": capability.observed_at,
     }
 
 
@@ -932,8 +1046,15 @@ def _write_receipt(
         "budget_source": budget_source,
         "budget_authority": (
             "openclaw"
-            if budget_source
-            in {"openclaw_token_budget", "openclaw_runtime_settings"}
+            if budget_source in {"openclaw_token_budget", "openclaw_runtime_settings"}
+            else (
+                "entroly_verified_registry"
+                if runtime_metadata["context_discovery"]["trust"] == "verified"
+                else "operator_registry"
+                if runtime_metadata["context_discovery"]["trust"] == "user"
+                else "local_discovery"
+            )
+            if budget_source == "entroly_model_registry"
             else "operator"
         ),
         "token_budget": request.get("token_budget"),
@@ -1163,6 +1284,12 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
             "OpenClaw did not provide a finite prompt budget; Entroly used the "
             "operator-configured fallbackTokenBudget."
         )
+    elif budget_source == "entroly_model_registry":
+        warnings.append(
+            "OpenClaw did not provide a finite prompt budget; Entroly derived a "
+            "conservative input ceiling from trusted model metadata and recorded "
+            "its provenance."
+        )
     evidence: dict[int, dict[str, Any]] = {}
     protected_indexes = {
         index for index, message in enumerate(messages) if _protected_message(message)
@@ -1266,6 +1393,7 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
     pinned_indexes = sorted(
         index for index, item in evidence.items() if item.get("evidence_pinned")
     )
+    discovery_metadata = runtime_metadata["context_discovery"]
     return {
         "schema_version": BRIDGE_SCHEMA,
         "ok": True,
@@ -1282,6 +1410,12 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         "provider_mode": PROVIDER_MODE,
         "provider_independent": True,
         "budget_source": budget_source,
+        "context_discovery_status": discovery_metadata["status"],
+        "context_discovery_trust": discovery_metadata["trust"],
+        "context_discovery_model": discovery_metadata["model_id"],
+        "context_window": discovery_metadata["context_window"],
+        "context_output_reserve": discovery_metadata["output_reserve_tokens"],
+        "context_safety_tokens": discovery_metadata["safety_tokens"],
         "model": runtime_metadata["model"]["resolved"],
         "provider_hint": runtime_metadata["model"]["provider"],
         "assembly_strategy": strategy,
@@ -1325,8 +1459,11 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
             "provider_mode": PROVIDER_MODE,
             "provider_independent": True,
             "requires_host_token_budget": True,
+            "supports_context_budget_discovery": True,
             "receipt_commit_protocol": "two_phase",
         }
+    if operation == "resolve_context_budget":
+        return _resolve_context_budget(request)
     if operation == "assemble":
         return assemble(request)
     if operation == "commit_receipt":
