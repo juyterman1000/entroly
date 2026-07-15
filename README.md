@@ -452,7 +452,7 @@ current complete-line recovery implementation, Entroly again recovered
 **66/66** byte-exactly; the published baseline recovered **55/66**. The raw
 artifact preserves the incomplete writer and exact failure evidence. Entroly
 was the participant that satisfied the frozen integrity gate on this run. That
-is a scoped concurrent-writer result, not universal recovery superiority.
+is a scoped concurrent-writer result; it does not establish universal recovery superiority.
 
 On the current-implementation Windows/Python 3.10 revalidation, the published
 Headroom 0.31.0 baseline had lower successful store-call latency (1.786 ms
