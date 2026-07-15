@@ -28,7 +28,18 @@ def test_artifact_proof_commands_verify_before_display(
     output = capsys.readouterr().out
     assert "[PASS]" in output
     assert expected in output
+    assert "HEADROOM BASELINE" in output
     assert "not a universal" in output.lower()
+
+
+def test_restart_proof_keeps_failure_mechanics_in_raw_artifact(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert readme_proof.main(["restart-recovery"]) == 0
+    output = capsys.readouterr().out
+    assert "incomplete worker evidence" in output
+    assert "database is locked" not in output
+    assert "Worker errors" not in output
 
 
 def test_model_recovery_proof_explains_missing_optional_tokenizer(

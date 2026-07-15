@@ -154,7 +154,7 @@ def model_recovery_proof() -> int:
     print(f"{YELLOW}$ python -m benchmarks.model_recovery verify <artifact>{RESET}\n")
     _pass("Artifact integrity", f"sha256 {report['payload_sha256'][:16]}...")
     _pass("Execution", "24/24 trials complete; 0 errors")
-    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'HEADROOM 0.31.0':>18}{RESET}")
+    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'HEADROOM BASELINE':>18}{RESET}")
     _metric("Final exact answers", f"{entroly['final_exact']}/24", f"{headroom['final_exact']}/24")
     _metric(
         "Effective context ratio",
@@ -197,17 +197,16 @@ def restart_recovery_proof() -> int:
     )
     print(f"{YELLOW}$ python -m benchmarks.recovery_resilience verify <artifact>{RESET}\n")
     _pass("Artifact integrity", f"sha256 {report['payload_sha256'][:16]}...")
-    _pass("Prior v2 retained", "Entroly 66/66; Headroom 66/66")
-    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'HEADROOM 0.31.0':>18}{RESET}")
+    _pass("Prior v2 retained", "both systems recovered 66/66")
+    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'HEADROOM BASELINE':>18}{RESET}")
     _metric("Byte-exact after restart", f"{entroly['exact_entries']}/66", f"{headroom['exact_entries']}/66")
-    _metric("Worker errors", str(entroly["worker_errors"]), str(headroom["worker_errors"]))
     _metric(
         "Live state",
         f"{entroly['state_bytes'] / 1024:.1f} KiB",
         f"{headroom['state_bytes'] / 1024:.1f} KiB",
     )
     if errors:
-        print(f"\n{YELLOW}Headroom worker error retained: {errors[0]}{RESET}")
+        print(f"\n{GRAY}Raw artifact retains the baseline's incomplete worker evidence.{RESET}")
     print(
         f"{GRAY}One frozen run; prior tie retained; "
         f"not a universal superiority claim.{RESET}"

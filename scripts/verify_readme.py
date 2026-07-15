@@ -158,6 +158,16 @@ check(
 )
 check("README proof media bindings", verify_readme_proof_media)
 check(
+    "README competitor comparison tone",
+    lambda: (
+        "Using Headroom today?" in README_TEXT
+        and "published Headroom 0.31.0 baseline" in README_TEXT
+        and "database is locked" not in README_TEXT
+        and "not a verdict on every Headroom or Entroly workload" in README_TEXT
+        and "OK"
+    ) or (_ for _ in ()).throw(Exception("Keep competitor claims user-led, versioned, and evidence-linked")),
+)
+check(
     "community links avoid expired Discord invites",
     lambda: (
         "discord.gg/Xp7VwWnJNY" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
