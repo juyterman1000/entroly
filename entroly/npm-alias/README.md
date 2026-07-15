@@ -1,6 +1,7 @@
 # entroly
 
-Node/WASM package for Entroly, the local context OS for AI coding agents.
+Node/WASM package for Entroly, an auditable context engineering control plane
+for AI agents with local compression, recovery, receipts, and verification.
 
 This package installs the current Node/WebAssembly Entroly runtime by depending
 on [`entroly-wasm`](https://www.npmjs.com/package/entroly-wasm), then exposes a

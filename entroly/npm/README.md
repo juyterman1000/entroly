@@ -1,8 +1,9 @@
 # entroly-mcp
 
-An NPX MCP bridge for Entroly, the local context OS for AI coding agents.
-Entroly gives AI workflows selected context, exact recovery handles, Context
-Receipts, local verification, and token optimization.
+An NPX MCP bridge for Entroly, an auditable context engineering control plane
+for AI agents. Entroly gives Claude Code, Codex, OpenClaw, GitHub Copilot,
+Cursor, and other MCP clients selected context, recoverable compression,
+Context Receipts, and local verification.
 
 ## Which package should I use?
 

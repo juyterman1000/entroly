@@ -1,7 +1,7 @@
 {
   "name": "entroly-wasm",
-  "version": "1.0.61",
-  "description": "Pure WebAssembly local context OS for AI agents: context receipts, local optimization, MCP, app SDK helpers, and no Python dependency.",
+  "version": "1.0.62",
+  "description": "WebAssembly context engineering for AI agents: local compression, MCP tools, recovery, receipts, and verification without Python.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -51,10 +51,12 @@
     "test": "node test_wasm_e2e.js"
   },
   "keywords": [
-    "entroly", "context-receipts", "context-control-plane", "local-context-os", "context-optimization", "mcp", "mcp-server", "ai", "agents",
+    "entroly", "ai-agents", "ai-coding-agents", "context-engineering", "context-compression", "context-management", "context-receipts", "context-control-plane", "context-optimization", "mcp", "mcp-server", "model-context-protocol", "claude-code", "codex", "openclaw",
     "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
   ],
   "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },
+  "homepage": "https://juyterman1000.github.io/entroly/",
+  "bugs": { "url": "https://github.com/juyterman1000/entroly/issues" },
   "author": "entroly",
   "license": "Apache-2.0",
   "engines": { "node": ">=16.0.0" }

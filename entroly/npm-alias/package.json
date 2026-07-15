@@ -1,7 +1,7 @@
 {
   "name": "entroly",
-  "version": "1.0.61",
-  "description": "Node/WASM Entroly runtime: local context optimization, MCP server tools, receipts, recovery, and verification without Python.",
+  "version": "1.0.62",
+  "description": "Node/WASM context engineering for AI agents: local compression, MCP tools, recovery, receipts, and verification without Python.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -16,22 +16,34 @@
     "README.md"
   ],
   "dependencies": {
-    "entroly-wasm": "1.0.61"
+    "entroly-wasm": "1.0.62"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/juyterman1000/entroly"
   },
+  "homepage": "https://juyterman1000.github.io/entroly/",
+  "bugs": {
+    "url": "https://github.com/juyterman1000/entroly/issues"
+  },
   "keywords": [
     "entroly",
     "entroly-wasm",
+    "context-engineering",
+    "context-compression",
+    "context-management",
     "context-optimization",
     "context-receipts",
-    "local-context-os",
     "mcp",
     "mcp-server",
+    "model-context-protocol",
     "ai",
     "agents",
+    "ai-agents",
+    "ai-coding-agents",
+    "claude-code",
+    "codex",
+    "openclaw",
     "webassembly"
   ],
   "author": "entroly",

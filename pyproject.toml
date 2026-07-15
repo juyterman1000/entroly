@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.61"
-description = "Local context OS for AI coding agents: token optimization, MCP tools, receipts, exact recovery, verification, and SDK helpers."
+version = "1.0.62"
+description = "Auditable context engineering for AI agents: select evidence, compress context, recover omissions, emit receipts, and verify answers."
 readme = "PYPI_README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -15,9 +15,10 @@ authors = [
     { name = "entroly", email = "fastrunner10090@gmail.com" },
 ]
 keywords = [
-    "context-receipts", "context-control-plane", "local-context-os", "token-saving", "context-compression", "reduce-llm-costs", "llm-proxy",
-    "mcp", "mcp-server", "github-copilot", "agentic-ai", "cursor", "claude-code", "copilot", "llm",
-    "knapsack", "entropy", "context-optimization", "token-reduction", "hallucination-detection"
+    "ai-agents", "ai-coding-agents", "context-engineering", "context-management", "context-optimization", "context-compression",
+    "prompt-compression", "token-optimization", "context-window", "context-receipts", "context-control-plane", "llm-proxy",
+    "mcp", "mcp-server", "model-context-protocol", "github-copilot", "cursor", "claude-code", "codex", "openclaw",
+    "hallucination-detection", "agent-memory", "llm"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -35,6 +36,13 @@ dependencies = [
     "mcp>=1.6.0,<2",
 ]
 
+[project.urls]
+Homepage = "https://juyterman1000.github.io/entroly/"
+Documentation = "https://juyterman1000.github.io/entroly/"
+Source = "https://github.com/juyterman1000/entroly"
+Issues = "https://github.com/juyterman1000/entroly/issues"
+"Release Notes" = "https://github.com/juyterman1000/entroly/releases"
+
 [project.optional-dependencies]
 proxy = [
     "httpx>=0.27",
@@ -42,14 +50,14 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=1.0.61,<2",
+    "entroly-core>=1.0.62,<2",
 ]
 receipt-proof = [
     "cryptography>=42",
 ]
 full = [
     "cryptography>=42",
-    "entroly-core>=1.0.61,<2",
+    "entroly-core>=1.0.62,<2",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",

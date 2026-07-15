@@ -2,19 +2,19 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.juyterman1000/entroly",
   "title": "Entroly",
-  "description": "Local context OS for AI agents with token optimization, receipts, memory, and verification.",
+  "description": "Auditable context engineering for AI agents with compression, recovery, receipts, and verification.",
   "websiteUrl": "https://github.com/juyterman1000/entroly",
   "repository": {
     "url": "https://github.com/juyterman1000/entroly",
     "source": "github"
   },
-  "version": "1.0.61",
+  "version": "1.0.62",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "entroly",
-      "version": "1.0.61",
+      "version": "1.0.62",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -24,7 +24,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "entroly-mcp",
-      "version": "1.0.61",
+      "version": "1.0.62",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
