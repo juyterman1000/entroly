@@ -26,7 +26,7 @@ jobs:
           EXPECTED_ACCOUNT_EMAIL: fastrunner10090@gmail.com
         run: |
           python - <<'PY'
-          import json, os, subprocess, sys
+          import json, os, re, subprocess, sys
           from pathlib import Path
 
           expected_login = os.environ["EXPECTED_LOGIN"]
@@ -67,12 +67,101 @@ jobs:
                   or email.endswith("+web-flow@users.noreply.github.com")
               )
 
+          def git_output(*args: str) -> str:
+              return subprocess.check_output(["git", *args], text=True)
+
+          def trusted_homebrew_automation_author(
+              commit: str,
+              author_name: str,
+              author_email: str,
+              committer_name: str,
+              committer_email: str,
+          ) -> bool:
+              # A release workflow opens the Homebrew PR with GITHUB_TOKEN.
+              # GitHub attributes the resulting squash commit to its Actions
+              # bot even though the owner reviewed and merged it. Keep this
+              # exception narrow enough that it cannot authorize general bot
+              # commits or hide unrelated release changes.
+              if event_name != "push" or event.get("ref") != "refs/heads/main":
+                  return False
+              if event.get("sender", {}).get("login") != expected_login:
+                  return False
+              if (
+                  author_name != "github-actions[bot]"
+                  or author_email
+                  != "41898282+github-actions[bot]@users.noreply.github.com"
+                  or not github_service_committer(committer_name, committer_email)
+              ):
+                  return False
+
+              parents = git_output("rev-list", "--parents", "-n", "1", commit).split()
+              if len(parents) != 2:
+                  return False
+
+              message = git_output("show", "-s", "--format=%B", commit)
+              lines = message.splitlines()
+              if not lines:
+                  return False
+              subject_match = re.fullmatch(
+                  r"Update Homebrew formula for (\d+\.\d+\.\d+) \(#\d+\)",
+                  lines[0],
+              )
+              if not subject_match:
+                  return False
+              coauthor_emails = {
+                  match.group(1)
+                  for line in lines[1:]
+                  if (
+                      match := re.fullmatch(
+                          r"Co-authored-by: .+ <([^<>]+)>", line, re.IGNORECASE
+                      )
+                  )
+              }
+              if owner_emails.isdisjoint(coauthor_emails):
+                  return False
+
+              changed_paths = set(
+                  git_output(
+                      "diff-tree", "--no-commit-id", "--name-only", "-r", commit
+                  ).splitlines()
+              )
+              if changed_paths != {
+                  "packaging/homebrew/entroly.rb",
+                  "tests/test_release_surface.py",
+              }:
+                  return False
+
+              version = subject_match.group(1)
+              formula = git_output(
+                  "show", f"{commit}:packaging/homebrew/entroly.rb"
+              )
+              release_test = git_output(
+                  "show", f"{commit}:tests/test_release_surface.py"
+              )
+              formula_sha = re.search(
+                  r'^\s*sha256 "([0-9a-f]{64})"$', formula, re.MULTILINE
+              )
+              test_sha = re.search(
+                  r'^HOMEBREW_FORMULA_SHA256 = "([0-9a-f]{64})"$',
+                  release_test,
+                  re.MULTILINE,
+              )
+              return bool(
+                  f"entroly-{version}.tar.gz" in formula
+                  and f'HOMEBREW_FORMULA_VERSION = "{version}"' in release_test
+                  and formula_sha
+                  and test_sha
+                  and formula_sha.group(1) == test_sha.group(1)
+              )
+
           failures = []
           for row in rows.strip("\x1e\n").split("\x1e"):
               if not row:
                   continue
               commit, an, ae, cn, ce = row.split("\x1f")
-              if not owner_identity(an, ae):
+              if not owner_identity(an, ae) and not trusted_homebrew_automation_author(
+                  commit, an, ae, cn, ce
+              ):
                   failures.append(f"{commit[:12]} author is {an} <{ae}>")
               if not owner_identity(cn, ce) and not github_service_committer(cn, ce):
                   failures.append(f"{commit[:12]} committer is {cn} <{ce}>")
