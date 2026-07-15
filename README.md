@@ -368,23 +368,27 @@ Context Efficiency Frontier above is the required gate for a real-model claim.</
 
 **Cross-process recovery holdout:** the preregistered six-writer test first
 exposed a serious Entroly failure (only 8/32 development payloads survived),
-which is preserved in the evidence. The original Entroly 1.0.59 holdout and a
-fresh 1.0.60 current-implementation revalidation both recorded Entroly and
-published Headroom 0.31.0 writing and recovering **66/66** payloads byte-exactly
-after restart with zero wrong payloads. This closes the integrity gap;
-it does not establish recovery superiority.
+which is preserved in the evidence. The original Entroly 1.0.59 holdout and
+the immutable v2 revalidation both recorded Entroly and published Headroom
+0.31.0 recovering **66/66** payloads. On the fresh-seed v3 revalidation of the
+current complete-line recovery implementation, Entroly again recovered
+**66/66** byte-exactly; Headroom recovered **55/66** after one of six writers
+exited with SQLite `database is locked`. Entroly alone satisfied the frozen
+integrity gate on this run. That is a scoped concurrent-writer reliability
+result; it does not establish universal recovery superiority.
 
 On the current-implementation Windows/Python 3.10 revalidation, Headroom had
-lower store-call latency (1.945 ms versus 36.571 ms p50). Entroly had lower
-retrieval latency (0.077 ms versus 0.851 ms p50) and a smaller live state
-footprint (95,438 versus 1,536,096 bytes). Headroom used SQLite WAL with
+lower successful store-call latency (1.786 ms versus 36.972 ms p50). Entroly
+had lower retrieval latency (0.165 ms versus 0.876 ms p50) and a smaller live
+state footprint (95,438 versus 1,354,888 bytes). Headroom used SQLite WAL with
 `synchronous=NORMAL`; Entroly
 fsynced its state file on each commit, so this is not a matched power-loss
 durability comparison. These are scoped workload measurements, not universal
 claims.
 
 [Frozen protocol and full result table](docs/benchmarks/competitive-evidence-matrix.md)
-| [current implementation revalidation](benchmarks/results/recovery_resilience_holdout_revalidation.json) |
+| [current v3 revalidation](benchmarks/results/recovery_resilience_holdout_revalidation_v3.json) |
+[prior v2 tie](benchmarks/results/recovery_resilience_holdout_revalidation.json) |
 [original post-repair holdout](benchmarks/results/recovery_resilience_holdout.json) |
 [original failing artifact](benchmarks/results/recovery_resilience_development_before.json).
 

@@ -14,8 +14,10 @@ remains immutable because recovery artifacts embed it. Later dimensions use
 their own immutable protocol files rather than rewriting prior evidence.
 Thresholds and holdout parameters are frozen before results are inspected.
 The current 1.0.60 durability revalidation is frozen separately in
-[`recovery_resilience_protocol_v2.json`](../../benchmarks/recovery_resilience_protocol_v2.json);
-it does not rewrite the original 1.0.59 protocol or artifact.
+[`recovery_resilience_protocol_v3.json`](../../benchmarks/recovery_resilience_protocol_v3.json).
+It preserves the immutable
+[`v2 protocol`](../../benchmarks/recovery_resilience_protocol_v2.json), its
+tie result, and the original 1.0.59 protocol and artifact.
 
 ## Claim rules
 
@@ -92,30 +94,39 @@ Entroly then added cross-process read/merge/write serialization, unique durable
 temporary files, file and directory synchronization, stale-reader refresh, and
 process-level regression tests. The frozen holdout was not changed.
 
-On the fresh-seed six-writer, 66-entry Windows/Python 3.10 revalidation, Entroly 1.0.60 source
-and the published Headroom 0.31.0 wheel both wrote and recovered 66 of 66
-payloads byte-exactly after restart, with zero incorrect payloads and no worker
-or retrieval errors. Therefore the verifier explicitly disallows a
-recovery-integrity leadership claim.
+The v2 fresh-seed Windows/Python 3.10 revalidation tied at 66/66 byte-exact
+recoveries. After complete-line preservation and relevance-before-fit changed
+the Entroly implementation hash, v3 froze a new seed before execution. Entroly
+1.0.60 source wrote and recovered 66/66 payloads byte-exactly after restart.
+Published Headroom 0.31.0 wrote and recovered 55/66: one of six independent
+writers exited with SQLite `OperationalError: database is locked`. There were
+no incorrect returned payloads. Entroly alone satisfied the frozen integrity
+gate on this run; the earlier tie remains evidence against generalizing this
+to universal recovery superiority.
 
 | Holdout metric | Entroly 1.0.60 source | Headroom 0.31.0 |
 |---|---:|---:|
-| Successful writes | 66 / 66 | 66 / 66 |
-| Byte-exact restart recovery | 66 / 66 | 66 / 66 |
+| Successful writes | **66 / 66** | 55 / 66 |
+| Byte-exact restart recovery | **66 / 66** | 55 / 66 |
+| Worker errors | **0** | 1 (`database is locked`) |
 | Incorrect payloads | 0 | 0 |
-| Store-call p50 / p95 | 36.571 / 639.941 ms | **1.945 / 40.486 ms** |
-| Retrieval p50 / p95 | **0.077 / 0.099 ms** | 0.851 / 1.837 ms |
-| Live state files | **95,438 bytes** | 1,536,096 bytes |
+| Successful store-call p50 / p95 | 36.972 / 681.477 ms | **1.786 / 35.554 ms** |
+| Retrieval p50 / p95 | **0.165 / 0.341 ms** | 0.876 / 1.534 ms |
+| Live state files | **95,438 bytes** | 1,354,888 bytes |
 
 These latency and size observations describe this workload and platform; they
-are not standalone product-superiority claims. Headroom was substantially
-faster for writes. Entroly was faster for retrieval and used less live state.
+are not standalone product-superiority claims. Headroom's successful calls were
+substantially faster for writes. Entroly was faster for retrieval and used less
+live state.
 Headroom used SQLite WAL with `synchronous=NORMAL`; Entroly fsynced its state
 file on every commit and its parent directory where supported. The suite did
 not simulate machine power loss, so the store-call latency is not a matched
 power-loss-durability comparison.
 The complete samples, environment identities, hashes, and errors are in the
-[`current-implementation revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation.json).
+[`current v3 revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v3.json).
+The immutable
+[`prior v2 tie`](../../benchmarks/results/recovery_resilience_holdout_revalidation.json)
+remains available.
 The original post-repair
 [`holdout artifact`](../../benchmarks/results/recovery_resilience_holdout.json)
 remains unchanged.
