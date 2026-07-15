@@ -42,6 +42,9 @@ function statusSnapshot(status) {
     "tokens_saved",
     "evidence_pinned",
     "evidence_pin_blocked",
+    "context_window",
+    "context_output_reserve",
+    "context_safety_tokens",
   ];
   const booleanFields = ["changed", "provider_independent"];
   const stringFields = [
@@ -49,6 +52,9 @@ function statusSnapshot(status) {
     "receipt_id",
     "provider_mode",
     "budget_source",
+    "context_discovery_status",
+    "context_discovery_trust",
+    "context_discovery_model",
     "model",
     "provider_hint",
     "assembly_strategy",
@@ -127,6 +133,7 @@ function resolveAssemblyRuntime({ tokenBudget, model, runtimeSettings, fallbackT
       prompt_token_budget: runtimeBudget ?? null,
       max_output_tokens: positiveInteger(runtimeSettings?.limits?.maxOutputTokens) ?? null,
     },
+    context_discovery: null,
   };
 
   if (explicitBudget !== undefined) {
@@ -158,6 +165,80 @@ function resolveAssemblyRuntime({ tokenBudget, model, runtimeSettings, fallbackT
     budgetSource: "missing",
     model: resolvedModel,
     runtimeMetadata,
+  };
+}
+
+function validateContextBudgetDiscovery(result) {
+  if (!result || result.ok !== true || result.schema_version !== ENTROLY_BRIDGE_SCHEMA) {
+    throw new Error("Entroly bridge returned an invalid context-discovery response");
+  }
+  if (result.status === "unavailable") {
+    return {
+      available: false,
+      metadata: {
+        status: "unavailable",
+        trust: boundedString(result.trust, 32),
+        model_id: boundedString(result.model, 256),
+        exact: null,
+        context_window: null,
+        output_reserve_tokens: null,
+        safety_tokens: null,
+        registry_digest: boundedString(result.registry_digest, 64),
+        source: null,
+      },
+      warning: safeDiagnostic(result.warning ?? "trusted model metadata was unavailable"),
+    };
+  }
+  if (result.status !== "resolved" || result.budget_source !== "entroly_model_registry") {
+    throw new Error("Entroly bridge returned an unknown context-discovery state");
+  }
+  const tokenBudget = positiveInteger(result.token_budget);
+  const contextWindow = positiveInteger(result.context_window);
+  const outputReserve = positiveInteger(result.output_reserve_tokens);
+  const safetyTokens = positiveInteger(result.safety_tokens);
+  const trust = boundedString(result.trust, 32);
+  const modelId = boundedString(result.model_id, 256);
+  const registryDigest = boundedString(result.registry_digest, 64);
+  if (
+    tokenBudget === undefined ||
+    tokenBudget < 1024 ||
+    contextWindow === undefined ||
+    outputReserve === undefined ||
+    safetyTokens === undefined ||
+    !["verified", "user", "discovered"].includes(trust) ||
+    modelId === null ||
+    registryDigest === null ||
+    !/^[0-9a-f]{64}$/.test(registryDigest) ||
+    tokenBudget + outputReserve + safetyTokens > contextWindow
+  ) {
+    throw new Error("Entroly bridge returned unsafe context-discovery limits");
+  }
+  return {
+    available: true,
+    tokenBudget,
+    metadata: {
+      status: "resolved",
+      trust,
+      model_id: modelId,
+      exact: result.exact === true,
+      context_window: contextWindow,
+      output_reserve_tokens: outputReserve,
+      safety_tokens: safetyTokens,
+      registry_digest: registryDigest,
+      source: boundedString(result.source, 512),
+    },
+  };
+}
+
+function applyDiscoveredBudget(runtime, discovery) {
+  return {
+    ...runtime,
+    tokenBudget: discovery.tokenBudget,
+    budgetSource: "entroly_model_registry",
+    runtimeMetadata: {
+      ...runtime.runtimeMetadata,
+      context_discovery: discovery.metadata,
+    },
   };
 }
 
@@ -295,6 +376,14 @@ export function formatEntrolyStatus(status) {
     `Estimated reduction: ${reduction}% (${saved.toLocaleString()} tokens)`,
     `Changed: ${status.changed ? "yes" : "no"}`,
   ];
+  if (status.context_discovery_status === "resolved") {
+    lines.splice(
+      3,
+      0,
+      `Context discovery: ${status.context_discovery_trust ?? "trusted"} metadata for ${status.context_discovery_model ?? "active model"}`,
+      `Discovered window: ${(status.context_window ?? 0).toLocaleString()} tokens (${(status.context_output_reserve ?? 0).toLocaleString()} output reserve + ${(status.context_safety_tokens ?? 0).toLocaleString()} safety reserve)`,
+    );
+  }
   if (status.receipt_id) lines.push(`Receipt: ${boundedString(status.receipt_id, 160)}`);
   if (status.warnings?.length) {
     lines.push(`Warnings: ${status.warnings.map((warning) => safeDiagnostic(warning)).join(" | ")}`);
@@ -390,12 +479,39 @@ export function createEntrolyContextEngine({
         throw error;
       }
       const sourceMessages = messages;
-      const assemblyRuntime = resolveAssemblyRuntime({
+      let assemblyRuntime = resolveAssemblyRuntime({
         tokenBudget,
         model,
         runtimeSettings,
         fallbackTokenBudget: config.fallbackTokenBudget,
       });
+      if (
+        assemblyRuntime.tokenBudget === undefined &&
+        config.autoDiscoverContextBudget !== false &&
+        assemblyRuntime.model
+      ) {
+        try {
+          const discovery = validateContextBudgetDiscovery(
+            await bridge.request({
+              operation: "resolve_context_budget",
+              model: assemblyRuntime.model,
+              provider_hint: assemblyRuntime.runtimeMetadata.model.provider,
+              requested_output_tokens:
+                assemblyRuntime.runtimeMetadata.limits.max_output_tokens,
+            }),
+          );
+          if (discovery.available) {
+            assemblyRuntime = applyDiscoveredBudget(assemblyRuntime, discovery);
+          } else {
+            assemblyRuntime.runtimeMetadata.context_discovery = discovery.metadata;
+            logger.warn?.(`entroly: context auto-discovery unavailable: ${discovery.warning}`);
+          }
+        } catch (error) {
+          logger.warn?.(
+            `entroly: context auto-discovery failed safely: ${safeDiagnostic(error)}`,
+          );
+        }
+      }
       const preserveLastN = positiveInteger(config.preserveLastN) ?? 4;
       let systemPromptAddition;
       try {
@@ -419,6 +535,18 @@ export function createEntrolyContextEngine({
           provider_mode: PROVIDER_MODE,
           provider_independent: true,
           budget_source: assemblyRuntime.budgetSource,
+          context_discovery_status:
+            assemblyRuntime.runtimeMetadata.context_discovery?.status,
+          context_discovery_trust:
+            assemblyRuntime.runtimeMetadata.context_discovery?.trust,
+          context_discovery_model:
+            assemblyRuntime.runtimeMetadata.context_discovery?.model_id,
+          context_window:
+            assemblyRuntime.runtimeMetadata.context_discovery?.context_window,
+          context_output_reserve:
+            assemblyRuntime.runtimeMetadata.context_discovery?.output_reserve_tokens,
+          context_safety_tokens:
+            assemblyRuntime.runtimeMetadata.context_discovery?.safety_tokens,
         });
         return {
           messages: sourceMessages,
@@ -430,7 +558,7 @@ export function createEntrolyContextEngine({
       if (assemblyRuntime.tokenBudget === undefined) {
         return failOpen(
           new Error(
-            "OpenClaw did not provide a positive prompt token budget; configure the model context window or plugins.entries.entroly.config.fallbackTokenBudget",
+            "OpenClaw did not provide a positive prompt token budget and Entroly could not resolve trusted model metadata; configure the model context window or plugins.entries.entroly.config.fallbackTokenBudget",
           ),
         );
       }

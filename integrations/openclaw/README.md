@@ -68,10 +68,22 @@ local JSONL bridge before inviting users onto the Gateway. The plugin requires
 the Entroly 1.0.57 bridge v2 protocol; doctor reports an actionable upgrade
 instead of accepting an older, incompatible Python installation.
 
-OpenClaw's resolved prompt token budget is authoritative. Entroly never guesses
-a context window from the provider name. For a custom model whose limit
-OpenClaw cannot resolve, configure that model's context window in OpenClaw or
-set an explicit operator-approved fallback:
+OpenClaw's resolved prompt token budget is authoritative. When an older or
+degraded host cannot provide one, Entroly automatically resolves a conservative
+input ceiling from its model registry. Only `verified`, operator-supplied
+`user`, or explicitly `discovered` metadata is accepted; announced and unknown
+records are rejected. The receipt records the model id, trust state, registry
+digest, native window, output reserve, safety reserve, and source.
+
+Context-budget discovery is local and enabled by default. It does not enable
+remote provider discovery or send credentials anywhere. Local Ollama/LM Studio
+and remote OpenRouter discovery remain separate operator opt-ins through
+Entroly's model-registry environment controls. Disable this fallback with
+`autoDiscoverContextBudget: false`.
+
+For a custom model that neither OpenClaw nor trusted registry metadata can
+resolve, configure the model in OpenClaw, provide an `ENTROLY_MODEL_REGISTRY`
+override, or set an explicit last-resort fallback:
 
 ```json5
 {
@@ -83,8 +95,10 @@ set an explicit operator-approved fallback:
 }
 ```
 
-Without either budget, Entroly returns the exact original context with an
-actionable warning instead of risking a provider overflow.
+Without any trusted budget, Entroly returns the exact original context with an
+actionable warning instead of risking a provider overflow. Explicit OpenClaw
+budgets always win, followed by the operator's `fallbackTokenBudget`; automatic
+registry discovery is used only when neither is available.
 
 ## Reproduce the evidence-pinning control
 

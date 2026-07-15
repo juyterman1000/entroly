@@ -32,6 +32,10 @@
         "minimum": 1024,
         "maximum": 4000000
       },
+      "autoDiscoverContextBudget": {
+        "type": "boolean",
+        "default": true
+      },
       "receiptDir": {
         "type": "string",
         "minLength": 1
@@ -77,7 +81,11 @@
     },
     "fallbackTokenBudget": {
       "label": "Fallback Prompt Token Budget",
-      "help": "Optional operator-approved budget used only when OpenClaw cannot resolve a finite model prompt budget."
+      "help": "Operator-approved budget used when OpenClaw cannot provide one. It takes precedence over automatic registry discovery."
+    },
+    "autoDiscoverContextBudget": {
+      "label": "Auto-discover Context Budget",
+      "help": "When OpenClaw omits a budget, resolve a conservative input ceiling from verified, user-supplied, or explicitly discovered model metadata. No remote discovery is enabled automatically."
     },
     "receiptDir": {
       "label": "Receipt Directory",
