@@ -972,6 +972,9 @@ def _bounded_exact_excerpt(
     structured = _query_local_json_object(content, query, budget)
     if structured is not None:
         return structured, True
+    complete_line = _query_local_complete_line(content, query, budget)
+    if complete_line is not None:
+        return complete_line, True
     excerpt, was_sliced = slice_recovery_content(content, query, budget)
     for _ in range(4):
         observed = _count_o200k_tokens(excerpt) if excerpt else 0
@@ -985,6 +988,64 @@ def _bounded_exact_excerpt(
 
 
 _EXCERPT_TERM_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{2,}")
+_EXACT_EXCERPT_GAP = (
+    "\n\n[... exact excerpt gap; retrieve full source by handle ...]\n\n"
+)
+
+
+def _query_local_complete_line(
+    content: str,
+    query: str,
+    max_tokens: int,
+) -> str | None:
+    """Keep the strongest complete source line, then spend spare budget on lead.
+
+    A character-ratio slice can end inside an identifier even while satisfying
+    its exact token cap. Recovery evidence is safer when a fitting query-local
+    line is indivisible: preserve it byte-for-byte and only trim optional lead
+    context around the explicit provenance gap.
+    """
+    if not content or _count_o200k_tokens(content) <= max_tokens:
+        return None
+    terms = {term.casefold() for term in _EXCERPT_TERM_RE.findall(query)}
+    if not terms:
+        return None
+    lowered = content.casefold()
+    frequencies = {term: max(1, lowered.count(term)) for term in terms}
+    offset = 0
+    candidates: list[tuple[float, int, int, str]] = []
+    for line_with_ending in content.splitlines(keepends=True):
+        line = line_with_ending.rstrip("\r\n")
+        folded = line.casefold()
+        score = sum(
+            len(term) / frequencies[term] for term in terms if term in folded
+        )
+        if score > 0 and _count_o200k_tokens(line) <= max_tokens:
+            candidates.append((score, -offset, offset, line))
+        offset += len(line_with_ending)
+    if not candidates:
+        return None
+
+    _, _, local_start, local = max(candidates)
+    gap = _EXACT_EXCERPT_GAP
+    if local_start == 0:
+        candidate = local + gap
+        return candidate if _count_o200k_tokens(candidate) <= max_tokens else None
+    if _count_o200k_tokens(gap + local) > max_tokens:
+        return None
+
+    # Binary-search the largest exact source prefix that leaves the complete
+    # local line and marker inside the public token ceiling.
+    low = 0
+    high = local_start
+    while low < high:
+        middle = (low + high + 1) // 2
+        candidate = content[:middle] + gap + local
+        if _count_o200k_tokens(candidate) <= max_tokens:
+            low = middle
+        else:
+            high = middle - 1
+    return content[:low] + gap + local
 
 
 def _json_object_ranges(content: str) -> list[tuple[int, int]]:
