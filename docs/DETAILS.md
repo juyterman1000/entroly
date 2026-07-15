@@ -114,7 +114,7 @@ Critical files appear in full. Supporting files appear as signatures. Everything
 pip install entroly && entroly demo    # see savings on YOUR codebase
 ```
 
-> Open the [interactive demo](docs/assets/demo.html) for the animated experience.
+> Open the [interactive demo](assets/demo.html) for the animated experience.
 
 ---
 

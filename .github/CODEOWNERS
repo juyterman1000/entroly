@@ -9,3 +9,12 @@
 /.github/workflows/publish-core-wheels.yml @juyterman1000
 /scripts/sync_release_version.py @juyterman1000
 /tests/test_release_surface.py @juyterman1000
+
+# Public trust, governance, and contributor experience.
+/SECURITY.md @juyterman1000
+/SUPPORTED_VERSIONS.md @juyterman1000
+/GOVERNANCE.md @juyterman1000
+/MAINTAINERS.md @juyterman1000
+/.github/CODEOWNERS @juyterman1000
+/.github/ISSUE_TEMPLATE/ @juyterman1000
+/.github/PULL_REQUEST_TEMPLATE.md @juyterman1000

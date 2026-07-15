@@ -1,51 +1,80 @@
 # Security Policy
 
-## Supported Versions
+Entroly handles source code, prompts, model responses, credentials passed to
+configured providers, and recoverable context artifacts. Security reports are
+treated as product-trust incidents.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.6.x   | :white_check_mark: |
-| < 0.6   | :x:                |
+## Supported versions
 
-## Reporting a Vulnerability
+Security fixes are released on the latest stable `1.0.x` line. Users should run
+the newest published patch because Entroly does not maintain parallel patch
+branches for older releases.
 
-If you discover a security vulnerability in Entroly, please report it responsibly.
+| Release line | Security support |
+| --- | --- |
+| Latest published `1.0.x` | Supported |
+| Earlier `1.0.x` patches | Upgrade required |
+| `0.x` and older | Unsupported |
 
-**Email:** fastrunner10090@gmail.com
+Runtime and platform details are maintained in
+[SUPPORTED_VERSIONS.md](SUPPORTED_VERSIONS.md).
 
-Please include:
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact
+## Report a vulnerability privately
 
-We aim to acknowledge reports within 48 hours and provide a fix or mitigation plan within 7 days.
+Do **not** open a public issue for a suspected vulnerability.
 
-**Please do not open a public GitHub issue for security vulnerabilities.**
+Email **fastrunner10090@gmail.com** with the subject
+`[Entroly security] <short description>`. Include, when available:
 
-## Hallucination Detection Accuracy Disclosure
+- the affected version, installation method, and operating system;
+- a minimal reproduction or proof of concept;
+- expected and observed behavior;
+- potential impact and whether credentials or user data may be exposed;
+- any suggested mitigation;
+- whether you want public credit in the advisory.
 
-Entroly ships a hallucination detector (EICV / WITNESS) that runs locally
-and can optionally rewrite or suppress LLM responses. Users relying on
-this output for compliance-sensitive decisions should understand the
-following:
+Never include live provider keys, private source code, or other people's data.
+Use synthetic fixtures and redact logs whenever possible.
 
-- **False-positive rate is non-zero.** A truthful claim may be wrongly
-  flagged as hallucinated and removed (in `strict` mode) or annotated
-  with `[unverified]` (in `annotate` mode).
-- **False-negative rate is non-zero.** A hallucinated claim may pass
-  through undetected.
-- **Operating points on public benchmarks** are recorded in
-  `benchmarks/results/` (FEVER, SQuAD v2, HaluEval-QA, TruthfulQA,
-  RAGAS). Review these before deploying.
-- **Performance varies by domain.** Profiles (`rag`, `qa`,
-  `summarization`, `dialogue`, `fact_check`) tune the decision band but
-  do not eliminate either error class.
-- **`audit` mode is the safe default** for telemetry, dashboards, and
-  any application where modifying the AI's output is undesirable. It
-  emits observability headers without changing the response body.
-- **Not certified for medical, legal, financial, or safety-critical
-  applications.** EICV is a research-grade tool. Independent validation
-  is required before use in regulated sectors.
-- **Suppression should be disclosed to end users** when the detector is
-  used in a service that returns modified AI output to third parties.
+The project aims to acknowledge a complete report within 48 hours and provide
+an initial assessment within seven days. Resolution timing depends on severity,
+reproduction quality, and coordinated-disclosure needs. Reporters will receive
+updates when the assessment, mitigation, release, or disclosure status changes.
+
+## Disclosure and release process
+
+For a confirmed vulnerability, maintainers will:
+
+1. reproduce and scope the issue privately;
+2. prepare a minimal regression test and fix;
+3. review affected Python, Rust, WASM, npm, Docker, MCP, and integration
+   surfaces;
+4. publish patched artifacts before publicizing exploit details;
+5. publish a GitHub Security Advisory with affected and fixed versions;
+6. credit the reporter when requested and appropriate.
+
+## Security boundaries
+
+- Entroly is local-first, but configured proxy/provider paths necessarily send
+  selected request data to the provider chosen by the operator.
+- Context Receipts and Context Commits may contain source material or exact
+  recovery data. Protect them with the same access and retention policy as the
+  source repository.
+- Content addressing detects mutation; it does not prove operator identity
+  unless an authenticated signing or attestation path is used.
+- Remote model-registry discovery is opt-in. Local ranking, verification, and
+  diagnostics must not introduce surprise remote calls.
+- Fail-open optimization means an internal optimization error should preserve
+  the original request. Security, authorization, path-safety, and explicit
+  compliance gates remain fail-closed.
+
+## Hallucination-detection disclosure
+
+WITNESS/EICV output is advisory evidence, not a certification. False positives
+and false negatives are possible, performance varies by domain, and independent
+validation is required for medical, legal, financial, regulated, or
+safety-critical uses. `audit` mode is the safest default when modifying an AI
+response would be undesirable. Current benchmark artifacts and limitations live
+under [`benchmarks/results/`](benchmarks/results/) and
+[`docs/limitations.md`](docs/limitations.md).
 

@@ -41,13 +41,14 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 </p>
 
 <p align="center">
-  <a href="#get-started"><b>Get started</b></a> ·
+  <a href="QUICKSTART.md"><b>3-minute quickstart</b></a> ·
+  <a href="#get-started"><b>Install paths</b></a> ·
   <a href="#proof-in-30-seconds"><b>Proof videos</b></a> ·
   <a href="#proof"><b>Proof</b></a> ·
   <a href="#works-with-your-stack"><b>Integrations</b></a> ·
-  <a href="#whats-inside"><b>What's inside</b></a> ·
-  <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
-  <a href="docs/for-teams.md"><b>For teams</b></a> ·
+  <a href="API_REFERENCE.md"><b>API</b></a> ·
+  <a href="ARCHITECTURE.md"><b>Architecture</b></a> ·
+  <a href="CONTRIBUTING.md"><b>Contribute</b></a> ·
   <a href="docs/limitations.md"><b>Limitations</b></a>
 </p>
 
@@ -794,6 +795,18 @@ This is the important distinction: Entroly does not just remember context. It ca
 ---
 
 ## Docs & community
+
+Start with **[the 3-minute quickstart](QUICKSTART.md)**. It proves the local
+package before asking you to configure an agent or paid provider.
+
+| Need | Start here |
+| --- | --- |
+| Install and first success | [Quickstart](QUICKSTART.md) · [Troubleshooting](TROUBLESHOOTING.md) |
+| Copy-paste workflows | [Examples](EXAMPLES.md) · [Cookbook](cookbook/README.md) |
+| SDK and CLI contracts | [API reference](API_REFERENCE.md) · [Supported versions](SUPPORTED_VERSIONS.md) |
+| System and trust boundaries | [Architecture](ARCHITECTURE.md) · [Limitations](docs/limitations.md) |
+| Upgrade and release history | [Migration guide](MIGRATION_GUIDE.md) · [Changelog](CHANGELOG.md) |
+| Contribute and get help | [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Roadmap](ROADMAP.md) |
 
 - **[Context control plane](docs/context-control-plane.md)** — model metadata, secure attachment, gateway recovery, and context-session UI guarantees.
 

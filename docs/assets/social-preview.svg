@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Entroly — auditable context control for AI agents</title>
+  <desc id="desc">Entroly selects evidence, preserves recovery, emits receipts, and verifies answers for AI agents.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05080c"/>
+      <stop offset="0.55" stop-color="#08120f"/>
+      <stop offset="1" stop-color="#071b12"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%">
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#39ff14" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#9bff86" stroke-opacity="0.055"/>
+    </pattern>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#39ff14" stop-opacity="0.15"/>
+      <stop offset="0.5" stop-color="#9bff86" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#39ff14" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <ellipse cx="640" cy="280" rx="560" ry="300" fill="url(#glow)"/>
+  <circle cx="1120" cy="80" r="120" fill="#39ff14" opacity="0.04" filter="url(#soft)"/>
+  <circle cx="120" cy="570" r="150" fill="#39ff14" opacity="0.035" filter="url(#soft)"/>
+
+  <image href="entroly_wordmark.svg" x="120" y="42" width="520" height="150"/>
+  <text x="640" y="116" fill="#f4fff2" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="750">
+    Know exactly what your AI agent saw.
+  </text>
+  <text x="642" y="157" fill="#a9b9ae" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">
+    Local, auditable context control for coding agents and applications
+  </text>
+
+  <rect x="88" y="224" width="1104" height="250" rx="28" fill="#0a1210" stroke="#2e6845" stroke-width="1.5"/>
+  <line x1="220" y1="349" x2="1060" y2="349" stroke="url(#line)" stroke-width="3"/>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <g transform="translate(220 349)">
+      <circle r="45" fill="#0d2118" stroke="#63ff55" stroke-width="2"/>
+      <path d="M-17 -7h34M-12 2h24M-7 11h14" stroke="#d9ffd8" stroke-width="4" stroke-linecap="round"/>
+      <text y="82" fill="#f4fff2" font-size="22" font-weight="700">Select evidence</text>
+      <text y="111" fill="#91a79a" font-size="16">under an explicit budget</text>
+    </g>
+    <g transform="translate(500 349)">
+      <circle r="45" fill="#0d2118" stroke="#63ff55" stroke-width="2"/>
+      <path d="M-15 9a22 22 0 1 1 8 8M-17 6l2 16 15-5" fill="none" stroke="#d9ffd8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text y="82" fill="#f4fff2" font-size="22" font-weight="700">Preserve recovery</text>
+      <text y="111" fill="#91a79a" font-size="16">for omitted source material</text>
+    </g>
+    <g transform="translate(780 349)">
+      <circle r="45" fill="#0d2118" stroke="#63ff55" stroke-width="2"/>
+      <path d="M-14 -20h20l13 13v27h-33zM6 -20v13h13M-7 3h18M-7 12h13" fill="none" stroke="#d9ffd8" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text y="82" fill="#f4fff2" font-size="22" font-weight="700">Emit receipts</text>
+      <text y="111" fill="#91a79a" font-size="16">selected, omitted, and risk</text>
+    </g>
+    <g transform="translate(1060 349)">
+      <circle r="45" fill="#0d2118" stroke="#63ff55" stroke-width="2"/>
+      <path d="M-19 0l12 12 27-29" fill="none" stroke="#d9ffd8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text y="82" fill="#f4fff2" font-size="22" font-weight="700">Verify answers</text>
+      <text y="111" fill="#91a79a" font-size="16">against supplied evidence</text>
+    </g>
+  </g>
+
+  <text x="640" y="550" text-anchor="middle" fill="#c8d7cc" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" letter-spacing="1.4">
+    LOCAL-FIRST  •  MCP  •  PROXY  •  PYTHON SDK  •  NODE/WASM  •  OPENCLAW
+  </text>
+  <text x="640" y="592" text-anchor="middle" fill="#65ff55" font-family="JetBrains Mono, Consolas, monospace" font-size="18">
+    github.com/juyterman1000/entroly
+  </text>
+  <rect x="1" y="1" width="1278" height="638" rx="18" fill="none" stroke="#2e6845" stroke-opacity="0.8" stroke-width="2"/>
+</svg>
