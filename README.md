@@ -42,6 +42,7 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 
 <p align="center">
   <a href="#get-started"><b>Get started</b></a> ·
+  <a href="#proof-in-30-seconds"><b>Proof videos</b></a> ·
   <a href="#proof"><b>Proof</b></a> ·
   <a href="#works-with-your-stack"><b>Integrations</b></a> ·
   <a href="#whats-inside"><b>What's inside</b></a> ·
@@ -128,6 +129,76 @@ your agent  ──►  Entroly (local)  ──►  LLM provider
 ```
 
 Critical files go in full. Supporting files can become signatures. Other material can become a reference that can be expanded on demand. Exact recovery is available only while the corresponding receipt and recovery store are retained; deleting that state deletes Entroly's recovery path.
+
+---
+
+## Proof in 30 seconds
+
+Three short, reproducible checks show the value before asking you to trust the
+product. These are not mocked terminal recordings: each video is rendered from
+a checked-in command that verifies its source artifact before printing a
+number. Click an animation for the MP4, or run the command below it yourself.
+
+### 1. Prove the installed path works—without an API key
+
+<p align="center">
+  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="900" alt="Entroly local verification: twelve checks pass without an API key"></a>
+</p>
+
+The packaged verifier exercises import, compression, receipts, witness checks,
+recovery, proxy routing, and replay, then writes a machine-readable JSON report.
+It is an install smoke test—not a savings or model-quality benchmark.
+
+```bash
+entroly verify-claims
+```
+
+### 2. Prove tighter context can preserve more answers
+
+<p align="center">
+  <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="900" alt="Frozen model-recovery holdout: Entroly answers 24 of 24 cases and Headroom answers 18 of 24"></a>
+</p>
+
+On the frozen 24-case holdout, Entroly answered **24/24** cases while Headroom
+answered **18/24**, at **28.88%** versus **42.97%** effective context. This is a
+synthetic local Qwen2.5-1.5B test at temperature 0, not a universal product or
+model claim. The six discordant cases all favored Entroly (exact McNemar
+`p=0.03125`).
+
+```bash
+python scripts/readme_proof.py model-recovery
+```
+
+[Protocol and limitations](docs/benchmarks/model-triggered-recovery.md) ·
+[raw holdout artifact](benchmarks/results/model_recovery_v7_holdout.json)
+
+### 3. Prove omitted evidence remains recoverable after restart
+
+<p align="center">
+  <a href="docs/assets/proof_restart_recovery.mp4"><img src="docs/assets/proof_restart_recovery.gif" width="900" alt="Fresh-seed restart recovery: Entroly recovers 66 of 66 payloads and Headroom recovers 55 of 66"></a>
+</p>
+
+The prior v2 run tied at **66/66** and remains published. In the fresh-seed v3
+Windows revalidation, Entroly recovered **66/66** payloads byte-exactly after
+restart; Headroom recovered **55/66** after one of six writers hit SQLite
+`database is locked`. This is one reproducible run, not a universal durability
+claim.
+
+```bash
+python scripts/readme_proof.py restart-recovery
+```
+
+[Protocol, prior tie, and limitations](docs/benchmarks/competitive-evidence-matrix.md) ·
+[current raw artifact](benchmarks/results/recovery_resilience_holdout_revalidation_v3.json) ·
+[prior tie artifact](benchmarks/results/recovery_resilience_holdout_revalidation.json)
+
+The animations, MP4s, static frames, source hashes, and commands are bound in
+the [proof media manifest](docs/assets/proof_media_manifest.json). Maintainers
+can rebuild them with `python scripts/render_readme_proof_videos.py generate`
+and reject stale media with `python scripts/render_readme_proof_videos.py verify`.
+Rebuilding requires Pillow, `tiktoken`, and FFmpeg; a missing frozen-tokenizer
+dependency fails with an actionable install command instead of weakening the
+artifact check.
 
 ---
 
