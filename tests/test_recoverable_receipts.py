@@ -177,3 +177,10 @@ def test_sdk_recoverable_roundtrip(tmp_path, monkeypatch):
     assert recovered
     assert all(r["verified"] for r in recovered)
     assert all(r["text"] for r in recovered)
+
+
+def test_recovery_helper_is_available_from_public_package() -> None:
+    import entroly
+    from entroly import sdk
+
+    assert entroly.recover_receipt_omission is sdk.recover_receipt_omission

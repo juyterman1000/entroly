@@ -1,13 +1,14 @@
 """
-Entroly — Information-Theoretic Context Optimization for Agentic AI
-========================================================================
+Entroly — auditable context control for AI agents.
+==================================================
 
-An MCP server that mathematically optimizes what goes into an LLM's
-context window. Uses knapsack dynamic programming, Shannon entropy scoring,
-SimHash deduplication, and predictive pre-fetching to cut token costs by
-50–70% while improving agent accuracy.
+Entroly selects task-relevant evidence under a token budget, can compact the
+selected context, and exposes receipts, recovery, and verification on supported
+paths. Actual token reduction and answer quality depend on the workload,
+integration, and budget; use the versioned benchmark artifacts or measure the
+target workload instead of assuming a fixed savings rate.
 
-Quick Setup (Cursor)::
+Quick setup (Cursor)::
 
     Add to .cursor/mcp.json:
     {
@@ -18,7 +19,7 @@ Quick Setup (Cursor)::
       }
     }
 
-Quick Setup (Claude Code)::
+Quick setup (Claude Code)::
 
     claude mcp add entroly -- entroly
 
@@ -34,6 +35,7 @@ try:
         context_receipt_from_path,
         create_context_receipt,
         explain_receipt_omission,
+        recover_receipt_omission,
         render_context_receipt,
     )
 except ImportError:
