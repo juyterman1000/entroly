@@ -28,8 +28,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://juyterman1000.github.io/entroly/"
-Documentation = "https://juyterman1000.github.io/entroly/"
+Homepage = "https://juyterman1000.github.io/entroly/docs/index.html"
+Documentation = "https://juyterman1000.github.io/entroly/docs/index.html"
 Source = "https://github.com/juyterman1000/entroly"
 Issues = "https://github.com/juyterman1000/entroly/issues"
 "Release Notes" = "https://github.com/juyterman1000/entroly/releases"
