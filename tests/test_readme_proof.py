@@ -8,7 +8,14 @@ from scripts import readme_proof
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
-        ("model-recovery", "24/24"),
+        pytest.param(
+            "model-recovery",
+            "24/24",
+            marks=pytest.mark.skipif(
+                not readme_proof.model_recovery_tokenizer_available(),
+                reason="artifact verification requires its frozen o200k tokenizer",
+            ),
+        ),
         ("restart-recovery", "66/66"),
     ],
 )
@@ -22,6 +29,20 @@ def test_artifact_proof_commands_verify_before_display(
     assert "[PASS]" in output
     assert expected in output
     assert "not a universal" in output.lower()
+
+
+def test_model_recovery_proof_explains_missing_optional_tokenizer(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        readme_proof,
+        "model_recovery_tokenizer_available",
+        lambda: False,
+    )
+
+    assert readme_proof.main(["model-recovery"]) == 2
+    assert "python -m pip install tiktoken" in capsys.readouterr().err
 
 
 def test_local_proof_uses_packaged_verifier(

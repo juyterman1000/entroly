@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import io
 import json
 import logging
@@ -43,6 +44,11 @@ RESET = "\033[0m"
 
 def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def model_recovery_tokenizer_available() -> bool:
+    """Return whether the artifact's frozen tokenizer can be reproduced."""
+    return importlib.util.find_spec("tiktoken") is not None
 
 
 def _header(title: str, subtitle: str) -> None:
@@ -124,6 +130,14 @@ def local_proof() -> int:
 
 def model_recovery_proof() -> int:
     """Verify and display the frozen model-triggered recovery holdout."""
+    if not model_recovery_tokenizer_available():
+        print(
+            "\033[31m[FAIL]\033[0m The model-recovery artifact freezes the "
+            "o200k_base tokenizer. Install it with: python -m pip install tiktoken",
+            file=sys.stderr,
+        )
+        return 2
+
     from benchmarks import model_recovery
 
     report = _load(MODEL_REPORT)

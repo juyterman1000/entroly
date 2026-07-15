@@ -196,6 +196,9 @@ The animations, MP4s, static frames, source hashes, and commands are bound in
 the [proof media manifest](docs/assets/proof_media_manifest.json). Maintainers
 can rebuild them with `python scripts/render_readme_proof_videos.py generate`
 and reject stale media with `python scripts/render_readme_proof_videos.py verify`.
+Rebuilding requires Pillow, `tiktoken`, and FFmpeg; a missing frozen-tokenizer
+dependency fails with an actionable install command instead of weakening the
+artifact check.
 
 ---
 

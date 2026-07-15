@@ -58,19 +58,27 @@ SPECS = (
         slug="proof_local",
         command="local",
         title="Local no-key verification",
-        sources=(ROOT / "entroly/verify_claims.py",),
+        sources=(
+            ROOT / "scripts/readme_proof.py",
+            ROOT / "entroly/verify_claims.py",
+        ),
     ),
     VideoSpec(
         slug="proof_model_recovery",
         command="model-recovery",
         title="Model-triggered recovery quality",
-        sources=(ROOT / "benchmarks/model_recovery.py", readme_proof.MODEL_REPORT),
+        sources=(
+            ROOT / "scripts/readme_proof.py",
+            ROOT / "benchmarks/model_recovery.py",
+            readme_proof.MODEL_REPORT,
+        ),
     ),
     VideoSpec(
         slug="proof_restart_recovery",
         command="restart-recovery",
         title="Concurrent restart recovery",
         sources=(
+            ROOT / "scripts/readme_proof.py",
             ROOT / "benchmarks/recovery_resilience.py",
             readme_proof.RECOVERY_REPORT,
             readme_proof.PRIOR_RECOVERY_REPORT,
