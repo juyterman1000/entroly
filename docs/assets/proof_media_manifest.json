@@ -1,0 +1,49 @@
+{
+  "font": "CascadiaMono.ttf",
+  "renderer": "scripts/render_readme_proof_videos.py",
+  "schema_version": "entroly.readme-proof-media.v1",
+  "videos": {
+    "proof_local": {
+      "outputs": {
+        "proof_local.gif": "441fd772845374391b4989952603606db99d087409a6954078cc82d89da08670",
+        "proof_local.mp4": "efd9ee0ca758e7c3b86295f609e92d857c192d3cdbd9a201313987e8febe3a2a",
+        "proof_local.png": "0519eae00996e88d3795db1130443b664b7d7dec24decd8d5a77399b0a73a94a"
+      },
+      "proof_command": "python scripts/readme_proof.py local",
+      "rendered_lines_sha256": "47d8bcd15b6e3ad317a21d42ab3af17e5dda3b84edf873ad3bdc321fbf5ec3b5",
+      "source_sha256": {
+        "entroly/verify_claims.py": "9000e9a5c9f526865a94052a908e36b1de77bfd764618ac14c6d7d4635c3f2a6",
+        "scripts/readme_proof.py": "6ae0ab2615aac267f52953c8c692cbfb940873ede27783429238510106a8295c"
+      }
+    },
+    "proof_model_recovery": {
+      "outputs": {
+        "proof_model_recovery.gif": "62da9c6a33de9284ef7e0addc816b04005f2346f92acd4ee7f88668e2d0fd7ff",
+        "proof_model_recovery.mp4": "f9a1ac7887cda9b8ffa317d0eef06452609a45f073cc77168c1e9572a1e5ed6a",
+        "proof_model_recovery.png": "f2e3b0f424d9c4370fcf6c189f17a1fe4aaf2b00821bef711f23362339a4ccf1"
+      },
+      "proof_command": "python scripts/readme_proof.py model-recovery",
+      "rendered_lines_sha256": "579368e566f292d97405383e2a5dd004a2a537e91dc8cc74d55e624b683f64dd",
+      "source_sha256": {
+        "benchmarks/model_recovery.py": "79e570d3d1283bd992e71e119c3c7be1cd721724959bd722e297b9fa681c8bd2",
+        "benchmarks/results/model_recovery_v7_holdout.json": "ce11d0ddfc64d6bceca29d90c6d2c01511003f7ac7fb1f65dc977a4dcafac61c",
+        "scripts/readme_proof.py": "6ae0ab2615aac267f52953c8c692cbfb940873ede27783429238510106a8295c"
+      }
+    },
+    "proof_restart_recovery": {
+      "outputs": {
+        "proof_restart_recovery.gif": "535f202988babe1cbea59f320775a89fb13df04aa618c6c7f93cd8b883fc3af7",
+        "proof_restart_recovery.mp4": "2462ec6a550143ac7644a8741cd4991d61b643bfe07657fa1ac6aee6fca49cf7",
+        "proof_restart_recovery.png": "d686393651e4bfc6f01716dd12b87a9ad4198e305a35d9023eb4c0e21bafb2d3"
+      },
+      "proof_command": "python scripts/readme_proof.py restart-recovery",
+      "rendered_lines_sha256": "0e98e7fffd51ba747f0d26c115c31e1b564305a1a76aeaecd7bd1a2409a03b22",
+      "source_sha256": {
+        "benchmarks/recovery_resilience.py": "c68846a8ad13c3e28fc452f8e88bd08a46dceeef89b76f34f7122ca01ee243d0",
+        "benchmarks/results/recovery_resilience_holdout_revalidation.json": "5b3c301c088a1f6500a6f7f27fbcb819f771fdab4d863bee286082b9b83f43bf",
+        "benchmarks/results/recovery_resilience_holdout_revalidation_v3.json": "ed3c5d3b7568f3846d7dc3685fda937adedcd6e8eeb3391c0dd126044c67d56f",
+        "scripts/readme_proof.py": "6ae0ab2615aac267f52953c8c692cbfb940873ede27783429238510106a8295c"
+      }
+    }
+  }
+}

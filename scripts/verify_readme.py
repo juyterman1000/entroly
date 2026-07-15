@@ -1,4 +1,6 @@
 """Verify every README claim against actual codebase."""
+import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -33,6 +35,44 @@ COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
 INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
+
+
+def verify_readme_proof_media():
+    """Reject missing, modified, or source-stale README proof media."""
+    manifest_path = Path("docs/assets/proof_media_manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    videos = manifest.get("videos", {})
+    if manifest.get("schema_version") != "entroly.readme-proof-media.v1":
+        raise ValueError("unexpected proof media manifest schema")
+    if len(videos) != 3:
+        raise ValueError(f"expected 3 proof videos, found {len(videos)}")
+
+    for name, entry in videos.items():
+        command = entry.get("proof_command", "")
+        if command not in README_TEXT and name != "proof_local":
+            raise ValueError(f"README does not expose proof command for {name}")
+        for source, expected in entry.get("source_sha256", {}).items():
+            actual = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+            if actual != expected:
+                raise ValueError(f"proof source changed; regenerate media: {source}")
+        for filename, expected in entry.get("outputs", {}).items():
+            media_path = manifest_path.parent / filename
+            actual = hashlib.sha256(media_path.read_bytes()).hexdigest()
+            if actual != expected:
+                raise ValueError(f"proof media hash mismatch: {media_path}")
+            if filename.endswith((".gif", ".mp4")) and str(media_path).replace("\\", "/") not in README_TEXT:
+                raise ValueError(f"README does not link proof media: {media_path}")
+
+    normalized_readme = " ".join(README_TEXT.split())
+    required_scope = (
+        "not a savings or model-quality benchmark",
+        "not a universal product or model claim",
+        "not a universal durability claim",
+    )
+    missing_scope = [text for text in required_scope if text not in normalized_readme]
+    if missing_scope:
+        raise ValueError(f"README proof scope missing: {missing_scope}")
+    return f"{len(videos)} source-bound videos"
 
 check("wrap claude", lambda: "claude" in _WRAP_AGENTS and "OK")
 check("wrap codex", lambda: "codex" in _WRAP_AGENTS and "OK")
@@ -116,6 +156,7 @@ check(
         and "OK"
     ) or (_ for _ in ()).throw(Exception("README must ask for stars through local proof, not broad first-fold claims")),
 )
+check("README proof media bindings", verify_readme_proof_media)
 check(
     "community links avoid expired Discord invites",
     lambda: (
