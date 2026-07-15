@@ -155,15 +155,20 @@ entroly verify-claims
 
 ### 2. Prove tighter context can preserve more answers
 
+> **Using Headroom today?** Run Entroly against the same workload and compare
+> answer retention, recoverability, state size, and context cost locally. The
+> results below use the published Headroom 0.31.0 package as a versioned
+> baseline; they are not a verdict on every Headroom or Entroly workload.
+
 <p align="center">
-  <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="900" alt="Frozen model-recovery holdout: Entroly answers 24 of 24 cases and Headroom answers 18 of 24"></a>
+  <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="900" alt="Frozen model-recovery holdout comparing Entroly with the published Headroom 0.31.0 baseline"></a>
 </p>
 
-On the frozen 24-case holdout, Entroly answered **24/24** cases while Headroom
-answered **18/24**, at **28.88%** versus **42.97%** effective context. This is a
-synthetic local Qwen2.5-1.5B test at temperature 0, not a universal product or
-model claim. The six discordant cases all favored Entroly (exact McNemar
-`p=0.03125`).
+On the frozen 24-case holdout, Entroly answered **24/24** cases; the published
+Headroom 0.31.0 baseline answered **18/24**, at **28.88%** versus **42.97%**
+effective context. This is a synthetic local Qwen2.5-1.5B test at temperature
+0, not a universal product or model claim. The six discordant cases favored
+Entroly (exact McNemar `p=0.03125`).
 
 ```bash
 python scripts/readme_proof.py model-recovery
@@ -175,14 +180,14 @@ python scripts/readme_proof.py model-recovery
 ### 3. Prove omitted evidence remains recoverable after restart
 
 <p align="center">
-  <a href="docs/assets/proof_restart_recovery.mp4"><img src="docs/assets/proof_restart_recovery.gif" width="900" alt="Fresh-seed restart recovery: Entroly recovers 66 of 66 payloads and Headroom recovers 55 of 66"></a>
+  <a href="docs/assets/proof_restart_recovery.mp4"><img src="docs/assets/proof_restart_recovery.gif" width="900" alt="Fresh-seed restart recovery comparing Entroly with the published Headroom 0.31.0 baseline"></a>
 </p>
 
 The prior v2 run tied at **66/66** and remains published. In the fresh-seed v3
 Windows revalidation, Entroly recovered **66/66** payloads byte-exactly after
-restart; Headroom recovered **55/66** after one of six writers hit SQLite
-`database is locked`. This is one reproducible run, not a universal durability
-claim.
+restart; the published Headroom 0.31.0 baseline recovered **55/66**. The raw
+artifact retains the incomplete worker and exact failure evidence. This is one
+reproducible run, not a universal durability claim.
 
 ```bash
 python scripts/readme_proof.py restart-recovery
@@ -380,24 +385,25 @@ and unsupported claims.
 No headline result will be claimed until the paired confidence bounds pass.
 
 **Matched token-cap active-context quality frontier (1.0.59 source candidate):**
-across 60 frozen SQuAD v2 long-context RAG/tool-result trials, without expanding
-Headroom's CCR retrieval pointers, Entroly retained **95.0%**,
+across 60 frozen SQuAD v2 long-context RAG/tool-result trials, without invoking
+recovery from the published Headroom 0.31.0 baseline's CCR pointers, Entroly
+retained **95.0%**,
 **93.3%**, and **88.3%** of accepted answers at the 2x, 4x, and 8x token caps.
-Published Headroom 0.31.0 retained **1.7%** at each cap. The paired two-sided
-exact McNemar tests pass at every point (`p <= 4.45e-16`). Entroly met all 180
-caps; Headroom met the 2x/4x caps but missed all 60 8x caps, keeping 18.6% of
-tokens instead of at most 12.5%.
+The published Headroom 0.31.0 baseline retained **1.7%** at each cap. The paired
+two-sided exact McNemar tests pass at every point (`p <= 4.45e-16`). Entroly met
+all 180 caps; the baseline met the 2x/4x caps and exceeded the 8x cap, retaining
+18.6% of tokens against the 12.5% maximum.
 
-| Maximum token cap | Entroly answer retained / actual kept | Headroom answer retained / actual kept |
+| Maximum token cap | Entroly answer retained / actual kept | Published Headroom 0.31.0 baseline |
 |---:|---:|---:|
 | 2x (50%) | **95.0% / 39.3%** | 1.7% / 18.6% |
 | 4x (25%) | **93.3% / 19.2%** | 1.7% / 18.6% |
-| 8x (12.5%) | **88.3% / 10.4%** | 1.7% / 18.6% (cap missed) |
+| 8x (12.5%) | **88.3% / 10.4%** | 1.7% / 18.6% (above cap) |
 
 A separate eight-question, randomized local `qwen2.5:1.5b` guard at 4x scored
-raw context at 62.5% exact match, Entroly at **87.5%**, and Headroom at 12.5%,
-with no errors. This small local-model sample is a veto guard, not the headline
-or a frontier-model claim.
+raw context at 62.5% exact match, Entroly at **87.5%**, and the published
+Headroom 0.31.0 baseline at 12.5%, with no errors. This small local-model sample
+is a veto guard, not the headline or a frontier-model claim.
 
 [Generated report](benchmarks/results/compression_frontier.md) ·
 [full auditable artifact](benchmarks/results/compression_frontier.json) ·
@@ -405,24 +411,24 @@ or a frontier-model claim.
 with `python -m benchmarks.compression_frontier verify benchmarks/results/compression_frontier.json`.
 
 <sub>Scope: extractive answer retention in structured SQuAD-v2 RAG results.
-Headroom's CCR pointers remain in its output, but retrieval recovery is not run;
-this measures immediately visible active context, not Headroom's end-to-end CCR
-workflow. Entroly is measured from the 1.0.59 source
-candidate; do not call this a released-package result until 1.0.59 is
-published. This does not establish superiority for every task, model,
-compressor, or production workload.</sub>
+The published Headroom 0.31.0 baseline's CCR pointers remain in its output, but
+retrieval recovery is not run; this measures immediately visible active
+context, not Headroom's end-to-end CCR workflow. Entroly is measured from the
+1.0.59 source candidate; do not call this a released-package result until
+1.0.59 is published. This does not establish superiority for every task,
+model, compressor, or production workload.</sub>
 
 <p align="center">
-  <a href="benchmarks/results/compression_frontier.md"><img src="docs/assets/compression_frontier.svg" width="900" alt="Entroly 1.0.59 candidate and Headroom 0.31.0 matched token-cap answer-retention frontier"></a>
+  <a href="benchmarks/results/compression_frontier.md"><img src="docs/assets/compression_frontier.svg" width="900" alt="Entroly 1.0.59 candidate and published Headroom 0.31.0 baseline on a matched token-cap frontier"></a>
 </p>
 
 **Same-input compression gauntlet:** on four deterministic agent-tool fixtures,
-current Entroly source (package version `1.0.59`) and Headroom `0.31.0`
-both retained **100% of the preregistered answer evidence**. Under the shared
-`o200k_base` tokenizer, Entroly reduced weighted input tokens by **95.1%** versus
-**31.4%** for Headroom's public `compress()` pipeline with its documented
-`agent-90` high-savings profile. Entroly compressed all four fixtures; Headroom
-compressed two and safely passed two through.
+current Entroly source (package version `1.0.59`) and the published Headroom
+0.31.0 baseline both retained **100% of the preregistered answer evidence**.
+Under the shared `o200k_base` tokenizer, Entroly reduced weighted input tokens
+by **95.1%** versus **31.4%** for the baseline's public `compress()` pipeline
+with its documented `agent-90` high-savings profile. Entroly compressed all
+four fixtures; the baseline compressed two and safely passed two through.
 
 [Generated report](benchmarks/results/compression_gauntlet.md) ·
 [raw inputs and outputs](benchmarks/results/compression_gauntlet.json) ·
@@ -434,24 +440,25 @@ measure downstream answer quality or establish neural/ML superiority. The
 Context Efficiency Frontier above is the required gate for a real-model claim.</sub>
 
 <p align="center">
-  <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and Headroom same-input compression gauntlet with evidence-retention caveat"></a>
+  <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and the published Headroom 0.31.0 baseline on a same-input compression gauntlet"></a>
 </p>
 
 **Cross-process recovery holdout:** the preregistered six-writer test first
 exposed a serious Entroly failure (only 8/32 development payloads survived),
 which is preserved in the evidence. The original Entroly 1.0.59 holdout and
-the immutable v2 revalidation both recorded Entroly and published Headroom
+the immutable v2 revalidation both recorded Entroly and the published Headroom
 0.31.0 recovering **66/66** payloads. On the fresh-seed v3 revalidation of the
 current complete-line recovery implementation, Entroly again recovered
-**66/66** byte-exactly; Headroom recovered **55/66** after one of six writers
-exited with SQLite `database is locked`. Entroly alone satisfied the frozen
-integrity gate on this run. That is a scoped concurrent-writer reliability
-result; it does not establish universal recovery superiority.
+**66/66** byte-exactly; the published baseline recovered **55/66**. The raw
+artifact preserves the incomplete writer and exact failure evidence. Entroly
+was the participant that satisfied the frozen integrity gate on this run. That
+is a scoped concurrent-writer result, not universal recovery superiority.
 
-On the current-implementation Windows/Python 3.10 revalidation, Headroom had
-lower successful store-call latency (1.786 ms versus 36.972 ms p50). Entroly
-had lower retrieval latency (0.165 ms versus 0.876 ms p50) and a smaller live
-state footprint (95,438 versus 1,354,888 bytes). Headroom used SQLite WAL with
+On the current-implementation Windows/Python 3.10 revalidation, the published
+Headroom 0.31.0 baseline had lower successful store-call latency (1.786 ms
+versus 36.972 ms p50). Entroly had lower retrieval latency (0.165 ms versus
+0.876 ms p50) and a smaller live state footprint (95,438 versus 1,354,888
+bytes). The baseline used SQLite WAL with
 `synchronous=NORMAL`; Entroly
 fsynced its state file on each commit, so this is not a matched power-loss
 durability comparison. These are scoped workload measurements, not universal
@@ -465,11 +472,11 @@ claims.
 
 **Quality-gated compression latency holdout:** on the same four deterministic
 agent-tool fixtures and public entry points as the gauntlet, Entroly 1.0.59
-source was **2.94x faster** than published Headroom 0.31.0 for warm compressor
-calls (95% bootstrap CI **2.74x–3.13x**) and **2.39x faster** for product import
-plus the first call in a fresh process (**1.89x–2.70x**). Both systems completed
-every fixture, retained 100% of preregistered evidence, remained deterministic,
-and never inflated tokens.
+source was **2.94x faster** than the published Headroom 0.31.0 baseline for warm
+compressor calls (95% bootstrap CI **2.74x–3.13x**) and **2.39x faster** for
+product import plus the first call in a fresh process (**1.89x–2.70x**). Both
+systems completed every fixture, retained 100% of preregistered evidence,
+remained deterministic, and never inflated tokens.
 
 [Protocol, per-fixture timings, and limits](docs/benchmarks/compression-latency.md)
 | [full holdout artifact](benchmarks/results/compression_latency_holdout.json)
@@ -484,24 +491,25 @@ superiority.</sub>
 **Model-triggered recovery holdout:** after compression for one question, a
 different future audit question was revealed to a local `qwen2.5:1.5b` guard.
 On 24 frozen query-shift cases, raw context and Entroly both scored **24/24
-exact**; published Headroom 0.31.0 scored **18/24**. All six paired differences
-favored Entroly (two-sided exact McNemar **p = 0.03125**). Entroly's mean
-effective context ratio, including recovery evidence on every triggered retry,
-was **28.88%** versus **42.97%** for Headroom.
+exact**; the published Headroom 0.31.0 baseline scored **18/24**. All six paired
+differences favored Entroly (two-sided exact McNemar **p = 0.03125**). Entroly's
+mean effective context ratio, including recovery evidence on every triggered
+retry, was **28.88%** versus **42.97%** for the baseline.
 
 Every Entroly row triggered retrieval and recovered a complete source-exact
-JSON object; Headroom answered 18 rows from active context and returned a wrong
-value rather than exact `RETRIEVE` on the other six, so the no-oracle protocol
-did not retrieve for them. The complete artifact passed the strengthened
-verifier with zero execution errors.
+JSON object. The published baseline answered 18 rows from active context; its
+remaining six rows were scored under the frozen no-oracle retrieval rule. The
+raw artifact retains every response. The complete artifact passed the
+strengthened verifier with zero execution errors.
 
 [Protocol, rejected variants, reproduction, and limits](docs/benchmarks/model-triggered-recovery.md)
 | [full holdout artifact](benchmarks/results/model_recovery_v7_holdout.json)
 | [development artifact](benchmarks/results/model_recovery_v7_development.json).
 
 <sub>Scope: synthetic 48-record JSON audit logs, Windows/Python 3.10, 24
-holdout cases, local Qwen2.5 1.5B Q4_K_M at temperature zero. Headroom recovery
-uses its public `compress()` plus persistent `CompressionStore` contract; MCP
+holdout cases, local Qwen2.5 1.5B Q4_K_M at temperature zero. The published
+Headroom 0.31.0 baseline uses its public `compress()` plus persistent
+`CompressionStore` contract; MCP
 transport is excluded. This is a scoped workflow result, not evidence about
 hosted frontier models, every agent workload, provider cost, or overall product
 superiority.</sub>
