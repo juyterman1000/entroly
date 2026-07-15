@@ -55,7 +55,7 @@
     "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
   ],
   "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },
-  "homepage": "https://juyterman1000.github.io/entroly/",
+  "homepage": "https://juyterman1000.github.io/entroly/docs/index.html",
   "bugs": { "url": "https://github.com/juyterman1000/entroly/issues" },
   "author": "entroly",
   "license": "Apache-2.0",

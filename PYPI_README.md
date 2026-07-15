@@ -103,7 +103,7 @@ claude mcp add entroly -- uvx --from entroly entroly
 ## Links
 
 - Repository: https://github.com/juyterman1000/entroly
-- Documentation: https://juyterman1000.github.io/entroly/
+- Documentation: https://juyterman1000.github.io/entroly/docs/index.html
 - PyPI: https://pypi.org/project/entroly/
 - npm runtime: https://www.npmjs.com/package/entroly
 - npm MCP bridge: https://www.npmjs.com/package/entroly-mcp
