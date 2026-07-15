@@ -135,8 +135,9 @@ def test_committed_frontier_artifacts_and_readme_are_in_sync() -> None:
         "**95.0%**",
         "**93.3%**",
         "**88.3%**",
-        "Published Headroom 0.31.0 retained **1.7%**",
-        "Entroly at **87.5%**, and Headroom at 12.5%",
+        "The published Headroom 0.31.0 baseline retained **1.7%**",
+        "Headroom 0.31.0 baseline at 12.5%",
+        "Using Headroom today?",
         "1.0.59 source candidate",
     ):
         assert expected in readme
