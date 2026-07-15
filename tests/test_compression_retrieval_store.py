@@ -14,6 +14,7 @@ from entroly.compression_proxy import compress_proxy_payload, compress_proxy_pay
 from entroly.compression_retrieval_store import (
     CompressionRetrievalStore,
     _count_o200k_tokens,
+    _query_local_json_object,
 )
 
 
@@ -422,6 +423,10 @@ def test_exact_excerpt_retrieval_rolls_back_when_persistence_fails(
 
 
 def test_exact_excerpt_search_returns_complete_query_matching_json_object() -> None:
+    try:
+        __import__("tiktoken")
+    except ImportError:
+        pytest.skip("exact-tokenizer object-fit contract requires tiktoken")
     rows = [
         {
             "audit_case": f"CASE-ORD-{index:04d}",
@@ -462,6 +467,39 @@ def test_exact_excerpt_search_returns_complete_query_matching_json_object() -> N
     assert matches[0].retrieved_tokens <= 600
     full = store.get_span(stored.receipt_id, stored.spans[0].span_id)
     assert full is not None and full.content == content
+
+
+def test_json_selection_never_substitutes_weaker_fitting_object(
+    monkeypatch,
+) -> None:
+    content = json.dumps(
+        [
+            {"audit_case": "CASE-ORD-0000", "payload": "routine"},
+            {
+                "audit_case": "CASE-TARGET-9000",
+                "payload": "q" * 800,
+                "recovery_code": "RCV-EXACT-9000",
+            },
+        ],
+        indent=2,
+        sort_keys=True,
+    )
+    real_import = builtins.__import__
+
+    def import_without_tiktoken(name, *args, **kwargs):
+        if name == "tiktoken":
+            raise ImportError("simulated base install")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_tiktoken)
+
+    selected = _query_local_json_object(
+        content,
+        "recovery code for audit case CASE-TARGET-9000",
+        max_tokens=200,
+    )
+
+    assert selected is None
 
 
 def test_exact_excerpt_json_field_projection_falls_back_for_minified_json() -> None:

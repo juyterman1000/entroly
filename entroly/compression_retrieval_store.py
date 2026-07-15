@@ -1013,20 +1013,25 @@ def _query_local_complete_line(
     lowered = content.casefold()
     frequencies = {term: max(1, lowered.count(term)) for term in terms}
     offset = 0
-    candidates: list[tuple[float, int, int, str]] = []
+    candidates: list[tuple[float, int, int, int, str]] = []
     for line_with_ending in content.splitlines(keepends=True):
         line = line_with_ending.rstrip("\r\n")
         folded = line.casefold()
         score = sum(
-            len(term) / frequencies[term] for term in terms if term in folded
+            len(term) / frequencies[term]
+            for term in sorted(terms)
+            if term in folded
         )
-        if score > 0 and _count_o200k_tokens(line) <= max_tokens:
-            candidates.append((score, -offset, offset, line))
+        if score > 0:
+            tokens = _count_o200k_tokens(line)
+            candidates.append((score, -tokens, -offset, offset, line))
         offset += len(line_with_ending)
     if not candidates:
         return None
 
-    _, _, local_start, local = max(candidates)
+    _, negated_tokens, _, local_start, local = max(candidates)
+    if -negated_tokens > max_tokens:
+        return None
     gap = _EXACT_EXCERPT_GAP
     if local_start == 0:
         candidate = local + gap
@@ -1086,7 +1091,7 @@ def _query_local_json_object(
         return None
     lowered = content.casefold()
     frequencies = {term: max(1, lowered.count(term)) for term in terms}
-    candidates: list[tuple[float, int, int, str]] = []
+    candidates: list[tuple[float, int, int, int, str]] = []
     for start, end in _json_object_ranges(content):
         exact = content[start:end]
         try:
@@ -1097,16 +1102,18 @@ def _query_local_json_object(
             continue
         candidate = exact.casefold()
         score = sum(
-            len(term) / frequencies[term] for term in terms if term in candidate
+            len(term) / frequencies[term]
+            for term in sorted(terms)
+            if term in candidate
         )
         if score <= 0:
             continue
         tokens = _count_o200k_tokens(exact)
-        if tokens <= max_tokens:
-            candidates.append((score, -tokens, -start, exact))
+        candidates.append((score, -tokens, -start, tokens, exact))
     if not candidates:
         return None
-    return max(candidates)[3]
+    best = max(candidates)
+    return best[4] if best[3] <= max_tokens else None
 
 
 def _sha256_text(text: str) -> str:
