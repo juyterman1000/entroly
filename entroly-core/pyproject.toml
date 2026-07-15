@@ -4,8 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "entroly-core"
-version = "1.0.61"
-description = "Rust core for Entroly: Context Receipts, deterministic ingestion/ranking, dependency audits, and local context optimization"
+version = "1.0.62"
+description = "Rust core for Entroly context engineering: deterministic selection, recoverable compression, Context Receipts, and verification"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 authors = [
     { name = "entroly", email = "fastrunner10090@gmail.com" },
 ]
-keywords = ["mcp", "context-receipts", "context-control-plane", "context-optimization", "knapsack", "entropy", "rust", "pyo3"]
+keywords = ["ai-agents", "context-engineering", "context-compression", "context-receipts", "context-control-plane", "context-optimization", "mcp", "knapsack", "entropy", "rust", "pyo3"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -28,8 +28,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/juyterman1000/entroly"
-Repository = "https://github.com/juyterman1000/entroly"
+Homepage = "https://juyterman1000.github.io/entroly/"
+Documentation = "https://juyterman1000.github.io/entroly/"
+Source = "https://github.com/juyterman1000/entroly"
+Issues = "https://github.com/juyterman1000/entroly/issues"
+"Release Notes" = "https://github.com/juyterman1000/entroly/releases"
 
 [tool.maturin]
 features = ["extension-module"]

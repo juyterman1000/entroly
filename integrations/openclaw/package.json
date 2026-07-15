@@ -1,7 +1,7 @@
 {
   "name": "entroly-openclaw",
-  "version": "1.0.61",
-  "description": "Provider-independent, auditable context optimization for every OpenClaw model route",
+  "version": "1.0.62",
+  "description": "Provider-independent, auditable context engineering for every OpenClaw model route",
   "type": "module",
   "license": "Apache-2.0",
   "homepage": "https://github.com/juyterman1000/entroly#entroly-for-openclaw",
@@ -13,6 +13,16 @@
   "bugs": {
     "url": "https://github.com/juyterman1000/entroly/issues"
   },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "ai-agents",
+    "context-engineering",
+    "context-compression",
+    "context-optimization",
+    "context-receipts",
+    "model-context-protocol"
+  ],
   "engines": {
     "node": ">=22.19"
   },

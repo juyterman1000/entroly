@@ -2,15 +2,17 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
+<h1 align="center">Entroly — Auditable Context Engineering for AI Agents</h1>
+
 <p align="center"><b>Know exactly what your AI agent saw.</b><br>
 Entroly creates replayable <b>Context Commits</b>: content-addressed proof of the evidence selected, omitted, and kept recoverable for each model request.</p>
 
 <p align="center">
-  <sub>Integrates with Cursor, Claude Code, Codex, Aider, OpenClaw, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+  <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
 </p>
 
 <p align="center">
-  <sub>Auditable context control plane · receipt-producing selection paths record what was used, what was omitted, and residual risks · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
+  <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
 </p>
 
 <!-- Distribution and licensing: registry badges report live package metadata. -->
@@ -60,7 +62,7 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 
 ## What it does
 
-Entroly is an auditable context control plane for AI agents. It decides what context to send, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.
+Entroly is an open-source, auditable context engineering control plane for AI agents. It decides what context to send, compresses selected evidence when useful, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.
 
 **OpenClaw runs the agents and conversations. Entroly controls, remembers, verifies, and proves the context those agents received.** The same boundary applies to Claude Code and Codex: Entroly augments the agent you already use instead of becoming another chat client.
 
