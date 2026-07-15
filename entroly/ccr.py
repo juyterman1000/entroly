@@ -33,7 +33,7 @@ def _retrieval_handle(source: str, original_content: str) -> str:
     return f"ccr:{digest[:24]}"
 
 
-_RECOVERY_TERM_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_RECOVERY_TERM_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{2,}")
 _RECOVERY_GAP = "\n\n[... exact excerpt gap; retrieve full source by handle ...]\n\n"
 
 
@@ -44,10 +44,11 @@ def slice_recovery_content(
 ) -> tuple[str, bool]:
     """Return a bounded provenance-preserving slice of an oversized source.
 
-    Half the character budget preserves the source lead, a strong prior for prose
-    and declarations. The other half selects exact query-local windows, a
-    strong prior for code, logs, and long documents. No generated summary is
-    introduced: emitted excerpts are exact spans and omitted text is marked.
+    One third of the character budget preserves the source lead, a strong prior
+    for prose and declarations. The remainder selects an exact query-local
+    window, a strong prior for code, logs, and long documents. No generated
+    summary is introduced: emitted excerpts are exact spans and omitted text is
+    marked.
     """
     if not content or token_budget < 32:
         return "", False
@@ -58,7 +59,7 @@ def slice_recovery_content(
     payload_chars = max_chars - len(_RECOVERY_GAP)
     if payload_chars <= 0:
         return "", False
-    lead_chars = payload_chars // 2
+    lead_chars = payload_chars // 3
     local_chars = payload_chars - lead_chars
     lead = content[:lead_chars]
 
@@ -66,6 +67,7 @@ def slice_recovery_content(
         term.lower() for term in _RECOVERY_TERM_RE.findall(query)
     }
     lowered = content.lower()
+    term_frequency = {term: max(1, lowered.count(term)) for term in query_terms}
     latest_start = max(lead_chars, len(content) - local_chars)
     starts = {lead_chars}
     for term in query_terms:
@@ -73,10 +75,29 @@ def slice_recovery_content(
             centered = lead_chars + match.start() - local_chars // 2
             starts.add(min(latest_start, max(lead_chars, centered)))
 
-    def rank(start: int) -> tuple[int, int]:
+    def rank(start: int) -> tuple[float, float, int]:
         window = lowered[start:start + local_chars]
+        coverage = 0.0
+        centrality = 0.0
+        center = local_chars / 2.0
+        for term in query_terms:
+            weight = len(term) / term_frequency[term]
+            positions = [
+                match.start() for match in re.finditer(re.escape(term), window)
+            ]
+            if not positions:
+                continue
+            coverage += weight
+            centrality += weight * max(
+                max(
+                    0.0,
+                    1.0 - abs((position + len(term) / 2.0) - center) / max(1.0, center),
+                )
+                for position in positions
+            )
         return (
-            sum(window.count(term) for term in query_terms),
+            coverage,
+            centrality,
             -start,
         )
 

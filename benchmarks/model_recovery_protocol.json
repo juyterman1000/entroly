@@ -1,0 +1,68 @@
+{
+  "schema_version": "entroly.model-recovery-protocol.v1",
+  "frozen_at": "2026-07-14T15:30:00Z",
+  "participants": {
+    "entroly": {
+      "package": "entroly",
+      "version": "1.0.59",
+      "compression_entry_point": "entroly.compression_proxy.compress_proxy_payload",
+      "retrieval_entry_point": "entroly.compression_retrieval_store.CompressionRetrievalStore.search"
+    },
+    "headroom": {
+      "package": "headroom-ai",
+      "version": "0.31.0",
+      "compression_entry_point": "headroom.compress",
+      "retrieval_entry_point": "headroom.cache.compression_store.CompressionStore.retrieve"
+    }
+  },
+  "fixture_generator": "query-shift-json-v1",
+  "fixture_rows": 180,
+  "ordinary_payload_chars": 96,
+  "future_payload_chars": 1200,
+  "shared_tokenizer": "o200k_base",
+  "entroly_budget_tokens": 600,
+  "entroly_retrieval_limit": 3,
+  "headroom_model": "gpt-4o",
+  "headroom_savings_profile": "agent-90",
+  "headroom_target_ratio": 0.25,
+  "ollama": {
+    "model": "entroly-qwen2.5-7b-32k:latest",
+    "base_url": "http://127.0.0.1:11434",
+    "temperature": 0,
+    "seed": 0,
+    "num_predict": 24,
+    "timeout_seconds": 180
+  },
+  "phases": {
+    "development": {
+      "trials": 4,
+      "seed": 20260718
+    },
+    "holdout": {
+      "trials": 12,
+      "seed": 20260719
+    }
+  },
+  "quality_gates": {
+    "complete_matrix": true,
+    "raw_exact_accuracy": 1.0,
+    "persistent_recovery_exact_bytes": true,
+    "failures_remain_in_sample": true,
+    "no_oracle_retrieval": true
+  },
+  "claim_policy": {
+    "aggregate_product_score_allowed": false,
+    "development_claims_allowed": false,
+    "negative_results_are_published": true,
+    "universal_superiority_claim_allowed": false,
+    "scoped_holdout_claim_requires_complete_gate": true,
+    "paired_superiority_requires_mcnemar_p_lte": 0.05
+  },
+  "definitions": {
+    "query_shift": "Compression sees only the initial incident question. The future audit question is revealed after compression.",
+    "model_triggered_recovery": "Recovery is called only when the first model response canonicalizes exactly to RETRIEVE.",
+    "final_exact_accuracy": "The first response is final unless it is RETRIEVE; then the single recovery retry is final.",
+    "effective_tokens": "Active context tokens plus recovery tokens only for trials where retrieval was triggered.",
+    "headroom_recovery_scope": "The runner composes Headroom's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement."
+  }
+}

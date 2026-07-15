@@ -1,0 +1,76 @@
+{
+  "schema_version": "entroly.model-recovery-protocol.v3",
+  "frozen_at": "2026-07-14T16:25:00Z",
+  "supersedes": {
+    "protocol": "benchmarks/model_recovery_protocol_v2.json",
+    "invalid_smoke_artifact": "benchmarks/results/model_recovery_v2_smoke.json",
+    "reason": "The pinned 7.6B CPU evaluator timed out on the 3,364-token raw smoke both before and after a clean model unload. V3 changes only the local guard model and its context allocation; fixture generator, padding, timeout, participant versions, budgets, trial counts, scoring, and holdout policy remain unchanged."
+  },
+  "participants": {
+    "entroly": {
+      "package": "entroly",
+      "version": "1.0.59",
+      "compression_entry_point": "entroly.compression_proxy.compress_proxy_payload",
+      "retrieval_entry_point": "entroly.compression_retrieval_store.CompressionRetrievalStore.search"
+    },
+    "headroom": {
+      "package": "headroom-ai",
+      "version": "0.31.0",
+      "compression_entry_point": "headroom.compress",
+      "retrieval_entry_point": "headroom.cache.compression_store.CompressionStore.retrieve"
+    }
+  },
+  "fixture_generator": "query-shift-json-v1",
+  "fixture_rows": 48,
+  "ordinary_payload_chars": 32,
+  "future_payload_chars": 512,
+  "shared_tokenizer": "o200k_base",
+  "entroly_budget_tokens": 600,
+  "entroly_retrieval_limit": 3,
+  "headroom_model": "gpt-4o",
+  "headroom_savings_profile": "agent-90",
+  "headroom_target_ratio": 0.25,
+  "ollama": {
+    "model": "qwen2.5:1.5b",
+    "base_url": "http://127.0.0.1:11434",
+    "temperature": 0,
+    "seed": 0,
+    "num_predict": 24,
+    "num_ctx": 8192,
+    "timeout_seconds": 180
+  },
+  "phases": {
+    "development": {
+      "trials": 4,
+      "seed": 20260718
+    },
+    "holdout": {
+      "trials": 12,
+      "seed": 20260719
+    }
+  },
+  "quality_gates": {
+    "complete_matrix": true,
+    "raw_exact_accuracy": 1.0,
+    "persistent_recovery_exact_bytes": true,
+    "failures_remain_in_sample": true,
+    "no_oracle_retrieval": true
+  },
+  "claim_policy": {
+    "aggregate_product_score_allowed": false,
+    "development_claims_allowed": false,
+    "negative_results_are_published": true,
+    "universal_superiority_claim_allowed": false,
+    "frontier_model_claim_allowed": false,
+    "scoped_holdout_claim_requires_complete_gate": true,
+    "paired_superiority_requires_mcnemar_p_lte": 0.05
+  },
+  "definitions": {
+    "query_shift": "Compression sees only the initial incident question. The future audit question is revealed after compression.",
+    "model_triggered_recovery": "Recovery is called only when the first model response canonicalizes exactly to RETRIEVE.",
+    "final_exact_accuracy": "The first response is final unless it is RETRIEVE; then the single recovery retry is final.",
+    "effective_tokens": "Active context tokens plus recovery tokens only for trials where retrieval was triggered.",
+    "headroom_recovery_scope": "The runner composes Headroom's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement.",
+    "model_scope": "Qwen2.5 1.5B Q4_K_M is a local deterministic workflow guard only, not a frontier-model quality proxy."
+  }
+}

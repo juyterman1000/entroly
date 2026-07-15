@@ -81,6 +81,22 @@ def test_slice_recovery_content_preserves_lead_and_query_local_exact_window():
     assert "[... exact excerpt gap; retrieve full source by handle ...]" in sliced
 
 
+def test_slice_recovery_content_prefers_unique_identifier_over_common_term() -> None:
+    rows = [f"audit case CASE-ORD-{index:04d} status ok" for index in range(200)]
+    rows[137] = "audit case CASE-0718-000 recovery code RCV-506714411"
+    content = "\n".join(rows)
+
+    sliced, was_sliced = slice_recovery_content(
+        content,
+        query="What recovery code belongs to audit case CASE-0718-000?",
+        token_budget=96,
+    )
+
+    assert was_sliced is True
+    assert "CASE-0718-000" in sliced
+    assert "RCV-506714411" in sliced
+
+
 def test_capture_recoverable_fragments_attaches_exact_handle():
     store = CompressedContextStore()
     originals = {

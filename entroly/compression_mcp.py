@@ -79,12 +79,14 @@ def create_compression_mcp_server(store_path: str | None = None):
         limit: int = 5,
         store_path_override: str = "",
         retrieval_id: str = "",
+        max_tokens_per_span: int = 600,
     ) -> str:
-        """Search spans and debit every span returned to the agent."""
+        """Search and return bounded exact excerpts; full spans remain retrievable."""
         store = _store(store_path_override)
-        spans = store.search(
+        spans = store.search_exact_excerpts(
             query,
             limit=max(1, min(int(limit), 20)),
+            max_tokens_per_span=max(32, min(int(max_tokens_per_span), 8_000)),
             record_retrieval=True,
             retrieval_id=retrieval_id or None,
         )

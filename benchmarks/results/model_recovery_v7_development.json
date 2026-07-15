@@ -1,0 +1,774 @@
+{
+  "schema_version": "entroly.model-recovery.v1",
+  "generated_at": "2026-07-15T01:31:34.104408+00:00",
+  "phase": "development",
+  "protocol": {
+    "schema_version": "entroly.model-recovery-protocol.v7",
+    "frozen_at": "2026-07-15T01:22:30Z",
+    "supersedes": {
+      "accepted_protocol": "benchmarks/model_recovery_protocol_v5.json",
+      "accepted_holdout_artifact": "benchmarks/results/model_recovery_v5_holdout.json",
+      "rejected_development_protocol": "benchmarks/model_recovery_protocol_v6.json",
+      "rejected_development_artifact": "benchmarks/results/model_recovery_v6_development.json",
+      "reason": "V5 passed all execution and integrity gates, but its report generator carried a stale 7B/32K limitation label even though the embedded model identity and protocol correctly recorded qwen2.5:1.5b. V6 tested scalar field projection and was rejected after development accuracy fell to 25%. V7 restores V5's complete source-exact JSON object recovery, fixes model-scope metadata generation, and uses fresh development and holdout seeds."
+    },
+    "participants": {
+      "entroly": {
+        "package": "entroly",
+        "version": "1.0.59",
+        "compression_entry_point": "entroly.compression_proxy.compress_proxy_payload",
+        "retrieval_entry_point": "entroly.compression_retrieval_store.CompressionRetrievalStore.search_exact_excerpts"
+      },
+      "headroom": {
+        "package": "headroom-ai",
+        "version": "0.31.0",
+        "compression_entry_point": "headroom.compress",
+        "retrieval_entry_point": "headroom.cache.compression_store.CompressionStore.retrieve"
+      }
+    },
+    "fixture_generator": "query-shift-json-v1",
+    "fixture_rows": 48,
+    "ordinary_payload_chars": 32,
+    "future_payload_chars": 512,
+    "shared_tokenizer": "o200k_base",
+    "entroly_budget_tokens": 600,
+    "entroly_retrieval_limit": 3,
+    "entroly_recovery_excerpt_tokens": 600,
+    "entroly_recovery_strategy": "complete exact query-matching JSON object when it fits; capped exact lead-plus-query-window fallback otherwise",
+    "headroom_model": "gpt-4o",
+    "headroom_savings_profile": "agent-90",
+    "headroom_target_ratio": 0.25,
+    "ollama": {
+      "model": "qwen2.5:1.5b",
+      "base_url": "http://127.0.0.1:11434",
+      "temperature": 0,
+      "seed": 0,
+      "num_predict": 24,
+      "num_ctx": 8192,
+      "timeout_seconds": 180
+    },
+    "phases": {
+      "development": {
+        "trials": 4,
+        "seed": 20260726
+      },
+      "holdout": {
+        "trials": 24,
+        "seed": 20260727
+      }
+    },
+    "quality_gates": {
+      "complete_matrix": true,
+      "raw_exact_accuracy": 1.0,
+      "persistent_recovery_exact_bytes": true,
+      "failures_remain_in_sample": true,
+      "no_oracle_retrieval": true
+    },
+    "claim_policy": {
+      "aggregate_product_score_allowed": false,
+      "development_claims_allowed": false,
+      "negative_results_are_published": true,
+      "universal_superiority_claim_allowed": false,
+      "frontier_model_claim_allowed": false,
+      "scoped_holdout_claim_requires_complete_gate": true,
+      "paired_superiority_requires_mcnemar_p_lte": 0.05
+    },
+    "definitions": {
+      "query_shift": "Compression sees only the initial incident question. The future audit question is revealed after compression.",
+      "model_triggered_recovery": "Recovery is called only when the first model response canonicalizes exactly to RETRIEVE.",
+      "bounded_exact_excerpt": "A complete exact JSON object is preferred when it fits. Otherwise an oversized stored span returns an exact source lead plus exact query-local window separated by an explicit gap marker; full-span retrieval remains available.",
+      "final_exact_accuracy": "The first response is final unless it is RETRIEVE; then the single recovery retry is final.",
+      "effective_tokens": "Active context tokens plus recovery tokens only for trials where retrieval was triggered.",
+      "headroom_recovery_scope": "The runner composes Headroom's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement.",
+      "model_scope": "Qwen2.5 1.5B Q4_K_M is a local deterministic workflow guard only, not a frontier-model quality proxy."
+    }
+  },
+  "protocol_sha256": "3088fbc1568afa9a5dec08bdbc863cac8eb31c46fc3cbcb143bdc00706f8c6fe",
+  "environment": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python": "3.10.0",
+    "model": {
+      "name": "qwen2.5:1.5b",
+      "digest": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b",
+      "size": 986061892,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen2",
+        "families": [
+          "qwen2"
+        ],
+        "parameter_size": "1.5B",
+        "quantization_level": "Q4_K_M"
+      },
+      "show_sha256": "f5d72da72ffe232d07707260001e7b67a01dfd4f56a25b14ccee98bc2920a51d"
+    },
+    "base_url": "http://127.0.0.1:11434"
+  },
+  "generation": {
+    "temperature": 0,
+    "seed": 0,
+    "num_predict": 24,
+    "num_ctx": 8192
+  },
+  "prompt_template_sha256": "4f833e34143aee1e422e87d9a831f56eefdfd22660f955c424e4eb1fb5d1fa59",
+  "fixtures": [
+    {
+      "fixture_id": "development-000",
+      "compression_query": "Find initial auth incident INC-0726-000, its latency, and failure status.",
+      "future_question": "What recovery code belongs to audit case CASE-0726-000?",
+      "expected_answer": "RCV-846741834",
+      "content": "[\n  {\n    \"audit_case\": \"CASE-ORD-0000\",\n    \"latency_ms\": 20,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0001\",\n    \"latency_ms\": 37,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0001-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0002\",\n    \"latency_ms\": 54,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0002-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0003\",\n    \"latency_ms\": 71,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0004\",\n    \"latency_ms\": 88,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0004-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0005\",\n    \"latency_ms\": 22,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0005-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0006\",\n    \"latency_ms\": 39,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0007\",\n    \"latency_ms\": 56,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0007-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0008\",\n    \"latency_ms\": 73,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0008-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0009\",\n    \"latency_ms\": 90,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0010\",\n    \"latency_ms\": 24,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0010-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0011\",\n    \"latency_ms\": 41,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0011-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0012\",\n    \"latency_ms\": 58,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0013\",\n    \"latency_ms\": 75,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0013-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0014\",\n    \"latency_ms\": 92,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0014-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0015\",\n    \"incident_id\": \"INC-0726-000\",\n    \"latency_ms\": 9911,\n    \"message\": \"initial refresh boundary incident\",\n    \"payload\": \"trace-0015-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"failed\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0016\",\n    \"latency_ms\": 43,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0016-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0017\",\n    \"latency_ms\": 60,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0017-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0018\",\n    \"latency_ms\": 77,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0018-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0019\",\n    \"latency_ms\": 94,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0019-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0020\",\n    \"latency_ms\": 28,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0020-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0021\",\n    \"latency_ms\": 45,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0021-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0022\",\n    \"latency_ms\": 62,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0022-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0023\",\n    \"latency_ms\": 79,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0023-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0024\",\n    \"latency_ms\": 96,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0024-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-0726-000\",\n    \"latency_ms\": 30,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-846741834 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-846741834\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0026\",\n    \"latency_ms\": 47,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0026-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0027\",\n    \"latency_ms\": 64,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0027-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0028\",\n    \"latency_ms\": 81,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0028-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0029\",\n    \"latency_ms\": 98,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0029-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0030\",\n    \"latency_ms\": 32,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0030-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0031\",\n    \"latency_ms\": 49,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0031-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0032\",\n    \"latency_ms\": 66,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0032-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0033\",\n    \"latency_ms\": 83,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0033-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0034\",\n    \"latency_ms\": 100,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0034-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0035\",\n    \"latency_ms\": 34,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0035-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0036\",\n    \"latency_ms\": 51,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0036-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0037\",\n    \"latency_ms\": 68,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0037-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0038\",\n    \"latency_ms\": 85,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0038-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0039\",\n    \"latency_ms\": 102,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0039-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0040\",\n    \"latency_ms\": 36,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0040-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0041\",\n    \"latency_ms\": 53,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0041-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0042\",\n    \"latency_ms\": 70,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0042-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0043\",\n    \"latency_ms\": 87,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0043-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0044\",\n    \"latency_ms\": 21,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0044-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0045\",\n    \"latency_ms\": 38,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0045-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0046\",\n    \"latency_ms\": 55,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0046-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0047\",\n    \"latency_ms\": 72,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  }\n]",
+      "content_sha256": "47d3846ca2e923f477f54977019943783256631ec870f298b3c05975faad2c20",
+      "input_tokens": 3364,
+      "primary_index": 15,
+      "future_index": 25
+    },
+    {
+      "fixture_id": "development-001",
+      "compression_query": "Find initial auth incident INC-0726-001, its latency, and failure status.",
+      "future_question": "What recovery code belongs to audit case CASE-0726-001?",
+      "expected_answer": "RCV-711833095",
+      "content": "[\n  {\n    \"audit_case\": \"CASE-ORD-0000\",\n    \"latency_ms\": 21,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0001\",\n    \"latency_ms\": 38,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0001-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0002\",\n    \"latency_ms\": 55,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0002-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0003\",\n    \"latency_ms\": 72,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0004\",\n    \"latency_ms\": 89,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0004-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0005\",\n    \"latency_ms\": 23,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0005-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0006\",\n    \"latency_ms\": 40,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0007\",\n    \"latency_ms\": 57,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0007-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0008\",\n    \"latency_ms\": 74,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0008-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0009\",\n    \"latency_ms\": 91,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0010\",\n    \"latency_ms\": 25,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0010-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0011\",\n    \"latency_ms\": 42,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0011-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0012\",\n    \"latency_ms\": 59,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0013\",\n    \"latency_ms\": 76,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0013-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0014\",\n    \"latency_ms\": 93,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0014-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0015\",\n    \"latency_ms\": 27,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0015-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0016\",\n    \"latency_ms\": 44,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0016-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0017\",\n    \"latency_ms\": 61,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0017-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0018\",\n    \"latency_ms\": 78,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0018-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0019\",\n    \"latency_ms\": 95,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0019-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0020\",\n    \"incident_id\": \"INC-0726-001\",\n    \"latency_ms\": 9912,\n    \"message\": \"initial refresh boundary incident\",\n    \"payload\": \"trace-0020-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"failed\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0021\",\n    \"latency_ms\": 46,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0021-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0022\",\n    \"latency_ms\": 63,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0022-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0023\",\n    \"latency_ms\": 80,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0023-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0024\",\n    \"latency_ms\": 97,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0024-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0025\",\n    \"latency_ms\": 31,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0025-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0026\",\n    \"latency_ms\": 48,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0026-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0027\",\n    \"latency_ms\": 65,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0027-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0028\",\n    \"latency_ms\": 82,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0028-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0029\",\n    \"latency_ms\": 99,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0029-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0030\",\n    \"latency_ms\": 33,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0030-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0031\",\n    \"latency_ms\": 50,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0031-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0032\",\n    \"latency_ms\": 67,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0032-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0033\",\n    \"latency_ms\": 84,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0033-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-0726-001\",\n    \"latency_ms\": 101,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-711833095 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-711833095\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0035\",\n    \"latency_ms\": 35,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0035-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0036\",\n    \"latency_ms\": 52,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0036-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0037\",\n    \"latency_ms\": 69,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0037-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0038\",\n    \"latency_ms\": 86,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0038-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0039\",\n    \"latency_ms\": 20,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0039-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0040\",\n    \"latency_ms\": 37,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0040-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0041\",\n    \"latency_ms\": 54,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0041-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0042\",\n    \"latency_ms\": 71,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0042-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0043\",\n    \"latency_ms\": 88,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0043-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0044\",\n    \"latency_ms\": 22,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0044-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0045\",\n    \"latency_ms\": 39,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0045-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0046\",\n    \"latency_ms\": 56,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0046-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0047\",\n    \"latency_ms\": 73,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  }\n]",
+      "content_sha256": "ec09bd14719b1f6f491de14990c504f3a9315f5690ef1b663779fddc8c5dc0c8",
+      "input_tokens": 3364,
+      "primary_index": 20,
+      "future_index": 34
+    },
+    {
+      "fixture_id": "development-002",
+      "compression_query": "Find initial auth incident INC-0726-002, its latency, and failure status.",
+      "future_question": "What recovery code belongs to audit case CASE-0726-002?",
+      "expected_answer": "RCV-788099237",
+      "content": "[\n  {\n    \"audit_case\": \"CASE-ORD-0000\",\n    \"latency_ms\": 22,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0001\",\n    \"latency_ms\": 39,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0001-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0002\",\n    \"latency_ms\": 56,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0002-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0003\",\n    \"latency_ms\": 73,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0004\",\n    \"latency_ms\": 90,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0004-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0005\",\n    \"latency_ms\": 24,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0005-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0006\",\n    \"latency_ms\": 41,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0007\",\n    \"latency_ms\": 58,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0007-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0008\",\n    \"latency_ms\": 75,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0008-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0009\",\n    \"latency_ms\": 92,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0010\",\n    \"latency_ms\": 26,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0010-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0011\",\n    \"latency_ms\": 43,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0011-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0012\",\n    \"latency_ms\": 60,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0013\",\n    \"latency_ms\": 77,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0013-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0014\",\n    \"latency_ms\": 94,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0014-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0015\",\n    \"latency_ms\": 28,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0015-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0016\",\n    \"latency_ms\": 45,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0016-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0017\",\n    \"latency_ms\": 62,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0017-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0018\",\n    \"latency_ms\": 79,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0018-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0019\",\n    \"latency_ms\": 96,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0019-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0020\",\n    \"incident_id\": \"INC-0726-002\",\n    \"latency_ms\": 9913,\n    \"message\": \"initial refresh boundary incident\",\n    \"payload\": \"trace-0020-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"failed\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0021\",\n    \"latency_ms\": 47,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0021-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-0726-002\",\n    \"latency_ms\": 64,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-788099237 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-788099237\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0023\",\n    \"latency_ms\": 81,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0023-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0024\",\n    \"latency_ms\": 98,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0024-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0025\",\n    \"latency_ms\": 32,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0025-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0026\",\n    \"latency_ms\": 49,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0026-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0027\",\n    \"latency_ms\": 66,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0027-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0028\",\n    \"latency_ms\": 83,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0028-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0029\",\n    \"latency_ms\": 100,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0029-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0030\",\n    \"latency_ms\": 34,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0030-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0031\",\n    \"latency_ms\": 51,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0031-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0032\",\n    \"latency_ms\": 68,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0032-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0033\",\n    \"latency_ms\": 85,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0033-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0034\",\n    \"latency_ms\": 102,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0034-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0035\",\n    \"latency_ms\": 36,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0035-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0036\",\n    \"latency_ms\": 53,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0036-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0037\",\n    \"latency_ms\": 70,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0037-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0038\",\n    \"latency_ms\": 87,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0038-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0039\",\n    \"latency_ms\": 21,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0039-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0040\",\n    \"latency_ms\": 38,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0040-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0041\",\n    \"latency_ms\": 55,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0041-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0042\",\n    \"latency_ms\": 72,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0042-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0043\",\n    \"latency_ms\": 89,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0043-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0044\",\n    \"latency_ms\": 23,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0044-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0045\",\n    \"latency_ms\": 40,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0045-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0046\",\n    \"latency_ms\": 57,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0046-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0047\",\n    \"latency_ms\": 74,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  }\n]",
+      "content_sha256": "fd202cbec94b5f5f1ea5229a38cf1e9d0de942ec788061160bfb6b640d1065f0",
+      "input_tokens": 3364,
+      "primary_index": 20,
+      "future_index": 22
+    },
+    {
+      "fixture_id": "development-003",
+      "compression_query": "Find initial auth incident INC-0726-003, its latency, and failure status.",
+      "future_question": "What recovery code belongs to audit case CASE-0726-003?",
+      "expected_answer": "RCV-469074479",
+      "content": "[\n  {\n    \"audit_case\": \"CASE-ORD-0000\",\n    \"latency_ms\": 23,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0001\",\n    \"latency_ms\": 40,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0001-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0002\",\n    \"latency_ms\": 57,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0002-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0003\",\n    \"latency_ms\": 74,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0004\",\n    \"latency_ms\": 91,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0004-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0005\",\n    \"latency_ms\": 25,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0005-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0006\",\n    \"latency_ms\": 42,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0007\",\n    \"latency_ms\": 59,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0007-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0008\",\n    \"latency_ms\": 76,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0008-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0009\",\n    \"latency_ms\": 93,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0010\",\n    \"latency_ms\": 27,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0010-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0011\",\n    \"latency_ms\": 44,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0011-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0012\",\n    \"latency_ms\": 61,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-0726-003\",\n    \"latency_ms\": 78,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-469074479 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-469074479\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0014\",\n    \"latency_ms\": 95,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0014-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0015\",\n    \"latency_ms\": 29,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0015-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0016\",\n    \"latency_ms\": 46,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0016-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0017\",\n    \"latency_ms\": 63,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0017-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0018\",\n    \"latency_ms\": 80,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0018-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0019\",\n    \"latency_ms\": 97,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0019-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0020\",\n    \"latency_ms\": 31,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0020-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0021\",\n    \"latency_ms\": 48,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0021-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0022\",\n    \"latency_ms\": 65,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0022-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0023\",\n    \"latency_ms\": 82,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0023-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0024\",\n    \"latency_ms\": 99,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0024-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0025\",\n    \"incident_id\": \"INC-0726-003\",\n    \"latency_ms\": 9914,\n    \"message\": \"initial refresh boundary incident\",\n    \"payload\": \"trace-0025-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"failed\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0026\",\n    \"latency_ms\": 50,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0026-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0027\",\n    \"latency_ms\": 67,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0027-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0028\",\n    \"latency_ms\": 84,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0028-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0029\",\n    \"latency_ms\": 101,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0029-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0030\",\n    \"latency_ms\": 35,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0030-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0031\",\n    \"latency_ms\": 52,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0031-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0032\",\n    \"latency_ms\": 69,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0032-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0033\",\n    \"latency_ms\": 86,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0033-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0034\",\n    \"latency_ms\": 20,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0034-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0035\",\n    \"latency_ms\": 37,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0035-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0036\",\n    \"latency_ms\": 54,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0036-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0037\",\n    \"latency_ms\": 71,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0037-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0038\",\n    \"latency_ms\": 88,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0038-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0039\",\n    \"latency_ms\": 22,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0039-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0040\",\n    \"latency_ms\": 39,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0040-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0041\",\n    \"latency_ms\": 56,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0041-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0042\",\n    \"latency_ms\": 73,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0042-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0043\",\n    \"latency_ms\": 90,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0043-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0044\",\n    \"latency_ms\": 24,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0044-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0045\",\n    \"latency_ms\": 41,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0045-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"auth\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0046\",\n    \"latency_ms\": 58,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0046-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  },\n  {\n    \"audit_case\": \"CASE-ORD-0047\",\n    \"latency_ms\": 75,\n    \"message\": \"routine audit event completed\",\n    \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n    \"service\": \"search\",\n    \"status\": \"ok\"\n  }\n]",
+      "content_sha256": "cd614063949ac37773a873aac64bbf5307ac9a2051a69c411debe2a1bbe3729e",
+      "input_tokens": 3364,
+      "primary_index": 25,
+      "future_index": 13
+    }
+  ],
+  "raw_rows": [
+    {
+      "fixture_id": "development-000",
+      "context_sha256": "47d3846ca2e923f477f54977019943783256631ec870f298b3c05975faad2c20",
+      "context_tokens": 3364,
+      "prompt_sha256": "aebcdf1dd031b746affaf333655a50cabba7468289a93da6b32fb087a82ccb07",
+      "prediction": "RCV-846741834",
+      "prediction_sha256": "edf315cdacf04c903096369db031e4423a75bdc74db78e508ba5d34243a298f7",
+      "canonical_prediction": "rcv-846741834",
+      "latency_ms": 70095.431,
+      "eval_count": 13,
+      "done": true,
+      "error": null,
+      "exact": true
+    },
+    {
+      "fixture_id": "development-001",
+      "context_sha256": "ec09bd14719b1f6f491de14990c504f3a9315f5690ef1b663779fddc8c5dc0c8",
+      "context_tokens": 3364,
+      "prompt_sha256": "612aa06ced60a35fe270307ac753a6977c093e0dd86ac774d94c21caa32590aa",
+      "prediction": "RCV-711833095",
+      "prediction_sha256": "5bf9cb249d009ddc31ddbddf641d697ca4e35b2432633866069f4082da39a1c6",
+      "canonical_prediction": "rcv-711833095",
+      "latency_ms": 70438.096,
+      "eval_count": 13,
+      "done": true,
+      "error": null,
+      "exact": true
+    },
+    {
+      "fixture_id": "development-002",
+      "context_sha256": "fd202cbec94b5f5f1ea5229a38cf1e9d0de942ec788061160bfb6b640d1065f0",
+      "context_tokens": 3364,
+      "prompt_sha256": "61f29a68b28066471eb423d645fd33839b68f7befb464b18a2678d864a6d7571",
+      "prediction": "RCV-788099237",
+      "prediction_sha256": "d6d88ab768b11035a3c216676eb830e9ae3eb17e2c48a9b3f884ea4a083a6b48",
+      "canonical_prediction": "rcv-788099237",
+      "latency_ms": 71179.063,
+      "eval_count": 13,
+      "done": true,
+      "error": null,
+      "exact": true
+    },
+    {
+      "fixture_id": "development-003",
+      "context_sha256": "cd614063949ac37773a873aac64bbf5307ac9a2051a69c411debe2a1bbe3729e",
+      "context_tokens": 3364,
+      "prompt_sha256": "c764e7e265a55a118ea5eedb875234657ae9cfde4d3f458183c872003eee5056",
+      "prediction": "RCV-469074479",
+      "prediction_sha256": "f3e324b69c8f69145b26e009ba8f2f10e3b7a5362865ddd89564c315b7f5d67b",
+      "canonical_prediction": "rcv-469074479",
+      "latency_ms": 70937.118,
+      "eval_count": 13,
+      "done": true,
+      "error": null,
+      "exact": true
+    }
+  ],
+  "rows": [
+    {
+      "fixture_id": "development-000",
+      "system": "entroly",
+      "input_tokens": 3364,
+      "active_tokens": 616,
+      "recovery_tokens": 354,
+      "effective_tokens": 970,
+      "active_contains_expected": false,
+      "changed": true,
+      "compression": {
+        "system": "entroly",
+        "operation": "compress",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "active_context": "{\n  \"counts\": {\n    \"dict\": 48,\n    \"int\": 48,\n    \"list\": 1,\n    \"str\": 242\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [],\n  \"query_matches\": [\n    {\n      \"audit_case\": \"CASE-ORD-0015\",\n      \"incident_id\": \"INC-0726-000\",\n      \"latency_ms\": 9911,\n      \"message\": \"initial refresh boundary incident\",\n      \"payload\": \"trace-0015-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": 20,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0003\",\n      \"latency_ms\": 71,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0006\",\n      \"latency_ms\": 39,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0009\",\n      \"latency_ms\": 90,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0012\",\n      \"latency_ms\": 58,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    \"items\": 48,\n    \"last\": {\n      \"audit_case\": \"CASE-ORD-0047\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"search\",\n      \"status\": \"ok\"\n    },\n    \"type\": \"array\"\n  }\n}",
+        "active_sha256": "cf49435e920c581857ab85b696d9fa9f47ab72412d663cbb212c169366a493c9",
+        "active_tokens": 616,
+        "changed": true,
+        "retrieval_handle": {
+          "receipt_ids": [
+            "6607aa2a9f18d69e"
+          ]
+        },
+        "native_metrics": {
+          "compressed_blocks": 1,
+          "receipt_count": 1,
+          "stored_span_count": 1
+        }
+      },
+      "active_response": {
+        "context_sha256": "cf49435e920c581857ab85b696d9fa9f47ab72412d663cbb212c169366a493c9",
+        "context_tokens": 616,
+        "prompt_sha256": "9a921635d0dd87a647eb29e13ee48aa40e4bc3b05174334c51ed8f7234fcdbe1",
+        "prediction": "RETRIEVE",
+        "prediction_sha256": "44551bee544aabfe7a14edc9b7977c96c61d44f8100046734f7205398b82f147",
+        "canonical_prediction": "retrieve",
+        "latency_ms": 8599.254,
+        "eval_count": 5,
+        "done": true,
+        "error": null
+      },
+      "active_exact": false,
+      "retrieval_triggered": true,
+      "retrieval_status": "ok",
+      "retrieval": {
+        "system": "entroly",
+        "operation": "retrieve",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "status": "ok",
+        "content": "[Recovered Entroly span c71459470a229e27]\n{\n    \"audit_case\": \"CASE-0726-000\",\n    \"latency_ms\": 30,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-846741834 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-846741834\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  }",
+        "content_sha256": "8256e22bb9c28799f5e873e4ccc0acf57d91698d7f0525422ddfa5e6f5150672",
+        "tokens": 354,
+        "items": [
+          {
+            "receipt_id": "6607aa2a9f18d69e",
+            "span_id": "c71459470a229e27",
+            "content_sha256": "cf6b7eae9af3dc918ad8e84b9bee6d83971a3a6578efb42bf1728153568acbb6"
+          }
+        ]
+      },
+      "retry_response": {
+        "context_sha256": "4385c6940a9cad07ae119c0a3bfe1c7e2ff772ba08157d2716d83b96c7dc5f2e",
+        "context_tokens": 978,
+        "prompt_sha256": "3a25c9170ad10335d70631884d4ad9e74a3bfaa2cf4b54a5c64683518648cd88",
+        "prediction": "RCV-846741834",
+        "prediction_sha256": "edf315cdacf04c903096369db031e4423a75bdc74db78e508ba5d34243a298f7",
+        "canonical_prediction": "rcv-846741834",
+        "latency_ms": 6722.891,
+        "eval_count": 13,
+        "done": true,
+        "error": null
+      },
+      "final_exact": true,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-000",
+      "system": "headroom",
+      "input_tokens": 3364,
+      "active_tokens": 1444,
+      "recovery_tokens": 0,
+      "effective_tokens": 1444,
+      "active_contains_expected": true,
+      "changed": true,
+      "compression": {
+        "system": "headroom",
+        "operation": "compress",
+        "version": "0.31.0",
+        "python": "3.10.0",
+        "active_context": "\"[48]{audit_case:string,latency_ms:int,message:string,payload:string,service:string,status:string,incident_id:string?,recovery_code:string?}\\nCASE-ORD-0000,20,routine audit event completed,trace-0000-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0001,37,routine audit event completed,trace-0001-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0002,54,routine audit event completed,trace-0002-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0003,71,routine audit event completed,trace-0003-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0004,88,routine audit event completed,trace-0004-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0005,22,routine audit event completed,trace-0005-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0006,39,routine audit event completed,trace-0006-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0007,56,routine audit event completed,trace-0007-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0008,73,routine audit event completed,trace-0008-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0009,90,routine audit event completed,trace-0009-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0010,24,routine audit event completed,trace-0010-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0011,41,routine audit event completed,trace-0011-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0012,58,routine audit event completed,trace-0012-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0013,75,routine audit event completed,trace-0013-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0014,92,routine audit event completed,trace-0014-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0015,9911,initial refresh boundary incident,trace-0015-xxxxxxxxxxxxxxxxxxxxx,auth,failed,INC-0726-000,\\nCASE-ORD-0016,43,routine audit event completed,trace-0016-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0017,60,routine audit event completed,trace-0017-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0018,77,routine audit event completed,trace-0018-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0019,94,routine audit event completed,trace-0019-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0020,28,routine audit event completed,trace-0020-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0021,45,routine audit event completed,trace-0021-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0022,62,routine audit event completed,trace-0022-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0023,79,routine audit event completed,trace-0023-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0024,96,routine audit event completed,trace-0024-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-0726-000,30,archived compliance recovery record,<<ccr:92ea315115aa,string,548B>>,billing,ok,,RCV-846741834\\nCASE-ORD-0026,47,routine audit event completed,trace-0026-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0027,64,routine audit event completed,trace-0027-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0028,81,routine audit event completed,trace-0028-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0029,98,routine audit event completed,trace-0029-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0030,32,routine audit event completed,trace-0030-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0031,49,routine audit event completed,trace-0031-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0032,66,routine audit event completed,trace-0032-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0033,83,routine audit event completed,trace-0033-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0034,100,routine audit event completed,trace-0034-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0035,34,routine audit event completed,trace-0035-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0036,51,routine audit event completed,trace-0036-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0037,68,routine audit event completed,trace-0037-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0038,85,routine audit event completed,trace-0038-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0039,102,routine audit event completed,trace-0039-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0040,36,routine audit event completed,trace-0040-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0041,53,routine audit event completed,trace-0041-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0042,70,routine audit event completed,trace-0042-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0043,87,routine audit event completed,trace-0043-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0044,21,routine audit event completed,trace-0044-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0045,38,routine audit event completed,trace-0045-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0046,55,routine audit event completed,trace-0046-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0047,72,routine audit event completed,trace-0047-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\n\"",
+        "active_sha256": "3817257d08174d1565529a5431bd959bb407f15f6f8eb029568b4d7eb3b44358",
+        "active_tokens": 1444,
+        "changed": true,
+        "retrieval_handle": {
+          "hash": "47d3846ca2e923f477f54977"
+        },
+        "native_metrics": {
+          "tokens_before": 3414,
+          "tokens_after": 1494,
+          "transforms": [
+            "router:smart_crusher:0.18"
+          ]
+        },
+        "stderr": "Content detection using pure-Python backend (native Magika/ONNX detector is unsafe by default on Windows; override with HEADROOM_DETECT_BACKEND=rust)."
+      },
+      "active_response": {
+        "context_sha256": "3817257d08174d1565529a5431bd959bb407f15f6f8eb029568b4d7eb3b44358",
+        "context_tokens": 1444,
+        "prompt_sha256": "78909d039bfebf8f61f92933384ce7b23a70da723470bbcc40c0471c01d8b0b9",
+        "prediction": "RCV-846741834",
+        "prediction_sha256": "edf315cdacf04c903096369db031e4423a75bdc74db78e508ba5d34243a298f7",
+        "canonical_prediction": "rcv-846741834",
+        "latency_ms": 28485.685,
+        "eval_count": 13,
+        "done": true,
+        "error": null
+      },
+      "active_exact": true,
+      "retrieval_triggered": false,
+      "retrieval_status": null,
+      "retrieval": null,
+      "retry_response": null,
+      "final_exact": true,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-001",
+      "system": "entroly",
+      "input_tokens": 3364,
+      "active_tokens": 616,
+      "recovery_tokens": 356,
+      "effective_tokens": 972,
+      "active_contains_expected": false,
+      "changed": true,
+      "compression": {
+        "system": "entroly",
+        "operation": "compress",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "active_context": "{\n  \"counts\": {\n    \"dict\": 48,\n    \"int\": 48,\n    \"list\": 1,\n    \"str\": 242\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [],\n  \"query_matches\": [\n    {\n      \"audit_case\": \"CASE-ORD-0020\",\n      \"incident_id\": \"INC-0726-001\",\n      \"latency_ms\": 9912,\n      \"message\": \"initial refresh boundary incident\",\n      \"payload\": \"trace-0020-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": 21,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0003\",\n      \"latency_ms\": 72,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0006\",\n      \"latency_ms\": 40,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0009\",\n      \"latency_ms\": 91,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0012\",\n      \"latency_ms\": 59,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    \"items\": 48,\n    \"last\": {\n      \"audit_case\": \"CASE-ORD-0047\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"search\",\n      \"status\": \"ok\"\n    },\n    \"type\": \"array\"\n  }\n}",
+        "active_sha256": "29cd5100199adf1c31eba82bdc48a55edce468b8f2e8e98dcab9b285051f4050",
+        "active_tokens": 616,
+        "changed": true,
+        "retrieval_handle": {
+          "receipt_ids": [
+            "ed0418ce9552a1d7"
+          ]
+        },
+        "native_metrics": {
+          "compressed_blocks": 1,
+          "receipt_count": 1,
+          "stored_span_count": 1
+        }
+      },
+      "active_response": {
+        "context_sha256": "29cd5100199adf1c31eba82bdc48a55edce468b8f2e8e98dcab9b285051f4050",
+        "context_tokens": 616,
+        "prompt_sha256": "b120129ef1c3383f19a926304a476e267a2610ca2dbcc2c4df7f55b1e7fff9bd",
+        "prediction": "RETRIEVE",
+        "prediction_sha256": "44551bee544aabfe7a14edc9b7977c96c61d44f8100046734f7205398b82f147",
+        "canonical_prediction": "retrieve",
+        "latency_ms": 9623.831,
+        "eval_count": 5,
+        "done": true,
+        "error": null
+      },
+      "active_exact": false,
+      "retrieval_triggered": true,
+      "retrieval_status": "ok",
+      "retrieval": {
+        "system": "entroly",
+        "operation": "retrieve",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "status": "ok",
+        "content": "[Recovered Entroly span 4f408aeffdc2dc35]\n{\n    \"audit_case\": \"CASE-0726-001\",\n    \"latency_ms\": 101,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-711833095 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-711833095\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  }",
+        "content_sha256": "a6be0f0f3c2f597bcfdfa9d4d8129a66a8d1b8b258711e10a1d4387162c2c772",
+        "tokens": 356,
+        "items": [
+          {
+            "receipt_id": "ed0418ce9552a1d7",
+            "span_id": "4f408aeffdc2dc35",
+            "content_sha256": "5626585b6b365e71a89279e45e33b3c7ea95a1737c81a25560daf5fb15a52a64"
+          }
+        ]
+      },
+      "retry_response": {
+        "context_sha256": "1e9b2de9b01853eb587c9782b941e2c12c92b6600c66dd03b4240b2387727f36",
+        "context_tokens": 980,
+        "prompt_sha256": "2bc1bd921c1f8ca268085f99ad8f05c8ffbdba2ca2a1e086d5ae7b83c1f61b95",
+        "prediction": "**RECOVERED EXACT CONTEXT**\n{\n    \"audit_case\": \"CASE-0726-00",
+        "prediction_sha256": "cd2e9052fe6aa863474ebbd43261d387756cd43ee32aa0a127dd26788c4cf27d",
+        "canonical_prediction": "recoveredexactcontextauditcasecase-0726-00",
+        "latency_ms": 15930.837,
+        "eval_count": 24,
+        "done": true,
+        "error": null
+      },
+      "final_exact": false,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-001",
+      "system": "headroom",
+      "input_tokens": 3364,
+      "active_tokens": 1446,
+      "recovery_tokens": 0,
+      "effective_tokens": 1446,
+      "active_contains_expected": true,
+      "changed": true,
+      "compression": {
+        "system": "headroom",
+        "operation": "compress",
+        "version": "0.31.0",
+        "python": "3.10.0",
+        "active_context": "\"[48]{audit_case:string,latency_ms:int,message:string,payload:string,service:string,status:string,incident_id:string?,recovery_code:string?}\\nCASE-ORD-0000,21,routine audit event completed,trace-0000-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0001,38,routine audit event completed,trace-0001-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0002,55,routine audit event completed,trace-0002-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0003,72,routine audit event completed,trace-0003-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0004,89,routine audit event completed,trace-0004-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0005,23,routine audit event completed,trace-0005-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0006,40,routine audit event completed,trace-0006-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0007,57,routine audit event completed,trace-0007-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0008,74,routine audit event completed,trace-0008-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0009,91,routine audit event completed,trace-0009-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0010,25,routine audit event completed,trace-0010-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0011,42,routine audit event completed,trace-0011-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0012,59,routine audit event completed,trace-0012-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0013,76,routine audit event completed,trace-0013-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0014,93,routine audit event completed,trace-0014-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0015,27,routine audit event completed,trace-0015-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0016,44,routine audit event completed,trace-0016-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0017,61,routine audit event completed,trace-0017-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0018,78,routine audit event completed,trace-0018-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0019,95,routine audit event completed,trace-0019-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0020,9912,initial refresh boundary incident,trace-0020-xxxxxxxxxxxxxxxxxxxxx,auth,failed,INC-0726-001,\\nCASE-ORD-0021,46,routine audit event completed,trace-0021-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0022,63,routine audit event completed,trace-0022-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0023,80,routine audit event completed,trace-0023-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0024,97,routine audit event completed,trace-0024-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0025,31,routine audit event completed,trace-0025-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0026,48,routine audit event completed,trace-0026-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0027,65,routine audit event completed,trace-0027-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0028,82,routine audit event completed,trace-0028-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0029,99,routine audit event completed,trace-0029-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0030,33,routine audit event completed,trace-0030-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0031,50,routine audit event completed,trace-0031-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0032,67,routine audit event completed,trace-0032-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0033,84,routine audit event completed,trace-0033-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-0726-001,101,archived compliance recovery record,<<ccr:a4f5baeb5091,string,548B>>,billing,ok,,RCV-711833095\\nCASE-ORD-0035,35,routine audit event completed,trace-0035-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0036,52,routine audit event completed,trace-0036-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0037,69,routine audit event completed,trace-0037-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0038,86,routine audit event completed,trace-0038-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0039,20,routine audit event completed,trace-0039-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0040,37,routine audit event completed,trace-0040-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0041,54,routine audit event completed,trace-0041-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0042,71,routine audit event completed,trace-0042-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0043,88,routine audit event completed,trace-0043-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0044,22,routine audit event completed,trace-0044-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0045,39,routine audit event completed,trace-0045-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0046,56,routine audit event completed,trace-0046-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0047,73,routine audit event completed,trace-0047-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\n\"",
+        "active_sha256": "2a8eaacc0ec28cd471baa228d9067505a0b9ac9b1f799f52d148fa768b05661c",
+        "active_tokens": 1446,
+        "changed": true,
+        "retrieval_handle": {
+          "hash": "ec09bd14719b1f6f491de149"
+        },
+        "native_metrics": {
+          "tokens_before": 3414,
+          "tokens_after": 1496,
+          "transforms": [
+            "router:smart_crusher:0.18"
+          ]
+        },
+        "stderr": "Content detection using pure-Python backend (native Magika/ONNX detector is unsafe by default on Windows; override with HEADROOM_DETECT_BACKEND=rust)."
+      },
+      "active_response": {
+        "context_sha256": "2a8eaacc0ec28cd471baa228d9067505a0b9ac9b1f799f52d148fa768b05661c",
+        "context_tokens": 1446,
+        "prompt_sha256": "30876adc362d16dc90efaa0d23ebec67c8ec720196a87aee33755fcb2d57c337",
+        "prediction": "RCV-711833095",
+        "prediction_sha256": "5bf9cb249d009ddc31ddbddf641d697ca4e35b2432633866069f4082da39a1c6",
+        "canonical_prediction": "rcv-711833095",
+        "latency_ms": 27840.958,
+        "eval_count": 13,
+        "done": true,
+        "error": null
+      },
+      "active_exact": true,
+      "retrieval_triggered": false,
+      "retrieval_status": null,
+      "retrieval": null,
+      "retry_response": null,
+      "final_exact": true,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-002",
+      "system": "entroly",
+      "input_tokens": 3364,
+      "active_tokens": 616,
+      "recovery_tokens": 360,
+      "effective_tokens": 976,
+      "active_contains_expected": false,
+      "changed": true,
+      "compression": {
+        "system": "entroly",
+        "operation": "compress",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "active_context": "{\n  \"counts\": {\n    \"dict\": 48,\n    \"int\": 48,\n    \"list\": 1,\n    \"str\": 242\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [],\n  \"query_matches\": [\n    {\n      \"audit_case\": \"CASE-ORD-0020\",\n      \"incident_id\": \"INC-0726-002\",\n      \"latency_ms\": 9913,\n      \"message\": \"initial refresh boundary incident\",\n      \"payload\": \"trace-0020-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": 22,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0003\",\n      \"latency_ms\": 73,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0006\",\n      \"latency_ms\": 41,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0009\",\n      \"latency_ms\": 92,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0012\",\n      \"latency_ms\": 60,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    \"items\": 48,\n    \"last\": {\n      \"audit_case\": \"CASE-ORD-0047\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"search\",\n      \"status\": \"ok\"\n    },\n    \"type\": \"array\"\n  }\n}",
+        "active_sha256": "a1c0a5846f8b277f1797775d9c354d55de1dfcd143cf1804e109a238c44556a8",
+        "active_tokens": 616,
+        "changed": true,
+        "retrieval_handle": {
+          "receipt_ids": [
+            "31659c8e303e2080"
+          ]
+        },
+        "native_metrics": {
+          "compressed_blocks": 1,
+          "receipt_count": 1,
+          "stored_span_count": 1
+        }
+      },
+      "active_response": {
+        "context_sha256": "a1c0a5846f8b277f1797775d9c354d55de1dfcd143cf1804e109a238c44556a8",
+        "context_tokens": 616,
+        "prompt_sha256": "0073efbbd959ca859c29481eb9f7792919e6760ef6138cd399ab001ea7ac732f",
+        "prediction": "RETRIEVE",
+        "prediction_sha256": "44551bee544aabfe7a14edc9b7977c96c61d44f8100046734f7205398b82f147",
+        "canonical_prediction": "retrieve",
+        "latency_ms": 12630.386,
+        "eval_count": 5,
+        "done": true,
+        "error": null
+      },
+      "active_exact": false,
+      "retrieval_triggered": true,
+      "retrieval_status": "ok",
+      "retrieval": {
+        "system": "entroly",
+        "operation": "retrieve",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "status": "ok",
+        "content": "[Recovered Entroly span 3e9c8e2ec7b30c77]\n{\n    \"audit_case\": \"CASE-0726-002\",\n    \"latency_ms\": 64,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-788099237 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-788099237\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  }",
+        "content_sha256": "24e0af8c489e42ded1018f25591c74fb2191c40fcbd5e1ec6cf29e1efabff244",
+        "tokens": 360,
+        "items": [
+          {
+            "receipt_id": "31659c8e303e2080",
+            "span_id": "3e9c8e2ec7b30c77",
+            "content_sha256": "a9a1bd5bc78ddd9837ee3fe558205bfb88261fabc0738c595e10c8a74256b67f"
+          }
+        ]
+      },
+      "retry_response": {
+        "context_sha256": "09a4d7752aed537b3b382db946241b96ce51b32a71da14fe4c86573996b572b3",
+        "context_tokens": 984,
+        "prompt_sha256": "1def55ae66781d44fbe5a2b2a3d5873995a7632bcf5322fb83a678cba8cde0e3",
+        "prediction": "RCV-788099237",
+        "prediction_sha256": "d6d88ab768b11035a3c216676eb830e9ae3eb17e2c48a9b3f884ea4a083a6b48",
+        "canonical_prediction": "rcv-788099237",
+        "latency_ms": 15249.393,
+        "eval_count": 13,
+        "done": true,
+        "error": null
+      },
+      "final_exact": true,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-002",
+      "system": "headroom",
+      "input_tokens": 3364,
+      "active_tokens": 1447,
+      "recovery_tokens": 0,
+      "effective_tokens": 1447,
+      "active_contains_expected": true,
+      "changed": true,
+      "compression": {
+        "system": "headroom",
+        "operation": "compress",
+        "version": "0.31.0",
+        "python": "3.10.0",
+        "active_context": "\"[48]{audit_case:string,latency_ms:int,message:string,payload:string,service:string,status:string,incident_id:string?,recovery_code:string?}\\nCASE-ORD-0000,22,routine audit event completed,trace-0000-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0001,39,routine audit event completed,trace-0001-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0002,56,routine audit event completed,trace-0002-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0003,73,routine audit event completed,trace-0003-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0004,90,routine audit event completed,trace-0004-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0005,24,routine audit event completed,trace-0005-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0006,41,routine audit event completed,trace-0006-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0007,58,routine audit event completed,trace-0007-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0008,75,routine audit event completed,trace-0008-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0009,92,routine audit event completed,trace-0009-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0010,26,routine audit event completed,trace-0010-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0011,43,routine audit event completed,trace-0011-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0012,60,routine audit event completed,trace-0012-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0013,77,routine audit event completed,trace-0013-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0014,94,routine audit event completed,trace-0014-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0015,28,routine audit event completed,trace-0015-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0016,45,routine audit event completed,trace-0016-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0017,62,routine audit event completed,trace-0017-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0018,79,routine audit event completed,trace-0018-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0019,96,routine audit event completed,trace-0019-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0020,9913,initial refresh boundary incident,trace-0020-xxxxxxxxxxxxxxxxxxxxx,auth,failed,INC-0726-002,\\nCASE-ORD-0021,47,routine audit event completed,trace-0021-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-0726-002,64,archived compliance recovery record,<<ccr:7ffd6f7f0163,string,548B>>,billing,ok,,RCV-788099237\\nCASE-ORD-0023,81,routine audit event completed,trace-0023-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0024,98,routine audit event completed,trace-0024-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0025,32,routine audit event completed,trace-0025-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0026,49,routine audit event completed,trace-0026-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0027,66,routine audit event completed,trace-0027-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0028,83,routine audit event completed,trace-0028-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0029,100,routine audit event completed,trace-0029-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0030,34,routine audit event completed,trace-0030-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0031,51,routine audit event completed,trace-0031-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0032,68,routine audit event completed,trace-0032-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0033,85,routine audit event completed,trace-0033-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0034,102,routine audit event completed,trace-0034-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0035,36,routine audit event completed,trace-0035-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0036,53,routine audit event completed,trace-0036-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0037,70,routine audit event completed,trace-0037-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0038,87,routine audit event completed,trace-0038-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0039,21,routine audit event completed,trace-0039-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0040,38,routine audit event completed,trace-0040-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0041,55,routine audit event completed,trace-0041-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0042,72,routine audit event completed,trace-0042-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0043,89,routine audit event completed,trace-0043-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0044,23,routine audit event completed,trace-0044-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0045,40,routine audit event completed,trace-0045-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0046,57,routine audit event completed,trace-0046-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0047,74,routine audit event completed,trace-0047-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\n\"",
+        "active_sha256": "9660948ff21bba980388a2a35a83a21e681744c463d602fa76e740018b6ed73b",
+        "active_tokens": 1447,
+        "changed": true,
+        "retrieval_handle": {
+          "hash": "fd202cbec94b5f5f1ea5229a"
+        },
+        "native_metrics": {
+          "tokens_before": 3414,
+          "tokens_after": 1497,
+          "transforms": [
+            "router:smart_crusher:0.18"
+          ]
+        },
+        "stderr": "Content detection using pure-Python backend (native Magika/ONNX detector is unsafe by default on Windows; override with HEADROOM_DETECT_BACKEND=rust)."
+      },
+      "active_response": {
+        "context_sha256": "9660948ff21bba980388a2a35a83a21e681744c463d602fa76e740018b6ed73b",
+        "context_tokens": 1447,
+        "prompt_sha256": "852026543e84b956648dfb8083023b57d9903fae4a173c26621307fa317ad895",
+        "prediction": "INC-0726-002",
+        "prediction_sha256": "b6c8500ace8d48f27c54bdc832530c794b6c38997ad56b36aa28c139e812ddcf",
+        "canonical_prediction": "inc-0726-002",
+        "latency_ms": 31731.144,
+        "eval_count": 11,
+        "done": true,
+        "error": null
+      },
+      "active_exact": false,
+      "retrieval_triggered": false,
+      "retrieval_status": null,
+      "retrieval": null,
+      "retry_response": null,
+      "final_exact": false,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-003",
+      "system": "entroly",
+      "input_tokens": 3364,
+      "active_tokens": 616,
+      "recovery_tokens": 356,
+      "effective_tokens": 972,
+      "active_contains_expected": false,
+      "changed": true,
+      "compression": {
+        "system": "entroly",
+        "operation": "compress",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "active_context": "{\n  \"counts\": {\n    \"dict\": 48,\n    \"int\": 48,\n    \"list\": 1,\n    \"str\": 242\n  },\n  \"elc\": \"json evidence-locked compression\",\n  \"outliers\": [],\n  \"query_matches\": [\n    {\n      \"audit_case\": \"CASE-ORD-0025\",\n      \"incident_id\": \"INC-0726-003\",\n      \"latency_ms\": 9914,\n      \"message\": \"initial refresh boundary incident\",\n      \"payload\": \"trace-0025-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"failed\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": 23,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0003\",\n      \"latency_ms\": 74,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0003-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0006\",\n      \"latency_ms\": 42,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0006-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0009\",\n      \"latency_ms\": 93,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0009-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    {\n      \"audit_case\": \"CASE-ORD-0012\",\n      \"latency_ms\": 61,\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0012-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"schema\": {\n    \"first\": {\n      \"audit_case\": \"CASE-ORD-0000\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0000-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"auth\",\n      \"status\": \"ok\"\n    },\n    \"items\": 48,\n    \"last\": {\n      \"audit_case\": \"CASE-ORD-0047\",\n      \"latency_ms\": \"<int>\",\n      \"message\": \"routine audit event completed\",\n      \"payload\": \"trace-0047-xxxxxxxxxxxxxxxxxxxxx\",\n      \"service\": \"search\",\n      \"status\": \"ok\"\n    },\n    \"type\": \"array\"\n  }\n}",
+        "active_sha256": "0d21cf1c13f8dc1db90e6cfa4560c5640fb87fd07d0bf6d9d338d9d95b66eb9d",
+        "active_tokens": 616,
+        "changed": true,
+        "retrieval_handle": {
+          "receipt_ids": [
+            "e0cedb9f5c45a007"
+          ]
+        },
+        "native_metrics": {
+          "compressed_blocks": 1,
+          "receipt_count": 1,
+          "stored_span_count": 1
+        }
+      },
+      "active_response": {
+        "context_sha256": "0d21cf1c13f8dc1db90e6cfa4560c5640fb87fd07d0bf6d9d338d9d95b66eb9d",
+        "context_tokens": 616,
+        "prompt_sha256": "ee20a98e1adbfd6417c9a33d1f151e27a222d9afb329cad43c2d6fdb55bf7137",
+        "prediction": "RETRIEVE",
+        "prediction_sha256": "44551bee544aabfe7a14edc9b7977c96c61d44f8100046734f7205398b82f147",
+        "canonical_prediction": "retrieve",
+        "latency_ms": 11033.7,
+        "eval_count": 5,
+        "done": true,
+        "error": null
+      },
+      "active_exact": false,
+      "retrieval_triggered": true,
+      "retrieval_status": "ok",
+      "retrieval": {
+        "system": "entroly",
+        "operation": "retrieve",
+        "version": "1.0.59",
+        "python": "3.10.0",
+        "status": "ok",
+        "content": "[Recovered Entroly span 3e4a605edcb05ead]\n{\n    \"audit_case\": \"CASE-0726-003\",\n    \"latency_ms\": 78,\n    \"message\": \"archived compliance recovery record\",\n    \"payload\": \"future-audit-payload-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq RCV-469074479 qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\",\n    \"recovery_code\": \"RCV-469074479\",\n    \"service\": \"billing\",\n    \"status\": \"ok\"\n  }",
+        "content_sha256": "7a525d68dfce8312f2c0afa4ebf5459243b7c8957c5f7d5f4f75fa89cb58f419",
+        "tokens": 356,
+        "items": [
+          {
+            "receipt_id": "e0cedb9f5c45a007",
+            "span_id": "3e4a605edcb05ead",
+            "content_sha256": "310211079c98a8cd92d9c9fd4347f699dcb94857bb5606d0de2ad629675a741f"
+          }
+        ]
+      },
+      "retry_response": {
+        "context_sha256": "30f0d29643e0e796857b869614c7f0edace74e01b579cc6039d631a06f7a115d",
+        "context_tokens": 980,
+        "prompt_sha256": "0e85c5f996038500e1099ebfacc353dfb11c3436c72017125fc826883f0c667e",
+        "prediction": "RCV-469074479",
+        "prediction_sha256": "f3e324b69c8f69145b26e009ba8f2f10e3b7a5362865ddd89564c315b7f5d67b",
+        "canonical_prediction": "rcv-469074479",
+        "latency_ms": 14957.712,
+        "eval_count": 13,
+        "done": true,
+        "error": null
+      },
+      "final_exact": true,
+      "errors": []
+    },
+    {
+      "fixture_id": "development-003",
+      "system": "headroom",
+      "input_tokens": 3364,
+      "active_tokens": 1445,
+      "recovery_tokens": 0,
+      "effective_tokens": 1445,
+      "active_contains_expected": true,
+      "changed": true,
+      "compression": {
+        "system": "headroom",
+        "operation": "compress",
+        "version": "0.31.0",
+        "python": "3.10.0",
+        "active_context": "\"[48]{audit_case:string,latency_ms:int,message:string,payload:string,service:string,status:string,incident_id:string?,recovery_code:string?}\\nCASE-ORD-0000,23,routine audit event completed,trace-0000-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0001,40,routine audit event completed,trace-0001-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0002,57,routine audit event completed,trace-0002-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0003,74,routine audit event completed,trace-0003-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0004,91,routine audit event completed,trace-0004-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0005,25,routine audit event completed,trace-0005-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0006,42,routine audit event completed,trace-0006-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0007,59,routine audit event completed,trace-0007-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0008,76,routine audit event completed,trace-0008-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0009,93,routine audit event completed,trace-0009-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0010,27,routine audit event completed,trace-0010-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0011,44,routine audit event completed,trace-0011-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0012,61,routine audit event completed,trace-0012-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-0726-003,78,archived compliance recovery record,<<ccr:b53e3820f611,string,548B>>,billing,ok,,RCV-469074479\\nCASE-ORD-0014,95,routine audit event completed,trace-0014-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0015,29,routine audit event completed,trace-0015-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0016,46,routine audit event completed,trace-0016-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0017,63,routine audit event completed,trace-0017-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0018,80,routine audit event completed,trace-0018-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0019,97,routine audit event completed,trace-0019-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0020,31,routine audit event completed,trace-0020-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0021,48,routine audit event completed,trace-0021-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0022,65,routine audit event completed,trace-0022-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0023,82,routine audit event completed,trace-0023-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0024,99,routine audit event completed,trace-0024-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0025,9914,initial refresh boundary incident,trace-0025-xxxxxxxxxxxxxxxxxxxxx,auth,failed,INC-0726-003,\\nCASE-ORD-0026,50,routine audit event completed,trace-0026-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0027,67,routine audit event completed,trace-0027-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0028,84,routine audit event completed,trace-0028-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0029,101,routine audit event completed,trace-0029-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0030,35,routine audit event completed,trace-0030-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0031,52,routine audit event completed,trace-0031-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0032,69,routine audit event completed,trace-0032-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0033,86,routine audit event completed,trace-0033-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0034,20,routine audit event completed,trace-0034-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0035,37,routine audit event completed,trace-0035-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0036,54,routine audit event completed,trace-0036-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0037,71,routine audit event completed,trace-0037-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0038,88,routine audit event completed,trace-0038-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0039,22,routine audit event completed,trace-0039-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0040,39,routine audit event completed,trace-0040-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0041,56,routine audit event completed,trace-0041-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0042,73,routine audit event completed,trace-0042-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0043,90,routine audit event completed,trace-0043-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0044,24,routine audit event completed,trace-0044-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\nCASE-ORD-0045,41,routine audit event completed,trace-0045-xxxxxxxxxxxxxxxxxxxxx,auth,ok,,\\nCASE-ORD-0046,58,routine audit event completed,trace-0046-xxxxxxxxxxxxxxxxxxxxx,billing,ok,,\\nCASE-ORD-0047,75,routine audit event completed,trace-0047-xxxxxxxxxxxxxxxxxxxxx,search,ok,,\\n\"",
+        "active_sha256": "a426cde4ecdacec3fc4c2da53de6b1252b7a834b126c8831789ff086927a1ac8",
+        "active_tokens": 1445,
+        "changed": true,
+        "retrieval_handle": {
+          "hash": "cd614063949ac37773a873aa"
+        },
+        "native_metrics": {
+          "tokens_before": 3414,
+          "tokens_after": 1495,
+          "transforms": [
+            "router:smart_crusher:0.18"
+          ]
+        },
+        "stderr": "Content detection using pure-Python backend (native Magika/ONNX detector is unsafe by default on Windows; override with HEADROOM_DETECT_BACKEND=rust)."
+      },
+      "active_response": {
+        "context_sha256": "a426cde4ecdacec3fc4c2da53de6b1252b7a834b126c8831789ff086927a1ac8",
+        "context_tokens": 1445,
+        "prompt_sha256": "8bf7ee280b198339d95578659b278e0dbc250cfff2a2290aa14794678ee68ed6",
+        "prediction": "RCV-469074479",
+        "prediction_sha256": "f3e324b69c8f69145b26e009ba8f2f10e3b7a5362865ddd89564c315b7f5d67b",
+        "canonical_prediction": "rcv-469074479",
+        "latency_ms": 27857.808,
+        "eval_count": 13,
+        "done": true,
+        "error": null
+      },
+      "active_exact": true,
+      "retrieval_triggered": false,
+      "retrieval_status": null,
+      "retrieval": null,
+      "retry_response": null,
+      "final_exact": true,
+      "errors": []
+    }
+  ],
+  "aggregates": {
+    "trials": 4,
+    "systems": {
+      "entroly": {
+        "trials": 4,
+        "active_exact": 0,
+        "retrieval_triggers": 4,
+        "retrieval_successes": 4,
+        "final_exact": 3,
+        "active_exact_accuracy": 0.0,
+        "final_exact_accuracy": 0.75,
+        "mean_active_token_ratio": 0.183115,
+        "mean_effective_token_ratio": 0.28909,
+        "errors": 0
+      },
+      "headroom": {
+        "trials": 4,
+        "active_exact": 3,
+        "retrieval_triggers": 0,
+        "retrieval_successes": 0,
+        "final_exact": 3,
+        "active_exact_accuracy": 0.75,
+        "final_exact_accuracy": 0.75,
+        "mean_active_token_ratio": 0.429697,
+        "mean_effective_token_ratio": 0.429697,
+        "errors": 0
+      }
+    },
+    "paired": {
+      "entroly_only_final_exact": 1,
+      "headroom_only_final_exact": 1,
+      "mcnemar_exact_p": 1.0
+    }
+  },
+  "quality_gates": {
+    "complete_matrix": true,
+    "raw_exact_accuracy": 1.0,
+    "no_errors": true,
+    "persistent_recovery_exact_bytes": true,
+    "passed": true
+  },
+  "limitations": [
+    "Local qwen2.5:1.5b short-answer behavior is not evidence about hosted frontier models.",
+    "Synthetic JSON audit logs isolate query shift and recovery; they do not represent every agent workload.",
+    "Headroom recovery composes public compress() with its persistent CompressionStore contract; MCP transport latency is excluded.",
+    "A single exact RETRIEVE token is required; wrong or verbose first responses do not receive oracle recovery.",
+    "No aggregate product score or universal superiority claim is allowed."
+  ],
+  "payload_sha256": "99b8d28d5905eeaf04adc64d9f5241711d09ae0017edff8f47a50b35a671362f"
+}

@@ -132,7 +132,7 @@ def test_verifier_rejects_payload_tampering() -> None:
 
 def test_committed_holdout_is_current_verified_and_scoped_in_readme() -> None:
     report = json.loads(
-        (ROOT / "benchmarks/results/recovery_resilience_holdout.json").read_text(
+        (ROOT / "benchmarks/results/recovery_resilience_holdout_revalidation.json").read_text(
             encoding="utf-8"
         )
     )

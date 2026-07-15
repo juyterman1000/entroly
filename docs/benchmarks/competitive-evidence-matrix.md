@@ -6,12 +6,13 @@ recovery, latency, provider behavior, reliability, security, packaging, cost,
 and operator experience are reported separately. A win in one dimension cannot
 hide a loss in another.
 
-The first machine-readable source of truth is
-[`benchmarks/competitive_evidence_protocol.json`](../../benchmarks/competitive_evidence_protocol.json).
-It is immutable because it is embedded in the recovery artifacts. Later
-dimensions use their own immutable protocol files rather than rewriting prior
-evidence. Thresholds and holdout parameters are frozen before results are
-inspected.
+The current additive index is
+[`benchmarks/competitive_evidence_protocol_v2.json`](../../benchmarks/competitive_evidence_protocol_v2.json).
+The original
+[`competitive_evidence_protocol.json`](../../benchmarks/competitive_evidence_protocol.json)
+remains immutable because recovery artifacts embed it. Later dimensions use
+their own immutable protocol files rather than rewriting prior evidence.
+Thresholds and holdout parameters are frozen before results are inspected.
 
 ## Claim rules
 
@@ -30,7 +31,7 @@ inspected.
 |---|---|---|
 | Active-context quality | matched caps, exact outputs, paired statistics | implemented |
 | Recovery resilience | restart replay, concurrent writers, exact bytes | implemented |
-| End-to-end model recovery | model-triggered retrieval and final answer | planned |
+| End-to-end model recovery | model-triggered retrieval and final answer | [implemented](model-triggered-recovery.md) |
 | Compression latency | warm/cold p50 and p95 by content type | [implemented](compression-latency.md) |
 | Provider conformance | Anthropic, OpenAI Chat/Responses, Gemini shapes | planned |
 | Interruption recovery | crash, retry, replay, idempotency | planned |
@@ -99,9 +100,9 @@ recovery-integrity leadership claim.
 | Successful writes | 66 / 66 | 66 / 66 |
 | Byte-exact restart recovery | 66 / 66 | 66 / 66 |
 | Incorrect payloads | 0 | 0 |
-| Store-call p50 / p95 | 22.606 / 435.966 ms | **0.797 / 24.503 ms** |
-| Retrieval p50 / p95 | **0.042 / 0.050 ms** | 0.279 / 0.514 ms |
-| Live state files | **95,438 bytes** | 1,581,416 bytes |
+| Store-call p50 / p95 | 36.798 / 574.700 ms | **2.257 / 43.753 ms** |
+| Retrieval p50 / p95 | **0.098 / 0.340 ms** | 0.519 / 0.797 ms |
+| Live state files | **95,438 bytes** | 1,593,776 bytes |
 
 These latency and size observations describe this workload and platform; they
 are not standalone product-superiority claims. Headroom was substantially
@@ -111,9 +112,36 @@ file on every commit and its parent directory where supported. The suite did
 not simulate machine power loss, so the store-call latency is not a matched
 power-loss-durability comparison.
 The complete samples, environment identities, hashes, and errors are in the
-[`holdout artifact`](../../benchmarks/results/recovery_resilience_holdout.json).
+[`current-implementation revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation.json).
+The original post-repair
+[`holdout artifact`](../../benchmarks/results/recovery_resilience_holdout.json)
+remains unchanged.
 The post-repair development iterations remain available as
 [`first repair`](../../benchmarks/results/recovery_resilience_development_after.json)
 and
 [`Windows lock optimization`](../../benchmarks/results/recovery_resilience_development_optimized.json)
 evidence.
+
+## Recorded compression-latency result
+
+The quality-gated Windows/Python 3.10 holdout measured Entroly 1.0.59 source as
+2.94x faster than Headroom 0.31.0 for warm public compressor calls (95%
+stratified bootstrap CI 2.74x to 3.13x) and 2.39x faster for import plus the
+first call in a fresh process (1.89x to 2.70x). Both participants completed all
+fixtures, retained every preregistered evidence needle, remained deterministic,
+and never inflated tokens. See the
+[protocol, samples, and limits](compression-latency.md).
+
+## Recorded model-triggered recovery result
+
+On the frozen 24-case synthetic query-shift holdout, raw context and Entroly
+both scored 24/24 final exact answers; Headroom scored 18/24. All six discordant
+pairs favored Entroly (two-sided exact McNemar `p = 0.03125`). Entroly's mean
+effective-context ratio was 28.88%, including source-exact recovery evidence on
+all 24 triggered retries, versus 42.97% for Headroom.
+
+This is a scoped result for a local `qwen2.5:1.5b` workflow guard, not a
+frontier-model or universal-agent claim. The full protocol evolution—including
+timeouts, an over-budget variant, an incomplete-JSON failure, a stale metadata
+label, and a rejected low-token projection—is retained in the
+[model-triggered recovery report](model-triggered-recovery.md).

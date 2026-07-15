@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -7,6 +8,7 @@ import time
 
 import pytest
 
+from entroly.compression_mcp import create_compression_mcp_server
 from entroly.compression_proxy import compress_proxy_payload, compress_proxy_payload_from_env
 from entroly.compression_retrieval_store import CompressionRetrievalStore
 
@@ -268,6 +270,220 @@ def test_retrieval_store_searches_omitted_spans() -> None:
     matches = store.search("payment worker")
     assert matches
     assert "payment worker" in matches[0].content
+
+
+def test_retrieval_store_search_preserves_hyphenated_id_before_punctuation() -> None:
+    store = CompressionRetrievalStore()
+    for case_id in ("CASE-OTHER-001", "CASE-TARGET-777"):
+        content = f"audit recovery record for {case_id}\nrecovery code RCV-{case_id}"
+        store.put(
+            original_text=content,
+            compressed_text="[omitted]",
+            receipt={
+                "original_tokens": len(content) // 4,
+                "compressed_tokens": 3,
+                "omitted_spans": [{"start_line": 1, "end_line": 2}],
+            },
+        )
+
+    matches = store.search("What recovery code belongs to CASE-TARGET-777?")
+
+    assert matches
+    assert "CASE-TARGET-777" in matches[0].content
+
+
+def test_exact_excerpt_search_bounds_tokens_and_preserves_query_window() -> None:
+    store = CompressionRetrievalStore()
+    heavy = "\n".join(
+        ["payment worker heartbeat" for _ in range(300)]
+        + ["audit case CASE-4242 recovery code RCV-998877"]
+        + ["trailing worker heartbeat" for _ in range(300)]
+    )
+    stored = store.put(
+        original_text=heavy,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": len(heavy) // 4,
+            "compressed_tokens": 3,
+            "omitted_spans": [{"start_line": 1, "end_line": 601}],
+        },
+    )
+
+    matches = store.search_exact_excerpts(
+        "CASE-4242 recovery code",
+        limit=3,
+        max_tokens_per_span=128,
+        record_retrieval=True,
+        retrieval_id="bounded-search",
+    )
+
+    assert len(matches) == 1
+    assert "RCV-998877" in matches[0].content
+    assert "exact excerpt gap" in matches[0].content
+    assert matches[0].retrieved_tokens <= 128
+    full = store.get_span(stored.receipt_id, stored.spans[0].span_id)
+    assert full is not None
+    assert full.content == heavy
+    assert full.retrieved_tokens == matches[0].retrieved_tokens
+
+
+def test_exact_excerpt_retrieval_is_idempotent() -> None:
+    store = CompressionRetrievalStore()
+    content = "lead\n" + "background\n" * 500 + "CASE-99 RCV-12345\n"
+    stored = store.put(
+        original_text=content,
+        compressed_text="lead",
+        receipt={
+            "original_tokens": len(content) // 4,
+            "compressed_tokens": 1,
+            "omitted_spans": [{"start_line": 1, "end_line": 502}],
+        },
+    )
+    first = store.retrieve_span_excerpt(
+        stored.receipt_id,
+        stored.spans[0].span_id,
+        query="CASE-99",
+        max_tokens=96,
+        retrieval_id="same-retry",
+    )
+    second = store.retrieve_span_excerpt(
+        stored.receipt_id,
+        stored.spans[0].span_id,
+        query="CASE-99",
+        max_tokens=96,
+        retrieval_id="same-retry",
+    )
+
+    assert first is not None and second is not None
+    assert first.content == second.content
+    persisted = store.get_span(stored.receipt_id, stored.spans[0].span_id)
+    assert persisted is not None
+    assert persisted.retrieval_count == 1
+    assert persisted.retrieved_tokens == first.retrieved_tokens
+
+
+def test_exact_excerpt_retrieval_rolls_back_when_persistence_fails(
+    tmp_path, monkeypatch
+) -> None:
+    store = CompressionRetrievalStore(tmp_path / "store.json")
+    content = "lead\n" + "background\n" * 500 + "CASE-99 RCV-12345\n"
+    stored = store.put(
+        original_text=content,
+        compressed_text="lead",
+        receipt={
+            "original_tokens": len(content) // 4,
+            "compressed_tokens": 1,
+            "omitted_spans": [{"start_line": 1, "end_line": 502}],
+        },
+    )
+    monkeypatch.setattr(
+        store,
+        "_persist",
+        lambda: (_ for _ in ()).throw(OSError("simulated excerpt persistence failure")),
+    )
+
+    with pytest.raises(OSError, match="simulated excerpt persistence failure"):
+        store.retrieve_span_excerpt(
+            stored.receipt_id,
+            stored.spans[0].span_id,
+            query="CASE-99",
+            max_tokens=96,
+            retrieval_id="failed-excerpt",
+        )
+
+    span = store.get_span(stored.receipt_id, stored.spans[0].span_id)
+    receipt = store.get_receipt(stored.receipt_id)
+    assert span is not None and receipt is not None
+    assert span.retrieval_count == 0
+    assert span.retrieved_tokens == 0
+    assert span.retrieval_ids == []
+    assert receipt.retrieval_count == 0
+
+
+def test_exact_excerpt_search_returns_complete_query_matching_json_object() -> None:
+    rows = [
+        {
+            "audit_case": f"CASE-ORD-{index:04d}",
+            "payload": "routine",
+            "status": "ok",
+        }
+        for index in range(100)
+    ]
+    rows[73] = {
+        "audit_case": "CASE-0718-000",
+        "payload": "q" * 300 + " RCV-506714411 " + "q" * 300,
+        "recovery_code": "RCV-506714411",
+        "status": "ok",
+    }
+    content = json.dumps(rows, indent=2, sort_keys=True)
+    store = CompressionRetrievalStore()
+    stored = store.put(
+        original_text=content,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": len(content) // 4,
+            "compressed_tokens": 3,
+            "omitted_spans": [{"start_line": 1, "end_line": len(content.splitlines())}],
+        },
+    )
+
+    matches = store.search_exact_excerpts(
+        "recovery code for audit case CASE-0718-000",
+        max_tokens_per_span=600,
+        record_retrieval=True,
+        retrieval_id="json-object",
+    )
+
+    assert len(matches) == 1
+    parsed = json.loads(matches[0].content)
+    assert parsed == rows[73]
+    assert matches[0].content in content
+    assert matches[0].retrieved_tokens <= 600
+    full = store.get_span(stored.receipt_id, stored.spans[0].span_id)
+    assert full is not None and full.content == content
+
+
+def test_exact_excerpt_json_field_projection_falls_back_for_minified_json() -> None:
+    rows = [
+        {
+            "audit_case": "CASE-4242",
+            "payload": "q" * 200,
+            "recovery_code": "RCV-998877",
+        }
+    ]
+    content = json.dumps(rows, separators=(",", ":"))
+    store = CompressionRetrievalStore()
+    store.put(
+        original_text=content,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": len(content) // 4,
+            "compressed_tokens": 3,
+            "omitted_spans": [{"start_line": 1, "end_line": 1}],
+        },
+    )
+
+    matches = store.search_exact_excerpts(
+        "recovery code for audit case CASE-4242",
+        max_tokens_per_span=600,
+    )
+
+    assert len(matches) == 1
+    assert json.loads(matches[0].content) == rows[0]
+    assert matches[0].content in content
+
+
+def test_mcp_search_schema_adds_bounded_excerpt_without_new_required_args() -> None:
+    server = create_compression_mcp_server()
+    tools = asyncio.run(server.list_tools())
+    search = next(tool for tool in tools if tool.name == "search_compressed_spans")
+
+    assert search.inputSchema["required"] == ["query"]
+    properties = search.inputSchema["properties"]
+    assert properties["limit"]["default"] == 5
+    assert properties["store_path_override"]["default"] == ""
+    assert properties["retrieval_id"]["default"] == ""
+    assert properties["max_tokens_per_span"]["default"] == 600
 
 
 def test_retrieval_accounting_rolls_back_when_persistence_fails(

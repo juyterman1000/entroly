@@ -373,16 +373,18 @@ source and published Headroom 0.31.0 both wrote and recovered **66/66** holdout
 payloads byte-exactly after restart with zero wrong payloads. This closes the
 integrity gap; it does not establish recovery superiority.
 
-On this Windows/Python 3.10 run, Headroom had lower store-call latency
-(0.797 ms versus 22.606 ms p50). Entroly had lower retrieval latency (0.042 ms
-versus 0.279 ms p50) and a smaller live state footprint (95,438 versus
-1,581,416 bytes). Headroom used SQLite WAL with `synchronous=NORMAL`; Entroly
+On the current-implementation Windows/Python 3.10 revalidation, Headroom had
+lower store-call latency (2.257 ms versus 36.798 ms p50). Entroly had lower
+retrieval latency (0.098 ms versus 0.519 ms p50) and a smaller live state
+footprint (95,438 versus 1,593,776 bytes). Headroom used SQLite WAL with
+`synchronous=NORMAL`; Entroly
 fsynced its state file on each commit, so this is not a matched power-loss
 durability comparison. These are scoped workload measurements, not universal
 claims.
 
 [Frozen protocol and full result table](docs/benchmarks/competitive-evidence-matrix.md)
-| [holdout artifact](benchmarks/results/recovery_resilience_holdout.json) |
+| [current implementation revalidation](benchmarks/results/recovery_resilience_holdout_revalidation.json) |
+[original post-repair holdout](benchmarks/results/recovery_resilience_holdout.json) |
 [original failing artifact](benchmarks/results/recovery_resilience_development_before.json).
 
 **Quality-gated compression latency holdout:** on the same four deterministic
@@ -401,6 +403,31 @@ and never inflated tokens.
 cold observations per participant. Cold excludes interpreter startup and
 includes product import plus first call. This is not provider latency,
 downstream answer quality, neural superiority, or universal product
+superiority.</sub>
+
+**Model-triggered recovery holdout:** after compression for one question, a
+different future audit question was revealed to a local `qwen2.5:1.5b` guard.
+On 24 frozen query-shift cases, raw context and Entroly both scored **24/24
+exact**; published Headroom 0.31.0 scored **18/24**. All six paired differences
+favored Entroly (two-sided exact McNemar **p = 0.03125**). Entroly's mean
+effective context ratio, including recovery evidence on every triggered retry,
+was **28.88%** versus **42.97%** for Headroom.
+
+Every Entroly row triggered retrieval and recovered a complete source-exact
+JSON object; Headroom answered 18 rows from active context and returned a wrong
+value rather than exact `RETRIEVE` on the other six, so the no-oracle protocol
+did not retrieve for them. The complete artifact passed the strengthened
+verifier with zero execution errors.
+
+[Protocol, rejected variants, reproduction, and limits](docs/benchmarks/model-triggered-recovery.md)
+| [full holdout artifact](benchmarks/results/model_recovery_v7_holdout.json)
+| [development artifact](benchmarks/results/model_recovery_v7_development.json).
+
+<sub>Scope: synthetic 48-record JSON audit logs, Windows/Python 3.10, 24
+holdout cases, local Qwen2.5 1.5B Q4_K_M at temperature zero. Headroom recovery
+uses its public `compress()` plus persistent `CompressionStore` contract; MCP
+transport is excluded. This is a scoped workflow result, not evidence about
+hosted frontier models, every agent workload, provider cost, or overall product
 superiority.</sub>
 
 **PRISM-R neural research preview:** a generic MiniLM encoder did **not** beat

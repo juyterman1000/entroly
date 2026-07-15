@@ -1,0 +1,32 @@
+{
+  "schema_version": "entroly.model-recovery-smoke.v1",
+  "valid_for_product_comparison": false,
+  "protocol_sha256": "cdce161c6b3e146c1a523184d7d734113b5449d61ff2a9880ccbc4bb9a6bb529",
+  "fixture_id": "development-000",
+  "content_sha256": "30afb4725b19fa9b13f6cd03d72aa315663ce1f4667cb1d3d43e8a1add37bd2a",
+  "input_tokens": 3364,
+  "expected_answer": "RCV-506714411",
+  "model": {
+    "name": "entroly-qwen2.5-7b-32k:latest",
+    "digest": "6561cc69dc5a92f43699c1917013780403e6aecfaff9d366e444f7647f9f2689",
+    "parameter_size": "7.6B",
+    "quantization": "Q4_K_M"
+  },
+  "timeout_seconds": 180,
+  "attempts": [
+    {
+      "condition": "after_v1_timeouts_before_model_stop",
+      "latency_ms": 180023.402,
+      "prediction": "",
+      "error": "Ollama request failed for /api/generate: timed out",
+      "interpretation": "confounded by possible abandoned v1 work"
+    },
+    {
+      "condition": "fresh_model_load_after_ollama_stop",
+      "latency_ms": 179997.27,
+      "prediction": "",
+      "error": "Ollama request failed for /api/generate: timed out",
+      "interpretation": "7.6B CPU evaluator is unusable under the frozen timeout on this hardware"
+    }
+  ]
+}
