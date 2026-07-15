@@ -27,6 +27,17 @@ from typing import Any, Callable, Sequence
 SCHEMA_VERSION = "entroly.recovery-resilience.v1"
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = ROOT / "benchmarks" / "competitive_evidence_protocol.json"
+REVALIDATION_PROTOCOL_PATH = (
+    ROOT / "benchmarks" / "recovery_resilience_protocol_v2.json"
+)
+CURRENT_REVALIDATION_PROTOCOL_PATH = (
+    ROOT / "benchmarks" / "recovery_resilience_protocol_v3.json"
+)
+KNOWN_PROTOCOL_PATHS = (
+    PROTOCOL_PATH,
+    REVALIDATION_PROTOCOL_PATH,
+    CURRENT_REVALIDATION_PROTOCOL_PATH,
+)
 SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH")
 
 
@@ -60,8 +71,12 @@ def _distribution_record_sha256(package: str) -> str | None:
     return _sha256(record) if record else None
 
 
-def _protocol() -> dict[str, Any]:
-    return json.loads(PROTOCOL_PATH.read_text(encoding="utf-8"))
+def _protocol(path: Path = PROTOCOL_PATH) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _known_protocols() -> list[dict[str, Any]]:
+    return [_protocol(path) for path in KNOWN_PROTOCOL_PATHS]
 
 
 def _phase_config(protocol: dict[str, Any], phase: str) -> dict[str, int]:
@@ -548,8 +563,8 @@ def verify_report(report: dict[str, Any]) -> None:
     protocol = report["protocol"]
     if report.get("protocol_sha256") != _canonical_sha256(protocol):
         raise ValueError("protocol_sha256 mismatch")
-    if protocol != _protocol():
-        raise ValueError("artifact protocol does not match frozen protocol file")
+    if protocol not in _known_protocols():
+        raise ValueError("artifact protocol does not match a frozen protocol file")
     phase = str(report["phase"])
     adapters = [report["adapters"][system] for system in ("entroly", "headroom")]
     recomputed = analyze(protocol=protocol, phase=phase, adapters=adapters)
@@ -612,7 +627,7 @@ def _invoke_adapter(
 
 
 def _run(args: argparse.Namespace) -> int:
-    protocol = _protocol()
+    protocol = _protocol(args.protocol)
     config = _phase_config(protocol, args.phase)
     adapters = [
         _invoke_adapter(sys.executable, "entroly", config, timeout=args.timeout),
@@ -653,6 +668,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run = subparsers.add_parser("run")
+    run.add_argument("--protocol", type=Path, default=PROTOCOL_PATH)
     run.add_argument("--phase", choices=("development", "holdout"), required=True)
     run.add_argument("--headroom-python", required=True)
     run.add_argument("--timeout", type=float, default=60.0)

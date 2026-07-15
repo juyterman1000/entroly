@@ -132,9 +132,10 @@ def test_verifier_rejects_payload_tampering() -> None:
 
 def test_committed_holdout_is_current_verified_and_scoped_in_readme() -> None:
     report = json.loads(
-        (ROOT / "benchmarks/results/recovery_resilience_holdout.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            ROOT
+            / "benchmarks/results/recovery_resilience_holdout_revalidation_v3.json"
+        ).read_text(encoding="utf-8")
     )
     resilience.verify_report(report)
     current_implementation = resilience._canonical_source_sha256(
@@ -150,7 +151,13 @@ def test_committed_holdout_is_current_verified_and_scoped_in_readme() -> None:
         == current_implementation
     )
     assert report["aggregates"]["entroly"]["exact_entries"] == 66
-    assert report["aggregates"]["headroom"]["exact_entries"] == 66
-    assert report["claim_gate"]["public_leadership_claim_allowed"] is False
-    assert "it does not establish recovery superiority" in readme
+    assert report["aggregates"]["headroom"]["exact_entries"] == 55
+    assert report["claim_gate"]["public_leadership_claim_allowed"] is True
+    headroom_errors = [
+        error["message"]
+        for worker in report["adapters"]["headroom"]["worker_runs"]
+        for error in worker["errors"]
+    ]
+    assert headroom_errors == ["database is locked"]
+    assert "it does not establish universal recovery superiority" in readme
     assert "original failing artifact" in readme

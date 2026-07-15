@@ -82,7 +82,7 @@ before publishing a production or billing claim.
 ### Same-input compression gauntlet
 
 The committed no-model gauntlet sends four byte-identical generated agent-tool
-fixtures through current Entroly source (package version `1.0.58`) and the
+fixtures through current Entroly source (package version `1.0.59`) and the
 released Headroom `0.31.0[proxy]` public `compress()` entry point with its
 documented `agent-90` high-savings profile. Both systems retain 100% of the
 preregistered answer strings. Under the shared
@@ -98,6 +98,26 @@ of neural/ML superiority.
 - Raw inputs, outputs, hashes, versions, and runtime metadata: [`compression_gauntlet.json`](../benchmarks/results/compression_gauntlet.json)
 - Protocol: [`compression-gauntlet.md`](benchmarks/compression-gauntlet.md)
 - Verify: `python -m benchmarks.compression_gauntlet verify benchmarks/results/compression_gauntlet.json`
+
+### Model-triggered recovery holdout
+
+The frozen 24-case synthetic query-shift holdout uses a local
+`qwen2.5:1.5b` Q4_K_M guard at temperature zero. Raw context and current Entroly
+source at package version `1.0.59` scored 24/24 final exact answers; published
+Headroom 0.31.0 scored 18/24. All six discordant pairs favored Entroly
+(two-sided exact McNemar `p = 0.03125`). Entroly's mean effective-context ratio
+was 28.88%, including recovery evidence on every triggered retry, versus 42.97%
+for Headroom.
+
+This supports only a scoped result for the named synthetic workflow. It does
+not establish hosted-frontier-model quality, universal agent quality,
+provider-observed savings, MCP transport performance, or overall product
+superiority. The rejected development variants and the stale-metadata artifact
+remain linked in the protocol report rather than being hidden.
+
+- Result: [`model_recovery_v7_holdout.json`](../benchmarks/results/model_recovery_v7_holdout.json)
+- Protocol and limits: [`model-triggered-recovery.md`](benchmarks/model-triggered-recovery.md)
+- Verify: `python -m benchmarks.model_recovery verify --input benchmarks/results/model_recovery_v7_holdout.json`
 
 ### PRISM-R neural research pilot
 

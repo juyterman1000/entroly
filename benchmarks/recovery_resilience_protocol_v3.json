@@ -1,0 +1,44 @@
+{
+  "schema_version": "entroly.recovery-resilience-protocol.v3",
+  "frozen_at": "2026-07-15T03:58:00Z",
+  "supersedes": {
+    "protocol": "benchmarks/recovery_resilience_protocol_v2.json",
+    "artifact": "benchmarks/results/recovery_resilience_holdout_revalidation.json",
+    "reason": "Revalidate Entroly 1.0.60 after exact recovery began preserving complete source lines and ranking the strongest evidence before applying the safe-fit budget. Preserve the immutable v2 protocol and result."
+  },
+  "comparison": {
+    "entroly": "1.0.60 source",
+    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+  },
+  "claim_policy": {
+    "aggregate_score_allowed": false,
+    "failures_remain_in_sample": true,
+    "negative_results_are_published": true,
+    "per_dimension_claims_only": true,
+    "universal_superiority_claim_allowed": false
+  },
+  "suites": {
+    "recovery_resilience": {
+      "development": {
+        "workers": 4,
+        "entries_per_worker": 8,
+        "seed": 20260730
+      },
+      "holdout": {
+        "workers": 6,
+        "entries_per_worker": 11,
+        "seed": 20260731
+      },
+      "gates": {
+        "worker_exit_success_rate": 1.0,
+        "write_success_rate": 1.0,
+        "restart_recovery_rate": 1.0,
+        "exact_byte_recovery_rate": 1.0,
+        "incorrect_payloads": 0
+      },
+      "latency_policy": "Report per-system p50 and p95 store/retrieve latency descriptively; correctness gates cannot be traded for speed.",
+      "development_policy": "Development results may guide implementation and remain visible but cannot support a public leadership claim.",
+      "holdout_policy": "Run once after the complete-line and relevance-before-fit repair. This revalidation can establish current implementation integrity but cannot convert a tie into a leadership claim."
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "schema_version": "entroly.competitive-evidence-protocol.v2",
+  "published_at": "2026-07-15T02:20:00Z",
+  "supersedes": {
+    "protocol": "benchmarks/competitive_evidence_protocol.json",
+    "policy": "The v1 file remains immutable because recovery-resilience artifacts embed it. V2 records additive dimension status without changing any prior fixture, gate, or result."
+  },
+  "comparison": {
+    "entroly": "1.0.59 source candidate",
+    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+  },
+  "claim_policy": {
+    "aggregate_score_allowed": false,
+    "failures_remain_in_sample": true,
+    "negative_results_are_published": true,
+    "per_dimension_claims_only": true,
+    "universal_superiority_claim_allowed": false
+  },
+  "dimensions": [
+    {
+      "id": "active_context_quality",
+      "status": "implemented",
+      "protocol": "docs/benchmarks/compression-frontier.md",
+      "evidence": "benchmarks/results/compression_frontier.json"
+    },
+    {
+      "id": "recovery_resilience",
+      "status": "implemented",
+      "protocol": "benchmarks/recovery_resilience_protocol_v2.json",
+      "evidence": "benchmarks/results/recovery_resilience_holdout_revalidation.json"
+    },
+    {
+      "id": "end_to_end_model_recovery",
+      "status": "implemented",
+      "protocol": "benchmarks/model_recovery_protocol_v7.json",
+      "evidence": "benchmarks/results/model_recovery_v7_holdout.json"
+    },
+    {
+      "id": "compression_latency",
+      "status": "implemented",
+      "protocol": "benchmarks/compression_latency_protocol.json",
+      "evidence": "benchmarks/results/compression_latency_holdout.json"
+    },
+    {
+      "id": "provider_protocol_conformance",
+      "status": "planned"
+    },
+    {
+      "id": "interruption_recovery",
+      "status": "planned"
+    },
+    {
+      "id": "security_and_secret_handling",
+      "status": "planned"
+    },
+    {
+      "id": "packaging_and_first_run",
+      "status": "planned"
+    },
+    {
+      "id": "operator_ux_and_diagnostics",
+      "status": "planned"
+    },
+    {
+      "id": "provider_observed_cost",
+      "status": "planned"
+    }
+  ]
+}
