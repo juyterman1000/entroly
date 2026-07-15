@@ -1,0 +1,57 @@
+name: Documentation quality
+
+on:
+  pull_request:
+    paths:
+      - "**/*.html"
+      - "**/*.md"
+      - ".codespellrc"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - "scripts/check_docs.py"
+      - "scripts/verify_public_trust.py"
+      - "scripts/verify_readme.py"
+      - "tests/test_check_docs.py"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.html"
+      - "**/*.md"
+      - ".codespellrc"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - "scripts/check_docs.py"
+      - "scripts/verify_public_trust.py"
+      - "scripts/verify_readme.py"
+      - "tests/test_check_docs.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install documentation checks
+        run: python -m pip install --disable-pip-version-check -e ".[test]" codespell==2.4.2
+      - name: Check spelling
+        run: codespell *.md docs .github cookbook examples/README.md
+      - name: Check local documentation links
+        run: python scripts/check_docs.py
+      - name: Test documentation checker
+        run: pytest -q tests/test_check_docs.py
+      - name: Verify README contracts
+        run: python scripts/verify_readme.py
+      - name: Verify public trust contracts
+        run: python scripts/verify_public_trust.py

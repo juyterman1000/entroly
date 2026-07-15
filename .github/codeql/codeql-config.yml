@@ -1,0 +1,10 @@
+name: Entroly CodeQL configuration
+
+paths-ignore:
+  - "artifacts/**"
+  - "benchmarks/results/**"
+  - "docs/assets/**"
+  - "entroly-wasm/pkg/**"
+
+queries:
+  - uses: security-extended

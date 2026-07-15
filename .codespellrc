@@ -1,0 +1,4 @@
+[codespell]
+quiet-level = 2
+skip = .git,*.gif,*.ico,*.jpg,*.json,*.lock,*.min.js,*.mp4,*.png,*.pyc,*.wasm,artifacts,docs/i18n,node_modules,target,vendor
+ignore-words-list = aider,asai,ba,crate,crossplane,fo,nd,openclaw,ot,ser,te,wasm,wit

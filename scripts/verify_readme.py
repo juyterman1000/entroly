@@ -52,8 +52,18 @@ def verify_readme_proof_media():
         if command not in README_TEXT and name != "proof_local":
             raise ValueError(f"README does not expose proof command for {name}")
         for source, expected in entry.get("source_sha256", {}).items():
-            actual = hashlib.sha256(Path(source).read_bytes()).hexdigest()
-            if actual != expected:
+            # Git may materialize text files with LF or CRLF. Historical proof
+            # manifests contain both conventions, so accept only the three
+            # byte streams obtainable by changing line endings; any content
+            # change still fails. Rendered media remains byte-for-byte hashed.
+            source_bytes = Path(source).read_bytes()
+            lf_bytes = source_bytes.replace(b"\r\n", b"\n")
+            crlf_bytes = lf_bytes.replace(b"\n", b"\r\n")
+            source_hashes = {
+                hashlib.sha256(candidate).hexdigest()
+                for candidate in (source_bytes, lf_bytes, crlf_bytes)
+            }
+            if expected not in source_hashes:
                 raise ValueError(f"proof source changed; regenerate media: {source}")
         for filename, expected in entry.get("outputs", {}).items():
             media_path = manifest_path.parent / filename
