@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
 import subprocess
 import sys
@@ -10,7 +11,10 @@ import pytest
 
 from entroly.compression_mcp import create_compression_mcp_server
 from entroly.compression_proxy import compress_proxy_payload, compress_proxy_payload_from_env
-from entroly.compression_retrieval_store import CompressionRetrievalStore
+from entroly.compression_retrieval_store import (
+    CompressionRetrievalStore,
+    _count_o200k_tokens,
+)
 
 
 _CONCURRENT_WRITER = r"""
@@ -325,6 +329,23 @@ def test_exact_excerpt_search_bounds_tokens_and_preserves_query_window() -> None
     assert full is not None
     assert full.content == heavy
     assert full.retrieved_tokens == matches[0].retrieved_tokens
+
+
+def test_exact_excerpt_uses_conservative_byte_cap_without_tiktoken(
+    monkeypatch,
+) -> None:
+    real_import = builtins.__import__
+
+    def import_without_tiktoken(name, *args, **kwargs):
+        if name == "tiktoken":
+            raise ImportError("simulated base install")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_tiktoken)
+
+    assert _count_o200k_tokens("source-exact ✓") == len(
+        "source-exact ✓".encode("utf-8")
+    )
 
 
 def test_exact_excerpt_retrieval_is_idempotent() -> None:

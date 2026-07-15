@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip(
+    "tiktoken",
+    reason="model recovery artifacts freeze the optional o200k benchmark tokenizer",
+)
+
 from benchmarks.model_recovery import (
     _canonical_sha256,
     _limitations,

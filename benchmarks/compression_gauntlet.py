@@ -16,6 +16,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -717,7 +718,11 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def verify_report(report: dict[str, Any]) -> None:
+def verify_report(
+    report: dict[str, Any],
+    *,
+    require_current_implementation: bool = False,
+) -> None:
     """Fail closed if a published artifact no longer matches its raw evidence."""
     if report.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"schema_version must be {SCHEMA_VERSION!r}")
@@ -802,20 +807,22 @@ def verify_report(report: dict[str, Any]) -> None:
 
     entroly_runtime = report.get("participants", {}).get("entroly", {}).get("runtime", {})
     if entroly_runtime.get("import_origin") == "repository source checkout":
-        from entroly import __version__ as current_entroly_version
-
-        if report["participants"]["entroly"].get("version") != current_entroly_version:
-            raise ValueError("Entroly version changed after the artifact was generated")
-        root = Path(__file__).resolve().parents[1]
-        implementation_sha256 = _implementation_sha256(
-            (
-                Path(__file__).resolve(),
-                root / "entroly" / "compression_proxy.py",
-                root / "entroly" / "evidence_locked_compression.py",
+        artifact_version = str(report["participants"]["entroly"].get("version", ""))
+        if re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", artifact_version) is None:
+            raise ValueError("Entroly artifact version is not a stable SemVer")
+        if require_current_implementation:
+            root = Path(__file__).resolve().parents[1]
+            implementation_sha256 = _implementation_sha256(
+                (
+                    Path(__file__).resolve(),
+                    root / "entroly" / "compression_proxy.py",
+                    root / "entroly" / "evidence_locked_compression.py",
+                )
             )
-        )
-        if entroly_runtime.get("implementation_sha256") != implementation_sha256:
-            raise ValueError("Entroly implementation changed after the artifact was generated")
+            if entroly_runtime.get("implementation_sha256") != implementation_sha256:
+                raise ValueError(
+                    "Entroly implementation changed after the artifact was generated"
+                )
 
     recomputed: dict[str, dict[str, Any]] = {}
     for system, system_rows in grouped.items():
@@ -963,6 +970,7 @@ def _run(args: argparse.Namespace) -> int:
             "warmups": args.warmups,
         },
     )
+    verify_report(report, require_current_implementation=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -26,7 +26,7 @@
     {
       "id": "recovery_resilience",
       "status": "implemented",
-      "protocol": "benchmarks/competitive_evidence_protocol.json",
+      "protocol": "benchmarks/recovery_resilience_protocol_v2.json",
       "evidence": "benchmarks/results/recovery_resilience_holdout_revalidation.json"
     },
     {

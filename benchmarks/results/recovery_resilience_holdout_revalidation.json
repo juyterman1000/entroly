@@ -7,1008 +7,1008 @@
         "backend": "entroly atomic JSON recovery store",
         "entries_per_worker": 11,
         "path": "recovery.json",
-        "seed": 20260715,
+        "seed": 20260729,
         "workers": 6
       },
       "participant": {
         "package": "entroly",
         "release_status": "merged source checkout",
         "runtime": {
-          "implementation_sha256": "a6e2bee28c63a6a11e83df88cd01d9d4f4d8b7cfe1583c2f3bfa08bf3b80024a",
+          "implementation_sha256": "1582b3a55c049df2471fb5a4b460536cb83eac453c5a87203aa732c15e4afcf4",
           "platform": "Windows-10-10.0.26200-SP0",
           "python": "3.10.0"
         },
-        "version": "1.0.59"
+        "version": "1.0.60"
       },
       "recovery_open_error": null,
       "rows": [
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "f9ff7a78a2085204b8c7afa81df821b5dde3d4bce5ea87fa63358482a5f71334",
-          "recovered_sha256": "f9ff7a78a2085204b8c7afa81df821b5dde3d4bce5ea87fa63358482a5f71334",
+          "payload_sha256": "d586845f37dfb74b108b53e7807a270e72337d15a8585860119352a4c20cd695",
+          "recovered_sha256": "d586845f37dfb74b108b53e7807a270e72337d15a8585860119352a4c20cd695",
           "reference": {
-            "receipt_id": "0fc214dffe64cfed",
-            "span_id": "f556e6f3054144c0"
+            "receipt_id": "9dca93e0555396bc",
+            "span_id": "4428b72855528157"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.3623,
-          "store_latency_ms": 1153.3016,
+          "retrieve_latency_ms": 0.1971,
+          "store_latency_ms": 1551.5519,
           "system": "entroly",
           "worker_id": 0
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "0b89de4c5e5dc021ca5c883439b448f21757d146ca7ffa1d95536657333c906f",
-          "recovered_sha256": "0b89de4c5e5dc021ca5c883439b448f21757d146ca7ffa1d95536657333c906f",
+          "payload_sha256": "7422fd27253821cb8e1130da7030ffd383bde9a9d87319af5d431a0e020ee873",
+          "recovered_sha256": "7422fd27253821cb8e1130da7030ffd383bde9a9d87319af5d431a0e020ee873",
           "reference": {
-            "receipt_id": "0a2521b0e93e67c5",
-            "span_id": "b184c5f448a36a09"
+            "receipt_id": "98e2f60ae5e6fe06",
+            "span_id": "dd9a31a69d221e4b"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.1926,
-          "store_latency_ms": 34.7754,
+          "retrieve_latency_ms": 0.1051,
+          "store_latency_ms": 38.9709,
           "system": "entroly",
           "worker_id": 0
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "cea8c60f52f39577c4ccb6bd572cd5b47a775767ed752c2951294c1dcc7fbd9b",
-          "recovered_sha256": "cea8c60f52f39577c4ccb6bd572cd5b47a775767ed752c2951294c1dcc7fbd9b",
+          "payload_sha256": "a5b2951e77741fc7b2db785076d09eb96077d94eb6ee8f38b1823e47e86dea91",
+          "recovered_sha256": "a5b2951e77741fc7b2db785076d09eb96077d94eb6ee8f38b1823e47e86dea91",
           "reference": {
-            "receipt_id": "ba624b71b26617e7",
-            "span_id": "41e925396a178f27"
+            "receipt_id": "ad7940dc7af350c8",
+            "span_id": "d153ade36757db82"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.1771,
-          "store_latency_ms": 39.3302,
+          "retrieve_latency_ms": 0.0943,
+          "store_latency_ms": 37.399,
           "system": "entroly",
           "worker_id": 0
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "6aee39af461f496cc0c288cd52bf1fcdf90a94bf4662e80cb37ed1c44204b935",
-          "recovered_sha256": "6aee39af461f496cc0c288cd52bf1fcdf90a94bf4662e80cb37ed1c44204b935",
+          "payload_sha256": "677d91fe2705e568de726ce102c47523febab4924a811c81d9330ac0c7f67667",
+          "recovered_sha256": "677d91fe2705e568de726ce102c47523febab4924a811c81d9330ac0c7f67667",
           "reference": {
-            "receipt_id": "9589827d1e4db7aa",
-            "span_id": "e166af379c1b6220"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1526,
-          "store_latency_ms": 36.6188,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 4,
-          "exact": true,
-          "payload_sha256": "c1eebc2e40338703567819f1e9b2bf315c7370c021f94bf1d5b01cd0691164d6",
-          "recovered_sha256": "c1eebc2e40338703567819f1e9b2bf315c7370c021f94bf1d5b01cd0691164d6",
-          "reference": {
-            "receipt_id": "e80898d4ff753d92",
-            "span_id": "244460a71706c211"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1458,
-          "store_latency_ms": 31.4148,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 5,
-          "exact": true,
-          "payload_sha256": "7eec2efdc65b5937c316ef13a6cc811f600a2d14ca1ba5fd5ae88337edf48a2a",
-          "recovered_sha256": "7eec2efdc65b5937c316ef13a6cc811f600a2d14ca1ba5fd5ae88337edf48a2a",
-          "reference": {
-            "receipt_id": "5fea5904494f25f2",
-            "span_id": "98d5ea13ee6b804c"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1478,
-          "store_latency_ms": 35.4093,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 6,
-          "exact": true,
-          "payload_sha256": "52cede1dd2972590be53ac1462a1621852ab2234ccc3f420c0f6c2ef34bdb006",
-          "recovered_sha256": "52cede1dd2972590be53ac1462a1621852ab2234ccc3f420c0f6c2ef34bdb006",
-          "reference": {
-            "receipt_id": "677c1d7e7dcce441",
-            "span_id": "56ce207829a54f11"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1518,
-          "store_latency_ms": 32.8915,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 7,
-          "exact": true,
-          "payload_sha256": "6ab0d229e82155ce7d0b4a60e0c63dc88654acc7cf754f4d2649e8e1c499ea0b",
-          "recovered_sha256": "6ab0d229e82155ce7d0b4a60e0c63dc88654acc7cf754f4d2649e8e1c499ea0b",
-          "reference": {
-            "receipt_id": "3ccfa70592fde57b",
-            "span_id": "551713c42734503e"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1517,
-          "store_latency_ms": 34.5714,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 8,
-          "exact": true,
-          "payload_sha256": "d1eca89553a2d526b91e0624d0d2a96b66f2bfb2c3773e002485337d20a03b4d",
-          "recovered_sha256": "d1eca89553a2d526b91e0624d0d2a96b66f2bfb2c3773e002485337d20a03b4d",
-          "reference": {
-            "receipt_id": "88fc877c63a868c1",
-            "span_id": "4be9c1ad534bcb87"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.2247,
-          "store_latency_ms": 34.3507,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 9,
-          "exact": true,
-          "payload_sha256": "e02d70f8fd42fa4c1765a38c0a7068ba2faf8173d42b9236abca9213c120a59e",
-          "recovered_sha256": "e02d70f8fd42fa4c1765a38c0a7068ba2faf8173d42b9236abca9213c120a59e",
-          "reference": {
-            "receipt_id": "66cdf10967166995",
-            "span_id": "7b6f18a2b5655641"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.5492,
-          "store_latency_ms": 34.551,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 10,
-          "exact": true,
-          "payload_sha256": "7d6a091849b035e231de0399bb51b0a1e5d4b781e1b1c8a1e1c28162324bdf06",
-          "recovered_sha256": "7d6a091849b035e231de0399bb51b0a1e5d4b781e1b1c8a1e1c28162324bdf06",
-          "reference": {
-            "receipt_id": "51e073fcfb736ca4",
-            "span_id": "64da747021d7ab19"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.2732,
-          "store_latency_ms": 39.3635,
-          "system": "entroly",
-          "worker_id": 0
-        },
-        {
-          "entry_index": 0,
-          "exact": true,
-          "payload_sha256": "6dd22baf643af574254c3a44391752b24f6bd9b8ac841817028f9aa7374a6dae",
-          "recovered_sha256": "6dd22baf643af574254c3a44391752b24f6bd9b8ac841817028f9aa7374a6dae",
-          "reference": {
-            "receipt_id": "8e05d98ee9b0fe50",
-            "span_id": "aa0e849f7680c7d1"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.2317,
-          "store_latency_ms": 617.6577,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 1,
-          "exact": true,
-          "payload_sha256": "49ab776afef82aea8029be24620783cfaad17242a237186b81218526ce159afc",
-          "recovered_sha256": "49ab776afef82aea8029be24620783cfaad17242a237186b81218526ce159afc",
-          "reference": {
-            "receipt_id": "4618df9098637548",
-            "span_id": "a9b70bc79470366a"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.5247,
-          "store_latency_ms": 33.8988,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 2,
-          "exact": true,
-          "payload_sha256": "3d233284fce5aa1600c08cd11a88d398d31af9dda151bb2eb7f75dcfaa8ef352",
-          "recovered_sha256": "3d233284fce5aa1600c08cd11a88d398d31af9dda151bb2eb7f75dcfaa8ef352",
-          "reference": {
-            "receipt_id": "5971074e816ece1c",
-            "span_id": "cc0729e439c8268e"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1991,
-          "store_latency_ms": 34.2372,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 3,
-          "exact": true,
-          "payload_sha256": "812ad3f54bb7da6d140477b7065f9c4e5fcd6f016c8e11e8edcf2408c37f892d",
-          "recovered_sha256": "812ad3f54bb7da6d140477b7065f9c4e5fcd6f016c8e11e8edcf2408c37f892d",
-          "reference": {
-            "receipt_id": "daeb9d84d4c8afa4",
-            "span_id": "f206db0bd641e42c"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1821,
-          "store_latency_ms": 37.0765,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 4,
-          "exact": true,
-          "payload_sha256": "5bb97c06fc775a0bfced3ebb93659504bcb0ad35ba4385ac56bcb75c01bced82",
-          "recovered_sha256": "5bb97c06fc775a0bfced3ebb93659504bcb0ad35ba4385ac56bcb75c01bced82",
-          "reference": {
-            "receipt_id": "93a6075c6730d8cf",
-            "span_id": "b8ead26920d156da"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0813,
-          "store_latency_ms": 35.1645,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 5,
-          "exact": true,
-          "payload_sha256": "1109034410b03262109e4e52d58a4d374faaa80121c265d5c46b73358c067186",
-          "recovered_sha256": "1109034410b03262109e4e52d58a4d374faaa80121c265d5c46b73358c067186",
-          "reference": {
-            "receipt_id": "ce8f4ecf4815704a",
-            "span_id": "433361a723760240"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0951,
-          "store_latency_ms": 35.0421,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 6,
-          "exact": true,
-          "payload_sha256": "9cd4229b8574550f97f720ec89e314f836606c5110cbd779c2066eda4dc4c800",
-          "recovered_sha256": "9cd4229b8574550f97f720ec89e314f836606c5110cbd779c2066eda4dc4c800",
-          "reference": {
-            "receipt_id": "53f440be9cbf43f9",
-            "span_id": "4c556960f8b6104e"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.3776,
-          "store_latency_ms": 33.4674,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 7,
-          "exact": true,
-          "payload_sha256": "2012c3138a72f5056f2b372b9620d8a11e3923eef01eddb5a98379d3641a79db",
-          "recovered_sha256": "2012c3138a72f5056f2b372b9620d8a11e3923eef01eddb5a98379d3641a79db",
-          "reference": {
-            "receipt_id": "14c9af0d5115eb81",
-            "span_id": "d0ebee4798e6a7b3"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1212,
-          "store_latency_ms": 32.4931,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 8,
-          "exact": true,
-          "payload_sha256": "6c3636e28b5f31a534053dc11ee33c90061aa725cbf0727de7905be7241ca974",
-          "recovered_sha256": "6c3636e28b5f31a534053dc11ee33c90061aa725cbf0727de7905be7241ca974",
-          "reference": {
-            "receipt_id": "6b8306135944e206",
-            "span_id": "6de597a812ee84ef"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1153,
-          "store_latency_ms": 34.1007,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 9,
-          "exact": true,
-          "payload_sha256": "6ba83b2283d149d2fa3c6899a15f7d3df6adc8bb625d9290a40ab1f63af1fa1a",
-          "recovered_sha256": "6ba83b2283d149d2fa3c6899a15f7d3df6adc8bb625d9290a40ab1f63af1fa1a",
-          "reference": {
-            "receipt_id": "15ca1d081eac2fbf",
-            "span_id": "aa946d8228ab72f9"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1027,
-          "store_latency_ms": 36.9764,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 10,
-          "exact": true,
-          "payload_sha256": "4351e2ba67f65b59b4c553b77e844ba18d77256a258532223269f0423a3f1145",
-          "recovered_sha256": "4351e2ba67f65b59b4c553b77e844ba18d77256a258532223269f0423a3f1145",
-          "reference": {
-            "receipt_id": "446c4b3b87b6f45d",
-            "span_id": "31a346cdda366fd1"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1012,
-          "store_latency_ms": 38.0639,
-          "system": "entroly",
-          "worker_id": 1
-        },
-        {
-          "entry_index": 0,
-          "exact": true,
-          "payload_sha256": "1eb8f2d35e8e99bb2463f2805990c26412c0f6f76e7c39326ba3550ba92d7408",
-          "recovered_sha256": "1eb8f2d35e8e99bb2463f2805990c26412c0f6f76e7c39326ba3550ba92d7408",
-          "reference": {
-            "receipt_id": "1edb5a56ed833e72",
-            "span_id": "2d25f27409a86260"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1027,
-          "store_latency_ms": 180.3236,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 1,
-          "exact": true,
-          "payload_sha256": "915c9287dac70cdb61869ac8f50c34db23bf215476dbc6fe7cdc328362312449",
-          "recovered_sha256": "915c9287dac70cdb61869ac8f50c34db23bf215476dbc6fe7cdc328362312449",
-          "reference": {
-            "receipt_id": "8786c1f1442e943b",
-            "span_id": "81dfb64e2c2b4b55"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1003,
-          "store_latency_ms": 30.1179,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 2,
-          "exact": true,
-          "payload_sha256": "ed584064f6ec00791d18cc627478bd0b4e449f3d848b202fdd33b210190ede23",
-          "recovered_sha256": "ed584064f6ec00791d18cc627478bd0b4e449f3d848b202fdd33b210190ede23",
-          "reference": {
-            "receipt_id": "7c550fa0faaf4006",
-            "span_id": "64a42105bdfae76c"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1127,
-          "store_latency_ms": 30.4026,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 3,
-          "exact": true,
-          "payload_sha256": "d6d32a1abc2d4e8da2c134efbd8a6d5a2d40eeb86a7e2f9e2751c5e5c1dd151e",
-          "recovered_sha256": "d6d32a1abc2d4e8da2c134efbd8a6d5a2d40eeb86a7e2f9e2751c5e5c1dd151e",
-          "reference": {
-            "receipt_id": "ea8108c02b9194bf",
-            "span_id": "53b59a7a683cee6b"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.101,
-          "store_latency_ms": 28.4622,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 4,
-          "exact": true,
-          "payload_sha256": "fe802675bfec17a747df18644257a8f7157edb42a8c23a92295d35d670ffa43f",
-          "recovered_sha256": "fe802675bfec17a747df18644257a8f7157edb42a8c23a92295d35d670ffa43f",
-          "reference": {
-            "receipt_id": "63eb3b814b1a4930",
-            "span_id": "5f12cc5ca435a3bb"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.099,
-          "store_latency_ms": 29.1611,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 5,
-          "exact": true,
-          "payload_sha256": "44118ec1f48445db6b36e6a01fb3e0bb6bb922e4bf72fce3fc7dcae6c36fc2b6",
-          "recovered_sha256": "44118ec1f48445db6b36e6a01fb3e0bb6bb922e4bf72fce3fc7dcae6c36fc2b6",
-          "reference": {
-            "receipt_id": "cae20a97cabf4030",
-            "span_id": "396951d8fc3e7850"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1138,
-          "store_latency_ms": 29.5445,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 6,
-          "exact": true,
-          "payload_sha256": "eb6a7057aa20abbc83345f9341715ee773949ba5535d0dcb9ec1ddca5cce0a10",
-          "recovered_sha256": "eb6a7057aa20abbc83345f9341715ee773949ba5535d0dcb9ec1ddca5cce0a10",
-          "reference": {
-            "receipt_id": "872a547af80b8407",
-            "span_id": "78fd9586b4cc7471"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1033,
-          "store_latency_ms": 30.6822,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 7,
-          "exact": true,
-          "payload_sha256": "9763a027cdf2bee0b8d89f2fe53c101e76806b9788c3bc99aa5aeeda51af3e5f",
-          "recovered_sha256": "9763a027cdf2bee0b8d89f2fe53c101e76806b9788c3bc99aa5aeeda51af3e5f",
-          "reference": {
-            "receipt_id": "fe6b2ca56353d044",
-            "span_id": "66e20c1a127e26fb"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1016,
-          "store_latency_ms": 33.8795,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 8,
-          "exact": true,
-          "payload_sha256": "1fafabb5285a25e295d00cd4db90840b6b940682b4f05a82dd02752ffd6e32f9",
-          "recovered_sha256": "1fafabb5285a25e295d00cd4db90840b6b940682b4f05a82dd02752ffd6e32f9",
-          "reference": {
-            "receipt_id": "cf731cdde141a5ce",
-            "span_id": "10a177ec05f33d35"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1395,
-          "store_latency_ms": 30.626,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 9,
-          "exact": true,
-          "payload_sha256": "5da8ea83104be09fa3d8c7f5d04e27771e7b7ee31ad3b341ed6a680eec9fb9e7",
-          "recovered_sha256": "5da8ea83104be09fa3d8c7f5d04e27771e7b7ee31ad3b341ed6a680eec9fb9e7",
-          "reference": {
-            "receipt_id": "f11ba8344e4affa6",
-            "span_id": "192caa5933f1b0fd"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1087,
-          "store_latency_ms": 32.0445,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 10,
-          "exact": true,
-          "payload_sha256": "dcfb17dcf55cd166bf07d011935633a9826410f09224a4032a4bad8d90019f91",
-          "recovered_sha256": "dcfb17dcf55cd166bf07d011935633a9826410f09224a4032a4bad8d90019f91",
-          "reference": {
-            "receipt_id": "7e9e63db5ded0c83",
-            "span_id": "14cf308b2c1b4c33"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1068,
-          "store_latency_ms": 29.9267,
-          "system": "entroly",
-          "worker_id": 2
-        },
-        {
-          "entry_index": 0,
-          "exact": true,
-          "payload_sha256": "649f1864bda447ee5f216c9b40e007dd4710c09d97034aad9e213ed6023969fc",
-          "recovered_sha256": "649f1864bda447ee5f216c9b40e007dd4710c09d97034aad9e213ed6023969fc",
-          "reference": {
-            "receipt_id": "5b009237bad94811",
-            "span_id": "5fd9a64443e04597"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1034,
-          "store_latency_ms": 2061.0605,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 1,
-          "exact": true,
-          "payload_sha256": "f45e9314c7be1d7dca5b8b357ee8a7cb3961db77892b1a224e5dce5fe09c8cf5",
-          "recovered_sha256": "f45e9314c7be1d7dca5b8b357ee8a7cb3961db77892b1a224e5dce5fe09c8cf5",
-          "reference": {
-            "receipt_id": "6cf1841fd56c7171",
-            "span_id": "4a5edc43f63b0984"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.1004,
-          "store_latency_ms": 37.2403,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 2,
-          "exact": true,
-          "payload_sha256": "82724755c205d2bd890fe37fdcee33cee16d73bd05427db84f50f1b45750fdc7",
-          "recovered_sha256": "82724755c205d2bd890fe37fdcee33cee16d73bd05427db84f50f1b45750fdc7",
-          "reference": {
-            "receipt_id": "e71ad213b922607d",
-            "span_id": "cb4bb141d8ea1360"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0835,
-          "store_latency_ms": 43.8426,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 3,
-          "exact": true,
-          "payload_sha256": "fd717279c0bf48022b7fef8df6bfc31cc39fa09a6a5325618522be84cd3592c9",
-          "recovered_sha256": "fd717279c0bf48022b7fef8df6bfc31cc39fa09a6a5325618522be84cd3592c9",
-          "reference": {
-            "receipt_id": "d9041f357194202d",
-            "span_id": "53433c7e14462bcc"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0819,
-          "store_latency_ms": 40.7503,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 4,
-          "exact": true,
-          "payload_sha256": "ca5a7ccb8951b374bcded22d2462f0d8061a24579768aef1af695793993f09d8",
-          "recovered_sha256": "ca5a7ccb8951b374bcded22d2462f0d8061a24579768aef1af695793993f09d8",
-          "reference": {
-            "receipt_id": "e226f5344f2d7c2b",
-            "span_id": "17ba8284c53d63f0"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0854,
-          "store_latency_ms": 45.6939,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 5,
-          "exact": true,
-          "payload_sha256": "36a74060869739d726b6bf71cf81e2f469405b27c00ca621edfeaa1a046d814f",
-          "recovered_sha256": "36a74060869739d726b6bf71cf81e2f469405b27c00ca621edfeaa1a046d814f",
-          "reference": {
-            "receipt_id": "665f3113063c5228",
-            "span_id": "b7bd080afc6d2b78"
+            "receipt_id": "01ff4dd408286979",
+            "span_id": "3c991612d5f369aa"
           },
           "retrieval_error": null,
           "retrieve_latency_ms": 0.0922,
-          "store_latency_ms": 40.909,
+          "store_latency_ms": 40.513,
           "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 6,
-          "exact": true,
-          "payload_sha256": "30073a63d8115932ea118005cf64e25b9243e07cbabe32ba7884b2bf7ba9eba3",
-          "recovered_sha256": "30073a63d8115932ea118005cf64e25b9243e07cbabe32ba7884b2bf7ba9eba3",
-          "reference": {
-            "receipt_id": "eb40317b7f2c81de",
-            "span_id": "7b5094b7e4a7ddf3"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0888,
-          "store_latency_ms": 44.8142,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 7,
-          "exact": true,
-          "payload_sha256": "3bac9daeb19fbcbd3f24d8e1fbea012e8dceae9d9ab68d63e30bf920e1226cb9",
-          "recovered_sha256": "3bac9daeb19fbcbd3f24d8e1fbea012e8dceae9d9ab68d63e30bf920e1226cb9",
-          "reference": {
-            "receipt_id": "70aaa157ba85b0e9",
-            "span_id": "42753f00520e58d8"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0962,
-          "store_latency_ms": 46.5515,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 8,
-          "exact": true,
-          "payload_sha256": "cc62448bf45e140ea58f2b289de64c79618220b5edcaf44c706a874e389d0d9c",
-          "recovered_sha256": "cc62448bf45e140ea58f2b289de64c79618220b5edcaf44c706a874e389d0d9c",
-          "reference": {
-            "receipt_id": "f980c017a679dc07",
-            "span_id": "64db1ad4e0d87cbd"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0916,
-          "store_latency_ms": 47.9477,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 9,
-          "exact": true,
-          "payload_sha256": "f485c8115a9563b93d49b04ee4dcbb89faca55d63150284e0b68e7add364b29f",
-          "recovered_sha256": "f485c8115a9563b93d49b04ee4dcbb89faca55d63150284e0b68e7add364b29f",
-          "reference": {
-            "receipt_id": "caabaa278ca5f8b8",
-            "span_id": "859847df20f6e50e"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0901,
-          "store_latency_ms": 46.317,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 10,
-          "exact": true,
-          "payload_sha256": "990d3f40c2fa09392b31532ef80c29b2f330135c8b700d2a151e4aa940a777b7",
-          "recovered_sha256": "990d3f40c2fa09392b31532ef80c29b2f330135c8b700d2a151e4aa940a777b7",
-          "reference": {
-            "receipt_id": "dd788354ad818b5f",
-            "span_id": "558fdcb5abeb16cb"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.092,
-          "store_latency_ms": 39.6619,
-          "system": "entroly",
-          "worker_id": 3
-        },
-        {
-          "entry_index": 0,
-          "exact": true,
-          "payload_sha256": "50da1b53ae77b4506a41b3be0b290555dd3eb78d4dd5e949cc955b90f420b3b8",
-          "recovered_sha256": "50da1b53ae77b4506a41b3be0b290555dd3eb78d4dd5e949cc955b90f420b3b8",
-          "reference": {
-            "receipt_id": "da91c36084b02bf0",
-            "span_id": "a300e4108e58c566"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0854,
-          "store_latency_ms": 1580.3329,
-          "system": "entroly",
-          "worker_id": 4
-        },
-        {
-          "entry_index": 1,
-          "exact": true,
-          "payload_sha256": "313d593e213ecd518a502506c489581f181ec63e9f2b0006fedc0e02d7cbfb76",
-          "recovered_sha256": "313d593e213ecd518a502506c489581f181ec63e9f2b0006fedc0e02d7cbfb76",
-          "reference": {
-            "receipt_id": "6f0bbdbef0de74e0",
-            "span_id": "4989d9b13dc10f31"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0793,
-          "store_latency_ms": 39.4626,
-          "system": "entroly",
-          "worker_id": 4
-        },
-        {
-          "entry_index": 2,
-          "exact": true,
-          "payload_sha256": "1c119c0804651a78e6d28f4474fb969dbb95b3c28133f84209974eadb8f03f9b",
-          "recovered_sha256": "1c119c0804651a78e6d28f4474fb969dbb95b3c28133f84209974eadb8f03f9b",
-          "reference": {
-            "receipt_id": "3eda9ec387ed0bcc",
-            "span_id": "78de684c3ffa0e16"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0816,
-          "store_latency_ms": 41.7402,
-          "system": "entroly",
-          "worker_id": 4
-        },
-        {
-          "entry_index": 3,
-          "exact": true,
-          "payload_sha256": "b3d118325757af105ffd3cfbc80b0e5158026dea50830cd22ce9e8aca29c8e96",
-          "recovered_sha256": "b3d118325757af105ffd3cfbc80b0e5158026dea50830cd22ce9e8aca29c8e96",
-          "reference": {
-            "receipt_id": "4fb0fb8748f7819c",
-            "span_id": "aca1c47b86bcae8c"
-          },
-          "retrieval_error": null,
-          "retrieve_latency_ms": 0.0752,
-          "store_latency_ms": 39.247,
-          "system": "entroly",
-          "worker_id": 4
+          "worker_id": 0
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "63097a6266b50689be57eeaba232d59820fb8e0622c535b881d1240c5174c149",
-          "recovered_sha256": "63097a6266b50689be57eeaba232d59820fb8e0622c535b881d1240c5174c149",
+          "payload_sha256": "ef95c7b6bbd64b0773e3ef84a9e57b609c299c7b9a7758a12d85fb05deb2ee94",
+          "recovered_sha256": "ef95c7b6bbd64b0773e3ef84a9e57b609c299c7b9a7758a12d85fb05deb2ee94",
           "reference": {
-            "receipt_id": "057ac79b44a48166",
-            "span_id": "058aa47f2b2cdd6e"
+            "receipt_id": "a219320b4759fb6c",
+            "span_id": "35bd7079322421d2"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0759,
-          "store_latency_ms": 38.5925,
+          "retrieve_latency_ms": 0.0895,
+          "store_latency_ms": 39.7099,
           "system": "entroly",
-          "worker_id": 4
+          "worker_id": 0
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "3cf31d46173f6c50bd8b9e72fc007bd9284686af7cb918937e2dd36213058a83",
-          "recovered_sha256": "3cf31d46173f6c50bd8b9e72fc007bd9284686af7cb918937e2dd36213058a83",
+          "payload_sha256": "58ac4f5a5e8b4d103f6104ac54f7c9870baccf1492c467a1059b4c7331d98941",
+          "recovered_sha256": "58ac4f5a5e8b4d103f6104ac54f7c9870baccf1492c467a1059b4c7331d98941",
           "reference": {
-            "receipt_id": "ce6d1a64b7a2e1fa",
-            "span_id": "6f3d1dc93c787a49"
+            "receipt_id": "cf4eb8e9f4a4890c",
+            "span_id": "faae47420c79b374"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0904,
+          "store_latency_ms": 38.5556,
+          "system": "entroly",
+          "worker_id": 0
+        },
+        {
+          "entry_index": 6,
+          "exact": true,
+          "payload_sha256": "b736e1afea7a30e82588977cea2b586373a5058aa07caf5d320a7d302662b488",
+          "recovered_sha256": "b736e1afea7a30e82588977cea2b586373a5058aa07caf5d320a7d302662b488",
+          "reference": {
+            "receipt_id": "e4d64b54e56b3665",
+            "span_id": "6cb943ed1c23160a"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0856,
+          "store_latency_ms": 40.1899,
+          "system": "entroly",
+          "worker_id": 0
+        },
+        {
+          "entry_index": 7,
+          "exact": true,
+          "payload_sha256": "69bacfb98095b1170b3935c9a335e43529ccc550145cd339876a60aa24abbc17",
+          "recovered_sha256": "69bacfb98095b1170b3935c9a335e43529ccc550145cd339876a60aa24abbc17",
+          "reference": {
+            "receipt_id": "f0e2c13ad9a647ae",
+            "span_id": "c45599b4cc5012b6"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0847,
+          "store_latency_ms": 34.1682,
+          "system": "entroly",
+          "worker_id": 0
+        },
+        {
+          "entry_index": 8,
+          "exact": true,
+          "payload_sha256": "6649df7a021586c0ef346156db85e5007f3ee12cf9d199d4a8247af429c89fe7",
+          "recovered_sha256": "6649df7a021586c0ef346156db85e5007f3ee12cf9d199d4a8247af429c89fe7",
+          "reference": {
+            "receipt_id": "5aa9c8aa840bba0d",
+            "span_id": "fb055b6893439194"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0842,
+          "store_latency_ms": 46.5379,
+          "system": "entroly",
+          "worker_id": 0
+        },
+        {
+          "entry_index": 9,
+          "exact": true,
+          "payload_sha256": "e21f6064e4d9d9101f636b37bfdbc74e17ab1ef23d3db8b3a2c080c320c17749",
+          "recovered_sha256": "e21f6064e4d9d9101f636b37bfdbc74e17ab1ef23d3db8b3a2c080c320c17749",
+          "reference": {
+            "receipt_id": "0bef414f6bfcdeba",
+            "span_id": "a0c7694b47c08f9d"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.1066,
+          "store_latency_ms": 507.8138,
+          "system": "entroly",
+          "worker_id": 0
+        },
+        {
+          "entry_index": 10,
+          "exact": true,
+          "payload_sha256": "fc02ade7d8fe2615a61bddab6e94cc94200286ab7413ae0358c6f336bbbecc7d",
+          "recovered_sha256": "fc02ade7d8fe2615a61bddab6e94cc94200286ab7413ae0358c6f336bbbecc7d",
+          "reference": {
+            "receipt_id": "e7068a6236e4b775",
+            "span_id": "abe0c3cc5c6fc4a0"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0832,
+          "store_latency_ms": 44.3563,
+          "system": "entroly",
+          "worker_id": 0
+        },
+        {
+          "entry_index": 0,
+          "exact": true,
+          "payload_sha256": "bed04acaddea91afe9c843651253ad00b731cfdf283e8be8f3f151ba7d89af8c",
+          "recovered_sha256": "bed04acaddea91afe9c843651253ad00b731cfdf283e8be8f3f151ba7d89af8c",
+          "reference": {
+            "receipt_id": "138c31fccd9168c7",
+            "span_id": "37662eb5e4d24e65"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0842,
+          "store_latency_ms": 683.9832,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 1,
+          "exact": true,
+          "payload_sha256": "b618b683b1c548f12b57949d968cd10e36303c8bd30276662fd80d06f3f7a2a8",
+          "recovered_sha256": "b618b683b1c548f12b57949d968cd10e36303c8bd30276662fd80d06f3f7a2a8",
+          "reference": {
+            "receipt_id": "86b6070a04c4a849",
+            "span_id": "9207823d3a1422ee"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.089,
+          "store_latency_ms": 37.3884,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 2,
+          "exact": true,
+          "payload_sha256": "0217bda9304b5b9fecb33fe7b3949288d38c958d24bd514e8744266a61c9ff3e",
+          "recovered_sha256": "0217bda9304b5b9fecb33fe7b3949288d38c958d24bd514e8744266a61c9ff3e",
+          "reference": {
+            "receipt_id": "05219567828c19cc",
+            "span_id": "7ada12b64b8157af"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0831,
+          "store_latency_ms": 32.1754,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 3,
+          "exact": true,
+          "payload_sha256": "9e9fca2a8e3d9b6fe9c1edf3011622e2e8727d1f198e5c582fb845611874769c",
+          "recovered_sha256": "9e9fca2a8e3d9b6fe9c1edf3011622e2e8727d1f198e5c582fb845611874769c",
+          "reference": {
+            "receipt_id": "91f210908066de20",
+            "span_id": "efa04c3e2ef4c08e"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0832,
+          "store_latency_ms": 32.9828,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 4,
+          "exact": true,
+          "payload_sha256": "f5b2d59ad5513e140f65f313b45b932f7791afacca19ab65b661148e54557ecb",
+          "recovered_sha256": "f5b2d59ad5513e140f65f313b45b932f7791afacca19ab65b661148e54557ecb",
+          "reference": {
+            "receipt_id": "1e85a8b3d5d3bf39",
+            "span_id": "27d0090f2841e0ab"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0824,
+          "store_latency_ms": 33.1312,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 5,
+          "exact": true,
+          "payload_sha256": "b55f47cd83910fb94ed4e6ea0d26aeb9727aa44c49671f33ae0323d4f1ad8081",
+          "recovered_sha256": "b55f47cd83910fb94ed4e6ea0d26aeb9727aa44c49671f33ae0323d4f1ad8081",
+          "reference": {
+            "receipt_id": "da484cdc40fa90d9",
+            "span_id": "8d612a47effedc99"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0993,
+          "store_latency_ms": 35.2266,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 6,
+          "exact": true,
+          "payload_sha256": "55c9aa8b8d56b023313e7b4c1690b387984bdeb794a1fc716e9531a6f044fabe",
+          "recovered_sha256": "55c9aa8b8d56b023313e7b4c1690b387984bdeb794a1fc716e9531a6f044fabe",
+          "reference": {
+            "receipt_id": "9e9023db26da8d71",
+            "span_id": "df2ec03a1602cfed"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0858,
+          "store_latency_ms": 34.2189,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 7,
+          "exact": true,
+          "payload_sha256": "94c523671912a6fab899ba6dab907b6d4359614733fc566aa2d0e2de659ea05a",
+          "recovered_sha256": "94c523671912a6fab899ba6dab907b6d4359614733fc566aa2d0e2de659ea05a",
+          "reference": {
+            "receipt_id": "ea2b39ae9afffd19",
+            "span_id": "af51cf018b235f83"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0815,
+          "store_latency_ms": 30.2748,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 8,
+          "exact": true,
+          "payload_sha256": "2f0e706bd3e56ad0b9477e866644f974f16a908ed84c426e4f879f02091824ab",
+          "recovered_sha256": "2f0e706bd3e56ad0b9477e866644f974f16a908ed84c426e4f879f02091824ab",
+          "reference": {
+            "receipt_id": "33517c8f2193d8c4",
+            "span_id": "5add2f3e05771cee"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0819,
+          "store_latency_ms": 34.4979,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 9,
+          "exact": true,
+          "payload_sha256": "b1d0e7a501f7b6724b9500b6639fa3d1c99e0cac4026bb09aad7c1bd7f1f1b79",
+          "recovered_sha256": "b1d0e7a501f7b6724b9500b6639fa3d1c99e0cac4026bb09aad7c1bd7f1f1b79",
+          "reference": {
+            "receipt_id": "0e5f2dc1c4689d76",
+            "span_id": "e1cf77d00d6600c2"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0807,
+          "store_latency_ms": 37.7694,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 10,
+          "exact": true,
+          "payload_sha256": "7d24899531a586bfef0b8cca4b509bcb3b60ae516198c89c083babcbffff63c3",
+          "recovered_sha256": "7d24899531a586bfef0b8cca4b509bcb3b60ae516198c89c083babcbffff63c3",
+          "reference": {
+            "receipt_id": "3134a2965581a6db",
+            "span_id": "7822e5b61325a4ab"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0766,
+          "store_latency_ms": 34.9818,
+          "system": "entroly",
+          "worker_id": 1
+        },
+        {
+          "entry_index": 0,
+          "exact": true,
+          "payload_sha256": "edb4d3f3a4547da23c0287556e6d83879912d1040ce782bf65ef24e7633ca234",
+          "recovered_sha256": "edb4d3f3a4547da23c0287556e6d83879912d1040ce782bf65ef24e7633ca234",
+          "reference": {
+            "receipt_id": "df7a2fa54c665fb8",
+            "span_id": "9d4b0163c13a1725"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0773,
+          "store_latency_ms": 1117.0023,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 1,
+          "exact": true,
+          "payload_sha256": "03be679d9ccaa5aa6e008dc8fa4aadeeff04cf359f7e66604ae5d254b52406e5",
+          "recovered_sha256": "03be679d9ccaa5aa6e008dc8fa4aadeeff04cf359f7e66604ae5d254b52406e5",
+          "reference": {
+            "receipt_id": "c7875bf74a54e203",
+            "span_id": "0dde3555d2580434"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0773,
+          "store_latency_ms": 35.9236,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 2,
+          "exact": true,
+          "payload_sha256": "2cddc08b21fff9d4fe2b8c96f59d21572ffca20ea4014c09c43f0d329cd0af8b",
+          "recovered_sha256": "2cddc08b21fff9d4fe2b8c96f59d21572ffca20ea4014c09c43f0d329cd0af8b",
+          "reference": {
+            "receipt_id": "96484f3ffb257faf",
+            "span_id": "9d76ea5d8d8abc96"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0773,
+          "store_latency_ms": 36.032,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 3,
+          "exact": true,
+          "payload_sha256": "3cfc6ac1e5dcc118d3b222c6ef90ce10c71fa8129e38a4aa38d175651bc71166",
+          "recovered_sha256": "3cfc6ac1e5dcc118d3b222c6ef90ce10c71fa8129e38a4aa38d175651bc71166",
+          "reference": {
+            "receipt_id": "7966d32d0f5a7c29",
+            "span_id": "f8060c1447b5ff3d"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.078,
+          "store_latency_ms": 39.1879,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 4,
+          "exact": true,
+          "payload_sha256": "52fa1106823afd2f89e36895a9eebaaad0c49fc19926096c9af5cb4ae45424c1",
+          "recovered_sha256": "52fa1106823afd2f89e36895a9eebaaad0c49fc19926096c9af5cb4ae45424c1",
+          "reference": {
+            "receipt_id": "580a3b47b46725e4",
+            "span_id": "70c8b515952b2546"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0766,
+          "store_latency_ms": 36.0038,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 5,
+          "exact": true,
+          "payload_sha256": "478b69b439d1d4c667a0ad684855bca5ef5b7f37da0cb81738dfcea38cabc5fe",
+          "recovered_sha256": "478b69b439d1d4c667a0ad684855bca5ef5b7f37da0cb81738dfcea38cabc5fe",
+          "reference": {
+            "receipt_id": "649fb7c8381d060b",
+            "span_id": "ce6d3a704be13805"
           },
           "retrieval_error": null,
           "retrieve_latency_ms": 0.0775,
-          "store_latency_ms": 40.0037,
+          "store_latency_ms": 32.7529,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 6,
+          "exact": true,
+          "payload_sha256": "be8607235aaf00ff18fc0eb1b1876ad94ac5733dc1dba08096bd45c0bd500cf1",
+          "recovered_sha256": "be8607235aaf00ff18fc0eb1b1876ad94ac5733dc1dba08096bd45c0bd500cf1",
+          "reference": {
+            "receipt_id": "ab341a4d5a858e47",
+            "span_id": "ecf01597504f9545"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0768,
+          "store_latency_ms": 40.5446,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 7,
+          "exact": true,
+          "payload_sha256": "8805396b5b593739ab6991c70270e2e0d9bf1b8148e4b6ae84c904d927ecce0b",
+          "recovered_sha256": "8805396b5b593739ab6991c70270e2e0d9bf1b8148e4b6ae84c904d927ecce0b",
+          "reference": {
+            "receipt_id": "0802aa5783385200",
+            "span_id": "7ec3fe6ffcaf24fa"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0977,
+          "store_latency_ms": 41.4809,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 8,
+          "exact": true,
+          "payload_sha256": "6fc372b19fbddaa0918ec8dc07a6cc960c290cbe13b3192034bbab122157685e",
+          "recovered_sha256": "6fc372b19fbddaa0918ec8dc07a6cc960c290cbe13b3192034bbab122157685e",
+          "reference": {
+            "receipt_id": "2eae426b3697c26b",
+            "span_id": "634a02a5a08c958d"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.072,
+          "store_latency_ms": 25.6363,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 9,
+          "exact": true,
+          "payload_sha256": "7d5b89bd7dcda12091004bf73a511bbdf0a0688420e47958b739af84f54570bb",
+          "recovered_sha256": "7d5b89bd7dcda12091004bf73a511bbdf0a0688420e47958b739af84f54570bb",
+          "reference": {
+            "receipt_id": "db38a4ac1db0147a",
+            "span_id": "0f687f16418e2726"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.07,
+          "store_latency_ms": 37.7156,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 10,
+          "exact": true,
+          "payload_sha256": "e4a32b8732ac6ccda6e85598ad144c90f4d5fcd369ef54f0cb934fc4c559f587",
+          "recovered_sha256": "e4a32b8732ac6ccda6e85598ad144c90f4d5fcd369ef54f0cb934fc4c559f587",
+          "reference": {
+            "receipt_id": "9a39bd548a621d3c",
+            "span_id": "a23e0ea60f44400a"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0737,
+          "store_latency_ms": 38.3879,
+          "system": "entroly",
+          "worker_id": 2
+        },
+        {
+          "entry_index": 0,
+          "exact": true,
+          "payload_sha256": "7a22dce1e50be398dd3cb73c1f3c6a8737504e103bd44aa023595485c12bbab9",
+          "recovered_sha256": "7a22dce1e50be398dd3cb73c1f3c6a8737504e103bd44aa023595485c12bbab9",
+          "reference": {
+            "receipt_id": "bd2ea9c705eca1cb",
+            "span_id": "956aea0959755ae9"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0737,
+          "store_latency_ms": 10.5762,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 1,
+          "exact": true,
+          "payload_sha256": "bc2d78424b6ae4e99a977ec65edac9f843231d4f0ddeaba91323a65f45d36c33",
+          "recovered_sha256": "bc2d78424b6ae4e99a977ec65edac9f843231d4f0ddeaba91323a65f45d36c33",
+          "reference": {
+            "receipt_id": "8ce5ff452dfbe224",
+            "span_id": "c32e622bae4e3c52"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0739,
+          "store_latency_ms": 27.8888,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 2,
+          "exact": true,
+          "payload_sha256": "4760d4446c8940e87280a9f465f40c1dae6eed4a0d2c363786d97b1f251e0b44",
+          "recovered_sha256": "4760d4446c8940e87280a9f465f40c1dae6eed4a0d2c363786d97b1f251e0b44",
+          "reference": {
+            "receipt_id": "81eac0827c0ef9d6",
+            "span_id": "ba4fc39cab9f77d7"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0722,
+          "store_latency_ms": 28.7604,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 3,
+          "exact": true,
+          "payload_sha256": "a0d55bab8996a7b2972b6b0215447f609ba8f13c11e63875c16c45f98bec172d",
+          "recovered_sha256": "a0d55bab8996a7b2972b6b0215447f609ba8f13c11e63875c16c45f98bec172d",
+          "reference": {
+            "receipt_id": "31accd4167b0b8ff",
+            "span_id": "e1c51ba0f043d828"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0735,
+          "store_latency_ms": 28.4436,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 4,
+          "exact": true,
+          "payload_sha256": "2756b94381534b63da10b1b9387d3f0c573d4eda74e91ef928f6a364118c67f2",
+          "recovered_sha256": "2756b94381534b63da10b1b9387d3f0c573d4eda74e91ef928f6a364118c67f2",
+          "reference": {
+            "receipt_id": "e1e52968c20ac527",
+            "span_id": "aa9ea1a13d986caa"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0709,
+          "store_latency_ms": 29.7544,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 5,
+          "exact": true,
+          "payload_sha256": "97f8f4ee670efc23b2243f8f94525f5684216a7d94056e44dac4a402aa81ab18",
+          "recovered_sha256": "97f8f4ee670efc23b2243f8f94525f5684216a7d94056e44dac4a402aa81ab18",
+          "reference": {
+            "receipt_id": "460460126ced6324",
+            "span_id": "703d6e2808caaf68"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0698,
+          "store_latency_ms": 29.2894,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 6,
+          "exact": true,
+          "payload_sha256": "8e12dbae0ec33564743f98322d0956d6d3d2e0e4d3b0b83f97e03346a17bb7ff",
+          "recovered_sha256": "8e12dbae0ec33564743f98322d0956d6d3d2e0e4d3b0b83f97e03346a17bb7ff",
+          "reference": {
+            "receipt_id": "f81ceb68b906dd87",
+            "span_id": "aaff0f9487b2e6f1"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0693,
+          "store_latency_ms": 27.5556,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 7,
+          "exact": true,
+          "payload_sha256": "89150205ac221692cb5be06c358e227dbe47729fa54bef72320dc6d19ad6a6a9",
+          "recovered_sha256": "89150205ac221692cb5be06c358e227dbe47729fa54bef72320dc6d19ad6a6a9",
+          "reference": {
+            "receipt_id": "793af274de3da40f",
+            "span_id": "445861ec283714a5"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0852,
+          "store_latency_ms": 60.4667,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 8,
+          "exact": true,
+          "payload_sha256": "ac4587509b31e9ea630c405f6ba8b75010c8422cbab87481975850dc38ffea92",
+          "recovered_sha256": "ac4587509b31e9ea630c405f6ba8b75010c8422cbab87481975850dc38ffea92",
+          "reference": {
+            "receipt_id": "71d7ddecb762c739",
+            "span_id": "ea275a401ec06ba2"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0721,
+          "store_latency_ms": 18.4123,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 9,
+          "exact": true,
+          "payload_sha256": "dd49bd89fe813ebb22bf3c79da512c325d86cab31e4dabf60f48c0897a90f3e6",
+          "recovered_sha256": "dd49bd89fe813ebb22bf3c79da512c325d86cab31e4dabf60f48c0897a90f3e6",
+          "reference": {
+            "receipt_id": "063cc799e91d3f29",
+            "span_id": "3ffc8d0dff2ba1bc"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0718,
+          "store_latency_ms": 28.1303,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 10,
+          "exact": true,
+          "payload_sha256": "84b03495168c3b222309dda91a3604e969b1730867e6a097d342161af71f720d",
+          "recovered_sha256": "84b03495168c3b222309dda91a3604e969b1730867e6a097d342161af71f720d",
+          "reference": {
+            "receipt_id": "5401e59db3a0d2c6",
+            "span_id": "56047f26f9468923"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0727,
+          "store_latency_ms": 24.9,
+          "system": "entroly",
+          "worker_id": 3
+        },
+        {
+          "entry_index": 0,
+          "exact": true,
+          "payload_sha256": "3fe9c191ce0bdd69f079d514040217357d3647c258dadccbab1b19e1afd98f5c",
+          "recovered_sha256": "3fe9c191ce0bdd69f079d514040217357d3647c258dadccbab1b19e1afd98f5c",
+          "reference": {
+            "receipt_id": "097bcda87fd18aeb",
+            "span_id": "a35aa37fa4594e17"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0712,
+          "store_latency_ms": 213.6638,
+          "system": "entroly",
+          "worker_id": 4
+        },
+        {
+          "entry_index": 1,
+          "exact": true,
+          "payload_sha256": "07a481780c2a31eb8f2aa38ee89e28272660a77dd2b9c7ad93284e9aec709413",
+          "recovered_sha256": "07a481780c2a31eb8f2aa38ee89e28272660a77dd2b9c7ad93284e9aec709413",
+          "reference": {
+            "receipt_id": "071e5665a8a27654",
+            "span_id": "6c8486ed2675ba87"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0703,
+          "store_latency_ms": 132.1834,
+          "system": "entroly",
+          "worker_id": 4
+        },
+        {
+          "entry_index": 2,
+          "exact": true,
+          "payload_sha256": "87165a868a33401dcf5badae73382e945c77232daa25235086b5eb3dcf8974ef",
+          "recovered_sha256": "87165a868a33401dcf5badae73382e945c77232daa25235086b5eb3dcf8974ef",
+          "reference": {
+            "receipt_id": "1e2d9afa94404c75",
+            "span_id": "db4f84432d79e445"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0724,
+          "store_latency_ms": 30.9596,
+          "system": "entroly",
+          "worker_id": 4
+        },
+        {
+          "entry_index": 3,
+          "exact": true,
+          "payload_sha256": "da732e7249c425f520643d53130d8b54a0b4cc1961ac3851365f0c161eacb0b2",
+          "recovered_sha256": "da732e7249c425f520643d53130d8b54a0b4cc1961ac3851365f0c161eacb0b2",
+          "reference": {
+            "receipt_id": "7e6f002761baabee",
+            "span_id": "c6342872e9940aa7"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0702,
+          "store_latency_ms": 30.155,
+          "system": "entroly",
+          "worker_id": 4
+        },
+        {
+          "entry_index": 4,
+          "exact": true,
+          "payload_sha256": "09f3c85bc7770cbc8e53e5de008d68d89b0e48ef26b852b419c28d83bef14a59",
+          "recovered_sha256": "09f3c85bc7770cbc8e53e5de008d68d89b0e48ef26b852b419c28d83bef14a59",
+          "reference": {
+            "receipt_id": "4324e0520ed837c4",
+            "span_id": "fd62386ed4613588"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.0702,
+          "store_latency_ms": 30.6215,
+          "system": "entroly",
+          "worker_id": 4
+        },
+        {
+          "entry_index": 5,
+          "exact": true,
+          "payload_sha256": "47ede2c57b60f71f31f38a0663eb5b3a5aff19c837d3cd538a17de44ae779bf1",
+          "recovered_sha256": "47ede2c57b60f71f31f38a0663eb5b3a5aff19c837d3cd538a17de44ae779bf1",
+          "reference": {
+            "receipt_id": "04f93686872aae09",
+            "span_id": "800876c1d9decb4e"
+          },
+          "retrieval_error": null,
+          "retrieve_latency_ms": 0.07,
+          "store_latency_ms": 32.2403,
           "system": "entroly",
           "worker_id": 4
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "43c09b9b0a840e2c97c9d5446c742e3cd5ac010dbd8b04f24bde9e2609c27861",
-          "recovered_sha256": "43c09b9b0a840e2c97c9d5446c742e3cd5ac010dbd8b04f24bde9e2609c27861",
+          "payload_sha256": "1104c9d190e94c618a420635a7c85e62728500b764b669255be6d521e4e2d6dd",
+          "recovered_sha256": "1104c9d190e94c618a420635a7c85e62728500b764b669255be6d521e4e2d6dd",
           "reference": {
-            "receipt_id": "b60c7b137595afdb",
-            "span_id": "1648aca8c3f07c92"
+            "receipt_id": "d400e9235f752572",
+            "span_id": "e500e1d5a52cd583"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0876,
-          "store_latency_ms": 37.779,
+          "retrieve_latency_ms": 0.0705,
+          "store_latency_ms": 30.3369,
           "system": "entroly",
           "worker_id": 4
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "7f1830c3666e0b60a53eb89dcbded8e4a56f2dcc8baaeab2e33344d10623ab47",
-          "recovered_sha256": "7f1830c3666e0b60a53eb89dcbded8e4a56f2dcc8baaeab2e33344d10623ab47",
+          "payload_sha256": "d47bd7243d8e71dc191eff73eca0ee60f460d8e42352d09476b1614e78dcedc2",
+          "recovered_sha256": "d47bd7243d8e71dc191eff73eca0ee60f460d8e42352d09476b1614e78dcedc2",
           "reference": {
-            "receipt_id": "e8289f682d6449b0",
-            "span_id": "bc5f789970f2a886"
+            "receipt_id": "692341f69d1e14cc",
+            "span_id": "d5948cffdab2edbf"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0849,
-          "store_latency_ms": 46.5915,
+          "retrieve_latency_ms": 0.0711,
+          "store_latency_ms": 34.7394,
           "system": "entroly",
           "worker_id": 4
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "824876e986d392975b9f3a478889f4083ba98d2a9127015f662cf68bb1276ed7",
-          "recovered_sha256": "824876e986d392975b9f3a478889f4083ba98d2a9127015f662cf68bb1276ed7",
+          "payload_sha256": "9d9d80cbc8a245e2d1599773870c323e2975dafe443b30f51378703b82b64abe",
+          "recovered_sha256": "9d9d80cbc8a245e2d1599773870c323e2975dafe443b30f51378703b82b64abe",
           "reference": {
-            "receipt_id": "b0243cba844cd424",
-            "span_id": "5bcb182dcc1cf6ac"
+            "receipt_id": "0804e2b58ef34c8b",
+            "span_id": "e00f7bf239841dce"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0758,
-          "store_latency_ms": 42.1393,
+          "retrieve_latency_ms": 0.0706,
+          "store_latency_ms": 32.5438,
           "system": "entroly",
           "worker_id": 4
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "7eb45b754125b3cc042932b004945246eb1eefa4fe6c9b603cc20382c7df99dd",
-          "recovered_sha256": "7eb45b754125b3cc042932b004945246eb1eefa4fe6c9b603cc20382c7df99dd",
+          "payload_sha256": "b45d4b392155d1eaa1ce3238dbbefcab2b4232cca104d99c564e950d78c0a527",
+          "recovered_sha256": "b45d4b392155d1eaa1ce3238dbbefcab2b4232cca104d99c564e950d78c0a527",
           "reference": {
-            "receipt_id": "910a98e324b7c271",
-            "span_id": "176aa1697d4a7fd4"
+            "receipt_id": "40181687da54cf65",
+            "span_id": "18b2ac1dd62210a4"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0718,
-          "store_latency_ms": 40.3198,
+          "retrieve_latency_ms": 0.0697,
+          "store_latency_ms": 37.1106,
           "system": "entroly",
           "worker_id": 4
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "0ebf6fcb1c75c374617225f492f571cac613f0f43614732a262bbedf1f39783a",
-          "recovered_sha256": "0ebf6fcb1c75c374617225f492f571cac613f0f43614732a262bbedf1f39783a",
+          "payload_sha256": "9a81df3d3341de0bc4745f4fd3f3b7f52aeb8e160ca1fc0045af870a254d51d5",
+          "recovered_sha256": "9a81df3d3341de0bc4745f4fd3f3b7f52aeb8e160ca1fc0045af870a254d51d5",
           "reference": {
-            "receipt_id": "eac83b9b7e222790",
-            "span_id": "2bbbdb8a5868df4f"
+            "receipt_id": "1d2773973354a854",
+            "span_id": "e7011a8f159a2b57"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0719,
-          "store_latency_ms": 43.1568,
+          "retrieve_latency_ms": 0.071,
+          "store_latency_ms": 33.8593,
           "system": "entroly",
           "worker_id": 4
         },
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "46df3622bd65b9fabaaeb30004e1b9a72774e9c03f5fb2e0a15e5a13c39f3788",
-          "recovered_sha256": "46df3622bd65b9fabaaeb30004e1b9a72774e9c03f5fb2e0a15e5a13c39f3788",
+          "payload_sha256": "ce2f3ba4fe4669558c0ce31f68c981e50b11d35abff879dd9ef60ec6ab2d5933",
+          "recovered_sha256": "ce2f3ba4fe4669558c0ce31f68c981e50b11d35abff879dd9ef60ec6ab2d5933",
           "reference": {
-            "receipt_id": "4f2392b0b7387cae",
-            "span_id": "f52d4770dad2b7cf"
+            "receipt_id": "c9b7fb1a515525c2",
+            "span_id": "e73749976169eb54"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.074,
-          "store_latency_ms": 12.0499,
+          "retrieve_latency_ms": 0.0692,
+          "store_latency_ms": 1911.6083,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "97b0a53ed55665f4860b2e7084333baf5561038a9de789f7258c1c01911d8dbd",
-          "recovered_sha256": "97b0a53ed55665f4860b2e7084333baf5561038a9de789f7258c1c01911d8dbd",
+          "payload_sha256": "b4f0ee978e808e8717d66051be9af892b875bde643d1569778e1d3a64802bbf6",
+          "recovered_sha256": "b4f0ee978e808e8717d66051be9af892b875bde643d1569778e1d3a64802bbf6",
           "reference": {
-            "receipt_id": "63c8f723b20f23ba",
-            "span_id": "fb54752cf9a76834"
+            "receipt_id": "c664e33f833ad3bf",
+            "span_id": "99a21bcde72fa202"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.071,
-          "store_latency_ms": 28.4942,
+          "retrieve_latency_ms": 0.0704,
+          "store_latency_ms": 42.8349,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "2b1596d11595a3675fb99130a6747b6cddb495b838fb5a257a87a712838cd036",
-          "recovered_sha256": "2b1596d11595a3675fb99130a6747b6cddb495b838fb5a257a87a712838cd036",
+          "payload_sha256": "dce3d557302391a86b316a00441767ca50d084f4084f2750deef3af43864ac29",
+          "recovered_sha256": "dce3d557302391a86b316a00441767ca50d084f4084f2750deef3af43864ac29",
           "reference": {
-            "receipt_id": "7c1b9c66bfa35ce1",
-            "span_id": "c088299c728ceaca"
+            "receipt_id": "7ca2ba5670438e96",
+            "span_id": "194986eff9a26b9c"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0688,
-          "store_latency_ms": 27.31,
+          "retrieve_latency_ms": 0.0696,
+          "store_latency_ms": 40.8324,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "70c85fde887d060ac890810ae59418ce6fed0404fd070b12b7912c59fbc2832a",
-          "recovered_sha256": "70c85fde887d060ac890810ae59418ce6fed0404fd070b12b7912c59fbc2832a",
+          "payload_sha256": "2c536a5c89211f400b7b3a7662adc3723770880009291693f087c3cc97bf656b",
+          "recovered_sha256": "2c536a5c89211f400b7b3a7662adc3723770880009291693f087c3cc97bf656b",
           "reference": {
-            "receipt_id": "fd442c5419783c67",
-            "span_id": "8ed047dc211a312c"
+            "receipt_id": "683cfa9a557195bc",
+            "span_id": "e9654f79c826af2a"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0698,
-          "store_latency_ms": 21.8387,
+          "retrieve_latency_ms": 0.093,
+          "store_latency_ms": 29.5448,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "0693c38ce6aac8468427aa62bbe1435a602404d0f7a553188ee0a1d15e6a1647",
-          "recovered_sha256": "0693c38ce6aac8468427aa62bbe1435a602404d0f7a553188ee0a1d15e6a1647",
+          "payload_sha256": "a2fed30f3b699ed7547eab52b54746260512721124cc5c3b899c452942de6088",
+          "recovered_sha256": "a2fed30f3b699ed7547eab52b54746260512721124cc5c3b899c452942de6088",
           "reference": {
-            "receipt_id": "ab5a135bd2310ddd",
-            "span_id": "fb4fc1494b55aa86"
+            "receipt_id": "745173f560b4fe3c",
+            "span_id": "75203cd233e09afb"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0692,
-          "store_latency_ms": 29.6415,
+          "retrieve_latency_ms": 0.078,
+          "store_latency_ms": 40.1233,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "1f0c4e3298e6405a8111426a7fa0054ad48b72827293f3415d53f7f06b6c82f0",
-          "recovered_sha256": "1f0c4e3298e6405a8111426a7fa0054ad48b72827293f3415d53f7f06b6c82f0",
+          "payload_sha256": "9feac6d3ecd1c46d0afcb83efeed711b9d1112dd8c2a635627d9b88b0eaa3ccf",
+          "recovered_sha256": "9feac6d3ecd1c46d0afcb83efeed711b9d1112dd8c2a635627d9b88b0eaa3ccf",
           "reference": {
-            "receipt_id": "42594cb31c90b38f",
-            "span_id": "ae51e7d409429988"
+            "receipt_id": "71cb18301f788af5",
+            "span_id": "7b9f4cd52e9e34cd"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0694,
-          "store_latency_ms": 30.7895,
+          "retrieve_latency_ms": 0.0705,
+          "store_latency_ms": 39.999,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "cbde09c4f9f5c0b21a22cefb60987465cc458ba4c9fad4b324d3eb14cafa84d0",
-          "recovered_sha256": "cbde09c4f9f5c0b21a22cefb60987465cc458ba4c9fad4b324d3eb14cafa84d0",
+          "payload_sha256": "9b8d5876a6cf7b76af217a17c7982f2a3586599f955585b54ae53870b1d8bbd9",
+          "recovered_sha256": "9b8d5876a6cf7b76af217a17c7982f2a3586599f955585b54ae53870b1d8bbd9",
           "reference": {
-            "receipt_id": "a377efdc2e69280d",
-            "span_id": "4ad0000ab3f02ef0"
+            "receipt_id": "360317f6b84f3b80",
+            "span_id": "d34168836f195f90"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0698,
-          "store_latency_ms": 375.9302,
+          "retrieve_latency_ms": 0.0736,
+          "store_latency_ms": 44.312,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "31b2c7464260e70cdfe9abae53ef363481893fdb6ca12bcf4b389b404b1d4101",
-          "recovered_sha256": "31b2c7464260e70cdfe9abae53ef363481893fdb6ca12bcf4b389b404b1d4101",
+          "payload_sha256": "c0cd433614b9030f20ef50cc3f13083e21d9e899253747dcecd93fd3a6c52b4c",
+          "recovered_sha256": "c0cd433614b9030f20ef50cc3f13083e21d9e899253747dcecd93fd3a6c52b4c",
           "reference": {
-            "receipt_id": "6cec58f6e9bac7b0",
-            "span_id": "fdaa9c5292142b70"
+            "receipt_id": "9031da360b403d65",
+            "span_id": "ce1fc3e257ec34f1"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0693,
-          "store_latency_ms": 29.3633,
+          "retrieve_latency_ms": 0.0709,
+          "store_latency_ms": 43.2792,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "794a67d58f4612f5a12cb1f2089fa91e463504ae5bd5b499199a7c44de606f33",
-          "recovered_sha256": "794a67d58f4612f5a12cb1f2089fa91e463504ae5bd5b499199a7c44de606f33",
+          "payload_sha256": "3e0f60f3115a9aee1337a24b8541729842ef97b32de8190949feeb9c8627ba24",
+          "recovered_sha256": "3e0f60f3115a9aee1337a24b8541729842ef97b32de8190949feeb9c8627ba24",
           "reference": {
-            "receipt_id": "529fa0a6e50fe59e",
-            "span_id": "cfe3829496ca7cb0"
+            "receipt_id": "2f20745066f243bb",
+            "span_id": "cf1dfd39899e9138"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0691,
-          "store_latency_ms": 28.6805,
+          "retrieve_latency_ms": 0.0697,
+          "store_latency_ms": 38.9098,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "c7078eeb3fbcaa40ff75740c5125495d774fccf8c1f99ffc1b7001908e88604f",
-          "recovered_sha256": "c7078eeb3fbcaa40ff75740c5125495d774fccf8c1f99ffc1b7001908e88604f",
+          "payload_sha256": "9070e7ae6f3ee9102624ac4ed19850cda4508678b8033f532b6e7b2877bb649e",
+          "recovered_sha256": "9070e7ae6f3ee9102624ac4ed19850cda4508678b8033f532b6e7b2877bb649e",
           "reference": {
-            "receipt_id": "39b09e71c0ef072c",
-            "span_id": "e790e8901cd2d51b"
+            "receipt_id": "351df7f2d2921984",
+            "span_id": "0bfad386f212beb0"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0702,
-          "store_latency_ms": 445.8254,
+          "retrieve_latency_ms": 0.0689,
+          "store_latency_ms": 40.5141,
           "system": "entroly",
           "worker_id": 5
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "790f5a38052471c29b32b31275bf71c88aad9e50c353dcc2d7d7c4d311e7deaf",
-          "recovered_sha256": "790f5a38052471c29b32b31275bf71c88aad9e50c353dcc2d7d7c4d311e7deaf",
+          "payload_sha256": "1d3a3b41bf1367a25b0fae3e40d92778f27c32dd074c3b7fdd54224b2324d52f",
+          "recovered_sha256": "1d3a3b41bf1367a25b0fae3e40d92778f27c32dd074c3b7fdd54224b2324d52f",
           "reference": {
-            "receipt_id": "8871af9dcc45c910",
-            "span_id": "f02fcfdd688879ff"
+            "receipt_id": "20cf6a69e4a17438",
+            "span_id": "78cab63e066697be"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.0721,
-          "store_latency_ms": 37.7492,
+          "retrieve_latency_ms": 0.0839,
+          "store_latency_ms": 42.5216,
           "system": "entroly",
           "worker_id": 5
         }
@@ -1082,7 +1082,7 @@
         "backend": "headroom SQLite CCR store",
         "entries_per_worker": 11,
         "path": "ccr.db",
-        "seed": 20260715,
+        "seed": 20260729,
         "workers": 6
       },
       "participant": {
@@ -1100,924 +1100,924 @@
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "f9ff7a78a2085204b8c7afa81df821b5dde3d4bce5ea87fa63358482a5f71334",
-          "recovered_sha256": "f9ff7a78a2085204b8c7afa81df821b5dde3d4bce5ea87fa63358482a5f71334",
+          "payload_sha256": "d586845f37dfb74b108b53e7807a270e72337d15a8585860119352a4c20cd695",
+          "recovered_sha256": "d586845f37dfb74b108b53e7807a270e72337d15a8585860119352a4c20cd695",
           "reference": {
-            "hash": "f9ff7a78a2085204b8c7afa8"
+            "hash": "d586845f37dfb74b108b53e7"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 43.3467,
-          "store_latency_ms": 34.9717,
+          "retrieve_latency_ms": 36.4428,
+          "store_latency_ms": 35.7036,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "0b89de4c5e5dc021ca5c883439b448f21757d146ca7ffa1d95536657333c906f",
-          "recovered_sha256": "0b89de4c5e5dc021ca5c883439b448f21757d146ca7ffa1d95536657333c906f",
+          "payload_sha256": "7422fd27253821cb8e1130da7030ffd383bde9a9d87319af5d431a0e020ee873",
+          "recovered_sha256": "7422fd27253821cb8e1130da7030ffd383bde9a9d87319af5d431a0e020ee873",
           "reference": {
-            "hash": "0b89de4c5e5dc021ca5c8834"
+            "hash": "7422fd27253821cb8e1130da"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 1.5603,
-          "store_latency_ms": 76.242,
+          "retrieve_latency_ms": 0.7839,
+          "store_latency_ms": 52.6684,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "cea8c60f52f39577c4ccb6bd572cd5b47a775767ed752c2951294c1dcc7fbd9b",
-          "recovered_sha256": "cea8c60f52f39577c4ccb6bd572cd5b47a775767ed752c2951294c1dcc7fbd9b",
+          "payload_sha256": "a5b2951e77741fc7b2db785076d09eb96077d94eb6ee8f38b1823e47e86dea91",
+          "recovered_sha256": "a5b2951e77741fc7b2db785076d09eb96077d94eb6ee8f38b1823e47e86dea91",
           "reference": {
-            "hash": "cea8c60f52f39577c4ccb6bd"
+            "hash": "a5b2951e77741fc7b2db7850"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.7518,
-          "store_latency_ms": 3.7622,
+          "retrieve_latency_ms": 0.668,
+          "store_latency_ms": 15.6577,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "6aee39af461f496cc0c288cd52bf1fcdf90a94bf4662e80cb37ed1c44204b935",
-          "recovered_sha256": "6aee39af461f496cc0c288cd52bf1fcdf90a94bf4662e80cb37ed1c44204b935",
+          "payload_sha256": "677d91fe2705e568de726ce102c47523febab4924a811c81d9330ac0c7f67667",
+          "recovered_sha256": "677d91fe2705e568de726ce102c47523febab4924a811c81d9330ac0c7f67667",
           "reference": {
-            "hash": "6aee39af461f496cc0c288cd"
+            "hash": "677d91fe2705e568de726ce1"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.7642,
-          "store_latency_ms": 3.2179,
+          "retrieve_latency_ms": 1.1041,
+          "store_latency_ms": 1.9531,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "c1eebc2e40338703567819f1e9b2bf315c7370c021f94bf1d5b01cd0691164d6",
-          "recovered_sha256": "c1eebc2e40338703567819f1e9b2bf315c7370c021f94bf1d5b01cd0691164d6",
+          "payload_sha256": "ef95c7b6bbd64b0773e3ef84a9e57b609c299c7b9a7758a12d85fb05deb2ee94",
+          "recovered_sha256": "ef95c7b6bbd64b0773e3ef84a9e57b609c299c7b9a7758a12d85fb05deb2ee94",
           "reference": {
-            "hash": "c1eebc2e40338703567819f1"
+            "hash": "ef95c7b6bbd64b0773e3ef84"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5566,
-          "store_latency_ms": 3.0991,
+          "retrieve_latency_ms": 0.9444,
+          "store_latency_ms": 2.2183,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "7eec2efdc65b5937c316ef13a6cc811f600a2d14ca1ba5fd5ae88337edf48a2a",
-          "recovered_sha256": "7eec2efdc65b5937c316ef13a6cc811f600a2d14ca1ba5fd5ae88337edf48a2a",
+          "payload_sha256": "58ac4f5a5e8b4d103f6104ac54f7c9870baccf1492c467a1059b4c7331d98941",
+          "recovered_sha256": "58ac4f5a5e8b4d103f6104ac54f7c9870baccf1492c467a1059b4c7331d98941",
           "reference": {
-            "hash": "7eec2efdc65b5937c316ef13"
+            "hash": "58ac4f5a5e8b4d103f6104ac"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.6202,
-          "store_latency_ms": 1.9603,
+          "retrieve_latency_ms": 0.8373,
+          "store_latency_ms": 1.71,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "52cede1dd2972590be53ac1462a1621852ab2234ccc3f420c0f6c2ef34bdb006",
-          "recovered_sha256": "52cede1dd2972590be53ac1462a1621852ab2234ccc3f420c0f6c2ef34bdb006",
+          "payload_sha256": "b736e1afea7a30e82588977cea2b586373a5058aa07caf5d320a7d302662b488",
+          "recovered_sha256": "b736e1afea7a30e82588977cea2b586373a5058aa07caf5d320a7d302662b488",
           "reference": {
-            "hash": "52cede1dd2972590be53ac14"
+            "hash": "b736e1afea7a30e82588977c"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.9255,
-          "store_latency_ms": 2.0668,
+          "retrieve_latency_ms": 1.9051,
+          "store_latency_ms": 1.5152,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "6ab0d229e82155ce7d0b4a60e0c63dc88654acc7cf754f4d2649e8e1c499ea0b",
-          "recovered_sha256": "6ab0d229e82155ce7d0b4a60e0c63dc88654acc7cf754f4d2649e8e1c499ea0b",
+          "payload_sha256": "69bacfb98095b1170b3935c9a335e43529ccc550145cd339876a60aa24abbc17",
+          "recovered_sha256": "69bacfb98095b1170b3935c9a335e43529ccc550145cd339876a60aa24abbc17",
           "reference": {
-            "hash": "6ab0d229e82155ce7d0b4a60"
+            "hash": "69bacfb98095b1170b3935c9"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5672,
-          "store_latency_ms": 1.9004,
+          "retrieve_latency_ms": 1.1599,
+          "store_latency_ms": 1.6262,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "d1eca89553a2d526b91e0624d0d2a96b66f2bfb2c3773e002485337d20a03b4d",
-          "recovered_sha256": "d1eca89553a2d526b91e0624d0d2a96b66f2bfb2c3773e002485337d20a03b4d",
+          "payload_sha256": "6649df7a021586c0ef346156db85e5007f3ee12cf9d199d4a8247af429c89fe7",
+          "recovered_sha256": "6649df7a021586c0ef346156db85e5007f3ee12cf9d199d4a8247af429c89fe7",
           "reference": {
-            "hash": "d1eca89553a2d526b91e0624"
+            "hash": "6649df7a021586c0ef346156"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.7124,
-          "store_latency_ms": 3.5169,
+          "retrieve_latency_ms": 0.7022,
+          "store_latency_ms": 1.5719,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "e02d70f8fd42fa4c1765a38c0a7068ba2faf8173d42b9236abca9213c120a59e",
-          "recovered_sha256": "e02d70f8fd42fa4c1765a38c0a7068ba2faf8173d42b9236abca9213c120a59e",
+          "payload_sha256": "e21f6064e4d9d9101f636b37bfdbc74e17ab1ef23d3db8b3a2c080c320c17749",
+          "recovered_sha256": "e21f6064e4d9d9101f636b37bfdbc74e17ab1ef23d3db8b3a2c080c320c17749",
           "reference": {
-            "hash": "e02d70f8fd42fa4c1765a38c"
+            "hash": "e21f6064e4d9d9101f636b37"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.6587,
-          "store_latency_ms": 3.9155,
+          "retrieve_latency_ms": 0.6363,
+          "store_latency_ms": 1.5261,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "7d6a091849b035e231de0399bb51b0a1e5d4b781e1b1c8a1e1c28162324bdf06",
-          "recovered_sha256": "7d6a091849b035e231de0399bb51b0a1e5d4b781e1b1c8a1e1c28162324bdf06",
+          "payload_sha256": "fc02ade7d8fe2615a61bddab6e94cc94200286ab7413ae0358c6f336bbbecc7d",
+          "recovered_sha256": "fc02ade7d8fe2615a61bddab6e94cc94200286ab7413ae0358c6f336bbbecc7d",
           "reference": {
-            "hash": "7d6a091849b035e231de0399"
+            "hash": "fc02ade7d8fe2615a61bddab"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.8036,
-          "store_latency_ms": 3.3331,
+          "retrieve_latency_ms": 0.8562,
+          "store_latency_ms": 1.5859,
           "system": "headroom",
           "worker_id": 0
         },
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "6dd22baf643af574254c3a44391752b24f6bd9b8ac841817028f9aa7374a6dae",
-          "recovered_sha256": "6dd22baf643af574254c3a44391752b24f6bd9b8ac841817028f9aa7374a6dae",
+          "payload_sha256": "bed04acaddea91afe9c843651253ad00b731cfdf283e8be8f3f151ba7d89af8c",
+          "recovered_sha256": "bed04acaddea91afe9c843651253ad00b731cfdf283e8be8f3f151ba7d89af8c",
           "reference": {
-            "hash": "6dd22baf643af574254c3a44"
+            "hash": "bed04acaddea91afe9c84365"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5351,
-          "store_latency_ms": 25.5928,
+          "retrieve_latency_ms": 0.9576,
+          "store_latency_ms": 120.4626,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "49ab776afef82aea8029be24620783cfaad17242a237186b81218526ce159afc",
-          "recovered_sha256": "49ab776afef82aea8029be24620783cfaad17242a237186b81218526ce159afc",
+          "payload_sha256": "b618b683b1c548f12b57949d968cd10e36303c8bd30276662fd80d06f3f7a2a8",
+          "recovered_sha256": "b618b683b1c548f12b57949d968cd10e36303c8bd30276662fd80d06f3f7a2a8",
           "reference": {
-            "hash": "49ab776afef82aea8029be24"
+            "hash": "b618b683b1c548f12b57949d"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4732,
-          "store_latency_ms": 0.4054,
+          "retrieve_latency_ms": 0.8901,
+          "store_latency_ms": 2.4171,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "3d233284fce5aa1600c08cd11a88d398d31af9dda151bb2eb7f75dcfaa8ef352",
-          "recovered_sha256": "3d233284fce5aa1600c08cd11a88d398d31af9dda151bb2eb7f75dcfaa8ef352",
+          "payload_sha256": "0217bda9304b5b9fecb33fe7b3949288d38c958d24bd514e8744266a61c9ff3e",
+          "recovered_sha256": "0217bda9304b5b9fecb33fe7b3949288d38c958d24bd514e8744266a61c9ff3e",
           "reference": {
-            "hash": "3d233284fce5aa1600c08cd1"
+            "hash": "0217bda9304b5b9fecb33fe7"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4815,
-          "store_latency_ms": 0.4244,
+          "retrieve_latency_ms": 1.0611,
+          "store_latency_ms": 3.4351,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "812ad3f54bb7da6d140477b7065f9c4e5fcd6f016c8e11e8edcf2408c37f892d",
-          "recovered_sha256": "812ad3f54bb7da6d140477b7065f9c4e5fcd6f016c8e11e8edcf2408c37f892d",
+          "payload_sha256": "9e9fca2a8e3d9b6fe9c1edf3011622e2e8727d1f198e5c582fb845611874769c",
+          "recovered_sha256": "9e9fca2a8e3d9b6fe9c1edf3011622e2e8727d1f198e5c582fb845611874769c",
           "reference": {
-            "hash": "812ad3f54bb7da6d140477b7"
+            "hash": "9e9fca2a8e3d9b6fe9c1edf3"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5473,
-          "store_latency_ms": 5.1199,
+          "retrieve_latency_ms": 0.9441,
+          "store_latency_ms": 3.0161,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "5bb97c06fc775a0bfced3ebb93659504bcb0ad35ba4385ac56bcb75c01bced82",
-          "recovered_sha256": "5bb97c06fc775a0bfced3ebb93659504bcb0ad35ba4385ac56bcb75c01bced82",
+          "payload_sha256": "f5b2d59ad5513e140f65f313b45b932f7791afacca19ab65b661148e54557ecb",
+          "recovered_sha256": "f5b2d59ad5513e140f65f313b45b932f7791afacca19ab65b661148e54557ecb",
           "reference": {
-            "hash": "5bb97c06fc775a0bfced3ebb"
+            "hash": "f5b2d59ad5513e140f65f313"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4775,
-          "store_latency_ms": 1.7495,
+          "retrieve_latency_ms": 0.7948,
+          "store_latency_ms": 2.3378,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "1109034410b03262109e4e52d58a4d374faaa80121c265d5c46b73358c067186",
-          "recovered_sha256": "1109034410b03262109e4e52d58a4d374faaa80121c265d5c46b73358c067186",
+          "payload_sha256": "b55f47cd83910fb94ed4e6ea0d26aeb9727aa44c49671f33ae0323d4f1ad8081",
+          "recovered_sha256": "b55f47cd83910fb94ed4e6ea0d26aeb9727aa44c49671f33ae0323d4f1ad8081",
           "reference": {
-            "hash": "1109034410b03262109e4e52"
+            "hash": "b55f47cd83910fb94ed4e6ea"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4591,
-          "store_latency_ms": 61.4579,
+          "retrieve_latency_ms": 0.7654,
+          "store_latency_ms": 2.3087,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "9cd4229b8574550f97f720ec89e314f836606c5110cbd779c2066eda4dc4c800",
-          "recovered_sha256": "9cd4229b8574550f97f720ec89e314f836606c5110cbd779c2066eda4dc4c800",
+          "payload_sha256": "55c9aa8b8d56b023313e7b4c1690b387984bdeb794a1fc716e9531a6f044fabe",
+          "recovered_sha256": "55c9aa8b8d56b023313e7b4c1690b387984bdeb794a1fc716e9531a6f044fabe",
           "reference": {
-            "hash": "9cd4229b8574550f97f720ec"
+            "hash": "55c9aa8b8d56b023313e7b4c"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5101,
-          "store_latency_ms": 2.5926,
+          "retrieve_latency_ms": 0.9574,
+          "store_latency_ms": 1.9753,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "2012c3138a72f5056f2b372b9620d8a11e3923eef01eddb5a98379d3641a79db",
-          "recovered_sha256": "2012c3138a72f5056f2b372b9620d8a11e3923eef01eddb5a98379d3641a79db",
+          "payload_sha256": "94c523671912a6fab899ba6dab907b6d4359614733fc566aa2d0e2de659ea05a",
+          "recovered_sha256": "94c523671912a6fab899ba6dab907b6d4359614733fc566aa2d0e2de659ea05a",
           "reference": {
-            "hash": "2012c3138a72f5056f2b372b"
+            "hash": "94c523671912a6fab899ba6d"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4706,
-          "store_latency_ms": 2.2763,
+          "retrieve_latency_ms": 0.519,
+          "store_latency_ms": 1.9428,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "6c3636e28b5f31a534053dc11ee33c90061aa725cbf0727de7905be7241ca974",
-          "recovered_sha256": "6c3636e28b5f31a534053dc11ee33c90061aa725cbf0727de7905be7241ca974",
+          "payload_sha256": "2f0e706bd3e56ad0b9477e866644f974f16a908ed84c426e4f879f02091824ab",
+          "recovered_sha256": "2f0e706bd3e56ad0b9477e866644f974f16a908ed84c426e4f879f02091824ab",
           "reference": {
-            "hash": "6c3636e28b5f31a534053dc1"
+            "hash": "2f0e706bd3e56ad0b9477e86"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4309,
-          "store_latency_ms": 3.5427,
+          "retrieve_latency_ms": 0.443,
+          "store_latency_ms": 3.3241,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "6ba83b2283d149d2fa3c6899a15f7d3df6adc8bb625d9290a40ab1f63af1fa1a",
-          "recovered_sha256": "6ba83b2283d149d2fa3c6899a15f7d3df6adc8bb625d9290a40ab1f63af1fa1a",
+          "payload_sha256": "b1d0e7a501f7b6724b9500b6639fa3d1c99e0cac4026bb09aad7c1bd7f1f1b79",
+          "recovered_sha256": "b1d0e7a501f7b6724b9500b6639fa3d1c99e0cac4026bb09aad7c1bd7f1f1b79",
           "reference": {
-            "hash": "6ba83b2283d149d2fa3c6899"
+            "hash": "b1d0e7a501f7b6724b9500b6"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5791,
-          "store_latency_ms": 3.1507,
+          "retrieve_latency_ms": 0.8616,
+          "store_latency_ms": 2.8164,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "4351e2ba67f65b59b4c553b77e844ba18d77256a258532223269f0423a3f1145",
-          "recovered_sha256": "4351e2ba67f65b59b4c553b77e844ba18d77256a258532223269f0423a3f1145",
+          "payload_sha256": "7d24899531a586bfef0b8cca4b509bcb3b60ae516198c89c083babcbffff63c3",
+          "recovered_sha256": "7d24899531a586bfef0b8cca4b509bcb3b60ae516198c89c083babcbffff63c3",
           "reference": {
-            "hash": "4351e2ba67f65b59b4c553b7"
+            "hash": "7d24899531a586bfef0b8cca"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4658,
-          "store_latency_ms": 3.0966,
+          "retrieve_latency_ms": 1.1656,
+          "store_latency_ms": 2.3692,
           "system": "headroom",
           "worker_id": 1
         },
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "1eb8f2d35e8e99bb2463f2805990c26412c0f6f76e7c39326ba3550ba92d7408",
-          "recovered_sha256": "1eb8f2d35e8e99bb2463f2805990c26412c0f6f76e7c39326ba3550ba92d7408",
+          "payload_sha256": "edb4d3f3a4547da23c0287556e6d83879912d1040ce782bf65ef24e7633ca234",
+          "recovered_sha256": "edb4d3f3a4547da23c0287556e6d83879912d1040ce782bf65ef24e7633ca234",
           "reference": {
-            "hash": "1eb8f2d35e8e99bb2463f280"
+            "hash": "edb4d3f3a4547da23c028755"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4964,
-          "store_latency_ms": 33.7684,
+          "retrieve_latency_ms": 0.9434,
+          "store_latency_ms": 72.4592,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "915c9287dac70cdb61869ac8f50c34db23bf215476dbc6fe7cdc328362312449",
-          "recovered_sha256": "915c9287dac70cdb61869ac8f50c34db23bf215476dbc6fe7cdc328362312449",
+          "payload_sha256": "03be679d9ccaa5aa6e008dc8fa4aadeeff04cf359f7e66604ae5d254b52406e5",
+          "recovered_sha256": "03be679d9ccaa5aa6e008dc8fa4aadeeff04cf359f7e66604ae5d254b52406e5",
           "reference": {
-            "hash": "915c9287dac70cdb61869ac8"
+            "hash": "03be679d9ccaa5aa6e008dc8"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5832,
-          "store_latency_ms": 0.9817,
+          "retrieve_latency_ms": 0.7856,
+          "store_latency_ms": 2.3448,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "ed584064f6ec00791d18cc627478bd0b4e449f3d848b202fdd33b210190ede23",
-          "recovered_sha256": "ed584064f6ec00791d18cc627478bd0b4e449f3d848b202fdd33b210190ede23",
+          "payload_sha256": "2cddc08b21fff9d4fe2b8c96f59d21572ffca20ea4014c09c43f0d329cd0af8b",
+          "recovered_sha256": "2cddc08b21fff9d4fe2b8c96f59d21572ffca20ea4014c09c43f0d329cd0af8b",
           "reference": {
-            "hash": "ed584064f6ec00791d18cc62"
+            "hash": "2cddc08b21fff9d4fe2b8c96"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4449,
-          "store_latency_ms": 1.2224,
+          "retrieve_latency_ms": 0.8448,
+          "store_latency_ms": 2.4823,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "d6d32a1abc2d4e8da2c134efbd8a6d5a2d40eeb86a7e2f9e2751c5e5c1dd151e",
-          "recovered_sha256": "d6d32a1abc2d4e8da2c134efbd8a6d5a2d40eeb86a7e2f9e2751c5e5c1dd151e",
+          "payload_sha256": "3cfc6ac1e5dcc118d3b222c6ef90ce10c71fa8129e38a4aa38d175651bc71166",
+          "recovered_sha256": "3cfc6ac1e5dcc118d3b222c6ef90ce10c71fa8129e38a4aa38d175651bc71166",
           "reference": {
-            "hash": "d6d32a1abc2d4e8da2c134ef"
+            "hash": "3cfc6ac1e5dcc118d3b222c6"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4532,
-          "store_latency_ms": 26.7001,
+          "retrieve_latency_ms": 1.6335,
+          "store_latency_ms": 2.3257,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "fe802675bfec17a747df18644257a8f7157edb42a8c23a92295d35d670ffa43f",
-          "recovered_sha256": "fe802675bfec17a747df18644257a8f7157edb42a8c23a92295d35d670ffa43f",
+          "payload_sha256": "52fa1106823afd2f89e36895a9eebaaad0c49fc19926096c9af5cb4ae45424c1",
+          "recovered_sha256": "52fa1106823afd2f89e36895a9eebaaad0c49fc19926096c9af5cb4ae45424c1",
           "reference": {
-            "hash": "fe802675bfec17a747df1864"
+            "hash": "52fa1106823afd2f89e36895"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5886,
-          "store_latency_ms": 1.6853,
+          "retrieve_latency_ms": 0.6485,
+          "store_latency_ms": 2.1488,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "44118ec1f48445db6b36e6a01fb3e0bb6bb922e4bf72fce3fc7dcae6c36fc2b6",
-          "recovered_sha256": "44118ec1f48445db6b36e6a01fb3e0bb6bb922e4bf72fce3fc7dcae6c36fc2b6",
+          "payload_sha256": "478b69b439d1d4c667a0ad684855bca5ef5b7f37da0cb81738dfcea38cabc5fe",
+          "recovered_sha256": "478b69b439d1d4c667a0ad684855bca5ef5b7f37da0cb81738dfcea38cabc5fe",
           "reference": {
-            "hash": "44118ec1f48445db6b36e6a0"
+            "hash": "478b69b439d1d4c667a0ad68"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.602,
-          "store_latency_ms": 14.2319,
+          "retrieve_latency_ms": 1.1865,
+          "store_latency_ms": 2.2838,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "eb6a7057aa20abbc83345f9341715ee773949ba5535d0dcb9ec1ddca5cce0a10",
-          "recovered_sha256": "eb6a7057aa20abbc83345f9341715ee773949ba5535d0dcb9ec1ddca5cce0a10",
+          "payload_sha256": "be8607235aaf00ff18fc0eb1b1876ad94ac5733dc1dba08096bd45c0bd500cf1",
+          "recovered_sha256": "be8607235aaf00ff18fc0eb1b1876ad94ac5733dc1dba08096bd45c0bd500cf1",
           "reference": {
-            "hash": "eb6a7057aa20abbc83345f93"
+            "hash": "be8607235aaf00ff18fc0eb1"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.461,
-          "store_latency_ms": 3.0338,
+          "retrieve_latency_ms": 0.8979,
+          "store_latency_ms": 2.6534,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "9763a027cdf2bee0b8d89f2fe53c101e76806b9788c3bc99aa5aeeda51af3e5f",
-          "recovered_sha256": "9763a027cdf2bee0b8d89f2fe53c101e76806b9788c3bc99aa5aeeda51af3e5f",
+          "payload_sha256": "8805396b5b593739ab6991c70270e2e0d9bf1b8148e4b6ae84c904d927ecce0b",
+          "recovered_sha256": "8805396b5b593739ab6991c70270e2e0d9bf1b8148e4b6ae84c904d927ecce0b",
           "reference": {
-            "hash": "9763a027cdf2bee0b8d89f2f"
+            "hash": "8805396b5b593739ab6991c7"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4429,
-          "store_latency_ms": 2.8925,
+          "retrieve_latency_ms": 0.8935,
+          "store_latency_ms": 2.05,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "1fafabb5285a25e295d00cd4db90840b6b940682b4f05a82dd02752ffd6e32f9",
-          "recovered_sha256": "1fafabb5285a25e295d00cd4db90840b6b940682b4f05a82dd02752ffd6e32f9",
+          "payload_sha256": "6fc372b19fbddaa0918ec8dc07a6cc960c290cbe13b3192034bbab122157685e",
+          "recovered_sha256": "6fc372b19fbddaa0918ec8dc07a6cc960c290cbe13b3192034bbab122157685e",
           "reference": {
-            "hash": "1fafabb5285a25e295d00cd4"
+            "hash": "6fc372b19fbddaa0918ec8dc"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5594,
-          "store_latency_ms": 2.7436,
+          "retrieve_latency_ms": 1.2038,
+          "store_latency_ms": 1.861,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "5da8ea83104be09fa3d8c7f5d04e27771e7b7ee31ad3b341ed6a680eec9fb9e7",
-          "recovered_sha256": "5da8ea83104be09fa3d8c7f5d04e27771e7b7ee31ad3b341ed6a680eec9fb9e7",
+          "payload_sha256": "7d5b89bd7dcda12091004bf73a511bbdf0a0688420e47958b739af84f54570bb",
+          "recovered_sha256": "7d5b89bd7dcda12091004bf73a511bbdf0a0688420e47958b739af84f54570bb",
           "reference": {
-            "hash": "5da8ea83104be09fa3d8c7f5"
+            "hash": "7d5b89bd7dcda12091004bf7"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5563,
-          "store_latency_ms": 3.1677,
+          "retrieve_latency_ms": 0.893,
+          "store_latency_ms": 2.5372,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "dcfb17dcf55cd166bf07d011935633a9826410f09224a4032a4bad8d90019f91",
-          "recovered_sha256": "dcfb17dcf55cd166bf07d011935633a9826410f09224a4032a4bad8d90019f91",
+          "payload_sha256": "e4a32b8732ac6ccda6e85598ad144c90f4d5fcd369ef54f0cb934fc4c559f587",
+          "recovered_sha256": "e4a32b8732ac6ccda6e85598ad144c90f4d5fcd369ef54f0cb934fc4c559f587",
           "reference": {
-            "hash": "dcfb17dcf55cd166bf07d011"
+            "hash": "e4a32b8732ac6ccda6e85598"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5275,
-          "store_latency_ms": 2.9123,
+          "retrieve_latency_ms": 0.8598,
+          "store_latency_ms": 2.4378,
           "system": "headroom",
           "worker_id": 2
         },
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "649f1864bda447ee5f216c9b40e007dd4710c09d97034aad9e213ed6023969fc",
-          "recovered_sha256": "649f1864bda447ee5f216c9b40e007dd4710c09d97034aad9e213ed6023969fc",
+          "payload_sha256": "7a22dce1e50be398dd3cb73c1f3c6a8737504e103bd44aa023595485c12bbab9",
+          "recovered_sha256": "7a22dce1e50be398dd3cb73c1f3c6a8737504e103bd44aa023595485c12bbab9",
           "reference": {
-            "hash": "649f1864bda447ee5f216c9b"
+            "hash": "7a22dce1e50be398dd3cb73c"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4644,
-          "store_latency_ms": 46.6806,
+          "retrieve_latency_ms": 0.8133,
+          "store_latency_ms": 34.1734,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "f45e9314c7be1d7dca5b8b357ee8a7cb3961db77892b1a224e5dce5fe09c8cf5",
-          "recovered_sha256": "f45e9314c7be1d7dca5b8b357ee8a7cb3961db77892b1a224e5dce5fe09c8cf5",
+          "payload_sha256": "bc2d78424b6ae4e99a977ec65edac9f843231d4f0ddeaba91323a65f45d36c33",
+          "recovered_sha256": "bc2d78424b6ae4e99a977ec65edac9f843231d4f0ddeaba91323a65f45d36c33",
           "reference": {
-            "hash": "f45e9314c7be1d7dca5b8b35"
+            "hash": "bc2d78424b6ae4e99a977ec6"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4711,
-          "store_latency_ms": 1.0409,
+          "retrieve_latency_ms": 0.8169,
+          "store_latency_ms": 0.7934,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "82724755c205d2bd890fe37fdcee33cee16d73bd05427db84f50f1b45750fdc7",
-          "recovered_sha256": "82724755c205d2bd890fe37fdcee33cee16d73bd05427db84f50f1b45750fdc7",
+          "payload_sha256": "4760d4446c8940e87280a9f465f40c1dae6eed4a0d2c363786d97b1f251e0b44",
+          "recovered_sha256": "4760d4446c8940e87280a9f465f40c1dae6eed4a0d2c363786d97b1f251e0b44",
           "reference": {
-            "hash": "82724755c205d2bd890fe37f"
+            "hash": "4760d4446c8940e87280a9f4"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5297,
-          "store_latency_ms": 1.9288,
+          "retrieve_latency_ms": 1.3732,
+          "store_latency_ms": 0.6717,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "fd717279c0bf48022b7fef8df6bfc31cc39fa09a6a5325618522be84cd3592c9",
-          "recovered_sha256": "fd717279c0bf48022b7fef8df6bfc31cc39fa09a6a5325618522be84cd3592c9",
+          "payload_sha256": "a0d55bab8996a7b2972b6b0215447f609ba8f13c11e63875c16c45f98bec172d",
+          "recovered_sha256": "a0d55bab8996a7b2972b6b0215447f609ba8f13c11e63875c16c45f98bec172d",
           "reference": {
-            "hash": "fd717279c0bf48022b7fef8d"
+            "hash": "a0d55bab8996a7b2972b6b02"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.7752,
-          "store_latency_ms": 2.6445,
+          "retrieve_latency_ms": 1.1813,
+          "store_latency_ms": 0.9387,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "ca5a7ccb8951b374bcded22d2462f0d8061a24579768aef1af695793993f09d8",
-          "recovered_sha256": "ca5a7ccb8951b374bcded22d2462f0d8061a24579768aef1af695793993f09d8",
+          "payload_sha256": "2756b94381534b63da10b1b9387d3f0c573d4eda74e91ef928f6a364118c67f2",
+          "recovered_sha256": "2756b94381534b63da10b1b9387d3f0c573d4eda74e91ef928f6a364118c67f2",
           "reference": {
-            "hash": "ca5a7ccb8951b374bcded22d"
+            "hash": "2756b94381534b63da10b1b9"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5037,
-          "store_latency_ms": 1.9609,
+          "retrieve_latency_ms": 0.8249,
+          "store_latency_ms": 1.6572,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "36a74060869739d726b6bf71cf81e2f469405b27c00ca621edfeaa1a046d814f",
-          "recovered_sha256": "36a74060869739d726b6bf71cf81e2f469405b27c00ca621edfeaa1a046d814f",
+          "payload_sha256": "97f8f4ee670efc23b2243f8f94525f5684216a7d94056e44dac4a402aa81ab18",
+          "recovered_sha256": "97f8f4ee670efc23b2243f8f94525f5684216a7d94056e44dac4a402aa81ab18",
           "reference": {
-            "hash": "36a74060869739d726b6bf71"
+            "hash": "97f8f4ee670efc23b2243f8f"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5655,
-          "store_latency_ms": 1.9218,
+          "retrieve_latency_ms": 0.9798,
+          "store_latency_ms": 1.1591,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "30073a63d8115932ea118005cf64e25b9243e07cbabe32ba7884b2bf7ba9eba3",
-          "recovered_sha256": "30073a63d8115932ea118005cf64e25b9243e07cbabe32ba7884b2bf7ba9eba3",
+          "payload_sha256": "8e12dbae0ec33564743f98322d0956d6d3d2e0e4d3b0b83f97e03346a17bb7ff",
+          "recovered_sha256": "8e12dbae0ec33564743f98322d0956d6d3d2e0e4d3b0b83f97e03346a17bb7ff",
           "reference": {
-            "hash": "30073a63d8115932ea118005"
+            "hash": "8e12dbae0ec33564743f9832"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.6546,
-          "store_latency_ms": 2.2376,
+          "retrieve_latency_ms": 0.8578,
+          "store_latency_ms": 0.7914,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "3bac9daeb19fbcbd3f24d8e1fbea012e8dceae9d9ab68d63e30bf920e1226cb9",
-          "recovered_sha256": "3bac9daeb19fbcbd3f24d8e1fbea012e8dceae9d9ab68d63e30bf920e1226cb9",
+          "payload_sha256": "89150205ac221692cb5be06c358e227dbe47729fa54bef72320dc6d19ad6a6a9",
+          "recovered_sha256": "89150205ac221692cb5be06c358e227dbe47729fa54bef72320dc6d19ad6a6a9",
           "reference": {
-            "hash": "3bac9daeb19fbcbd3f24d8e1"
+            "hash": "89150205ac221692cb5be06c"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5006,
-          "store_latency_ms": 2.2834,
+          "retrieve_latency_ms": 0.788,
+          "store_latency_ms": 1.6742,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "cc62448bf45e140ea58f2b289de64c79618220b5edcaf44c706a874e389d0d9c",
-          "recovered_sha256": "cc62448bf45e140ea58f2b289de64c79618220b5edcaf44c706a874e389d0d9c",
+          "payload_sha256": "ac4587509b31e9ea630c405f6ba8b75010c8422cbab87481975850dc38ffea92",
+          "recovered_sha256": "ac4587509b31e9ea630c405f6ba8b75010c8422cbab87481975850dc38ffea92",
           "reference": {
-            "hash": "cc62448bf45e140ea58f2b28"
+            "hash": "ac4587509b31e9ea630c405f"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4313,
-          "store_latency_ms": 2.4875,
+          "retrieve_latency_ms": 1.965,
+          "store_latency_ms": 1.9477,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "f485c8115a9563b93d49b04ee4dcbb89faca55d63150284e0b68e7add364b29f",
-          "recovered_sha256": "f485c8115a9563b93d49b04ee4dcbb89faca55d63150284e0b68e7add364b29f",
+          "payload_sha256": "dd49bd89fe813ebb22bf3c79da512c325d86cab31e4dabf60f48c0897a90f3e6",
+          "recovered_sha256": "dd49bd89fe813ebb22bf3c79da512c325d86cab31e4dabf60f48c0897a90f3e6",
           "reference": {
-            "hash": "f485c8115a9563b93d49b04e"
+            "hash": "dd49bd89fe813ebb22bf3c79"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5394,
-          "store_latency_ms": 2.4135,
+          "retrieve_latency_ms": 1.3967,
+          "store_latency_ms": 1.2945,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "990d3f40c2fa09392b31532ef80c29b2f330135c8b700d2a151e4aa940a777b7",
-          "recovered_sha256": "990d3f40c2fa09392b31532ef80c29b2f330135c8b700d2a151e4aa940a777b7",
+          "payload_sha256": "84b03495168c3b222309dda91a3604e969b1730867e6a097d342161af71f720d",
+          "recovered_sha256": "84b03495168c3b222309dda91a3604e969b1730867e6a097d342161af71f720d",
           "reference": {
-            "hash": "990d3f40c2fa09392b31532e"
+            "hash": "84b03495168c3b222309dda9"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4627,
-          "store_latency_ms": 2.5268,
+          "retrieve_latency_ms": 0.8897,
+          "store_latency_ms": 11.0674,
           "system": "headroom",
           "worker_id": 3
         },
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "50da1b53ae77b4506a41b3be0b290555dd3eb78d4dd5e949cc955b90f420b3b8",
-          "recovered_sha256": "50da1b53ae77b4506a41b3be0b290555dd3eb78d4dd5e949cc955b90f420b3b8",
+          "payload_sha256": "3fe9c191ce0bdd69f079d514040217357d3647c258dadccbab1b19e1afd98f5c",
+          "recovered_sha256": "3fe9c191ce0bdd69f079d514040217357d3647c258dadccbab1b19e1afd98f5c",
           "reference": {
-            "hash": "50da1b53ae77b4506a41b3be"
+            "hash": "3fe9c191ce0bdd69f079d514"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4428,
-          "store_latency_ms": 26.6961,
+          "retrieve_latency_ms": 0.6732,
+          "store_latency_ms": 28.0427,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "313d593e213ecd518a502506c489581f181ec63e9f2b0006fedc0e02d7cbfb76",
-          "recovered_sha256": "313d593e213ecd518a502506c489581f181ec63e9f2b0006fedc0e02d7cbfb76",
+          "payload_sha256": "07a481780c2a31eb8f2aa38ee89e28272660a77dd2b9c7ad93284e9aec709413",
+          "recovered_sha256": "07a481780c2a31eb8f2aa38ee89e28272660a77dd2b9c7ad93284e9aec709413",
           "reference": {
-            "hash": "313d593e213ecd518a502506"
+            "hash": "07a481780c2a31eb8f2aa38e"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.502,
-          "store_latency_ms": 0.4695,
+          "retrieve_latency_ms": 0.4948,
+          "store_latency_ms": 0.4868,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "1c119c0804651a78e6d28f4474fb969dbb95b3c28133f84209974eadb8f03f9b",
-          "recovered_sha256": "1c119c0804651a78e6d28f4474fb969dbb95b3c28133f84209974eadb8f03f9b",
+          "payload_sha256": "87165a868a33401dcf5badae73382e945c77232daa25235086b5eb3dcf8974ef",
+          "recovered_sha256": "87165a868a33401dcf5badae73382e945c77232daa25235086b5eb3dcf8974ef",
           "reference": {
-            "hash": "1c119c0804651a78e6d28f44"
+            "hash": "87165a868a33401dcf5badae"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5897,
-          "store_latency_ms": 0.5159,
+          "retrieve_latency_ms": 0.5026,
+          "store_latency_ms": 0.5023,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "b3d118325757af105ffd3cfbc80b0e5158026dea50830cd22ce9e8aca29c8e96",
-          "recovered_sha256": "b3d118325757af105ffd3cfbc80b0e5158026dea50830cd22ce9e8aca29c8e96",
+          "payload_sha256": "da732e7249c425f520643d53130d8b54a0b4cc1961ac3851365f0c161eacb0b2",
+          "recovered_sha256": "da732e7249c425f520643d53130d8b54a0b4cc1961ac3851365f0c161eacb0b2",
           "reference": {
-            "hash": "b3d118325757af105ffd3cfb"
+            "hash": "da732e7249c425f520643d53"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4468,
-          "store_latency_ms": 0.4595,
+          "retrieve_latency_ms": 0.5406,
+          "store_latency_ms": 0.5255,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "63097a6266b50689be57eeaba232d59820fb8e0622c535b881d1240c5174c149",
-          "recovered_sha256": "63097a6266b50689be57eeaba232d59820fb8e0622c535b881d1240c5174c149",
+          "payload_sha256": "09f3c85bc7770cbc8e53e5de008d68d89b0e48ef26b852b419c28d83bef14a59",
+          "recovered_sha256": "09f3c85bc7770cbc8e53e5de008d68d89b0e48ef26b852b419c28d83bef14a59",
           "reference": {
-            "hash": "63097a6266b50689be57eeab"
+            "hash": "09f3c85bc7770cbc8e53e5de"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4307,
-          "store_latency_ms": 0.4596,
+          "retrieve_latency_ms": 0.4552,
+          "store_latency_ms": 0.4246,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "3cf31d46173f6c50bd8b9e72fc007bd9284686af7cb918937e2dd36213058a83",
-          "recovered_sha256": "3cf31d46173f6c50bd8b9e72fc007bd9284686af7cb918937e2dd36213058a83",
+          "payload_sha256": "47ede2c57b60f71f31f38a0663eb5b3a5aff19c837d3cd538a17de44ae779bf1",
+          "recovered_sha256": "47ede2c57b60f71f31f38a0663eb5b3a5aff19c837d3cd538a17de44ae779bf1",
           "reference": {
-            "hash": "3cf31d46173f6c50bd8b9e72"
+            "hash": "47ede2c57b60f71f31f38a06"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.6535,
-          "store_latency_ms": 0.4447,
+          "retrieve_latency_ms": 0.4926,
+          "store_latency_ms": 0.457,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "43c09b9b0a840e2c97c9d5446c742e3cd5ac010dbd8b04f24bde9e2609c27861",
-          "recovered_sha256": "43c09b9b0a840e2c97c9d5446c742e3cd5ac010dbd8b04f24bde9e2609c27861",
+          "payload_sha256": "1104c9d190e94c618a420635a7c85e62728500b764b669255be6d521e4e2d6dd",
+          "recovered_sha256": "1104c9d190e94c618a420635a7c85e62728500b764b669255be6d521e4e2d6dd",
           "reference": {
-            "hash": "43c09b9b0a840e2c97c9d544"
+            "hash": "1104c9d190e94c618a420635"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4931,
-          "store_latency_ms": 0.5034,
+          "retrieve_latency_ms": 0.7259,
+          "store_latency_ms": 0.3898,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "7f1830c3666e0b60a53eb89dcbded8e4a56f2dcc8baaeab2e33344d10623ab47",
-          "recovered_sha256": "7f1830c3666e0b60a53eb89dcbded8e4a56f2dcc8baaeab2e33344d10623ab47",
+          "payload_sha256": "d47bd7243d8e71dc191eff73eca0ee60f460d8e42352d09476b1614e78dcedc2",
+          "recovered_sha256": "d47bd7243d8e71dc191eff73eca0ee60f460d8e42352d09476b1614e78dcedc2",
           "reference": {
-            "hash": "7f1830c3666e0b60a53eb89d"
+            "hash": "d47bd7243d8e71dc191eff73"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5261,
-          "store_latency_ms": 0.4816,
+          "retrieve_latency_ms": 0.559,
+          "store_latency_ms": 0.403,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "824876e986d392975b9f3a478889f4083ba98d2a9127015f662cf68bb1276ed7",
-          "recovered_sha256": "824876e986d392975b9f3a478889f4083ba98d2a9127015f662cf68bb1276ed7",
+          "payload_sha256": "9d9d80cbc8a245e2d1599773870c323e2975dafe443b30f51378703b82b64abe",
+          "recovered_sha256": "9d9d80cbc8a245e2d1599773870c323e2975dafe443b30f51378703b82b64abe",
           "reference": {
-            "hash": "824876e986d392975b9f3a47"
+            "hash": "9d9d80cbc8a245e2d1599773"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4956,
-          "store_latency_ms": 0.5357,
+          "retrieve_latency_ms": 0.4857,
+          "store_latency_ms": 0.4373,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "7eb45b754125b3cc042932b004945246eb1eefa4fe6c9b603cc20382c7df99dd",
-          "recovered_sha256": "7eb45b754125b3cc042932b004945246eb1eefa4fe6c9b603cc20382c7df99dd",
+          "payload_sha256": "b45d4b392155d1eaa1ce3238dbbefcab2b4232cca104d99c564e950d78c0a527",
+          "recovered_sha256": "b45d4b392155d1eaa1ce3238dbbefcab2b4232cca104d99c564e950d78c0a527",
           "reference": {
-            "hash": "7eb45b754125b3cc042932b0"
+            "hash": "b45d4b392155d1eaa1ce3238"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5696,
-          "store_latency_ms": 47.8095,
+          "retrieve_latency_ms": 0.5442,
+          "store_latency_ms": 0.4081,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "0ebf6fcb1c75c374617225f492f571cac613f0f43614732a262bbedf1f39783a",
-          "recovered_sha256": "0ebf6fcb1c75c374617225f492f571cac613f0f43614732a262bbedf1f39783a",
+          "payload_sha256": "9a81df3d3341de0bc4745f4fd3f3b7f52aeb8e160ca1fc0045af870a254d51d5",
+          "recovered_sha256": "9a81df3d3341de0bc4745f4fd3f3b7f52aeb8e160ca1fc0045af870a254d51d5",
           "reference": {
-            "hash": "0ebf6fcb1c75c374617225f4"
+            "hash": "9a81df3d3341de0bc4745f4f"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4896,
-          "store_latency_ms": 2.1779,
+          "retrieve_latency_ms": 0.5531,
+          "store_latency_ms": 0.4352,
           "system": "headroom",
           "worker_id": 4
         },
         {
           "entry_index": 0,
           "exact": true,
-          "payload_sha256": "46df3622bd65b9fabaaeb30004e1b9a72774e9c03f5fb2e0a15e5a13c39f3788",
-          "recovered_sha256": "46df3622bd65b9fabaaeb30004e1b9a72774e9c03f5fb2e0a15e5a13c39f3788",
+          "payload_sha256": "ce2f3ba4fe4669558c0ce31f68c981e50b11d35abff879dd9ef60ec6ab2d5933",
+          "recovered_sha256": "ce2f3ba4fe4669558c0ce31f68c981e50b11d35abff879dd9ef60ec6ab2d5933",
           "reference": {
-            "hash": "46df3622bd65b9fabaaeb300"
+            "hash": "ce2f3ba4fe4669558c0ce31f"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.441,
-          "store_latency_ms": 32.9545,
+          "retrieve_latency_ms": 0.4417,
+          "store_latency_ms": 42.0805,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 1,
           "exact": true,
-          "payload_sha256": "97b0a53ed55665f4860b2e7084333baf5561038a9de789f7258c1c01911d8dbd",
-          "recovered_sha256": "97b0a53ed55665f4860b2e7084333baf5561038a9de789f7258c1c01911d8dbd",
+          "payload_sha256": "b4f0ee978e808e8717d66051be9af892b875bde643d1569778e1d3a64802bbf6",
+          "recovered_sha256": "b4f0ee978e808e8717d66051be9af892b875bde643d1569778e1d3a64802bbf6",
           "reference": {
-            "hash": "97b0a53ed55665f4860b2e70"
+            "hash": "b4f0ee978e808e8717d66051"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5561,
-          "store_latency_ms": 1.8423,
+          "retrieve_latency_ms": 0.5737,
+          "store_latency_ms": 1.6829,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 2,
           "exact": true,
-          "payload_sha256": "2b1596d11595a3675fb99130a6747b6cddb495b838fb5a257a87a712838cd036",
-          "recovered_sha256": "2b1596d11595a3675fb99130a6747b6cddb495b838fb5a257a87a712838cd036",
+          "payload_sha256": "dce3d557302391a86b316a00441767ca50d084f4084f2750deef3af43864ac29",
+          "recovered_sha256": "dce3d557302391a86b316a00441767ca50d084f4084f2750deef3af43864ac29",
           "reference": {
-            "hash": "2b1596d11595a3675fb99130"
+            "hash": "dce3d557302391a86b316a00"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5116,
-          "store_latency_ms": 1.4665,
+          "retrieve_latency_ms": 0.4377,
+          "store_latency_ms": 1.8541,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 3,
           "exact": true,
-          "payload_sha256": "70c85fde887d060ac890810ae59418ce6fed0404fd070b12b7912c59fbc2832a",
-          "recovered_sha256": "70c85fde887d060ac890810ae59418ce6fed0404fd070b12b7912c59fbc2832a",
+          "payload_sha256": "2c536a5c89211f400b7b3a7662adc3723770880009291693f087c3cc97bf656b",
+          "recovered_sha256": "2c536a5c89211f400b7b3a7662adc3723770880009291693f087c3cc97bf656b",
           "reference": {
-            "hash": "70c85fde887d060ac890810a"
+            "hash": "2c536a5c89211f400b7b3a76"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4666,
-          "store_latency_ms": 1.5024,
+          "retrieve_latency_ms": 0.8817,
+          "store_latency_ms": 1.8493,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 4,
           "exact": true,
-          "payload_sha256": "0693c38ce6aac8468427aa62bbe1435a602404d0f7a553188ee0a1d15e6a1647",
-          "recovered_sha256": "0693c38ce6aac8468427aa62bbe1435a602404d0f7a553188ee0a1d15e6a1647",
+          "payload_sha256": "a2fed30f3b699ed7547eab52b54746260512721124cc5c3b899c452942de6088",
+          "recovered_sha256": "a2fed30f3b699ed7547eab52b54746260512721124cc5c3b899c452942de6088",
           "reference": {
-            "hash": "0693c38ce6aac8468427aa62"
+            "hash": "a2fed30f3b699ed7547eab52"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5804,
-          "store_latency_ms": 1.6248,
+          "retrieve_latency_ms": 1.0307,
+          "store_latency_ms": 1.9463,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 5,
           "exact": true,
-          "payload_sha256": "1f0c4e3298e6405a8111426a7fa0054ad48b72827293f3415d53f7f06b6c82f0",
-          "recovered_sha256": "1f0c4e3298e6405a8111426a7fa0054ad48b72827293f3415d53f7f06b6c82f0",
+          "payload_sha256": "9feac6d3ecd1c46d0afcb83efeed711b9d1112dd8c2a635627d9b88b0eaa3ccf",
+          "recovered_sha256": "9feac6d3ecd1c46d0afcb83efeed711b9d1112dd8c2a635627d9b88b0eaa3ccf",
           "reference": {
-            "hash": "1f0c4e3298e6405a8111426a"
+            "hash": "9feac6d3ecd1c46d0afcb83e"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4224,
-          "store_latency_ms": 1.674,
+          "retrieve_latency_ms": 0.9328,
+          "store_latency_ms": 1.9593,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 6,
           "exact": true,
-          "payload_sha256": "cbde09c4f9f5c0b21a22cefb60987465cc458ba4c9fad4b324d3eb14cafa84d0",
-          "recovered_sha256": "cbde09c4f9f5c0b21a22cefb60987465cc458ba4c9fad4b324d3eb14cafa84d0",
+          "payload_sha256": "9b8d5876a6cf7b76af217a17c7982f2a3586599f955585b54ae53870b1d8bbd9",
+          "recovered_sha256": "9b8d5876a6cf7b76af217a17c7982f2a3586599f955585b54ae53870b1d8bbd9",
           "reference": {
-            "hash": "cbde09c4f9f5c0b21a22cefb"
+            "hash": "9b8d5876a6cf7b76af217a17"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4459,
-          "store_latency_ms": 1.5747,
+          "retrieve_latency_ms": 1.1017,
+          "store_latency_ms": 1.7452,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 7,
           "exact": true,
-          "payload_sha256": "31b2c7464260e70cdfe9abae53ef363481893fdb6ca12bcf4b389b404b1d4101",
-          "recovered_sha256": "31b2c7464260e70cdfe9abae53ef363481893fdb6ca12bcf4b389b404b1d4101",
+          "payload_sha256": "c0cd433614b9030f20ef50cc3f13083e21d9e899253747dcecd93fd3a6c52b4c",
+          "recovered_sha256": "c0cd433614b9030f20ef50cc3f13083e21d9e899253747dcecd93fd3a6c52b4c",
           "reference": {
-            "hash": "31b2c7464260e70cdfe9abae"
+            "hash": "c0cd433614b9030f20ef50cc"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5529,
-          "store_latency_ms": 1.6159,
+          "retrieve_latency_ms": 2.3327,
+          "store_latency_ms": 1.0949,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 8,
           "exact": true,
-          "payload_sha256": "794a67d58f4612f5a12cb1f2089fa91e463504ae5bd5b499199a7c44de606f33",
-          "recovered_sha256": "794a67d58f4612f5a12cb1f2089fa91e463504ae5bd5b499199a7c44de606f33",
+          "payload_sha256": "3e0f60f3115a9aee1337a24b8541729842ef97b32de8190949feeb9c8627ba24",
+          "recovered_sha256": "3e0f60f3115a9aee1337a24b8541729842ef97b32de8190949feeb9c8627ba24",
           "reference": {
-            "hash": "794a67d58f4612f5a12cb1f2"
+            "hash": "3e0f60f3115a9aee1337a24b"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.4508,
-          "store_latency_ms": 1.5681,
+          "retrieve_latency_ms": 0.633,
+          "store_latency_ms": 1.3541,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 9,
           "exact": true,
-          "payload_sha256": "c7078eeb3fbcaa40ff75740c5125495d774fccf8c1f99ffc1b7001908e88604f",
-          "recovered_sha256": "c7078eeb3fbcaa40ff75740c5125495d774fccf8c1f99ffc1b7001908e88604f",
+          "payload_sha256": "9070e7ae6f3ee9102624ac4ed19850cda4508678b8033f532b6e7b2877bb649e",
+          "recovered_sha256": "9070e7ae6f3ee9102624ac4ed19850cda4508678b8033f532b6e7b2877bb649e",
           "reference": {
-            "hash": "c7078eeb3fbcaa40ff75740c"
+            "hash": "9070e7ae6f3ee9102624ac4e"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.563,
-          "store_latency_ms": 1.6062,
+          "retrieve_latency_ms": 0.647,
+          "store_latency_ms": 1.9692,
           "system": "headroom",
           "worker_id": 5
         },
         {
           "entry_index": 10,
           "exact": true,
-          "payload_sha256": "790f5a38052471c29b32b31275bf71c88aad9e50c353dcc2d7d7c4d311e7deaf",
-          "recovered_sha256": "790f5a38052471c29b32b31275bf71c88aad9e50c353dcc2d7d7c4d311e7deaf",
+          "payload_sha256": "1d3a3b41bf1367a25b0fae3e40d92778f27c32dd074c3b7fdd54224b2324d52f",
+          "recovered_sha256": "1d3a3b41bf1367a25b0fae3e40d92778f27c32dd074c3b7fdd54224b2324d52f",
           "reference": {
-            "hash": "790f5a38052471c29b32b312"
+            "hash": "1d3a3b41bf1367a25b0fae3e"
           },
           "retrieval_error": null,
-          "retrieve_latency_ms": 0.5071,
-          "store_latency_ms": 1.7942,
+          "retrieve_latency_ms": 0.7457,
+          "store_latency_ms": 1.6908,
           "system": "headroom",
           "worker_id": 5
         }
@@ -2032,7 +2032,7 @@
           "name": "ccr.db-shm"
         },
         {
-          "bytes": 1474992,
+          "bytes": 1417312,
           "name": "ccr.db-wal"
         }
       ],
@@ -2105,148 +2105,148 @@
       "recovered_entries": 66,
       "retrieval_errors": 0,
       "retrieve_latency": {
-        "p50_ms": 0.0976,
-        "p95_ms": 0.340025,
+        "p50_ms": 0.0766,
+        "p95_ms": 0.0989,
         "samples_ms": [
-          0.3623,
-          0.1926,
-          0.1771,
-          0.1526,
-          0.1458,
-          0.1478,
-          0.1518,
-          0.1517,
-          0.2247,
-          0.5492,
-          0.2732,
-          0.2317,
-          0.5247,
-          0.1991,
-          0.1821,
-          0.0813,
-          0.0951,
-          0.3776,
-          0.1212,
-          0.1153,
-          0.1027,
-          0.1012,
-          0.1027,
-          0.1003,
-          0.1127,
-          0.101,
-          0.099,
-          0.1138,
-          0.1033,
-          0.1016,
-          0.1395,
-          0.1087,
-          0.1068,
-          0.1034,
-          0.1004,
-          0.0835,
-          0.0819,
-          0.0854,
+          0.1971,
+          0.1051,
+          0.0943,
           0.0922,
-          0.0888,
-          0.0962,
-          0.0916,
-          0.0901,
-          0.092,
-          0.0854,
-          0.0793,
-          0.0816,
-          0.0752,
-          0.0759,
+          0.0895,
+          0.0904,
+          0.0856,
+          0.0847,
+          0.0842,
+          0.1066,
+          0.0832,
+          0.0842,
+          0.089,
+          0.0831,
+          0.0832,
+          0.0824,
+          0.0993,
+          0.0858,
+          0.0815,
+          0.0819,
+          0.0807,
+          0.0766,
+          0.0773,
+          0.0773,
+          0.0773,
+          0.078,
+          0.0766,
           0.0775,
-          0.0876,
-          0.0849,
-          0.0758,
-          0.0718,
-          0.0719,
-          0.074,
-          0.071,
-          0.0688,
-          0.0698,
-          0.0692,
-          0.0694,
+          0.0768,
+          0.0977,
+          0.072,
+          0.07,
+          0.0737,
+          0.0737,
+          0.0739,
+          0.0722,
+          0.0735,
+          0.0709,
           0.0698,
           0.0693,
-          0.0691,
+          0.0852,
+          0.0721,
+          0.0718,
+          0.0727,
+          0.0712,
+          0.0703,
+          0.0724,
           0.0702,
-          0.0721
+          0.0702,
+          0.07,
+          0.0705,
+          0.0711,
+          0.0706,
+          0.0697,
+          0.071,
+          0.0692,
+          0.0704,
+          0.0696,
+          0.093,
+          0.078,
+          0.0705,
+          0.0736,
+          0.0709,
+          0.0697,
+          0.0689,
+          0.0839
         ]
       },
       "state_bytes": 95438,
       "store_latency": {
-        "p50_ms": 36.7976,
-        "p95_ms": 574.699625,
+        "p50_ms": 36.5713,
+        "p95_ms": 639.94085,
         "samples_ms": [
-          1153.3016,
-          34.7754,
-          39.3302,
-          36.6188,
-          31.4148,
-          35.4093,
-          32.8915,
-          34.5714,
-          34.3507,
-          34.551,
-          39.3635,
-          617.6577,
-          33.8988,
-          34.2372,
-          37.0765,
-          35.1645,
-          35.0421,
-          33.4674,
-          32.4931,
-          34.1007,
-          36.9764,
-          38.0639,
-          180.3236,
-          30.1179,
-          30.4026,
-          28.4622,
-          29.1611,
-          29.5445,
-          30.6822,
-          33.8795,
-          30.626,
-          32.0445,
-          29.9267,
-          2061.0605,
-          37.2403,
-          43.8426,
-          40.7503,
-          45.6939,
-          40.909,
-          44.8142,
-          46.5515,
-          47.9477,
-          46.317,
-          39.6619,
-          1580.3329,
-          39.4626,
-          41.7402,
-          39.247,
-          38.5925,
-          40.0037,
-          37.779,
-          46.5915,
-          42.1393,
-          40.3198,
-          43.1568,
-          12.0499,
-          28.4942,
-          27.31,
-          21.8387,
-          29.6415,
-          30.7895,
-          375.9302,
-          29.3633,
-          28.6805,
-          445.8254,
-          37.7492
+          1551.5519,
+          38.9709,
+          37.399,
+          40.513,
+          39.7099,
+          38.5556,
+          40.1899,
+          34.1682,
+          46.5379,
+          507.8138,
+          44.3563,
+          683.9832,
+          37.3884,
+          32.1754,
+          32.9828,
+          33.1312,
+          35.2266,
+          34.2189,
+          30.2748,
+          34.4979,
+          37.7694,
+          34.9818,
+          1117.0023,
+          35.9236,
+          36.032,
+          39.1879,
+          36.0038,
+          32.7529,
+          40.5446,
+          41.4809,
+          25.6363,
+          37.7156,
+          38.3879,
+          10.5762,
+          27.8888,
+          28.7604,
+          28.4436,
+          29.7544,
+          29.2894,
+          27.5556,
+          60.4667,
+          18.4123,
+          28.1303,
+          24.9,
+          213.6638,
+          132.1834,
+          30.9596,
+          30.155,
+          30.6215,
+          32.2403,
+          30.3369,
+          34.7394,
+          32.5438,
+          37.1106,
+          33.8593,
+          1911.6083,
+          42.8349,
+          40.8324,
+          29.5448,
+          40.1233,
+          39.999,
+          44.312,
+          43.2792,
+          38.9098,
+          40.5141,
+          42.5216
         ]
       },
       "worker_errors": 0,
@@ -2267,148 +2267,148 @@
       "recovered_entries": 66,
       "retrieval_errors": 0,
       "retrieve_latency": {
-        "p50_ms": 0.51885,
-        "p95_ms": 0.7965,
+        "p50_ms": 0.8505,
+        "p95_ms": 1.8372,
         "samples_ms": [
-          43.3467,
-          1.5603,
-          0.7518,
-          0.7642,
-          0.5566,
-          0.6202,
-          0.9255,
-          0.5672,
-          0.7124,
-          0.6587,
-          0.8036,
-          0.5351,
-          0.4732,
-          0.4815,
-          0.5473,
-          0.4775,
-          0.4591,
-          0.5101,
-          0.4706,
-          0.4309,
-          0.5791,
-          0.4658,
-          0.4964,
-          0.5832,
-          0.4449,
-          0.4532,
-          0.5886,
-          0.602,
-          0.461,
-          0.4429,
-          0.5594,
-          0.5563,
-          0.5275,
-          0.4644,
-          0.4711,
-          0.5297,
-          0.7752,
-          0.5037,
-          0.5655,
-          0.6546,
-          0.5006,
-          0.4313,
-          0.5394,
-          0.4627,
-          0.4428,
-          0.502,
-          0.5897,
-          0.4468,
-          0.4307,
-          0.6535,
-          0.4931,
-          0.5261,
-          0.4956,
-          0.5696,
-          0.4896,
-          0.441,
-          0.5561,
-          0.5116,
-          0.4666,
-          0.5804,
-          0.4224,
-          0.4459,
-          0.5529,
-          0.4508,
-          0.563,
-          0.5071
+          36.4428,
+          0.7839,
+          0.668,
+          1.1041,
+          0.9444,
+          0.8373,
+          1.9051,
+          1.1599,
+          0.7022,
+          0.6363,
+          0.8562,
+          0.9576,
+          0.8901,
+          1.0611,
+          0.9441,
+          0.7948,
+          0.7654,
+          0.9574,
+          0.519,
+          0.443,
+          0.8616,
+          1.1656,
+          0.9434,
+          0.7856,
+          0.8448,
+          1.6335,
+          0.6485,
+          1.1865,
+          0.8979,
+          0.8935,
+          1.2038,
+          0.893,
+          0.8598,
+          0.8133,
+          0.8169,
+          1.3732,
+          1.1813,
+          0.8249,
+          0.9798,
+          0.8578,
+          0.788,
+          1.965,
+          1.3967,
+          0.8897,
+          0.6732,
+          0.4948,
+          0.5026,
+          0.5406,
+          0.4552,
+          0.4926,
+          0.7259,
+          0.559,
+          0.4857,
+          0.5442,
+          0.5531,
+          0.4417,
+          0.5737,
+          0.4377,
+          0.8817,
+          1.0307,
+          0.9328,
+          1.1017,
+          2.3327,
+          0.633,
+          0.647,
+          0.7457
         ]
       },
-      "state_bytes": 1593776,
+      "state_bytes": 1536096,
       "store_latency": {
-        "p50_ms": 2.25695,
-        "p95_ms": 43.753375,
+        "p50_ms": 1.94455,
+        "p95_ms": 40.486275,
         "samples_ms": [
-          34.9717,
-          76.242,
-          3.7622,
-          3.2179,
-          3.0991,
-          1.9603,
-          2.0668,
-          1.9004,
-          3.5169,
-          3.9155,
-          3.3331,
-          25.5928,
-          0.4054,
-          0.4244,
-          5.1199,
-          1.7495,
-          61.4579,
-          2.5926,
-          2.2763,
-          3.5427,
-          3.1507,
-          3.0966,
-          33.7684,
-          0.9817,
-          1.2224,
-          26.7001,
-          1.6853,
-          14.2319,
-          3.0338,
-          2.8925,
-          2.7436,
-          3.1677,
-          2.9123,
-          46.6806,
-          1.0409,
-          1.9288,
-          2.6445,
-          1.9609,
-          1.9218,
-          2.2376,
-          2.2834,
-          2.4875,
-          2.4135,
-          2.5268,
-          26.6961,
-          0.4695,
-          0.5159,
-          0.4595,
-          0.4596,
-          0.4447,
-          0.5034,
-          0.4816,
-          0.5357,
-          47.8095,
-          2.1779,
-          32.9545,
-          1.8423,
-          1.4665,
-          1.5024,
-          1.6248,
-          1.674,
-          1.5747,
-          1.6159,
-          1.5681,
-          1.6062,
-          1.7942
+          35.7036,
+          52.6684,
+          15.6577,
+          1.9531,
+          2.2183,
+          1.71,
+          1.5152,
+          1.6262,
+          1.5719,
+          1.5261,
+          1.5859,
+          120.4626,
+          2.4171,
+          3.4351,
+          3.0161,
+          2.3378,
+          2.3087,
+          1.9753,
+          1.9428,
+          3.3241,
+          2.8164,
+          2.3692,
+          72.4592,
+          2.3448,
+          2.4823,
+          2.3257,
+          2.1488,
+          2.2838,
+          2.6534,
+          2.05,
+          1.861,
+          2.5372,
+          2.4378,
+          34.1734,
+          0.7934,
+          0.6717,
+          0.9387,
+          1.6572,
+          1.1591,
+          0.7914,
+          1.6742,
+          1.9477,
+          1.2945,
+          11.0674,
+          28.0427,
+          0.4868,
+          0.5023,
+          0.5255,
+          0.4246,
+          0.457,
+          0.3898,
+          0.403,
+          0.4373,
+          0.4081,
+          0.4352,
+          42.0805,
+          1.6829,
+          1.8541,
+          1.8493,
+          1.9463,
+          1.9593,
+          1.7452,
+          1.0949,
+          1.3541,
+          1.9692,
+          1.6908
         ]
       },
       "worker_errors": 0,
@@ -2420,17 +2420,17 @@
     "public_leadership_claim_allowed": false,
     "universal_superiority_claim_allowed": false
   },
-  "generated_at": "2026-07-15T02:57:25.315668+00:00",
+  "generated_at": "2026-07-15T03:20:24.763857+00:00",
   "participants": {
     "entroly": {
       "package": "entroly",
       "release_status": "merged source checkout",
       "runtime": {
-        "implementation_sha256": "a6e2bee28c63a6a11e83df88cd01d9d4f4d8b7cfe1583c2f3bfa08bf3b80024a",
+        "implementation_sha256": "1582b3a55c049df2471fb5a4b460536cb83eac453c5a87203aa732c15e4afcf4",
         "platform": "Windows-10-10.0.26200-SP0",
         "python": "3.10.0"
       },
-      "version": "1.0.59"
+      "version": "1.0.60"
     },
     "headroom": {
       "package": "headroom-ai",
@@ -2443,7 +2443,7 @@
       "version": "0.31.0"
     }
   },
-  "payload_sha256": "1379f1efa0a19c5708d8512d9dda13337847a86743ae04b326b31418a7db22b4",
+  "payload_sha256": "0c20e10c27e6c43f5647a30da0b37e0257f29c576424899ebede3843ef562f48",
   "phase": "holdout",
   "protocol": {
     "claim_policy": {
@@ -2454,60 +2454,16 @@
       "universal_superiority_claim_allowed": false
     },
     "comparison": {
-      "entroly": "1.0.59 merged source",
+      "entroly": "1.0.60 source",
       "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
     },
-    "dimensions": [
-      {
-        "evidence": "benchmarks/results/compression_frontier.json",
-        "id": "active_context_quality",
-        "status": "implemented"
-      },
-      {
-        "evidence": "benchmarks/recovery_resilience.py",
-        "id": "recovery_resilience",
-        "status": "implemented"
-      },
-      {
-        "id": "end_to_end_model_recovery",
-        "status": "planned"
-      },
-      {
-        "id": "compression_latency",
-        "status": "planned"
-      },
-      {
-        "id": "provider_protocol_conformance",
-        "status": "planned"
-      },
-      {
-        "id": "interruption_recovery",
-        "status": "planned"
-      },
-      {
-        "id": "security_and_secret_handling",
-        "status": "planned"
-      },
-      {
-        "id": "packaging_and_first_run",
-        "status": "planned"
-      },
-      {
-        "id": "operator_ux_and_diagnostics",
-        "status": "planned"
-      },
-      {
-        "id": "provider_observed_cost",
-        "status": "planned"
-      }
-    ],
-    "frozen_at": "2026-07-14T11:30:00Z",
-    "schema_version": "entroly.competitive-evidence-protocol.v1",
+    "frozen_at": "2026-07-15T03:25:00Z",
+    "schema_version": "entroly.recovery-resilience-protocol.v2",
     "suites": {
       "recovery_resilience": {
         "development": {
           "entries_per_worker": 8,
-          "seed": 20260714,
+          "seed": 20260728,
           "workers": 4
         },
         "development_policy": "Development results may guide implementation and remain visible but cannot support a public leadership claim.",
@@ -2520,14 +2476,19 @@
         },
         "holdout": {
           "entries_per_worker": 11,
-          "seed": 20260715,
+          "seed": 20260729,
           "workers": 6
         },
-        "holdout_policy": "Run once after implementation. A scoped public claim requires the complete holdout matrix and a passing verifier.",
+        "holdout_policy": "Run once after implementation. This revalidation can establish current implementation integrity but cannot convert a tie into a leadership claim.",
         "latency_policy": "Report per-system p50 and p95 store/retrieve latency descriptively; correctness gates cannot be traded for speed."
       }
+    },
+    "supersedes": {
+      "artifact": "benchmarks/results/recovery_resilience_holdout.json",
+      "protocol": "benchmarks/competitive_evidence_protocol.json",
+      "reason": "Revalidate the additive bounded-recovery implementation and conservative base-install token fallback under 1.0.60 without relabeling or rewriting the immutable 1.0.59 holdout."
     }
   },
-  "protocol_sha256": "67149234fcff176f63e4663676d77a9bced0f55e83ee8258d7017c9bc65accb0",
+  "protocol_sha256": "0c70e4bc040d288c80ffab5b18a59be01b08de40e7db1dcfc50628663ed7e149",
   "schema_version": "entroly.recovery-resilience.v1"
 }

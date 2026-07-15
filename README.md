@@ -368,15 +368,16 @@ Context Efficiency Frontier above is the required gate for a real-model claim.</
 
 **Cross-process recovery holdout:** the preregistered six-writer test first
 exposed a serious Entroly failure (only 8/32 development payloads survived),
-which is preserved in the evidence. After the durability repair, Entroly 1.0.59
-source and published Headroom 0.31.0 both wrote and recovered **66/66** holdout
-payloads byte-exactly after restart with zero wrong payloads. This closes the
-integrity gap; it does not establish recovery superiority.
+which is preserved in the evidence. The original Entroly 1.0.59 holdout and a
+fresh 1.0.60 current-implementation revalidation both recorded Entroly and
+published Headroom 0.31.0 writing and recovering **66/66** payloads byte-exactly
+after restart with zero wrong payloads. This closes the integrity gap;
+it does not establish recovery superiority.
 
 On the current-implementation Windows/Python 3.10 revalidation, Headroom had
-lower store-call latency (2.257 ms versus 36.798 ms p50). Entroly had lower
-retrieval latency (0.098 ms versus 0.519 ms p50) and a smaller live state
-footprint (95,438 versus 1,593,776 bytes). Headroom used SQLite WAL with
+lower store-call latency (1.945 ms versus 36.571 ms p50). Entroly had lower
+retrieval latency (0.077 ms versus 0.851 ms p50) and a smaller live state
+footprint (95,438 versus 1,536,096 bytes). Headroom used SQLite WAL with
 `synchronous=NORMAL`; Entroly
 fsynced its state file on each commit, so this is not a matched power-loss
 durability comparison. These are scoped workload measurements, not universal

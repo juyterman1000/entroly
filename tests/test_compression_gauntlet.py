@@ -153,7 +153,7 @@ def test_artifact_verifier_rejects_tampered_output() -> None:
         verify_report(tampered)
 
 
-def test_artifact_verifier_rejects_stale_entroly_version() -> None:
+def test_artifact_verifier_rejects_malformed_historical_entroly_version() -> None:
     scenarios = build_scenarios()
     adapter = run_adapter("entroly", _payload())
     report = analyze(
@@ -163,8 +163,22 @@ def test_artifact_verifier_rejects_stale_entroly_version() -> None:
     )
     report["participants"]["entroly"]["version"] = "stale-version"
 
-    with pytest.raises(ValueError, match="version changed"):
+    with pytest.raises(ValueError, match="not a stable SemVer"):
         verify_report(report)
+
+
+def test_generation_gate_rejects_current_implementation_drift() -> None:
+    scenarios = build_scenarios()
+    adapter = run_adapter("entroly", _payload())
+    report = analyze(
+        scenarios=scenarios,
+        adapters=[adapter],
+        protocol={"model": "gpt-4o", "budget_tokens": 1_200, "runs": 2, "warmups": 0},
+    )
+    report["participants"]["entroly"]["runtime"]["implementation_sha256"] = "0" * 64
+
+    with pytest.raises(ValueError, match="implementation changed"):
+        verify_report(report, require_current_implementation=True)
 
 
 def test_social_card_keeps_scope_caveat_attached() -> None:

@@ -13,6 +13,9 @@ The original
 remains immutable because recovery artifacts embed it. Later dimensions use
 their own immutable protocol files rather than rewriting prior evidence.
 Thresholds and holdout parameters are frozen before results are inspected.
+The current 1.0.60 durability revalidation is frozen separately in
+[`recovery_resilience_protocol_v2.json`](../../benchmarks/recovery_resilience_protocol_v2.json);
+it does not rewrite the original 1.0.59 protocol or artifact.
 
 ## Claim rules
 
@@ -89,20 +92,20 @@ Entroly then added cross-process read/merge/write serialization, unique durable
 temporary files, file and directory synchronization, stale-reader refresh, and
 process-level regression tests. The frozen holdout was not changed.
 
-On the six-writer, 66-entry Windows/Python 3.10 holdout, Entroly 1.0.59 source
+On the fresh-seed six-writer, 66-entry Windows/Python 3.10 revalidation, Entroly 1.0.60 source
 and the published Headroom 0.31.0 wheel both wrote and recovered 66 of 66
 payloads byte-exactly after restart, with zero incorrect payloads and no worker
 or retrieval errors. Therefore the verifier explicitly disallows a
 recovery-integrity leadership claim.
 
-| Holdout metric | Entroly 1.0.59 source | Headroom 0.31.0 |
+| Holdout metric | Entroly 1.0.60 source | Headroom 0.31.0 |
 |---|---:|---:|
 | Successful writes | 66 / 66 | 66 / 66 |
 | Byte-exact restart recovery | 66 / 66 | 66 / 66 |
 | Incorrect payloads | 0 | 0 |
-| Store-call p50 / p95 | 36.798 / 574.700 ms | **2.257 / 43.753 ms** |
-| Retrieval p50 / p95 | **0.098 / 0.340 ms** | 0.519 / 0.797 ms |
-| Live state files | **95,438 bytes** | 1,593,776 bytes |
+| Store-call p50 / p95 | 36.571 / 639.941 ms | **1.945 / 40.486 ms** |
+| Retrieval p50 / p95 | **0.077 / 0.099 ms** | 0.851 / 1.837 ms |
+| Live state files | **95,438 bytes** | 1,536,096 bytes |
 
 These latency and size observations describe this workload and platform; they
 are not standalone product-superiority claims. Headroom was substantially

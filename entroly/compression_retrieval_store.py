@@ -947,7 +947,13 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _count_o200k_tokens(text: str) -> int:
-    import tiktoken
+    try:
+        import tiktoken
+    except ImportError:
+        # A byte is a conservative upper bound for a tokenizer piece. Base
+        # installs intentionally keep benchmark tokenizers optional, so this
+        # path may return less context but can never violate the public cap.
+        return len(text.encode("utf-8"))
 
     return len(tiktoken.get_encoding("o200k_base").encode(text))
 
@@ -957,7 +963,7 @@ def _bounded_exact_excerpt(
     query: str,
     max_tokens: int,
 ) -> tuple[str, bool]:
-    """Slice exact source windows and enforce the public o200k token cap."""
+    """Slice exact source windows under an exact or conservative token cap."""
     from .ccr import slice_recovery_content
 
     budget = int(max_tokens)
