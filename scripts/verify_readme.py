@@ -28,6 +28,10 @@ check("SDK: compress works", lambda: f"{len(__import__('entroly').compress('hell
 
 # === CLI: wrap ===
 from entroly.cli import _WRAP_AGENTS  # noqa: E402
+from benchmarks.neural_evidence_frontier import (  # noqa: E402
+    render_svg as render_neural_evidence_svg,
+    verify_report as verify_neural_evidence_report,
+)
 from verify_public_trust import collect_offline_failures  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
@@ -35,6 +39,9 @@ COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
 INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
+NEURAL_EVIDENCE_TEXT = Path("docs/benchmarks/neural-evidence-frontier.md").read_text(
+    encoding="utf-8"
+)
 
 
 def verify_readme_proof_media():
@@ -73,6 +80,47 @@ def verify_readme_proof_media():
     if missing_scope:
         raise ValueError(f"README proof scope missing: {missing_scope}")
     return f"{len(videos)} source-bound videos"
+
+
+def verify_neural_evidence_story():
+    """Bind the prominent negative result to raw trials and its caveats."""
+    report_path = Path("benchmarks/results/neural_evidence_frontier.json")
+    card_path = Path("docs/assets/neural_evidence_frontier.svg")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    verify_neural_evidence_report(report)
+
+    metrics = report["test_metrics"]
+    protocol = report["protocol"]
+    paired = metrics["paired"]
+    guard = metrics["dual_channel_guard"]
+    required_readme = (
+        "The transformer lost. We published the result anyway.",
+        f"**{metrics['local_transformer']['top1_recall']:.1%}**",
+        f"**{metrics['lexical_bm25']['top1_recall']:.1%}**",
+        f"**{guard['answer_passage_recall']:.1%}**",
+        f"**{guard['average_selected_passages']:.2f} of {protocol['candidates_per_trial']} passages**",
+        f"`p={paired['mcnemar_exact_p']:.5f}`",
+        "this experiment measures retrieval",
+        "docs/assets/neural_evidence_frontier.svg",
+        "benchmarks/results/neural_evidence_frontier.json",
+    )
+    missing = [value for value in required_readme if value not in README_TEXT]
+    if missing:
+        raise ValueError(f"README neural evidence story drifted: {missing}")
+
+    model = report["model"]
+    required_provenance = (
+        model["repository"],
+        model["revision"],
+        model["fingerprint_sha256"],
+        report["implementation"]["git_commit"],
+    )
+    missing = [value for value in required_provenance if value not in NEURAL_EVIDENCE_TEXT]
+    if missing:
+        raise ValueError(f"neural evidence provenance is incomplete: {missing}")
+    if card_path.read_text(encoding="utf-8") != render_neural_evidence_svg(report):
+        raise ValueError("neural evidence card is stale; rerun render-card")
+    return f"{protocol['trials']} source-bound trials"
 
 check("wrap claude", lambda: "claude" in _WRAP_AGENTS and "OK")
 check("wrap codex", lambda: "codex" in _WRAP_AGENTS and "OK")
@@ -157,6 +205,7 @@ check(
     ) or (_ for _ in ()).throw(Exception("README must ask for stars through local proof, not broad first-fold claims")),
 )
 check("README proof media bindings", verify_readme_proof_media)
+check("README neural evidence story", verify_neural_evidence_story)
 check(
     "README competitor comparison tone",
     lambda: (

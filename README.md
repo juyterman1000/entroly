@@ -60,6 +60,34 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 
 ---
 
+## The transformer lost. We published the result anyway.
+
+<p align="center">
+  <a href="docs/benchmarks/neural-evidence-frontier.md"><img src="docs/assets/neural_evidence_frontier.svg" width="900" alt="Frozen Entroly retrieval experiment: deterministic BM25 reached 99.0 percent top-1 recall, a local transformer reached 97.7 percent, and a disagreement guard reached 99.3 percent without passing a breakthrough gate"></a>
+</p>
+
+We tested whether a local transformer had earned the right to replace
+deterministic BM25 for answer-bearing context retrieval. It had not: **97.7%**
+versus **99.0%** held-out top-1 recall. Entroly keeps the deterministic path
+primary instead of turning a weaker neural result into a marketing claim.
+
+The useful signal was disagreement. Retaining both champions only on the six
+lexical/neural disagreements reached **99.3%** answer-passage recall while
+selecting **1.02 of 16 passages** on average. That is promising engineering
+evidence, not a breakthrough claim: the primary-selector comparison was not
+statistically conclusive (`p=0.21875`), and this experiment measures retrieval,
+not generated answers or production savings.
+
+```bash
+python -m benchmarks.neural_evidence_frontier verify benchmarks/results/neural_evidence_frontier.json
+```
+
+[Audit every trial in under a minute](docs/benchmarks/neural-evidence-frontier.md)
+· [inspect the raw artifact](benchmarks/results/neural_evidence_frontier.json)
+· [submit a counterexample](https://github.com/juyterman1000/entroly/issues/new?template=evidence_report.yml)
+
+---
+
 ## What it does
 
 Entroly is an open-source, auditable context engineering control plane for AI agents. It decides what context to send, compresses selected evidence when useful, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.

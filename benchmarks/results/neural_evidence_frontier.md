@@ -4,6 +4,14 @@
 
 Answer-bearing paragraph retrieval under fixed one-of-N selection on a frozen SQuAD v2 validation subset.
 
+## Frozen provenance
+
+- Encoder: `sentence-transformers/all-MiniLM-L6-v2` at `c9745ed1d9f207416be6d2e6f8de32d1f16199bf`
+- Model tree SHA-256: `3efc859f2086261cc877fff243cddd2e4532e55e4157747861f705cd36b05a13`
+- Implementation commit: `0dc83f1f7759d7ace58cfc2d7ae19380473452f1`
+- Python: `3.10.0`
+- Packages: `datasets==4.8.4`, `sentence-transformers==5.1.1`, `torch==2.8.0+cpu`
+
 | Selector | Top-1 answer-passage recall | Top-2 recall | MRR |
 |---|---:|---:|---:|
 | Deterministic BM25 | 99.0% | 99.7% | 0.9937 |

@@ -156,3 +156,32 @@ def test_share_card_is_bound_to_verified_trial_evidence() -> None:
     assert "99.3%" in rendered
     assert "p=0.21875" in rendered
     assert card_path.read_text(encoding="utf-8") == rendered
+
+
+def test_public_story_keeps_the_negative_result_and_provenance_attached() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    evidence_page = (
+        ROOT / "docs" / "benchmarks" / "neural-evidence-frontier.md"
+    ).read_text(encoding="utf-8")
+
+    for claim in (
+        "The transformer lost. We published the result anyway.",
+        "**97.7%**",
+        "**99.0%**",
+        "**99.3%**",
+        "**1.02 of 16 passages**",
+        "`p=0.21875`",
+        "this experiment measures retrieval",
+    ):
+        assert claim in readme
+
+    for provenance in (
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+        "3efc859f2086261cc877fff243cddd2e4532e55e4157747861f705cd36b05a13",
+        "0dc83f1f7759d7ace58cfc2d7ae19380473452f1",
+    ):
+        assert provenance in evidence_page
+
+    assert "It does not measure generated-answer quality" in evidence_page
+    assert "This audits the committed experiment; it does not rerun" in evidence_page

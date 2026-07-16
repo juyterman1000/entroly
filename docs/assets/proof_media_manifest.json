@@ -13,7 +13,7 @@
       "rendered_lines_sha256": "47d8bcd15b6e3ad317a21d42ab3af17e5dda3b84edf873ad3bdc321fbf5ec3b5",
       "source_sha256": {
         "entroly/verify_claims.py": "9000e9a5c9f526865a94052a908e36b1de77bfd764618ac14c6d7d4635c3f2a6",
-        "scripts/readme_proof.py": "ff8a0b707520160389c03401a43bcb4cad064e4957004355e26c835f553946ad"
+        "scripts/readme_proof.py": "1ff6fafa8ef82341474965f14c40a2e8b92b0e2076e80e11ea97ca3965e434e8"
       }
     },
     "proof_model_recovery": {
@@ -25,9 +25,9 @@
       "proof_command": "python scripts/readme_proof.py model-recovery",
       "rendered_lines_sha256": "fb7ea00d2b629dcf5065a14aaf60423c8956f1db0749712af9b732d01a2b3abb",
       "source_sha256": {
-        "benchmarks/model_recovery.py": "79e570d3d1283bd992e71e119c3c7be1cd721724959bd722e297b9fa681c8bd2",
-        "benchmarks/results/model_recovery_v7_holdout.json": "ce11d0ddfc64d6bceca29d90c6d2c01511003f7ac7fb1f65dc977a4dcafac61c",
-        "scripts/readme_proof.py": "ff8a0b707520160389c03401a43bcb4cad064e4957004355e26c835f553946ad"
+        "benchmarks/model_recovery.py": "8afc297f0d75823e7b5f8c5757351640925c3530b4ed5df712aa9af18f20d8f5",
+        "benchmarks/results/model_recovery_v7_holdout.json": "5446599337bc048bea24f429383ac56071f7fd381b7fe0bc7596bf3f654efa49",
+        "scripts/readme_proof.py": "1ff6fafa8ef82341474965f14c40a2e8b92b0e2076e80e11ea97ca3965e434e8"
       }
     },
     "proof_restart_recovery": {
@@ -39,10 +39,10 @@
       "proof_command": "python scripts/readme_proof.py restart-recovery",
       "rendered_lines_sha256": "6165accf013ed1fd50394de752bf79412f90ab2935c5b3df04a948d0a93f84aa",
       "source_sha256": {
-        "benchmarks/recovery_resilience.py": "c68846a8ad13c3e28fc452f8e88bd08a46dceeef89b76f34f7122ca01ee243d0",
+        "benchmarks/recovery_resilience.py": "d4a2811f24348e915347555443179e9bebf841d330693f2df69f860a7899529c",
         "benchmarks/results/recovery_resilience_holdout_revalidation.json": "5b3c301c088a1f6500a6f7f27fbcb819f771fdab4d863bee286082b9b83f43bf",
         "benchmarks/results/recovery_resilience_holdout_revalidation_v3.json": "ed3c5d3b7568f3846d7dc3685fda937adedcd6e8eeb3391c0dd126044c67d56f",
-        "scripts/readme_proof.py": "ff8a0b707520160389c03401a43bcb4cad064e4957004355e26c835f553946ad"
+        "scripts/readme_proof.py": "1ff6fafa8ef82341474965f14c40a2e8b92b0e2076e80e11ea97ca3965e434e8"
       }
     }
   }
