@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 
 import pytest
 
@@ -12,8 +14,11 @@ from benchmarks.neural_evidence_frontier import (
     _mcnemar_exact,
     _metrics,
     _wilson_upper,
+    render_svg,
     verify_report,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _row(
@@ -121,6 +126,11 @@ def test_verifier_recomputes_orders_metrics_and_headline_gate() -> None:
             },
         },
         "headline_eligible": False,
+        "model": {
+            "id": "snapshot-id",
+            "fingerprint_sha256": "f" * 64,
+            "path_disclosed": False,
+        },
         "trials": rows,
     }
 
@@ -130,3 +140,19 @@ def test_verifier_recomputes_orders_metrics_and_headline_gate() -> None:
     tampered["test_metrics"]["local_transformer"]["top1_correct"] = 0
     with pytest.raises(ValueError, match="metrics"):
         verify_report(tampered)
+
+
+def test_share_card_is_bound_to_verified_trial_evidence() -> None:
+    report_path = ROOT / "benchmarks" / "results" / "neural_evidence_frontier.json"
+    card_path = ROOT / "docs" / "assets" / "neural_evidence_frontier.svg"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    rendered = render_svg(report)
+
+    assert "The transformer lost." in rendered
+    assert "NO BREAKTHROUGH CLAIM" in rendered
+    assert "99.0%" in rendered
+    assert "97.7%" in rendered
+    assert "99.3%" in rendered
+    assert "p=0.21875" in rendered
+    assert card_path.read_text(encoding="utf-8") == rendered

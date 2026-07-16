@@ -18,7 +18,9 @@
   "model": {
     "fingerprint_sha256": "3efc859f2086261cc877fff243cddd2e4532e55e4157747861f705cd36b05a13",
     "id": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
-    "path_disclosed": false
+    "path_disclosed": false,
+    "repository": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
   },
   "protocol": {
     "calibration_fraction": 0.5,

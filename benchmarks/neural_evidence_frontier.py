@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import math
 import os
+import platform
 import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -63,6 +66,13 @@ def _mcnemar_exact(neural_only: int, lexical_only: int) -> float:
         math.comb(discordant, value) for value in range(tail + 1)
     ) / (2**discordant)
     return min(1.0, 2.0 * probability)
+
+
+def _installed_version(distribution: str) -> str:
+    try:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return "not-installed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,14 +297,28 @@ def run(
     calibration_fraction: float,
     max_override_error_upper: float,
     minimum_overrides: int,
+    model_repository: str | None = None,
+    model_revision: str | None = None,
+    implementation_commit: str | None = None,
 ) -> dict[str, Any]:
     if not 0.1 <= calibration_fraction <= 0.9:
         raise ValueError("calibration_fraction must be between 0.1 and 0.9")
+    if (model_repository is None) is not (model_revision is None):
+        raise ValueError("model_repository and model_revision must be supplied together")
+    if implementation_commit is not None:
+        if len(implementation_commit) != 40:
+            raise ValueError("implementation_commit must be a full 40-character SHA")
+        try:
+            int(implementation_commit, 16)
+        except ValueError as error:
+            raise ValueError("implementation_commit must be hexadecimal") from error
     source_rows, dataset_fingerprint = _load_rows()
     trial_rows = _build_trials(
         source_rows, trials=trials, distractors=distractors, seed=seed
     )
     encoder = LocalTransformerEncoder(model_path)
+    if model_revision is not None and model_revision != encoder.model_id:
+        raise ValueError("model_revision must match the local snapshot directory name")
 
     encoded_inputs: list[str] = []
     for trial in trial_rows:
@@ -386,6 +410,15 @@ def run(
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "implementation": {
+            "git_commit": implementation_commit,
+            "python": platform.python_version(),
+            "packages": {
+                "datasets": _installed_version("datasets"),
+                "sentence-transformers": _installed_version("sentence-transformers"),
+                "torch": _installed_version("torch"),
+            },
+        },
         "protocol": {
             "dataset": DATASET_ID,
             "split": DATASET_SPLIT,
@@ -403,6 +436,8 @@ def run(
             "id": encoder.model_id,
             "fingerprint_sha256": encoder.fingerprint,
             "path_disclosed": False,
+            "repository": model_repository,
+            "revision": model_revision,
         },
         "calibration": calibration,
         "test_metrics": {
@@ -502,11 +537,37 @@ def verify_report(report: dict[str, Any]) -> None:
     if report["headline_eligible"] is not eligible:
         raise ValueError("headline_eligible does not match the statistical gate")
 
+    model = report.get("model")
+    if not isinstance(model, dict):
+        raise ValueError("report contains no model provenance")
+    repository = model.get("repository")
+    revision = model.get("revision")
+    if (repository is None) is not (revision is None):
+        raise ValueError("model repository and revision must be disclosed together")
+    if revision is not None and revision != model.get("id"):
+        raise ValueError("model revision must match the local snapshot id")
+
+    implementation = report.get("implementation")
+    if implementation is not None:
+        if not isinstance(implementation, dict):
+            raise ValueError("implementation provenance must be an object")
+        commit = implementation.get("git_commit")
+        if commit is not None:
+            if not isinstance(commit, str) or len(commit) != 40:
+                raise ValueError("implementation git_commit must be a full SHA")
+            try:
+                int(commit, 16)
+            except ValueError as error:
+                raise ValueError("implementation git_commit must be hexadecimal") from error
+
 
 def render_markdown(report: dict[str, Any]) -> str:
     verify_report(report)
     metrics = report["test_metrics"]
     paired = metrics["paired"]
+    model = report["model"]
+    implementation = report.get("implementation") or {}
+    packages = implementation.get("packages") or {}
     status = (
         "**HELD-OUT SEMANTIC RETRIEVAL WIN.**"
         if report["headline_eligible"]
@@ -518,6 +579,22 @@ def render_markdown(report: dict[str, Any]) -> str:
         status,
         "",
         report["claim_scope"],
+        "",
+        "## Frozen provenance",
+        "",
+        (
+            f"- Encoder: `{model.get('repository') or 'local snapshot'}`"
+            f" at `{model.get('revision') or model['id']}`"
+        ),
+        f"- Model tree SHA-256: `{model['fingerprint_sha256']}`",
+        f"- Implementation commit: `{implementation.get('git_commit') or 'not recorded'}`",
+        f"- Python: `{implementation.get('python') or 'not recorded'}`",
+        (
+            "- Packages: "
+            f"`datasets=={packages.get('datasets', 'not recorded')}`, "
+            f"`sentence-transformers=={packages.get('sentence-transformers', 'not recorded')}`, "
+            f"`torch=={packages.get('torch', 'not recorded')}`"
+        ),
         "",
         "| Selector | Top-1 answer-passage recall | Top-2 recall | MRR |",
         "|---|---:|---:|---:|",
@@ -568,6 +645,113 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_svg(report: dict[str, Any]) -> str:
+    """Render a shareable proof card with its statistical caveat attached."""
+    verify_report(report)
+    metrics = report["test_metrics"]
+    lexical = metrics["lexical_bm25"]
+    neural = metrics["local_transformer"]
+    guard = metrics["dual_channel_guard"]
+    paired = metrics["paired"]
+    protocol = report["protocol"]
+    neural_won = neural["top1_recall"] > lexical["top1_recall"]
+    headline = (
+        "The transformer won the held-out gate."
+        if neural_won
+        else "The transformer lost."
+    )
+    subhead = (
+        "The statistical gate passed; inspect the raw trials before repeating the claim."
+        if report["headline_eligible"]
+        else "We published the result anyway—and kept deterministic retrieval primary."
+    )
+    status = (
+        "HELD-OUT GATE PASSED"
+        if report["headline_eligible"]
+        else "NO BREAKTHROUGH CLAIM"
+    )
+
+    cards = (
+        (
+            72,
+            "DETERMINISTIC BM25",
+            lexical["top1_recall"],
+            "PRIMARY SELECTOR",
+            "#36E6C3",
+        ),
+        (
+            406,
+            "LOCAL TRANSFORMER",
+            neural["top1_recall"],
+            "DID NOT REPLACE BM25",
+            "#9DB0C8",
+        ),
+        (
+            740,
+            "DISAGREEMENT GUARD",
+            guard["answer_passage_recall"],
+            "PROMISING, NOT CONCLUSIVE",
+            "#B69CFF",
+        ),
+    )
+    card_rows: list[str] = []
+    for x, label, value, note, color in cards:
+        card_rows.extend(
+            [
+                f'<rect x="{x}" y="248" width="300" height="158" rx="20" fill="#111D31" stroke="#273B57"/>',
+                f'<text x="{x + 24}" y="284" class="metric-label">{label}</text>',
+                f'<text x="{x + 24}" y="352" class="metric" fill="{color}">{value:.1%}</text>',
+                f'<text x="{x + 24}" y="385" class="metric-note">{note}</text>',
+            ]
+        )
+
+    return "\n".join(
+        [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">',
+            f'<title id="title">Entroly evidence: {escape(headline)}</title>',
+            f'<desc id="desc">{escape(str(report["claim_scope"]))} {status}.</desc>',
+            "<defs>",
+            '<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
+            '<stop offset="0" stop-color="#07111F"/><stop offset="0.58" stop-color="#0A1425"/><stop offset="1" stop-color="#14102A"/>',
+            "</linearGradient>",
+            '<radialGradient id="glow" cx="50%" cy="50%" r="50%">',
+            '<stop offset="0" stop-color="#704DFF" stop-opacity="0.24"/><stop offset="1" stop-color="#704DFF" stop-opacity="0"/>',
+            "</radialGradient>",
+            "</defs>",
+            '<rect width="1200" height="630" fill="url(#bg)"/>',
+            '<circle cx="1060" cy="84" r="280" fill="url(#glow)"/>',
+            '<path d="M0 536 C250 474 355 610 610 532 S970 452 1200 518" fill="none" stroke="#36E6C3" stroke-opacity="0.11" stroke-width="2"/>',
+            '<rect x="36" y="34" width="1128" height="562" rx="30" fill="none" stroke="#263A54" stroke-width="2"/>',
+            "<style>",
+            "text{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#F5F8FC}",
+            ".brand{font-size:19px;font-weight:800;letter-spacing:2.4px;fill:#36E6C3}",
+            ".badge{font-size:15px;font-weight:800;letter-spacing:1.2px;fill:#F1E9FF}",
+            ".headline{font-size:58px;font-weight:850;letter-spacing:-1.5px}",
+            ".subhead{font-size:23px;fill:#B8C5D8}",
+            ".metric-label{font-size:15px;font-weight:800;letter-spacing:1px;fill:#AEBED2}",
+            ".metric{font-size:56px;font-weight:850}",
+            ".metric-note{font-size:14px;font-weight:700;letter-spacing:.5px;fill:#8498B3}",
+            ".proof{font-size:18px;font-weight:700;fill:#E7EDF6}",
+            ".fine{font-size:15px;fill:#91A2B9}",
+            "</style>",
+            '<circle cx="78" cy="76" r="18" fill="#36E6C3"/><path d="M69 76h18M78 67v18" stroke="#07111F" stroke-width="4" stroke-linecap="round"/>',
+            '<text x="108" y="83" class="brand">ENTROLY EVIDENCE LAB</text>',
+            '<rect x="900" y="57" width="220" height="39" rx="19.5" fill="#211A3E" stroke="#6F55D9"/>',
+            f'<text x="1010" y="82" class="badge" text-anchor="middle">{status}</text>',
+            f'<text x="72" y="166" class="headline">{escape(headline)}</text>',
+            f'<text x="72" y="209" class="subhead">{escape(subhead)}</text>',
+            *card_rows,
+            '<rect x="72" y="438" width="996" height="82" rx="18" fill="#0B1728" stroke="#233853"/>',
+            f'<text x="98" y="474" class="proof">{guard["average_selected_passages"]:.2f} / {protocol["candidates_per_trial"]} passages selected on average</text>',
+            f'<text x="98" y="501" class="fine">{guard["passage_compression_ratio"]:.2f}x passage compression · lexical and neural champions are both kept only on disagreement</text>',
+            f'<text x="72" y="558" class="fine">Frozen SQuAD v2 · {protocol["test_trials"]} held-out trials · {protocol["distractors_per_trial"]} distractors each · retrieval only · exact McNemar p={paired["mcnemar_exact_p"]:.5f}</text>',
+            '<text x="72" y="584" class="fine">Verify every trial → benchmarks/results/neural_evidence_frontier.json</text>',
+            "</svg>",
+            "",
+        ]
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -579,13 +763,20 @@ def main() -> int:
     run_parser.add_argument("--calibration-fraction", type=float, default=0.5)
     run_parser.add_argument("--max-override-error-upper", type=float, default=0.10)
     run_parser.add_argument("--minimum-overrides", type=int, default=40)
+    run_parser.add_argument("--model-repository")
+    run_parser.add_argument("--model-revision")
+    run_parser.add_argument("--implementation-commit")
     run_parser.add_argument("--output", type=Path, required=True)
     run_parser.add_argument("--markdown", type=Path)
+    run_parser.add_argument("--svg", type=Path)
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("input", type=Path)
     render_parser = subparsers.add_parser("render")
     render_parser.add_argument("input", type=Path)
     render_parser.add_argument("--output", type=Path)
+    card_parser = subparsers.add_parser("render-card")
+    card_parser.add_argument("input", type=Path)
+    card_parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     if args.command == "run":
@@ -597,6 +788,9 @@ def main() -> int:
             calibration_fraction=args.calibration_fraction,
             max_override_error_upper=args.max_override_error_upper,
             minimum_overrides=args.minimum_overrides,
+            model_repository=args.model_repository,
+            model_revision=args.model_revision,
+            implementation_commit=args.implementation_commit,
         )
         verify_report(report)
         rendered_json = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -606,6 +800,9 @@ def main() -> int:
         if args.markdown:
             args.markdown.parent.mkdir(parents=True, exist_ok=True)
             args.markdown.write_text(rendered_markdown, encoding="utf-8")
+        if args.svg:
+            args.svg.parent.mkdir(parents=True, exist_ok=True)
+            args.svg.write_text(render_svg(report), encoding="utf-8")
         print(rendered_markdown, end="")
         return 0
     report = json.loads(args.input.read_text(encoding="utf-8"))
@@ -615,6 +812,12 @@ def main() -> int:
             f"VERIFIED {args.input}: {report['protocol']['trials']} trials, "
             f"headline_eligible={report['headline_eligible']}"
         )
+        return 0
+    if args.command == "render-card":
+        rendered_svg = render_svg(report)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered_svg, encoding="utf-8")
+        print(f"WROTE {args.output}")
         return 0
     rendered = render_markdown(report)
     if args.output:

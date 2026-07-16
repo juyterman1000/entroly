@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+<title id="title">Entroly evidence: The transformer lost.</title>
+<desc id="desc">Answer-bearing paragraph retrieval under fixed one-of-N selection on a frozen SQuAD v2 validation subset. NO BREAKTHROUGH CLAIM.</desc>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#07111F"/><stop offset="0.58" stop-color="#0A1425"/><stop offset="1" stop-color="#14102A"/>
+</linearGradient>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%">
+<stop offset="0" stop-color="#704DFF" stop-opacity="0.24"/><stop offset="1" stop-color="#704DFF" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bg)"/>
+<circle cx="1060" cy="84" r="280" fill="url(#glow)"/>
+<path d="M0 536 C250 474 355 610 610 532 S970 452 1200 518" fill="none" stroke="#36E6C3" stroke-opacity="0.11" stroke-width="2"/>
+<rect x="36" y="34" width="1128" height="562" rx="30" fill="none" stroke="#263A54" stroke-width="2"/>
+<style>
+text{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#F5F8FC}
+.brand{font-size:19px;font-weight:800;letter-spacing:2.4px;fill:#36E6C3}
+.badge{font-size:15px;font-weight:800;letter-spacing:1.2px;fill:#F1E9FF}
+.headline{font-size:58px;font-weight:850;letter-spacing:-1.5px}
+.subhead{font-size:23px;fill:#B8C5D8}
+.metric-label{font-size:15px;font-weight:800;letter-spacing:1px;fill:#AEBED2}
+.metric{font-size:56px;font-weight:850}
+.metric-note{font-size:14px;font-weight:700;letter-spacing:.5px;fill:#8498B3}
+.proof{font-size:18px;font-weight:700;fill:#E7EDF6}
+.fine{font-size:15px;fill:#91A2B9}
+</style>
+<circle cx="78" cy="76" r="18" fill="#36E6C3"/><path d="M69 76h18M78 67v18" stroke="#07111F" stroke-width="4" stroke-linecap="round"/>
+<text x="108" y="83" class="brand">ENTROLY EVIDENCE LAB</text>
+<rect x="900" y="57" width="220" height="39" rx="19.5" fill="#211A3E" stroke="#6F55D9"/>
+<text x="1010" y="82" class="badge" text-anchor="middle">NO BREAKTHROUGH CLAIM</text>
+<text x="72" y="166" class="headline">The transformer lost.</text>
+<text x="72" y="209" class="subhead">We published the result anyway—and kept deterministic retrieval primary.</text>
+<rect x="72" y="248" width="300" height="158" rx="20" fill="#111D31" stroke="#273B57"/>
+<text x="96" y="284" class="metric-label">DETERMINISTIC BM25</text>
+<text x="96" y="352" class="metric" fill="#36E6C3">99.0%</text>
+<text x="96" y="385" class="metric-note">PRIMARY SELECTOR</text>
+<rect x="406" y="248" width="300" height="158" rx="20" fill="#111D31" stroke="#273B57"/>
+<text x="430" y="284" class="metric-label">LOCAL TRANSFORMER</text>
+<text x="430" y="352" class="metric" fill="#9DB0C8">97.7%</text>
+<text x="430" y="385" class="metric-note">DID NOT REPLACE BM25</text>
+<rect x="740" y="248" width="300" height="158" rx="20" fill="#111D31" stroke="#273B57"/>
+<text x="764" y="284" class="metric-label">DISAGREEMENT GUARD</text>
+<text x="764" y="352" class="metric" fill="#B69CFF">99.3%</text>
+<text x="764" y="385" class="metric-note">PROMISING, NOT CONCLUSIVE</text>
+<rect x="72" y="438" width="996" height="82" rx="18" fill="#0B1728" stroke="#233853"/>
+<text x="98" y="474" class="proof">1.02 / 16 passages selected on average</text>
+<text x="98" y="501" class="fine">15.69x passage compression · lexical and neural champions are both kept only on disagreement</text>
+<text x="72" y="558" class="fine">Frozen SQuAD v2 · 300 held-out trials · 15 distractors each · retrieval only · exact McNemar p=0.21875</text>
+<text x="72" y="584" class="fine">Verify every trial → benchmarks/results/neural_evidence_frontier.json</text>
+</svg>
