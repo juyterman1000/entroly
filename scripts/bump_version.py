@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from _release_artifacts import MCPB_MANIFEST, rebuild_mcpb  # noqa: E402
 
 TARGETS = [
     ("pyproject.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
@@ -106,9 +111,16 @@ def main(argv: list[str]) -> int:
 
     for path, updated in pending.items():
         path.write_text(updated, encoding="utf-8")
+    artifacts: list[str] = []
+    if ROOT / MCPB_MANIFEST in pending:
+        bundle = rebuild_mcpb(ROOT)
+        artifacts.append(bundle.relative_to(ROOT).as_posix())
     for rel in dict.fromkeys(changed):
         print(f"  {rel} -> {new}")
-    print(f"bumped {replacement_count} target(s) across {len(pending)} file(s) to {new}")
+    for rel in artifacts:
+        print(f"  {rel} -> rebuilt")
+    file_count = len(pending) + len(artifacts)
+    print(f"bumped {replacement_count} target(s) across {file_count} file(s) to {new}")
     return 0
 
 

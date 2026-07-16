@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import zipfile
 from pathlib import Path
 
 
@@ -57,3 +59,31 @@ def test_synchronizer_never_rewrites_workflow_definitions(tmp_path: Path) -> Non
     assert '"version":"1.0.52"' in (
         tmp_path / "server.json"
     ).read_text(encoding="utf-8")
+
+
+def test_synchronizer_rebuilds_mcp_bundle_from_updated_manifest(tmp_path: Path) -> None:
+    module = _load_sync_module()
+    module.RELEASE_SURFACES = (
+        "pyproject.toml",
+        ".mcpb-build/manifest.json",
+    )
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "entroly"\nversion = "1.0.51"\n',
+        encoding="utf-8",
+    )
+    manifest = tmp_path / ".mcpb-build" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        '{"name":"entroly","version":"1.0.51"}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "entroly.mcpb").write_bytes(b"stale bundle")
+
+    changed = module.synchronize(tmp_path, "1.0.52")
+
+    assert "entroly.mcpb" in changed
+    with zipfile.ZipFile(tmp_path / "entroly.mcpb") as archive:
+        bundled = json.loads(archive.read("manifest.json"))
+        assert archive.namelist() == ["manifest.json"]
+    assert bundled["version"] == "1.0.52"

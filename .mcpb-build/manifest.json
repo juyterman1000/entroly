@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "entroly",
   "version": "1.0.62",
-  "description": "Open-source context control plane for AI coding agents. Compresses prompts 70-95%, stabilizes KV-cache prefixes, routes tasks to cheaper models, and verifies answers locally with WITNESS.",
+  "description": "Open-source Context OS for AI agents: context engineering, memory, recovery, receipts, verification, provider controls, and guarded learning.",
   "author": {
     "name": "juyterman1000",
     "url": "https://github.com/juyterman1000"

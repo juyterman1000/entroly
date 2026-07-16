@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import zipfile
 from pathlib import Path
 
 
@@ -75,6 +76,14 @@ def test_public_package_versions_are_1_0_62() -> None:
     assert _read_json("integrations/openclaw/package.json")["version"] == RELEASE_VERSION
     assert _read_json(".claude-plugin/manifest.json")["version"] == RELEASE_VERSION
     assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
+
+
+def test_bundled_mcpb_manifest_matches_release_source() -> None:
+    source = _read_json(".mcpb-build/manifest.json")
+    with zipfile.ZipFile(ROOT / "entroly.mcpb") as bundle:
+        bundled = json.loads(bundle.read("manifest.json"))
+
+    assert bundled == source
 
 
 def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
