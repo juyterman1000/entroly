@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup and usage questions
+    url: https://github.com/juyterman1000/entroly/discussions
+    about: Ask the community before filing a bug when behavior is unclear.
+  - name: Security vulnerability
+    url: https://github.com/juyterman1000/entroly/security/policy
+    about: Report vulnerabilities privately. Never disclose secrets in an issue.
+  - name: Documentation
+    url: https://juyterman1000.github.io/entroly/docs/index.html
+    about: Browse installation, architecture, and integration documentation.
