@@ -1,0 +1,89 @@
+name: Bug report
+description: Report a reproducible Entroly failure or regression
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Entroly. Do not include API keys, bearer
+        tokens, private source code, Context Commit recovery data, or other
+        secrets. Report vulnerabilities privately through SECURITY.md.
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I removed secrets and private source material from this report.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Python CLI or SDK
+        - MCP server
+        - HTTP proxy
+        - Rust/native engine
+        - Node/WASM package
+        - OpenClaw plugin
+        - Docker or binary package
+        - Documentation or website
+        - Release or marketplace
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Entroly version and install method
+      description: Paste `entroly --version` and say pip, uv, npm, Docker, Homebrew, binary, or source checkout.
+      placeholder: "1.0.x via pip install entroly[full]"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, architecture, Python or Node version, and agent/client version.
+      placeholder: "Windows 11 x86_64, Python 3.13, Codex ..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: List exact commands and the smallest synthetic input that reproduces the problem.
+      placeholder: |
+        1. Run ...
+        2. Configure ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and recovery
+      description: Say whether the original context was preserved, whether data was lost, and how you recovered.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Include relevant `entroly doctor`, `entroly verify-claims`, receipt warnings, and stack traces.
+      render: shell
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Links to a minimal public reproduction, screenshots, or suspected root cause.

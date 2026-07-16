@@ -1,0 +1,70 @@
+name: Feature request
+description: Propose a concrete user workflow or compatibility improvement
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues, discussions, and the roadmap.
+          required: true
+        - label: I can describe the user problem independently of a preferred implementation.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who is blocked, what are they trying to do, and what happens today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable success rather than only an API shape.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - CLI or onboarding
+        - SDK or public API
+        - MCP or agent integration
+        - Proxy or provider compatibility
+        - Receipts, recovery, or verification
+        - Performance or compression
+        - Memory or session intelligence
+        - Packaging or release
+        - Documentation or community
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: trust
+    attributes:
+      label: Trust and compatibility constraints
+      description: Note data-integrity, privacy, network, provider, cache, receipt, or backward-compatibility requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include workarounds or other tools you evaluated.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence of demand
+      description: Link reproducible examples, discussions, user reports, or benchmark workloads when available.
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Contribution interest
+      options:
+        - I can implement this with maintainer guidance
+        - I can help test or document it
+        - I can provide a reproducible workload
+        - I am requesting maintainer implementation

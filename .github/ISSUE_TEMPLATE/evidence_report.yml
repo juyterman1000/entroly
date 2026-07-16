@@ -1,0 +1,57 @@
+name: Benchmark or evidence report
+description: Report a reproducible result, claim discrepancy, or benchmark proposal
+title: "[Evidence]: "
+labels: ["benchmark", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Entroly treats benchmark claims as versioned evidence. Include enough
+        information for another person to reproduce the result.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Report type
+      options:
+        - Reproduction of an Entroly result
+        - Result that disagrees with an Entroly claim
+        - New benchmark workload or protocol
+        - Comparison with another tool
+        - Performance regression
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and environment
+      description: Entroly, baseline, model, tokenizer, hardware, operating system, and dependency versions.
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Protocol
+      description: Dataset/workload, split, token budget, prompts, sampling settings, seeds, commands, and scoring method.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result and raw artifacts
+      description: Provide aggregate numbers plus a public link or attachment containing per-case results.
+    validations:
+      required: true
+  - type: textarea
+    id: limitations
+    attributes:
+      label: Limitations and possible confounders
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Evidence checks
+      options:
+        - label: I distinguished measured, estimated, and inferred values.
+          required: true
+        - label: I did not include credentials or private data.
+          required: true
