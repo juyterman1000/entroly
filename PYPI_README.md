@@ -2,15 +2,13 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly_wordmark.svg" width="760" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Auditable Context Engineering for AI Agents</h1>
+<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
 
-<p align="center"><b>Know exactly what your AI agent saw.</b></p>
+<p align="center"><b>Keep your agent. Give it a Context OS.</b></p>
 
-Entroly is an open-source, auditable context engineering control plane for AI
-agents. It selects the highest-value evidence under a token budget, compresses
-selected context when useful, records what was selected and omitted, keeps
-compressed context recoverable, and produces verifiable Context Commits and
-receipts.
+Entroly is an open-source Context OS for AI agents: auditable context
+engineering, recoverable compression, memory, verification, provider controls,
+receipts, security, and guarded outcome learning in one local layer.
 
 ## Install
 

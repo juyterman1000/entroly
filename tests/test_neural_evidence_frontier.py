@@ -149,12 +149,14 @@ def test_share_card_is_bound_to_verified_trial_evidence() -> None:
 
     rendered = render_svg(report)
 
-    assert "The transformer lost." in rendered
-    assert "NO BREAKTHROUGH CLAIM" in rendered
-    assert "99.0%" in rendered
-    assert "97.7%" in rendered
-    assert "99.3%" in rendered
-    assert "p=0.21875" in rendered
+    assert "Keep your agent. Give it a Context OS." in rendered
+    assert "Read. Remember. Trust. Recover. Spend wisely. Learn from outcomes." in rendered
+    assert "16" in rendered
+    assert "1.02" in rendered
+    assert "298 / 300" in rendered
+    assert "ENTROLY EVIDENCE LAB" not in rendered
+    assert "NO BREAKTHROUGH CLAIM" not in rendered
+    assert "Generated answers and production savings were not measured." in rendered
     assert card_path.read_text(encoding="utf-8") == rendered
 
 
@@ -165,10 +167,12 @@ def test_public_story_keeps_the_negative_result_and_provenance_attached() -> Non
     ).read_text(encoding="utf-8")
 
     for claim in (
-        "The transformer lost. We published the result anyway.",
-        "**97.7%**",
-        "**99.0%**",
-        "**99.3%**",
+        "Keep your agent. Give it a Context OS.",
+        "One measured job of the Context OS",
+        "Frontier models reason. OpenClaw and Hermes run agents.",
+        "**297 of 300**",
+        "**293 of 300**",
+        "**298 of 300**",
         "**1.02 of 16 passages**",
         "`p=0.21875`",
         "this experiment measures retrieval",

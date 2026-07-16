@@ -1,7 +1,7 @@
 {
   "name": "entroly-wasm",
   "version": "1.0.62",
-  "description": "WebAssembly context engineering for AI agents: local compression, MCP tools, recovery, receipts, and verification without Python.",
+  "description": "WebAssembly Context OS for AI agents: local context engineering, compression, recovery, receipts, and verification without Python.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {

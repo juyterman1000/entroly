@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "entroly"
 version = "1.0.62"
 
-description = "Auditable context engineering for AI agents: select evidence, compress context, recover omissions, emit receipts, and verify answers."
+description = "Open-source Context OS for AI agents: auditable context engineering, compression, recovery, receipts, and verification."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"

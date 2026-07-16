@@ -94,10 +94,12 @@ def verify_neural_evidence_story():
     paired = metrics["paired"]
     guard = metrics["dual_channel_guard"]
     required_readme = (
-        "The transformer lost. We published the result anyway.",
-        f"**{metrics['local_transformer']['top1_recall']:.1%}**",
-        f"**{metrics['lexical_bm25']['top1_recall']:.1%}**",
-        f"**{guard['answer_passage_recall']:.1%}**",
+        "Keep your agent. Give it a Context OS.",
+        "One measured job of the Context OS",
+        "Frontier models reason. OpenClaw and Hermes run agents.",
+        f"**{metrics['lexical_bm25']['top1_correct']} of {protocol['test_trials']}**",
+        f"**{metrics['local_transformer']['top1_correct']} of {protocol['test_trials']}**",
+        f"**{guard['answer_passage_correct']} of {protocol['test_trials']}**",
         f"**{guard['average_selected_passages']:.2f} of {protocol['candidates_per_trial']} passages**",
         f"`p={paired['mcnemar_exact_p']:.5f}`",
         "this experiment measures retrieval",

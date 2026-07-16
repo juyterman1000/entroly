@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.juyterman1000/entroly",
   "title": "Entroly",
-  "description": "Auditable context engineering for AI agents with compression, recovery, receipts, and verification.",
+  "description": "Open-source Context OS for AI agents: context engineering, recovery, receipts, and verification.",
   "websiteUrl": "https://github.com/juyterman1000/entroly",
   "repository": {
     "url": "https://github.com/juyterman1000/entroly",

@@ -2,10 +2,10 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Auditable Context Engineering for AI Agents</h1>
+<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
 
-<p align="center"><b>Know exactly what your AI agent saw.</b><br>
-Entroly creates replayable <b>Context Commits</b>: content-addressed proof of the evidence selected, omitted, and kept recoverable for each model request.</p>
+<p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
+Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
 
 <p align="center">
   <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
@@ -60,23 +60,27 @@ Entroly creates replayable <b>Context Commits</b>: content-addressed proof of th
 
 ---
 
-## The transformer lost. We published the result anyway.
+## One measured job of the Context OS
 
 <p align="center">
-  <a href="docs/benchmarks/neural-evidence-frontier.md"><img src="docs/assets/neural_evidence_frontier.svg" width="900" alt="Frozen Entroly retrieval experiment: deterministic BM25 reached 99.0 percent top-1 recall, a local transformer reached 97.7 percent, and a disagreement guard reached 99.3 percent without passing a breakthrough gate"></a>
+  <a href="docs/benchmarks/neural-evidence-frontier.md"><img src="docs/assets/neural_evidence_frontier.svg" width="900" alt="Entroly selected 1.02 of 16 candidate passages on average while keeping the answer-bearing passage in 298 of 300 held-out retrieval questions"></a>
 </p>
 
-We tested whether a local transformer had earned the right to replace
-deterministic BM25 for answer-bearing context retrieval. It had not: **97.7%**
-versus **99.0%** held-out top-1 recall. Entroly keeps the deterministic path
-primary instead of turning a weaker neural result into a marketing claim.
+Entroly is much more than a compressor: it also ships memory, recovery,
+verification, provider controls, security, receipts, and guarded outcome
+learning. This frozen benchmark isolates one job in that system: choosing the
+answer-bearing evidence before a model request.
 
-The useful signal was disagreement. Retaining both champions only on the six
-lexical/neural disagreements reached **99.3%** answer-passage recall while
-selecting **1.02 of 16 passages** on average. That is promising engineering
-evidence, not a breakthrough claim: the primary-selector comparison was not
+In this frozen retrieval test, Entroly selected **1.02 of 16 passages** on
+average while keeping the answer-bearing passage in **298 of 300** held-out
+questions. This demonstrates one Context OS primitive: selecting a small
+evidence set without blindly discarding the passage needed to answer.
+
+Under the hood, traditional BM25 found the passage in **297 of 300** questions
+and a local transformer found it in **293 of 300**. They disagreed six times;
+the guard kept both candidates only on those cases. The point difference was not
 statistically conclusive (`p=0.21875`), and this experiment measures retrieval,
-not generated answers or production savings.
+not generated answers, token savings, or production cost.
 
 ```bash
 python -m benchmarks.neural_evidence_frontier verify benchmarks/results/neural_evidence_frontier.json
@@ -90,9 +94,18 @@ python -m benchmarks.neural_evidence_frontier verify benchmarks/results/neural_e
 
 ## What it does
 
-Entroly is an open-source, auditable context engineering control plane for AI agents. It decides what context to send, compresses selected evidence when useful, records what it left out, and produces a receipt you can inspect before trusting a hard multi-file answer.
+Entroly is a local Context OS for AI agents. It unifies the full lifecycle of the information surrounding a model request.
 
-**OpenClaw runs the agents and conversations. Entroly controls, remembers, verifies, and proves the context those agents received.** The same boundary applies to Claude Code and Codex: Entroly augments the agent you already use instead of becoming another chat client.
+**Frontier models reason. OpenClaw and Hermes run agents. Entroly manages what those agents read, remember, trust, recover, spend, and learn.** The same boundary applies to Claude Code and Codex: Entroly augments the agent you already use instead of becoming another chat client.
+
+| Context OS job | What Entroly does |
+|---|---|
+| **Read** | Discovers, ranks, deduplicates, compresses, and secures evidence under an explicit budget. |
+| **Remember** | Maintains working, episodic, semantic, checkpoint, and knowledge-vault context locally. |
+| **Trust** | Checks prompts, code, provenance, and generated claims with layered security and verification. |
+| **Recover** | Keeps omitted originals reachable through content-addressed handles and replayable Context Commits. |
+| **Spend** | Preserves cache boundaries, accounts for provider usage, and applies explicit routing and budget policy. |
+| **Learn** | Uses tests, CI, command exits, edits, and user outcomes to improve guarded local policies and skills. |
 
 Most compression tools shrink whatever text the agent already chose. Entroly starts one step earlier: it chooses the highest-value evidence first, compresses only after selection, keeps originals recoverable, then verifies the answer against the evidence.
 

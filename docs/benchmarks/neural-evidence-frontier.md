@@ -1,18 +1,24 @@
-# The transformer lost. We published the result anyway.
+# One measured job of the Context OS
 
 <p align="center">
-  <a href="../../benchmarks/results/neural_evidence_frontier.json"><img src="../assets/neural_evidence_frontier.svg" width="900" alt="Frozen Entroly retrieval experiment: deterministic BM25 reached 99.0 percent top-1 recall, a local transformer reached 97.7 percent, and a disagreement guard reached 99.3 percent without passing a breakthrough gate"></a>
+  <a href="../../benchmarks/results/neural_evidence_frontier.json"><img src="../assets/neural_evidence_frontier.svg" width="900" alt="Entroly selected 1.02 of 16 candidate passages on average while keeping the answer-bearing passage in 298 of 300 held-out retrieval questions"></a>
 </p>
 
-Entroly tested a tempting idea: replace deterministic lexical retrieval with a
-local transformer for answer-bearing context selection. On this frozen
-holdout, that idea did not earn the right to ship.
+Entroly is a local Context OS spanning selection, compression, memory, recovery,
+verification, provider controls, receipts, security, and guarded learning. This
+benchmark isolates one mechanism in that larger system: selecting the
+answer-bearing evidence before a model request.
 
-The useful result was the disagreement. Keeping lexical retrieval primary and
-retaining both champions only when the lexical and neural rankings disagreed
-recovered one additional answer-bearing passage while selecting only `1.02`
-of `16` passages on average. That guard result is promising, not statistically
-conclusive.
+From `16` candidate passages, Entroly selected `1.02` on average while keeping
+the answer-bearing passage in
+`298 / 300` held-out questions. It does not claim that this test proves better
+generated answers or lower production bills.
+
+The mechanism is deliberately secondary to the value. BM25 found the passage
+in `297 / 300` questions and the local transformer found it in `293 / 300`.
+They disagreed six times, so the guard retained both candidates only on those
+cases. That point difference is useful engineering evidence, not a statistically
+conclusive improvement.
 
 ## What was frozen
 
