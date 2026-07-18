@@ -8,8 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.63"
-HOMEBREW_FORMULA_VERSION = "1.0.62"
-HOMEBREW_FORMULA_SHA256 = "5f1bb72a81521c01f8951c22fe7761fcbcc60fb0b107ba0153bebe2794b37064"
+HOMEBREW_FORMULA_VERSION = "1.0.63"
+HOMEBREW_FORMULA_SHA256 = "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
