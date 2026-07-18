@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.62"
+RELEASE_VERSION = "1.0.63"
 HOMEBREW_FORMULA_VERSION = "1.0.62"
 HOMEBREW_FORMULA_SHA256 = "5f1bb72a81521c01f8951c22fe7761fcbcc60fb0b107ba0153bebe2794b37064"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
@@ -66,7 +67,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_62() -> None:
+def test_public_package_versions_are_1_0_63() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -75,6 +76,14 @@ def test_public_package_versions_are_1_0_62() -> None:
     assert _read_json("integrations/openclaw/package.json")["version"] == RELEASE_VERSION
     assert _read_json(".claude-plugin/manifest.json")["version"] == RELEASE_VERSION
     assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
+
+
+def test_bundled_mcpb_manifest_matches_release_source() -> None:
+    source = _read_json(".mcpb-build/manifest.json")
+    with zipfile.ZipFile(ROOT / "entroly.mcpb") as bundle:
+        bundled = json.loads(bundle.read("manifest.json"))
+
+    assert bundled == source
 
 
 def test_openclaw_install_metadata_identifies_clawhub_target() -> None:

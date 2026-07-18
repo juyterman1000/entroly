@@ -2194,6 +2194,16 @@ def create_mcp_server(
     _last_opt_ctx = {}  # tracks last optimization for feedback attribution
     _vault_beliefs_loaded = False  # lazy: load vault beliefs on first optimize
     _mcp_belief_vault = [None]  # lazy VaultManager cell for belief-conditioning
+    _proof_runtime_cell = [None]  # lazy to avoid key creation until explicitly used
+
+    def _proof_runtime():
+        runtime = _proof_runtime_cell[0]
+        if runtime is None:
+            from .proof_guided_runtime import ProofGuidedRuntime
+
+            runtime = ProofGuidedRuntime(Path(_checkpoint_dir) / "proof-guided")
+            _proof_runtime_cell[0] = runtime
+        return runtime
 
 
     # ── Read-only discovery surfaces ────────────────────────────────
@@ -2547,7 +2557,9 @@ def create_mcp_server(
         except Exception as _ccr_err:
             logger.debug("CCR capture skipped: %s", _ccr_err)
 
-        # ── Record savings to ValueTracker (funds evolution budget) ──
+        # MCP optimization is local-only evidence. The tracker cannot prove
+        # this result reached a paid provider, so it never funds evolution or
+        # supports a dollar-savings claim.
         tokens_saved = result.get("tokens_saved", 0)
         if tokens_saved > 0:
             try:
@@ -2556,6 +2568,7 @@ def create_mcp_server(
                     model=result.get("model", ""),
                     duplicates=result.get("duplicates_caught", 0),
                     optimized=True,
+                    source="mcp",
                 )
             except Exception:
                 pass  # Never fail the optimization for tracking
@@ -3258,6 +3271,88 @@ def create_mcp_server(
             return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
 
     @mcp.tool()
+    def prepare_proof_guided_context(
+        path: str,
+        query: str,
+        token_budget: int = 8000,
+        max_rounds: int = 3,
+        recovery_token_budget: int = 1200,
+        max_chunks_per_round: int = 3,
+        idempotency_key: str = "",
+    ) -> str:
+        """Prepare a durable proof-guided model request from local documents.
+
+        This tool performs only local selection, security checks, exact-recovery
+        commitments, and signed auditing. It does not call a model. Send the
+        returned ``request`` through the host's configured model route, then
+        pass the model text to ``advance_proof_guided_context``. The path must
+        remain inside the attached project root.
+        """
+        try:
+            from .context_receipts.ingest import read_documents_from_path
+
+            project_root = Path(
+                os.environ.get("ENTROLY_SOURCE", os.getcwd())
+            ).resolve()
+            candidate = Path(path).expanduser()
+            if not candidate.is_absolute():
+                candidate = project_root / candidate
+            candidate = candidate.resolve()
+            try:
+                candidate.relative_to(project_root)
+            except ValueError as exc:
+                raise ValueError(
+                    f"path must remain within the project root: {path}"
+                ) from exc
+            documents = read_documents_from_path(candidate)
+            result = _proof_runtime().prepare(
+                documents,
+                query=query,
+                token_budget=token_budget,
+                max_rounds=max_rounds,
+                recovery_token_budget=recovery_token_budget,
+                max_chunks_per_round=max_chunks_per_round,
+                idempotency_key=idempotency_key or None,
+            )
+            return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
+        except ValueError as exc:
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
+    def advance_proof_guided_context(
+        session_id: str,
+        model_output: str,
+        idempotency_key: str,
+    ) -> str:
+        """Verify one model round and return exact evidence or a final answer.
+
+        The operation is durable and idempotent. A continuation response has
+        ``status=awaiting_model`` and a new request whose committed prefix is
+        byte-identical. A terminal response returns a locally verified output.
+        No provider call is performed by Entroly.
+        """
+        try:
+            result = _proof_runtime().advance(
+                session_id,
+                model_output=model_output,
+                idempotency_key=idempotency_key,
+            )
+            return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
+    def inspect_proof_guided_context(session_id: str) -> str:
+        """Inspect the last durable proof-guided response without advancing it."""
+        try:
+            result = _proof_runtime().inspect(session_id)
+            return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
     def checkpoint_state(
         task_description: str = "",
         current_step: str = "",
@@ -3370,9 +3465,13 @@ def create_mcp_server(
         optimized_cost = mem.get("optimized_cost_per_call_usd", 0)
         try:
             _lt = get_tracker().get_trends().get("lifetime", {})
-            cost_saved_usd = float(_lt.get("cost_saved_usd", 0) or 0)
-            real_tokens_saved = int(_lt.get("tokens_saved", 0) or 0)
-            real_requests = int(_lt.get("requests_optimized", 0) or 0)
+            cost_saved_usd = float(
+                _lt.get("provider_cost_avoided_usd", 0) or 0
+            )
+            real_tokens_saved = int(_lt.get("provider_tokens_saved", 0) or 0)
+            real_requests = int(
+                _lt.get("provider_requests_optimized", 0) or 0
+            )
         except Exception:
             cost_saved_usd = 0.0
             real_tokens_saved = 0
@@ -3440,16 +3539,25 @@ def create_mcp_server(
 
         dashboard = {
             "💰 money": {
-                "cost_saved_total_usd": f"${cost_saved_usd:.4f}",
+                "modeled_api_cost_avoided_usd": f"${cost_saved_usd:.4f}",
                 "tokens_saved_total": f"{real_tokens_saved:,}",
+                "provider_bound_requests": real_requests,
+                # Compatibility aliases for clients built against the older
+                # dashboard shape. Their values are now provider-classified.
+                "cost_saved_total_usd": f"${cost_saved_usd:.4f}",
                 "real_llm_requests": real_requests,
+                "measurement_note": (
+                    "Dollar values model input-cost avoidance from measured "
+                    "provider-bound token reduction; they are not invoices."
+                ),
                 "cost_per_call_without_entroly": f"${naive_cost:.4f}",
                 "cost_per_call_with_entroly": f"${optimized_cost:.4f}",
                 "savings_pct": f"{savings_pct:.0f}%",
                 "session_roi_usd": f"${session_roi:.4f}",
                 "insight": (
-                    f"${cost_saved_usd:.4f} saved across {real_requests} real LLM requests "
-                    f"intercepted by the proxy. Engine ran {total_opts} internal optimize "
+                    f"${cost_saved_usd:.4f} modeled API input cost avoided across "
+                    f"{real_requests} provider-bound requests intercepted by the proxy. "
+                    f"Engine ran {total_opts} internal optimize "
                     f"calls (CLI/MCP); those don't count toward $ saved."
                     if real_requests > 0 else
                     f"No LLM requests intercepted yet — point your AI tool at "
@@ -5061,7 +5169,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.62"
+        _version = "1.0.63"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

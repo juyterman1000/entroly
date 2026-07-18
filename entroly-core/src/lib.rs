@@ -1737,8 +1737,11 @@ impl EntrolyEngine {
                 // Sort all files by TPKS score (descending)
                 let mut sorted_tpks: Vec<(String, f64)> =
                     tpks_scores.iter().map(|(k, &v)| (k.clone(), v)).collect();
-                sorted_tpks
-                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                sorted_tpks.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
 
                 // Assign rank-percentile scores
                 let total = sorted_tpks.len().max(1) as f64;
@@ -1767,7 +1770,8 @@ impl EntrolyEngine {
                 };
 
                 // PageRank (tie-breaker only, max 2% influence)
-                let pr_ids: Vec<String> = self.fragments.keys().cloned().collect();
+                let mut pr_ids: Vec<String> = self.fragments.keys().cloned().collect();
+                pr_ids.sort();
                 let pagerank = hierarchical::compute_pagerank(&self.dep_graph, &pr_ids, 15);
                 let max_pr = pagerank
                     .values()
@@ -2050,7 +2054,13 @@ impl EntrolyEngine {
                     .clamp(0.15, 0.90);
             }
 
+            // HashMap iteration order is intentionally randomized.  Selection must not
+            // inherit that entropy: it makes identical benchmark trials disagree and
+            // can also turn score ties into process-order-dependent user behavior.
+            // Fragment IDs share one engine prefix and a monotonic counter, so sorting
+            // here recovers stable ingest order without changing the scoring policy.
             let mut frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
+            frags.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
 
             // ── SKS Phase 1: Pin precision files ─────────────────────
             // Temporarily mark path-matched files as pinned so IOS/knapsack
@@ -2072,8 +2082,11 @@ impl EntrolyEngine {
                 // Sort by TPKS descending — pin highest-precision files first!
                 // Files matching 3 query terms in path get pinned before
                 // files matching only 1 term.
-                pin_candidates
-                    .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                pin_candidates.sort_by(|a, b| {
+                    b.2.partial_cmp(&a.2)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
                 for (fid, tc, _) in &pin_candidates {
                     if pin_budget_used + tc <= max_pin_budget {
                         pin_budget_used += tc;
@@ -4827,6 +4840,35 @@ impl EntrolyEngine {
         self.exploration_rate = rate.clamp(0.0, 1.0);
     }
 
+    /// Set the local exploration PRNG state for reproducible experiments.
+    ///
+    /// This controls only Entroly's lightweight xorshift exploration stream;
+    /// it is not a cryptographic RNG and must not be used for secrets. A zero
+    /// seed is mapped to one because xorshift's all-zero state is absorbing.
+    pub fn set_rng_seed(&mut self, seed: u64) {
+        self.rng_state = seed.max(1);
+    }
+
+    /// Put a fresh engine into a reproducible benchmark identity.
+    ///
+    /// Fragment identifiers participate in several graph, cache, and tie-break
+    /// paths, so seeding only the exploration PRNG is not sufficient for an
+    /// exact replay.  This method is deliberately fail-closed once ingestion
+    /// has begun: changing an identity prefix after IDs exist would corrupt
+    /// graph and index references.
+    pub fn set_benchmark_seed(&mut self, seed: u64) -> PyResult<()> {
+        if self.id_counter != 0 || !self.fragments.is_empty() || !self.fragment_slot_ids.is_empty()
+        {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "set_benchmark_seed must be called before ingest",
+            ));
+        }
+        let normalized = seed.max(1);
+        self.instance_id = normalized;
+        self.rng_state = normalized;
+        Ok(())
+    }
+
     /// Set the resonance weight (5th PRISM dimension).
     ///
     /// Wires the Python ArchetypeOptimizer's per-archetype `w_resonance`
@@ -6404,6 +6446,21 @@ mod tests {
         assert!((engine.exploration_rate - 0.0).abs() < 0.001);
         engine.set_exploration_rate(0.1);
         assert!((engine.exploration_rate - 0.1).abs() < 0.001);
+
+        engine.set_rng_seed(42);
+        assert_eq!(engine.rng_state, 42);
+        engine.set_rng_seed(0);
+        assert_eq!(engine.rng_state, 1);
+
+        engine.set_benchmark_seed(77).unwrap();
+        assert_eq!(engine.instance_id, 77);
+        assert_eq!(engine.rng_state, 77);
+
+        engine.fragments.insert(
+            "f1".into(),
+            ContextFragment::new("f1".into(), "evidence".into(), 1, "test".into()),
+        );
+        assert!(engine.set_benchmark_seed(99).is_err());
     }
 
     // ═══════════════════════════════════════════════════════════════════════

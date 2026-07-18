@@ -1,10 +1,11 @@
 /**
- * ValueTracker — JS port of entroly/value_tracker.py (schema v3)
+ * ValueTracker — JS port of entroly/value_tracker.py (schema v4)
  *
- * Persistent, lifetime-savings accounting with the self-funded evolution
- * budget invariant:
+ * Persistent, evidence-classified value accounting. Provider-bound reductions
+ * may support modeled cost avoidance; local-only and legacy reductions do not.
+ * The bounded evolution budget uses only provider-classified value:
  *
- *     C_spent(t)  ≤  τ · S(t)         (τ = 5%)
+ *     C_spent(t)  ≤  τ · S_provider(t)         (τ = 5%)
  *
  * CROSS-RUNTIME CONTRACT: this writes the SAME file, SAME directory and
  * SAME JSON schema as the Python tracker so that one shared dashboard
@@ -26,7 +27,8 @@ const os = require('os');
 const EVOLUTION_TAX_RATE = 0.05;
 const FILE_NAME = 'value_tracker.json';
 const ACTIVITY_NAME = 'activity.jsonl';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
+const PRICING_AS_OF = '2026-05';
 const MAX_DAILY = 90, MAX_WEEKLY = 52, MAX_MONTHLY = 24, MAX_ACTIVITY = 200;
 
 // Per-model $/1M tokens — kept in sync with entroly/value_tracker.py (×1000).
@@ -65,6 +67,20 @@ function estimateCost(tokens, model = '') {
     }
   }
   return (tokens / 1_000_000) * COST_PER_M[key || 'default'];
+}
+
+function hasPricedModel(model = '') {
+  if (!model) return false;
+  let normalized = String(model).toLowerCase();
+  for (const [alias, canonical] of Object.entries(MODEL_ALIASES)) {
+    if (normalized.startsWith(alias)) {
+      normalized = canonical + normalized.slice(alias.length);
+      break;
+    }
+  }
+  return Object.keys(COST_PER_M)
+    .filter(key => key !== 'default')
+    .some(key => normalized.startsWith(key));
 }
 
 // ── UTC date keys — MUST match Python time.gmtime()-based keys ──────────
@@ -127,6 +143,13 @@ class ValueTracker {
       lifetime: {
         tokens_saved: 0, cost_saved_usd: 0.0,
         requests_optimized: 0, requests_total: 0, duplicates_caught: 0,
+        provider_tokens_saved: 0, provider_cost_avoided_usd: 0.0,
+        provider_requests: 0, provider_requests_optimized: 0,
+        provider_unpriced_tokens: 0, provider_unpriced_requests: 0,
+        local_tokens_reduced: 0, local_operations: 0,
+        unclassified_tokens_reduced: 0,
+        unclassified_cost_estimate_usd: 0.0,
+        unclassified_operations: 0,
         first_seen: now, last_seen: now,
         evolution_spent_usd: 0.0, evolution_attempts: 0,
         evolution_successes: 0,
@@ -138,15 +161,57 @@ class ValueTracker {
   }
 
   _migrate(data) {
-    // Backward-compatible forward migration (v2 → v3): backfill any
-    // missing keys/buckets without touching existing counters.
+    // Backward-compatible forward migration: preserve old mixed counters as
+    // unclassified instead of presenting them as provider-bound savings.
     const base = this._defaults();
     data.lifetime = data.lifetime || {};
+    const previousVersion = Number(data.version || 0);
+    if (previousVersion < 4) {
+      const lt = data.lifetime;
+      if (!('unclassified_tokens_reduced' in lt)) {
+        lt.unclassified_tokens_reduced = Number(lt.tokens_saved || 0);
+      }
+      if (!('unclassified_cost_estimate_usd' in lt)) {
+        lt.unclassified_cost_estimate_usd = Number(lt.cost_saved_usd || 0);
+      }
+      if (!('unclassified_operations' in lt)) {
+        lt.unclassified_operations = Number(lt.requests_optimized || 0);
+      }
+      lt.cost_saved_usd = Number(lt.provider_cost_avoided_usd || 0);
+    }
     for (const [k, v] of Object.entries(base.lifetime)) {
       if (!(k in data.lifetime)) data.lifetime[k] = v;
     }
     for (const b of ['daily', 'weekly', 'monthly']) {
       if (!data[b] || typeof data[b] !== 'object') data[b] = {};
+      if (previousVersion < 4) {
+        for (const row of Object.values(data[b])) {
+          if (!row || typeof row !== 'object') continue;
+          if (!('unclassified_tokens_reduced' in row)) {
+            row.unclassified_tokens_reduced = Number(row.tokens_saved || 0);
+          }
+          if (!('unclassified_cost_estimate_usd' in row)) {
+            row.unclassified_cost_estimate_usd = Number(row.cost_saved || 0);
+          }
+          if (!('unclassified_operations' in row)) {
+            row.unclassified_operations = Number(row.requests || 0);
+          }
+          row.cost_saved = Number(row.provider_cost_avoided_usd || 0);
+          const periodDefaults = {
+            provider_tokens_saved: 0,
+            provider_cost_avoided_usd: 0.0,
+            provider_requests: 0,
+            provider_requests_optimized: 0,
+            provider_unpriced_tokens: 0,
+            provider_unpriced_requests: 0,
+            local_tokens_reduced: 0,
+            local_operations: 0,
+          };
+          for (const [field, value] of Object.entries(periodDefaults)) {
+            if (!(field in row)) row[field] = value;
+          }
+        }
+      }
     }
     data.version = SCHEMA_VERSION;
     return data;
@@ -179,12 +244,43 @@ class ValueTracker {
     } catch (_) { /* best-effort */ }
   }
 
-  _bump(bucketName, key, tokens, cost) {
+  _bump(bucketName, key, tokens, cost, channel, optimized, providerPriced) {
     const bucket = this._data[bucketName] || (this._data[bucketName] = {});
-    if (!bucket[key]) bucket[key] = { tokens_saved: 0, cost_saved: 0.0, requests: 0 };
-    bucket[key].tokens_saved += tokens;
-    bucket[key].cost_saved = +(bucket[key].cost_saved + cost).toFixed(6);
-    bucket[key].requests += 1;
+    const defaults = {
+      tokens_saved: 0, cost_saved: 0.0, requests: 0,
+      provider_tokens_saved: 0, provider_cost_avoided_usd: 0.0,
+      provider_requests: 0, provider_requests_optimized: 0,
+      provider_unpriced_tokens: 0, provider_unpriced_requests: 0,
+      local_tokens_reduced: 0, local_operations: 0,
+      unclassified_tokens_reduced: 0,
+      unclassified_cost_estimate_usd: 0.0,
+      unclassified_operations: 0,
+    };
+    if (!bucket[key]) bucket[key] = { ...defaults };
+    const row = bucket[key];
+    for (const [field, value] of Object.entries(defaults)) {
+      if (!(field in row)) row[field] = value;
+    }
+    row.tokens_saved += tokens;
+    row.requests += 1;
+    if (channel === 'provider') {
+      row.cost_saved = +(row.cost_saved + cost).toFixed(6);
+      row.provider_tokens_saved += tokens;
+      row.provider_cost_avoided_usd = +(row.provider_cost_avoided_usd + cost).toFixed(6);
+      row.provider_requests += 1;
+      if (optimized) row.provider_requests_optimized += 1;
+      if (!providerPriced) {
+        row.provider_unpriced_tokens += tokens;
+        row.provider_unpriced_requests += 1;
+      }
+    } else if (channel === 'local') {
+      row.local_tokens_reduced += tokens;
+      row.local_operations += 1;
+    } else {
+      row.unclassified_tokens_reduced += tokens;
+      row.unclassified_cost_estimate_usd = +(row.unclassified_cost_estimate_usd + cost).toFixed(6);
+      row.unclassified_operations += 1;
+    }
     const limit = { daily: MAX_DAILY, weekly: MAX_WEEKLY, monthly: MAX_MONTHLY }[bucketName];
     const ks = Object.keys(bucket);
     if (ks.length > limit) {
@@ -193,19 +289,44 @@ class ValueTracker {
     }
   }
 
-  record({ tokensSaved = 0, model = '', duplicates = 0, optimized = true } = {}) {
-    const cost = estimateCost(tokensSaved, model);
+  record({ tokensSaved = 0, model = '', duplicates = 0, optimized = true, source = 'npm' } = {}) {
+    tokensSaved = Math.max(0, Number(tokensSaved) || 0);
+    const normalizedSource = String(source || 'unclassified').toLowerCase();
+    const channel = ['provider', 'proxy', 'gateway'].includes(normalizedSource)
+      ? 'provider'
+      : ['sdk', 'npm', 'mcp', 'local'].includes(normalizedSource)
+        ? 'local' : 'unclassified';
+    const estimatedCost = estimateCost(tokensSaved, model);
+    const providerPriced = channel !== 'provider' || hasPricedModel(model);
+    const cost = providerPriced ? estimatedCost : 0;
     const now = new Date();
     const lt = this._data.lifetime;
     lt.tokens_saved += tokensSaved;
-    lt.cost_saved_usd = +(lt.cost_saved_usd + cost).toFixed(6);
     lt.requests_total = (lt.requests_total || 0) + 1;
     if (optimized) lt.requests_optimized += 1;
     lt.duplicates_caught = (lt.duplicates_caught || 0) + duplicates;
     lt.last_seen = Date.now() / 1000;
-    this._bump('daily', _dayKey(now), tokensSaved, cost);
-    this._bump('weekly', _weekKey(now), tokensSaved, cost);
-    this._bump('monthly', _monthKey(now), tokensSaved, cost);
+    if (channel === 'provider') {
+      lt.cost_saved_usd = +(lt.cost_saved_usd + cost).toFixed(6);
+      lt.provider_tokens_saved += tokensSaved;
+      lt.provider_cost_avoided_usd = +(lt.provider_cost_avoided_usd + cost).toFixed(6);
+      lt.provider_requests += 1;
+      if (optimized) lt.provider_requests_optimized += 1;
+      if (!providerPriced) {
+        lt.provider_unpriced_tokens += tokensSaved;
+        lt.provider_unpriced_requests += 1;
+      }
+    } else if (channel === 'local') {
+      lt.local_tokens_reduced += tokensSaved;
+      lt.local_operations += 1;
+    } else {
+      lt.unclassified_tokens_reduced += tokensSaved;
+      lt.unclassified_cost_estimate_usd = +(lt.unclassified_cost_estimate_usd + estimatedCost).toFixed(6);
+      lt.unclassified_operations += 1;
+    }
+    this._bump('daily', _dayKey(now), tokensSaved, cost, channel, optimized, providerPriced);
+    this._bump('weekly', _weekKey(now), tokensSaved, cost, channel, optimized, providerPriced);
+    this._bump('monthly', _monthKey(now), tokensSaved, cost, channel, optimized, providerPriced);
     this._save();
     this._activity.push({
       ts: +(Date.now() / 1000).toFixed(3),
@@ -213,10 +334,12 @@ class ValueTracker {
       summary: `Optimized request: saved ${tokensSaved.toLocaleString()} tokens`
         + (model ? ` (${model})` : ''),
       tokens_saved: tokensSaved,
-      cost_saved_usd: +cost.toFixed(6),
+      cost_saved_usd: +(channel === 'provider' ? cost : 0).toFixed(6),
+      modeled_cost_avoided_usd: +(channel === 'provider' ? cost : 0).toFixed(6),
       model: model || '',
       duplicates,
-      source: 'npm',
+      source: normalizedSource,
+      measurement_channel: channel,
     });
     this._saveActivity();
     return { tokensSaved, costSaved: cost };
@@ -262,7 +385,7 @@ class ValueTracker {
 
   getEvolutionBudget() {
     const lt = this._data.lifetime;
-    const lifetimeSaved = lt.cost_saved_usd || 0;
+    const lifetimeSaved = lt.provider_cost_avoided_usd || 0;
     const totalSpent = lt.evolution_spent_usd || 0;
     const totalEarned = lifetimeSaved * EVOLUTION_TAX_RATE;
     const available = Math.max(0, totalEarned - totalSpent);
@@ -277,7 +400,7 @@ class ValueTracker {
 
   recordEvolutionSpend(costUsd, success = false) {
     const lt = this._data.lifetime;
-    const lifetimeSaved = lt.cost_saved_usd || 0;
+    const lifetimeSaved = lt.provider_cost_avoided_usd || 0;
     const currentSpent = lt.evolution_spent_usd || 0;
     const totalEarned = lifetimeSaved * EVOLUTION_TAX_RATE;
     const available = totalEarned - currentSpent;
@@ -308,6 +431,53 @@ class ValueTracker {
       weekly: this._sortedBucket('weekly', 12),
       monthly: this._sortedBucket('monthly', 12),
       activity: this._activity.slice(-50).reverse(),
+    };
+  }
+
+  getValueReceipt() {
+    const lifetime = { ...this._data.lifetime };
+    const daily = this._sortedBucket('daily', 90);
+    const providerDays = daily.filter(row => Number(row.provider_requests || 0) > 0).length;
+    const localDays = daily.filter(row => Number(row.local_operations || 0) > 0).length;
+    return {
+      schema_version: 'entroly.value-receipt.v1',
+      provider_path: {
+        requests_observed: Number(lifetime.provider_requests || 0),
+        requests_optimized: Number(lifetime.provider_requests_optimized || 0),
+        input_tokens_reduced: Number(lifetime.provider_tokens_saved || 0),
+        modeled_input_cost_avoided_usd: Number(
+          Number(lifetime.provider_cost_avoided_usd || 0).toFixed(6)
+        ),
+        active_days: providerDays,
+        unpriced_requests: Number(lifetime.provider_unpriced_requests || 0),
+        unpriced_input_tokens: Number(lifetime.provider_unpriced_tokens || 0),
+        evidence: 'Pre/post token counts on provider-bound requests; modeled dollars are not invoices. Requests without an explicit catalog match remain unpriced.',
+      },
+      local_operations: {
+        operations: Number(lifetime.local_operations || 0),
+        tokens_reduced: Number(lifetime.local_tokens_reduced || 0),
+        active_days: localDays,
+        dollar_claimed_usd: 0.0,
+        evidence: 'npm, MCP, SDK, and local reductions; provider delivery is not observable.',
+      },
+      legacy_unclassified: {
+        operations: Number(lifetime.unclassified_operations || 0),
+        tokens_reduced: Number(lifetime.unclassified_tokens_reduced || 0),
+        historical_cost_estimate_usd: Number(
+          Number(lifetime.unclassified_cost_estimate_usd || 0).toFixed(6)
+        ),
+        dollar_claimed_usd: 0.0,
+        evidence: 'Preserved unknown-source history; excluded from provider savings.',
+      },
+      trust_signals: {
+        unsupported_claims_blocked: Number(lifetime.hallucinations_blocked || 0),
+        routing_decisions: Number(lifetime.routing_decisions || 0),
+        modeled_routing_cost_avoided_usd: Number(
+          Number(lifetime.routing_saved_usd || 0).toFixed(6)
+        ),
+      },
+      pricing: { source: 'bundled', as_of: PRICING_AS_OF },
+      generated_at_unix: +(Date.now() / 1000).toFixed(3),
     };
   }
 

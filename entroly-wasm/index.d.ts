@@ -55,6 +55,32 @@ export function wrapOpenAI<TClient>(client: TClient, options?: EntrolyAppSdkOpti
 export function wrapAnthropic<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
 export function wrapGemini<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
 
+export interface EntrolyValueReceipt {
+  schema_version: "entroly.value-receipt.v1";
+  provider_path: Record<string, number | string>;
+  local_operations: Record<string, number | string>;
+  legacy_unclassified: Record<string, number | string>;
+  trust_signals: Record<string, number>;
+  pricing: { source: string; as_of: string };
+  generated_at_unix: number;
+}
+
+export class ValueTracker {
+  constructor(dataDir?: string | null);
+  record(input?: {
+    tokensSaved?: number;
+    model?: string;
+    duplicates?: number;
+    optimized?: boolean;
+    source?: "provider" | "proxy" | "gateway" | "sdk" | "npm" | "mcp" | "local" | string;
+  }): { tokensSaved: number; costSaved: number };
+  getTrends(): Record<string, unknown>;
+  getValueReceipt(): EntrolyValueReceipt;
+}
+
+export const EVOLUTION_TAX_RATE: number;
+export function estimateCost(tokens: number, model?: string): number;
+
 export interface ContextReceiptDocument {
   source_path?: string;
   source?: string;

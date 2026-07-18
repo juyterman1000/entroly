@@ -94,6 +94,51 @@ test("assemble delegates to Entroly and reports assembled authority", async () =
   assert.equal(engine.getStatus("s1").receipt_path, undefined);
 });
 
+test("proof-guided recovery arms only after accepted context assembly", async () => {
+  const sourceMessages = [
+    { role: "assistant", content: "Exact durable evidence." },
+    { role: "user", content: "What survives restart?" },
+  ];
+  const assembledMessages = [
+    { role: "assistant", content: "Durable evidence." },
+    sourceMessages[1],
+  ];
+  const proofStateBySession = new Map();
+  const engine = createTestEngine({
+    bridge: {
+      request: async () => ({
+        schema_version: ENTROLY_BRIDGE_SCHEMA,
+        ok: true,
+        messages: assembledMessages,
+        estimated_tokens: 8,
+      }),
+      dispose: async () => {},
+    },
+    config: {
+      proofGuidedRecovery: true,
+      preserveLastN: 1,
+      writeReceipts: false,
+      workspaceDir: "/workspace",
+    },
+    proofStateBySession,
+  });
+
+  const result = await engine.assemble({
+    sessionId: "proof-armed",
+    messages: sourceMessages,
+    tokenBudget: 100,
+    prompt: "What survives restart?",
+  });
+
+  assert.deepEqual(result.messages, assembledMessages);
+  assert.deepEqual(proofStateBySession.get("proof-armed").sourceMessages, sourceMessages);
+  assert.deepEqual(
+    proofStateBySession.get("proof-armed").assembledMessages,
+    assembledMessages,
+  );
+  assert.equal(engine.getStatus("proof-armed").proof_guided_status, "armed");
+});
+
 test("assemble fails open to the exact original messages", async () => {
   const messages = [{ role: "system", content: "never change" }];
   const warnings = [];

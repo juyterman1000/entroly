@@ -8,6 +8,7 @@
 //   entroly health     Analyze codebase health (grade A-F)
 //   entroly status     Check if server is running
 //   entroly stats      Show session statistics
+//   entroly value      Show an evidence-classified Context Value Receipt
 //   entroly init       Auto-detect project + AI tool, generate MCP config
 //   entroly demo       Before/after demo showing token savings
 //   entroly clean      Clear cached state
@@ -18,6 +19,7 @@ const { autoIndex } = require('./auto_index');
 const { persistIndex, loadIndex } = require('./checkpoint');
 const { EntrolyMCPServer } = require('./server');
 const { runAutotune } = require('./autotune');
+const { getTracker } = require('./value_tracker');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -111,6 +113,29 @@ function cmdStats() {
 
   const stats = engine.stats();
   console.log(typeof stats === 'string' ? stats : JSON.stringify(stats, null, 2));
+}
+
+function cmdValue(args) {
+  const receipt = getTracker().getValueReceipt();
+  if (args.includes('--json')) {
+    console.log(JSON.stringify(receipt, null, 2));
+    return;
+  }
+  const provider = receipt.provider_path;
+  const local = receipt.local_operations;
+  const legacy = receipt.legacy_unclassified;
+  console.log(banner());
+  console.log(`\n  ${C.BOLD}Context Value Receipt${C.RESET}`);
+  console.log(`  Provider-bound: ${provider.requests_observed} requests · ${provider.input_tokens_reduced.toLocaleString()} input tokens reduced`);
+  console.log(`  Modeled API input cost avoided: $${provider.modeled_input_cost_avoided_usd.toFixed(4)} (not an invoice)`);
+  if (provider.unpriced_requests) {
+    console.log(`  Unpriced provider traffic: ${provider.unpriced_requests} requests · ${provider.unpriced_input_tokens.toLocaleString()} reduced tokens`);
+  }
+  console.log(`  Local-only: ${local.operations} operations · ${local.tokens_reduced.toLocaleString()} tokens reduced · $0 claimed`);
+  if (legacy.operations || legacy.tokens_reduced) {
+    console.log(`  Legacy unclassified: ${legacy.operations} operations · ${legacy.tokens_reduced.toLocaleString()} tokens · $0 claimed`);
+  }
+  console.log(`  Pricing: ${receipt.pricing.source}, as of ${receipt.pricing.as_of}`);
 }
 
 function cmdInit() {
@@ -286,6 +311,7 @@ function cmdHelp() {
   console.log(`    ${C.CYAN}gateways${C.RESET}   Stream evolution events to Telegram/Discord/Slack`);
   console.log(`    ${C.CYAN}init${C.RESET}       Auto-detect IDE and generate MCP config`);
   console.log(`    ${C.CYAN}stats${C.RESET}      Show session statistics`);
+  console.log(`    ${C.CYAN}value${C.RESET}      Show evidence-classified context value`);
   console.log(`    ${C.CYAN}status${C.RESET}     Check environment status`);
   console.log(`    ${C.CYAN}autotune${C.RESET}   Run autonomous self-tuning (args: [iterations] [--bench-only])`);
   console.log(`    ${C.CYAN}clean${C.RESET}      Clear cached state`);
@@ -306,6 +332,7 @@ switch (cmd) {
   case 'optimize': case 'opt': cmdOptimize(args); break;
   case 'health': cmdHealth(); break;
   case 'stats': cmdStats(); break;
+  case 'value': cmdValue(args); break;
   case 'init': cmdInit(); break;
   case 'demo': cmdDemo(); break;
   case 'gateways': case 'gateway': cmdGateways(); break;

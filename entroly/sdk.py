@@ -40,15 +40,21 @@ def _track_savings(before_tokens: int, after_tokens: int, label: str) -> None:
     dashboard reflects SDK-only users (previously a hard blank). Strictly
     fail-open: telemetry must NEVER affect compress() output or raise.
 
-    `model=""` on purpose: it books the default cost rate without
-    emitting the unknown-model warning on every compress() call."""
+    SDK reductions are classified as local-only: Entroly cannot prove the
+    compressed result was sent to a paid provider, so no dollar savings are
+    claimed for this path."""
     try:
         saved = int(before_tokens) - int(after_tokens)
         if saved <= 0:
             return
         from .value_tracker import get_tracker
         tracker = get_tracker()
-        tracker.record(tokens_saved=saved, model="", optimized=True)
+        tracker.record(
+            tokens_saved=saved,
+            model="",
+            optimized=True,
+            source="sdk",
+        )
         tracker.record_event(
             "compress", f"SDK {label}: saved {saved:,} tokens",
             source="sdk", tokens_saved=saved,

@@ -144,7 +144,7 @@ module.exports = {
   TaskProfileOptimizer,
   FeedbackJournal,
 
-  // Self-funded evolution budget (C_spent ≤ τ·S(t))
+  // Provider-classified evolution budget (C_spent ≤ τ·S_provider(t))
   ValueTracker,
   EVOLUTION_TAX_RATE,
   estimateCost,

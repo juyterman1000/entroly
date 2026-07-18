@@ -1426,6 +1426,216 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def verify_proof_guided_output(request: dict[str, Any]) -> dict[str, Any]:
+    """Verify one OpenClaw output and recover exact omitted message evidence.
+
+    OpenClaw owns the model transport and explicitly enables any retry. This
+    bridge performs deterministic local verification only; it never calls a
+    provider and never receives provider credentials.
+    """
+    source_messages = request.get("source_messages")
+    assembled_messages = request.get("assembled_messages")
+    recovered_messages = request.get("recovered_messages", [])
+    output = request.get("model_output")
+    if not isinstance(source_messages, list) or not all(
+        isinstance(item, dict) for item in source_messages
+    ):
+        raise ValueError("source_messages must be a list of objects")
+    if not isinstance(assembled_messages, list) or not all(
+        isinstance(item, dict) for item in assembled_messages
+    ):
+        raise ValueError("assembled_messages must be a list of objects")
+    if not isinstance(recovered_messages, list) or not all(
+        isinstance(item, dict) for item in recovered_messages
+    ):
+        raise ValueError("recovered_messages must be a list of objects")
+    if not isinstance(output, str):
+        raise ValueError("model_output must be a string")
+    if len(source_messages) != len(assembled_messages):
+        raise ValueError("source and assembled message counts must match")
+
+    max_messages = request.get("max_recovery_messages", 3)
+    token_budget = request.get("recovery_token_budget", 1200)
+    if (
+        isinstance(max_messages, bool)
+        or not isinstance(max_messages, int)
+        or not 1 <= max_messages <= 16
+    ):
+        raise ValueError("max_recovery_messages must be an integer within [1, 16]")
+    if (
+        isinstance(token_budget, bool)
+        or not isinstance(token_budget, int)
+        or not 0 <= token_budget <= 100_000
+    ):
+        raise ValueError("recovery_token_budget must be within [0, 100000]")
+
+    grounding_messages = [*assembled_messages, *recovered_messages]
+    grounding_context = "\n\n".join(
+        _message_text(item, compressible_only=False) for item in grounding_messages
+    )
+    from .context_firewall import scan
+    from .eicv_suppressor import EICVSuppressor
+
+    output_scan = scan(output, source="openclaw_model_output", check_repetition=False)
+    suppressor = EICVSuppressor(
+        profile=str(request.get("profile") or "rag"),
+        mode="strict",
+    )
+    suppression = suppressor.suppress(grounding_context, output)
+    certificates = [certificate.as_dict() for certificate in suppression.certificates]
+    obligations = [
+        item
+        for item in certificates
+        if item.get("decision") != "supported" or item.get("action") != "pass"
+    ]
+    n_claims = int(suppression.n_claims)
+    already_recovered = {
+        _sha256_text(_canonical_json(item)) for item in recovered_messages
+    }
+    selected: list[dict[str, Any]] = []
+    selected_tokens = 0
+
+    if obligations and token_budget > 0:
+        obligation_query = " ".join(
+            str(item.get("claim_text") or "") for item in obligations
+        )
+        relevance = _message_relevance(source_messages, obligation_query)
+        candidates: list[tuple[float, int, str, int, dict[str, Any]]] = []
+        for index, (source, assembled, score) in enumerate(
+            zip(source_messages, assembled_messages, relevance, strict=True)
+        ):
+            source_text = _message_text(source, compressible_only=False)
+            if not source_text.strip() or _canonical_json(source) == _canonical_json(assembled):
+                continue
+            fingerprint = _sha256_text(_canonical_json(source))
+            if fingerprint in already_recovered or not score.get("pin_eligible", False):
+                continue
+            tokens = max(1, _provider_visible_message_tokens(source))
+            numeric_score = float(score.get("score", 0.0) or 0.0)
+            if numeric_score <= 0.0:
+                continue
+            candidates.append((numeric_score / tokens, tokens, fingerprint, index, source))
+        for utility, tokens, fingerprint, index, source in sorted(
+            candidates, key=lambda item: (-item[0], item[2])
+        )[:128]:
+            if len(selected) >= max_messages or selected_tokens + tokens > token_budget:
+                continue
+            selected.append(
+                {
+                    "message_index": index,
+                    "message": copy.deepcopy(source),
+                    "message_sha256": fingerprint,
+                    "token_count_estimated": tokens,
+                    "utility_per_token": round(utility, 12),
+                    "verified_exact": True,
+                }
+            )
+            selected_tokens += tokens
+
+    if not output_scan.is_safe:
+        status = "unsafe_output"
+    elif n_claims == 0:
+        status = "no_verifiable_claims"
+    elif not obligations:
+        status = "supported"
+    elif selected:
+        status = "retry_with_exact_evidence"
+    else:
+        status = "no_supporting_omitted_evidence"
+
+    safe_output = suppression.rewritten_output
+    if not output_scan.is_safe:
+        safe_output = (
+            "Entroly withheld this response because the local context firewall "
+            "detected unsafe model output. Inspect the signed local proof receipt "
+            "before retrying."
+        )
+    if obligations and not safe_output.strip():
+        safe_output = (
+            "Entroly withheld unsupported claims because the available context "
+            "did not establish them. Inspect the local proof receipt for details."
+        )
+    recovered_exact = [item["message"] for item in selected]
+    retry_instruction = None
+    if selected:
+        evidence_blocks = [
+            "[Verified recovered OpenClaw message "
+            f"{item['message_index']} sha256={item['message_sha256']}]\n"
+            + _message_text(item["message"], compressible_only=False)
+            for item in selected
+        ]
+        retry_instruction = (
+            "Revise the previous answer using the exact recovered evidence below. "
+            "Keep supported claims, remove unsupported claims, and state remaining "
+            "uncertainty.\n\n" + "\n\n".join(evidence_blocks)
+        )
+
+    workspace = request.get("workspace_dir")
+    workspace_root = (
+        Path(workspace).expanduser().resolve()
+        if isinstance(workspace, str) and workspace.strip()
+        else Path.cwd().resolve()
+    )
+    from .verified_efficiency import VerifiedEfficiencyLayer
+
+    audit_layer = VerifiedEfficiencyLayer(
+        workspace_root / ".entroly" / "proof-guided-openclaw",
+        context_risk_mode="audit",
+    )
+    audit = audit_layer._persist_audit(
+        {
+            "artifact_type": "openclaw_proof_guided_output",
+            "session_id_hash": _sha256_text(str(request.get("session_id") or "")),
+            "run_id_hash": _sha256_text(str(request.get("run_id") or "")),
+            "round_index": int(request.get("round_index", 0) or 0),
+            "grounding_context_hash": _sha256_text(grounding_context),
+            "original_output_hash": _sha256_text(output),
+            "verified_output_hash": _sha256_text(safe_output),
+            "status": status,
+            "counts": {
+                "claims": n_claims,
+                "supported": suppression.n_supported,
+                "abstained": suppression.n_abstained,
+                "hallucinated": suppression.n_hallucinated,
+            },
+            "recovered_message_commitments": [
+                {
+                    "message_index": item["message_index"],
+                    "message_sha256": item["message_sha256"],
+                    "token_count_estimated": item["token_count_estimated"],
+                }
+                for item in selected
+            ],
+            "provider_call_performed": False,
+        }
+    )
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "status": status,
+        "verified_output": safe_output,
+        "changed": safe_output != output,
+        "suppression": {
+            "n_claims": n_claims,
+            "n_supported": suppression.n_supported,
+            "n_abstained": suppression.n_abstained,
+            "n_hallucinated": suppression.n_hallucinated,
+            "certificates": certificates,
+        },
+        "recovered_messages": recovered_exact,
+        "recovered_message_commitments": [
+            {key: value for key, value in item.items() if key != "message"}
+            for item in selected
+        ],
+        "recovery_tokens_used": selected_tokens,
+        "retry_instruction": retry_instruction,
+        "audit_artifact_id": audit.artifact_id,
+        "audit_path": audit.path,
+        "provider_call_performed": False,
+        "local_only": True,
+    }
+
+
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     operation = request.get("operation")
     if operation == "health":
@@ -1468,6 +1678,8 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return assemble(request)
     if operation == "commit_receipt":
         return commit_receipt(request)
+    if operation == "verify_proof_guided_output":
+        return verify_proof_guided_output(request)
     raise ValueError(f"unsupported operation: {operation!r}")
 
 

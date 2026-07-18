@@ -41,6 +41,7 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "entroly_retrieve",
             "recall_relevant",
             "prefetch_related",
+            "prepare_proof_guided_context",
             "smart_read",
             "repo_file_map",
         }
@@ -58,6 +59,7 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
     "verify": frozenset(
         {
             "verify_response",
+            "advance_proof_guided_context",
             "verify_and_repair",
             "eicv_verify_claim",
             "eicv_suppress_hallucinations",
@@ -65,6 +67,7 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "scan_for_vulnerabilities",
             "security_report",
             "analyze_codebase_health",
+            "inspect_proof_guided_context",
         }
     ),
     "remember": frozenset(

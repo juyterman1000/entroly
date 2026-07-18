@@ -64,7 +64,30 @@ The simulation is not a quality benchmark and does not claim provider-bill parit
 Do not mix paths on the first run. Run `verify-claims` and `simulate`, choose the
 one integration that matches your workflow, then expand later.
 
-## 5. Safety expectations
+## 5. Read the Context Value Receipt
+
+After local compression or a provider-bound proxy request, run:
+
+```bash
+entroly value
+entroly value --json
+```
+
+The receipt separates three evidence classes:
+
+- Provider-bound proxy requests can report measured input-token reduction and
+  modeled API input-cost avoidance using the recorded model's configured rate.
+  Unknown or unmatched models remain visible as tokens but unpriced until an
+  explicit catalog rate is supplied.
+- SDK, MCP, and npm operations report tokens reduced but claim `$0` because
+  Entroly cannot prove the result reached a paid provider.
+- Legacy or unknown-source history is preserved but excluded from provider
+  savings and evolution-budget calculations.
+
+Modeled cost avoidance is not a provider invoice. For negotiated rates, point
+`ENTROLY_PRICING_FILE` at the local pricing catalog used by your team.
+
+## 6. Safety expectations
 
 Entroly should not pretend every workload benefits.
 
@@ -76,19 +99,19 @@ Expected behavior:
 - Receipts should show what was selected, what was omitted, and what risk remains.
 - Verification should flag unsupported claims instead of silently trusting compressed context.
 
-## 6. What success should feel like
+## 7. What success should feel like
 
 A first-time developer should leave the first run with three concrete signals:
 
 | Signal | How they see it |
 |---|---|
-| Local value | `verify-claims` and `simulate` run without an API key and produce a JSON report |
+| Local value | `verify-claims` and `simulate` run without an API key; `value --json` shows which evidence can and cannot support a dollar claim |
 | Integration clarity | MCP, proxy, SDK, npm, Docker, and CI paths are clearly separated |
 | Trust boundary | Receipts, exact recovery, verification, and pass-through behavior are visible instead of hidden |
 
 Power users can then explore Memory OS, session intelligence, value tracking, gateway accounting, multimodal intake, and self-improvement. Those are additive layers; the basic first-run path must stay simple.
 
-## 7. What to send in bug reports
+## 8. What to send in bug reports
 
 Please include:
 
@@ -96,6 +119,7 @@ Please include:
 entroly --version
 entroly verify-claims
 entroly simulate
+entroly value --json
 ```
 
 Also include:

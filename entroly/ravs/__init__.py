@@ -58,6 +58,21 @@ from .spectral import (
     compute_spectral_consistency,
     SpectralSignal,
 )
+from .world_model import (
+    anytime_hoeffding_radius,
+    DreamRollout,
+    EbbiforgeWorldModelAdapter,
+    EmpiricalWorldModel,
+    InsufficientWorldModelData,
+    PromotionDecision,
+    TransitionIntegrityError,
+    TransitionLedger,
+    TransitionReceipt,
+    transition_from_ravs,
+    VerifiedDreamController,
+    VerifiedTransition,
+    WorldModelPrediction,
+)
 
 __all__ = [
     # V1 — Instrumentation
@@ -116,5 +131,19 @@ __all__ = [
     "compute_fused_risk",
     "EPRSignal",
     "FusedHallucinationSignal",
+    # Verified model-based learning — real transitions + bounded dreams
+    "anytime_hoeffding_radius",
+    "DreamRollout",
+    "EbbiforgeWorldModelAdapter",
+    "EmpiricalWorldModel",
+    "InsufficientWorldModelData",
+    "PromotionDecision",
+    "TransitionIntegrityError",
+    "TransitionLedger",
+    "TransitionReceipt",
+    "transition_from_ravs",
+    "VerifiedDreamController",
+    "VerifiedTransition",
+    "WorldModelPrediction",
 ]
 

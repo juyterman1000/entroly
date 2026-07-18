@@ -163,10 +163,47 @@ def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
     assert payload[0]["query"] == "Where is the CLI wired?"
 
 
+def test_value_json_separates_provider_and_local_evidence(tmp_path: Path):
+    """`entroly value --json` must be pure JSON and conservative about money."""
+    from entroly.value_tracker import ValueTracker
+
+    state = tmp_path / "state"
+    tracker = ValueTracker(state)
+    tracker.record(tokens_saved=1_000, model="gpt-4o", source="proxy")
+    tracker.record(tokens_saved=500, model="gpt-4o", source="sdk")
+
+    env = os.environ.copy()
+    env["ENTROLY_DIR"] = str(state)
+    env["HOME"] = str(tmp_path / "home")
+    env["USERPROFILE"] = str(tmp_path / "home")
+    env["ENTROLY_DISABLE_UPDATE_CHECK"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "entroly.cli", "value", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(ROOT),
+        env=env,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    payload = json.loads(proc.stdout)
+    assert payload["schema_version"] == "entroly.value-receipt.v1"
+    assert payload["provider_path"]["input_tokens_reduced"] == 1_000
+    assert payload["provider_path"]["modeled_input_cost_avoided_usd"] == pytest.approx(0.0025)
+    assert payload["local_operations"]["tokens_reduced"] == 500
+    assert payload["local_operations"]["dollar_claimed_usd"] == 0.0
+
+
 @pytest.mark.parametrize("subcmd", [
     "wrap", "ravs", "proxy", "serve", "dashboard", "demo", "batch",
     "benchmark", "go", "daemon", "verify", "verify-code", "compile",
-    "doctor", "witness", "audit",
+    "doctor", "witness", "audit", "value",
 ])
 def test_subcommand_help_runs(subcmd: str):
     """Every advertised subcommand must produce help without crashing."""
