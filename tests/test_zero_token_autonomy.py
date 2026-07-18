@@ -194,7 +194,8 @@ class TestStructuralSynthesizer:
             assert spec is not None
             assert spec.entity == "auth_service"
             assert "structural_induction" in spec.tool_code
-            assert "zero-token" in spec.tool_code
+            assert "no provider call" in spec.tool_code
+            assert "local_compute" in spec.tool_code
             assert spec.metrics.get("synthesis_method") == 0.0  # 0 = structural
             assert "def execute" in spec.tool_code
             assert "def matches" in spec.tool_code

@@ -2,9 +2,8 @@
 Witness-Verified Handoff (WVH)
 ===============================
 
-The first multi-agent handoff protocol with built-in hallucination
-filtering — prevents cascading hallucination propagation across
-agent chains.
+A multi-agent handoff protocol with evidence-grounding checks intended to
+reduce unsupported-claim propagation across agent chains.
 
 Problem
 -------
@@ -13,12 +12,15 @@ If Agent A hallucinated "the auth module uses plaintext passwords",
 Agent B inherits that as ground truth and may act on it — deleting
 perfectly good JWT code, introducing actual security vulnerabilities.
 
-In a 5-agent chain, one hallucination in step 1 corrupts ALL
-downstream work.  This is the "hallucination cascade" problem.
+An unsupported claim early in an agent chain can influence downstream work.
+The actual impact depends on later evidence, tools, and verification.
 
 Solution
 --------
-Every handoff passes through WITNESS.  Only verified claims survive.
+Eligible handoffs pass through WITNESS. Grounded claims can pass, while
+unsupported or contradicted claims are surfaced according to policy. WITNESS
+can produce false positives and false negatives; callers must not treat a pass
+as proof of correctness.
 
     Agent A output
           │

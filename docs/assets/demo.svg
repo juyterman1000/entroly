@@ -1,189 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 580" width="840" height="580">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">Entroly context workflow</title>
+  <desc id="desc">An illustrative flow from repository evidence through budgeted selection to an auditable context receipt. No benchmark values are shown.</desc>
   <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1020"/><stop offset="1" stop-color="#17142c"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#67e8f9"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
-      .term-text { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 13px; }
-      .term-bold { font-weight: 700; }
-      .c-green  { fill: #50fa7b; }
-      .c-cyan   { fill: #8be9fd; }
-      .c-yellow { fill: #f1fa8c; }
-      .c-red    { fill: #ff5555; }
-      .c-purple { fill: #bd93f9; }
-      .c-orange { fill: #ffb86c; }
-      .c-white  { fill: #f8f8f2; }
-      .c-gray   { fill: #6272a4; }
-      .c-bright { fill: #ffffff; }
+      .ui{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#e5e7eb}.mono{font-family:JetBrains Mono,Consolas,monospace}.muted{fill:#94a3b8}.label{font-size:13px;letter-spacing:.08em;text-transform:uppercase}.body{font-size:16px}.title{font-size:28px;font-weight:700}.card{fill:#111827;stroke:#334155;stroke-width:1.2}.chip{fill:#172033;stroke:#475569}.accent{fill:#67e8f9}.good{fill:#86efac}
     </style>
-    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#282a36"/>
-      <stop offset="100%" stop-color="#1e1f29"/>
-    </linearGradient>
-    <linearGradient id="titleBar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#44475a"/>
-      <stop offset="100%" stop-color="#383a4a"/>
-    </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
-    </filter>
   </defs>
+  <rect width="900" height="520" rx="20" fill="url(#bg)"/>
+  <rect x="24" y="24" width="852" height="472" rx="16" fill="#0f172a" stroke="#334155"/>
+  <circle cx="50" cy="50" r="6" fill="#fb7185"/><circle cx="70" cy="50" r="6" fill="#fbbf24"/><circle cx="90" cy="50" r="6" fill="#4ade80"/>
+  <text x="120" y="56" class="ui mono muted" font-size="13">entroly demo · illustrative workflow</text>
+  <text x="48" y="112" class="ui title">Put the right evidence inside the budget.</text>
+  <text x="48" y="140" class="ui body muted">Then expose exactly what was selected, omitted, and recoverable.</text>
 
-  <!-- Background -->
-  <rect width="840" height="580" rx="0" fill="#0d0e17"/>
-
-  <!-- Terminal window -->
-  <g filter="url(#shadow)">
-    <rect x="20" y="12" width="800" height="556" rx="10" fill="url(#bgGrad)" stroke="#44475a" stroke-width="1"/>
+  <g transform="translate(48 184)">
+    <rect class="card" width="226" height="190" rx="14"/>
+    <text x="18" y="30" class="ui label muted">1 · Repository evidence</text>
+    <rect x="18" y="50" width="190" height="27" rx="7" class="chip"/><text x="31" y="69" class="ui mono body">auth/service.py</text>
+    <rect x="18" y="87" width="190" height="27" rx="7" class="chip"/><text x="31" y="106" class="ui mono body">auth/policy.py</text>
+    <rect x="18" y="124" width="190" height="27" rx="7" class="chip"/><text x="31" y="143" class="ui mono body">tests/test_auth.py</text>
+    <text x="18" y="174" class="ui body muted">Indexed locally</text>
   </g>
 
-  <!-- Title bar -->
-  <rect x="20" y="12" width="800" height="36" rx="10" fill="url(#titleBar)"/>
-  <rect x="20" y="38" width="800" height="10" fill="url(#titleBar)"/>
+  <path d="M286 279H326" stroke="url(#accent)" stroke-width="3"/><path d="M318 271l10 8-10 8" fill="none" stroke="#a78bfa" stroke-width="3"/>
 
-  <!-- Traffic lights -->
-  <circle cx="44" cy="30" r="6" fill="#ff5f56"/>
-  <circle cx="64" cy="30" r="6" fill="#ffbd2e"/>
-  <circle cx="84" cy="30" r="6" fill="#27c93f"/>
-
-  <!-- Title -->
-  <text x="420" y="34" text-anchor="middle" class="term-text c-gray" font-size="12">entroly — Terminal</text>
-
-  <!-- ============ SCENE 1: Command prompt + typing (0-2s) ============ -->
-  <g>
-    <text x="36" y="72" class="term-text c-green">$</text>
-    <text x="50" y="72" class="term-text c-bright">entroly demo</text>
-    <set attributeName="opacity" to="0" begin="0s" dur="0.5s" fill="remove"/>
-    <animate attributeName="opacity" from="0" to="1" begin="0.5s" dur="0.3s" fill="freeze"
-             repeatCount="indefinite" restart="always"/>
+  <g transform="translate(338 184)">
+    <rect class="card" width="226" height="190" rx="14"/>
+    <text x="18" y="30" class="ui label muted">2 · Budgeted selection</text>
+    <text x="18" y="67" class="ui mono body accent">query → ranked evidence</text>
+    <rect x="18" y="88" width="190" height="9" rx="4.5" fill="#253047"/><rect x="18" y="88" width="132" height="9" rx="4.5" fill="url(#accent)"/>
+    <text x="18" y="124" class="ui body">Full · Skeleton · Reference</text>
+    <text x="18" y="153" class="ui body muted">Explicit token budget</text>
+    <text x="18" y="176" class="ui body muted">Dependency-aware scoring</text>
   </g>
 
-  <!-- ============ SCENE 2: Indexing (2-3s) ============ -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="1.5s" dur="0.3s" fill="freeze"/>
-    <text x="36" y="96" class="term-text c-gray">  ⏳ Indexing your codebase...</text>
-  </g>
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="2.5s" dur="0.3s" fill="freeze"/>
-    <text x="36" y="116" class="term-text c-green">  ✓ Indexed 847 files (186,420 tokens) in 1.8s</text>
-  </g>
+  <path d="M576 279H616" stroke="url(#accent)" stroke-width="3"/><path d="M608 271l10 8-10 8" fill="none" stroke="#a78bfa" stroke-width="3"/>
 
-  <!-- ============ SCENE 3: WITHOUT ENTROLY box (3-6s) ============ -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="3.5s" dur="0.4s" fill="freeze"/>
-
-    <!-- Box outline -->
-    <rect x="36" y="132" width="540" height="92" rx="4" fill="none" stroke="#ff5555" stroke-width="1" stroke-dasharray="4,2" opacity="0.5"/>
-    <rect x="36" y="132" width="540" height="92" rx="4" fill="#ff5555" opacity="0.04"/>
-
-    <text x="50" y="152" class="term-text term-bold c-red">  WITHOUT ENTROLY</text>
-    <text x="50" y="174" class="term-text c-white">  Your AI tool sees:  </text>
-    <text x="235" y="174" class="term-text term-bold c-red">5-10 files</text>
-    <text x="360" y="174" class="term-text c-gray">(rest is invisible)</text>
-    <text x="50" y="194" class="term-text c-white">  Tokens per request: </text>
-    <text x="235" y="194" class="term-text term-bold c-red">186,420</text>
-    <text x="320" y="194" class="term-text c-gray">(entire raw dump)</text>
-    <text x="50" y="214" class="term-text c-white">  Cost per 1K reqs:   </text>
-    <text x="235" y="214" class="term-text term-bold c-red">~$560</text>
+  <g transform="translate(628 184)">
+    <rect class="card" width="224" height="190" rx="14"/>
+    <text x="18" y="30" class="ui label muted">3 · Context receipt</text>
+    <text x="18" y="67" class="ui body good">✓ included evidence</text>
+    <text x="18" y="98" class="ui body">○ omitted evidence</text>
+    <text x="18" y="129" class="ui body">↻ recovery handles</text>
+    <text x="18" y="160" class="ui body"># content hashes</text>
+    <text x="18" y="181" class="ui body muted">Auditable by the caller</text>
   </g>
 
-  <!-- ============ SCENE 4: WITH ENTROLY header (6-7s) ============ -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="5s" dur="0.4s" fill="freeze"/>
-
-    <!-- Box outline - green -->
-    <rect x="36" y="236" width="770" height="256" rx="4" fill="none" stroke="#50fa7b" stroke-width="1" opacity="0.5"/>
-    <rect x="36" y="236" width="770" height="256" rx="4" fill="#50fa7b" opacity="0.03"/>
-
-    <text x="50" y="256" class="term-text term-bold c-green">  WITH ENTROLY</text>
-    <text x="50" y="278" class="term-text c-white">  Your AI tool sees:  </text>
-    <text x="235" y="278" class="term-text term-bold c-green">ALL 847 files</text>
-    <text x="370" y="278" class="term-text c-gray">(at variable resolution)</text>
-  </g>
-
-  <!-- Query 1 -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="6s" dur="0.3s" fill="freeze"/>
-    <text x="50" y="306" class="term-text c-cyan">  Q1:</text>
-    <text x="90" y="306" class="term-text c-yellow">"Fix the authentication bug"</text>
-  </g>
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="6.8s" dur="0.3s" fill="freeze"/>
-    <text x="90" y="324" class="term-text c-white">  → 12 fragments, 7,450 tokens</text>
-    <text x="385" y="324" class="term-text term-bold c-green">▼ 96% saved</text>
-    <!-- Mini progress bar -->
-    <rect x="510" y="314" width="120" height="10" rx="5" fill="#44475a"/>
-    <rect x="510" y="314" width="5" height="10" rx="5" fill="#50fa7b"/>
-  </g>
-
-  <!-- Query 2 -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="7.8s" dur="0.3s" fill="freeze"/>
-    <text x="50" y="350" class="term-text c-cyan">  Q2:</text>
-    <text x="90" y="350" class="term-text c-yellow">"Explain the module architecture"</text>
-  </g>
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="8.6s" dur="0.3s" fill="freeze"/>
-    <text x="90" y="368" class="term-text c-white">  → 35 fragments, 10,240 tokens</text>
-    <text x="385" y="368" class="term-text term-bold c-green">▼ 94% saved</text>
-    <rect x="510" y="358" width="120" height="10" rx="5" fill="#44475a"/>
-    <rect x="510" y="358" width="7" height="10" rx="5" fill="#50fa7b"/>
-  </g>
-
-  <!-- Query 3 -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="9.6s" dur="0.3s" fill="freeze"/>
-    <text x="50" y="394" class="term-text c-cyan">  Q3:</text>
-    <text x="90" y="394" class="term-text c-yellow">"Find SQL injection vulnerabilities"</text>
-  </g>
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="10.4s" dur="0.3s" fill="freeze"/>
-    <text x="90" y="412" class="term-text c-white">  → 42 fragments, 9,320 tokens</text>
-    <text x="385" y="412" class="term-text term-bold c-green">▼ 95% saved</text>
-    <rect x="510" y="402" width="120" height="10" rx="5" fill="#44475a"/>
-    <rect x="510" y="402" width="6" height="10" rx="5" fill="#50fa7b"/>
-  </g>
-
-  <!-- ============ SCENE 5: Summary stats (12-16s) ============ -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="11.5s" dur="0.3s" fill="freeze"/>
-    <line x1="60" y1="430" x2="560" y2="430" stroke="#44475a" stroke-width="1"/>
-    <text x="50" y="450" class="term-text c-white">  Average savings:</text>
-    <text x="230" y="450" class="term-text term-bold c-green" font-size="15" filter="url(#glow)"><tspan style="opacity:0.4;font-weight:400">70-</tspan>95% fewer tokens</text>
-  </g>
-
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="12.3s" dur="0.3s" fill="freeze"/>
-    <text x="50" y="470" class="term-text c-white">  Cost per 1K reqs:</text>
-    <text x="230" y="470" class="term-text term-bold c-green"><tspan style="opacity:0.4;font-weight:400">$28 -</tspan> $168</text>
-    <text x="360" y="470" class="term-text c-gray">(was $560)</text>
-  </g>
-
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="12.8s" dur="0.3s" fill="freeze"/>
-    <text x="50" y="490" class="term-text c-white">  Pipeline latency:</text>
-    <text x="230" y="490" class="term-text term-bold c-purple">8.2ms</text>
-    <text x="300" y="490" class="term-text c-gray">(entropy → knapsack → PRISM → done)</text>
-  </g>
-
-  <!-- ============ SCENE 6: Final message (14-18s) ============ -->
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="14s" dur="0.5s" fill="freeze"/>
-    <text x="36" y="524" class="term-text term-bold c-green">  ✓</text>
-    <text x="56" y="524" class="term-text c-bright"> Your AI sees more. You pay less. Zero config changes.</text>
-  </g>
-
-  <g opacity="0">
-    <animate attributeName="opacity" from="0" to="1" begin="15s" dur="0.4s" fill="freeze"/>
-    <text x="36" y="548" class="term-text c-gray">  Start now:</text>
-    <text x="135" y="548" class="term-text c-cyan">pip install entroly &amp;&amp; entroly proxy</text>
-  </g>
-
-  <!-- Blinking cursor -->
-  <rect x="420" y="538" width="8" height="16" fill="#f8f8f2">
-    <animate attributeName="opacity" values="1;1;0;0" dur="1s" repeatCount="indefinite"/>
-    <animate attributeName="x" values="420" begin="15s" fill="freeze"/>
-  </rect>
+  <rect x="48" y="414" width="804" height="50" rx="10" fill="#111827" stroke="#334155"/>
+  <text x="67" y="445" class="ui mono body"><tspan class="accent">$ entroly demo</tspan><tspan class="muted">  # run locally for workload-specific measurements</tspan></text>
+  <text x="852" y="489" text-anchor="end" class="ui muted" font-size="11">Illustrative UI · not a benchmark or billing claim</text>
 </svg>

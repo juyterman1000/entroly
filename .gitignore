@@ -106,3 +106,9 @@ entroly-wasm/.entroly/
 
 # Stray research artifact (large external HTML dump, not project code)
 halueval_paper.html
+
+# Registry publisher is downloaded and checksum-verified in CI; never commit binaries.
+/mcp-publisher
+/mcp-publisher.exe
+/mcp-publisher_*.tar.gz
+/mcp-publisher.tar.gz

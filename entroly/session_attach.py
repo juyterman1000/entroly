@@ -38,6 +38,7 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
     "context": frozenset(
         {
             "optimize_context",
+            "prepare_task_dream",
             "entroly_retrieve",
             "recall_relevant",
             "prefetch_related",

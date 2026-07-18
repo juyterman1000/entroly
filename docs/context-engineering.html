@@ -56,8 +56,6 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <p><strong>Last updated: April 2026</strong> | Reading time: 8 min</p>
 
-<blockquote>"The hottest new skill in AI is not prompt engineering — it's context engineering."<br>— Andrej Karpathy</blockquote>
-
 <p>If you've been building with LLMs, you've noticed something: <strong>the model is rarely the bottleneck. The context is.</strong> Two developers using the same model get wildly different results — the difference is what information they put in the context window.</p>
 
 <p><strong>Context engineering</strong> is the discipline of automatically selecting, compressing, and delivering the right information to AI models at the right time.</p>
@@ -68,36 +66,30 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <p>The problem: <strong>RAM is finite and expensive.</strong></p>
 
-<ul>
-  <li>GPT-4 Turbo: 128K tokens (~300 pages)</li>
-  <li>Claude Opus: 200K tokens (~500 pages)</li>
-  <li>A medium codebase: 500K-2M tokens</li>
-</ul>
-
-<p>Your codebase doesn't fit. So every AI tool makes a choice: <strong>which code to include and which to ignore.</strong> Most tools make this choice poorly — they stuff files until the window is full, then cut. The result is an AI that sees 5% of your code and hallucinates the rest.</p>
+<p>Provider context limits and pricing change over time, while repositories and session histories can grow beyond any practical per-request budget. Every integration therefore makes a choice: <strong>which evidence to include and which to omit.</strong> That decision should be explicit and inspectable.</p>
 
 <h2>The Three Layers of Context Engineering</h2>
 
 <h3>Layer 1: Selection — What Goes In</h3>
-<p>Which code fragments, documents, and context should be included? This is where most approaches fail — they use embedding similarity (RAG) which misses dependencies, ignores information density, and can't guarantee optimality.</p>
+<p>Which code fragments, documents, and history should be included? Similarity retrieval is useful, but code tasks may also need dependency, provenance, diversity, freshness, and budget signals.</p>
 
 <p>An ideal selection system:</p>
 <ul>
-  <li>Considers <strong>all</strong> fragments, not just top-K similar ones</li>
+  <li>Defines an explicit <strong>eligible corpus</strong> and selection budget</li>
   <li>Accounts for <strong>dependencies</strong> — if you include auth.py, include auth_config.py</li>
   <li>Ensures <strong>diversity</strong> — don't send 3 auth files and 0 database files</li>
-  <li>Is <strong>mathematically optimal</strong> — proven best subset for the budget, not approximate</li>
+  <li>States the <strong>optimization objective</strong> and whether the solver is exact or approximate</li>
 </ul>
 
 <h3>Layer 2: Compression — How It Fits</h3>
 <p>Not all code needs full resolution. A file your AI needs to edit should appear in full. A utility it might call only needs the function signature. A config file it should know exists only needs a one-line reference.</p>
 
-<p><strong>Variable resolution</strong> is the key insight: represent your entire codebase at different levels of detail, allocating more resolution to more important code.</p>
+<p><strong>Variable resolution</strong> is the key insight: represent selected, supported repository content at different levels of detail, allocating more resolution to higher-scoring evidence.</p>
 
 <h3>Layer 3: Learning — Getting Better Over Time</h3>
-<p>Which context produced good AI responses? Which selections led to hallucinations? A context engineering system should learn from every interaction and improve its selection weights over time.</p>
+<p>Which context produced verified good outcomes? Which selections missed necessary evidence? A context engineering system can learn from request-bound, externally verified outcomes while rejecting unverified self-reports.</p>
 
-<p>This is where <strong>reinforcement learning</strong> enters: the system observes outcomes and adjusts, without manual tuning.</p>
+<p>This is where <strong>bounded online learning</strong> can help: the system records eligible outcomes, evaluates candidate changes behind gates, and keeps the incumbent when evidence is insufficient.</p>
 
 <h2>Context Engineering vs Prompt Engineering</h2>
 
@@ -105,28 +97,28 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
   <tr><th></th><th>Prompt Engineering</th><th>Context Engineering</th></tr>
   <tr><td><strong>Focus</strong></td><td>How you ask</td><td>What information the AI sees</td></tr>
   <tr><td><strong>Scale</strong></td><td>Manual per-prompt</td><td>Automated per-request</td></tr>
-  <tr><td><strong>Handles code</strong></td><td>You paste it manually</td><td>Auto-selects optimal subset</td></tr>
-  <tr><td><strong>Learns</strong></td><td>You iterate manually</td><td>RL optimizes automatically</td></tr>
-  <tr><td><strong>Token efficiency</strong></td><td>Low (you guess)</td><td>High (mathematically optimal)</td></tr>
+  <tr><td><strong>Handles code</strong></td><td>Often pasted or referenced manually</td><td>Can select a budgeted subset automatically</td></tr>
+  <tr><td><strong>Learns</strong></td><td>You iterate manually</td><td>Can update from verified outcomes</td></tr>
+  <tr><td><strong>Token efficiency</strong></td><td>Depends on the prompt</td><td>Explicit budget and measurable selection</td></tr>
 </table>
 
-<p>Prompt engineering is about <strong>how you phrase the question</strong>. Context engineering is about <strong>what information the AI has access to when answering</strong>. Both matter. But context engineering has far more leverage — the best prompt in the world can't fix an AI that can't see your code.</p>
+<p>Prompt engineering is about <strong>how you phrase the question</strong>. Context engineering is about <strong>what information the AI has access to when answering</strong>. Both matter, and neither guarantees a correct answer.</p>
 
 <h2>Context Engineering vs RAG</h2>
 
-<p>RAG (Retrieval Augmented Generation) is one approach to context selection. It uses embedding vectors to find chunks similar to your query. But RAG has fundamental limitations for code:</p>
+<p>Retrieval-augmented generation (RAG) is a family of context-selection approaches. Some systems use embeddings alone; others combine lexical, graph, metadata, reranking, or learned signals. Entroly can be compared to a simple embedding-only baseline as follows:</p>
 
 <table>
-  <tr><th></th><th>RAG</th><th>Context Engineering</th></tr>
-  <tr><td><strong>Selection method</strong></td><td>Cosine similarity</td><td>Information-theoretic optimization</td></tr>
-  <tr><td><strong>Coverage</strong></td><td>Top-K similar chunks</td><td>Supported files at variable resolution</td></tr>
-  <tr><td><strong>Dependencies</strong></td><td>Missed</td><td>Automatically included</td></tr>
-  <tr><td><strong>Duplicates</strong></td><td>Sent multiple times</td><td>Detected and merged</td></tr>
-  <tr><td><strong>Needs embeddings</strong></td><td>Yes (API cost + latency)</td><td>No (runs locally)</td></tr>
-  <tr><td><strong>Optimality</strong></td><td>Approximate</td><td>Knapsack-optimal (proven for the scoring objective)</td></tr>
+  <tr><th></th><th>Embedding-only top-K baseline</th><th>Entroly selection path</th></tr>
+  <tr><td><strong>Selection method</strong></td><td>Vector similarity</td><td>Lexical, entropy, graph, and budget signals</td></tr>
+  <tr><td><strong>Coverage</strong></td><td>Top-K chunks</td><td>Eligible fragments at variable resolution</td></tr>
+  <tr><td><strong>Dependencies</strong></td><td>Not represented unless added separately</td><td>Dependency signals can affect ranking and expansion</td></tr>
+  <tr><td><strong>Duplicates</strong></td><td>Depends on implementation</td><td>SimHash-based deduplication is available</td></tr>
+  <tr><td><strong>Embeddings</strong></td><td>Required for this baseline</td><td>Not required for the local core path</td></tr>
+  <tr><td><strong>Optimization</strong></td><td>Top-K ranking</td><td>Knapsack over Entroly's stated scoring objective</td></tr>
 </table>
 
-<p>RAG answers the question "what's similar to my query?" Context engineering answers the question <strong>"what's the optimal information set for this token budget?"</strong></p>
+<p>The useful distinction is not “RAG versus context engineering.” It is whether a system makes the corpus, signals, budget, omissions, and objective visible enough to evaluate.</p>
 
 <h2>The Context Engineering Stack</h2>
 
@@ -134,11 +126,11 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <ol>
   <li><strong>Indexer</strong> — Maps your codebase: files, dependencies, symbols, types</li>
-  <li><strong>Scorer</strong> — Ranks fragments by information density (Shannon entropy, not embedding similarity)</li>
+  <li><strong>Scorer</strong> — Ranks fragments using documented relevance and information signals</li>
   <li><strong>Deduplicator</strong> — Finds and merges duplicate/near-duplicate code (SimHash, LSH)</li>
-  <li><strong>Selector</strong> — Picks the optimal subset for a token budget (knapsack solver, submodular optimization)</li>
+  <li><strong>Selector</strong> — Chooses a subset for a token budget under a stated objective</li>
   <li><strong>Compressor</strong> — Represents code at variable resolution (full, skeleton, reference)</li>
-  <li><strong>Learner</strong> — Tracks outcomes, updates selection weights (reinforcement learning)</li>
+  <li><strong>Learner</strong> — Tracks eligible verified outcomes and gates candidate updates</li>
 </ol>
 
 <h2>Entroly: Context Engineering, Automated</h2>
@@ -147,12 +139,14 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <p>Key results:</p>
 <ul>
-  <li><strong>78% fewer tokens</strong> per request (measured across real codebases)</li>
-  <li><strong>Variable-resolution coverage</strong> — supported files represented at some resolution</li>
-  <li><strong>&lt;10ms overhead</strong> — Rust engine, imperceptible latency</li>
-  <li><strong>Learns from usage</strong> — REINFORCE-based weight optimization</li>
-  <li><strong>Zero config</strong> — one command setup</li>
+  <li><strong>Explicit token budgets</strong> — measure selected versus source tokens on your workload</li>
+  <li><strong>Variable-resolution context</strong> — eligible content can be selected as full text, a skeleton, or a reference</li>
+  <li><strong>Auditable selection</strong> — receipts expose included and omitted evidence</li>
+  <li><strong>Verified-outcome learning</strong> — candidate updates remain gated until evidence supports promotion</li>
+  <li><strong>Reproducible evidence</strong> — public numbers link to committed protocols and artifacts</li>
 </ul>
+
+<p>See the <a href="public-evidence.md">public evidence ledger</a>. Token reduction, latency, and answer quality are separate measurements and vary by workload.</p>
 
 <pre>pip install entroly[full] && entroly go</pre>
 

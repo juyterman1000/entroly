@@ -461,6 +461,28 @@ def test_ebbiforge_adapter_combines_dynamics_with_verified_reward_support():
     assert adapter.stats()["synthetic_training_transitions"] == 0
 
 
+def test_dream_scenario_deterministically_changes_proposed_mutation(tmp_path):
+    loop = DreamingLoop(FeedbackJournal(str(tmp_path / "journal")))
+    config = {
+        "weight_recency": 0.30,
+        "weight_frequency": 0.25,
+        "weight_semantic_sim": 0.25,
+        "weight_entropy": 0.20,
+        "decay_half_life_turns": 15,
+        "min_relevance_threshold": 0.05,
+        "exploration_rate": 0.10,
+    }
+    auth = {"query": "fix auth retry", "task_type": "Debugging", "budget": 4_000}
+    cache = {"query": "optimize cache", "task_type": "Performance", "budget": 12_000}
+
+    first = loop._mutate_dream_config(config, auth)
+    repeated = loop._mutate_dream_config(config, auth)
+    different = loop._mutate_dream_config(config, cache)
+
+    assert first == repeated
+    assert first != different
+
+
 def test_dreaming_loop_uses_model_only_to_choose_real_benchmark_experiments(
     tmp_path, monkeypatch
 ):

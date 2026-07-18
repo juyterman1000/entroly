@@ -17,7 +17,7 @@
 //!   We need a separate importance dimension.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Criticality level — overrides entropy and relevance scoring.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -410,6 +410,22 @@ impl FeedbackTracker {
             welford_m2s: HashMap::new(),
             total_observations: 0,
         }
+    }
+
+    /// Drop learned state for fragments that no longer exist.
+    ///
+    /// File replacement intentionally creates a new fragment identity. Carrying
+    /// success/failure evidence from the old bytes into the replacement would
+    /// be an unearned prior and could make stale code look proven.
+    pub fn remove_fragments(&mut self, fragment_ids: &HashSet<String>) {
+        self.success_counts
+            .retain(|id, _| !fragment_ids.contains(id));
+        self.failure_counts
+            .retain(|id, _| !fragment_ids.contains(id));
+        self.visit_counts.retain(|id, _| !fragment_ids.contains(id));
+        self.welford_means
+            .retain(|id, _| !fragment_ids.contains(id));
+        self.welford_m2s.retain(|id, _| !fragment_ids.contains(id));
     }
 
     /// Record that these fragments contributed to a successful output.

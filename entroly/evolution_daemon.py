@@ -1,8 +1,8 @@
 """
-Evolution Daemon — Zero-Token Autonomous Self-Improvement
-=========================================================
+Evolution Daemon — Provider-Gated Autonomous Improvement
+========================================================
 
-The orchestrator for the 4 Pillars of Zero-Token Autonomy:
+The orchestrator for four guarded improvement paths:
 
   Pillar 1 — Cost Guardrail (Bounded Evolution):
     Before any LLM-based synthesis, checks ValueTracker.get_evolution_budget().
@@ -12,7 +12,8 @@ The orchestrator for the 4 Pillars of Zero-Token Autonomy:
 
   Pillar 2 — Local Structural Induction:
     ALWAYS tried first. Uses StructuralSynthesizer to generate tools
-    from the entropy gradient of the code graph. Zero tokens, deterministic.
+    from the entropy gradient of the code graph. It is deterministic and makes
+    no provider call, while still using local compute and storage.
     Only falls back to LLM synthesis if structural synthesis fails AND
     the budget allows it.
 
