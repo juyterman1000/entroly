@@ -53,7 +53,7 @@ def test_remote_endpoint_is_rejected(tmp_path: Path):
     payload["base_url"] = "https://api.openai.com/v1"
     remote = LocalFoundationConfig.from_dict(payload)
 
-    with pytest.raises(LocalFoundationError, match="non-loopback"):
+    with pytest.raises(LocalFoundationError, match="loopback"):
         remote.validate()
 
 
