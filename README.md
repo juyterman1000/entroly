@@ -650,7 +650,7 @@ estimate; use provider-observed usage for a billing or production claim.
 | [SQuAD 2.0](benchmarks/results/squad_accuracy.json) | 50 | 100 | 80% | 72% | **90%** | **43.8%** |
 | [GSM8K](benchmarks/results/gsm8k_accuracy.json) | 20 | 50K | 85% | 85% | **100%** | pass-through* |
 
-<sub>*pass-through: context already fit the budget, so Entroly left it unchanged. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`). Full table + MMLU/TruthfulQA in [DETAILS](docs/DETAILS.md).</sub>
+<sub>*pass-through: context already fit the budget, so Entroly left it unchanged. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`). Scope, additional artifacts, and limitations are in the [public evidence ledger](docs/public-evidence.md).</sub>
 
 **Hallucination detection** — committed [HaluEval-QA](https://github.com/RUCAIBox/HaluEval)
 balanced, both-answers-scored run:

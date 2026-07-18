@@ -16,10 +16,10 @@ Entroly sits between your agents and the LLM API and selects context under a tok
 
 | Outcome | What it means |
 |---|---|
-| **Lower bill** | 70–95% fewer input tokens on large-repo workloads (measured; workload-dependent). |
+| **Measurable input reduction** | Entroly reports source and selected tokens under an explicit budget; translate that result using your provider pricing. |
 | **Measured accuracy retention** | Compression is selection-based and benchmarked for accuracy *retention*, not just ratio — with committed result files and confidence intervals. |
 | **Local & private core** | Indexing, selection, and deterministic verification paths run **on-device** — no code or context is sent anywhere for *analysis*. |
-| **Hallucination guard** | WITNESS checks model output against supplied evidence at $0 / no extra LLM call (Python product). |
+| **Hallucination guard** | WITNESS scores model output against supplied evidence without an extra provider call; local compute still applies. |
 | **Multiple integration paths** | HTTP proxy, MCP server, Python SDK, or a standalone Rust binary with no Python runtime. Integration helpers cover 30+ wrap targets; compatibility depends on the installed tool and version. |
 
 ## ROI — how to size it (no vanity numbers)
@@ -32,7 +32,7 @@ monthly_savings ≈ monthly_input_token_spend × input_token_reduction
                  + provider prefix-cache discount captured (cache alignment)
 ```
 
-- **Input-token reduction** measured 70–95% on large repos (e.g. **97.9% on the DeepSpeed repo at an 8K budget**). Short prompts / tiny repos save less.
+- **Input-token reduction is workload-specific.** Run the local verification smoke and a representative proxy pilot; do not treat repository examples as a billing forecast.
 - **Validate the install locally**, on your own code, with no API key:
   ```bash
   pip install entroly && cd /your/repo && entroly verify-claims
@@ -48,7 +48,7 @@ monthly_savings ≈ monthly_input_token_spend × input_token_reduction
 - **No outbound analytics by default.** Local usage metrics are stored for the dashboard. Optional federation and cloud-backed features must be enabled separately.
 - **Auditable local core.** Core selection and deterministic verification paths are testable. Evaluate stateful learning, exploration, routing, and optional cloud-backed modes separately.
 - **Apache-2.0** licensed. **Air-gap-capable** when used with local/offline endpoints.
-- The Rust single binary is **zero-dependency** (no Python runtime) for locked-down environments.
+- The Rust binary does not require a Python runtime. Validate operating-system libraries, architecture, and artifact integrity for your deployment target.
 
 ## Deployment options
 
@@ -61,14 +61,14 @@ monthly_savings ≈ monthly_input_token_spend × input_token_reduction
 
 ## Why it clears the bar
 
-- **Spend** — release checks show 70–95% fewer input tokens on measured large-repo workloads. Run a representative pilot to measure your workload.
+- **Spend** — use the emitted source/selected-token counts and your negotiated provider rates. Run a representative pilot before making an ROI claim.
 - **Risk** — local-first, provider-neutral, Apache-2.0, with no outbound analytics by default. Review optional modes against your requirements.
 - **Adoption** — proxy, MCP, SDK, and standalone Rust-binary paths are available. Integration helpers cover 30+ wrap targets; confirm the path for your tool and version.
 
 ## Evaluate it
 
 1. `pip install entroly && cd /your/repo && entroly verify-claims` — validate the local install and inspect the sampled smoke report.
-2. Reproduce the public accuracy-retention benchmarks (committed JSON): see the [Benchmarks](../README.md#benchmarks) section.
+2. Reproduce the public benchmarks and inspect their limits in the [public evidence ledger](public-evidence.md).
 3. Run a representative proxy pilot; use the dashboard's Cost Intelligence panel to size workload-specific savings.
 
 ---

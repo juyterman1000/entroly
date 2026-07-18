@@ -4,8 +4,9 @@ Entroly Demo Video Generator
 =============================
 
 Generates a stunning animated terminal recording as SVG, GIF, or HTML.
-This creates the hero visual for the README — showing Entroly's value
-proposition in a compelling 25-second animated terminal session.
+This creates an illustrative UI walkthrough for the README. It intentionally
+contains no benchmark or billing numbers; users generate measurements by
+running ``entroly demo`` on their own workload.
 
 Usage:
     python docs/generate_demo.py              # Generate SVG (default)
@@ -43,7 +44,7 @@ COLORS = {
 FRAMES = [
     # Frame 0: Command prompt
     (800, [
-        ("$ entroly demo", "bright", True, 0),
+        ("$ entroly demo  # illustrative UI walkthrough", "bright", True, 0),
     ]),
     # Frame 1: Indexing spinner
     (1200, [
@@ -52,16 +53,16 @@ FRAMES = [
     ]),
     # Frame 2: Indexed result
     (1000, [
-        ("  \u2713 Indexed 847 files (186,420 tokens) in 1.8s", "green", False, 0),
+        ("  \u2713 Eligible content indexed; source tokens measured", "green", False, 0),
     ]),
     # Frame 3: WITHOUT box header
     (1200, [
         ("", None, False, 0),
         ("  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510", "red", False, 0),
         ("  \u2502  WITHOUT ENTROLY                                       \u2502", "red", True, 0),
-        ("  \u2502  Your AI sees: 5-10 files (rest is invisible)          \u2502", "fg", False, 0),
-        ("  \u2502  Tokens sent:  186,420 (entire raw dump)               \u2502", "fg", False, 0),
-        ("  \u2502  Cost / 1K requests: ~$560                             \u2502", "red", True, 0),
+        ("  \u2502  Context: unbudgeted input                              \u2502", "fg", False, 0),
+        ("  \u2502  Tokens: measured from the source request               \u2502", "fg", False, 0),
+        ("  \u2502  Cost: apply your provider's current rates              \u2502", "red", True, 0),
         ("  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518", "red", False, 0),
     ]),
     # Frame 4: WITH box header
@@ -69,7 +70,7 @@ FRAMES = [
         ("", None, False, 0),
         ("  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510", "green", False, 0),
         ("  \u2502  WITH ENTROLY                                          \u2502", "green", True, 0),
-        ("  \u2502  Your AI sees: ALL 847 files (variable resolution)     \u2502", "fg", False, 0),
+        ("  \u2502  Context: selected evidence under a token budget        \u2502", "fg", False, 0),
     ]),
     # Frame 5: Query 1
     (900, [
@@ -77,7 +78,7 @@ FRAMES = [
         ("  \u2502  Q1: \"Fix the authentication bug\"                      \u2502", "cyan", False, 0),
     ]),
     (700, [
-        ("  \u2502      \u2192 12 fragments, 7,450 tokens       \u25bc 96% saved  \u2502", "green", True, 0),
+        ("  \u2502      \u2192 selected fragments + exact token receipt    \u2502", "green", True, 0),
     ]),
     # Frame 6: Query 2
     (900, [
@@ -85,7 +86,7 @@ FRAMES = [
         ("  \u2502  Q2: \"Explain the module architecture\"                 \u2502", "cyan", False, 0),
     ]),
     (700, [
-        ("  \u2502      \u2192 35 fragments, 10,240 tokens      \u25bc 94% saved  \u2502", "green", True, 0),
+        ("  \u2502      \u2192 selected fragments + omitted evidence       \u2502", "green", True, 0),
     ]),
     # Frame 7: Query 3
     (900, [
@@ -93,7 +94,7 @@ FRAMES = [
         ("  \u2502  Q3: \"Find SQL injection vulnerabilities\"              \u2502", "cyan", False, 0),
     ]),
     (700, [
-        ("  \u2502      \u2192 42 fragments, 9,320 tokens       \u25bc 95% saved  \u2502", "green", True, 0),
+        ("  \u2502      \u2192 selected fragments + audit receipt          \u2502", "green", True, 0),
     ]),
     # Frame 8: Summary
     (600, [
@@ -101,9 +102,9 @@ FRAMES = [
         ("  \u2502  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500  \u2502", "green", False, 0),
     ]),
     (800, [
-        ("  \u2502  Average:   70-95% fewer tokens                        \u2502", "green", True, 0),
-        ("  \u2502  Cost:      ~$28 / 1K requests (was $560)              \u2502", "green", True, 0),
-        ("  \u2502  Pipeline:  8.2ms (entropy \u2192 knapsack \u2192 PRISM)         \u2502", "purple", False, 0),
+        ("  \u2502  Example only \u2014 run on your workload for results       \u2502", "green", True, 0),
+        ("  \u2502  Cost: use measured tokens and provider rates          \u2502", "green", True, 0),
+        ("  \u2502  Latency: measure end-to-end on your hardware          \u2502", "purple", False, 0),
     ]),
     (400, [
         ("  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518", "green", False, 0),
@@ -111,7 +112,7 @@ FRAMES = [
     # Frame 9: Final message
     (1200, [
         ("", None, False, 0),
-        ("  \u2713 Your AI sees more. You pay less. Zero config changes.", "bright", True, 0),
+        ("  \u2713 Inspect selected context, receipts, and measured tokens.", "bright", True, 0),
     ]),
     (1500, [
         ("", None, False, 0),
@@ -400,12 +401,12 @@ def main():
     if args.format in ("svg", "both"):
         svg_path = output_dir / "demo_animated.svg"
         svg_path.write_text(generate_svg(), encoding="utf-8")
-        print(f"  \033[38;5;82m\u2713\033[0m SVG saved: {svg_path}")
+        print(f"  \033[38;5;82m[ok]\033[0m SVG saved: {svg_path}")
 
     if args.format in ("html", "both"):
         html_path = output_dir / "demo.html"
         html_path.write_text(generate_html(), encoding="utf-8")
-        print(f"  \033[38;5;82m\u2713\033[0m HTML saved: {html_path}")
+        print(f"  \033[38;5;82m[ok]\033[0m HTML saved: {html_path}")
 
     print("\n  \033[38;5;45mTip:\033[0m Open the HTML file in a browser for the interactive version!")
     print("  \033[38;5;45mTip:\033[0m Use the SVG in your README for GitHub rendering.")
