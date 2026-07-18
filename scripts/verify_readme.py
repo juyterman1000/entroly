@@ -35,6 +35,7 @@ from benchmarks.neural_evidence_frontier import (  # noqa: E402
 from verify_public_trust import collect_offline_failures  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
+README_FIRST_SCREEN = README_TEXT.split("\n---\n", 1)[0]
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
@@ -192,6 +193,24 @@ check(
         and "Evaluate stateful learning, exploration, routing" in FOR_TEAMS_TEXT
         and "OK"
     ) or (_ for _ in ()).throw(Exception("Scope determinism claims to the tested local paths")),
+)
+check(
+    "README plain-language first screen",
+    lambda: (
+        "Make AI agents use less context and show their work" in README_FIRST_SCREEN
+        and "Your agent keeps rereading files, logs, tool output, and old history."
+        in README_FIRST_SCREEN
+        and "keeps omitted originals" in README_FIRST_SCREEN
+        and "recoverable" in README_FIRST_SCREEN
+        and "entroly go" in README_FIRST_SCREEN
+        and "docs/assets/neural_evidence_frontier.svg" in README_FIRST_SCREEN
+        and "Generated-answer quality and production savings were not measured."
+        in README_FIRST_SCREEN
+        and "OK"
+    )
+    or (_ for _ in ()).throw(
+        Exception("Lead with the user problem, one-command value, and scoped proof")
+    ),
 )
 check(
     "README proof-first star CTA",

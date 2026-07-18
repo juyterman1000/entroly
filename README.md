@@ -2,18 +2,29 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+<h1 align="center">Entroly — Make AI agents use less context and show their work</h1>
+
+<p align="center"><b>Your agent keeps rereading files, logs, tool output, and old history.</b><br>
+Entroly selects and compresses that context locally, keeps omitted originals
+recoverable, and records what it selected, omitted, and considered risky.</p>
 
 <p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
-The observability, governance, and decision layer for AI context.<br>
-Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
+<sub>Works with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom AI applications.</sub></p>
 
 <p align="center">
-  <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+  <code>pip install -U entroly && cd /your/repo && entroly go</code><br>
+  <sub>Auto-detect the supported agent on this machine, connect Entroly, and open the local dashboard.</sub>
 </p>
 
+| What hurts today | What Entroly changes |
+|---|---|
+| The agent rereads large files, logs, and repeated tool output | Selects, deduplicates, and compresses evidence under an explicit context budget |
+| Compression can silently hide the one detail the agent needs | Keeps omitted source reachable through exact recovery handles while its receipt exists |
+| Token-saving claims are hard to trust | Records selected and omitted evidence, risks, token counts, and provider-bound value separately |
+
 <p align="center">
-  <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
+  <a href="docs/benchmarks/neural-evidence-frontier.md"><img src="docs/assets/neural_evidence_frontier.svg" width="900" alt="On 300 frozen retrieval questions, Entroly selected 1.02 of 16 passages on average and retained the answer-bearing passage in 298 questions"></a>
+  <br><sub>One measured retrieval job: 300 held-out questions. Generated-answer quality and production savings were not measured. <a href="docs/benchmarks/neural-evidence-frontier.md">Audit all 600 trial rows.</a></sub>
 </p>
 
 <!-- Distribution and licensing: registry badges report live package metadata. -->
@@ -38,10 +49,6 @@ Entroly brings together what agents read, remember, trust, recover, spend, and l
 </p>
 
 <p align="center"><sub>Registry badges show distribution metadata. Evidence badges link to committed results with scope and caveats. Community and marketplace status are not treated as technical proof.</sub></p>
-
-<p align="center">
-  <code>pip install -U entroly && cd /your/repo && entroly verify-claims && entroly simulate</code>
-</p>
 
 <p align="center">
   <a href="#get-started"><b>Get started</b></a> ·
@@ -91,10 +98,6 @@ pricing source and date.
 ---
 
 ## One measured job of the Context OS
-
-<p align="center">
-  <a href="docs/benchmarks/neural-evidence-frontier.md"><img src="docs/assets/neural_evidence_frontier.svg" width="900" alt="Entroly selected 1.02 of 16 candidate passages on average while keeping the answer-bearing passage in 298 of 300 held-out retrieval questions"></a>
-</p>
 
 Entroly is much more than a compressor: it also ships memory, recovery,
 verification, provider controls, security, receipts, and guarded outcome

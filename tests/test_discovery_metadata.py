@@ -39,9 +39,13 @@ def _toml_section(path: str, section: str) -> str:
 
 
 def test_readme_first_fold_names_the_category_and_supported_clients() -> None:
-    for path in ("README.md", "PYPI_README.md"):
+    expected_headline = {
+        "README.md": "entroly — make ai agents use less context and show their work",
+        "PYPI_README.md": "entroly — the open-source context os for ai agents",
+    }
+    for path, headline in expected_headline.items():
         first_fold = _text(path)[:5_000].casefold()
-        assert "entroly — the open-source context os for ai agents" in first_fold
+        assert headline in first_fold
         assert IDENTITY in first_fold
         assert "context compression" in first_fold or "compress" in first_fold
         for client in ("claude code", "codex", "openclaw", "github copilot", "mcp"):
