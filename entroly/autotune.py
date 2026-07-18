@@ -28,6 +28,7 @@ Single-file mutation discipline:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -62,6 +63,9 @@ RESULTS_PATH = BENCH_DIR / "results.tsv"
 # Fixed time budget per benchmark evaluation.
 # Iterations exceeding this are auto-discarded (poor configs stall the loop).
 DEFAULT_TIME_BUDGET_SECS = 5.0
+# Common-random-number seed used for fair, repeatable config comparisons.
+# Per-case seeds are derived from this value and the stable case ID.
+AUTOTUNE_BENCHMARK_SEED = 0xE17A0B1
 
 # Parameters and their mutation ranges
 TUNABLE_PARAMS = {
@@ -172,8 +176,12 @@ def save_config(config: dict[str, Any], config_path: Path | None = None) -> None
             temp_path.unlink(missing_ok=True)
 
 
-def evaluate(config: dict[str, Any], cases: list[dict[str, Any]],
-             time_budget: float = DEFAULT_TIME_BUDGET_SECS) -> BenchResult:
+def evaluate(
+    config: dict[str, Any],
+    cases: list[dict[str, Any]],
+    time_budget: float = DEFAULT_TIME_BUDGET_SECS,
+    benchmark_seed: int | None = None,
+) -> BenchResult:
     """
     Run the benchmark suite with a given config.
 
@@ -203,6 +211,19 @@ def evaluate(config: dict[str, Any], cases: list[dict[str, Any]],
             min_relevance=config.get("min_relevance_threshold", 0.05),
             exploration_rate=config.get("exploration_rate", 0.1),
         )
+        if benchmark_seed is not None:
+            set_benchmark_seed = getattr(engine, "set_benchmark_seed", None)
+            if not callable(set_benchmark_seed):
+                raise RuntimeError(
+                    "native engine lacks set_benchmark_seed; rebuild entroly_core "
+                    "before running reproducible autotune"
+                )
+            case_identity = str(case.get("id", ""))
+            digest = hashlib.sha256(
+                f"{int(benchmark_seed)}:{case_identity}".encode("utf-8")
+            ).digest()
+            case_seed = int.from_bytes(digest[:8], "big") or 1
+            set_benchmark_seed(case_seed)
 
         frag_id_map: dict[str, str] = {}
         for frag_data in case["fragments"]:
@@ -438,7 +459,12 @@ def run_autotune(iterations: int = 100,
     _log(f"Time budget per case: {time_budget}s")
 
     _log("\n--- Baseline evaluation ---")
-    baseline = evaluate(config, cases, time_budget)
+    baseline = evaluate(
+        config,
+        cases,
+        time_budget,
+        benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+    )
     baseline_score = composite_score(baseline)
     _log(f"Baseline score: {baseline_score:.4f} "
          f"(recall={baseline.recall_accuracy:.3f}, "
@@ -476,7 +502,12 @@ def run_autotune(iterations: int = 100,
         old_val = best_config.get(mutated_param)
         new_val = candidate.get(mutated_param)
 
-        result = evaluate(candidate, cases, time_budget)
+        result = evaluate(
+            candidate,
+            cases,
+            time_budget,
+            benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+        )
         score = composite_score(result, candidate, defaults)
 
         if score > best_score:
@@ -518,7 +549,12 @@ def run_autotune(iterations: int = 100,
     # ── Final: evaluate Polyak average ──
     if polyak_count > 2:
         _log(f"\n--- Evaluating Polyak average ({polyak_count} samples) ---")
-        polyak_result = evaluate(polyak_avg, cases, time_budget)
+        polyak_result = evaluate(
+            polyak_avg,
+            cases,
+            time_budget,
+            benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+        )
         polyak_score = composite_score(polyak_result, polyak_avg, defaults)
         _log(f"Polyak score: {polyak_score:.4f} vs best: {best_score:.4f}")
 
@@ -1127,9 +1163,12 @@ class TaskProfileOptimizer:
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # During idle cycles (no user queries for >60s), the system "dreams":
-# it generates synthetic queries from its own experience (FeedbackJournal),
-# tests counterfactual weight configurations against the benchmark harness,
-# and keeps only configurations that improve context_efficiency.
+# it generates counterfactual queries from its own experience
+# (FeedbackJournal), tests weight configurations against the real benchmark
+# harness, and keeps only configurations that improve context_efficiency.
+# When a VerifiedDreamController is supplied, a world model can rank which
+# mutations to test next. Model predictions remain proposal-only; the real
+# benchmark still decides whether a configuration is promoted.
 #
 # Mathematical foundation:
 #   The dreaming loop solves the rate-distortion dual:
@@ -1143,19 +1182,18 @@ class TaskProfileOptimizer:
 #   ensuring the system explores corners of its experience it rarely
 #   encounters in real traffic.
 #
-# This is genuinely novel: no existing system performs counterfactual
-# self-play on its own weight space during idle time. The closest
-# analogy is AlphaGo's self-play — but applied to context engineering.
-#
-# Guarantees:
+# Operational invariants:
 #   - Zero tokens: all computation is local (CPU-only)
-#   - Monotonic improvement: only keeps configs that beat the baseline
+#   - Real-gated promotion: only benchmarked configs can replace the baseline
+#   - Evidence separation: model-generated transitions never train as reality
 #   - Bounded resource usage: max N iterations per dream cycle (default 10)
 #   - Non-blocking: runs in a background thread, yields to user queries
 
 DREAMING_IDLE_THRESHOLD_S = 60.0    # seconds of inactivity before dreaming
 DREAMING_MAX_ITERATIONS = 10        # max experiments per dream cycle
 DREAMING_WEIGHT_PERTURB_STD = 0.05  # standard deviation for weight perturbation
+DREAMING_CANDIDATE_POOL = 8         # candidates ranked per real experiment
+DREAMING_METRIC_TOLERANCE = 1e-12   # numerical tolerance for Pareto gates
 # Cooldown between dream cycles to avoid continuous dreaming while idle.
 DREAMING_COOLDOWN_S = 5 * 60.0      # seconds
 
@@ -1176,6 +1214,7 @@ class DreamingLoop:
         cooldown_s: float = DREAMING_COOLDOWN_S,
         archetype_optimizer: Any = None,
         engine: Any = None,
+        world_model_controller: Any = None,
     ):
         self._journal = journal
         self._config_path = config_path or runtime_config_path()
@@ -1193,6 +1232,11 @@ class DreamingLoop:
         # the same prior as the Python archetype profile. Without this, the
         # Rust optimizer cold-starts at 0 and ignores Python priors.
         self._engine = engine
+        self._world_model_controller = world_model_controller
+        self._world_model_guided_experiments = 0
+        self._world_model_real_transitions = 0
+        self._world_model_dream_proposals = 0
+        self._last_world_model_error: str | None = None
         self._last_dream_result: dict[str, Any] | None = None
         self._last_dream_at: float | None = None
         self._dream_in_progress: bool = False
@@ -1295,6 +1339,193 @@ class DreamingLoop:
         random.shuffle(synthetic)
         return synthetic[:self._max_iterations * 3]
 
+    @staticmethod
+    def _config_vector(config: dict[str, Any]) -> tuple[float, ...]:
+        """Normalize the tunable config into a stable world-model state."""
+        values = []
+        for name, (lower, upper) in TUNABLE_PARAMS.items():
+            default = (lower + upper) / 2
+            value = float(config.get(name, default))
+            values.append((value - float(lower)) / max(float(upper - lower), 1e-12))
+        return tuple(max(0.0, min(1.0, value)) for value in values)
+
+    @staticmethod
+    def _config_policy_version(config: dict[str, Any]) -> str:
+        """Bind real evidence to the exact tunable context-policy surface."""
+        payload = {
+            name: config.get(name)
+            for name in sorted(TUNABLE_PARAMS)
+            if name in config
+        }
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+        return f"prism-config:{digest}"
+
+    @classmethod
+    def _config_action(
+        cls,
+        current: dict[str, Any],
+        candidate: dict[str, Any],
+    ) -> tuple[float, ...]:
+        before = cls._config_vector(current)
+        after = cls._config_vector(candidate)
+        return tuple(right - left for left, right in zip(before, after))
+
+    @staticmethod
+    def _mutate_dream_config(config: dict[str, Any]) -> dict[str, Any]:
+        """Create one bounded counterfactual action in configuration space."""
+        mutated = dict(config)
+        for param, (lower, upper) in TUNABLE_PARAMS.items():
+            if param not in mutated:
+                continue
+            current = mutated[param]
+            delta = random.gauss(0, DREAMING_WEIGHT_PERTURB_STD)
+            new_value = max(lower, min(upper, current + delta * (upper - lower)))
+            if isinstance(current, int):
+                new_value = int(round(new_value))
+            mutated[param] = new_value
+        return mutated
+
+    def _select_dream_candidate(
+        self,
+        config: dict[str, Any],
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        controller = self._world_model_controller
+        if controller is None or len(candidates) <= 1:
+            return candidates[0]
+        actions = [self._config_action(config, candidate) for candidate in candidates]
+        pool_commitment = hashlib.sha256(
+            "|".join(
+                self._config_policy_version(candidate) for candidate in candidates
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        try:
+            propose_experiment = getattr(controller, "propose_experiment", None)
+            if callable(propose_experiment):
+                rollout = propose_experiment(
+                    self._config_vector(config),
+                    actions,
+                    environment="entroly_autotune_fixed_benchmark_v1",
+                    policy_version=f"proposal-pool:{pool_commitment}",
+                )
+                require_positive_return = False
+            else:
+                rollout = controller.dream(
+                    self._config_vector(config),
+                    lambda _state: actions,
+                    horizon=1,
+                    environment="entroly_autotune_fixed_benchmark_v1",
+                    policy_version=f"proposal-pool:{pool_commitment}",
+                )
+                require_positive_return = True
+            if not rollout.transitions:
+                return candidates[0]
+            # A simulator is allowed to override the deterministic fallback
+            # only when its uncertainty-penalized return is strictly positive.
+            # Picking the "least bad" imagined action would convert model
+            # uncertainty into real experiments with negative expected value.
+            if (
+                require_positive_return
+                and rollout.pessimistic_return <= DREAMING_METRIC_TOLERANCE
+            ):
+                return candidates[0]
+            chosen_action = rollout.transitions[0].action
+            for candidate, action in zip(candidates, actions):
+                if all(
+                    abs(left - right) <= 1e-12
+                    for left, right in zip(action, chosen_action)
+                ):
+                    self._world_model_guided_experiments += 1
+                    self._world_model_dream_proposals += 1
+                    self._last_world_model_error = None
+                    return candidate
+        except Exception as exc:
+            # Fail closed to an ordinary real benchmark experiment. The error
+            # remains visible in stats instead of silently changing behavior.
+            self._last_world_model_error = str(exc)
+            logger.debug("verified world-model proposal skipped: %s", exc)
+        return candidates[0]
+
+    def _record_real_benchmark_transition(
+        self,
+        current_config: dict[str, Any],
+        candidate_config: dict[str, Any],
+        current_result: BenchResult,
+        candidate_result: BenchResult,
+    ) -> None:
+        controller = self._world_model_controller
+        if controller is None:
+            return
+        try:
+            from .ravs.world_model import VerifiedTransition
+
+            if self._is_pareto_improvement(candidate_result, current_result):
+                # The world model predicts a bounded, trust-aligned event:
+                # whether this action produced a Pareto improvement. Raw
+                # composite deltas are typically orders of magnitude smaller
+                # than calibrated uncertainty and make the pessimistic gate
+                # mathematically incapable of opening.
+                reward_delta = 1.0
+            elif (
+                abs(
+                    candidate_result.recall_accuracy
+                    - current_result.recall_accuracy
+                )
+                <= DREAMING_METRIC_TOLERANCE
+                and abs(
+                    candidate_result.context_efficiency
+                    - current_result.context_efficiency
+                )
+                <= DREAMING_METRIC_TOLERANCE
+            ):
+                reward_delta = 0.0
+            else:
+                # Any dominated result is a failed context-policy experiment;
+                # in particular, token savings can never purchase lost recall.
+                reward_delta = -1.0
+            transition = VerifiedTransition(
+                state=self._config_vector(current_config),
+                action=self._config_action(current_config, candidate_config),
+                next_state=self._config_vector(candidate_config),
+                reward=reward_delta,
+                environment="entroly_autotune_fixed_benchmark_v1",
+                source="entroly.autotune.evaluate",
+                verifier="fixed_benchmark_execution",
+                strength="strong",
+                policy_version=self._config_policy_version(candidate_config),
+            )
+            controller.observe_real(transition)
+            self._world_model_real_transitions += 1
+            self._last_world_model_error = None
+        except Exception as exc:
+            self._last_world_model_error = str(exc)
+            logger.warning("verified world-model transition was not recorded: %s", exc)
+
+    @staticmethod
+    def _is_pareto_improvement(
+        candidate: BenchResult,
+        incumbent: BenchResult,
+    ) -> bool:
+        """Require a strict gain without sacrificing recall or efficiency."""
+        recall_delta = candidate.recall_accuracy - incumbent.recall_accuracy
+        efficiency_delta = (
+            candidate.context_efficiency - incumbent.context_efficiency
+        )
+        recall_noninferior = recall_delta >= -DREAMING_METRIC_TOLERANCE
+        efficiency_noninferior = efficiency_delta >= -DREAMING_METRIC_TOLERANCE
+        strict_gain = (
+            recall_delta > DREAMING_METRIC_TOLERANCE
+            or efficiency_delta > DREAMING_METRIC_TOLERANCE
+        )
+        return recall_noninferior and efficiency_noninferior and strict_gain
+
     def run_dream_cycle(self) -> dict[str, Any]:
         """Run one dream cycle: generate synthetic queries, test weight
         perturbations, keep improvements.
@@ -1339,7 +1570,13 @@ class DreamingLoop:
                 return result
 
             # Evaluate baseline
-            baseline = evaluate(config, cases, time_budget=DEFAULT_TIME_BUDGET_SECS)
+            baseline = evaluate(
+                config,
+                cases,
+                time_budget=DEFAULT_TIME_BUDGET_SECS,
+                benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+            )
+            current_result = baseline
             self._best_efficiency = baseline.context_efficiency
 
             improvements = 0
@@ -1353,28 +1590,48 @@ class DreamingLoop:
 
                 experiments += 1
 
-                # Perturb weights using Gaussian noise
-                mutated_config = dict(config)
-                for param, (lo, hi) in TUNABLE_PARAMS.items():
-                    if param in mutated_config:
-                        current = mutated_config[param]
-                        delta = random.gauss(0, DREAMING_WEIGHT_PERTURB_STD)
-                        new_val = max(lo, min(hi, current + delta * (hi - lo)))
-                        if isinstance(current, int):
-                            new_val = int(round(new_val))
-                        mutated_config[param] = new_val
+                # The world model may rank a larger candidate set, but it can
+                # never promote one. Every selected mutation is executed by the
+                # same fixed benchmark before the configuration can change.
+                current_config = dict(config)
+                candidate_count = (
+                    DREAMING_CANDIDATE_POOL
+                    if self._world_model_controller is not None
+                    else 1
+                )
+                candidates = [
+                    self._mutate_dream_config(current_config)
+                    for _candidate in range(candidate_count)
+                ]
+                mutated_config = self._select_dream_candidate(
+                    current_config,
+                    candidates,
+                )
 
                 # Evaluate the mutation
                 try:
-                    result = evaluate(mutated_config, cases,
-                                      time_budget=DEFAULT_TIME_BUDGET_SECS)
+                    result = evaluate(
+                        mutated_config,
+                        cases,
+                        time_budget=DEFAULT_TIME_BUDGET_SECS,
+                        benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+                    )
                 except Exception:
                     continue
 
-                # Keep only strict improvements (monotonic improvement guarantee)
-                if result.context_efficiency > self._best_efficiency:
+                self._record_real_benchmark_transition(
+                    current_config,
+                    mutated_config,
+                    current_result,
+                    result,
+                )
+
+                # Context policies must Pareto-improve the real harness:
+                # savings can never purchase lower evidence recall.
+                if self._is_pareto_improvement(result, current_result):
                     self._best_efficiency = result.context_efficiency
                     config = mutated_config
+                    current_result = result
                     save_config(config, self._config_path)
                     improvements += 1
                     self._total_improvements += 1
@@ -1427,6 +1684,9 @@ class DreamingLoop:
                 "synthetic_queries_generated": len(synthetic_queries),
                 "total_dreams": self._total_dreams,
                 "total_improvements": self._total_improvements,
+                "world_model_guided_experiments": self._world_model_guided_experiments,
+                "world_model_real_transitions": self._world_model_real_transitions,
+                "world_model_dream_proposals": self._world_model_dream_proposals,
             }
             self._last_dream_result = dict(result)
             return result
@@ -1458,7 +1718,7 @@ class DreamingLoop:
                 0.0, self._cooldown_s - (time.time() - self._last_dream_at)
             )
         next_dream_in_s = max(idle_remaining_s, cooldown_remaining_s or 0.0)
-        return {
+        result = {
             "total_dreams": self._total_dreams,
             "total_improvements": self._total_improvements,
             "best_efficiency": self._best_efficiency,
@@ -1478,4 +1738,14 @@ class DreamingLoop:
             "last_wall_seconds": last_wall_seconds,
             "last_improvements": last_improvements,
             "last_error": last_error,
+            "world_model_guided_experiments": self._world_model_guided_experiments,
+            "world_model_real_transitions": self._world_model_real_transitions,
+            "world_model_dream_proposals": self._world_model_dream_proposals,
+            "last_world_model_error": self._last_world_model_error,
         }
+        if self._world_model_controller is not None:
+            try:
+                result["world_model"] = self._world_model_controller.stats()
+            except Exception as exc:
+                result["world_model"] = {"ready": False, "error": str(exc)}
+        return result

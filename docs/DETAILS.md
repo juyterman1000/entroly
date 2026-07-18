@@ -53,7 +53,7 @@ Example trace from this repo's local development vault:
 [spend]      $0.0000 — invariant C_spent ≤ τ·S(t) holds
 ```
 
-The structural synthesizer reads your code graph rather than calling an LLM. When structural synthesis can't solve a gap, the LLM fallback is **budget-gated by cumulative token savings** — intended to keep learning cost below lifetime savings.
+The structural synthesizer reads your code graph rather than calling an LLM. When structural synthesis can't solve a gap, the LLM fallback is **budget-gated by provider-classified modeled cost avoidance**. Local-only and legacy estimates cannot fund it.
 
 → See [The 3 Pillars of Zero-Token Autonomy](#the-3-pillars-of-zero-token-autonomy) for how.
 
@@ -338,7 +338,7 @@ The `auth` skill in the trace above was synthesized this way. Fitness 1.0, cost 
 
 ### Pillar 3 — Dreaming Loop (Idle-Time Self-Play)
 
-When no user activity is detected for >60 s, the `DreamingLoop` generates synthetic queries from `FeedbackJournal` history, perturbs the PRISM scoring weights, and runs counterfactual experiments against itself. Improvements are kept when they beat the local acceptance gate; regressions are discarded. This is designed to improve local ranking while idle — with no API calls.
+When no user activity is detected for >60 s, the `DreamingLoop` generates counterfactual queries from `FeedbackJournal` history, perturbs the PRISM scoring weights, and executes candidates against the fixed local benchmark. Candidates are kept only when the real harness improves; regressions are discarded. With `ENTROLY_VERIFIED_DREAMING=1`, a learned world model can rank which candidates to execute next, but its synthetic transitions live in a separate hash-chained ledger and cannot promote a configuration. See [Verified dreaming](verified-dreaming.md).
 
 ### The Closed Loop
 
@@ -353,9 +353,9 @@ User query → miss → EvolutionLogger registers gap
                     ↓
             Skill registry live in .entroly/vault/evolution/
                     ↓
-        [Pillar 3] Idle? Dream: perturb weights, self-play, keep wins
+        [Pillar 3] Idle? Rank proposals, run real benchmark, keep measured wins
                     ↓
-            Next session starts strictly smarter
+            Next session uses only benchmark-accepted changes
 ```
 
 No manual tuning. No config files. No tokens spent on learning. The daemon ships with the runtime and starts the moment you run `entroly go`.
@@ -472,7 +472,7 @@ Every exported `skill.json` carries `origin.synthesis: "structural"` and `origin
 | **Skill synthesis** | LLM generates code (pays tokens) | **Structural induction first — $0** |
 | **Learning budget** | Unbounded (you pay the bill) | **Gated: C_spent ≤ 5% of savings** |
 | **Gap detection** | Implicit (re-encounters failure) | **Explicit: `EvolutionLogger` miss counter** |
-| **Idle time** | Process sleeps | **DreamingLoop runs self-play** |
+| **Idle time** | Process sleeps | **DreamingLoop runs bounded local experiments** |
 | **Persistence** | Session memory + FTS | **Epistemic vault + belief graph + registry** |
 | **Net cost of learning** | Positive (always) | **Designed to be ≤ 0** |
 
@@ -481,7 +481,7 @@ Every exported `skill.json` carries `origin.synthesis: "structural"` and `origin
 | Capability | What It Does | Cost |
 |---|---|---|
 | **PRISM Reinforcement Learning** | Learns which context produces good AI responses. Updates 4D scoring weights (recency, frequency, semantic, entropy) via policy gradients with counterfactual credit assignment. | Zero — runs on CPU |
-| **Dreaming Loop** | During idle time (>60s inactivity), generates synthetic queries and runs self-play experiments to find better weight configurations. Monotonic improvement guarantee. | Zero — no API calls |
+| **Dreaming Loop** | During idle time (>60s inactivity), generates counterfactual queries and runs real local benchmark experiments. Optional world-model dreams rank proposals; they never promote directly. | Zero — no API calls |
 | **Task-Conditioned Profiles** | Automatically detects task type (debugging, feature, refactor, performance, testing, docs) and loads task-specific learned weights. Debugging prioritizes recency; documentation prioritizes semantic similarity. | Zero |
 | **Skill Synthesis** | Identifies gaps in coverage, synthesizes new tools from AST analysis, benchmarks them, promotes winners, prunes losers. Full lifecycle — no human intervention. | Zero — structural analysis only |
 | **Adaptive Exploration (RAVEN-UCB)** | Thompson sampling + Upper Confidence Bound automatically balances exploring new strategies vs exploiting known-good ones. Exploration rate anneals as confidence grows. | Zero |
@@ -764,7 +764,7 @@ entroly proxy --quality 0.7         # any float 0.0-1.0
 
 ## Operational Features
 
-- **Persistent savings tracking** — lifetime savings in `~/.entroly/value_tracker.json`, trend charts in dashboard
+- **Evidence-classified value tracking** — provider-bound modeled cost avoidance, local-only token reduction, and quarantined legacy history in `~/.entroly/value_tracker.json`
 - **IDE status bar** — `/confidence` endpoint for real-time VS Code widgets
 - **Rich headers** — `X-Entroly-Confidence`, `X-Entroly-Coverage-Pct`, `X-Entroly-Cost-Saved-Today`
 - **Crash recovery** — gzipped checkpoints restore in <100ms

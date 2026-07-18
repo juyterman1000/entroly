@@ -4,7 +4,8 @@
 
 <h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
 
-<p align="center"><b>Keep your agent. Give it a Context OS.</b></p>
+<p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
+The observability, governance, and decision layer for AI context.</p>
 
 Entroly is an open-source Context OS for AI agents: auditable context
 engineering, recoverable compression, memory, verification, provider controls,
@@ -21,7 +22,13 @@ Run the local, no-key verification path:
 ```bash
 entroly verify-claims
 entroly simulate
+entroly value
 ```
+
+`entroly value` keeps provider-bound cost avoidance separate from SDK, MCP,
+and npm reductions. Local-only operations report tokens reduced with `$0`
+claimed; modeled provider cost avoidance includes pricing provenance and is
+not a provider invoice.
 
 ## MCP server
 
@@ -93,10 +100,27 @@ claude mcp add entroly -- uvx --from entroly entroly
 - **Context Commits** linking selected, omitted, and recoverable evidence
 - **Context Receipts** for replay, audit, and omission explanations
 - **Exact recovery** of compressed fragments through stable handles
+- **Proof-guided recovery** that verifies drafts, recovers exact omitted
+  evidence, and stops under declared round/token bounds; local prepare and
+  advance operations never call a provider
 - **Local verification** through WITNESS and receipt checks
 - **Context Check** coverage evidence for changed files and CI risk gates
+- **Verified model-based dreaming** (experimental, opt-in): real transitions
+  train the model, synthetic rollouts only rank experiments, and real holdout
+  evidence remains mandatory for promotion
 - **Pure-Python base runtime**, optional Rust acceleration, and a separate npm/WASM runtime
 - **Local-first operation** with no outbound analytics by default
+
+Prepare a restart-safe model request without a provider call:
+
+```bash
+entroly proof prepare ./docs --query "What evidence supports this answer?" \
+  --budget 8000 --idempotency-key request-001
+```
+
+The caller sends the returned request through its existing model route and
+returns the draft with `entroly proof advance`. See the repository's
+proof-guided protocol guide for MCP, proxy, and opt-in OpenClaw automation.
 
 ## Links
 

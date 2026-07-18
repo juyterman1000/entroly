@@ -1,10 +1,11 @@
 """
-Entroly Value Tracker — Persistent lifetime savings across sessions
-====================================================================
+Entroly Value Tracker — Evidence-classified value across sessions
+==================================================================
 
-Tracks cumulative value delivered by Entroly across all sessions:
-  - Total tokens saved (lifetime)
-  - Estimated cost saved (USD, per-model pricing)
+Tracks cumulative value without mixing incompatible evidence classes:
+  - Provider-bound input tokens reduced and modeled API cost avoidance
+  - Local-only SDK/MCP/npm token reduction with no dollar claim
+  - Legacy or unknown-source history preserved as unclassified
   - Requests optimized
   - Daily/weekly/monthly aggregates for trend charts
   - Context confidence score (real-time)
@@ -88,9 +89,10 @@ _MODEL_ALIASES = {
 }
 
 # ── Evolution Budget Guardrail ──────────────────────────────────────────
-# The evolution daemon may only spend τ% of lifetime savings on LLM synthesis.
-# Budget(t) = τ · S(t) − C_spent(t)  →  guaranteed token-negative.
-EVOLUTION_TAX_RATE = 0.05  # 5% of lifetime savings
+# The evolution daemon may spend only τ% of provider-classified modeled cost
+# avoidance on LLM synthesis. Local-only and legacy estimates cannot fund it.
+# Budget(t) = τ · S_provider(t) − C_spent(t).
+EVOLUTION_TAX_RATE = 0.05
 
 
 _PRICING_CACHE: dict[str, Any] | None = None
@@ -145,6 +147,22 @@ def pricing_provenance() -> dict[str, str]:
     """Where the active rates come from — for audit/report surfaces."""
     p = _pricing()
     return {"as_of": str(p.get("as_of", _PRICING_AS_OF)), "source": str(p.get("source", "bundled"))}
+
+
+def _has_priced_model(model: str) -> bool:
+    """Return whether the active catalog explicitly prices ``model``."""
+    if not model:
+        return False
+    pricing = _pricing()
+    normalized = model.lower()
+    for alias, canonical in _MODEL_ALIASES.items():
+        if normalized.startswith(alias):
+            normalized = canonical + normalized[len(alias):]
+            break
+    return any(
+        normalized.startswith(prefix)
+        for prefix in pricing.get("models", {})
+    )
 
 
 def estimate_cost(tokens_saved: int, model: str = "", kind: str = "input") -> float:
@@ -214,7 +232,9 @@ class ValueTracker:
     _MAX_WEEKLY_ENTRIES = 52   # ~1 year
     _MAX_MONTHLY_ENTRIES = 24  # ~2 years
     _MAX_ACTIVITY = 200        # bounded cross-process live feed
-    _SCHEMA_VERSION = 3
+    _SCHEMA_VERSION = 4
+    _PROVIDER_SOURCES = frozenset({"provider", "proxy", "gateway"})
+    _LOCAL_SOURCES = frozenset({"sdk", "npm", "mcp", "local"})
 
     @staticmethod
     def _default_dir() -> Path:
@@ -244,6 +264,11 @@ class ValueTracker:
         self._session_requests: int = 0
         self._session_tokens_saved: int = 0
         self._session_cost_saved: float = 0.0
+        self._session_provider_requests: int = 0
+        self._session_provider_tokens_saved: int = 0
+        self._session_provider_cost_avoided: float = 0.0
+        self._session_local_operations: int = 0
+        self._session_local_tokens_reduced: int = 0
 
     @staticmethod
     def _mtime(p: Path) -> float:
@@ -269,15 +294,57 @@ class ValueTracker:
 
     @classmethod
     def _migrate(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Backward-compatible forward migration. Adds v3 value fields
-        (hallucinations blocked, model-routing $ saved) without touching
-        existing counters."""
+        """Migrate without presenting old mixed counters as provider savings."""
         base = cls._defaults()
         lt = data.setdefault("lifetime", {})
+        previous_version = int(data.get("version", 0) or 0)
+        if previous_version < 4:
+            # v3 mixed proxy, SDK, MCP, and npm reductions in the same totals.
+            # Preserve that history, but quarantine it as unclassified because
+            # there is no honest way to reconstruct which operations reached a
+            # paid provider after the fact.
+            lt.setdefault(
+                "unclassified_tokens_reduced", int(lt.get("tokens_saved", 0) or 0)
+            )
+            lt.setdefault(
+                "unclassified_cost_estimate_usd",
+                float(lt.get("cost_saved_usd", 0.0) or 0.0),
+            )
+            lt.setdefault(
+                "unclassified_operations",
+                int(lt.get("requests_optimized", 0) or 0),
+            )
+            # The legacy dollar field is retained as a compatibility alias,
+            # but v4 narrows it to provider-classified value. The old mixed
+            # estimate remains available above as unclassified history.
+            lt["cost_saved_usd"] = float(
+                lt.get("provider_cost_avoided_usd", 0.0) or 0.0
+            )
         for k, v in base["lifetime"].items():
             lt.setdefault(k, v)
         for bucket in ("daily", "weekly", "monthly"):
-            data.setdefault(bucket, {})
+            period = data.setdefault(bucket, {})
+            if previous_version < 4 and isinstance(period, dict):
+                for row in period.values():
+                    if not isinstance(row, dict):
+                        continue
+                    row.setdefault(
+                        "unclassified_tokens_reduced",
+                        int(row.get("tokens_saved", 0) or 0),
+                    )
+                    row.setdefault(
+                        "unclassified_cost_estimate_usd",
+                        float(row.get("cost_saved", 0.0) or 0.0),
+                    )
+                    row.setdefault(
+                        "unclassified_operations",
+                        int(row.get("requests", 0) or 0),
+                    )
+                    row["cost_saved"] = float(
+                        row.get("provider_cost_avoided_usd", 0.0) or 0.0
+                    )
+                    for field, default in cls._empty_period().items():
+                        row.setdefault(field, default)
         data["version"] = cls._SCHEMA_VERSION
         return data
 
@@ -291,6 +358,19 @@ class ValueTracker:
                 "requests_optimized": 0,
                 "requests_total": 0,
                 "duplicates_caught": 0,
+                # v4: evidence classes. Only provider-bound requests can
+                # produce a public dollar-cost-avoidance claim.
+                "provider_tokens_saved": 0,
+                "provider_cost_avoided_usd": 0.0,
+                "provider_requests": 0,
+                "provider_requests_optimized": 0,
+                "provider_unpriced_tokens": 0,
+                "provider_unpriced_requests": 0,
+                "local_tokens_reduced": 0,
+                "local_operations": 0,
+                "unclassified_tokens_reduced": 0,
+                "unclassified_cost_estimate_usd": 0.0,
+                "unclassified_operations": 0,
                 "first_seen": time.time(),
                 "last_seen": time.time(),
                 # Evolution budget accounting (Pillar 1)
@@ -553,6 +633,74 @@ class ValueTracker:
                 for old_key in sorted_keys[: len(sorted_keys) - limit]:
                     del bucket[old_key]
 
+    @classmethod
+    def _channel(cls, source: str) -> str:
+        normalized = (source or "unclassified").strip().lower()
+        if normalized in cls._PROVIDER_SOURCES:
+            return "provider"
+        if normalized in cls._LOCAL_SOURCES:
+            return "local"
+        return "unclassified"
+
+    @staticmethod
+    def _empty_period() -> dict[str, int | float]:
+        return {
+            "tokens_saved": 0,
+            "cost_saved": 0.0,
+            "requests": 0,
+            "provider_tokens_saved": 0,
+            "provider_cost_avoided_usd": 0.0,
+            "provider_requests": 0,
+            "provider_requests_optimized": 0,
+            "provider_unpriced_tokens": 0,
+            "provider_unpriced_requests": 0,
+            "local_tokens_reduced": 0,
+            "local_operations": 0,
+            "unclassified_tokens_reduced": 0,
+            "unclassified_cost_estimate_usd": 0.0,
+            "unclassified_operations": 0,
+        }
+
+    def _record_period(
+        self,
+        bucket_name: str,
+        key: str,
+        *,
+        tokens: int,
+        cost: float,
+        channel: str,
+        optimized: bool,
+        provider_priced: bool,
+    ) -> None:
+        bucket = self._data.setdefault(bucket_name, {})
+        row = bucket.setdefault(key, self._empty_period())
+        for field, default in self._empty_period().items():
+            row.setdefault(field, default)
+
+        row["tokens_saved"] += tokens
+        row["requests"] += 1
+        if channel == "provider":
+            row["cost_saved"] = round(float(row["cost_saved"]) + cost, 6)
+            row["provider_tokens_saved"] += tokens
+            row["provider_cost_avoided_usd"] = round(
+                float(row["provider_cost_avoided_usd"]) + cost, 6
+            )
+            row["provider_requests"] += 1
+            if optimized:
+                row["provider_requests_optimized"] += 1
+            if not provider_priced:
+                row["provider_unpriced_tokens"] += tokens
+                row["provider_unpriced_requests"] += 1
+        elif channel == "local":
+            row["local_tokens_reduced"] += tokens
+            row["local_operations"] += 1
+        else:
+            row["unclassified_tokens_reduced"] += tokens
+            row["unclassified_cost_estimate_usd"] = round(
+                float(row["unclassified_cost_estimate_usd"]) + cost, 6
+            )
+            row["unclassified_operations"] += 1
+
     def record(
         self,
         tokens_saved: int,
@@ -561,13 +709,20 @@ class ValueTracker:
         optimized: bool = True,
         coverage_pct: float = 0.0,
         confidence: float = 0.0,
+        source: str = "unclassified",
     ) -> None:
-        """Record a single optimized request's value.
+        """Record an optimization without overstating its economic evidence.
 
-        Called from proxy.py after each successful optimization.
-        Thread-safe. Persists to disk on every call (atomic write).
+        ``source="proxy"`` records a provider-bound request whose pre/post
+        token counts may support modeled API input-cost avoidance. SDK, npm,
+        MCP, and local operations record token reduction only because the
+        tracker cannot prove their output was sent to a paid provider.
         """
-        cost = estimate_cost(tokens_saved, model)
+        tokens_saved = max(0, int(tokens_saved))
+        channel = self._channel(source)
+        estimated_cost = estimate_cost(tokens_saved, model)
+        provider_priced = channel != "provider" or _has_priced_model(model)
+        cost = estimated_cost if provider_priced else 0.0
         now = time.time()
         day = _day_key(now)
         week = _week_key(now)
@@ -576,41 +731,63 @@ class ValueTracker:
         with self._lock:
             lt = self._data["lifetime"]
             lt["tokens_saved"] += tokens_saved
-            lt["cost_saved_usd"] = round(lt["cost_saved_usd"] + cost, 6)
             lt["requests_total"] += 1
             if optimized:
                 lt["requests_optimized"] += 1
             lt["duplicates_caught"] += duplicates
             lt["last_seen"] = now
 
-            # Daily
-            d = self._data.setdefault("daily", {})
-            if day not in d:
-                d[day] = {"tokens_saved": 0, "cost_saved": 0.0, "requests": 0}
-            d[day]["tokens_saved"] += tokens_saved
-            d[day]["cost_saved"] = round(d[day]["cost_saved"] + cost, 6)
-            d[day]["requests"] += 1
+            if channel == "provider":
+                lt["cost_saved_usd"] = round(
+                    lt["cost_saved_usd"] + cost, 6
+                )
+                lt["provider_tokens_saved"] += tokens_saved
+                lt["provider_cost_avoided_usd"] = round(
+                    lt["provider_cost_avoided_usd"] + cost, 6
+                )
+                lt["provider_requests"] += 1
+                if optimized:
+                    lt["provider_requests_optimized"] += 1
+                if not provider_priced:
+                    lt["provider_unpriced_tokens"] += tokens_saved
+                    lt["provider_unpriced_requests"] += 1
+            elif channel == "local":
+                lt["local_tokens_reduced"] += tokens_saved
+                lt["local_operations"] += 1
+            else:
+                lt["unclassified_tokens_reduced"] += tokens_saved
+                lt["unclassified_cost_estimate_usd"] = round(
+                    lt["unclassified_cost_estimate_usd"] + estimated_cost, 6
+                )
+                lt["unclassified_operations"] += 1
 
-            # Weekly
-            w = self._data.setdefault("weekly", {})
-            if week not in w:
-                w[week] = {"tokens_saved": 0, "cost_saved": 0.0, "requests": 0}
-            w[week]["tokens_saved"] += tokens_saved
-            w[week]["cost_saved"] = round(w[week]["cost_saved"] + cost, 6)
-            w[week]["requests"] += 1
-
-            # Monthly
-            m = self._data.setdefault("monthly", {})
-            if month not in m:
-                m[month] = {"tokens_saved": 0, "cost_saved": 0.0, "requests": 0}
-            m[month]["tokens_saved"] += tokens_saved
-            m[month]["cost_saved"] = round(m[month]["cost_saved"] + cost, 6)
-            m[month]["requests"] += 1
+            self._record_period(
+                "daily", day, tokens=tokens_saved, cost=cost,
+                channel=channel, optimized=optimized,
+                provider_priced=provider_priced,
+            )
+            self._record_period(
+                "weekly", week, tokens=tokens_saved, cost=cost,
+                channel=channel, optimized=optimized,
+                provider_priced=provider_priced,
+            )
+            self._record_period(
+                "monthly", month, tokens=tokens_saved, cost=cost,
+                channel=channel, optimized=optimized,
+                provider_priced=provider_priced,
+            )
 
             # Session counters (in-memory only)
             self._session_requests += 1
             self._session_tokens_saved += tokens_saved
-            self._session_cost_saved += cost
+            if channel == "provider":
+                self._session_cost_saved += cost
+                self._session_provider_requests += 1
+                self._session_provider_tokens_saved += tokens_saved
+                self._session_provider_cost_avoided += cost
+            elif channel == "local":
+                self._session_local_operations += 1
+                self._session_local_tokens_reduced += tokens_saved
             self._last_confidence = confidence
             self._last_coverage_pct = coverage_pct
 
@@ -625,9 +802,14 @@ class ValueTracker:
                 "summary": (f"Optimized request: saved {tokens_saved:,} "
                             f"tokens" + (f" ({model})" if model else "")),
                 "tokens_saved": int(tokens_saved),
-                "cost_saved_usd": round(cost, 6),
+                "cost_saved_usd": round(cost if channel == "provider" else 0.0, 6),
+                "modeled_cost_avoided_usd": round(
+                    cost if channel == "provider" else 0.0, 6
+                ),
                 "model": model or "",
                 "duplicates": int(duplicates),
+                "source": source or "unclassified",
+                "measurement_channel": channel,
             })
             self._save_activity()
 
@@ -664,6 +846,13 @@ class ValueTracker:
                 "requests": self._session_requests,
                 "tokens_saved": self._session_tokens_saved,
                 "cost_saved_usd": round(self._session_cost_saved, 4),
+                "provider_requests": self._session_provider_requests,
+                "provider_tokens_saved": self._session_provider_tokens_saved,
+                "provider_cost_avoided_usd": round(
+                    self._session_provider_cost_avoided, 4
+                ),
+                "local_operations": self._session_local_operations,
+                "local_tokens_reduced": self._session_local_tokens_reduced,
             }
 
     def get_confidence(self) -> dict[str, Any]:
@@ -679,19 +868,44 @@ class ValueTracker:
                 "confidence": round(self._last_confidence, 4),
                 "coverage_pct": round(self._last_coverage_pct, 2),
                 "session": {
-                    "requests": self._session_requests,
-                    "tokens_saved": self._session_tokens_saved,
-                    "cost_saved_usd": round(self._session_cost_saved, 4),
+                    "requests": self._session_provider_requests,
+                    "tokens_saved": self._session_provider_tokens_saved,
+                    "cost_saved_usd": round(
+                        self._session_provider_cost_avoided, 4
+                    ),
+                    "local_operations": self._session_local_operations,
+                    "local_tokens_reduced": self._session_local_tokens_reduced,
                 },
                 "today": {
-                    "tokens_saved": today_data.get("tokens_saved", 0),
-                    "cost_saved_usd": today_data.get("cost_saved", 0.0),
-                    "requests": today_data.get("requests", 0),
+                    "tokens_saved": today_data.get("provider_tokens_saved", 0),
+                    "cost_saved_usd": today_data.get(
+                        "provider_cost_avoided_usd", 0.0
+                    ),
+                    "requests": today_data.get(
+                        "provider_requests_optimized", 0
+                    ),
+                    "local_tokens_reduced": today_data.get(
+                        "local_tokens_reduced", 0
+                    ),
+                    "local_operations": today_data.get("local_operations", 0),
                 },
                 "lifetime": {
-                    "tokens_saved": lt.get("tokens_saved", 0),
-                    "cost_saved_usd": lt.get("cost_saved_usd", 0.0),
-                    "requests_optimized": lt.get("requests_optimized", 0),
+                    "tokens_saved": lt.get("provider_tokens_saved", 0),
+                    "cost_saved_usd": lt.get(
+                        "provider_cost_avoided_usd", 0.0
+                    ),
+                    "requests_optimized": lt.get(
+                        "provider_requests_optimized", 0
+                    ),
+                    "provider_requests": lt.get("provider_requests", 0),
+                    "provider_unpriced_tokens": lt.get(
+                        "provider_unpriced_tokens", 0
+                    ),
+                    "provider_unpriced_requests": lt.get(
+                        "provider_unpriced_requests", 0
+                    ),
+                    "local_tokens_reduced": lt.get("local_tokens_reduced", 0),
+                    "local_operations": lt.get("local_operations", 0),
                     "hallucinations_blocked": lt.get(
                         "hallucinations_blocked", 0),
                     "routing_saved_usd": lt.get("routing_saved_usd", 0.0),
@@ -710,19 +924,109 @@ class ValueTracker:
             "activity": self.get_activity(50),
         }
 
+    def get_value_receipt(self) -> dict[str, Any]:
+        """Return a machine-readable, evidence-classified value summary."""
+        self.reload_if_changed()
+        lifetime = self.get_lifetime()
+        daily = self.get_daily(90)
+        provider_days = sum(
+            1 for row in daily if int(row.get("provider_requests", 0) or 0) > 0
+        )
+        local_days = sum(
+            1 for row in daily if int(row.get("local_operations", 0) or 0) > 0
+        )
+        pricing = pricing_provenance()
+        return {
+            "schema_version": "entroly.value-receipt.v1",
+            "provider_path": {
+                "requests_observed": int(
+                    lifetime.get("provider_requests", 0) or 0
+                ),
+                "requests_optimized": int(
+                    lifetime.get("provider_requests_optimized", 0) or 0
+                ),
+                "input_tokens_reduced": int(
+                    lifetime.get("provider_tokens_saved", 0) or 0
+                ),
+                "modeled_input_cost_avoided_usd": round(
+                    float(lifetime.get("provider_cost_avoided_usd", 0.0) or 0.0),
+                    6,
+                ),
+                "active_days": provider_days,
+                "unpriced_requests": int(
+                    lifetime.get("provider_unpriced_requests", 0) or 0
+                ),
+                "unpriced_input_tokens": int(
+                    lifetime.get("provider_unpriced_tokens", 0) or 0
+                ),
+                "evidence": (
+                    "Pre/post local token counts on requests Entroly handled "
+                    "on a provider-bound proxy path. Dollar value applies the "
+                    "recorded model's configured input rate; it is not an invoice. "
+                    "Requests without an explicit catalog match remain unpriced."
+                ),
+            },
+            "local_operations": {
+                "operations": int(lifetime.get("local_operations", 0) or 0),
+                "tokens_reduced": int(
+                    lifetime.get("local_tokens_reduced", 0) or 0
+                ),
+                "active_days": local_days,
+                "dollar_claimed_usd": 0.0,
+                "evidence": (
+                    "SDK, MCP, npm, and other local reductions. Entroly does not "
+                    "claim dollar savings because it cannot prove the output was "
+                    "sent to a paid provider."
+                ),
+            },
+            "legacy_unclassified": {
+                "operations": int(
+                    lifetime.get("unclassified_operations", 0) or 0
+                ),
+                "tokens_reduced": int(
+                    lifetime.get("unclassified_tokens_reduced", 0) or 0
+                ),
+                "historical_cost_estimate_usd": round(
+                    float(
+                        lifetime.get("unclassified_cost_estimate_usd", 0.0) or 0.0
+                    ),
+                    6,
+                ),
+                "dollar_claimed_usd": 0.0,
+                "evidence": (
+                    "History recorded before source classification or by an "
+                    "unknown caller. Preserved, but excluded from public savings."
+                ),
+            },
+            "trust_signals": {
+                "unsupported_claims_blocked": int(
+                    lifetime.get("hallucinations_blocked", 0) or 0
+                ),
+                "routing_decisions": int(
+                    lifetime.get("routing_decisions", 0) or 0
+                ),
+                "modeled_routing_cost_avoided_usd": round(
+                    float(lifetime.get("routing_saved_usd", 0.0) or 0.0), 6
+                ),
+            },
+            "pricing": pricing,
+            "generated_at_unix": round(time.time(), 3),
+        }
+
     # ── Evolution Budget Guardrail (Pillar 1) ─────────────────────────────
 
     def get_evolution_budget(self) -> dict[str, Any]:
         """Return the available evolution budget.
 
-        Budget = τ · lifetime_savings − total_spent
-        The system can only spend τ% (5%) of its lifetime savings on
-        LLM-based skill synthesis. This guarantees token-negativity.
+        Budget = τ · provider_classified_cost_avoidance − total_spent
+        The system can spend at most τ% (5%) of provider-classified modeled
+        cost avoidance on LLM-based skill synthesis. Local-only and legacy
+        estimates cannot fund it.
 
         Returns:
             {
                 "available_usd": float,   # remaining evolution budget
-                "total_earned_usd": float, # τ · lifetime savings
+                "total_earned_usd": float, # τ · provider cost avoidance
                 "total_spent_usd": float,  # already debited
                 "can_evolve": bool,        # available > 0
                 "tax_rate": float,         # τ
@@ -730,7 +1034,7 @@ class ValueTracker:
         """
         with self._lock:
             lt = self._data.get("lifetime", {})
-            lifetime_saved = lt.get("cost_saved_usd", 0.0)
+            lifetime_saved = lt.get("provider_cost_avoided_usd", 0.0)
             total_spent = lt.get("evolution_spent_usd", 0.0)
             total_earned = lifetime_saved * EVOLUTION_TAX_RATE
             available = max(0.0, total_earned - total_spent)
@@ -762,7 +1066,7 @@ class ValueTracker:
         """
         with self._lock:
             lt = self._data.get("lifetime", {})
-            lifetime_saved = lt.get("cost_saved_usd", 0.0)
+            lifetime_saved = lt.get("provider_cost_avoided_usd", 0.0)
             current_spent = lt.get("evolution_spent_usd", 0.0)
             total_earned = lifetime_saved * EVOLUTION_TAX_RATE
             available = total_earned - current_spent

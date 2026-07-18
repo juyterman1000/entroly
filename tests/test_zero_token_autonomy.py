@@ -40,7 +40,11 @@ class TestEvolutionBudget:
         vt = self._make_tracker()
         # Simulate saving 10,000 tokens at $0.003/1K = $0.03/request
         for _ in range(100):
-            vt.record(tokens_saved=10000, model="claude-sonnet-4")
+            vt.record(
+                tokens_saved=10000,
+                model="claude-sonnet-4",
+                source="proxy",
+            )
         budget = vt.get_evolution_budget()
         # 100 requests × 10K tokens × $0.003/1K = $3.00 saved
         # Budget = 5% × $3.00 = $0.15
@@ -60,7 +64,11 @@ class TestEvolutionBudget:
         vt = self._make_tracker()
         # Save enough to have budget
         for _ in range(50):
-            vt.record(tokens_saved=50000, model="gpt-4o")
+            vt.record(
+                tokens_saved=50000,
+                model="gpt-4o",
+                source="proxy",
+            )
         budget = vt.get_evolution_budget()
         assert budget["can_evolve"]
 
@@ -73,7 +81,11 @@ class TestEvolutionBudget:
         """C_spent(t) ≤ τ · S(t) must hold at all times."""
         vt = self._make_tracker()
         # Save $10 worth of tokens
-        vt.record(tokens_saved=3_333_333, model="claude-sonnet-4")
+        vt.record(
+            tokens_saved=3_333_333,
+            model="claude-sonnet-4",
+            source="proxy",
+        )
         budget = vt.get_evolution_budget()
         earned = budget["total_earned_usd"]
 
@@ -267,13 +279,20 @@ class TestDreamingLoop:
         class DummyEval:
             def __init__(self, eff: float):
                 self.context_efficiency = eff
+                self.recall_accuracy = 1.0
 
         monkeypatch.setattr(autotune, "load_config", lambda _path=None: {"w_r": 0.2, "w_f": 0.2, "w_s": 0.3, "w_e": 0.3})
         monkeypatch.setattr(
             autotune, "save_config", lambda _cfg, _path=None: None
         )
         monkeypatch.setattr(autotune, "load_cases", lambda: [{"q": "x", "a": "y"}])
-        monkeypatch.setattr(autotune, "evaluate", lambda _cfg, _cases, time_budget=None: DummyEval(0.5))
+        monkeypatch.setattr(
+            autotune,
+            "evaluate",
+            lambda _cfg, _cases, time_budget=None, benchmark_seed=None: DummyEval(
+                0.5
+            ),
+        )
 
         result = loop.run_dream_cycle()
         assert result["status"] == "completed"

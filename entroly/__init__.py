@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.62"
+__version__ = "1.0.63"
 
 try:
     from .sdk import compress, compress_messages, verify  # noqa: F401
@@ -46,6 +46,63 @@ try:
         create_context_commit,
         replay_context,
         verify_context_commit,
+    )
+except ImportError:
+    pass
+
+# Verified AI efficiency layer: secure intake, proof-carrying context,
+# hallucination suppression, exact recovery, and verified-only evolution.
+try:
+    from .verified_efficiency import (  # noqa: F401
+        AuditArtifact,
+        AuditUnavailableError,
+        AuditVerification,
+        ContextRiskError,
+        EfficiencyLayerError,
+        EvolutionEvidenceError,
+        LearningReceipt,
+        PreparedContext,
+        RecoveredContext,
+        RecoveryIntegrityError,
+        UnsafeContextError,
+        VerificationFailureError,
+        VerifiedEfficiencyLayer,
+        VerifiedOutput,
+    )
+except ImportError:
+    pass
+
+# Proof-guided fixed point: bounded claim verification, exact evidence
+# rehydration, monotonic context expansion, and signed round decisions.
+try:
+    from .context_fixed_point import (  # noqa: F401
+        EvidenceCandidate,
+        EvidenceObligation,
+        EvidencePlan,
+        FixedPointError,
+        FixedPointModelError,
+        FixedPointModelRequest,
+        FixedPointRecoveryError,
+        FixedPointResult,
+        FixedPointRound,
+        FixedPointSession,
+        FixedPointStep,
+        FixedPointVerificationError,
+        ProofGuidedRecoveryPlanner,
+        advance_proof_guided_fixed_point,
+        run_proof_guided_fixed_point,
+        start_proof_guided_fixed_point,
+    )
+except ImportError:
+    pass
+
+# Durable host adapter used by MCP, HTTP sidecars, CLI, and agent plugins.
+try:
+    from .proof_guided_runtime import (  # noqa: F401
+        ProofGuidedRuntime,
+        ProofGuidedRuntimeError,
+        ProofGuidedSessionConflict,
+        ProofGuidedSessionNotFound,
     )
 except ImportError:
     pass

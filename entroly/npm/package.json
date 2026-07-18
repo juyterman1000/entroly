@@ -1,6 +1,6 @@
 {
   "name": "entroly-mcp",
-  "version": "1.0.62",
+  "version": "1.0.63",
   "mcpName": "io.github.juyterman1000/entroly",
   "description": "NPX bridge to Entroly's Context OS: auditable AI agent context engineering, recovery, receipts, and verification.",
   "main": "index.js",
