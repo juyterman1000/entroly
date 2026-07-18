@@ -204,6 +204,19 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "for attempt in $(seq 1 20)" in openclaw_publisher
     assert "waiting for PyPI propagation" in openclaw_publisher
 
+    clawhub_publisher = text.split("  publish-clawhub-openclaw:", 1)[1].split(
+        "  publish-binaries:", 1
+    )[0]
+    assert "id-token: write" in clawhub_publisher
+    assert "package trusted-publisher set entroly-openclaw" in clawhub_publisher
+    assert '--workflow-filename "entroly-publish.yml"' in clawhub_publisher
+    assert "--manual-override-reason" not in clawhub_publisher
+    assert '--source-commit "$GITHUB_SHA"' in clawhub_publisher
+    assert '--source-ref "entroly-v${RELEASE_VERSION}"' in clawhub_publisher
+    assert "Verify exact ClawHub version is public" in clawhub_publisher
+    assert "for attempt in range(1, 61)" in clawhub_publisher
+    assert "package moderation-status entroly-openclaw --json" in clawhub_publisher
+
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
     assert not (ROOT / ".github/workflows/sync-homebrew-after-release.yml").exists()
