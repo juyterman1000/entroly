@@ -19,6 +19,16 @@ on:
       - "benchmarks/results/openclaw_evidence_pinning.json"
       - ".github/workflows/publish-openclaw-clawhub.yml"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Released Entroly version to diagnose or reconcile, for example 1.0.63."
+        required: false
+        type: string
+      publish_if_missing:
+        description: "Publish the immutable tagged source only when authenticated status confirms the version is absent."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -98,6 +108,333 @@ jobs:
           path: |
             ${{ runner.temp }}/clawhub-package-validate.json
             ${{ runner.temp }}/clawhub-package-publish-dry-run.json
+          if-no-files-found: ignore
+
+  reconcile:
+    name: Diagnose or reconcile a released ClawHub version
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      REQUESTED_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout canonical release history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable release source
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$REQUESTED_VERSION" =~ $SEMVER_RE ]]; then
+            echo "Version must be canonical major.minor.patch semver: $REQUESTED_VERSION" >&2
+            exit 1
+          fi
+          release_tag="entroly-v${REQUESTED_VERSION}"
+          git fetch --force --tags origin
+          git fetch --no-tags origin main
+          release_sha="$(git rev-parse "${release_tag}^{commit}")"
+          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
+            echo "Release source $release_sha is not contained in canonical main." >&2
+            exit 1
+          fi
+          tagged_version="$(git show "${release_sha}:integrations/openclaw/package.json" | node -e \
+            "let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => console.log(JSON.parse(data).version));")"
+          if [[ "$tagged_version" != "$REQUESTED_VERSION" ]]; then
+            echo "Tagged OpenClaw version $tagged_version does not match $REQUESTED_VERSION." >&2
+            exit 1
+          fi
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.19.0"
+
+      - name: Install pinned ClawHub CLI
+        run: npm install --global "clawhub@${CLAWHUB_CLI_VERSION}"
+
+      - name: Authenticate to ClawHub
+        shell: bash
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLAWHUB_TOKEN"
+          echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-reconcile-config.json" >> "$GITHUB_ENV"
+          CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-reconcile-config.json" \
+            clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+
+      - name: Read authenticated moderation state
+        id: moderation
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw_status="$RUNNER_TEMP/clawhub-moderation-before-raw.json"
+          safe_status="$RUNNER_TEMP/clawhub-moderation-before.json"
+          clawhub package moderation-status entroly-openclaw --json > "$raw_status"
+          STATUS_FILE="$raw_status" SAFE_STATUS="$safe_status" python - <<'PY'
+          import json
+          import os
+
+          status = json.load(open(os.environ["STATUS_FILE"], encoding="utf-8"))
+          release = status.get("latestRelease") or {}
+          expected = os.environ["REQUESTED_VERSION"]
+          version = release.get("version")
+          scan = release.get("scanStatus")
+          moderation = release.get("moderationState")
+          blocked = bool(release.get("blockedFromDownload"))
+          if version != expected:
+              decision = "missing"
+          elif blocked or scan in {"suspicious", "malicious"} or moderation in {
+              "quarantined",
+              "revoked",
+          }:
+              decision = "blocked"
+          else:
+              decision = "wait"
+          safe = {
+              "decision": decision,
+              "release_id": release.get("releaseId"),
+              "latest_version": version,
+              "scan_status": scan,
+              "moderation_state": moderation,
+              "blocked": blocked,
+          }
+          with open(os.environ["SAFE_STATUS"], "w", encoding="utf-8") as output:
+              json.dump(safe, output, indent=2, sort_keys=True)
+              output.write("\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"decision={decision}\n")
+              output.write(f"latest_version={version or ''}\n")
+              output.write(f"scan_status={scan or ''}\n")
+              output.write(f"moderation_state={moderation or ''}\n")
+          print(json.dumps(safe, indent=2, sort_keys=True))
+          PY
+          rm -f "$raw_status"
+
+      - name: Configure GitHub OIDC trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          clawhub package trusted-publisher set entroly-openclaw \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow-filename "publish-openclaw-clawhub.yml" \
+            --json | tee "$RUNNER_TEMP/clawhub-trusted-publisher.json"
+
+      - name: Probe exact public version
+        id: public
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          name = "entroly-openclaw"
+          expected = os.environ["REQUESTED_VERSION"]
+          base = "https://clawhub.ai/api/v1/packages"
+          headers = {"User-Agent": "entroly-clawhub-reconciler/1.0"}
+          visible = False
+          try:
+              request = urllib.request.Request(
+                  f"{base}/{urllib.parse.quote(name, safe='')}", headers=headers
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  package = (json.load(response).get("package") or {})
+              request = urllib.request.Request(
+                  f"{base}/{urllib.parse.quote(name, safe='')}/versions/"
+                  f"{urllib.parse.quote(expected, safe='')}",
+                  headers=headers,
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  release = (json.load(response).get("version") or {})
+              visible = (
+                  package.get("latestVersion") == expected
+                  and release.get("version") == expected
+                  and bool((release.get("artifact") or {}).get("sha256"))
+              )
+          except (urllib.error.HTTPError, urllib.error.URLError, ValueError):
+              visible = False
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"visible={'true' if visible else 'false'}\n")
+          print(json.dumps({"expected": expected, "visible": visible}, sort_keys=True))
+          PY
+
+      - name: Refuse an unsafe or quarantined release
+        if: steps.public.outputs.visible != 'true' && steps.moderation.outputs.decision == 'blocked'
+        shell: bash
+        run: |
+          echo "ClawHub blocked ${REQUESTED_VERSION}: scan=${{ steps.moderation.outputs.scan_status }}, moderation=${{ steps.moderation.outputs.moderation_state }}" >&2
+          exit 1
+
+      - name: Require explicit approval before replacing a missing release
+        if: >-
+          steps.public.outputs.visible != 'true' &&
+          steps.moderation.outputs.decision == 'missing' &&
+          inputs.publish_if_missing != true
+        shell: bash
+        run: |
+          echo "ClawHub has no authenticated ${REQUESTED_VERSION} release. Re-run with publish_if_missing=true to publish the immutable tag." >&2
+          exit 1
+
+      - name: Publish missing release with GitHub OIDC
+        id: publish
+        if: >-
+          steps.public.outputs.visible != 'true' &&
+          steps.moderation.outputs.decision == 'missing' &&
+          inputs.publish_if_missing == true
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          rm -f "$CLAWHUB_CONFIG_PATH"
+          release_dir="$RUNNER_TEMP/entroly-clawhub-release"
+          git worktree add --detach "$release_dir" "$RELEASE_SHA"
+          cd "$release_dir/integrations/openclaw"
+          clawhub package validate . --json | tee "$RUNNER_TEMP/clawhub-package-validate.json"
+          clawhub package publish . \
+            --version "$REQUESTED_VERSION" \
+            --tags latest \
+            --source-repo "$GITHUB_REPOSITORY" \
+            --source-commit "$RELEASE_SHA" \
+            --source-ref "$RELEASE_TAG" \
+            --source-path "integrations/openclaw" \
+            --changelog "Reconciled Entroly ${REQUESTED_VERSION} from its immutable GitHub release" \
+            --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
+
+      - name: Wait for exact public release
+        if: >-
+          steps.public.outputs.visible != 'true' &&
+          (steps.moderation.outputs.decision == 'wait' || steps.publish.outcome == 'success')
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          name = "entroly-openclaw"
+          expected = os.environ["REQUESTED_VERSION"]
+          base = "https://clawhub.ai/api/v1/packages"
+          headers = {"User-Agent": "entroly-clawhub-reconciler/1.0"}
+          last_error = "release did not become public"
+
+          def read_json(url: str) -> dict:
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          for attempt in range(1, 61):
+              try:
+                  package = (
+                      read_json(f"{base}/{urllib.parse.quote(name, safe='')}").get("package")
+                      or {}
+                  )
+                  release = (
+                      read_json(
+                          f"{base}/{urllib.parse.quote(name, safe='')}/versions/"
+                          f"{urllib.parse.quote(expected, safe='')}"
+                      ).get("version")
+                      or {}
+                  )
+                  artifact = release.get("artifact") or {}
+                  if package.get("latestVersion") != expected:
+                      raise RuntimeError(
+                          f"latest is {package.get('latestVersion')!r}, expected {expected!r}"
+                      )
+                  if release.get("version") != expected or not artifact.get("sha256"):
+                      raise RuntimeError("exact public artifact is incomplete")
+                  result = {
+                      "package": name,
+                      "version": expected,
+                      "artifact_sha256": artifact["sha256"],
+                      "release_id": release.get("_id"),
+                  }
+                  with open(
+                      os.path.join(os.environ["RUNNER_TEMP"], "clawhub-public-version.json"),
+                      "w",
+                      encoding="utf-8",
+                  ) as output:
+                      json.dump(result, output, indent=2, sort_keys=True)
+                      output.write("\n")
+                  print(json.dumps(result, indent=2, sort_keys=True))
+                  raise SystemExit(0)
+              except (urllib.error.HTTPError, urllib.error.URLError, ValueError, RuntimeError) as exc:
+                  last_error = str(exc)
+                  print(f"Attempt {attempt}/60: {last_error}")
+                  if attempt < 60:
+                      time.sleep(15)
+          raise SystemExit(last_error)
+          PY
+
+      - name: Record final authenticated moderation state
+        if: always()
+        shell: bash
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLAWHUB_TOKEN"
+          final_config="$RUNNER_TEMP/clawhub-final-config.json"
+          CLAWHUB_CONFIG_PATH="$final_config" \
+            clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+          raw_status="$RUNNER_TEMP/clawhub-moderation-after-raw.json"
+          CLAWHUB_CONFIG_PATH="$final_config" \
+            clawhub package moderation-status entroly-openclaw --json > "$raw_status"
+          RAW_STATUS="$raw_status" python - <<'PY'
+          import json
+          import os
+
+          status = json.load(open(os.environ["RAW_STATUS"], encoding="utf-8"))
+          release = status.get("latestRelease") or {}
+          safe = {
+              "package": (status.get("package") or {}).get("name"),
+              "release_id": release.get("releaseId"),
+              "version": release.get("version"),
+              "scan_status": release.get("scanStatus"),
+              "moderation_state": release.get("moderationState"),
+              "blocked_from_download": bool(release.get("blockedFromDownload")),
+          }
+          destination = os.path.join(
+              os.environ["RUNNER_TEMP"], "clawhub-moderation-after.json"
+          )
+          with open(destination, "w", encoding="utf-8") as output:
+              json.dump(safe, output, indent=2, sort_keys=True)
+              output.write("\n")
+          print(json.dumps(safe, indent=2, sort_keys=True))
+          PY
+          rm -f "$raw_status"
+
+      - name: Upload reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawhub-release-reconciliation-${{ inputs.version }}
+          path: |
+            ${{ runner.temp }}/clawhub-moderation-before.json
+            ${{ runner.temp }}/clawhub-moderation-after.json
+            ${{ runner.temp }}/clawhub-trusted-publisher.json
+            ${{ runner.temp }}/clawhub-package-validate.json
+            ${{ runner.temp }}/clawhub-package-publish.json
+            ${{ runner.temp }}/clawhub-public-version.json
           if-no-files-found: ignore
 
   # Production publication is intentionally coordinated in entroly-publish.yml
