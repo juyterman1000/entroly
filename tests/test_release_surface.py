@@ -216,6 +216,8 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "Verify exact ClawHub version is public" in clawhub_publisher
     assert "for attempt in range(1, 61)" in clawhub_publisher
     assert "package moderation-status entroly-openclaw --json" in clawhub_publisher
+    assert "moderation-status entroly-openclaw --json > \"$raw_status\"" in clawhub_publisher
+    assert 'release.get("moderationReason")' not in clawhub_publisher
 
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
@@ -315,3 +317,25 @@ def test_clawhub_verifier_follows_coordinated_release() -> None:
         "https://clawhub.ai/juyterman1000/plugins/entroly-openclaw" in text
     )
     assert "ClawHub {expected_version} unavailable: {safe_error}" in text
+
+
+def test_clawhub_reconciliation_is_tag_bound_and_non_destructive_by_default() -> None:
+    text = (ROOT / ".github/workflows/publish-openclaw-clawhub.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "publish_if_missing:" in text
+    assert "default: false" in text
+    assert 'release_tag="entroly-v${REQUESTED_VERSION}"' in text
+    assert 'git rev-parse "${release_tag}^{commit}"' in text
+    assert "package moderation-status entroly-openclaw --json" in text
+    assert "steps.moderation.outputs.decision == 'missing'" in text
+    assert "inputs.publish_if_missing == true" in text
+    assert "package trusted-publisher set entroly-openclaw" in text
+    assert '--source-commit "$RELEASE_SHA"' in text
+    assert "package delete" not in text
+    assert "clawhub-moderation-before-raw.json" in text
+    assert "clawhub-moderation-before-raw.json" not in text.split(
+        "name: clawhub-release-reconciliation-${{ inputs.version }}", 1
+    )[1]
+    assert 'release.get("moderationReason")' not in text

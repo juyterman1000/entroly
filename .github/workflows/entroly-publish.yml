@@ -633,9 +633,32 @@ jobs:
           test -n "$CLAWHUB_TOKEN"
           CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-moderation-config.json" \
             clawhub login --token "$CLAWHUB_TOKEN" --no-browser
+          raw_status="$RUNNER_TEMP/clawhub-moderation-status-raw.json"
           CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-moderation-config.json" \
-            clawhub package moderation-status entroly-openclaw --json \
-              | tee "$RUNNER_TEMP/clawhub-moderation-status.json"
+            clawhub package moderation-status entroly-openclaw --json > "$raw_status"
+          RAW_STATUS="$raw_status" python - <<'PY'
+          import json
+          import os
+
+          status = json.load(open(os.environ["RAW_STATUS"], encoding="utf-8"))
+          release = status.get("latestRelease") or {}
+          safe = {
+              "package": (status.get("package") or {}).get("name"),
+              "release_id": release.get("releaseId"),
+              "version": release.get("version"),
+              "scan_status": release.get("scanStatus"),
+              "moderation_state": release.get("moderationState"),
+              "blocked_from_download": bool(release.get("blockedFromDownload")),
+          }
+          destination = os.path.join(
+              os.environ["RUNNER_TEMP"], "clawhub-moderation-status.json"
+          )
+          with open(destination, "w", encoding="utf-8") as output:
+              json.dump(safe, output, indent=2, sort_keys=True)
+              output.write("\n")
+          print(json.dumps(safe, indent=2, sort_keys=True))
+          PY
+          rm -f "$raw_status"
 
       - name: Upload ClawHub publication evidence
         if: always()
