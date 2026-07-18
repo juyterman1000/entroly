@@ -37,7 +37,12 @@ from entroly.reward_crystallizer import (  # noqa: E402
     _hamming,
     _jaccard,
 )
-from entroly.skill_engine import SkillSynthesizer, SkillEngine  # noqa: E402
+from entroly.skill_engine import (  # noqa: E402
+    SkillBenchmark,
+    SkillEngine,
+    SkillSpec,
+    SkillSynthesizer,
+)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -315,7 +320,7 @@ def _fake_event(**overrides):
 
 def test_c10_synthesize_from_success_carries_provenance():
     spec = SkillSynthesizer().synthesize_from_success(_fake_event())
-    assert spec.status == "promoted"  # pre-validated by LCB
+    assert spec.status == "testing"  # recipe evidence is not executable proof
     assert spec.metrics.get("source") == "crystallization"
     assert spec.metrics.get("fitness_score") == 0.78
     assert "auth.py" in spec.tool_code
@@ -338,6 +343,7 @@ def test_c11_crystallize_skill_writes_vault(tmp_path):
 
     res = se.crystallize_skill(_fake_event(cluster_id="cl_test"))
     assert res["status"] == "crystallized"
+    assert res["skill_status"] == "testing"
 
     skill_dir = Path(res["path"])
     assert (skill_dir / "SKILL.md").exists()
@@ -369,11 +375,10 @@ def test_c11_crystallize_skill_writes_vault(tmp_path):
     assert "auth.py" in out["fragment_recipe"]
 
 
-def test_c12_promoted_status_skips_draft_lifecycle():
-    """Crystallized skills enter the registry already promoted.
-    The Hoeffding LCB is the fitness proof; no benchmark required."""
+def test_c12_crystallized_status_requires_benchmark_lifecycle():
+    """Recipe reward evidence cannot promote newly generated code."""
     spec = SkillSynthesizer().synthesize_from_success(_fake_event())
-    assert spec.status == "promoted"
+    assert spec.status == "testing"
     # Distinct from failure-driven path which starts as 'draft'
     failure_spec = SkillSynthesizer().synthesize_from_gap(
         "auth",
@@ -381,6 +386,39 @@ def test_c12_promoted_status_skips_draft_lifecycle():
         "Debugging",
     )
     assert failure_spec.status == "draft"
+
+
+def test_c12b_benchmark_rejects_wrong_successful_output():
+    tool = "def execute(query, context):\n    return {'answer': 'WRONG'}\n"
+    spec = SkillSpec(
+        tool_code=tool,
+        test_cases=[{"input": "question", "expected": {"answer": "RIGHT"}}],
+    )
+
+    result = SkillBenchmark().benchmark(spec)
+
+    assert result.passed == 0
+    assert result.failed == 1
+    assert result.fitness_score == 0.0
+    assert "output contract failed" in result.errors[0]
+
+
+def test_c12c_promotion_requires_benchmark_contract(tmp_path):
+    from entroly.vault import VaultConfig, VaultManager
+
+    vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+    vault.ensure_structure()
+    engine = SkillEngine(vault)
+    created = engine.crystallize_skill(_fake_event(cluster_id="cl_gate"))
+
+    before = engine.promote_or_prune(created["skill_id"])
+    assert before["status"] == "kept"
+    assert before["new_status"] == "testing"
+
+    benchmark = engine.benchmark_skill(created["skill_id"])
+    assert benchmark["fitness"] == 1.0
+    after = engine.promote_or_prune(created["skill_id"])
+    assert after["status"] == "promoted"
 
 
 # ══════════════════════════════════════════════════════════════════

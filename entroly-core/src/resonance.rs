@@ -280,6 +280,12 @@ impl ResonanceMatrix {
         self.pairs.is_empty()
     }
 
+    /// Remove pairwise evidence involving fragments that left the live index.
+    pub fn remove_fragments(&mut self, fragment_ids: &std::collections::HashSet<String>) {
+        self.pairs
+            .retain(|key, _| !fragment_ids.contains(&key.0) && !fragment_ids.contains(&key.1));
+    }
+
     /// Get the strongest resonance pairs (for diagnostics).
     /// Returns up to `top_k` pairs sorted by |strength| descending.
     pub fn top_pairs(&self, top_k: usize) -> Vec<(String, String, f64, u32)> {

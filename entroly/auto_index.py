@@ -18,6 +18,7 @@ import logging
 import os
 import subprocess
 import time
+from hashlib import sha256
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -448,7 +449,351 @@ def _source_type_token_weight(rel_path: str) -> float:
     return 1.5
 
 
+def _canonical_rel_path(rel_path: str) -> str:
+    """Return the stable workspace-relative path used in fragment sources."""
+    normalized = rel_path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.lstrip("/")
+
+
+def _read_index_file(project_dir: str, rel_path: str) -> tuple[str | None, int, str | None]:
+    """Read one index candidate and explain every non-content outcome.
+
+    Returns ``(content, size_bytes, reason)``.  ``reason`` is ``None`` only
+    when content is safe to ingest.  Reconciliation uses the explicit reason
+    to remove stale bytes when a formerly indexed file becomes unavailable.
+    """
+    abs_path = _resolve_project_file(project_dir, rel_path)
+    if abs_path is None:
+        return None, 0, "outside_project"
+    try:
+        size = os.path.getsize(abs_path)
+        max_bytes = _max_bytes_for_path(rel_path)
+        if size > ABSOLUTE_MAX_BYTES:
+            return None, size, f"too_large:{ABSOLUTE_MAX_BYTES}"
+        if size > max_bytes:
+            return None, size, f"too_large:{max_bytes}"
+        if size == 0:
+            return None, 0, "empty"
+    except OSError:
+        return None, 0, "unreadable"
+    try:
+        with open(abs_path, "rb") as file_handle:
+            if b"\x00" in file_handle.read(8192):
+                return None, size, "binary"
+    except OSError:
+        return None, size, "unreadable"
+    try:
+        with open(abs_path, encoding="utf-8", errors="ignore") as file_handle:
+            content = file_handle.read()
+    except (OSError, UnicodeDecodeError):
+        return None, size, "unreadable"
+    if not content.strip():
+        return None, size, "empty"
+    return content, size, None
+
+
+def _export_file_fragments(engine: EntrolyEngine) -> dict[str, list[dict]]:
+    """Group live file fragments by canonical source without losing aliases."""
+    if engine._use_rust:
+        fragments = [dict(fragment) for fragment in engine._rust.export_fragments()]
+    else:
+        fragments = [
+            {
+                "fragment_id": fragment.fragment_id,
+                "source": fragment.source,
+                "content": fragment.content,
+                "token_count": fragment.token_count,
+            }
+            for fragment in engine._fragments.values()
+        ]
+
+    grouped: dict[str, list[dict]] = {}
+    for fragment in fragments:
+        source = str(fragment.get("source") or "")
+        if not source.startswith("file:"):
+            continue
+        canonical = f"file:{_canonical_rel_path(source[5:])}"
+        grouped.setdefault(canonical, []).append(fragment)
+    return grouped
+
+
+def reconcile_index(
+    engine: EntrolyEngine,
+    project_dir: str | None = None,
+    *,
+    max_changes: int | None = None,
+) -> dict:
+    """Serialize and reconcile the repository index against live files."""
+    mutation_lock = getattr(engine, "_index_mutation_lock", None)
+    if mutation_lock is None:
+        return _reconcile_index(engine, project_dir, max_changes=max_changes)
+    with mutation_lock:
+        return _reconcile_index(engine, project_dir, max_changes=max_changes)
+
+
+def _reconcile_index(
+    engine: EntrolyEngine,
+    project_dir: str | None = None,
+    *,
+    max_changes: int | None = None,
+) -> dict:
+    """Reconcile the live index against exact workspace bytes.
+
+    This is deliberately content-addressed rather than mtime-only.  A changed
+    file is source-atomically removed and re-ingested; a deleted, unreadable,
+    or newly excluded file is removed.  The result is an inspectable receipt,
+    and successful mutations are persisted before returning.
+    """
+    project_dir = os.path.abspath(project_dir or os.getcwd())
+    started = time.perf_counter()
+    engine.wait_until_warm()
+
+    global _ignore_patterns
+    _ignore_patterns = _load_entrolyignore(project_dir)
+
+    discovered = _git_ls_files(project_dir)
+    discovery = "git"
+    if not discovered:
+        discovered = _walk_fallback(project_dir)
+        discovery = "walk"
+    indexable = [_canonical_rel_path(path) for path in discovered if _should_index(path)]
+    indexable = sorted(set(indexable), key=_priority_score, reverse=True)
+    candidates = indexable[:MAX_FILES]
+    # The active cap is part of the index contract. A warm cache produced with
+    # a larger prior cap must not retain unchecked, potentially stale sources.
+    current_paths = set(candidates)
+    existing = _export_file_fragments(engine)
+    existing_source_aliases = {
+        canonical: {
+            str(fragment.get("source") or canonical)
+            for fragment in fragments
+        }
+        for canonical, fragments in existing.items()
+    }
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    reads: dict[str, tuple[str | None, int, str | None]] = {}
+    max_workers = min(16, (os.cpu_count() or 4) * 2)
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="reconcile") as pool:
+        futures = {
+            pool.submit(_read_index_file, project_dir, rel_path): rel_path
+            for rel_path in candidates
+        }
+        for future in as_completed(futures):
+            rel_path = futures[future]
+            try:
+                reads[rel_path] = future.result()
+            except Exception as exc:  # fail visibly; never drop live context silently
+                reads[rel_path] = (None, 0, f"read_error:{type(exc).__name__}")
+
+    changed: list[tuple[str, str, int, bool]] = []
+    unavailable: dict[str, str] = {}
+    unchanged = 0
+    for rel_path in candidates:
+        source = f"file:{rel_path}"
+        content, _size, reason = reads[rel_path]
+        prior = existing.get(source, [])
+        if content is None:
+            if prior:
+                unavailable[source] = reason or "unavailable"
+            continue
+        current_digest = sha256(content.encode("utf-8")).hexdigest()
+        prior_digests = {
+            sha256(str(fragment.get("content") or "").encode("utf-8")).hexdigest()
+            for fragment in prior
+        }
+        # Multiple fragments for one source are themselves stale ambiguity,
+        # even when one copy happens to match current disk content.
+        if len(prior) == 1 and current_digest in prior_digests:
+            unchanged += 1
+            continue
+        changed.append((source, content, _estimate_tokens(content), bool(prior)))
+
+    deleted: list[str] = []
+    for source in existing:
+        rel_path = source[5:]
+        if rel_path not in current_paths:
+            deleted.append(source)
+
+    removal_reasons: dict[str, str] = {
+        **{source: "deleted_or_excluded" for source in deleted},
+        **unavailable,
+        **{source: "content_changed" for source, _, _, had_prior in changed if had_prior},
+    }
+    additions = [item for item in changed if not item[3]]
+    replacements = [item for item in changed if item[3]]
+
+    ordered_mutations = sorted(removal_reasons)
+    if max_changes is not None:
+        mutation_budget = max(0, int(max_changes))
+        ordered_mutations = ordered_mutations[:mutation_budget]
+        remaining_budget = max(0, mutation_budget - len(ordered_mutations))
+        additions_to_apply = additions[:remaining_budget]
+    else:
+        additions_to_apply = additions
+    removal_sources = set(ordered_mutations)
+    exact_removal_sources = sorted({
+        alias
+        for canonical in removal_sources
+        for alias in existing_source_aliases.get(canonical, {canonical})
+    })
+
+    transaction_snapshot = (
+        engine.snapshot_index_state()
+        if exact_removal_sources or additions_to_apply
+        else None
+    )
+    removal_result = engine.remove_sources(exact_removal_sources) if exact_removal_sources else {
+        "status": "unchanged",
+        "removed_fragments": 0,
+        "removed_sources": [],
+        "missing_sources": [],
+    }
+    removed_exact = set(removal_result.get("removed_sources", []))
+    removed_canonical = {
+        f"file:{_canonical_rel_path(source[5:])}"
+        for source in removed_exact
+        if source.startswith("file:")
+    }
+    removal_supported = removal_result.get("status") != "unsupported"
+
+    errors: list[str] = []
+    stale_sources: list[str] = []
+    if not removal_supported:
+        stale_sources = sorted(removal_sources)
+        errors.append(
+            "native source removal is unavailable; upgrade entroly-core before "
+            "reconciling modified or deleted files"
+        )
+
+    ingested_added = 0
+    ingested_replaced = 0
+    added_sources: list[str] = []
+    replaced_sources: list[str] = []
+    ingest_errors: list[str] = []
+    additions_by_source = {item[0]: item for item in additions_to_apply}
+    replacements_by_source = {item[0]: item for item in replacements}
+    safe_items = list(additions_by_source.values())
+    if removal_supported:
+        safe_items.extend(
+            item for source, item in replacements_by_source.items()
+            if source in removal_sources
+            and existing_source_aliases.get(source, {source}).issubset(removed_exact)
+        )
+
+    for source, content, tokens, had_prior in safe_items:
+        weighted_tokens = int(tokens * _source_type_token_weight(source[5:]))
+        try:
+            result = engine.ingest_fragment(
+                content=content,
+                source=source,
+                token_count=weighted_tokens,
+                is_pinned=False,
+            )
+            if result.get("status") not in {"ingested", "duplicate"}:
+                ingest_errors.append(f"{source}: {result.get('reason', result.get('status'))}")
+            elif had_prior:
+                ingested_replaced += 1
+                replaced_sources.append(source)
+            else:
+                ingested_added += 1
+                added_sources.append(source)
+        except Exception as exc:
+            ingest_errors.append(f"{source}: {type(exc).__name__}: {exc}")
+
+    errors.extend(ingest_errors)
+    mutated = bool(removed_exact or ingested_added or ingested_replaced)
+    rolled_back = False
+    dependency_refresh: dict[str, object] = {"status": "unchanged"}
+    persistence: dict[str, object] = {"status": "unchanged"}
+
+    # A replacement is a multi-step operation (remove, ingest, rebuild,
+    # persist). Restore the exact pre-scan state on any failed step so callers
+    # never observe or restart from a half-applied workspace mutation.
+    if ingest_errors and transaction_snapshot is not None:
+        engine.restore_index_state(transaction_snapshot)
+        rolled_back = True
+    elif mutated:
+        dependency_refresh = engine.rebuild_dependencies()
+        if dependency_refresh.get("status") == "unsupported":
+            errors.append(
+                "native dependency rebuild is unavailable; upgrade entroly-core "
+                "before trusting relationships after source replacement"
+            )
+            if transaction_snapshot is not None:
+                engine.restore_index_state(transaction_snapshot)
+                rolled_back = True
+
+    if mutated and not rolled_back:
+        try:
+            persistence = engine.persist_index()
+        except Exception as exc:
+            persistence = {
+                "status": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            errors.append(f"index persistence failed: {type(exc).__name__}: {exc}")
+            if transaction_snapshot is not None:
+                engine.restore_index_state(transaction_snapshot)
+                rolled_back = True
+
+    if rolled_back:
+        dependency_refresh = {"status": "rolled_back"}
+        if persistence.get("status") == "unchanged":
+            persistence = {"status": "rolled_back"}
+        removed_exact = set()
+        removed_canonical = set()
+        ingested_added = 0
+        ingested_replaced = 0
+        added_sources = []
+        replaced_sources = []
+        mutated = False
+
+    pending = max(0, len(removal_reasons) + len(additions) - len(ordered_mutations) - len(additions_to_apply))
+    status = "partial" if errors or pending else "updated" if mutated else "current"
+    return {
+        "status": status,
+        "project_dir": project_dir,
+        "discovery_method": discovery,
+        "files_scanned": len(candidates),
+        "files_unchanged": unchanged,
+        "files_added": ingested_added,
+        "files_replaced": ingested_replaced,
+        "files_removed": len(removed_canonical - set(replacements_by_source)),
+        "removed_fragments": (
+            0 if rolled_back else int(removal_result.get("removed_fragments", 0))
+        ),
+        "added_sources": added_sources,
+        "replaced_sources": replaced_sources,
+        "removed_sources": sorted(removed_canonical - set(replacements_by_source)),
+        "stale_sources": stale_sources,
+        "unavailable_sources": unavailable,
+        "pending_changes": pending,
+        "dependency_refresh": dependency_refresh,
+        "persistence": persistence,
+        "rolled_back": rolled_back,
+        "errors": errors,
+        "duration_s": round(time.perf_counter() - started, 3),
+    }
+
+
 def auto_index(
+    engine: EntrolyEngine,
+    project_dir: str | None = None,
+    force: bool = False,
+) -> dict:
+    """Serialize the full index lifecycle with incremental reconciliation."""
+    mutation_lock = getattr(engine, "_index_mutation_lock", None)
+    if mutation_lock is None:
+        return _auto_index(engine, project_dir, force)
+    with mutation_lock:
+        return _auto_index(engine, project_dir, force)
+
+
+def _auto_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
     force: bool = False,
@@ -476,6 +821,11 @@ def auto_index(
     project_dir = project_dir or os.getcwd()
     project_dir = os.path.abspath(project_dir)
 
+    # Warm-start is lazy by design, but auto-index is itself a mutation path.
+    # Load before inspecting or changing fragments so a later first request
+    # cannot overwrite freshly indexed bytes with an older persisted snapshot.
+    engine.wait_until_warm()
+
     # Load .entrolyignore patterns
     global _ignore_patterns
     _ignore_patterns = _load_entrolyignore(project_dir)
@@ -489,6 +839,9 @@ def auto_index(
     if not force and engine._use_rust:
         existing = engine._rust.fragment_count()
         if existing > 0:
+            # A persisted index is a cache, not authority. Reconcile it against
+            # exact workspace bytes before allowing retrieval to trust it.
+            reconciliation = reconcile_index(engine, project_dir)
             try:
                 frags = list(engine._rust.export_fragments())
                 existing_files = len({f.get("source", "") for f in frags if f.get("source")})
@@ -517,7 +870,8 @@ def auto_index(
                 "project_dir": project_dir,
                 # Skip-specific diagnostics (kept for callers that care):
                 "reason": "persistent_index_loaded",
-                "existing_fragments": existing,
+                "existing_fragments": int(engine._rust.fragment_count()),
+                "reconciliation": reconciliation,
             }
 
     t0 = time.perf_counter()
@@ -547,34 +901,6 @@ def auto_index(
     # ── Phase 1: Parallel file reading (I/O-bound) ─────────────────────────────
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    def _read_file(rel_path: str) -> tuple | None:
-        abs_path = _resolve_project_file(project_dir, rel_path)
-        if abs_path is None:
-            return ("skip_read", rel_path, 0)
-        try:
-            size = os.path.getsize(abs_path)
-            max_bytes = _max_bytes_for_path(rel_path)
-            if size > ABSOLUTE_MAX_BYTES:
-                return ("skip_size", rel_path, size, ABSOLUTE_MAX_BYTES)
-            if size > max_bytes or size == 0:
-                return ("skip_size", rel_path, size, max_bytes) if size > max_bytes else None
-        except OSError:
-            return None
-        try:
-            with open(abs_path, "rb") as fb:
-                if b"\x00" in fb.read(8192):
-                    return ("skip_read", rel_path, 0)
-        except OSError:
-            return ("skip_read", rel_path, 0)
-        try:
-            with open(abs_path, encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-        except (OSError, UnicodeDecodeError):
-            return ("skip_read", rel_path, 0)
-        if not content.strip():
-            return None
-        return (content, rel_path, _estimate_tokens(content))
-
     batch: list[tuple[str, str, int]] = []
     skipped_size = 0
     skipped_read = 0
@@ -586,20 +912,20 @@ def auto_index(
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="lpi") as pool:
-        futures = {pool.submit(_read_file, rp): rp for rp in indexable}
+        futures = {pool.submit(_read_index_file, project_dir, rp): rp for rp in indexable}
         for future in as_completed(futures):
-            data = future.result()
-            if data is None:
-                continue
-            if data[0] == "skip_size":
+            rel_path = _canonical_rel_path(futures[future])
+            content, size, reason = future.result()
+            if content is None and reason and reason.startswith("too_large:"):
                 skipped_size += 1
-                if len(data) >= 4:
-                    skipped_size_paths.append((data[1], data[2], data[3]))
+                cap = int(reason.split(":", 1)[1])
+                skipped_size_paths.append((rel_path, size, cap))
                 continue
-            if data[0] == "skip_read":
-                skipped_read += 1
+            if content is None:
+                if reason not in {None, "empty"}:
+                    skipped_read += 1
                 continue
-            content, rel_path, tokens = data
+            tokens = _estimate_tokens(content)
             # Apply source-type weighting: inflate token count for config files
             # so the knapsack deprioritizes them vs source code.
             weight = _source_type_token_weight(rel_path)
@@ -607,6 +933,26 @@ def auto_index(
             batch.append((content, f"file:{rel_path}", weighted_tokens))
 
     t_read = time.perf_counter()
+
+    force_removal: dict = {"status": "unchanged", "removed_fragments": 0}
+    force_snapshot: dict | None = None
+    if force:
+        existing_file_fragments = _export_file_fragments(engine)
+        exact_sources = sorted({
+            str(fragment.get("source") or "")
+            for fragments in existing_file_fragments.values()
+            for fragment in fragments
+            if fragment.get("source")
+        })
+        if exact_sources:
+            force_snapshot = engine.snapshot_index_state()
+            force_removal = engine.remove_sources(exact_sources)
+            if force_removal.get("status") == "unsupported":
+                logger.warning(
+                    "Forced re-index was not applied because the installed native "
+                    "engine cannot remove stale sources; upgrade entroly-core."
+                )
+                batch = []
 
     # ── Phase 2: Single PyO3 call into Rust batch_ingest ───────────────────────
     # Rust rayon parallelises SimHash + skeleton + entropy.
@@ -618,6 +964,7 @@ def auto_index(
     if engine._use_rust and batch:
         try:
             r = engine._rust.batch_ingest(batch)
+            engine._fragment_cache_dirty = True
             indexed = int(r.get("ingested", 0))
             total_tokens = int(r.get("total_tokens", 0))
             p1 = r.get('phase1_ms', '?')
@@ -630,6 +977,24 @@ def auto_index(
         except AttributeError:
             # Older entroly_core without batch_ingest — graceful fallback
             logger.debug("batch_ingest unavailable, falling back to per-file ingest")
+            try:
+                for content, source, tokens in batch:
+                    engine.ingest_fragment(
+                        content=content, source=source,
+                        token_count=tokens, is_pinned=False,
+                    )
+                    indexed += 1
+                    total_tokens += tokens
+            except Exception:
+                if force_snapshot is not None:
+                    engine.restore_index_state(force_snapshot)
+                raise
+        except Exception:
+            if force_snapshot is not None:
+                engine.restore_index_state(force_snapshot)
+            raise
+    else:
+        try:
             for content, source, tokens in batch:
                 engine.ingest_fragment(
                     content=content, source=source,
@@ -637,14 +1002,10 @@ def auto_index(
                 )
                 indexed += 1
                 total_tokens += tokens
-    else:
-        for content, source, tokens in batch:
-            engine.ingest_fragment(
-                content=content, source=source,
-                token_count=tokens, is_pinned=False,
-            )
-            indexed += 1
-            total_tokens += tokens
+        except Exception:
+            if force_snapshot is not None:
+                engine.restore_index_state(force_snapshot)
+            raise
 
     elapsed = time.perf_counter() - t0
     read_s = t_read - t_discovery
@@ -692,8 +1053,39 @@ def auto_index(
             except Exception as e:
                 logger.debug(f"Vault belief loading failed: {e}")
 
+    dependency_refresh: dict[str, object] = {"status": "unchanged"}
+    if indexed or force_removal.get("removed_fragments"):
+        dependency_refresh = engine.rebuild_dependencies()
+        if dependency_refresh.get("status") == "unsupported":
+            logger.warning(
+                "Full dependency graph rebuild is unavailable; upgrade entroly-core "
+                "to make architecture relationships immediately queryable."
+            )
+
+    persistence: dict[str, object] = {"status": "unchanged"}
+    if indexed or force_removal.get("removed_fragments"):
+        try:
+            persistence = engine.persist_index()
+        except Exception as exc:
+            persistence = {
+                "status": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            logger.warning("Fresh index persistence failed: %s", exc)
+            if force_snapshot is not None:
+                engine.restore_index_state(force_snapshot)
+                force_removal = {
+                    "status": "rolled_back",
+                    "removed_fragments": 0,
+                    "reason": "persistence_failed",
+                }
+                dependency_refresh = {"status": "rolled_back"}
+                indexed = 0
+                total_tokens = 0
+                beliefs_attached = 0
+
     return {
-        "status": "indexed",
+        "status": "error" if persistence.get("status") == "error" else "indexed",
         "files_indexed": indexed,
         "total_tokens": total_tokens,
         "beliefs_attached": beliefs_attached,
@@ -704,6 +1096,9 @@ def auto_index(
         "skipped_too_large": skipped_size,
         "skipped_unreadable": skipped_read,
         "project_dir": project_dir,
+        "persistence": persistence,
+        "force_removal": force_removal,
+        "dependency_refresh": dependency_refresh,
     }
 
 
@@ -722,78 +1117,31 @@ def start_incremental_watcher(
     project_dir = project_dir or os.getcwd()
     project_dir = os.path.abspath(project_dir)
 
-    # Track what we've already indexed (by mtime)
-    _indexed_mtimes: dict[str, float] = {}
-
-    def _initial_snapshot():
-        """Capture mtimes of all currently indexed files."""
-        files = _git_ls_files(project_dir) or []
-        for rel_path in files:
-            abs_path = _resolve_project_file(project_dir, rel_path)
-            if abs_path is None:
-                continue
-            try:
-                _indexed_mtimes[rel_path] = os.path.getmtime(abs_path)
-            except OSError:
-                pass
-
     def _scan_loop():
-        _initial_snapshot()
         while True:
             time.sleep(interval_s)
             try:
                 _incremental_scan()
             except Exception as e:
-                logger.debug(f"Incremental re-index error: {e}")
+                logger.warning("Incremental re-index failed: %s", e)
 
     def _incremental_scan():
-        files = _git_ls_files(project_dir) or []
-        new_or_modified = []
-
-        for rel_path in files:
-            if not _should_index(rel_path):
-                continue
-            abs_path = _resolve_project_file(project_dir, rel_path)
-            if abs_path is None:
-                continue
-            try:
-                mtime = os.path.getmtime(abs_path)
-            except OSError:
-                continue
-            prev_mtime = _indexed_mtimes.get(rel_path)
-            if prev_mtime is None or mtime > prev_mtime:
-                new_or_modified.append(rel_path)
-                _indexed_mtimes[rel_path] = mtime
-
-        if not new_or_modified:
-            return
-
-        count = 0
-        for rel_path in new_or_modified[:100]:  # cap per scan
-            abs_path = _resolve_project_file(project_dir, rel_path)
-            if abs_path is None:
-                continue
-            try:
-                size = os.path.getsize(abs_path)
-                if size > ABSOLUTE_MAX_BYTES or size > _max_bytes_for_path(rel_path) or size == 0:
-                    continue
-                with open(abs_path, encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-                if not content.strip():
-                    continue
-                tokens = _estimate_tokens(content)
-                engine.ingest_fragment(
-                    content=content,
-                    source=f"file:{rel_path}",
-                    token_count=tokens,
-                    is_pinned=False,
-                )
-                count += 1
-            except (OSError, UnicodeDecodeError):
-                continue
-
-        if count > 0:
-            logger.info(f"Incremental re-index: {count} new/modified files ingested")
+        result = reconcile_index(engine, project_dir, max_changes=100)
+        changed = result["files_added"] + result["files_replaced"] + result["files_removed"]
+        if changed:
+            logger.info(
+                "Incremental reconciliation: %s added, %s replaced, %s removed; "
+                "persistence=%s",
+                result["files_added"],
+                result["files_replaced"],
+                result["files_removed"],
+                result["persistence"].get("status"),
+            )
+        if result["errors"]:
+            logger.warning(
+                "Incremental reconciliation incomplete: %s",
+                "; ".join(result["errors"]),
+            )
 
     t = threading.Thread(target=_scan_loop, daemon=True, name="entroly-watcher")
     t.start()

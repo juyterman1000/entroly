@@ -94,6 +94,33 @@ impl DepGraph {
     /// Auto-link: given a fragment's content, extract symbols it references
     /// and create dependency edges to the fragments that define those symbols.
     pub fn auto_link(&mut self, fragment_id: &str, content: &str) {
+        // Preserve the incremental-ingest contract: resolve references against
+        // symbols that are already known, then publish definitions from the new
+        // fragment for later ingests.
+        self.link_references(fragment_id, content);
+        self.register_definitions_for_fragment(fragment_id, content);
+    }
+
+    /// Rebuild the graph from a complete fragment snapshot.
+    ///
+    /// Source replacement and deletion cannot safely patch only the edges that
+    /// mention the removed fragment: a replacement receives a new fragment ID,
+    /// and every existing caller must be rebound to that new definition.  A
+    /// deterministic two-pass rebuild first registers all definitions, then
+    /// resolves all references, so dependency discovery is independent of
+    /// HashMap or filesystem iteration order.
+    pub fn rebuild(&mut self, fragments: &[(String, String)]) {
+        *self = Self::new();
+
+        for (fragment_id, content) in fragments {
+            self.register_definitions_for_fragment(fragment_id, content);
+        }
+        for (fragment_id, content) in fragments {
+            self.link_references(fragment_id, content);
+        }
+    }
+
+    fn link_references(&mut self, fragment_id: &str, content: &str) {
         let lower = content.to_lowercase();
 
         // Detect explicit imports first (strongest dependency type)
@@ -127,7 +154,23 @@ impl DepGraph {
             }
         }
 
-        // Extract symbols this fragment DEFINES
+        // Cross-language callers use the same symbol namespace as ordinary
+        // imports, but carry a stronger edge type in the receipt/selector.
+        for ident in &identifiers {
+            if let Some((export_frag, _bridge)) = self.cross_lang_exports.get(ident) {
+                if export_frag != fragment_id {
+                    self.add_dependency(Dependency {
+                        source_id: fragment_id.to_string(),
+                        target_id: export_frag.clone(),
+                        dep_type: DepType::CrossLanguageFFI,
+                        strength: 0.95,
+                    });
+                }
+            }
+        }
+    }
+
+    fn register_definitions_for_fragment(&mut self, fragment_id: &str, content: &str) {
         let definitions = extract_definitions(content);
         for def in &definitions {
             self.register_symbol(def, fragment_id);
@@ -142,20 +185,6 @@ impl DepGraph {
             );
             // Also register in the normal symbol table so imports resolve
             self.register_symbol(symbol, fragment_id);
-        }
-
-        // Check if this fragment's imports match any cross-language export
-        for ident in &identifiers {
-            if let Some((export_frag, _bridge)) = self.cross_lang_exports.get(ident) {
-                if export_frag != fragment_id {
-                    self.add_dependency(Dependency {
-                        source_id: fragment_id.to_string(),
-                        target_id: export_frag.clone(),
-                        dep_type: DepType::CrossLanguageFFI,
-                        strength: 0.95, // Very strong: cross-lang deps are critical context
-                    });
-                }
-            }
         }
     }
 

@@ -53,10 +53,10 @@ class SkillSpec:
     trigger: str = ""  # pattern that triggers this skill
     procedure: str = ""  # step-by-step SOP
     tool_code: str = ""  # Python tool implementation
-    test_cases: list[dict[str, str]] = field(default_factory=list)
+    test_cases: list[dict[str, Any]] = field(default_factory=list)
     status: str = "draft"  # draft, testing, promoted, pruned
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    metrics: dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -103,8 +103,14 @@ class SkillSynthesizer:
         tool_code = self._generate_tool_template(name, entity_key, trigger)
 
         # Generate test cases
+        # A generated template is deliberately *not* considered implemented.
+        # Its contract can only pass after the placeholder is replaced by a
+        # separately verified implementation.
         tests = [
-            {"input": q, "expected": "should_not_fail"}
+            {
+                "input": q,
+                "expected": {"status": "implemented", "entity": entity_key},
+            }
             for q in failing_queries[:5]
         ]
 
@@ -161,9 +167,9 @@ class SkillSynthesizer:
     # baseline (Hoeffding LCB > baseline + ε) gets frozen as a skill.
     #
     # Differences from the failure path:
-    #   - status starts as "promoted" (not "draft"). The Hoeffding LCB
-    #     is itself the fitness proof; running another benchmark would
-    #     just re-derive the same statistic with smaller n.
+    #   - status starts as "testing" (not "promoted"). The Hoeffding LCB
+    #     proves the selection recipe was useful, not that generated code
+    #     satisfies an executable output contract.
     #   - Test cases are real positive samples from the cluster (the
     #     queries that earned the reward), not synthetic placeholders.
     #   - The procedure encodes the actual recipe: weight profile +
@@ -173,8 +179,8 @@ class SkillSynthesizer:
     def synthesize_from_success(self, event: "CrystallizationEvent") -> SkillSpec:  # type: ignore[name-defined]
         """Generate a SkillSpec from a RewardCrystallizer event.
 
-        The event already carries the statistical proof (LCB, effect
-        size, n) so we don't re-derive — we materialize.
+        The event carries statistical evidence for the source recipe. We
+        materialize it as a candidate and require independent validation.
         """
         from .reward_crystallizer import CrystallizationEvent  # noqa: F401, runtime check
 
@@ -220,7 +226,13 @@ class SkillSynthesizer:
 
         # Real positive samples as test cases — the queries that won.
         tests = [
-            {"input": q, "expected": "should_match"}
+            {
+                "input": q,
+                "expected": {
+                    "status": "success",
+                    "fragment_recipe": list(event.fragment_recipe),
+                },
+            }
             for q in event.sample_queries[:5]
         ]
 
@@ -235,7 +247,7 @@ class SkillSynthesizer:
             procedure=procedure,
             tool_code=tool_code,
             test_cases=tests,
-            status="promoted",  # Pre-validated by Hoeffding LCB; skip benchmark gate.
+            status="testing",
             metrics={
                 "fitness_score": round(event.lcb_reward, 4),
                 "samples": float(event.n_samples),
@@ -321,9 +333,9 @@ class SkillSynthesizer:
 # Structural Synthesizer — Entropy-Gradient Program Synthesis (Pillar 2)
 # ══════════════════════════════════════════════════════════════════════
 #
-# Novel contribution: Instead of asking an LLM to "write a tool," this
-# synthesizer derives executable tools from the *information topology*
-# of the code graph.
+# Instead of asking an LLM to write a tool, this synthesizer derives a
+# candidate tool from repository structure and subjects its output to a
+# benchmark contract before promotion.
 #
 # Given a skill gap at entity E, it computes:
 #   1. Dependency Closure: all files/functions reachable from E via
@@ -336,9 +348,9 @@ class SkillSynthesizer:
 #
 # The output tool's execute() function performs a local code search
 # along the entropy gradient, returning the most informative context
-# about the entity. This is deterministic, costs $0, and produces
-# tools that are *provably correct* (they return real code, not
-# hallucinations).
+# about the entity. This path is deterministic and makes no provider API call,
+# but it still consumes local compute and filesystem I/O. Returning source
+# excerpts does not prove that a candidate is correct or safe.
 #
 # Mathematical grounding:
 #   - The entropy gradient ∇H(E) points toward the direction of
@@ -349,11 +361,12 @@ class SkillSynthesizer:
 #     where the "distortion" is miss rate and "rate" is token cost.
 
 class StructuralSynthesizer:
-    """Zero-token skill synthesis via entropy-gradient structural analysis.
+    """Provider-call-free skill synthesis via structural analysis.
 
     Uses the Rust SAST/entropy engine to analyze code structure and
     generate tools that navigate the information topology of a codebase.
-    All synthesis is deterministic and runs on the local CPU for $0.
+    Synthesis is deterministic and runs on the local CPU. Local compute and
+    storage still have operational cost.
     """
 
     # Maximum depth of dependency traversal
@@ -404,13 +417,24 @@ class StructuralSynthesizer:
 
         # Step 5: Build test cases from failing queries
         tests = [
-            {"input": q, "expected": "should_return_context"}
+            {
+                "input": q,
+                "expected": {
+                    "status": "executed",
+                    "entity": entity_key,
+                    "synthesis_method": "structural_induction",
+                    "results": {"$min_items": 1},
+                },
+            }
             for q in failing_queries[:5]
         ]
 
         return SkillSpec(
             name=name,
-            description=f"Structural skill for {entity_key} (zero-token synthesis)",
+            description=(
+                f"Structural candidate skill for {entity_key} "
+                "(no provider call; local compute applies)"
+            ),
             entity=entity_key,
             trigger=trigger,
             procedure=self._generate_structural_procedure(entity_key, invariants),
@@ -565,7 +589,9 @@ class StructuralSynthesizer:
           1. Reads the source files associated with the entity
           2. Extracts the top-K most informative functions (by entropy)
           3. Returns their signatures + surrounding context
-        This is deterministic and always returns real code, never hallucinations.
+        This is deterministic and returns bounded current-source excerpts when
+        files remain available. The benchmark contract must still reject empty,
+        stale, malformed, or unsafe output before promotion.
         """
         pattern_lit = repr(SkillSynthesizer._literal_trigger_pattern(entity))
         closure_lit = repr(closure[:15])
@@ -574,7 +600,7 @@ class StructuralSynthesizer:
 
         return f'''"""
 Structural skill tool.
-Synthesis: entropy-gradient structural induction (zero-token, CPU-only)
+Synthesis: entropy-gradient structural induction (no provider call; CPU-only)
 
 This tool was generated WITHOUT any LLM call. It navigates the
 information topology of the codebase, returning
@@ -604,7 +630,7 @@ def execute(query: str, context: dict) -> dict:
 
     Returns the most informative code fragments, ranked by
     information density. All data comes from local file I/O —
-    no API calls, no token cost.
+    no provider API calls. Local compute and I/O still apply.
     """
     results = []
     for node in _CLOSURE:
@@ -632,6 +658,8 @@ def execute(query: str, context: dict) -> dict:
         "entity": {entity!r},
         "synthesis_method": "structural_induction",
         "token_cost": 0,
+        "token_cost_scope": "provider_tokens_only",
+        "local_compute": True,
         "closure_size": len(_CLOSURE),
         "imports": _IMPORTS,
         "classes": _CLASSES,
@@ -650,7 +678,7 @@ def execute(query: str, context: dict) -> dict:
         return (
             f"# Structural Procedure for {entity}\n\n"
             f"## Synthesis Method\n"
-            f"Entropy-gradient structural induction (zero-token, CPU-only).\n"
+            f"Entropy-gradient structural induction (no provider call; CPU-only).\n"
             f"Generated from AST analysis of {sig_count} functions, "
             f"{class_count} classes, {import_count} imports.\n\n"
             f"## Steps\n"
@@ -658,10 +686,10 @@ def execute(query: str, context: dict) -> dict:
             f"2. Rank functions by Shannon entropy (information density)\n"
             f"3. Return top-K most informative code fragments\n"
             f"4. Include dependency context (imports, classes)\n\n"
-            f"## Guarantees\n"
-            f"- Zero token cost (all local I/O)\n"
+            f"## Operational properties\n"
+            f"- No provider API call; local compute and I/O still apply\n"
             f"- Deterministic output (same input → same result)\n"
-            f"- No hallucinations (returns actual code, not generated text)\n"
+            f"- Returns bounded source excerpts; benchmark and security gates still apply\n"
         )
 
     @staticmethod
@@ -761,14 +789,24 @@ class SkillBenchmark:
 
         for tc in skill.test_cases:
             query = tc.get("input", "")
-            tc.get("expected", "")
+            expected = tc.get("expected")
             try:
                 run = self._runner.run_tool(skill.tool_code, query)
-                if run["status"] == "success":
+                if run.get("status") != "success":
+                    result.failed += 1
+                    result.errors.append(
+                        f"Query '{query}': {run.get('error', run.get('status', 'unknown'))}"
+                    )
+                    continue
+
+                matched, reason = self._matches_expected(run.get("result"), expected)
+                if matched:
                     result.passed += 1
                 else:
                     result.failed += 1
-                    result.errors.append(f"Query '{query}': {run.get('error', 'unknown')}")
+                    result.errors.append(
+                        f"Query '{query}': output contract failed: {reason}"
+                    )
             except Exception as e:
                 result.failed += 1
                 result.errors.append(f"Query '{query}': {e}")
@@ -778,6 +816,70 @@ class SkillBenchmark:
         result.fitness_score = result.passed / total if total > 0 else 0.0
 
         return result
+
+    @classmethod
+    def _matches_expected(
+        cls,
+        actual: Any,
+        expected: Any,
+        path: str = "result",
+    ) -> tuple[bool, str]:
+        """Verify an explicit deterministic output contract.
+
+        Dictionaries are recursively matched as subsets. ``$min_items`` is
+        available for collections. Empty expectations and historical
+        ``should_*`` placeholders fail closed instead of silently passing.
+        """
+        if expected is None or expected == "":
+            return False, "missing expected output"
+
+        if isinstance(expected, str):
+            if expected.strip().lower().startswith("should_"):
+                return False, f"unverifiable legacy expectation {expected!r}"
+            if isinstance(actual, str):
+                matched = actual.strip() == expected.strip()
+            else:
+                matched = expected.strip() in json.dumps(
+                    actual, sort_keys=True, default=str
+                )
+            return matched, "matched" if matched else f"expected {expected!r}"
+
+        if isinstance(expected, dict):
+            if "$min_items" in expected:
+                minimum = expected["$min_items"]
+                if not isinstance(minimum, int) or minimum < 0:
+                    return False, f"{path} has invalid $min_items contract"
+                if not isinstance(actual, (list, tuple, dict, str)):
+                    return False, f"{path} is not a collection"
+                if len(actual) < minimum:
+                    return (
+                        False,
+                        f"{path} has {len(actual)} items; expected at least {minimum}",
+                    )
+
+            remaining = {k: v for k, v in expected.items() if not k.startswith("$")}
+            if remaining and not isinstance(actual, dict):
+                return False, f"{path} is not an object"
+            for key, value in remaining.items():
+                if key not in actual:
+                    return False, f"{path}.{key} is missing"
+                matched, reason = cls._matches_expected(
+                    actual[key], value, f"{path}.{key}"
+                )
+                if not matched:
+                    return False, reason
+            return True, "matched"
+
+        if isinstance(expected, list):
+            if actual != expected:
+                return False, f"{path} did not equal the expected list"
+            return True, "matched"
+
+        matched = actual == expected
+        return (
+            matched,
+            "matched" if matched else f"{path} expected {expected!r}, got {actual!r}",
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -865,12 +967,12 @@ class SkillEngine:
         }
 
     def crystallize_skill(self, event: "CrystallizationEvent") -> dict[str, Any]:  # type: ignore[name-defined]
-        """Materialize a RewardCrystallizer event as a promoted skill.
+        """Materialize a RewardCrystallizer event as a benchmark candidate.
 
-        Bypasses the failure-driven gap pipeline: the event already
-        carries a Hoeffding LCB > baseline + ε, which is a stronger
-        statistical guarantee than any benchmark we'd run. The skill
-        is written directly with status='promoted'.
+        The event's Hoeffding LCB is evidence for the context-selection
+        recipe. It is not evidence that newly generated executable code is
+        correct, so the skill remains in testing until its output contract
+        passes an independent benchmark.
 
         Returns the same shape as ``create_skill``.
         """
@@ -925,6 +1027,7 @@ class SkillEngine:
         )
         return {
             "status": "crystallized",
+            "skill_status": spec.status,
             "skill_id": spec.skill_id,
             "name": spec.name,
             "path": str(skill_dir),
@@ -964,8 +1067,13 @@ class SkillEngine:
             return {"status": "not_found"}
 
         fitness = spec.metrics.get("fitness_score", 0.0)
+        benchmark_runs = int(spec.metrics.get("benchmark_runs", 0) or 0)
+        contract_version = int(spec.metrics.get("benchmark_contract_version", 0) or 0)
 
-        if fitness >= self.PROMOTION_THRESHOLD:
+        if benchmark_runs < 1 or contract_version < 1:
+            action = "kept"
+            spec.status = "testing"
+        elif fitness >= self.PROMOTION_THRESHOLD:
             action = "promoted"
             spec.status = "promoted"
         elif fitness <= self.PRUNE_THRESHOLD:
@@ -1085,6 +1193,8 @@ class SkillEngine:
             data = {}
 
         data["fitness_score"] = result.fitness_score
+        data["benchmark_contract_version"] = 1
+        data["benchmark_runs"] = data.get("benchmark_runs", 0) + 1
         data["runs"] = data.get("runs", 0) + 1
         data["successes"] = data.get("successes", 0) + result.passed
         data["failures"] = data.get("failures", 0) + result.failed

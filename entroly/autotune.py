@@ -620,7 +620,8 @@ if __name__ == "__main__":
 # maintains an exponential moving average (EMA) of its own metric,
 # and adjusts its parameter in the direction that improves the EMA.
 #
-# No LLM calls. No tokens. Pure local O(1) computation per episode.
+# No provider or LLM calls. Pure local O(1) computation per episode; local
+# compute and persistence still apply.
 #
 # Mathematical formulation:
 #   θ_{t+1} = θ_t + α · sign(EMA_recent - EMA_baseline) · step_size
@@ -633,7 +634,7 @@ class ComponentFeedbackBus:
     """Universal feedback bus for all Entroly components.
 
     Allows any component to log metrics and self-tune parameters
-    based on observed outcomes. Zero token cost — all local compute.
+    based on observed outcomes without provider calls. All work is local.
     """
 
     # EMA smooth factor: higher = more responsive to recent data
@@ -1201,9 +1202,9 @@ DREAMING_COOLDOWN_S = 5 * 60.0      # seconds
 class DreamingLoop:
     """Autonomous self-play optimization during idle cycles.
 
-    Generates synthetic queries from the FeedbackJournal, tests weight
-    perturbations against the benchmark harness, and keeps improvements.
-    All computation is local — zero token cost.
+    Generates proposal scenarios from the FeedbackJournal, uses them to
+    diversify bounded perturbations, and keeps only real-benchmark gains.
+    All computation is local and makes no provider call; local compute applies.
     """
 
     def __init__(
@@ -1255,8 +1256,8 @@ class DreamingLoop:
             return True
         return (now - self._last_dream_at) >= self._cooldown_s
 
-    def generate_synthetic_queries(self) -> list[dict[str, Any]]:
-        """Generate synthetic queries from journal history.
+    def generate_experiment_scenarios(self) -> list[dict[str, Any]]:
+        """Generate proposal-only experiment scenarios from journal history.
 
         Constructs a set of counterfactual queries that maximizes
         coverage of the (task_type × entity) space. Each query
@@ -1264,8 +1265,9 @@ class DreamingLoop:
         from TASK_PATTERNS, generating situations the system may
         not have encountered in real traffic.
 
-        This is the "imagination" step — the system generates its
-        own training data from its memory of past interactions.
+        This is proposal diversity, not generated training data. Scenario
+        content may influence which mutation is tried, but only the fixed
+        benchmark supplies real evidence or permits promotion.
         """
         episodes = self._journal.load()
         if not episodes:
@@ -1339,6 +1341,10 @@ class DreamingLoop:
         random.shuffle(synthetic)
         return synthetic[:self._max_iterations * 3]
 
+    def generate_synthetic_queries(self) -> list[dict[str, Any]]:
+        """Backward-compatible alias for proposal-only scenarios."""
+        return self.generate_experiment_scenarios()
+
     @staticmethod
     def _config_vector(config: dict[str, Any]) -> tuple[float, ...]:
         """Normalize the tunable config into a stable world-model state."""
@@ -1378,14 +1384,47 @@ class DreamingLoop:
         return tuple(right - left for left, right in zip(before, after))
 
     @staticmethod
-    def _mutate_dream_config(config: dict[str, Any]) -> dict[str, Any]:
-        """Create one bounded counterfactual action in configuration space."""
+    def _mutate_dream_config(
+        config: dict[str, Any],
+        scenario: dict[str, Any] | None = None,
+        *,
+        candidate_index: int = 0,
+    ) -> dict[str, Any]:
+        """Create one bounded, scenario-conditioned counterfactual action.
+
+        A stable local RNG binds proposals to task/budget coverage without
+        changing benchmark cases or treating imagined text as evidence.
+        """
         mutated = dict(config)
+        payload = {
+            "scenario": scenario or {},
+            "config": {
+                key: config.get(key)
+                for key in sorted(TUNABLE_PARAMS)
+                if key in config
+            },
+            "candidate_index": int(candidate_index),
+        }
+        seed = int.from_bytes(
+            hashlib.sha256(
+                json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    default=str,
+                ).encode("utf-8")
+            ).digest()[:8],
+            "big",
+        )
+        rng = random.Random(seed)
+        budget = max(1, int((scenario or {}).get("budget", 8_000) or 8_000))
+        perturb_scale = max(0.5, min(1.5, budget / 8_000.0))
         for param, (lower, upper) in TUNABLE_PARAMS.items():
             if param not in mutated:
                 continue
             current = mutated[param]
-            delta = random.gauss(0, DREAMING_WEIGHT_PERTURB_STD)
+            delta = rng.gauss(0, DREAMING_WEIGHT_PERTURB_STD * perturb_scale)
             new_value = max(lower, min(upper, current + delta * (upper - lower)))
             if isinstance(current, int):
                 new_value = int(round(new_value))
@@ -1581,14 +1620,26 @@ class DreamingLoop:
 
             improvements = 0
             experiments = 0
-            synthetic_queries = self.generate_synthetic_queries()
+            experiment_scenarios = self.generate_experiment_scenarios()
+            scenarios_evaluated: list[dict[str, Any]] = []
 
-            for _ in range(min(self._max_iterations, len(synthetic_queries))):
+            for scenario_index, scenario in enumerate(
+                experiment_scenarios[: self._max_iterations]
+            ):
                 # Check if user has become active
                 if (time.time() - self._last_activity) <= DREAMING_IDLE_THRESHOLD_S:
                     break
 
                 experiments += 1
+                scenarios_evaluated.append({
+                    "index": scenario_index,
+                    "origin": str(scenario.get("origin", "pattern_only"))[:80],
+                    "task_type": str(scenario.get("task_type", ""))[:80],
+                    "budget": int(scenario.get("budget", 0) or 0),
+                    "query_sha256": hashlib.sha256(
+                        str(scenario.get("query", "")).encode("utf-8")
+                    ).hexdigest(),
+                })
 
                 # The world model may rank a larger candidate set, but it can
                 # never promote one. Every selected mutation is executed by the
@@ -1600,7 +1651,11 @@ class DreamingLoop:
                     else 1
                 )
                 candidates = [
-                    self._mutate_dream_config(current_config)
+                    self._mutate_dream_config(
+                        current_config,
+                        scenario,
+                        candidate_index=_candidate,
+                    )
                     for _candidate in range(candidate_count)
                 ]
                 mutated_config = self._select_dream_candidate(
@@ -1681,7 +1736,11 @@ class DreamingLoop:
                 "baseline_efficiency": baseline.context_efficiency,
                 "best_efficiency": self._best_efficiency,
                 "wall_seconds": round(wall_seconds, 2),
-                "synthetic_queries_generated": len(synthetic_queries),
+                "experiment_scenarios_generated": len(experiment_scenarios),
+                # Backward-compatible metric name. These remain proposal-only
+                # and never enter the real evidence ledger.
+                "synthetic_queries_generated": len(experiment_scenarios),
+                "scenarios_evaluated": scenarios_evaluated,
                 "total_dreams": self._total_dreams,
                 "total_improvements": self._total_improvements,
                 "world_model_guided_experiments": self._world_model_guided_experiments,

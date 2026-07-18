@@ -967,7 +967,10 @@ def detect_hallucination(
     context: str = "",
     prompt: str = "",
 ) -> dict[str, Any]:
-    """Detect hallucination in AI-generated text, locally and at $0.
+    """Estimate evidence-grounding risk locally without a provider call.
+
+    Local compute still applies, and the result is not proof that a response is
+    correct or hallucination-free.
 
     Scoring is WITNESS-only — the one benchmark-validated detector here
     (faithful HaluEval-QA AUROC ≈ 0.80; deterministic, no LLM call).
@@ -1017,7 +1020,8 @@ def detect_hallucination(
     # ── 1. WITNESS — the ONLY benchmark-validated signal ──────────────
     # Faithful HaluEval-QA protocol: AUROC 0.798 (README). risk is the
     # *complement* of groundedness (summary_score is faithfulness, higher
-    # = LESS risk). Deterministic + $0 (force_python, no NLI) to match
+    # = LESS risk). Deterministic and provider-call-free (force_python, no NLI)
+    # to match
     # the published number and stay zero-cost.
     witness_risk = 0.0
     flagged_claims: list[dict[str, Any]] = []
@@ -1327,7 +1331,7 @@ def recover_receipt_omission(
     return recover_omitted(receipt, chunk_id, store_dir=store_dir)
 
 
-# EICV — Evidence-Invariant Causal Verification (Deterministic, $0)
+# EICV — Evidence-Invariant Causal Verification (deterministic, no provider call)
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # Deterministic hallucination detection + suppression. No neural model,

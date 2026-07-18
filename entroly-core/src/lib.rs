@@ -784,6 +784,84 @@ impl EntrolyEngine {
         })
     }
 
+    /// Remove every fragment whose source exactly matches one of `sources`.
+    ///
+    /// Workspace reconciliation uses this before ingesting changed files and
+    /// for files deleted from disk.  Source-atomic removal prevents two
+    /// contradictory versions of the same file from competing in retrieval.
+    pub fn remove_sources(&mut self, sources: Vec<String>) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let requested: HashSet<String> = sources.into_iter().collect();
+            let removed_ids: HashSet<String> = self
+                .fragments
+                .iter()
+                .filter(|(_, fragment)| requested.contains(&fragment.source))
+                .map(|(fragment_id, _)| fragment_id.clone())
+                .collect();
+            let removed_sources: HashSet<String> = self
+                .fragments
+                .values()
+                .filter(|fragment| requested.contains(&fragment.source))
+                .map(|fragment| fragment.source.clone())
+                .collect();
+
+            for fragment_id in &removed_ids {
+                self.fragments.remove(fragment_id);
+                self.dedup_index.remove(fragment_id);
+            }
+
+            if !removed_ids.is_empty() {
+                self.feedback.remove_fragments(&removed_ids);
+                self.resonance_matrix.remove_fragments(&removed_ids);
+                self.causal_graph.remove_fragments(&removed_ids);
+                self.prev_selected_ids
+                    .retain(|fragment_id| !removed_ids.contains(fragment_id));
+                self.prev_explored_ids
+                    .retain(|fragment_id| !removed_ids.contains(fragment_id));
+                self.last_optimization = None;
+                self.last_cache_feedback_eligible = false;
+                self.egsc_cache.clear();
+                self.rebuild_lsh_index();
+                self.rebuild_dependency_graph();
+            }
+
+            let removed_source_set = removed_sources;
+            let mut removed_sources: Vec<String> = removed_source_set.iter().cloned().collect();
+            removed_sources.sort();
+            let mut removed_fragment_ids: Vec<String> = removed_ids.iter().cloned().collect();
+            removed_fragment_ids.sort();
+            let mut missing_sources: Vec<String> =
+                requested.difference(&removed_source_set).cloned().collect();
+            missing_sources.sort();
+
+            let result = PyDict::new(py);
+            result.set_item("removed_fragments", removed_ids.len())?;
+            result.set_item("removed_fragment_ids", removed_fragment_ids)?;
+            result.set_item("removed_sources", removed_sources)?;
+            result.set_item("missing_sources", missing_sources)?;
+            result.set_item("remaining_fragments", self.fragments.len())?;
+            Ok(result.into())
+        })
+    }
+
+    /// Rebuild the complete symbol/dependency graph from live fragments.
+    ///
+    /// Source replacement assigns a new fragment ID. Existing callers must be
+    /// rebound after the replacement is ingested; otherwise their edges still
+    /// describe the pre-change graph (or disappear entirely).
+    pub fn rebuild_dependencies(&mut self) -> PyResult<PyObject> {
+        self.rebuild_dependency_graph();
+        self.last_optimization = None;
+        self.last_cache_feedback_eligible = false;
+        self.egsc_cache.clear();
+        Python::with_gil(|py| {
+            let result = PyDict::new(py);
+            result.set_item("nodes", self.dep_graph.node_count())?;
+            result.set_item("edges", self.dep_graph.edge_count())?;
+            Ok(result.into())
+        })
+    }
+
     /// Batch-ingest multiple fragments in one PyO3 call with rayon parallelism.
     ///
     /// This is 10-50x faster than calling ingest() per-file because:
@@ -5092,6 +5170,19 @@ impl EntrolyEngine {
             }
             self.fragment_slot_ids.push(id.clone());
         }
+    }
+
+    /// Rebuild dependency and symbol state from the live fragment set.
+    /// Called after source-atomic deletion/replacement so no edge or symbol can
+    /// continue pointing at content that is no longer selectable.
+    fn rebuild_dependency_graph(&mut self) {
+        let mut fragments: Vec<(String, String)> = self
+            .fragments
+            .values()
+            .map(|fragment| (fragment.fragment_id.clone(), fragment.content.clone()))
+            .collect();
+        fragments.sort_by(|left, right| left.0.cmp(&right.0));
+        self.dep_graph.rebuild(&fragments);
     }
 
     /// Numerically stable sigmoid: σ(x) = 1 / (1 + e^{-x}).

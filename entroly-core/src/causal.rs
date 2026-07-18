@@ -427,6 +427,42 @@ impl CausalContextGraph {
         self.recompute_gravity_field();
     }
 
+    /// Remove every learned reference to fragments that left the live index.
+    ///
+    /// A source replacement receives a new fragment identity. Keeping the old
+    /// interventional estimate, temporal links, or trace membership would let
+    /// obsolete bytes continue influencing future selections through causal
+    /// bonuses even though the fragment itself is no longer retrievable.
+    pub fn remove_fragments(&mut self, fragment_ids: &HashSet<String>) {
+        if fragment_ids.is_empty() {
+            return;
+        }
+
+        self.interventions
+            .retain(|fragment_id, _| !fragment_ids.contains(fragment_id));
+        self.causal_mass
+            .retain(|fragment_id, _| !fragment_ids.contains(fragment_id));
+
+        self.temporal_links
+            .retain(|source_id, _| !fragment_ids.contains(source_id));
+        for targets in self.temporal_links.values_mut() {
+            targets.retain(|target_id, _| !fragment_ids.contains(target_id));
+        }
+        self.temporal_links.retain(|_, targets| !targets.is_empty());
+        self.total_temporal_links = self.temporal_links.values().map(HashMap::len).sum();
+
+        for trace in &mut self.traces {
+            trace
+                .selected_ids
+                .retain(|fragment_id| !fragment_ids.contains(fragment_id));
+            trace
+                .explored_ids
+                .retain(|fragment_id| !fragment_ids.contains(fragment_id));
+        }
+        self.traces.retain(|trace| !trace.selected_ids.is_empty());
+        self.recompute_gravity_field();
+    }
+
     pub fn is_empty(&self) -> bool {
         self.interventions.is_empty()
     }
@@ -1088,6 +1124,28 @@ mod tests {
         assert_eq!(restored.tracked_fragments(), g.tracked_fragments());
         assert_eq!(restored.traces.len(), g.traces.len());
         assert!((restored.base_rate - g.base_rate).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_remove_fragments_purges_learned_state() {
+        let mut g = CausalContextGraph::new();
+        g.record_trace(1, 0x11, &make_ids(&["obsolete", "keeper"]), &[], 0.5);
+        g.record_trace(2, 0x22, &make_ids(&["target", "keeper"]), &[], 0.8);
+
+        let removed = HashSet::from(["obsolete".to_string()]);
+        g.remove_fragments(&removed);
+
+        assert!(!g.interventions.contains_key("obsolete"));
+        assert!(!g.causal_mass.contains_key("obsolete"));
+        assert!(!g.temporal_links.contains_key("obsolete"));
+        assert!(g
+            .temporal_links
+            .values()
+            .all(|targets| !targets.contains_key("obsolete")));
+        assert!(g
+            .traces
+            .iter()
+            .all(|trace| !trace.selected_ids.contains(&"obsolete".to_string())));
     }
 
     #[test]

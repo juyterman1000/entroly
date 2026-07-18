@@ -36,10 +36,10 @@ Threat model
 5. **Repetition flooding**: many identical lines designed to dominate the
    context window and push out legitimate content.
 
-Novel claim
------------
-    "First context pipeline with end-to-end cryptographic integrity
-     verification and pre-LLM prompt injection scanning."
+Scope
+-----
+    ACF combines content hashing with heuristic pre-LLM threat scanning. It is
+    one defense layer, not proof that all prompt-injection attacks are detected.
 """
 from __future__ import annotations
 

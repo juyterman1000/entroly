@@ -2,16 +2,13 @@
 STAVE — Semantic Triplet Alignment Via Extraction
 ==================================================
 
-Mathematical breakthrough: all existing lexical hallucination detectors
-(WITNESS, entity-gap, bag-of-words overlap) are UNARY — they ask "does
-token X appear in the knowledge?" STAVE is the first *binary-relational*
-verifier: it asks "does the RELATIONSHIP between X and Y in the answer
-match the relationship between X and Y in the knowledge?"
+STAVE is a deterministic relational heuristic. In addition to token and
+entity overlap, it asks whether an extracted relationship between X and Y
+in the answer matches an extracted relationship in the supplied evidence.
 
-This directly targets the dominant failure class of HaluEval-QA:
-wrong-slot factoids (~67% of false negatives), where the answer uses
-the right predicate and the right vocabulary but binds the slots
-incorrectly.
+This targets wrong-slot factoids, where an answer can reuse the right
+predicate and vocabulary while binding subject or object slots incorrectly.
+It is a risk signal, not a semantic proof or a universal detector.
 
 Example:
     Knowledge : "Warren Buffett is the CEO of Berkshire Hathaway."

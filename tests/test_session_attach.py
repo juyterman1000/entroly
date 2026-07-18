@@ -30,6 +30,7 @@ def test_attachment_grant_is_scoped_hashed_expiring_and_revocable(tmp_path):
 
     assert issued.grant.scopes == ("context", "verify")
     assert "optimize_context" in issued.grant.tools
+    assert "prepare_task_dream" in issued.grant.tools
     assert "remember_fragment" not in issued.grant.tools
     assert token not in store.db_path.read_bytes().decode("latin-1")
     assert store.authorize(issued.grant.grant_id, token, tool="optimize_context", now=1010)
