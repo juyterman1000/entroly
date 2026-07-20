@@ -3904,6 +3904,8 @@ def create_mcp_server(
         to_when: str = "",
         entity: str = "",
         time_axis: str = "transaction",
+        claim_id: str = "",
+        reason: str = "user_requested_erasure",
     ) -> str:
         """Query the vault's bitemporal belief ledger — memory time travel.
 
@@ -3918,6 +3920,9 @@ def create_mcp_server(
                 timeline — version history for `entity`
                 verify_chain — tamper-check the ledger hash chain
                 seed — backfill the ledger from pre-ledger belief files
+                redact — erase belief bodies (by `entity` or `claim_id`)
+                    via a chained tombstone; content is deleted, the hash
+                    chain stays verifiable
             when: ISO-8601 instant for as_of (e.g., '2026-07-14T00:00:00+00:00')
             from_when: ISO-8601 start instant for diff
             to_when: ISO-8601 end instant for diff
@@ -3964,6 +3969,11 @@ def create_mcp_server(
             if action == "seed":
                 return json.dumps(
                     ledger.seed_from_current(_vault_mgr._base / "beliefs"), indent=2
+                )
+            if action == "redact":
+                return json.dumps(
+                    ledger.redact(claim_id=claim_id, entity=entity, reason=reason),
+                    indent=2,
                 )
             return json.dumps({"status": "error", "error": f"unknown action: {action}"})
         except LedgerIntegrityError as exc:

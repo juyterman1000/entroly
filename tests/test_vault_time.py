@@ -7,7 +7,7 @@ import json
 import pytest
 
 from entroly.vault import BeliefArtifact, VaultConfig, VaultManager
-from entroly.vault_time import BeliefLedger, LedgerIntegrityError
+from entroly.vault_time import BeliefLedger, BeliefRedactedError, LedgerIntegrityError
 
 
 def _belief(entity: str, body: str, confidence: float = 0.8,
@@ -119,6 +119,62 @@ def test_unparseable_ledger_fails_closed(ledger):
         fh.write("{not json\n")
     with pytest.raises(LedgerIntegrityError, match="line 2"):
         ledger.as_of("2099-01-01T00:00:00+00:00")
+
+
+def test_redact_entity_erases_content_but_chain_still_verifies(ledger):
+    ledger.record(_belief("secret-user", "Alice's API key rotation schedule."))
+    ledger.record(_belief("public", "The build uses vite."))
+
+    result = ledger.redact(entity="secret-user", reason="gdpr_erasure")
+    assert result["status"] == "redacted"
+    assert result["objects_deleted"] == 1
+
+    # Content is gone from disk and refused with a redaction (not tamper) error.
+    v = ledger.timeline("secret-user")[0]
+    assert v.redacted is True
+    with pytest.raises(BeliefRedactedError, match="gdpr_erasure"):
+        ledger.body_of(v)
+    # The chain — including the tombstone — still verifies.
+    assert ledger.verify_chain()["status"] == "intact"
+    # Unrelated beliefs are untouched.
+    assert ledger.body_of(ledger.timeline("public")[0]) == "The build uses vite."
+    # Snapshots flag the redacted version instead of hiding history.
+    snap = ledger.as_of("2099-01-01T00:00:00+00:00")
+    assert snap["secret-user"].redacted is True
+
+
+def test_redact_preserves_body_objects_shared_with_other_beliefs(ledger):
+    ledger.record(_belief("a", "shared body text"))
+    ledger.record(_belief("b", "shared body text"))  # same content-addressed object
+
+    result = ledger.redact(entity="a")
+    assert result["objects_deleted"] == 0
+    assert result["objects_retained_shared"] == 1
+
+    # 'a' refuses by policy; 'b' still reads the shared object.
+    with pytest.raises(BeliefRedactedError):
+        ledger.body_of(ledger.timeline("a")[0])
+    assert ledger.body_of(ledger.timeline("b")[0]) == "shared body text"
+
+
+def test_redact_requires_exactly_one_selector_and_reports_no_match(ledger):
+    ledger.record(_belief("a", "one"))
+    with pytest.raises(ValueError, match="exactly one"):
+        ledger.redact()
+    with pytest.raises(ValueError, match="exactly one"):
+        ledger.redact(entity="a", claim_id="x")
+    assert ledger.redact(entity="ghost")["status"] == "no_match"
+
+
+def test_tombstone_tampering_breaks_the_chain(ledger):
+    ledger.record(_belief("a", "one"))
+    ledger.redact(entity="a")
+    lines = ledger._log.read_text(encoding="utf-8").splitlines()
+    rec = json.loads(lines[1])
+    rec["reason"] = "rewritten history"
+    lines[1] = json.dumps(rec, sort_keys=True, ensure_ascii=False)
+    ledger._log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert ledger.verify_chain()["status"] == "broken"
 
 
 def test_seed_from_current_backfills_once_and_flags(vault, ledger):

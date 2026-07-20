@@ -22,7 +22,11 @@ Trust properties:
 - unparseable ledger lines fail closed: queries raise rather than silently
   returning a partial past;
 - backfill from pre-ledger belief files is explicit and flagged
-  (``backfilled: true``), never silent.
+  (``backfilled: true``), never silent;
+- **redaction without repudiation**: ``redact`` deletes body objects and
+  appends a chained tombstone, so sensitive *content* is provably gone while
+  the hash chain still verifies. Structural metadata (hashes, timestamps,
+  entity labels) necessarily remains — a chain cannot un-say its metadata.
 """
 
 from __future__ import annotations
@@ -42,6 +46,10 @@ _RECORD_HASH_FIELD = "record_sha256"
 
 class LedgerIntegrityError(RuntimeError):
     """The ledger is unreadable or its hash chain is broken."""
+
+
+class BeliefRedactedError(RuntimeError):
+    """The requested body was deliberately redacted — not an integrity failure."""
 
 
 def _utc_now_iso() -> str:
@@ -81,6 +89,7 @@ class BeliefVersion:
     title: str
     body_sha256: str
     backfilled: bool = False
+    redacted: bool = False
 
     @classmethod
     def from_record(cls, rec: dict[str, Any]) -> "BeliefVersion":
@@ -203,7 +212,7 @@ class BeliefLedger:
 
     # ── Reading ──────────────────────────────────────────────────────
 
-    def _iter_versions(self) -> Iterator[BeliefVersion]:
+    def _iter_records(self) -> Iterator[dict[str, Any]]:
         if not self._log.exists():
             return
         for line_no, line in enumerate(
@@ -212,13 +221,117 @@ class BeliefLedger:
             if not line.strip():
                 continue
             try:
-                yield BeliefVersion.from_record(json.loads(line))
-            except (json.JSONDecodeError, KeyError, ValueError) as exc:
+                yield json.loads(line)
+            except json.JSONDecodeError as exc:
                 raise LedgerIntegrityError(
                     f"unreadable ledger record at line {line_no}: {exc}"
                 ) from exc
 
+    def _iter_versions(self) -> Iterator[BeliefVersion]:
+        for rec in self._iter_records():
+            if rec.get("kind") == "redaction":
+                continue
+            try:
+                yield BeliefVersion.from_record(rec)
+            except (KeyError, ValueError) as exc:
+                raise LedgerIntegrityError(
+                    f"unreadable ledger record seq={rec.get('seq')}: {exc}"
+                ) from exc
+
+    def _redaction_index(self) -> dict[int, str]:
+        """seq -> redaction reason, from tombstone records."""
+        index: dict[int, str] = {}
+        for rec in self._iter_records():
+            if rec.get("kind") == "redaction":
+                for seq in rec.get("redacts_seqs", ()):
+                    index[int(seq)] = str(rec.get("reason", ""))
+        return index
+
+    def _flag_redacted(self, version: BeliefVersion,
+                       index: dict[int, str]) -> BeliefVersion:
+        from dataclasses import replace
+        if version.seq in index:
+            return replace(version, redacted=True)
+        return version
+
+    def redact(self, *, claim_id: str = "", entity: str = "",
+               reason: str = "user_requested_erasure") -> dict[str, Any]:
+        """Erase belief content while keeping the hash chain verifiable.
+
+        Deletes the content-addressed body objects of every belief version
+        matching the selector and appends a chained tombstone record. The
+        chain records themselves are never modified, so ``verify_chain``
+        still passes — the *content* is provably gone, the *structure*
+        (hashes, timestamps, entity labels, confidences) remains. If entity
+        labels themselves are sensitive, that is a naming-policy decision at
+        write time; a hash chain cannot un-say its metadata.
+
+        A body object shared with a non-redacted version is NOT deleted
+        (deleting it would corrupt the other belief); the redacted versions
+        still refuse ``body_of`` by policy.
+        """
+        if bool(claim_id) == bool(entity):
+            raise ValueError("redact requires exactly one of claim_id or entity")
+
+        matched: list[dict[str, Any]] = []
+        kept_shas: set[str] = set()
+        already_redacted = self._redaction_index()
+        for rec in self._iter_records():
+            if rec.get("kind") == "redaction":
+                continue
+            is_match = (
+                (claim_id and rec.get("claim_id") == claim_id)
+                or (entity and rec.get("entity") == entity)
+            )
+            if is_match:
+                matched.append(rec)
+            elif int(rec["seq"]) not in already_redacted:
+                kept_shas.add(str(rec.get("body_sha256", "")))
+        if not matched:
+            return {"status": "no_match", "claim_id": claim_id, "entity": entity}
+
+        deleted_objects: list[str] = []
+        retained_shared: list[str] = []
+        for rec in matched:
+            sha = str(rec.get("body_sha256", ""))
+            obj = self._objects / f"{sha}.md"
+            if sha in kept_shas:
+                retained_shared.append(sha)
+            elif obj.exists():
+                obj.unlink()
+                deleted_objects.append(sha)
+
+        last = self._last_record()
+        tombstone = {
+            "schema": LEDGER_SCHEMA,
+            "kind": "redaction",
+            "seq": (int(last["seq"]) + 1) if last else 1,
+            "tx_time": _utc_now_iso(),
+            "redacts_seqs": sorted(int(r["seq"]) for r in matched),
+            "claim_id": claim_id,
+            "entity": entity,
+            "reason": reason,
+            "deleted_objects": sorted(deleted_objects),
+            "retained_shared_objects": sorted(set(retained_shared)),
+            "prev_sha256": last[_RECORD_HASH_FIELD] if last else "",
+        }
+        tombstone[_RECORD_HASH_FIELD] = _record_hash(tombstone)
+        with self._log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(tombstone, sort_keys=True, ensure_ascii=False) + "\n")
+        return {
+            "status": "redacted",
+            "versions": len(matched),
+            "objects_deleted": len(deleted_objects),
+            "objects_retained_shared": len(set(retained_shared)),
+            "tombstone_seq": tombstone["seq"],
+        }
+
     def body_of(self, version: BeliefVersion) -> str:
+        reason = self._redaction_index().get(version.seq)
+        if reason is not None:
+            raise BeliefRedactedError(
+                f"body of '{version.entity}' seq={version.seq} was redacted: {reason}"
+            )
         obj = self._objects / f"{version.body_sha256}.md"
         if not obj.exists():
             raise LedgerIntegrityError(
@@ -250,7 +363,8 @@ class BeliefLedger:
                 prev = snapshot.get(v.entity)
                 if prev is None or v.seq > prev.seq:
                     snapshot[v.entity] = v
-        return snapshot
+        index = self._redaction_index()
+        return {e: self._flag_redacted(v, index) for e, v in snapshot.items()}
 
     def diff(self, t1: str | datetime, t2: str | datetime, *,
              time_axis: str = "transaction") -> dict[str, Any]:
@@ -281,8 +395,10 @@ class BeliefLedger:
 
     def timeline(self, entity: str) -> list[BeliefVersion]:
         """Every recorded version of one entity, oldest first."""
+        index = self._redaction_index()
         return sorted(
-            (v for v in self._iter_versions() if v.entity == entity),
+            (self._flag_redacted(v, index)
+             for v in self._iter_versions() if v.entity == entity),
             key=lambda v: v.seq,
         )
 
