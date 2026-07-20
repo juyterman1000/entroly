@@ -207,6 +207,16 @@ class VaultManager:
             raise ValueError(f"Refusing to write outside vault: {file_path}")
         safe_path.write_text(artifact.to_markdown(), encoding="utf-8")
 
+        # The per-entity file is overwrite-in-place; the append-only ledger
+        # preserves every version for as-of/diff/timeline queries. A ledger
+        # failure must be visible in the result, but never lose the write.
+        try:
+            from .vault_time import BeliefLedger
+            ledger = BeliefLedger(self._base).record(artifact)
+        except Exception as exc:
+            logger.error(f"Vault: belief ledger append failed: {exc}")
+            ledger = {"status": "failed", "error": str(exc)}
+
         logger.info(f"Vault: wrote belief '{artifact.entity}' -> {file_path}")
         return {
             "status": "written",
@@ -214,6 +224,7 @@ class VaultManager:
             "path": str(safe_path),
             "claim_id": artifact.claim_id,
             "entity": artifact.entity,
+            "ledger": ledger,
         }
 
     def read_belief(self, entity: str) -> dict[str, Any] | None:
