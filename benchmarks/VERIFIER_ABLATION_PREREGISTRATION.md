@@ -155,3 +155,31 @@ Exit code: 0 iff P1 ∧ P2 ∧ ¬F1.
 
 The v1 verdict stands as recorded. The v2 run is the binding verdict for the
 Section 7 interpretation commitments.
+
+---
+
+## 10. S1-EXT — tighter-budget sweep (declared before its run)
+
+**Motivation:** the v2 S1 run produced only 11 dropped-answer cases (flag rate
+11/11, Wilson 95% lower bound 0.741). n is too small to quote a
+real-compression recall figure. This extension grows the dropped-answer sample
+by shrinking the QCCR budget. It does **not** alter the v2 verdict; it
+tightens the S1 estimate only.
+
+- **Harness:** `benchmarks/verifier_ablation_s1_sweep.py`
+- **Artifact:** `benchmarks/results/verifier_ablation_s1_sweep.json`
+- **Items:** the same 200 v2 eval items; same calibration set; τ fixed at the
+  v2 dev-selected value 0.3608 (no re-tuning).
+- **Budgets:** {1.00, 0.75, 0.50, 0.25} × the v2 matched budget
+  (`critical_kept_chars // 4` tokens, floor 16).
+- **Per budget:** answer survival count, dropped count, flag rate at τ on
+  dropped items, Wilson 95% CI. Also flag rate on *survived* items (benign
+  false-alarm rate under real compression).
+
+**Declared criteria:**
+
+| ID | Criterion |
+|---|---|
+| S1-EXT-a | at every budget with ≥ 10 dropped items: flag rate ≥ 0.75 |
+| S1-EXT-b | pooled unique dropped items ≥ 50 (reported with the caveat that the same item dropped at multiple budgets contributes correlated observations; the per-budget rows are the primary evidence) |
+| S1-EXT-c | benign false-alarm rate on survived items ≤ 0.15 at every budget (the verifier must not fire merely because compression got tighter while the answer survived) |
