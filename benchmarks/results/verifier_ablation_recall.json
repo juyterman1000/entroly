@@ -1,0 +1,97 @@
+{
+  "schema": "verifier-ablation-recall-v1",
+  "preregistration_doc": "benchmarks/VERIFIER_ABLATION_PREREGISTRATION.md",
+  "preregistration_commit": "c45d3073fb8ac3ed963920a0903796bd76f18098",
+  "seed": 42,
+  "n_eval": 200,
+  "n_dev": 100,
+  "n_calibration": 200,
+  "pool_scanned": 292,
+  "exclusions": {
+    "E2_too_few_sentences": 62,
+    "E3_ablation_over_char_cap": 12,
+    "E5_no_length_matched_random_ablation": 13,
+    "E1b_answer_crosses_sentence_boundary": 5
+  },
+  "mean_scores": {
+    "intact": 0.042,
+    "critical": 0.8989,
+    "random": 0.0395
+  },
+  "auroc_intact_vs_critical": 0.9928,
+  "auroc_intact_vs_random": 0.9334,
+  "tau": 0.3338,
+  "dev_recall_at_tau": 0.97,
+  "holdout_recall_at_tau": 0.96,
+  "holdout_recall_wilson95": [
+    0.9016,
+    0.9843
+  ],
+  "holdout_fpr_at_tau": 0.08,
+  "holdout_fpr_wilson95": [
+    0.0411,
+    0.15
+  ],
+  "mean_latency_ms": 1.53,
+  "decision_flag_rates": {
+    "intact": {
+      "decisions": {
+        "abstain": 187,
+        "hallucinated": 13
+      },
+      "strict_flag_rate": 0.065,
+      "strict_wilson95": [
+        0.0384,
+        0.108
+      ],
+      "liberal_flag_rate": 1.0,
+      "liberal_wilson95": [
+        0.9812,
+        1.0
+      ]
+    },
+    "critical": {
+      "decisions": {
+        "hallucinated": 191,
+        "abstain": 9
+      },
+      "strict_flag_rate": 0.955,
+      "strict_wilson95": [
+        0.9167,
+        0.9761
+      ],
+      "liberal_flag_rate": 1.0,
+      "liberal_wilson95": [
+        0.9812,
+        1.0
+      ]
+    },
+    "random": {
+      "decisions": {
+        "abstain": 188,
+        "hallucinated": 12
+      },
+      "strict_flag_rate": 0.06,
+      "strict_wilson95": [
+        0.0347,
+        0.1019
+      ],
+      "liberal_flag_rate": 1.0,
+      "liberal_wilson95": [
+        0.9812,
+        1.0
+      ]
+    }
+  },
+  "qccr_real": {
+    "status": "skipped",
+    "reason": "native QCCR engine unavailable"
+  },
+  "criteria": {
+    "P1_auroc_critical_ge_0.85": true,
+    "P2_holdout_recall_ge_0.75_fpr_le_0.25": true,
+    "F1_random_artifact_auroc_gt_0.65": true,
+    "S1": "skipped"
+  },
+  "verdict_pass": false
+}
