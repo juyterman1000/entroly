@@ -10,26 +10,26 @@
       "conditions": [
         {
           "name": "C1",
-          "auroc": 0.999
+          "auroc": 0.9949
         },
         {
           "name": "C2",
-          "auroc": 0.9988
+          "auroc": 0.9947
         },
         {
           "name": "C3",
-          "auroc": 0.991
+          "auroc": 0.9831
         },
         {
           "name": "C4",
-          "auroc": 0.9989
+          "auroc": 0.9948
         }
       ],
-      "min_auroc_c1_c4": 0.991,
+      "min_auroc_c1_c4": 0.9831,
       "artifact_drop_c1_c4": 0.0001,
       "artifact_detected": false,
       "survives_falsification": true,
-      "elapsed_s": 2.26,
+      "elapsed_s": 1.14,
       "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md"
     },
     "halueval_qa": {
@@ -41,26 +41,26 @@
       "conditions": [
         {
           "name": "C1",
-          "auroc": 0.9487
+          "auroc": 0.9262
         },
         {
           "name": "C2",
-          "auroc": 0.94
+          "auroc": 0.904
         },
         {
           "name": "C3",
-          "auroc": 0.8068
+          "auroc": 0.7883
         },
         {
           "name": "C4",
-          "auroc": 0.9427
+          "auroc": 0.9061
         }
       ],
-      "min_auroc_c1_c4": 0.8068,
-      "artifact_drop_c1_c4": 0.006,
+      "min_auroc_c1_c4": 0.7883,
+      "artifact_drop_c1_c4": 0.0201,
       "artifact_detected": false,
       "survives_falsification": true,
-      "elapsed_s": 2.48,
+      "elapsed_s": 1.17,
       "preregistration_doc": "benchmarks/EICV_PREREGISTRATION.md"
     }
   }

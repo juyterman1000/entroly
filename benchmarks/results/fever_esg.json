@@ -5,23 +5,23 @@
   "seed": 42,
   "scorers": {
     "esg_slot_aware": {
-      "auroc": 0.7504,
+      "auroc": 0.5927,
       "accuracy": 0.81,
       "ci95": 0.0109,
       "f1": 0.6024,
       "precision": 0.5759,
       "recall": 0.6315,
-      "ms_per_item": 0.63,
+      "ms_per_item": 0.28,
       "best_threshold": 1.0
     },
     "eicv_integrated": {
-      "auroc": 0.7504,
+      "auroc": 0.5927,
       "accuracy": 0.81,
       "ci95": 0.0109,
       "f1": 0.6024,
       "precision": 0.5759,
       "recall": 0.6315,
-      "ms_per_item": 1.94,
+      "ms_per_item": 0.95,
       "best_threshold": 1.0
     }
   },
