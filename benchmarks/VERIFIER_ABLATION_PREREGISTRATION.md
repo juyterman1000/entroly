@@ -113,3 +113,45 @@ Exit code: 0 iff P1 ∧ P2 ∧ ¬F1.
   covered by Experiment 0.
 - Single dataset (SQuAD v2), single seed; results are span-level evidence, not
   agent-session evidence.
+
+---
+
+## 9. Protocol revision v2 (declared before the v2 run)
+
+**v1 outcome (committed):** P1 and P2 passed (AUROC 0.9928; holdout recall
+0.960 at FPR 0.080), F1 fired (AUROC intact-vs-random 0.9334) →
+`verdict_pass: false` per the locked rules
+(`benchmarks/results/verifier_ablation_recall.json`).
+
+**Diagnosis (committed, dev items only):**
+`benchmarks/results/diagnose_ablation_artifact.json` shows the F1 firing was a
+**metric defect, not a verifier property**:
+
+- Two semantically identical evidence variants (raw context vs
+  whitespace-rejoined) "separated" at AUROC 0.9431 — impossible for a real
+  signal.
+- ~90% of intact and random scores are exactly 0.0 (heavy ties); the v1
+  `_auroc` helper had no midrank tie correction, and Python's tuple sort broke
+  score-ties by label, systematically ranking label-1 items above label-0
+  items at every tie.
+- Operationally the verifier is clean at the deployed threshold: flag rates
+  intact 6%, random 5%, critical 97%.
+
+**v2 changes (methodology only — all P1/P2/F1/S1 thresholds unchanged):**
+
+1. **Metric fix:** midrank tie-corrected Mann-Whitney AUROC (identical
+   distributions ⇒ 0.5 exactly).
+2. **Construction fix:** INTACT is `" ".join(sentences(context))` so all
+   conditions share one formatting pipeline (removes the raw-vs-rejoined
+   confound as a matter of hygiene; the diagnosis shows it was not the driver
+   once ties are handled, since means and flag rates were identical).
+3. **Fresh evaluation items:** the v2 eval set (200 items, dev/holdout 100/100)
+   is drawn from the pool *after* the v1 calibration range (pool index ≥ 492),
+   so no item used in the v1 run or the diagnosis contributes to the v2
+   verdict. v2 calibration uses the next 200 pool items after the v2 eval
+   cursor.
+4. **Artifact:** `benchmarks/results/verifier_ablation_recall_v2.json`,
+   schema `verifier-ablation-recall-v2`. The v1 artifact remains committed.
+
+The v1 verdict stands as recorded. The v2 run is the binding verdict for the
+Section 7 interpretation commitments.
