@@ -63,6 +63,28 @@
       "evidencePinning": {
         "type": "boolean",
         "default": true
+      },
+      "proofGuidedRecovery": {
+        "type": "boolean",
+        "default": false
+      },
+      "proofGuidedMaxRounds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4,
+        "default": 2
+      },
+      "proofGuidedRecoveryTokens": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100000,
+        "default": 1200
+      },
+      "proofGuidedMaxMessages": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 16,
+        "default": 3
       }
     }
   },
@@ -110,6 +132,22 @@
     "evidencePinning": {
       "label": "Query-Aware Evidence Pinning",
       "help": "Keep older messages that match the current request verbatim when they fit the bounded evidence reserve."
+    },
+    "proofGuidedRecovery": {
+      "label": "Proof-Guided Recovery",
+      "help": "Opt in to local output verification and at most the configured number of OpenClaw revision passes using exact recovered evidence. Requires hooks.allowConversationAccess=true because it inspects model input and output."
+    },
+    "proofGuidedMaxRounds": {
+      "label": "Maximum Proof Rounds",
+      "help": "Hard cap on model attempts, including the first response. Additional paid calls occur only when Proof-Guided Recovery is explicitly enabled."
+    },
+    "proofGuidedRecoveryTokens": {
+      "label": "Recovery Token Budget",
+      "help": "Maximum estimated exact-evidence tokens recovered for one revision decision."
+    },
+    "proofGuidedMaxMessages": {
+      "label": "Recovery Message Limit",
+      "help": "Maximum exact omitted messages appended to one revision instruction."
     }
   }
 }

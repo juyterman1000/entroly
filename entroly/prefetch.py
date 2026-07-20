@@ -231,6 +231,24 @@ class PrefetchEngine:
         if len(self._recent_accesses) > 100:
             self._recent_accesses = self._recent_accesses[-100:]
 
+    def remove_paths(self, file_paths: set[str]) -> None:
+        """Forget learned and pending state for paths removed from the index."""
+        if not file_paths:
+            return
+        for file_path in file_paths:
+            self._co_access.pop(file_path, None)
+        for peers in self._co_access.values():
+            for file_path in file_paths:
+                peers.pop(file_path, None)
+        self._recent_accesses = [
+            item for item in self._recent_accesses if item[0] not in file_paths
+        ]
+        self._pending_predictions = {
+            key: {path for path in predictions if path not in file_paths}
+            for key, predictions in self._pending_predictions.items()
+            if key not in file_paths
+        }
+
     def predict(
         self,
         file_path: str,

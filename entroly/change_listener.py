@@ -19,6 +19,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,8 +91,14 @@ class WorkspaceChangeListener:
         self._state_path = Path(state_path).resolve() if state_path else state_root / "change_listener_state.json"
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._scan_lock = threading.Lock()
 
     def scan_once(self, force: bool = False, max_files: int = 100) -> WorkspaceSyncResult:
+        """Run one serialized scan so manual and background syncs cannot race."""
+        with self._scan_lock:
+            return self._scan_once(force=force, max_files=max_files)
+
+    def _scan_once(self, force: bool = False, max_files: int = 100) -> WorkspaceSyncResult:
         current = self._snapshot()
         previous = {} if force else self._load_state()
 
@@ -114,6 +122,7 @@ class WorkspaceChangeListener:
             return result
 
         result.status = "synced"
+        completed_files: set[str] = set()
 
         refresh_targets = result.changed_files + result.deleted_files
         if refresh_targets:
@@ -122,16 +131,20 @@ class WorkspaceChangeListener:
         for rel_path in result.changed_files:
             abs_path = resolve_file_within(self._project_dir, rel_path)
             if abs_path is None:
+                result.errors.append(f"{rel_path}: path resolves outside project")
                 continue
             try:
                 content = abs_path.read_text(encoding="utf-8", errors="replace")
                 if not content.strip():
+                    completed_files.add(rel_path)
                     continue
                 belief = self._compiler.compile_file(rel_path.replace('\\', '/'), content)
                 if belief is None:
+                    completed_files.add(rel_path)
                     continue
                 self._vault.write_belief(belief)
                 result.beliefs_written += 1
+                completed_files.add(rel_path)
             except Exception as exc:
                 result.errors.append(f"{rel_path}: {exc}")
 
@@ -145,7 +158,18 @@ class WorkspaceChangeListener:
         )
         result.action_path = action.get("path", "")
 
-        self._save_state(current)
+        # Advance state only for files actually processed. Saving the complete
+        # snapshot here used to lose every change beyond ``max_files`` and every
+        # transient compiler failure forever: the next scan incorrectly saw
+        # those paths as current. Keep them pending so later scans resume the
+        # backlog without data loss.
+        next_state = dict(previous)
+        for rel_path in completed_files:
+            if rel_path in current:
+                next_state[rel_path] = current[rel_path]
+        for rel_path in deleted:
+            next_state.pop(rel_path, None)
+        self._save_state(next_state)
         logger.info(
             "WorkspaceChangeListener: synced %s changed / %s deleted -> %s beliefs",
             len(result.changed_files), len(result.deleted_files), result.beliefs_written,
@@ -235,9 +259,25 @@ class WorkspaceChangeListener:
             return {}
 
     def _save_state(self, state: dict[str, str]) -> None:
-        self._state_path.write_text(
-            json.dumps(state, indent=2, sort_keys=True), encoding="utf-8"
+        payload = json.dumps(state, indent=2, sort_keys=True)
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_path = tempfile.mkstemp(
+            prefix=f".{self._state_path.name}.",
+            suffix=".tmp",
+            dir=self._state_path.parent,
         )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, self._state_path)
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
 
     def _render_summary(self, result: WorkspaceSyncResult) -> str:
         changed = ", ".join(result.changed_files[:20]) or "None"

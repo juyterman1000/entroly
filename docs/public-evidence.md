@@ -122,9 +122,10 @@ remain linked in the protocol report rather than being hidden.
 ### PRISM-R neural research pilot
 
 PRISM-R is an opt-in research prototype, not the default compressor. On the
-held-out half of a frozen 600-trial SQuAD v2 paragraph-retrieval experiment, a
-generic local MiniLM encoder underperformed deterministic BM25 as the primary
-selector (97.7% versus 99.0%). The repository therefore rejects a
+held-out half of a frozen 600-trial SQuAD v2 paragraph-retrieval experiment,
+`sentence-transformers/all-MiniLM-L6-v2` revision
+`c9745ed1d9f207416be6d2e6f8de32d1f16199bf` underperformed deterministic BM25
+as the primary selector (97.7% versus 99.0%). The repository therefore rejects a
 neural-primary claim. Retaining both champions only when the systems disagreed
 reached 99.3% evidence recall while selecting 1.02 of 16 passages on average.
 
@@ -140,6 +141,7 @@ They do not measure generated answers, general neural superiority, long-agent
 memory, production latency, or billing savings.
 
 - Research design and prior art: [`prism-r-neural-compression.md`](research/prism-r-neural-compression.md)
+- Evidence story and full rerun identity: [`neural-evidence-frontier.md`](benchmarks/neural-evidence-frontier.md)
 - Held-out retrieval artifact: [`neural_evidence_frontier.json`](../benchmarks/results/neural_evidence_frontier.json)
 - Query-shift artifact: [`neural_query_shift.json`](../benchmarks/results/neural_query_shift.json)
 - Verify: `python -m benchmarks.neural_evidence_frontier verify benchmarks/results/neural_evidence_frontier.json`

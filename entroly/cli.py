@@ -19,6 +19,7 @@ Commands:
     entroly explain     Explain receipt selection/omission decisions
     entroly simulate    Estimate local token savings without LLM calls
     entroly perf        Measure local optimizer savings/latency without LLM calls
+    entroly value       Show an evidence-classified context value receipt
     entroly status      Check if server/proxy is running
     entroly config      Show current configuration
     entroly clean       Clear cached state (checkpoints, index, pull cache)
@@ -51,7 +52,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.62"
+    __version__ = "1.0.64"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -2808,6 +2809,89 @@ def cmd_perf(args):
     _print_local_simulation(report, title="Entroly Perf", include_perf=True)
 
 
+def cmd_value(args):
+    """entroly value -- show measured value without mixing evidence classes."""
+    from entroly.value_tracker import get_tracker
+
+    receipt = get_tracker().get_value_receipt()
+    if getattr(args, "json_output", False):
+        print(json.dumps(receipt, indent=2, sort_keys=True))
+        return
+
+    provider = receipt["provider_path"]
+    local = receipt["local_operations"]
+    legacy = receipt["legacy_unclassified"]
+    trust = receipt["trust_signals"]
+    pricing = receipt["pricing"]
+
+    print(f"\n{C.CYAN}{C.BOLD}  Entroly Context Value Receipt{C.RESET}\n")
+    print(f"  {C.BOLD}Provider-bound requests{C.RESET}")
+    print(
+        f"    Observed: {provider['requests_observed']:,}  |  "
+        f"Optimized: {provider['requests_optimized']:,}"
+    )
+    print(
+        f"    Input tokens reduced: "
+        f"{C.GREEN}{provider['input_tokens_reduced']:,}{C.RESET}"
+    )
+    print(
+        "    Modeled input cost avoided: "
+        f"{C.GREEN}${provider['modeled_input_cost_avoided_usd']:.4f}{C.RESET}"
+    )
+    print(f"    Active days with provider traffic: {provider['active_days']:,}\n")
+    if provider["unpriced_requests"]:
+        print(
+            f"    {C.YELLOW}Unpriced provider traffic: "
+            f"{provider['unpriced_requests']:,} requests / "
+            f"{provider['unpriced_input_tokens']:,} reduced tokens. "
+            f"Add an explicit catalog rate to price them.{C.RESET}\n"
+        )
+
+    print(f"  {C.BOLD}Local-only optimization{C.RESET}")
+    print(
+        f"    Operations: {local['operations']:,}  |  "
+        f"Tokens reduced: {local['tokens_reduced']:,}"
+    )
+    print(
+        f"    Dollar savings claimed: {C.GREEN}$0.0000{C.RESET} "
+        f"{C.GRAY}(delivery to a paid provider is not observable){C.RESET}\n"
+    )
+
+    print(f"  {C.BOLD}Trust and routing signals{C.RESET}")
+    print(
+        "    Unsupported claims blocked: "
+        f"{trust['unsupported_claims_blocked']:,}"
+    )
+    print(
+        f"    RAVS routing decisions: {trust['routing_decisions']:,}  |  "
+        "Modeled routing cost avoided: "
+        f"${trust['modeled_routing_cost_avoided_usd']:.4f}\n"
+    )
+
+    if legacy["operations"] or legacy["tokens_reduced"]:
+        print(f"  {C.YELLOW}{C.BOLD}Legacy history kept, not claimed{C.RESET}")
+        print(
+            f"    {legacy['operations']:,} operations / "
+            f"{legacy['tokens_reduced']:,} tokens predate source classification."
+        )
+        print("    They are excluded from provider savings and dollar claims.\n")
+
+    print(
+        f"  {C.GRAY}Pricing: {pricing.get('source', 'bundled')} rates, "
+        f"as of {pricing.get('as_of', 'unknown')}. Dollar values are modeled "
+        f"from measured token reduction; they are not provider invoices.{C.RESET}"
+    )
+    if provider["requests_observed"] == 0:
+        print(
+            f"  {C.YELLOW}No provider-bound request has been measured yet.{C.RESET}"
+        )
+        print(
+            "  Run `entroly simulate` for a no-key local estimate, then use a "
+            "supported proxy path to measure provider-bound value."
+        )
+    print()
+
+
 
 def cmd_share(args):
     """entroly share — generate a shareable Context Report Card."""
@@ -2936,9 +3020,9 @@ def cmd_share(args):
     # Pull lifetime stats if available
     tracker = get_tracker()
     lifetime = tracker.get_lifetime()
-    lifetime_tokens = lifetime.get("tokens_saved", 0)
-    lifetime_cost = lifetime.get("cost_saved_usd", 0.0)
-    lifetime_requests = lifetime.get("requests_optimized", 0)
+    lifetime_tokens = lifetime.get("provider_tokens_saved", 0)
+    lifetime_cost = lifetime.get("provider_cost_avoided_usd", 0.0)
+    lifetime_requests = lifetime.get("provider_requests_optimized", 0)
 
     # Honest per-query tokens shown instead of "AI sees ALL".
     avg_selected_frags = sum(qr["fragments"] for qr in query_results) // max(len(query_results), 1)
@@ -2976,7 +3060,7 @@ def cmd_share(args):
     print(f"  │    {C.GRAY}stability {avg_stability:.2f}  coverage {avg_coverage:.2f}  respect {avg_respect:.2f}{C.RESET}   │")
     print(f"  │  {C.BOLD}PER-QUERY:{C.RESET}  ~{avg_selected_frags} frags, {avg_tokens_used:,} tokens (from {files_indexed:,} files)")
     print(f"  │  {C.BOLD}TOKENS vs 32K DUMP:{C.RESET}  {C.GREEN}{avg_pct}%{C.RESET} smaller")
-    print(f"  │  {C.BOLD}SAVED / QUERY:{C.RESET}  {C.GREEN}${per_query_savings_usd:.4f}{C.RESET} (GPT-4o, today)   │")
+    print(f"  │  {C.BOLD}MODELED / QUERY:{C.RESET}  {C.GREEN}${per_query_savings_usd:.4f}{C.RESET} (32K baseline, GPT-4o rate)   │")
     print("  └─────────────────────────────────────────────────────┘")
     print(f"\n  {C.GREEN}Report saved:{C.RESET} {out_path.resolve()}")
     print(f"\n  {C.CYAN}Share it!{C.RESET} Post your Context Score on Twitter/LinkedIn.")
@@ -3104,7 +3188,7 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
     </div>
     <div class="stat">
       <div class="stat-val">${per_query_savings_usd:.4f}</div>
-      <div class="stat-label">Saved / Query<br><span style="font-size:10px;text-transform:none">GPT-4o, today</span></div>
+      <div class="stat-label">Modeled / Query<br><span style="font-size:10px;text-transform:none">32K baseline · GPT-4o rate</span></div>
     </div>
   </div>
 
@@ -3123,7 +3207,7 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
     </div>
   </div>
 
-  {"<div class='lifetime'><span>Lifetime: <strong>" + f"{lifetime_tokens:,}" + "</strong> tokens saved</span><span><strong>" + f"${lifetime_cost:,.2f}" + "</strong> saved</span><span><strong>" + f"{lifetime_requests:,}" + "</strong> requests</span></div>" if lifetime_requests > 0 else ""}
+  {"<div class='lifetime'><span>Provider-bound: <strong>" + f"{lifetime_tokens:,}" + "</strong> input tokens reduced</span><span><strong>" + f"${lifetime_cost:,.2f}" + "</strong> modeled cost avoided</span><span><strong>" + f"{lifetime_requests:,}" + "</strong> requests</span></div>" if lifetime_requests > 0 else ""}
 
   <div class="queries">
     <h3>Sample Queries</h3>
@@ -3189,7 +3273,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.62\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.64\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -3483,7 +3567,11 @@ def cmd_digest(args):
         print(f"  {C.BOLD}Tokens saved:{C.RESET} {saved:,} ({savings_pct})")
         from entroly.value_tracker import estimate_cost
         est_cost = estimate_cost(saved, "gpt-4o")
-        print(f"  {C.BOLD}Estimated cost saved:{C.RESET} ${est_cost:.2f} {C.GRAY}(at GPT-4o input rate){C.RESET}")
+        print(
+            f"  {C.BOLD}Modeled API input cost avoided:{C.RESET} "
+            f"${est_cost:.2f} {C.GRAY}(provider-bound tokens at the "
+            f"bundled GPT-4o input rate; not an invoice){C.RESET}"
+        )
         print(f"  {C.BOLD}Pipeline latency:{C.RESET} {mean_ms:.1f}ms avg")
         if error_rate > 0:
             color = C.RED if error_rate > 0.1 else C.YELLOW
@@ -3674,7 +3762,7 @@ def cmd_completions(args):
     """entroly completions {bash|zsh|fish} — output shell completion script."""
     shell = args.shell
     commands = [
-        "init", "go", "serve", "proxy", "dashboard", "health",
+        "init", "go", "serve", "proxy", "dashboard", "value", "health",
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
         "batch", "wrap", "learn", "share", "demo",
@@ -4076,6 +4164,142 @@ def cmd_context_commit(args):
             )
         )
         print(f"  JSON: {output}")
+    return 0
+
+
+def _proof_runtime_from_args(args):
+    from entroly.proof_guided_runtime import ProofGuidedRuntime
+
+    state_dir = (
+        Path(args.state_dir).expanduser()
+        if getattr(args, "state_dir", None)
+        else _ENTROLY_DIR / "proof-guided"
+    )
+    return ProofGuidedRuntime(
+        state_dir,
+        context_risk_mode=(
+            "audit" if getattr(args, "allow_high_risk", False) else "block_high"
+        ),
+        prefer_rust=not getattr(args, "python", False),
+    )
+
+
+def _proof_prepare(runtime, args):
+    from entroly.context_receipts.ingest import (
+        read_documents_from_path,
+        supported_documents_hint,
+    )
+
+    documents = read_documents_from_path(args.path)
+    if not documents:
+        raise ValueError(
+            f"no supported documents found in {args.path!r}; "
+            f"{supported_documents_hint()}"
+        )
+    return runtime.prepare(
+        documents,
+        query=args.query,
+        token_budget=args.budget,
+        max_rounds=args.max_rounds,
+        recovery_token_budget=args.recovery_budget,
+        max_chunks_per_round=args.max_chunks_per_round,
+        profile=args.profile,
+        chunk_tokens=args.chunk_tokens,
+        overlap_tokens=args.overlap_tokens,
+        idempotency_key=args.idempotency_key,
+    )
+
+
+def _proof_model_output(args) -> str:
+    if args.output is not None and args.output_file is not None:
+        raise ValueError("use only one of --output or --output-file")
+    if args.output is not None:
+        return args.output
+    if args.output_file is not None:
+        return Path(args.output_file).read_text(encoding="utf-8")
+    if sys.stdin.isatty():
+        raise ValueError("provide --output, --output-file, or pipe model text on stdin")
+    return sys.stdin.read()
+
+
+def _run_explicit_model_command(command_text: str, request: dict, timeout: float) -> str:
+    """Run an operator-supplied command without a shell or hidden credentials."""
+    import shlex
+
+    command = shlex.split(command_text, posix=os.name != "nt")
+    if not command:
+        raise ValueError("--model-command cannot be empty")
+    completed = subprocess.run(
+        command,
+        input=json.dumps(request, ensure_ascii=False),
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+    if completed.returncode != 0:
+        diagnostic = " ".join(completed.stderr.split())[:400]
+        raise RuntimeError(
+            f"model command exited {completed.returncode}: "
+            f"{diagnostic or 'no stderr was returned'}"
+        )
+    output = completed.stdout
+    try:
+        decoded = json.loads(output)
+    except json.JSONDecodeError:
+        decoded = None
+    if isinstance(decoded, dict) and isinstance(decoded.get("output"), str):
+        output = decoded["output"]
+    if not output.strip():
+        raise RuntimeError("model command returned an empty output")
+    return output
+
+
+def cmd_proof(args):
+    """Run or advance the durable proof-guided context protocol."""
+    runtime = _proof_runtime_from_args(args)
+    if args.proof_action == "prepare":
+        result = _proof_prepare(runtime, args)
+    elif args.proof_action == "advance":
+        result = runtime.advance(
+            args.session_id,
+            model_output=_proof_model_output(args),
+            idempotency_key=args.idempotency_key,
+        )
+    elif args.proof_action == "inspect":
+        result = runtime.inspect(args.session_id)
+    elif args.proof_action == "run":
+        result = _proof_prepare(runtime, args)
+        while result["status"] == "awaiting_model":
+            model_output = _run_explicit_model_command(
+                args.model_command,
+                result["request"],
+                args.model_timeout,
+            )
+            result = runtime.advance(
+                result["session_id"],
+                model_output=model_output,
+                idempotency_key=(
+                    f"cli-round-{result['revision']}-"
+                    f"{result['session_id']}"
+                ),
+            )
+    else:  # pragma: no cover - argparse enforces the action
+        raise ValueError(f"unknown proof action: {args.proof_action}")
+
+    if args.proof_action == "run" and not args.json_output:
+        if result.get("final_output"):
+            print(result["final_output"])
+        else:
+            print(
+                f"Proof-guided run stopped with status {result['status']}; "
+                "inspect the JSON receipt with `entroly proof inspect`.",
+                file=sys.stderr,
+            )
+        return 0 if result.get("converged") else 3
+    print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 
 
@@ -4707,7 +4931,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.62\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.64\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -4750,7 +4974,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.62\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.64\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -5291,6 +5515,77 @@ def main():
     context_commit_parser.add_argument("--python", action="store_true", help="Force the Python reference implementation")
     context_commit_parser.add_argument("--json", action="store_true", help="Print the created JSON artifact")
 
+    proof_parser = subparsers.add_parser(
+        "proof",
+        help="Run the durable proof-guided context and exact-recovery protocol",
+    )
+    proof_subparsers = proof_parser.add_subparsers(
+        dest="proof_action", required=True
+    )
+
+    def _add_proof_prepare_arguments(command_parser):
+        command_parser.add_argument("path", help="Document file or directory")
+        command_parser.add_argument("--query", "-q", required=True)
+        command_parser.add_argument("--budget", "-b", type=int, default=8000)
+        command_parser.add_argument("--max-rounds", type=int, default=3)
+        command_parser.add_argument("--recovery-budget", type=int, default=1200)
+        command_parser.add_argument("--max-chunks-per-round", type=int, default=3)
+        command_parser.add_argument(
+            "--profile",
+            choices=["code", "rag", "qa", "benchmark_qa", "summary", "chat", "dialogue"],
+            default="rag",
+        )
+        command_parser.add_argument("--chunk-tokens", type=int, default=360)
+        command_parser.add_argument("--overlap-tokens", type=int, default=32)
+        command_parser.add_argument("--idempotency-key", default=None)
+        command_parser.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
+        command_parser.add_argument("--python", action="store_true")
+        command_parser.add_argument(
+            "--allow-high-risk",
+            action="store_true",
+            help="Continue only after explicitly accepting a high-review receipt",
+        )
+
+    proof_prepare = proof_subparsers.add_parser(
+        "prepare",
+        help="Prepare a model request without calling a provider",
+    )
+    _add_proof_prepare_arguments(proof_prepare)
+
+    proof_advance = proof_subparsers.add_parser(
+        "advance",
+        help="Verify one model output and produce the next request or final answer",
+    )
+    proof_advance.add_argument("session_id")
+    proof_advance.add_argument("--output", default=None)
+    proof_advance.add_argument("--output-file", default=None)
+    proof_advance.add_argument("--idempotency-key", required=True)
+    proof_advance.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
+    proof_advance.add_argument("--python", action="store_true", help=argparse.SUPPRESS)
+    proof_advance.add_argument("--allow-high-risk", action="store_true", help=argparse.SUPPRESS)
+
+    proof_inspect = proof_subparsers.add_parser(
+        "inspect",
+        help="Inspect the last durable response without advancing it",
+    )
+    proof_inspect.add_argument("session_id")
+    proof_inspect.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
+    proof_inspect.add_argument("--python", action="store_true", help=argparse.SUPPRESS)
+    proof_inspect.add_argument("--allow-high-risk", action="store_true", help=argparse.SUPPRESS)
+
+    proof_run = proof_subparsers.add_parser(
+        "run",
+        help="Run all bounded rounds through an explicit local model command",
+    )
+    _add_proof_prepare_arguments(proof_run)
+    proof_run.add_argument(
+        "--model-command",
+        required=True,
+        help="Command that reads request JSON on stdin and writes model text or {\"output\": ...}",
+    )
+    proof_run.add_argument("--model-timeout", type=float, default=120.0)
+    proof_run.add_argument("--json", dest="json_output", action="store_true")
+
     # entroly audit
     audit_parser = subparsers.add_parser(
         "audit",
@@ -5396,6 +5691,17 @@ def main():
         help="Measure local optimizer savings and latency without calling an LLM",
     )
     _add_local_measure_args(perf_parser)
+
+    value_parser = subparsers.add_parser(
+        "value",
+        help="Show measured provider value separately from local-only reductions",
+    )
+    value_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Emit a machine-readable Context Value Receipt",
+    )
 
     # entroly status
     status_parser = subparsers.add_parser(
@@ -5855,7 +6161,11 @@ def main():
     # First-run output would corrupt the stdio JSON-RPC stream used by an
     # attached MCP server, so the internal serve action stays protocol-clean.
     internal_attach_serve = args.command == "attach" and args.attach_action == "serve"
-    if not internal_attach_serve:
+    machine_readable = (
+        (args.command == "value" and getattr(args, "json_output", False))
+        or args.command == "proof"
+    )
+    if not internal_attach_serve and not machine_readable:
         _check_first_run()
         if args.command not in (None, "completions"):
             _check_for_update()
@@ -5868,6 +6178,7 @@ def main():
         "attach": cmd_attach,
         "go": cmd_go,
         "dashboard": cmd_dashboard,
+        "value": cmd_value,
         "health": cmd_health,
         "autotune": cmd_autotune,
         "proxy": cmd_proxy,
@@ -5878,6 +6189,7 @@ def main():
         "select": cmd_select,
         "receipt": cmd_receipt,
         "context-commit": cmd_context_commit,
+        "proof": cmd_proof,
         "audit": cmd_audit,
         "explain": cmd_explain,
         "status": cmd_status,

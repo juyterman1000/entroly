@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.62"
-description = "Auditable context engineering for AI agents: select evidence, compress context, recover omissions, emit receipts, and verify answers."
+version = "1.0.64"
+description = "Open-source Context OS for AI agents: auditable context engineering, compression, recovery, receipts, and verification."
 readme = "PYPI_README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -50,14 +50,14 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=1.0.62,<2",
+    "entroly-core>=1.0.64,<2",
 ]
 receipt-proof = [
     "cryptography>=42",
 ]
 full = [
     "cryptography>=42",
-    "entroly-core>=1.0.62,<2",
+    "entroly-core>=1.0.64,<2",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",

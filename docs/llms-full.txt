@@ -1,6 +1,6 @@
 # Entroly Extended Documentation Index
 
-> Entroly is an auditable context-control plane for AI agents. This file routes readers to source, documentation, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
+> Entroly is an open-source, local-first Context OS for AI agents. This file routes readers to source, documentation, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
 
 Entroly can index, select, and compress repository context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering source content. WITNESS can evaluate whether output claims are supported by supplied evidence.
 

@@ -1,0 +1,12 @@
+name: entroly
+description: >
+  Query-conditioned context compression with receipts and verification.
+  Replaces lossy summarization with Entroly's evidence-aware selection.
+version: 1.0.0
+author: juyterman1000
+homepage: https://github.com/juyterman1000/entroly
+license: Apache-2.0
+requires:
+  python: ">=3.10"
+  packages:
+    - entroly>=1.0.57

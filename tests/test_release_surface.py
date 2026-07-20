@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.62"
-HOMEBREW_FORMULA_VERSION = "1.0.62"
-HOMEBREW_FORMULA_SHA256 = "5f1bb72a81521c01f8951c22fe7761fcbcc60fb0b107ba0153bebe2794b37064"
+RELEASE_VERSION = "1.0.64"
+HOMEBREW_FORMULA_VERSION = "1.0.64"
+HOMEBREW_FORMULA_SHA256 = "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -66,7 +67,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_62() -> None:
+def test_public_package_versions_are_1_0_63() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -75,6 +76,14 @@ def test_public_package_versions_are_1_0_62() -> None:
     assert _read_json("integrations/openclaw/package.json")["version"] == RELEASE_VERSION
     assert _read_json(".claude-plugin/manifest.json")["version"] == RELEASE_VERSION
     assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
+
+
+def test_bundled_mcpb_manifest_matches_release_source() -> None:
+    source = _read_json(".mcpb-build/manifest.json")
+    with zipfile.ZipFile(ROOT / "entroly.mcpb") as bundle:
+        bundled = json.loads(bundle.read("manifest.json"))
+
+    assert bundled == source
 
 
 def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
@@ -195,6 +204,21 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "for attempt in $(seq 1 20)" in openclaw_publisher
     assert "waiting for PyPI propagation" in openclaw_publisher
 
+    clawhub_publisher = text.split("  publish-clawhub-openclaw:", 1)[1].split(
+        "  publish-binaries:", 1
+    )[0]
+    assert "id-token: write" in clawhub_publisher
+    assert "package trusted-publisher set entroly-openclaw" in clawhub_publisher
+    assert '--workflow-filename "entroly-publish.yml"' in clawhub_publisher
+    assert "--manual-override-reason" not in clawhub_publisher
+    assert '--source-commit "$GITHUB_SHA"' in clawhub_publisher
+    assert '--source-ref "entroly-v${RELEASE_VERSION}"' in clawhub_publisher
+    assert "Verify exact ClawHub version is public" in clawhub_publisher
+    assert "for attempt in range(1, 61)" in clawhub_publisher
+    assert "package moderation-status entroly-openclaw --json" in clawhub_publisher
+    assert "moderation-status entroly-openclaw --json > \"$raw_status\"" in clawhub_publisher
+    assert 'release.get("moderationReason")' not in clawhub_publisher
+
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
     assert not (ROOT / ".github/workflows/sync-homebrew-after-release.yml").exists()
@@ -293,3 +317,25 @@ def test_clawhub_verifier_follows_coordinated_release() -> None:
         "https://clawhub.ai/juyterman1000/plugins/entroly-openclaw" in text
     )
     assert "ClawHub {expected_version} unavailable: {safe_error}" in text
+
+
+def test_clawhub_reconciliation_is_tag_bound_and_non_destructive_by_default() -> None:
+    text = (ROOT / ".github/workflows/publish-openclaw-clawhub.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "publish_if_missing:" in text
+    assert "default: false" in text
+    assert 'release_tag="entroly-v${REQUESTED_VERSION}"' in text
+    assert 'git rev-parse "${release_tag}^{commit}"' in text
+    assert "package moderation-status entroly-openclaw --json" in text
+    assert "steps.moderation.outputs.decision == 'missing'" in text
+    assert "inputs.publish_if_missing == true" in text
+    assert "package trusted-publisher set entroly-openclaw" in text
+    assert '--source-commit "$RELEASE_SHA"' in text
+    assert "package delete" not in text
+    assert "clawhub-moderation-before-raw.json" in text
+    assert "clawhub-moderation-before-raw.json" not in text.split(
+        "name: clawhub-release-reconciliation-${{ inputs.version }}", 1
+    )[1]
+    assert 'release.get("moderationReason")' not in text

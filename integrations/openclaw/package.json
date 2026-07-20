@@ -1,6 +1,6 @@
 {
   "name": "entroly-openclaw",
-  "version": "1.0.62",
+  "version": "1.0.64",
   "description": "Provider-independent, auditable context engineering for every OpenClaw model route",
   "type": "module",
   "license": "Apache-2.0",
@@ -30,12 +30,13 @@
     "bridge-client.js",
     "engine.js",
     "index.js",
+    "proof-hooks.js",
     "openclaw.plugin.json",
     "README.md"
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check bridge-client.js && node --check engine.js && node --check index.js",
+    "check": "node --check bridge-client.js && node --check engine.js && node --check proof-hooks.js && node --check index.js",
     "pack:check": "npm pack --dry-run"
   },
   "peerDependencies": {

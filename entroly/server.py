@@ -26,6 +26,7 @@ Run:
 
 from __future__ import annotations
 
+import copy
 import gc
 import gzip
 import inspect
@@ -450,6 +451,12 @@ class _WilsonFeedbackTracker:
         raw = 0.5 + lower_bound * 1.5
         return max(0.5, min(2.0, raw))  # Clamp to documented [0.5, 2.0] range
 
+    def remove_fragments(self, fragment_ids: set[str]) -> None:
+        """Drop feedback for fragment identities that no longer exist."""
+        for fragment_id in fragment_ids:
+            self._success.pop(fragment_id, None)
+            self._failure.pop(fragment_id, None)
+
 
 def _build_rust_engine(config: EntrolyConfig):
     """Construct the Rust engine from an EntrolyConfig, threading every
@@ -620,6 +627,11 @@ class EntrolyEngine:
         # concurrent Rust &mut borrow / "Already borrowed" race). A lock makes
         # the one-time load idempotent under concurrent first calls.
         self._index_load_lock = threading.Lock()
+        # Reconciliation spans remove -> ingest -> dependency rebuild ->
+        # persistence. Serialize that transaction across manual calls and the
+        # background watcher; an RLock permits auto_index's warm-cache path to
+        # invoke reconciliation without deadlocking itself.
+        self._index_mutation_lock = threading.RLock()
         self._index_loaded = not (self._use_rust and self.config.use_persistent_index)
         if self._use_rust and not self.config.use_persistent_index:
             logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
@@ -751,6 +763,143 @@ class EntrolyEngine:
         finally:
             gc.enable()
             gc.collect()
+
+    def remove_sources(self, sources: list[str]) -> dict[str, Any]:
+        """Remove all live fragments for exact source identifiers.
+
+        Repository files are indexed with ``file:<relative-path>`` sources.
+        A file update must remove the complete previous source atomically before
+        ingesting its replacement; otherwise contradictory old and new versions
+        can both be selected.  Unknown native wheels fail visibly instead of
+        pretending the stale content was removed.
+        """
+        self._ensure_index_loaded()
+        normalized = sorted({str(source) for source in sources if str(source)})
+        if not normalized:
+            return {
+                "status": "unchanged",
+                "removed_fragments": 0,
+                "removed_sources": [],
+                "missing_sources": [],
+            }
+
+        self._fragment_cache_dirty = True
+        if self._use_rust:
+            if not hasattr(self._rust, "remove_sources"):
+                return {
+                    "status": "unsupported",
+                    "reason": "native_remove_sources_unavailable",
+                    "removed_fragments": 0,
+                    "removed_sources": [],
+                    "missing_sources": normalized,
+                }
+            result = dict(self._rust.remove_sources(normalized))
+            result["status"] = "removed"
+        else:
+            requested = set(normalized)
+            removed_ids = [
+                fragment_id
+                for fragment_id, fragment in self._fragments.items()
+                if fragment.source in requested
+            ]
+            removed_sources = sorted({
+                self._fragments[fragment_id].source for fragment_id in removed_ids
+            })
+            for fragment_id in removed_ids:
+                self._dedup.remove(fragment_id)
+                del self._fragments[fragment_id]
+
+            removed_id_set = set(removed_ids)
+            self._wilson.remove_fragments(removed_id_set)
+
+            # Token-frequency state contributes to Python fallback entropy scores.
+            # Rebuild it from live content so removed bytes cannot bias later files.
+            from collections import Counter
+            self._global_token_counts = Counter()
+            self._total_token_count = 0
+            for fragment in self._fragments.values():
+                tokens = fragment.content.lower().split()
+                self._global_token_counts.update(tokens)
+                self._total_token_count += len(tokens)
+
+            result = {
+                "status": "removed",
+                "removed_fragments": len(removed_ids),
+                "removed_fragment_ids": sorted(removed_ids),
+                "removed_sources": removed_sources,
+                "missing_sources": sorted(requested - set(removed_sources)),
+                "remaining_fragments": len(self._fragments),
+            }
+
+        removed_id_set = set(result.get("removed_fragment_ids", []))
+        for fragment_id in removed_id_set:
+            self._fragment_selection_counts.pop(fragment_id, None)
+        removed_paths: set[str] = set()
+        for source in result.get("removed_sources", []):
+            source = str(source)
+            if source.startswith("file:"):
+                # Prefetch callers historically used both the fragment source
+                # and the bare workspace path; invalidate both aliases.
+                removed_paths.update({source, source[5:]})
+        self._prefetch.remove_paths(removed_paths)
+        return result
+
+    def rebuild_dependencies(self) -> dict[str, Any]:
+        """Rebind the dependency graph to the current live fragment identities."""
+        self._ensure_index_loaded()
+        if not self._use_rust:
+            return {"status": "disabled", "reason": "python_fallback_has_no_dependency_graph"}
+        if not hasattr(self._rust, "rebuild_dependencies"):
+            return {"status": "unsupported", "reason": "native_dependency_rebuild_unavailable"}
+        result = dict(self._rust.rebuild_dependencies())
+        result["status"] = "rebuilt"
+        return result
+
+    def snapshot_index_state(self) -> dict[str, Any]:
+        """Capture the mutable index boundary for recoverable reconciliation."""
+        self._ensure_index_loaded()
+        snapshot: dict[str, Any] = {
+            "engine": "rust" if self._use_rust else "python",
+            "fragment_selection_counts": copy.deepcopy(self._fragment_selection_counts),
+            "prefetch_co_access": copy.deepcopy(self._prefetch._co_access),
+            "prefetch_recent_accesses": copy.deepcopy(self._prefetch._recent_accesses),
+            "prefetch_pending_predictions": copy.deepcopy(self._prefetch._pending_predictions),
+        }
+        if self._use_rust:
+            snapshot["rust_state"] = self._rust.export_state()
+        else:
+            snapshot.update({
+                "fragments": copy.deepcopy(self._fragments),
+                "dedup": copy.deepcopy(self._dedup),
+                "global_token_counts": copy.deepcopy(self._global_token_counts),
+                "total_token_count": self._total_token_count,
+                "wilson": copy.deepcopy(self._wilson),
+                "total_fragments_ingested": self._total_fragments_ingested,
+                "total_duplicates_caught": self._total_duplicates_caught,
+            })
+        return snapshot
+
+    def restore_index_state(self, snapshot: dict[str, Any]) -> None:
+        """Restore a snapshot after a failed multi-step index mutation."""
+        expected_engine = "rust" if self._use_rust else "python"
+        if snapshot.get("engine") != expected_engine:
+            raise RuntimeError("index snapshot engine does not match the live engine")
+        if self._use_rust:
+            self._rust.import_state(snapshot["rust_state"])
+        else:
+            self._fragments = snapshot["fragments"]
+            self._dedup = snapshot["dedup"]
+            self._global_token_counts = snapshot["global_token_counts"]
+            self._total_token_count = snapshot["total_token_count"]
+            self._wilson = snapshot["wilson"]
+            self._total_fragments_ingested = snapshot["total_fragments_ingested"]
+            self._total_duplicates_caught = snapshot["total_duplicates_caught"]
+        self._fragment_selection_counts = snapshot["fragment_selection_counts"]
+        self._prefetch._co_access = snapshot["prefetch_co_access"]
+        self._prefetch._recent_accesses = snapshot["prefetch_recent_accesses"]
+        self._prefetch._pending_predictions = snapshot["prefetch_pending_predictions"]
+        self._fragment_cache.clear()
+        self._fragment_cache_dirty = True
 
     def optimize_context(
         self,
@@ -1599,6 +1748,26 @@ class EntrolyEngine:
             self._ensure_gzip_index(self._index_path)
         return checkpoint_path
 
+    def persist_index(self) -> dict[str, Any]:
+        """Durably persist the live repository index without creating a checkpoint.
+
+        Incremental workspace reconciliation can happen long before graceful
+        shutdown. Persisting once per successful reconciliation prevents a crash
+        from resurrecting deleted or superseded source content on the next run.
+        """
+        self._ensure_index_loaded()
+        if not self.config.use_persistent_index:
+            return {"status": "disabled", "reason": "persistent_index_disabled"}
+        if not self._use_rust:
+            return {"status": "disabled", "reason": "python_fallback_has_no_repo_index"}
+        state = self._rust.export_state()
+        self._write_gzip_index(self._index_path, state)
+        return {
+            "status": "persisted",
+            "path": self._index_path,
+            "fragment_count": int(self._rust.fragment_count()),
+        }
+
     def resume(self, query: str = "", project: str = "") -> dict[str, Any]:
         """Resume the latest checkpoint or a query-relevant checkpoint."""
         match = None
@@ -1947,7 +2116,7 @@ class EntrolyEngine:
         """Python fallback for optimize."""
         self._total_optimizations += 1
 
-        if query and promoted_skill_execution_enabled():
+        if query:
             query_hash = _py_simhash(query)
             for frag in self._fragments.values():
                 dist = _py_hamming_distance(query_hash, frag.simhash)
@@ -2194,6 +2363,16 @@ def create_mcp_server(
     _last_opt_ctx = {}  # tracks last optimization for feedback attribution
     _vault_beliefs_loaded = False  # lazy: load vault beliefs on first optimize
     _mcp_belief_vault = [None]  # lazy VaultManager cell for belief-conditioning
+    _proof_runtime_cell = [None]  # lazy to avoid key creation until explicitly used
+
+    def _proof_runtime():
+        runtime = _proof_runtime_cell[0]
+        if runtime is None:
+            from .proof_guided_runtime import ProofGuidedRuntime
+
+            runtime = ProofGuidedRuntime(Path(_checkpoint_dir) / "proof-guided")
+            _proof_runtime_cell[0] = runtime
+        return runtime
 
 
     # ── Read-only discovery surfaces ────────────────────────────────
@@ -2383,6 +2562,29 @@ def create_mcp_server(
                 compressed candidate so the total token ceiling stays honest.
         """
         # NOTE: turn is NOT advanced here — turns advance on optimize/recall
+        # Scan before mutating the index. High/critical prompt-injection or
+        # Unicode threats are rejected rather than stored for later selection.
+        from .context_firewall import scan as _scan_context
+
+        firewall = _scan_context(content, source=source or "mcp:remember_fragment")
+        if not firewall.is_safe:
+            return json.dumps({
+                "status": "rejected",
+                "reason": "context firewall blocked high-risk content before storage",
+                "stored": False,
+                "content_sha256": firewall.content_hash,
+                "threats": [
+                    {
+                        "type": threat.threat_type,
+                        "severity": threat.severity,
+                        "description": threat.description,
+                        "remediation": threat.remediation,
+                    }
+                    for threat in firewall.threats
+                    if threat.severity in {"critical", "high"}
+                ],
+            }, indent=2)
+
         result = engine.ingest_fragment(content, source, token_count, is_pinned)
         # CodeQualityGuard: scan for secrets, TODOs, unsafe blocks
         issues = engine._guard.scan(content, source)
@@ -2488,17 +2690,32 @@ def create_mcp_server(
         # Apply task-conditioned weights before optimization
         task_type, task_confidence = _task_profiles.apply_to_engine(engine, query)
 
-        # ── Auto-execute promoted skills that match the query ──────
-        # Closes the evolution loop: daemon creates skills → skills
-        # inject context into optimization → better results → RL learns
-        if query:
+        # ── Explicitly opted-in promoted skill execution ───────────
+        # Writable vault tools are local code. A subprocess timeout is an
+        # availability boundary, not a security sandbox, so automatic
+        # execution is disabled unless the operator opts in explicitly.
+        _skill_execution: dict[str, Any] | None = None
+        if query and not promoted_skill_execution_enabled():
+            _skill_execution = {
+                "status": "disabled",
+                "reason": "set ENTROLY_EXECUTE_PROMOTED_SKILLS=1 to run writable vault tools",
+                "executed": 0,
+                "injected_fragments": 0,
+            }
+        elif query:
+            _skill_execution = {
+                "status": "enabled",
+                "matched": 0,
+                "executed": 0,
+                "injected_fragments": 0,
+                "errors": [],
+            }
             try:
                 promoted = [
                     s for s in _py_skill_engine.list_skills()
                     if s.get("status") == "promoted"
                 ]
                 if promoted:
-                    import re as _skill_re
                     from entroly.skill_engine import SandboxedRunner
                     runner = SandboxedRunner(timeout_seconds=5.0)
                     query_lower = query.lower()
@@ -2513,14 +2730,22 @@ def create_mcp_server(
                                 if bare not in query_lower:
                                     continue
 
+                            _skill_execution["matched"] += 1
+
                             spec = _py_skill_engine._load_skill(sk["skill_id"])
                             if not spec or not spec.tool_code:
+                                _skill_execution["errors"].append(
+                                    f"{sk['skill_id']}: missing executable tool"
+                                )
                                 continue
 
                             run = runner.run_tool(spec.tool_code, query)
+                            _skill_execution["executed"] += 1
                             if run.get("status") == "success" and isinstance(run.get("result"), dict):
                                 skill_results = run["result"].get("results", [])
                                 for sr in skill_results[:5]:
+                                    if not isinstance(sr, dict):
+                                        continue
                                     snippet = sr.get("snippet", "")
                                     if snippet:
                                         engine.remember_fragment(
@@ -2529,12 +2754,69 @@ def create_mcp_server(
                                             token_count=0,
                                             is_pinned=False,
                                         )
-                        except Exception:
-                            pass  # Never block optimization for skill errors
-            except Exception:
-                pass
+                                        _skill_execution["injected_fragments"] += 1
+                            else:
+                                _skill_execution["errors"].append(
+                                    f"{sk['skill_id']}: {run.get('status', 'invalid result')}"
+                                )
+                        except Exception as _skill_err:
+                            logger.warning(
+                                "Promoted skill %s failed: %s",
+                                sk.get("skill_id", "unknown"),
+                                _skill_err,
+                            )
+                            _skill_execution["errors"].append(
+                                f"{sk.get('skill_id', 'unknown')}: execution failed"
+                            )
+            except Exception as _skill_list_err:
+                logger.warning("Promoted skill discovery failed: %s", _skill_list_err)
+                _skill_execution["status"] = "error"
+                _skill_execution["errors"].append("skill discovery failed")
 
-        result = engine.optimize_context(token_budget, query)
+        # Active-task preplay: assemble a bounded, evidence-only capsule before
+        # the agent consumes this optimization result. Reserve its estimated
+        # size from the requested context budget so automatic dreaming does not
+        # quietly exceed the caller's ceiling. Users can disable automatic
+        # capsules with ENTROLY_TASK_DREAM=0 and call prepare_task_dream directly.
+        _task_dream_result = None
+        _effective_token_budget = token_budget
+        _task_dream_enabled = os.environ.get("ENTROLY_TASK_DREAM", "1").strip().lower() not in {
+            "0", "false", "no", "off",
+        }
+        if query and _task_dream_enabled and token_budget >= 1024:
+            try:
+                _dream_budget = min(1600, max(512, token_budget // 8))
+                _task_dream_result = _task_dreamer.prepare(
+                    query,
+                    agent_id="default",
+                    token_budget=_dream_budget,
+                    persist=True,
+                )
+                _dream_tokens = int(
+                    _task_dream_result.receipt.get("rendered_estimated_tokens", 0)
+                )
+                _effective_token_budget = max(0, token_budget - _dream_tokens)
+            except Exception as _dream_err:
+                logger.warning("Task dream preparation failed: %s", _dream_err)
+
+        result = engine.optimize_context(_effective_token_budget, query)
+        if _skill_execution is not None:
+            if not _skill_execution.get("errors"):
+                _skill_execution.pop("errors", None)
+            result["promoted_skill_execution"] = _skill_execution
+        if _task_dream_result is not None:
+            result["task_dream"] = _task_dream_result.to_dict()
+            result["task_dream"]["context_token_budget"] = _effective_token_budget
+        elif query and not _task_dream_enabled:
+            result["task_dream"] = {
+                "status": "disabled",
+                "reason": "ENTROLY_TASK_DREAM=0",
+            }
+        elif query and token_budget < 1024:
+            result["task_dream"] = {
+                "status": "skipped",
+                "reason": "requested token budget is too small for a safe capsule",
+            }
 
         # CCR: compressed IOS variants must remain exactly recoverable.
         # Attach content-addressed handles before serializing the MCP result.
@@ -2547,7 +2829,9 @@ def create_mcp_server(
         except Exception as _ccr_err:
             logger.debug("CCR capture skipped: %s", _ccr_err)
 
-        # ── Record savings to ValueTracker (funds evolution budget) ──
+        # MCP optimization is local-only evidence. The tracker cannot prove
+        # this result reached a paid provider, so it never funds evolution or
+        # supports a dollar-savings claim.
         tokens_saved = result.get("tokens_saved", 0)
         if tokens_saved > 0:
             try:
@@ -2556,13 +2840,33 @@ def create_mcp_server(
                     model=result.get("model", ""),
                     duplicates=result.get("duplicates_caught", 0),
                     optimized=True,
+                    source="mcp",
                 )
             except Exception:
                 pass  # Never fail the optimization for tracking
 
         # Capture optimization context for feedback attribution
+        import hashlib as _hashlib
         import uuid as _uuid
         _opt_request_id = _uuid.uuid4().hex
+        _selected_for_memory = []
+        for _selected_item in (
+            result.get("selected_fragments") or result.get("selected") or []
+        )[:20]:
+            if not isinstance(_selected_item, dict):
+                continue
+            _selected_content = str(_selected_item.get("content") or "")
+            _selected_for_memory.append({
+                "fragment_id": str(
+                    _selected_item.get("fragment_id")
+                    or _selected_item.get("id")
+                    or ""
+                )[:128],
+                "source": str(_selected_item.get("source") or "")[:500],
+                "sha256": _hashlib.sha256(
+                    _selected_content.encode("utf-8")
+                ).hexdigest() if _selected_content else "",
+            })
         _last_opt_ctx = {
             "request_id": _opt_request_id,
             "weights": {
@@ -2571,6 +2875,7 @@ def create_mcp_server(
             },
             "query": query, "token_budget": token_budget,
             "selected_count": result.get("selected_count", 0),
+            "selected_fragments": _selected_for_memory,
             "turn": engine._turn_counter,
             "task_type": task_type,
         }
@@ -2702,7 +3007,7 @@ def create_mcp_server(
             query=result.get("query", query),
             refined_query=result.get("query_refinement", {}).get("refined_query") if isinstance(result.get("query_refinement"), dict) else None,
             turn=engine._turn_counter,
-            token_budget=token_budget,
+            token_budget=_effective_token_budget,
             quality_scan_fn=engine._guard.scan if engine._guard.available else None,
         )
         result["provenance"] = provenance.to_dict()
@@ -3023,6 +3328,32 @@ def create_mcp_server(
                 "honest_reward": bridge_result.get("honest_reward", 0),
                 "implicit_reward": bridge_result.get("implicit_reward", 0),
             }
+        # Only request-bound, externally verified successes can become durable
+        # cross-session memory. The legacy self-report tool never calls this.
+        if str((_last_opt_ctx or {}).get("request_id", "")) == request_id:
+            try:
+                resp["memory_promotion"] = _task_dreamer.remember_verified_outcome(
+                    request_id=request_id,
+                    task=str((_last_opt_ctx or {}).get("query", "")),
+                    event_type=event_type,
+                    value=value,
+                    source=source,
+                    metadata=metadata,
+                    selected_fragments=list(
+                        (_last_opt_ctx or {}).get("selected_fragments", [])
+                    ),
+                )
+            except Exception as _memory_err:
+                logger.warning("Verified task memory promotion failed: %s", _memory_err)
+                resp["memory_promotion"] = {
+                    "status": "error",
+                    "reason": "verified task memory promotion failed",
+                }
+        else:
+            resp["memory_promotion"] = {
+                "status": "skipped",
+                "reason": "request_id does not match the active optimization",
+            }
         return json.dumps(resp)
 
     @mcp.tool()
@@ -3258,6 +3589,88 @@ def create_mcp_server(
             return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
 
     @mcp.tool()
+    def prepare_proof_guided_context(
+        path: str,
+        query: str,
+        token_budget: int = 8000,
+        max_rounds: int = 3,
+        recovery_token_budget: int = 1200,
+        max_chunks_per_round: int = 3,
+        idempotency_key: str = "",
+    ) -> str:
+        """Prepare a durable proof-guided model request from local documents.
+
+        This tool performs only local selection, security checks, exact-recovery
+        commitments, and signed auditing. It does not call a model. Send the
+        returned ``request`` through the host's configured model route, then
+        pass the model text to ``advance_proof_guided_context``. The path must
+        remain inside the attached project root.
+        """
+        try:
+            from .context_receipts.ingest import read_documents_from_path
+
+            project_root = Path(
+                os.environ.get("ENTROLY_SOURCE", os.getcwd())
+            ).resolve()
+            candidate = Path(path).expanduser()
+            if not candidate.is_absolute():
+                candidate = project_root / candidate
+            candidate = candidate.resolve()
+            try:
+                candidate.relative_to(project_root)
+            except ValueError as exc:
+                raise ValueError(
+                    f"path must remain within the project root: {path}"
+                ) from exc
+            documents = read_documents_from_path(candidate)
+            result = _proof_runtime().prepare(
+                documents,
+                query=query,
+                token_budget=token_budget,
+                max_rounds=max_rounds,
+                recovery_token_budget=recovery_token_budget,
+                max_chunks_per_round=max_chunks_per_round,
+                idempotency_key=idempotency_key or None,
+            )
+            return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
+        except ValueError as exc:
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
+    def advance_proof_guided_context(
+        session_id: str,
+        model_output: str,
+        idempotency_key: str,
+    ) -> str:
+        """Verify one model round and return exact evidence or a final answer.
+
+        The operation is durable and idempotent. A continuation response has
+        ``status=awaiting_model`` and a new request whose committed prefix is
+        byte-identical. A terminal response returns a locally verified output.
+        No provider call is performed by Entroly.
+        """
+        try:
+            result = _proof_runtime().advance(
+                session_id,
+                model_output=model_output,
+                idempotency_key=idempotency_key,
+            )
+            return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
+    def inspect_proof_guided_context(session_id: str) -> str:
+        """Inspect the last durable proof-guided response without advancing it."""
+        try:
+            result = _proof_runtime().inspect(session_id)
+            return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
+            return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
+
+    @mcp.tool()
     def checkpoint_state(
         task_description: str = "",
         current_step: str = "",
@@ -3370,9 +3783,13 @@ def create_mcp_server(
         optimized_cost = mem.get("optimized_cost_per_call_usd", 0)
         try:
             _lt = get_tracker().get_trends().get("lifetime", {})
-            cost_saved_usd = float(_lt.get("cost_saved_usd", 0) or 0)
-            real_tokens_saved = int(_lt.get("tokens_saved", 0) or 0)
-            real_requests = int(_lt.get("requests_optimized", 0) or 0)
+            cost_saved_usd = float(
+                _lt.get("provider_cost_avoided_usd", 0) or 0
+            )
+            real_tokens_saved = int(_lt.get("provider_tokens_saved", 0) or 0)
+            real_requests = int(
+                _lt.get("provider_requests_optimized", 0) or 0
+            )
         except Exception:
             cost_saved_usd = 0.0
             real_tokens_saved = 0
@@ -3440,16 +3857,25 @@ def create_mcp_server(
 
         dashboard = {
             "💰 money": {
-                "cost_saved_total_usd": f"${cost_saved_usd:.4f}",
+                "modeled_api_cost_avoided_usd": f"${cost_saved_usd:.4f}",
                 "tokens_saved_total": f"{real_tokens_saved:,}",
+                "provider_bound_requests": real_requests,
+                # Compatibility aliases for clients built against the older
+                # dashboard shape. Their values are now provider-classified.
+                "cost_saved_total_usd": f"${cost_saved_usd:.4f}",
                 "real_llm_requests": real_requests,
+                "measurement_note": (
+                    "Dollar values model input-cost avoidance from measured "
+                    "provider-bound token reduction; they are not invoices."
+                ),
                 "cost_per_call_without_entroly": f"${naive_cost:.4f}",
                 "cost_per_call_with_entroly": f"${optimized_cost:.4f}",
                 "savings_pct": f"{savings_pct:.0f}%",
                 "session_roi_usd": f"${session_roi:.4f}",
                 "insight": (
-                    f"${cost_saved_usd:.4f} saved across {real_requests} real LLM requests "
-                    f"intercepted by the proxy. Engine ran {total_opts} internal optimize "
+                    f"${cost_saved_usd:.4f} modeled API input cost avoided across "
+                    f"{real_requests} provider-bound requests intercepted by the proxy. "
+                    f"Engine ran {total_opts} internal optimize "
                     f"calls (CLI/MCP); those don't count toward $ saved."
                     if real_requests > 0 else
                     f"No LLM requests intercepted yet — point your AI tool at "
@@ -4090,15 +4516,15 @@ def create_mcp_server(
     # ── Wire reward-driven crystallization ───────────────────────────
     # Closes the success-side of the evolution loop: when a query
     # cluster's Hoeffding lower bound on reward beats the global
-    # baseline, materialize it as a promoted skill (status='promoted',
-    # because the LCB is itself the fitness proof — no benchmark gate).
+    # baseline, materialize its recipe as a testing candidate. Executable
+    # promotion still requires an independent output-contract benchmark.
     # Runs synchronously inside the engine's optimize_context but is
     # cheap (no LLM, no IO besides one vault write) and exception-safe.
     def _on_crystallization(event: Any) -> None:
         try:
             res = _py_skill_engine.crystallize_skill(event)
             logger.info(
-                "Crystallized skill %s from cluster %s (lcb=%.3f, n=%d)",
+                "Crystallized testing candidate %s from cluster %s (lcb=%.3f, n=%d)",
                 res.get("skill_id"), event.cluster_id,
                 event.lcb_reward, event.n_samples,
             )
@@ -4111,8 +4537,8 @@ def create_mcp_server(
     # When a query matches a previously-crystallized skill, the router
     # bypasses the full optimize_context pipeline and returns the
     # recipe directly. The router caches loaded skills with a TTL and
-    # invalidates on each new crystallization, so newly-promoted
-    # skills are picked up immediately without a restart.
+    # invalidates on each new crystallization. Testing candidates remain
+    # invisible to the router until a benchmark promotes them.
     try:
         from .fast_path import FastPathRouter
         _fast_path = FastPathRouter(
@@ -4143,6 +4569,66 @@ def create_mcp_server(
         change_pipe=_py_change_pipe,
         project_dir=_source_dir,
     )
+    # The MCP runtime owns the belief/vault services. Attach the existing
+    # listener to the engine so background initialization can activate the
+    # change-driven pipeline without constructing a second set of compilers or
+    # requiring the model to remember to call an MCP tool first.
+    engine._workspace_listener = _py_workspace_listener
+
+    # Active-task dreaming is intentionally separate from the idle autotuner.
+    # It recalls durable memory and current code into an expiring SKILL.md while
+    # keeping repository AGENTS.md / CLAUDE.md immutable and authoritative.
+    from .memory_fabric import MemoryFabric
+    from .task_dream import TaskDreamer
+
+    _task_memory_path = Path(
+        os.environ.get("ENTROLY_MEMORY", str(Path(_checkpoint_dir) / "memory.json"))
+    ).expanduser()
+    _task_memory = MemoryFabric(
+        enable_long_term=False,
+        enable_native=False,
+        enable_builtin_kernels=False,
+    )
+    _task_dreamer = TaskDreamer(
+        project_dir=_source_dir,
+        runtime_dir=Path(_checkpoint_dir) / "task_dreams",
+        engine=engine,
+        memory_fabric=_task_memory,
+        memory_path=_task_memory_path,
+        long_term_memory=getattr(engine, "_ltm", None),
+        vault=_vault_mgr,
+        skill_engine=_py_skill_engine,
+    )
+    engine._task_dreamer = _task_dreamer
+
+    @mcp.tool()
+    def prepare_task_dream(
+        task: str,
+        agent_id: str = "default",
+        token_budget: int = 1600,
+        persist: bool = True,
+    ) -> str:
+        """Prepare an expiring, receipt-backed task skill before agent work.
+
+        The capsule combines safe cross-session MemoryOS recall, optional
+        hippocampal long-term memory, current repository fragments, non-stale
+        beliefs, and already-promoted skills. Recalled text is evidence rather
+        than authority and is prompt-injection scanned. Root AGENTS.md and
+        CLAUDE.md files are never modified.
+
+        Args:
+            task: The concrete task the agent is about to perform.
+            agent_id: MemoryOS identity used for scoped recall.
+            token_budget: Approximate maximum capsule tokens (256-8000).
+            persist: Write SKILL.md and receipt.json under .entroly/task_dreams.
+        """
+        result = _task_dreamer.prepare(
+            task,
+            agent_id=agent_id,
+            token_budget=token_budget,
+            persist=persist,
+        )
+        return json.dumps(result.to_dict(), indent=2, ensure_ascii=False)
 
     @mcp.tool()
     def compile_beliefs(
@@ -5150,6 +5636,24 @@ def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
         except Exception as e:
             logger.warning(f"Auto-index failed (non-fatal): {e}")
 
+        workspace_listener = getattr(engine, "_workspace_listener", None)
+        if workspace_listener is not None:
+            try:
+                listener_result = workspace_listener.start(
+                    interval_s=120,
+                    max_files=100,
+                    # Empty state already discovers the whole workspace. Do
+                    # not force a rebuild on every MCP restart: persisted
+                    # signatures let us compile only genuinely changed files.
+                    force_initial=False,
+                )
+                logger.info(
+                    "Workspace belief listener: %s (initial backlog is drained in bounded batches)",
+                    listener_result.get("status", "unknown"),
+                )
+            except Exception as e:
+                logger.warning("Workspace belief listener failed (non-fatal): %s", e)
+
         # Keep the previous ordering: autotune starts after the initial index
         # pass, but neither operation blocks the MCP stdio handshake.
         try:
@@ -5176,7 +5680,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.62"
+        _version = "1.0.64"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

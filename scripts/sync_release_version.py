@@ -12,7 +12,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from _release_artifacts import MCPB_MANIFEST, rebuild_mcpb  # noqa: E402
 
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 PROJECT_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"')
@@ -103,6 +110,10 @@ def synchronize(root: Path, target: str) -> list[str]:
             "release surfaces no longer contain the current version; review the allowlist: "
             + ", ".join(stale)
         )
+
+    if MCPB_MANIFEST.as_posix() in changed:
+        bundle = rebuild_mcpb(root)
+        changed.append(bundle.relative_to(root).as_posix())
 
     note = root / "docs" / "releases" / f"v{target}.md"
     if not note.exists():

@@ -19,10 +19,10 @@
 class Entroly < Formula
   include Language::Python::Virtualenv
 
-  desc "Token-saving proxy and context compression engine for AI coding agents"
+  desc "Open-source Context OS for AI agents"
   homepage "https://github.com/juyterman1000/entroly"
-  url "https://files.pythonhosted.org/packages/source/e/entroly/entroly-1.0.62.tar.gz"
-  sha256 "5f1bb72a81521c01f8951c22fe7761fcbcc60fb0b107ba0153bebe2794b37064"
+  url "https://files.pythonhosted.org/packages/source/e/entroly/entroly-1.0.64.tar.gz"
+  sha256 "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
   license "Apache-2.0"
   head "https://github.com/juyterman1000/entroly.git", branch: "main"
 

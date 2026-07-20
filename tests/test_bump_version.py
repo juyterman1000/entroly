@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
+import zipfile
 from pathlib import Path
 
 
@@ -89,6 +91,41 @@ def test_bump_summary_reports_replacements_and_unique_files(tmp_path, monkeypatc
     assert "generated/package.json missing; skipping generated artifact" in output
     assert output.count("manifest.toml -> 1.0.1") == 1
     assert "bumped 2 target(s) across 1 file(s) to 1.0.1" in output
+
+
+def test_bump_rebuilds_mcp_bundle_after_manifest_update(
+    tmp_path, monkeypatch, capsys
+):
+    manifest = tmp_path / ".mcpb-build" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        '{"name":"entroly","version":"1.0.0"}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "entroly.mcpb").write_bytes(b"stale bundle")
+
+    monkeypatch.setattr(bump_version, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        bump_version,
+        "TARGETS",
+        [
+            (
+                ".mcpb-build/manifest.json",
+                r'"version"\s*:\s*"[^"]+"',
+                '"version": "{v}"',
+            )
+        ],
+    )
+
+    assert bump_version.main(["bump_version.py", "1.0.1"]) == 0
+
+    with zipfile.ZipFile(tmp_path / "entroly.mcpb") as archive:
+        bundled = json.loads(archive.read("manifest.json"))
+        assert archive.namelist() == ["manifest.json"]
+    assert bundled["version"] == "1.0.1"
+    output = capsys.readouterr().out
+    assert "entroly.mcpb -> rebuilt" in output
+    assert "across 2 file(s)" in output
 
 
 def test_homebrew_readme_targets_update_heading_and_command():

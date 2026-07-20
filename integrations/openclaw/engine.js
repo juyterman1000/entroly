@@ -45,6 +45,7 @@ function statusSnapshot(status) {
     "context_window",
     "context_output_reserve",
     "context_safety_tokens",
+    "proof_guided_attempts",
   ];
   const booleanFields = ["changed", "provider_independent"];
   const stringFields = [
@@ -58,6 +59,8 @@ function statusSnapshot(status) {
     "model",
     "provider_hint",
     "assembly_strategy",
+    "proof_guided_status",
+    "proof_guided_audit_artifact_id",
     "error",
   ];
   for (const field of numericFields) {
@@ -385,6 +388,17 @@ export function formatEntrolyStatus(status) {
     );
   }
   if (status.receipt_id) lines.push(`Receipt: ${boundedString(status.receipt_id, 160)}`);
+  if (status.proof_guided_status) {
+    lines.push(
+      `Proof-guided recovery: ${boundedString(status.proof_guided_status, 160)}`,
+      `Proof model attempts: ${Number(status.proof_guided_attempts ?? 0).toLocaleString()}`,
+    );
+  }
+  if (status.proof_guided_audit_artifact_id) {
+    lines.push(
+      `Proof audit: ${boundedString(status.proof_guided_audit_artifact_id, 160)}`,
+    );
+  }
   if (status.warnings?.length) {
     lines.push(`Warnings: ${status.warnings.map((warning) => safeDiagnostic(warning)).join(" | ")}`);
   }
@@ -418,6 +432,7 @@ export function createEntrolyContextEngine({
   config = {},
   logger = console,
   statusBySession = new Map(),
+  proofStateBySession = new Map(),
   maxStatusSessions = 512,
 }) {
   if (typeof delegateCompaction !== "function") {
@@ -548,6 +563,7 @@ export function createEntrolyContextEngine({
           context_safety_tokens:
             assemblyRuntime.runtimeMetadata.context_discovery?.safety_tokens,
         });
+        proofStateBySession.delete(sessionId);
         return {
           messages: sourceMessages,
           estimatedTokens: estimateTokens(sourceMessages),
@@ -627,7 +643,36 @@ export function createEntrolyContextEngine({
             "Entroly bridge wrote a receipt without the required acceptance handshake",
           );
         }
-        storeStatus(sessionId, result);
+        if (config.proofGuidedRecovery === true) {
+          const existing = proofStateBySession.get(sessionId);
+          if (!existing || existing.prompt !== prompt || existing.disabled) {
+            proofStateBySession.set(sessionId, {
+              prompt,
+              workspaceDir: config.workspaceDir,
+              sourceMessages: structuredClone(sourceMessages),
+              assembledMessages: structuredClone(result.messages),
+              recoveredMessages: [],
+              attempts: 0,
+              runId: null,
+              lastOutputSha256: null,
+              lastProofResult: null,
+              retryIssued: false,
+              disabled: false,
+            });
+          }
+          while (proofStateBySession.size > statusLimit) {
+            proofStateBySession.delete(proofStateBySession.keys().next().value);
+          }
+        } else {
+          proofStateBySession.delete(sessionId);
+        }
+        storeStatus(sessionId, {
+          ...result,
+          proof_guided_status:
+            config.proofGuidedRecovery === true ? "armed" : "disabled",
+          proof_guided_attempts:
+            proofStateBySession.get(sessionId)?.attempts ?? 0,
+        });
         return {
           messages: result.messages,
           estimatedTokens: result.estimated_tokens,

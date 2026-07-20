@@ -784,6 +784,84 @@ impl EntrolyEngine {
         })
     }
 
+    /// Remove every fragment whose source exactly matches one of `sources`.
+    ///
+    /// Workspace reconciliation uses this before ingesting changed files and
+    /// for files deleted from disk.  Source-atomic removal prevents two
+    /// contradictory versions of the same file from competing in retrieval.
+    pub fn remove_sources(&mut self, sources: Vec<String>) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let requested: HashSet<String> = sources.into_iter().collect();
+            let removed_ids: HashSet<String> = self
+                .fragments
+                .iter()
+                .filter(|(_, fragment)| requested.contains(&fragment.source))
+                .map(|(fragment_id, _)| fragment_id.clone())
+                .collect();
+            let removed_sources: HashSet<String> = self
+                .fragments
+                .values()
+                .filter(|fragment| requested.contains(&fragment.source))
+                .map(|fragment| fragment.source.clone())
+                .collect();
+
+            for fragment_id in &removed_ids {
+                self.fragments.remove(fragment_id);
+                self.dedup_index.remove(fragment_id);
+            }
+
+            if !removed_ids.is_empty() {
+                self.feedback.remove_fragments(&removed_ids);
+                self.resonance_matrix.remove_fragments(&removed_ids);
+                self.causal_graph.remove_fragments(&removed_ids);
+                self.prev_selected_ids
+                    .retain(|fragment_id| !removed_ids.contains(fragment_id));
+                self.prev_explored_ids
+                    .retain(|fragment_id| !removed_ids.contains(fragment_id));
+                self.last_optimization = None;
+                self.last_cache_feedback_eligible = false;
+                self.egsc_cache.clear();
+                self.rebuild_lsh_index();
+                self.rebuild_dependency_graph();
+            }
+
+            let removed_source_set = removed_sources;
+            let mut removed_sources: Vec<String> = removed_source_set.iter().cloned().collect();
+            removed_sources.sort();
+            let mut removed_fragment_ids: Vec<String> = removed_ids.iter().cloned().collect();
+            removed_fragment_ids.sort();
+            let mut missing_sources: Vec<String> =
+                requested.difference(&removed_source_set).cloned().collect();
+            missing_sources.sort();
+
+            let result = PyDict::new(py);
+            result.set_item("removed_fragments", removed_ids.len())?;
+            result.set_item("removed_fragment_ids", removed_fragment_ids)?;
+            result.set_item("removed_sources", removed_sources)?;
+            result.set_item("missing_sources", missing_sources)?;
+            result.set_item("remaining_fragments", self.fragments.len())?;
+            Ok(result.into())
+        })
+    }
+
+    /// Rebuild the complete symbol/dependency graph from live fragments.
+    ///
+    /// Source replacement assigns a new fragment ID. Existing callers must be
+    /// rebound after the replacement is ingested; otherwise their edges still
+    /// describe the pre-change graph (or disappear entirely).
+    pub fn rebuild_dependencies(&mut self) -> PyResult<PyObject> {
+        self.rebuild_dependency_graph();
+        self.last_optimization = None;
+        self.last_cache_feedback_eligible = false;
+        self.egsc_cache.clear();
+        Python::with_gil(|py| {
+            let result = PyDict::new(py);
+            result.set_item("nodes", self.dep_graph.node_count())?;
+            result.set_item("edges", self.dep_graph.edge_count())?;
+            Ok(result.into())
+        })
+    }
+
     /// Batch-ingest multiple fragments in one PyO3 call with rayon parallelism.
     ///
     /// This is 10-50x faster than calling ingest() per-file because:
@@ -1737,8 +1815,11 @@ impl EntrolyEngine {
                 // Sort all files by TPKS score (descending)
                 let mut sorted_tpks: Vec<(String, f64)> =
                     tpks_scores.iter().map(|(k, &v)| (k.clone(), v)).collect();
-                sorted_tpks
-                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                sorted_tpks.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
 
                 // Assign rank-percentile scores
                 let total = sorted_tpks.len().max(1) as f64;
@@ -1767,7 +1848,8 @@ impl EntrolyEngine {
                 };
 
                 // PageRank (tie-breaker only, max 2% influence)
-                let pr_ids: Vec<String> = self.fragments.keys().cloned().collect();
+                let mut pr_ids: Vec<String> = self.fragments.keys().cloned().collect();
+                pr_ids.sort();
                 let pagerank = hierarchical::compute_pagerank(&self.dep_graph, &pr_ids, 15);
                 let max_pr = pagerank
                     .values()
@@ -2050,7 +2132,13 @@ impl EntrolyEngine {
                     .clamp(0.15, 0.90);
             }
 
+            // HashMap iteration order is intentionally randomized.  Selection must not
+            // inherit that entropy: it makes identical benchmark trials disagree and
+            // can also turn score ties into process-order-dependent user behavior.
+            // Fragment IDs share one engine prefix and a monotonic counter, so sorting
+            // here recovers stable ingest order without changing the scoring policy.
             let mut frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
+            frags.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
 
             // ── SKS Phase 1: Pin precision files ─────────────────────
             // Temporarily mark path-matched files as pinned so IOS/knapsack
@@ -2072,8 +2160,11 @@ impl EntrolyEngine {
                 // Sort by TPKS descending — pin highest-precision files first!
                 // Files matching 3 query terms in path get pinned before
                 // files matching only 1 term.
-                pin_candidates
-                    .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                pin_candidates.sort_by(|a, b| {
+                    b.2.partial_cmp(&a.2)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
                 for (fid, tc, _) in &pin_candidates {
                     if pin_budget_used + tc <= max_pin_budget {
                         pin_budget_used += tc;
@@ -4827,6 +4918,35 @@ impl EntrolyEngine {
         self.exploration_rate = rate.clamp(0.0, 1.0);
     }
 
+    /// Set the local exploration PRNG state for reproducible experiments.
+    ///
+    /// This controls only Entroly's lightweight xorshift exploration stream;
+    /// it is not a cryptographic RNG and must not be used for secrets. A zero
+    /// seed is mapped to one because xorshift's all-zero state is absorbing.
+    pub fn set_rng_seed(&mut self, seed: u64) {
+        self.rng_state = seed.max(1);
+    }
+
+    /// Put a fresh engine into a reproducible benchmark identity.
+    ///
+    /// Fragment identifiers participate in several graph, cache, and tie-break
+    /// paths, so seeding only the exploration PRNG is not sufficient for an
+    /// exact replay.  This method is deliberately fail-closed once ingestion
+    /// has begun: changing an identity prefix after IDs exist would corrupt
+    /// graph and index references.
+    pub fn set_benchmark_seed(&mut self, seed: u64) -> PyResult<()> {
+        if self.id_counter != 0 || !self.fragments.is_empty() || !self.fragment_slot_ids.is_empty()
+        {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "set_benchmark_seed must be called before ingest",
+            ));
+        }
+        let normalized = seed.max(1);
+        self.instance_id = normalized;
+        self.rng_state = normalized;
+        Ok(())
+    }
+
     /// Set the resonance weight (5th PRISM dimension).
     ///
     /// Wires the Python ArchetypeOptimizer's per-archetype `w_resonance`
@@ -5050,6 +5170,19 @@ impl EntrolyEngine {
             }
             self.fragment_slot_ids.push(id.clone());
         }
+    }
+
+    /// Rebuild dependency and symbol state from the live fragment set.
+    /// Called after source-atomic deletion/replacement so no edge or symbol can
+    /// continue pointing at content that is no longer selectable.
+    fn rebuild_dependency_graph(&mut self) {
+        let mut fragments: Vec<(String, String)> = self
+            .fragments
+            .values()
+            .map(|fragment| (fragment.fragment_id.clone(), fragment.content.clone()))
+            .collect();
+        fragments.sort_by(|left, right| left.0.cmp(&right.0));
+        self.dep_graph.rebuild(&fragments);
     }
 
     /// Numerically stable sigmoid: σ(x) = 1 / (1 + e^{-x}).
@@ -6404,6 +6537,21 @@ mod tests {
         assert!((engine.exploration_rate - 0.0).abs() < 0.001);
         engine.set_exploration_rate(0.1);
         assert!((engine.exploration_rate - 0.1).abs() < 0.001);
+
+        engine.set_rng_seed(42);
+        assert_eq!(engine.rng_state, 42);
+        engine.set_rng_seed(0);
+        assert_eq!(engine.rng_state, 1);
+
+        engine.set_benchmark_seed(77).unwrap();
+        assert_eq!(engine.instance_id, 77);
+        assert_eq!(engine.rng_state, 77);
+
+        engine.fragments.insert(
+            "f1".into(),
+            ContextFragment::new("f1".into(), "evidence".into(), 1, "test".into()),
+        );
+        assert!(engine.set_benchmark_seed(99).is_err());
     }
 
     // ═══════════════════════════════════════════════════════════════════════

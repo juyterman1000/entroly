@@ -2,9 +2,9 @@
 Semantic Resolution Protocol (SRP) — Information-Optimal File Reads
 ====================================================================
 
-The first context server that automatically selects per-block resolution
-level using information-theoretic scoring, instead of requiring the agent
-to choose a fixed read mode.
+A context-reading protocol that selects per-block resolution using
+information-theoretic scoring instead of requiring the agent to choose a
+single fixed read mode.
 
 Motivation
 ----------

@@ -23,7 +23,7 @@
   <text x="420" y="34" text-anchor="middle" class="t" fill="#6272a4" font-size="12">entroly — Developer Demo</text>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="0.80s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="74" class="t b" fill="#ffffff">$ entroly demo</text>
+    <text x="36" y="74" class="t b" fill="#ffffff">$ entroly demo  # illustrative UI walkthrough</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="2.16s" dur="0.25s" fill="freeze"/>
@@ -31,7 +31,7 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="3.24s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="128" class="t" fill="#50fa7b">  ✓ Indexed 847 files (186,420 tokens) in 1.8s</text>
+    <text x="36" y="128" class="t" fill="#50fa7b">  ✓ Eligible content indexed; source tokens measured</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="4.60s" dur="0.25s" fill="freeze"/>
@@ -43,15 +43,15 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="4.76s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="200" class="t" fill="#f8f8f2">  │  Your AI sees: 5-10 files (rest is invisible)          │</text>
+    <text x="36" y="200" class="t" fill="#f8f8f2">  │  Context: unbudgeted input                              │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="4.84s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="218" class="t" fill="#f8f8f2">  │  Tokens sent:  186,420 (entire raw dump)               │</text>
+    <text x="36" y="218" class="t" fill="#f8f8f2">  │  Tokens: measured from the source request               │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="4.92s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="236" class="t b" fill="#ff5555">  │  Cost / 1K requests: ~$560                             │</text>
+    <text x="36" y="236" class="t b" fill="#ff5555">  │  Cost: apply your provider's current rates              │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="5.00s" dur="0.25s" fill="freeze"/>
@@ -67,7 +67,7 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="6.52s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="326" class="t" fill="#f8f8f2">  │  Your AI sees: ALL 847 files (variable resolution)     │</text>
+    <text x="36" y="326" class="t" fill="#f8f8f2">  │  Context: selected evidence under a token budget        │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="7.50s" dur="0.25s" fill="freeze"/>
@@ -79,7 +79,7 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="8.36s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="380" class="t b" fill="#50fa7b">  │      → 12 fragments, 7,450 tokens       ▼ 96% saved  │</text>
+    <text x="36" y="380" class="t b" fill="#50fa7b">  │      → selected fragments + exact token receipt    │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="9.34s" dur="0.25s" fill="freeze"/>
@@ -91,7 +91,7 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="10.20s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="434" class="t b" fill="#50fa7b">  │      → 35 fragments, 10,240 tokens      ▼ 94% saved  │</text>
+    <text x="36" y="434" class="t b" fill="#50fa7b">  │      → selected fragments + omitted evidence       │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="11.18s" dur="0.25s" fill="freeze"/>
@@ -103,7 +103,7 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="12.04s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="488" class="t b" fill="#50fa7b">  │      → 42 fragments, 9,320 tokens       ▼ 95% saved  │</text>
+    <text x="36" y="488" class="t b" fill="#50fa7b">  │      → selected fragments + audit receipt          │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="12.72s" dur="0.25s" fill="freeze"/>
@@ -115,15 +115,15 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="13.68s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="542" class="t b" fill="#50fa7b">  │  Average:   <tspan style="opacity:0.4;font-weight:400">70-</tspan>95% fewer tokens                        │</text>
+    <text x="36" y="542" class="t b" fill="#50fa7b">  │  Example only — run on your workload for results       │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="13.76s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="560" class="t b" fill="#50fa7b">  │  Cost:      <tspan style="opacity:0.4;font-weight:400">$28 -</tspan> $168 / 1K requests (was $560)        │</text>
+    <text x="36" y="560" class="t b" fill="#50fa7b">  │  Cost: use measured tokens and provider rates          │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="13.84s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="578" class="t" fill="#bd93f9">  │  Pipeline:  8.2ms (entropy → knapsack → PRISM)         │</text>
+    <text x="36" y="578" class="t" fill="#bd93f9">  │  Latency: measure end-to-end on your hardware          │</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="14.32s" dur="0.25s" fill="freeze"/>
@@ -131,7 +131,7 @@
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="15.68s" dur="0.25s" fill="freeze"/>
-    <text x="36" y="632" class="t b" fill="#ffffff">  ✓ Your AI sees more. You pay less. Zero config changes.</text>
+    <text x="36" y="632" class="t b" fill="#ffffff">  ✓ Inspect selected context, receipts, and measured tokens.</text>
   </g>
   <g opacity="0">
     <animate attributeName="opacity" from="0" to="1" begin="17.34s" dur="0.25s" fill="freeze"/>

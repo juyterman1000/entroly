@@ -1,24 +1,28 @@
 """
-Evolution Daemon — Zero-Token Autonomous Self-Improvement
-=========================================================
+Evolution Daemon — Provider-Gated Autonomous Improvement
+========================================================
 
-The orchestrator for the 4 Pillars of Zero-Token Autonomy:
+The orchestrator for four guarded improvement paths:
 
-  Pillar 1 — Token Economy (Self-Funded Evolution):
+  Pillar 1 — Cost Guardrail (Bounded Evolution):
     Before any LLM-based synthesis, checks ValueTracker.get_evolution_budget().
-    The system can only spend τ% (5%) of its lifetime savings on evolution.
-    Invariant: C_spent(t) ≤ τ · S(t)  →  strictly token-negative.
+    The system can spend only τ% (5%) of provider-classified modeled cost
+    avoidance on evolution. Local-only and legacy estimates cannot fund it.
+    Invariant: C_spent(t) ≤ τ · S_provider(t).
 
   Pillar 2 — Local Structural Induction:
     ALWAYS tried first. Uses StructuralSynthesizer to generate tools
-    from the entropy gradient of the code graph. Zero tokens, deterministic.
+    from the entropy gradient of the code graph. It is deterministic and makes
+    no provider call, while still using local compute and storage.
     Only falls back to LLM synthesis if structural synthesis fails AND
     the budget allows it.
 
   Pillar 3 — Dreaming Loop (Self-Play):
     During idle cycles (>60s), runs counterfactual weight optimization
-    via DreamingLoop.run_dream_cycle(). Generates synthetic queries from
-    FeedbackJournal history, tests weight perturbations, keeps improvements.
+    via DreamingLoop.run_dream_cycle(). Generates counterfactual queries from
+    FeedbackJournal history and executes weight perturbations on the fixed
+    benchmark. Optional verified dreaming ranks experiments with a world model;
+    synthetic transitions never promote a configuration.
 
   Pillar 4 — Archetype-Aware Evolution (NEW):
     On startup, fingerprints the codebase topology (language mix, dep graph
@@ -49,8 +53,10 @@ Usage (integrated into server.py):
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("entroly.evolution_daemon")
@@ -62,7 +68,7 @@ class EvolutionDaemon:
     Orchestrates the 4 pillars:
       1. ROI-gated evolution (ValueTracker budget guardrail)
       2. Structural synthesis first ($0), LLM fallback (budget-gated)
-      3. Dreaming loop during idle cycles
+      3. Real-benchmark-gated dreaming loop during idle cycles
       4. Archetype-aware weight adaptation (PRISM 5D)
     """
 
@@ -144,11 +150,113 @@ class EvolutionDaemon:
             logger.debug("EvolutionDaemon: federation init skipped: %s", e)
 
         # ── Pillar 3: Dreaming Loop ─────────────────────────────────
+        # Verified model-based ranking remains opt-in while it accumulates
+        # release evidence. Even when enabled, synthetic transitions only
+        # propose which mutation to benchmark; the fixed harness remains the
+        # promotion authority.
+        self._verified_dream_controller = None
+        self._verified_dream_status = "disabled"
+        self._verified_dream_backend = "none"
+        if os.environ.get("ENTROLY_VERIFIED_DREAMING", "0") == "1":
+            try:
+                from .ravs.world_model import (
+                    EbbiforgeWorldModelAdapter,
+                    EmpiricalWorldModel,
+                    TransitionLedger,
+                    VerifiedDreamController,
+                )
+
+                min_samples = max(
+                    4,
+                    int(os.environ.get("ENTROLY_WORLD_MODEL_MIN_SAMPLES", "8")),
+                )
+                neighbors = max(
+                    1,
+                    int(os.environ.get("ENTROLY_WORLD_MODEL_NEIGHBORS", "8")),
+                )
+                reward_model = EmpiricalWorldModel(
+                    min_samples=min_samples,
+                    neighbors=neighbors,
+                )
+                backend_name = os.environ.get(
+                    "ENTROLY_WORLD_MODEL_BACKEND", "empirical"
+                ).strip().lower()
+                if backend_name == "empirical":
+                    world_model = reward_model
+                elif backend_name == "ebbiforge":
+                    import ebbiforge_core as ebbi
+                    from .autotune import TUNABLE_PARAMS
+
+                    config = ebbi.WorldModelConfig(
+                        latent_dim=len(TUNABLE_PARAMS),
+                        prediction_steps=1,
+                    )
+                    predictor = ebbi.AutoregressivePredictor(config)
+                    world_model = EbbiforgeWorldModelAdapter(
+                        predictor,
+                        state_factory=lambda vector: ebbi.LatentState(
+                            list(vector), "entroly-autotune", 0
+                        ),
+                        reward_model=reward_model,
+                        max_validation_loss=float(
+                            os.environ.get(
+                                "ENTROLY_EBBIFORGE_MAX_VALIDATION_LOSS", "1.0"
+                            )
+                        ),
+                        retrain_interval=max(
+                            1,
+                            int(
+                                os.environ.get(
+                                    "ENTROLY_EBBIFORGE_RETRAIN_INTERVAL", "8"
+                                )
+                            ),
+                        ),
+                        train_kwargs={
+                            "epochs": max(
+                                1,
+                                int(
+                                    os.environ.get(
+                                        "ENTROLY_EBBIFORGE_TRAIN_EPOCHS", "50"
+                                    )
+                                ),
+                            )
+                        },
+                    )
+                else:
+                    raise ValueError(
+                        "ENTROLY_WORLD_MODEL_BACKEND must be empirical or ebbiforge"
+                    )
+
+                world_model_dir = Path(data_dir or ".entroly") / "verified_dreaming"
+                self._verified_dream_controller = VerifiedDreamController(
+                    TransitionLedger(world_model_dir),
+                    world_model,
+                    min_confidence=float(
+                        os.environ.get("ENTROLY_WORLD_MODEL_MIN_CONFIDENCE", "0.55")
+                    ),
+                    uncertainty_penalty=float(
+                        os.environ.get(
+                            "ENTROLY_WORLD_MODEL_UNCERTAINTY_PENALTY", "0.75"
+                        )
+                    ),
+                    experiment_exploration_bonus=float(
+                        os.environ.get(
+                            "ENTROLY_WORLD_MODEL_EXPLORATION_BONUS", "0.50"
+                        )
+                    ),
+                )
+                self._verified_dream_status = "enabled"
+                self._verified_dream_backend = backend_name
+            except Exception as exc:
+                self._verified_dream_status = f"error: {exc}"
+                logger.warning("verified dreaming disabled: %s", exc)
+
         if feedback_journal:
             from .autotune import DreamingLoop
             self._dreaming = DreamingLoop(
                 feedback_journal,
                 archetype_optimizer=self._archetype,
+                world_model_controller=self._verified_dream_controller,
             )
 
         # State
@@ -168,6 +276,8 @@ class EvolutionDaemon:
             "federation_merges": 0,
             "archetype": self._archetype_info.label if self._archetype_info else None,
             "archetype_confidence": self._archetype_info.confidence if self._archetype_info else 0.0,
+            "verified_dreaming": self._verified_dream_status,
+            "verified_dreaming_backend": self._verified_dream_backend,
         }
 
     def start(self) -> None:

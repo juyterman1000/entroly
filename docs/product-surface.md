@@ -2,7 +2,8 @@
 
 This page maps what Entroly exposes today from the codebase. It is meant to help developers choose the right integration path without guessing from marketing copy.
 
-Entroly is best understood as a local context OS for AI agents:
+Entroly is best understood as a local Context OS for AI agents: the
+observability, governance, and decision layer for AI context.
 
 1. **Context engine** — rank, deduplicate, compress, and select evidence under budget.
 2. **Recovery ledger** — keep omitted originals reachable by handle.
@@ -13,7 +14,7 @@ Entroly is best understood as a local context OS for AI agents:
 7. **Security layer** — scan code, detect prompt injection, apply redaction policy, and keep file reads contained.
 8. **Multi-runtime packaging** — Python, Rust native, Node/WASM, Docker, CLI, SDK, MCP, and proxy.
 9. **Self-improvement layer** — convert real outcomes into safer policies, skills, and weight profiles.
-10. **Memory/session/value layer** — retain useful working memory, session continuity, checkpoint relevance, and lifetime savings evidence.
+10. **Memory/session/value layer** — retain useful working memory, session continuity, checkpoint relevance, and evidence-classified value.
 11. **Multimodal intake layer** — convert diagrams, images, voice, diffs, and structured artifacts into budgetable context.
 12. **CogOps/vault layer** — compile beliefs, route epistemically, verify knowledge, and sync workspace changes.
 13. **Integration/event layer** — connect framework helpers and team event gateways into the same local feedback loop.
@@ -48,6 +49,7 @@ Core first-run commands:
 ```bash
 entroly verify-claims
 entroly simulate
+entroly value
 entroly perf
 entroly doctor
 entroly status
@@ -153,10 +155,16 @@ Entroly includes memory surfaces that make long-running agent work less wasteful
 | Memory OS | `memory.py`, `memory_cli.py` | Budget-aware working, episodic, and semantic recall with safety scanning and receipts |
 | Memory Fabric | `memory_fabric.py`, `long_term_memory.py`, `memory_kernels.py` | Longer-horizon memory, consolidation, and retrieval patterns |
 | Session intelligence | `session_intelligence.py`, `checkpoint.py` | Decision digests, checkpoint relevance, cache-retention forecasting, behavioral-waste detection |
-| Value evidence | `value_tracker.py`, `cost_cortex.py`, `usage_ledger.py` | Lifetime savings, observed provider usage, cache economics, and spend summaries |
+| Value evidence | `value_tracker.py`, `cost_cortex.py`, `usage_ledger.py` | Provider-bound token reduction and modeled input-cost avoidance, local-only reduction, pricing provenance, cache economics, and spend summaries |
 | Agent bridge | `context_bridge.py`, `verified_handoff.py` | Share context between tools while preserving verification and handoff boundaries |
 
 The product claim this enables is stronger than "compress this prompt": Entroly can help a developer keep useful state across a coding session, spend tokens where they are likely to matter, and explain what value was actually measured.
+
+`entroly value` is the public accounting boundary. It prices only measured
+token reduction on provider-bound proxy requests. SDK, MCP, and npm operations
+remain useful token-reduction evidence but claim `$0` because the local runtime
+cannot prove their output reached a paid provider. History from older schemas
+is preserved as unclassified and excluded from provider-dollar claims.
 
 ## Multimodal and image context
 
@@ -248,11 +256,14 @@ Entroly's self-improvement surfaces are deliberately guarded. They adapt from ev
 | `OnlinePrism` | Bayesian online weight adaptation from reward and contribution signals |
 | `RAVS` | Collects honest outcomes from tests, commands, CI, retries, edits, and verification |
 | `OutcomeBridge` | Corrects PRISM posterior weights with delayed honest outcomes |
+| `VerifiedDreamController` | Learns real state/action/next-state transitions, runs uncertainty-bounded proposal rollouts, and keeps dreams in a separate hash-chained ledger |
+| `ProofGuidedRuntime` | Persists hash-sealed prepare/advance sessions, survives restart, replays idempotency keys, and shares one provider-neutral protocol across CLI, MCP, and localhost proxy surfaces |
+| `EbbiforgeWorldModelAdapter` | Optionally uses Ebbiforge's Rust autoregressive dynamics while retaining Entroly's verified reward and promotion gates |
 | `RewardCrystallizer` | Turns statistically repeated wins into candidate reusable skills |
 | `SkillEngine` | Synthesizes, benchmarks, promotes, merges, or prunes skills |
 | `EvolutionDaemon` | Orchestrates structural synthesis, idle dreaming, archetype-aware evolution, and optional federation |
 | `PromotionGate` | Promotes shadow policies only when non-inferior and supports rollback |
-| `ValueTracker` | Tracks lifetime savings so optional evolution can be budget-gated |
+| `ValueTracker` | Classifies provider-bound, local-only, and legacy evidence so optional evolution is funded only by provider-classified cost avoidance |
 | `ArchetypeOptimizer` | Detects project shape and loads project-appropriate weight priors |
 
 The intended loop:
@@ -267,9 +278,16 @@ Safety boundaries:
 
 - Structural synthesis is attempted before any LLM fallback.
 - LLM-backed synthesis is budget-gated.
+- Synthetic world-model transitions may rank experiments but never fit as real
+  evidence or satisfy a promotion gate.
 - Promotions require non-inferiority checks.
 - Rollback is available when post-promotion repair/retry/success metrics regress.
 - Federation is opt-in.
+
+The verified model-based path is documented in
+[Verified dreaming](verified-dreaming.md). It is experimental and opt-in via
+`ENTROLY_VERIFIED_DREAMING=1` until controlled sample-efficiency results are
+available.
 
 ## Native Rust/WASM engine
 
@@ -305,7 +323,7 @@ The repository includes committed benchmark/proof artifacts rather than only scr
 
 | Need | Path |
 |---|---|
-| Quick confidence check | `entroly verify-claims && entroly simulate` |
+| Quick confidence check | `entroly verify-claims && entroly simulate && entroly value` |
 | Claude Code subscription workflow | `claude mcp add entroly -- entroly` |
 | API-key proxy workflow | `entroly proxy` |
 | Programmatic compression | Python SDK |

@@ -1,6 +1,6 @@
 # Entroly
 
-> Entroly is an open-source, local-first context-control plane for AI coding agents. It selects and compresses repository context under explicit token budgets, can produce receipts for selection decisions, can preserve source recovery through CCR handles, and offers evidence-grounding audits for model output.
+> Entroly is the open-source, local-first Context OS for AI agents: context engineering, compression, memory, recovery, receipts, verification, provider controls, security, and guarded outcome learning in one layer.
 
 Primary install: `pip install entroly`
 

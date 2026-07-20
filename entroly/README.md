@@ -1,27 +1,45 @@
-# Entroly 🤖🧠
+# Entroly
 
-**A self-evolving daemon that "dreams" about your codebase to cure AI hallucination.**
+**A local Context OS for selecting, remembering, verifying, and accounting for
+the context AI agents receive.**
 
-Every AI coding tool manages context with dumb FIFO truncation — blindly stuffing tokens until the window is full, then chopping off the top. This causes your agents to hallucinate, loop endlessly, and burn API credits.
+Entroly can run as a Python SDK, MCP server, CLI, or optional HTTP proxy. It
+selects context under a token budget, preserves provenance and recovery
+handles, records auditable receipts, and learns from tests, CI, command exits,
+and user acceptance. Provider-bound savings, local-only reductions, and legacy
+estimates are reported separately so local compression is never presented as a
+paid API saving.
 
-Entroly acts as an **Epistemic Firewall**. It sits locally on `localhost:9377` and intercepts traffic between your editor (Cursor, Claude Code, Copilot) and the LLM. 
+The idle learning loop runs bounded local benchmark experiments. An optional
+verified world-model path can rank experiments, but synthetic transitions are
+stored separately and can never promote a configuration without a real
+benchmark result. See [Verified dreaming](../docs/verified-dreaming.md).
 
-When you close your laptop, Entroly's background daemon wakes up. It crawls your repository, structurally induces the architecture, and pre-fetches answers. When you open your editor the next day, the agent responds instantly because Entroly already "dreamt" about the codebase all night and mathematically cached the exact tokens you need using a Rust backend.
+For answer-critical work, `entroly proof prepare` creates a durable local model
+request; `entroly proof advance` verifies a caller-supplied draft and recovers
+exact omitted evidence under explicit bounds. These operations never select or
+call a provider. See
+[Proof-guided context](../docs/proof-guided-context-fixed-point.md).
 
-### 🚀 The 5-Second Quickstart
+### Quickstart
 
-**1. Install & Run**
 ```bash
-pip install entroly
-entroly start
+pip install -U entroly
+cd /your/repository
+entroly verify-claims
+entroly go
 ```
 
-**2. Point your AI Agent**
-Change your AI tool's API base URL (in Cursor, Cline, or Claude Code) to:
-`http://localhost:9377/v1`
+For an API-key or custom-application proxy path, install the proxy extra and
+start the local endpoint explicitly:
 
-**3. Watch the Magic**
-Open **`http://localhost:9378`** in your browser. Entroly comes with a gorgeous live intelligence dashboard. Watch the PRISM caching engine work in real-time, see which files are being excluded to prevent hallucination, and watch a live ticker of how much money you are saving.
+```bash
+pip install -U "entroly[proxy]"
+entroly proxy  # http://localhost:9377
+```
+
+Use `entroly value` for the evidence-classified value receipt and
+`entroly dashboard` for local observability.
 
 ---
 
@@ -158,17 +176,18 @@ prefetch_related(file_path="src/payments.py", source_content="from utils import.
 ```
 
 ### `get_stats`
-Session statistics and cost savings.
+Session statistics and engine-internal efficiency telemetry. Use
+`entroly value` for evidence-classified provider cost avoidance.
 
 ```
 get_stats()
 → {
     "fragments": 142,
     "total_tokens": 384000,
-    "savings": {
-      "total_tokens_saved": 284000,
-      "total_duplicates_caught": 12,
-      "estimated_cost_saved_usd": 0.85
+    "engine": {
+      "dedup_tokens_avoided": 284000,
+      "duplicates_caught": 12,
+      "optimize_calls": 9
     }
   }
 ```

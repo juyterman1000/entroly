@@ -37,9 +37,13 @@ def _run_budget_invariant_end_to_end():
         assert b0["can_evolve"] is False
 
         # 2) Record $10 of savings → budget grows to $0.50
-        vt.record(tokens_saved=2_000_000, model="claude-3-opus")
+        vt.record(
+            tokens_saved=2_000_000,
+            model="claude-3-opus",
+            source="proxy",
+        )
         b1 = vt.get_evolution_budget()
-        saved = vt._data["lifetime"]["cost_saved_usd"]
+        saved = vt._data["lifetime"]["provider_cost_avoided_usd"]
         expected = saved * EVOLUTION_TAX_RATE
         assert abs(b1["total_earned_usd"] - expected) < 1e-6
         assert b1["available_usd"] > 0.001

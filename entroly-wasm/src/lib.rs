@@ -1949,12 +1949,23 @@ impl WasmEntrolyEngine {
                 "avg_entropy": (avg_entropy * 10000.0).round() / 10000.0,
                 "pinned": pinned,
             },
+            "engine": {
+                "dedup_tokens_avoided": self.total_tokens_saved,
+                "duplicates_caught": self.total_duplicates_caught,
+                "optimize_calls": self.total_optimizations,
+                "fragments_ingested": self.total_fragments_ingested,
+            },
+            // Backward-compatible engine telemetry alias. These counters can
+            // rise during local-only optimization, so they cannot support a
+            // provider-dollar claim. Use the JS ValueTracker receipt instead.
             "savings": {
                 "total_tokens_saved": self.total_tokens_saved,
                 "total_duplicates_caught": self.total_duplicates_caught,
                 "total_optimizations": self.total_optimizations,
                 "total_fragments_ingested": self.total_fragments_ingested,
-                "estimated_cost_saved_usd": (self.total_tokens_saved as f64 * 0.000003 * 10000.0).round() / 10000.0,
+                "estimated_cost_saved_usd": 0.0,
+                "cost_claim_supported": false,
+                "measurement_note": "Engine-local telemetry is not evidence of provider delivery.",
             },
             "dedup": { "indexed_fragments": self.dedup_index.size(), "duplicates_detected": self.dedup_index.duplicates_detected },
             "policy": {

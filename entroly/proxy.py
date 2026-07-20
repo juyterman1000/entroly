@@ -32,6 +32,7 @@ import sys
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -1031,6 +1032,8 @@ class PromptCompilerProxy:
 
         # Thread-safe stats
         self._stats_lock = threading.Lock()
+        self._proof_runtime_lock = threading.Lock()
+        self._proof_runtime: Any = None
         self._requests_total: int = 0
         self._requests_optimized: int = 0
         self._requests_bypassed: int = 0
@@ -1081,6 +1084,7 @@ class PromptCompilerProxy:
             if catalog_path
             else None
         )
+
         self._usage_recorded = 0
         self._usage_unpriced = 0
         self._usage_failures = 0
@@ -1338,6 +1342,27 @@ class PromptCompilerProxy:
                 self._escalation_mode,
                 len(self._escalation_ladder),
             )
+
+    def proof_runtime(self):
+        """Lazily create the local, provider-neutral proof-guided state store."""
+        if self._proof_runtime is not None:
+            return self._proof_runtime
+        with self._proof_runtime_lock:
+            if self._proof_runtime is None:
+                from .proof_guided_runtime import ProofGuidedRuntime
+
+                state_root = Path(
+                    os.environ.get(
+                        "ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly")
+                    )
+                )
+                self._proof_runtime = ProofGuidedRuntime(
+                    state_root / "proof-guided",
+                    context_risk_mode=os.environ.get(
+                        "ENTROLY_PROOF_CONTEXT_RISK_MODE", "block_high"
+                    ),
+                )
+        return self._proof_runtime
 
     async def startup(self) -> None:
         self._client = httpx.AsyncClient(**_http_client_kwargs())
@@ -2234,6 +2259,7 @@ class PromptCompilerProxy:
                             optimized=True,
                             coverage_pct=_coverage,
                             confidence=_confidence,
+                            source="proxy",
                         )
                     except Exception:
                         pass  # Never block a request for tracking
@@ -4378,7 +4404,8 @@ class PromptCompilerProxy:
                 resp_headers["X-Entroly-Confidence"] = f"{getattr(self, '_last_confidence', 0.0):.4f}"
             if hasattr(self, '_last_coverage_pct'):
                 resp_headers["X-Entroly-Coverage-Pct"] = f"{getattr(self, '_last_coverage_pct', 0.0):.1f}"
-            # Today's cumulative cost saved
+            # Today's provider-classified modeled input cost avoided. Keep the
+            # legacy header name for compatibility; its semantics are narrower.
             try:
                 tracker = get_tracker()
                 today_data = tracker.get_confidence().get("today", {})
@@ -5067,6 +5094,99 @@ async def _toggle_bypass(request: Request) -> JSONResponse:
     })
 
 
+def _proof_sidecar_error(exc: Exception) -> JSONResponse:
+    from .proof_guided_runtime import (
+        ProofGuidedSessionConflict,
+        ProofGuidedSessionNotFound,
+    )
+
+    if isinstance(exc, ProofGuidedSessionNotFound):
+        status_code = 404
+    elif isinstance(exc, (ProofGuidedSessionConflict, ValueError)):
+        status_code = 409 if isinstance(exc, ProofGuidedSessionConflict) else 400
+    else:
+        logger.debug("proof-guided sidecar failed: %s", exc, exc_info=True)
+        return JSONResponse(
+            {
+                "error": "proof_guided_operation_failed",
+                "detail": "Inspect the local Entroly logs for the signed failure record.",
+            },
+            status_code=500,
+        )
+    return JSONResponse(
+        {"error": type(exc).__name__, "detail": str(exc)},
+        status_code=status_code,
+    )
+
+
+async def _proof_prepare_route(request: Request) -> JSONResponse:
+    """Prepare a provider-neutral proof-guided request; never call upstream."""
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        path = body.get("path")
+        query = body.get("query")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("path is required")
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("query is required")
+        project_root = Path(
+            os.environ.get("ENTROLY_SOURCE", os.getcwd())
+        ).resolve()
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = project_root / candidate
+        candidate = candidate.resolve()
+        try:
+            candidate.relative_to(project_root)
+        except ValueError as exc:
+            raise ValueError("path must remain within the project root") from exc
+        from .context_receipts.ingest import read_documents_from_path
+
+        documents = read_documents_from_path(candidate)
+        result = request.app.state.proxy.proof_runtime().prepare(
+            documents,
+            query=query,
+            token_budget=body.get("token_budget", 8000),
+            max_rounds=body.get("max_rounds", 3),
+            recovery_token_budget=body.get("recovery_token_budget", 1200),
+            max_chunks_per_round=body.get("max_chunks_per_round", 3),
+            profile=body.get("profile", "rag"),
+            chunk_tokens=body.get("chunk_tokens", 360),
+            overlap_tokens=body.get("overlap_tokens", 32),
+            idempotency_key=body.get("idempotency_key"),
+        )
+        return JSONResponse(result)
+    except Exception as exc:  # noqa: BLE001 - converted to bounded local error
+        return _proof_sidecar_error(exc)
+
+
+async def _proof_advance_route(request: Request) -> JSONResponse:
+    """Verify one caller-owned model result and return a safe continuation."""
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        result = request.app.state.proxy.proof_runtime().advance(
+            str(body.get("session_id", "")),
+            model_output=body.get("model_output"),
+            idempotency_key=body.get("idempotency_key"),
+        )
+        return JSONResponse(result)
+    except Exception as exc:  # noqa: BLE001 - converted to bounded local error
+        return _proof_sidecar_error(exc)
+
+
+async def _proof_inspect_route(request: Request) -> JSONResponse:
+    try:
+        session_id = request.query_params.get("session_id", "")
+        result = request.app.state.proxy.proof_runtime().inspect(session_id)
+        return JSONResponse(result)
+    except Exception as exc:  # noqa: BLE001 - converted to bounded local error
+        return _proof_sidecar_error(exc)
+
+
 async def _catch_all(request: Request) -> StreamingResponse | JSONResponse:
     """Transparent catch-all: forward any unmatched path to upstream API.
 
@@ -5499,6 +5619,9 @@ def create_proxy_app(
             Route("/witness/train", _sidecar_guard(_witness_train_route), methods=["POST"]),
             Route("/witness/{witness_id}/feedback", _sidecar_guard(_witness_feedback_route), methods=["POST"]),
             Route("/witness/{witness_id}", _sidecar_guard(_witness_certificate)),       # WITNESS sidecar certificates
+            Route("/proof/prepare", _sidecar_guard(_proof_prepare_route), methods=["POST"]),
+            Route("/proof/advance", _sidecar_guard(_proof_advance_route), methods=["POST"]),
+            Route("/proof/inspect", _sidecar_guard(_proof_inspect_route), methods=["GET"]),
             # Catch-all: forward any unmatched path to upstream API
             # Must be LAST — Starlette matches routes in declaration order
             Route("/{path:path}", _catch_all, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]),

@@ -7,6 +7,7 @@ from pathlib import Path
 from scripts.verify_public_trust import (
     PROMINENT_PUBLIC_FILES,
     _collect_prism_r_public_failures,
+    _collect_stale_public_claim_failures,
     collect_offline_failures,
 )
 
@@ -49,3 +50,21 @@ def test_prism_r_public_claim_rejects_unscoped_reuse() -> None:
     text["PYPI_README.md"] += "\n87.0%\n"
     failures = _collect_prism_r_public_failures(text, _query_shift_report())
     assert any("unscoped public claim '87.0%'" in failure for failure in failures)
+
+
+def test_stale_public_claims_fail_closed() -> None:
+    failures = _collect_stale_public_claim_failures(
+        {"docs/example.html": "Entroly gives 70–95% savings with same accuracy"}
+    )
+    assert any("universal token or billing range" in failure for failure in failures)
+    assert any("answer-quality guarantee" in failure for failure in failures)
+
+
+def test_registry_publisher_is_not_vendored_and_is_checksum_pinned() -> None:
+    assert not (ROOT / "mcp-publisher.exe").exists()
+    assert not (ROOT / "mcp-publisher.tar.gz").exists()
+    workflow = (ROOT / ".github/workflows/publish-mcp-registry.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "sha256sum --check --strict" in workflow
+    assert "| tar" not in workflow

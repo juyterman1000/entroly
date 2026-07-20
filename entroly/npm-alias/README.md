@@ -35,7 +35,12 @@ entroly status
 entroly serve
 entroly optimize 8000 "fix the auth bug"
 entroly health
+entroly value
 ```
+
+`entroly value` emits the same evidence-classified receipt shape as the Python
+runtime. npm/MCP/local reductions report tokens with `$0` claimed unless a
+provider-bound path is explicitly observed.
 
 ## MCP setup
 

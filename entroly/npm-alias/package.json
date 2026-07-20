@@ -1,7 +1,7 @@
 {
   "name": "entroly",
-  "version": "1.0.62",
-  "description": "Node/WASM context engineering for AI agents: local compression, MCP tools, recovery, receipts, and verification without Python.",
+  "version": "1.0.64",
+  "description": "Node/WASM Context OS for AI agents: local context engineering, compression, recovery, receipts, and verification without Python.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -16,7 +16,7 @@
     "README.md"
   ],
   "dependencies": {
-    "entroly-wasm": "1.0.62"
+    "entroly-wasm": "1.0.64"
   },
   "repository": {
     "type": "git",

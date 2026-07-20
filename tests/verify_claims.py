@@ -71,7 +71,7 @@ def main():
     check("IDX-2", "Files indexed > 0", files > 0, f"{files} files")
 
     # ── TOKEN SAVINGS ──────────────────────────────────────────────────
-    print("\n[2] Token savings (70-95%+)")
+    print("\n[2] Token-budget enforcement")
     print("-" * 40)
     queries = [
         "How does the main controller reconcile resources?",
@@ -90,12 +90,11 @@ def main():
         all_savings[budget] = {"used": used, "saving": saving, "frags": len(sel)}
         print(f"  Budget {budget:>7,}: {used:>6,} tokens → {saving:.1f}% savings")
 
-    # Savings at typical budget (32K)
-    s32 = all_savings.get(32000, {}).get("saving", 0)
-    check("SAV-1", "Savings >= 90% at 32K budget", s32 >= 90, f"{s32:.1f}%")
+    used32 = all_savings.get(32000, {}).get("used", 0)
+    check("BUD-1", "32K selection respects budget", used32 <= 32000, f"{used32:,} tokens")
 
-    s8 = all_savings.get(8000, {}).get("saving", 0)
-    check("SAV-2", "Savings >= 95% at 8K budget", s8 >= 95, f"{s8:.1f}%")
+    used8 = all_savings.get(8000, {}).get("used", 0)
+    check("BUD-2", "8K selection respects budget", used8 <= 8000, f"{used8:,} tokens")
 
     # Average across queries at 128K
     query_savings = []

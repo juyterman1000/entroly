@@ -13,12 +13,23 @@
     "A headline requires a positive transformer delta and paired McNemar p < 0.05 on the held-out partition."
   ],
   "claim_scope": "Answer-bearing paragraph retrieval under fixed one-of-N selection on a frozen SQuAD v2 validation subset.",
-  "generated_at": "2026-07-14T08:09:24.518417+00:00",
+  "generated_at": "2026-07-16T03:18:50.876419+00:00",
   "headline_eligible": false,
+  "implementation": {
+    "git_commit": "0dc83f1f7759d7ace58cfc2d7ae19380473452f1",
+    "packages": {
+      "datasets": "4.8.4",
+      "sentence-transformers": "5.1.1",
+      "torch": "2.8.0+cpu"
+    },
+    "python": "3.10.0"
+  },
   "model": {
     "fingerprint_sha256": "3efc859f2086261cc877fff243cddd2e4532e55e4157747861f705cd36b05a13",
     "id": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
-    "path_disclosed": false
+    "path_disclosed": false,
+    "repository": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
   },
   "protocol": {
     "calibration_fraction": 0.5,

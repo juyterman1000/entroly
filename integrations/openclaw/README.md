@@ -22,7 +22,7 @@ Install the Python engine, then install the plugin from OpenClaw's official
 ClawHub registry:
 
 ```bash
-pip install "entroly>=1.0.57"
+pip install "entroly>=1.0.64"
 openclaw plugins install clawhub:entroly-openclaw
 openclaw plugins enable entroly
 ```
@@ -37,7 +37,7 @@ openclaw plugins enable entroly
 From an Entroly source checkout:
 
 ```bash
-pip install "entroly>=1.0.57"
+pip install "entroly>=1.0.64"
 openclaw plugins install ./integrations/openclaw
 openclaw plugins enable entroly
 ```
@@ -65,7 +65,7 @@ After the first agent turn, run `/entroly-context` in any connected channel to
 see the estimated before/after context size, reduction, warnings, and receipt.
 Run `/entroly-context doctor` to verify the configured Python executable and
 local JSONL bridge before inviting users onto the Gateway. The plugin requires
-the Entroly 1.0.57 bridge v2 protocol; doctor reports an actionable upgrade
+the Entroly 1.0.64 bridge v2 protocol; doctor reports an actionable upgrade
 instead of accepting an older, incompatible Python installation.
 
 OpenClaw's resolved prompt token budget is authoritative. When an older or
@@ -99,6 +99,54 @@ Without any trusted budget, Entroly returns the exact original context with an
 actionable warning instead of risking a provider overflow. Explicit OpenClaw
 budgets always win, followed by the operator's `fallbackTokenBudget`; automatic
 registry discovery is used only when neither is available.
+
+## Optional proof-guided exact recovery
+
+Default behavior performs local context assembly only and makes no additional
+model call. To let Entroly verify a draft, recover exact omitted messages, and
+ask OpenClaw for a bounded revision, opt in explicitly:
+
+```json5
+{
+  plugins: {
+    slots: { contextEngine: "entroly" },
+    entries: {
+      entroly: {
+        hooks: { allowConversationAccess: true },
+        config: {
+          proofGuidedRecovery: true,
+          proofGuidedMaxRounds: 2,
+          proofGuidedRecoveryTokens: 1200,
+          proofGuidedMaxMessages: 3
+        }
+      }
+    }
+  }
+}
+```
+
+`proofGuidedMaxRounds` includes the first response, so the default maximum of
+two allows at most one additional model call. Entroly never receives provider
+credentials and never calls the provider itself: it returns an idempotent
+revision request to OpenClaw, which keeps its normal provider routing and
+billing behavior. The retry contains exact recovered message text and SHA-256
+commitments, not a generated summary.
+
+The local bridge checks the draft with EICV and the context firewall. If a
+claim is unsupported, it either identifies exact omitted evidence for the
+bounded revision or supplies a safer verified output. If bridge verification
+fails or model output is unsafe, the delivery hook substitutes a clear withheld
+response instead of silently passing unverified text. `/entroly-context` shows
+the proof status, attempt count, and local audit artifact ID.
+
+This feature requires a current OpenClaw build that exposes `llm_output`,
+`before_agent_finalize`, and `reply_payload_sending`, plus the explicit
+`allowConversationAccess` grant shown above. Verify registration after restart:
+
+```bash
+openclaw plugins inspect entroly --runtime --json
+openclaw plugins doctor
+```
 
 ## Reproduce the evidence-pinning control
 

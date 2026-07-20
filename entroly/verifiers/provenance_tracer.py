@@ -2,22 +2,19 @@
 Byte-Level Information Provenance Tracer (BIPT)
 =================================================
 
-A genuinely novel hallucination detection algorithm with no prior art.
+A deterministic byte-level provenance heuristic for generated identifiers.
 
-The Invention
--------------
-Every existing hallucination detector asks: "Is this output CORRECT?"
-BIPT asks a fundamentally different question:
+Scope
+-----
+BIPT does not decide whether output is correct. It asks a narrower question:
 
     "Can every byte of this output be EXPLAINED by the input context?"
 
 If the LLM was given context C and produced output O, then every
-identifier, every API call, every constant in O must have a
-*provenance trail* back to C. Bytes with no provenance are
-INVENTIONS — and inventions in identifier positions are hallucinations.
-
-This is the first system to apply Kolmogorov complexity theory to
-hallucination detection via suffix automaton matching.
+identifier, API call, or constant in O can be compared with C for a
+*byte-level provenance trail*. Bytes with no match are marked novel. Novelty
+can be useful evidence of an invented identifier, but it is not proof of a
+hallucination: valid new names and transformations also produce novel bytes.
 
 Mathematical Foundation
 -----------------------
@@ -63,23 +60,23 @@ Algorithm
 
 5. IPD = total_novel / total_identifier_bytes
 
-Why This Is Novel
------------------
-1. Nobody has used suffix automata for hallucination detection.
-2. It works at the BYTE level, not token/symbol level — catches
+Properties and limitations
+--------------------------
+1. It works at the BYTE level, not only the token/symbol level, and can flag
    partial matches that symbol-level checkers miss.
-3. It's information-theoretically grounded (Kolmogorov/MDL), not
-   heuristic.
-4. It's model-agnostic — works with any LLM, any language.
-5. O(n + m) time, O(n) space — faster than any ML-based detector.
-6. It measures a CONTINUOUS grounding score, not binary.
+2. It uses a computable matching heuristic motivated by conditional
+   description length; it does not compute Kolmogorov complexity.
+3. It is model-agnostic but its identifier extraction is language-dependent.
+4. The matching core is O(n + m) time and O(n) space for context length n and
+   output length m; end-to-end cost also includes parsing and receipt work.
+5. It emits a continuous provenance score, not a correctness verdict.
 
 The Key Insight
 ---------------
 Existing verifiers ask "does symbol X exist in the manifest?"
 BIPT asks "does the BYTE SEQUENCE of X have provenance in context?"
 
-This catches a class no other verifier can:
+This can flag a class that symbol-existence checks alone may miss:
   - Symbol exists (passes GRAPHS)
   - Symbol is in scope (passes scope analyzer)
   - Symbol types check (passes pyright)

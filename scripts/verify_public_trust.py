@@ -77,6 +77,55 @@ RETIRED_SETUP_PAGES = (
     "docs/claude-code-setup.html",
 )
 
+TRANSLATED_READMES = (
+    "docs/i18n/README.de.md",
+    "docs/i18n/README.es.md",
+    "docs/i18n/README.fr.md",
+    "docs/i18n/README.hi.md",
+    "docs/i18n/README.ja.md",
+    "docs/i18n/README.ko.md",
+    "docs/i18n/README.pt-BR.md",
+    "docs/i18n/README.ru.md",
+    "docs/i18n/README.zh-CN.md",
+)
+
+CLAIM_SENSITIVE_PUBLIC_FILES = (
+    *RETIRED_MARKETING_PAGES,
+    *RETIRED_SETUP_PAGES,
+    *TRANSLATED_READMES,
+    "docs/context-engineering.html",
+    "docs/DETAILS.md",
+    "docs/for-teams.md",
+    "docs/marketing/launch_playbook.md",
+    "docs/marketing/entroly_vs_headroom_seo.md",
+    "docs/generate_demo.py",
+    "docs/assets/demo.svg",
+    "docs/assets/demo_animated.svg",
+    "docs/assets/demo.html",
+    "docs/assets/value.svg",
+    "BIPT.md",
+)
+
+STALE_PUBLIC_CLAIMS = {
+    "70–95%": "universal token or billing range",
+    "70-95%": "universal token or billing range",
+    "78% fewer": "unscoped token-reduction headline",
+    "statistically equivalent": "unsupported equivalence conclusion",
+    "equivalent to gpt-4o-mini": "unsupported cross-protocol conclusion",
+    "0.844 auroc": "retired exploratory metric",
+    "same accuracy": "answer-quality guarantee",
+    "verifies every output": "universal verifier coverage",
+    "checks every llm response": "universal verifier coverage",
+    "all your files": "universal repository-visibility claim",
+    "all 847 files": "simulated repository-visibility claim",
+    "zero config changes": "unverified integration-friction claim",
+    "the first hallucination detector": "unverified novelty claim",
+    "why nobody else has this": "unverified competitor-wide claim",
+    "the only system": "unverified exclusivity claim",
+    "no prior art": "unverified prior-art claim",
+    "mathematical breakthrough": "unverified research headline",
+}
+
 PRISM_R_PUBLIC_FILES = {
     "README.md": "benchmarks/results/neural_query_shift.json",
     "docs/public-evidence.md": "../benchmarks/results/neural_query_shift.json",
@@ -192,6 +241,22 @@ def _collect_prism_r_public_failures(
     return failures
 
 
+def _collect_stale_public_claim_failures(
+    public_text: dict[str, str],
+) -> list[str]:
+    """Reject retired universal claims from trust-sensitive public surfaces."""
+
+    failures: list[str] = []
+    for path, text in public_text.items():
+        folded = text.casefold()
+        for phrase, reason in STALE_PUBLIC_CLAIMS.items():
+            if phrase.casefold() in folded:
+                failures.append(
+                    f"{path} contains stale public claim {phrase!r}: {reason}"
+                )
+    return failures
+
+
 def collect_offline_failures() -> list[str]:
     failures: list[str] = []
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -286,12 +351,17 @@ def collect_offline_failures() -> list[str]:
         if f'href="/entroly/{path}"' in prominent_text["docs/index.html"]:
             failures.append(f"homepage still promotes retired setup page: {path}")
 
-    if "docs/i18n/README." in readme:
-        failures.append("primary README still promotes archived translations")
-    translation_warning = "> **Archived translation:**"
-    for path in sorted((ROOT / "docs/i18n").glob("README.*.md")):
-        if not path.read_text(encoding="utf-8").startswith(translation_warning):
-            failures.append(f"stale translation lacks archive warning: {path.relative_to(ROOT)}")
+    for path in TRANSLATED_READMES:
+        translated = (ROOT / path).read_text(encoding="utf-8")
+        for required in ("entroly verify-claims", "../public-evidence.md", "../limitations.md"):
+            if required not in translated:
+                failures.append(f"{path} is missing translated trust link {required!r}")
+
+    claim_sensitive_text = {
+        path: (ROOT / path).read_text(encoding="utf-8")
+        for path in CLAIM_SENSITIVE_PUBLIC_FILES
+    }
+    failures.extend(_collect_stale_public_claim_failures(claim_sensitive_text))
 
     forbidden_promotions = (
         "https://huggingface.co/spaces/entroly/entroly-context-compression",
@@ -356,6 +426,21 @@ def collect_offline_failures() -> list[str]:
     }
     if package_names != {"entroly", "entroly-mcp", "entroly-wasm"}:
         failures.append(f"unexpected npm package identity set: {sorted(package_names)}")
+
+    for artifact in ("mcp-publisher", "mcp-publisher.exe", "mcp-publisher.tar.gz"):
+        if (ROOT / artifact).exists():
+            failures.append(f"unsigned registry publisher artifact committed at repo root: {artifact}")
+
+    publisher_workflow = (ROOT / ".github/workflows/publish-mcp-registry.yml").read_text(
+        encoding="utf-8"
+    )
+    publisher_digest = "ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac"
+    if publisher_digest not in publisher_workflow:
+        failures.append("MCP publisher workflow is missing the reviewed v1.7.9 Linux digest")
+    if "sha256sum --check --strict" not in publisher_workflow:
+        failures.append("MCP publisher workflow does not fail closed on checksum mismatch")
+    if "| tar" in publisher_workflow:
+        failures.append("MCP publisher workflow streams an unverified download into tar")
 
     return failures
 

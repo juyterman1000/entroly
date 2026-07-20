@@ -100,7 +100,7 @@ on 300 trials and evaluated on a disjoint 300:
 | Selector | Held-out top-1 evidence recall | Notes |
 |---|---:|---|
 | Deterministic BM25 | 99.0% | Exact lexical evidence remains the strongest primary scorer. |
-| Local MiniLM transformer | 97.7% | One transformer-only success, five lexical-only successes; no neural-primary claim. |
+| Local `all-MiniLM-L6-v2` transformer | 97.7% | Frozen revision `c9745ed1d9f207416be6d2e6f8de32d1f16199bf`; one transformer-only success, five lexical-only successes; no neural-primary claim. |
 | Dual-channel disagreement guard | 99.3% | Selects 1.02 of 16 passages on average, a 15.69x passage compression ratio. |
 
 The generic transformer failed the primary-scorer gate. PRISM-R therefore uses
@@ -108,6 +108,7 @@ it as a residual semantic channel rather than replacing lexical evidence.
 
 Artifacts:
 
+- [`neural-evidence-frontier.md`](../benchmarks/neural-evidence-frontier.md)
 - [`neural_evidence_frontier.json`](../../benchmarks/results/neural_evidence_frontier.json)
 - [`neural_evidence_frontier.md`](../../benchmarks/results/neural_evidence_frontier.md)
 

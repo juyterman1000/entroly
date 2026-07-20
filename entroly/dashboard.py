@@ -5,7 +5,7 @@ Entroly Live Dashboard — Real-time AI value metrics at localhost:9378
 Shows developers exactly what Entroly's Rust engine is doing for them,
 pulling REAL data from all engine subsystems:
 
-  Engine Stats:       tokens saved, cost saved, dedup hits, turn count
+  Engine Stats:       provider/local token reduction, modeled cost, dedup hits
   PRISM RL Weights:   learned scoring weights (recency/frequency/semantic/entropy)
   Health Analysis:    code health grade A–F, clones, dead symbols, god files
   SAST Security:      vulnerability findings with CWE categories
@@ -39,7 +39,9 @@ _MAX_LOG = 50
 def record_request(entry: dict):
     """Record a proxy request's metrics (called from proxy.py)."""
     with _lock:
-        _request_log.append(entry)
+        row = dict(entry)
+        row.setdefault("path", "provider")
+        _request_log.append(row)
         if len(_request_log) > _MAX_LOG:
             del _request_log[: len(_request_log) - _MAX_LOG]
 
@@ -177,6 +179,9 @@ def _get_full_snapshot() -> dict:
         snap["recent_requests"] = _safe_json([
             {
                 "time": row.get("ts", row.get("time", 0)),
+                "path": row.get(
+                    "measurement_channel", row.get("source", "runtime")
+                ),
                 "model": row.get("model", "") or row.get("kind", ""),
                 "tokens_in": row.get("tokens_in", 0),
                 "tokens_saved": row.get("tokens_saved", 0),
@@ -203,7 +208,8 @@ def _get_full_snapshot() -> dict:
             "available": False,
             "reason": "native engine not running in this process",
             "has_value_data": bool(
-                lt.get("tokens_saved") or lt.get("hallucinations_blocked")
+                lt.get("tokens_saved") or lt.get("local_tokens_reduced")
+                or lt.get("hallucinations_blocked")
             ),
             "hint": ("Value metrics below are live from the shared "
                      "telemetry file written by your MCP server / proxy / "
@@ -215,7 +221,7 @@ def _get_full_snapshot() -> dict:
     try:
         # 1. Core stats — engine telemetry only. NEVER prices "$ saved" from
         # these numbers; the only source of truth for money saved is
-        # value_trends.lifetime (proxy-only). The Rust struct historically
+        # value_trends.lifetime provider_* fields. The Rust struct historically
         # exposed a `savings` block with a fabricated `estimated_cost_saved_usd`
         # field that conflated CLI dedup with real LLM savings — we normalize
         # that block to `engine` here and strip the misleading cost field.
@@ -762,7 +768,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
     <div class="ph"><h2>📡 Request Flow</h2><span id="rb" class="badge b-cyan">—</span></div>
     <div id="sparkarea" style="padding:12px 20px 0;"></div>
     <div style="overflow-x:auto;">
-      <table><thead><tr><th>Time</th><th>Model</th><th>Tokens In</th><th>Saved</th><th>Dedup</th><th>SAST</th><th>Query</th></tr></thead>
+      <table><thead><tr><th>Time</th><th>Path</th><th>Model</th><th>Tokens In</th><th>Reduced</th><th>Dedup</th><th>SAST</th><th>Query</th></tr></thead>
       <tbody id="reqs"></tbody></table>
     </div>
   </div>
@@ -776,7 +782,7 @@ let hasRequests=false;
 
 let heroSparkData=[];
 function renderHero(d){
-  // Single source of truth for "saved": value_trends.lifetime (proxy-only).
+  // Only provider-classified traffic can support an API cost claim.
   // stats.engine is internal efficiency telemetry — never priced as $$.
   const s=d.stats||{},eng=s.engine||s.savings||{},ss=s.session||{},dd=s.dedup||{};
   const frags=ss.total_fragments||0;
@@ -786,9 +792,10 @@ function renderHero(d){
   const score=h.code_health_score||0;
   const gc={'A':'var(--emerald)','B':'var(--blue)','C':'var(--amber)','D':'#e3872d','F':'var(--rose)'}[grade]||'var(--dim)';
   const lt=(d.value_trends&&d.value_trends.lifetime)||{};
-  const realCost=lt.cost_saved_usd||0;
-  const realTokens=lt.tokens_saved||0;
-  const realReqs=lt.requests_optimized||0;
+  const realCost=lt.provider_cost_avoided_usd||0;
+  const realTokens=lt.provider_tokens_saved||0;
+  const realReqs=lt.provider_requests_optimized||0;
+  const localTokens=lt.local_tokens_reduced||0;
   const dedupCount=dd.duplicates_detected||eng.duplicates_caught||eng.total_duplicates_caught||0;
   const optCalls=eng.optimize_calls||eng.total_optimizations||0;
   const reqs=d.recent_requests||[];
@@ -800,7 +807,7 @@ function renderHero(d){
   if(reqs.length>0){reqs.forEach(r=>{if(heroSparkData.length>=40)heroSparkData.shift();heroSparkData.push(r.tokens_saved||0);});}
 
   // Empty state — nothing indexed AND no value from any path yet.
-  const anyVal=realTokens>0||realReqs>0||(lt.hallucinations_blocked||0)>0||(lt.routing_saved_usd||0)>0||(d.activity||[]).length>0;
+  const anyVal=realTokens>0||realReqs>0||localTokens>0||(lt.unclassified_tokens_reduced||0)>0||(lt.hallucinations_blocked||0)>0||(lt.routing_saved_usd||0)>0||(d.activity||[]).length>0;
   if(frags===0&&!hasRequests&&!anyVal){
     document.getElementById('hero').innerHTML=`<div class="empty-hero">
       <div class="empty-icon">🚀</div>
@@ -814,12 +821,12 @@ function renderHero(d){
   const sparkBars=heroSparkData.map(v=>'<div class="hbar" style="height:'+Math.max(3,v/mx*44)+'px;"></div>').join('');
   const sparkHTML=heroSparkData.length>0?'<div class="hero-spark">'+sparkBars+'</div>':'';
 
-  // Headline = REAL savings only. Pre-traffic state shows what's READY,
-  // not a fake projected dollar amount.
+  // Headline = modeled cost avoidance from provider-bound token reduction.
+  // Pre-traffic state shows what's ready, not a projected dollar amount.
   const bigNum=realReqs>0?'$'+realCost.toFixed(2):fmt(frags);
-  const bigLabel=realReqs>0?'COST SAVED':'FRAGMENTS READY';
+  const bigLabel=realReqs>0?'MODELED API COST AVOIDED':'FRAGMENTS READY';
   const subtitle=realReqs>0
-    ?`<b>${fmt(realTokens)}</b> tokens saved across <b>${realReqs}</b> real LLM request${realReqs!==1?'s':''}`
+    ?`<b>${fmt(realTokens)}</b> input tokens reduced across <b>${realReqs}</b> provider-bound request${realReqs!==1?'s':''}`
     :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
@@ -1093,9 +1100,9 @@ function renderRequests(d){
   if(reqs.length>0){reqs.forEach(r=>{if(sparkData.length>=30)sparkData.shift();sparkData.push(r.tokens_saved||0);});
     const mx=Math.max(...sparkData,1);
     document.getElementById('sparkarea').innerHTML='<div class="sparkline">'+sparkData.map(v=>'<div class="bar" style="height:'+Math.max(2,v/mx*40)+'px;"></div>').join('')+'</div>';}
-  if(reqs.length===0){tbody.innerHTML='<tr><td colspan="7" class="empty">No activity yet — flows in live from proxy, MCP (pip/npm), or the SDK on first use</td></tr>';return;}
+  if(reqs.length===0){tbody.innerHTML='<tr><td colspan="8" class="empty">No activity yet — flows in live from proxy, MCP (pip/npm), or the SDK on first use</td></tr>';return;}
   tbody.innerHTML=reqs.slice().reverse().slice(0,15).map(r=>`<tr>
-    <td>${ago(r.time||0)}</td><td>${r.model||'—'}</td><td class="mono">${fmt(r.tokens_in||0)}</td>
+    <td>${ago(r.time||0)}</td><td><span class="tag ${r.path==='provider'?'t-green':'t-blue'}">${escHtml(r.path||r.source||'runtime')}</span></td><td>${r.model||'—'}</td><td class="mono">${fmt(r.tokens_in||0)}</td>
     <td><span class="tag t-green">−${fmt(r.tokens_saved||0)}</span></td>
     <td>${(r.dedup_hits||0)>0?'<span class="tag t-amber">'+r.dedup_hits+'</span>':'<span style="color:var(--dim2)">0</span>'}</td>
     <td>${(r.sast_findings||0)>0?'<span class="tag t-rose">'+r.sast_findings+'</span>':'<span style="color:var(--dim2)">0</span>'}</td>
@@ -1107,7 +1114,8 @@ function renderValueTrends(d){
   const vt=d.value_trends,vc=d.value_confidence,el=document.getElementById('valueTrends');
   if(!el)return;
   const _lt0=(vt&&vt.lifetime)||{};
-  const anyValue=vt&&vc&&(vt.lifetime.tokens_saved||vc.session.tokens_saved||
+  const anyValue=vt&&vc&&(_lt0.provider_tokens_saved||vc.session.tokens_saved||
+    _lt0.local_tokens_reduced||_lt0.unclassified_tokens_reduced||
     _lt0.hallucinations_blocked||_lt0.routing_saved_usd);
   if(!anyValue){
     // Friendly zero-state instead of a blank panel. Works for every
@@ -1116,9 +1124,9 @@ function renderValueTrends(d){
       '<h2>Lifetime Value</h2><span class="badge" style="background:'+
       'rgba(148,163,184,.12);color:var(--dim)">waiting for first request</span>'+
       '</div><div class="empty" style="padding:22px 16px;line-height:1.6">'+
-      'No value recorded yet. Entroly starts counting tokens saved, '+
+      'No value recorded yet. Entroly starts classifying token reduction, '+
       'hallucinations blocked, and model-routing savings the moment your '+
-      'first request flows through <b>any</b> path:<br>'+
+      'first operation flows through <b>any</b> path:<br>'+
       '&nbsp;&nbsp;• <b>Proxy</b>: point your AI tool at '+
       '<code>http://localhost:9377/v1</code><br>'+
       '&nbsp;&nbsp;• <b>MCP</b> (pip/npm): call the <code>optimize_context</code> tool<br>'+
@@ -1130,23 +1138,24 @@ function renderValueTrends(d){
   const lt=vt.lifetime||{},sess=vc.session||{},today=vc.today||{};
   const status=vc.status||'idle';
   const statusColor=status==='active'?'var(--emerald)':'var(--dim)';
-  const days_active=Math.max(1,Math.round((lt.last_seen-lt.first_seen)/86400));
-  const daily_avg=lt.tokens_saved>0?(lt.cost_saved_usd/days_active):0;
+  const providerDays=(vt.daily||[]).filter(x=>(x.provider_requests||0)>0).length;
+  const days_active=Math.max(1,providerDays);
+  const daily_avg=(lt.provider_tokens_saved||0)>0?((lt.provider_cost_avoided_usd||0)/days_active):0;
 
   // Select data based on current view
   const chartData=trendsView==='daily'?vt.daily:trendsView==='weekly'?vt.weekly:vt.monthly;
-  const maxTokens=Math.max(...chartData.map(d=>d.tokens_saved||0),1);
+  const maxTokens=Math.max(...chartData.map(d=>d.provider_tokens_saved||0),1);
   const bars=chartData.map(d=>{
-    const h=Math.max(2,((d.tokens_saved||0)/maxTokens)*72);
+    const h=Math.max(2,((d.provider_tokens_saved||0)/maxTokens)*72);
     const label=d.date||d.week||d.month||'';
-    return '<div class="tbar cost" style="height:'+h+'px;" data-tip="'+label+': '+fmt(d.tokens_saved||0)+' tokens / $'+(d.cost_saved||0).toFixed(4)+'"></div>';
+    return '<div class="tbar cost" style="height:'+h+'px;" data-tip="'+label+': '+fmt(d.provider_tokens_saved||0)+' provider-bound tokens / $'+(d.provider_cost_avoided_usd||0).toFixed(4)+' modeled"></div>';
   }).join('');
 
   // ── Cost Intelligence — honest per-lever attribution ──
-  // Dollars are shown ONLY for levers we actually price: token reduction
-  // (cost_saved_usd) and model routing (routing_saved_usd). Every other lever
+  // Dollars are shown ONLY for classified provider token reduction
+  // (provider_cost_avoided_usd) and model routing. Every other lever
   // is shown as a volume/quality signal — never an invented dollar figure.
-  const ciComp=lt.cost_saved_usd||0, ciRoute=lt.routing_saved_usd||0, ciTotal=ciComp+ciRoute;
+  const ciComp=lt.provider_cost_avoided_usd||0, ciRoute=lt.routing_saved_usd||0, ciTotal=ciComp+ciRoute;
   const ciPct=v=>ciTotal>0?Math.round(v/ciTotal*100):0;
   const ciW=v=>ciTotal>0?Math.max(2,v/ciTotal*100):0;
   const ciRow=(name,usd,sub,col)=>'<div style="margin-bottom:10px;">'+
@@ -1158,16 +1167,16 @@ function renderValueTrends(d){
   const ciSig=(name,val,sub)=>'<div class="trends-kpi"><div class="trends-kpi-label">'+name+'</div>'+
     '<div class="trends-kpi-val" style="font-size:18px;">'+val+'</div><div class="trends-kpi-sub">'+sub+'</div></div>';
   const ciPanel='<div class="trends-panel" style="margin-top:20px;"><div class="trends-header"><h2>Cost Intelligence</h2>'+
-    '<span class="badge" style="background:rgba(52,211,153,0.1);color:var(--emerald);">$'+ciTotal.toFixed(2)+' attributed</span></div>'+
+    '<span class="badge" style="background:rgba(52,211,153,0.1);color:var(--emerald);">$'+ciTotal.toFixed(2)+' modeled</span></div>'+
     '<div class="trends-body">'+
-    '<div style="font-size:11px;color:var(--dim);margin-bottom:14px;">Where your savings come from. Dollars are shown for measured levers; counts are shown where value is not yet dollar-priced (no invented figures).</div>'+
-    ciRow('Context + token reduction',ciComp,fmt(lt.tokens_saved||0)+' tokens reduced · '+(lt.duplicates_caught||0)+' duplicates collapsed','#34d399')+
+    '<div style="font-size:11px;color:var(--dim);margin-bottom:14px;">Dollar values are modeled from measured provider-bound reductions and configured rates; local-only operations are never priced.</div>'+
+    ciRow('Provider-bound context reduction',ciComp,fmt(lt.provider_tokens_saved||0)+' input tokens reduced · '+(lt.provider_requests_optimized||0)+' requests','#34d399')+
     ciRow('Model routing (RAVS)',ciRoute,(lt.routing_decisions||0)+' routing decisions to cheaper capable models','#a78bfa')+
     '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px;">Value signals (not yet dollar-priced)</div>'+
     '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">'+
     ciSig('Hallucinations blocked',fmt(lt.hallucinations_blocked||0),'$0 WITNESS guard')+
     ciSig('Beliefs conditioned',fmt(lt.beliefs_conditioned_fragments||0),(lt.belief_conditioning_passes||0)+' passes')+
-    ciSig('Requests optimized',fmt(lt.requests_optimized||0),'of '+fmt(lt.requests_total||0)+' total')+
+    ciSig('Local-only reduction',fmt(lt.local_tokens_reduced||0),(lt.local_operations||0)+' operations · $0 claimed')+
     '</div>'+
     '<div style="font-size:10px;color:var(--dim);margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">Rates as of '+((d.pricing||{}).as_of||'—')+' · '+(((d.pricing||{}).source||'bundled')==='bundled'?'bundled defaults':'local override')+' · set ENTROLY_PRICING_FILE for your negotiated rates</div>'+
     '</div></div>';
@@ -1176,10 +1185,10 @@ function renderValueTrends(d){
     '<span class="badge" style="background:rgba(52,211,153,0.1);color:'+statusColor+';"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:'+statusColor+';margin-right:6px;'+(status==='active'?'box-shadow:0 0 8px var(--emerald);':'')+'"></span>'+status+'</span></div>'+
     '<div class="trends-body">'+
     '<div class="trends-kpis">'+
-    '<div class="trends-kpi"><div class="trends-kpi-label">Lifetime Saved</div><div class="trends-kpi-val hv-green">$'+(lt.cost_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+fmt(lt.tokens_saved||0)+' tokens across '+days_active+' day'+(days_active!==1?'s':'')+'</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Modeled API Cost Avoided</div><div class="trends-kpi-val hv-green">$'+(lt.provider_cost_avoided_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+fmt(lt.provider_tokens_saved||0)+' provider-bound tokens · '+fmt(lt.provider_unpriced_tokens||0)+' unpriced</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Today</div><div class="trends-kpi-val hv-blue">$'+(today.cost_saved_usd||0).toFixed(4)+'</div><div class="trends-kpi-sub">'+fmt(today.tokens_saved||0)+' tokens · '+(today.requests||0)+' reqs</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">This Session</div><div class="trends-kpi-val hv-amber">'+fmt(sess.tokens_saved||0)+'</div><div class="trends-kpi-sub">$'+(sess.cost_saved_usd||0).toFixed(4)+' · '+(sess.requests||0)+' reqs</div></div>'+
-    '<div class="trends-kpi"><div class="trends-kpi-label">Daily Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.requests_optimized||0)+' reqs optimized · '+(lt.duplicates_caught||0)+' dedup</div></div>'+
+    '<div class="trends-kpi"><div class="trends-kpi-label">Provider-Day Average</div><div class="trends-kpi-val hv-green">$'+daily_avg.toFixed(4)+'</div><div class="trends-kpi-sub">'+(lt.provider_requests_optimized||0)+' provider requests · modeled, not invoiced</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Hallucinations Blocked</div><div class="trends-kpi-val hv-rose">'+fmt(lt.hallucinations_blocked||0)+'</div><div class="trends-kpi-sub">unsupported claims stopped by WITNESS</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Model-Routing Saved</div><div class="trends-kpi-val hv-violet">$'+(lt.routing_saved_usd||0).toFixed(2)+'</div><div class="trends-kpi-sub">'+(lt.routing_decisions||0)+' RAVS routing decisions</div></div>'+
     '<div class="trends-kpi"><div class="trends-kpi-label">Beliefs Conditioned</div><div class="trends-kpi-val hv-violet">'+fmt(lt.beliefs_conditioned_fragments||0)+'</div><div class="trends-kpi-sub">restated-belief fragments discounted · '+(lt.belief_conditioning_passes||0)+' passes</div></div>'+

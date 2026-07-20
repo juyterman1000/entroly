@@ -281,12 +281,22 @@ jobs:
         shell: bash
         env:
           MCP_PUBLISHER_VERSION: v1.7.9
+          # Official release digest for mcp-publisher_linux_amd64.tar.gz.
+          # Update version and digest together from the upstream GitHub release.
+          MCP_PUBLISHER_LINUX_AMD64_SHA256: ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac
         run: |
           set -euo pipefail
-          platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
-          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
-          url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_${platform}_${arch}.tar.gz"
-          curl --fail --location --silent --show-error "$url" | tar xz mcp-publisher
+          if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+            echo "::error::No reviewed mcp-publisher digest for this runner architecture"
+            exit 2
+          fi
+          artifact="mcp-publisher_linux_amd64.tar.gz"
+          url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${artifact}"
+          curl --fail --location --silent --show-error --output "$artifact" "$url"
+          printf '%s  %s\n' "$MCP_PUBLISHER_LINUX_AMD64_SHA256" "$artifact" \
+            | sha256sum --check --strict
+          tar xzf "$artifact" -- mcp-publisher
+          rm -- "$artifact"
           test -x ./mcp-publisher
           ./mcp-publisher --help >/dev/null
 

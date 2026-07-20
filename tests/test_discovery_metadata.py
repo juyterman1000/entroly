@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "https://github.com/juyterman1000/entroly"
 HOMEPAGE = "https://juyterman1000.github.io/entroly/docs/index.html"
 CATEGORY = "context engineering"
+IDENTITY = "context os"
 PACKAGE_KEYWORDS = {
     "ai-agents",
     "context-engineering",
@@ -40,7 +41,8 @@ def _toml_section(path: str, section: str) -> str:
 def test_readme_first_fold_names_the_category_and_supported_clients() -> None:
     for path in ("README.md", "PYPI_README.md"):
         first_fold = _text(path)[:5_000].casefold()
-        assert "entroly — auditable context engineering for ai agents" in first_fold
+        assert "entroly — the open-source context os for ai agents" in first_fold
+        assert IDENTITY in first_fold
         assert "context compression" in first_fold or "compress" in first_fold
         for client in ("claude code", "codex", "openclaw", "github copilot", "mcp"):
             assert client in first_fold, f"{path} does not identify {client} above the fold"
@@ -52,6 +54,7 @@ def test_python_package_metadata_is_searchable_and_connected() -> None:
         urls = _toml_section(path, "project.urls")
 
         assert CATEGORY in project
+        assert IDENTITY in project
         assert "ai agents" in project
         for keyword in PACKAGE_KEYWORDS:
             assert f'"{keyword}"' in project, f"{path} is missing keyword {keyword}"
@@ -72,6 +75,7 @@ def test_npm_packages_share_discovery_terms_and_trust_links() -> None:
         keywords = set(package["keywords"])
 
         assert CATEGORY in description
+        assert IDENTITY in description
         assert "ai agent" in description
         assert PACKAGE_KEYWORDS <= keywords
         assert package["repository"]["url"] == REPOSITORY
@@ -86,12 +90,13 @@ def test_mcp_and_docs_metadata_use_the_same_verified_positioning() -> None:
 
     assert len(description) <= 100
     assert CATEGORY in description.casefold()
+    assert IDENTITY in description.casefold()
     assert "recovery" in description.casefold()
     assert "receipts" in description.casefold()
     assert "verification" in description.casefold()
-    assert "<title>Entroly — Auditable Context Engineering for AI Agents</title>" in homepage
+    assert "<title>Entroly — The Open-Source Context OS for AI Agents</title>" in homepage
     assert f'"codeRepository": "{REPOSITORY}"' in homepage
-    assert 'content="Auditable context engineering for AI agents:' in homepage
+    assert 'content="Open-source Context OS for AI agents:' in homepage
 
 
 def test_openclaw_listing_names_its_category_without_provider_overclaims() -> None:
