@@ -41,13 +41,8 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _auroc(scores, labels):
-    pairs = sorted(zip(scores, labels))
-    n0 = sum(1 for _, y in pairs if y == 0)
-    n1 = sum(1 for _, y in pairs if y == 1)
-    if n0 == 0 or n1 == 0:
-        return 0.5
-    rank_sum = sum(r for r, (_, y) in enumerate(pairs, 1) if y == 1)
-    return (rank_sum - n1 * (n1 + 1) / 2) / (n0 * n1)
+    from entroly.metrics import tie_corrected_auroc
+    return tie_corrected_auroc(scores, labels)
 
 
 def load_squad():
