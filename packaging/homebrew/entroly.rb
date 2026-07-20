@@ -21,7 +21,7 @@ class Entroly < Formula
 
   desc "Open-source Context OS for AI agents"
   homepage "https://github.com/juyterman1000/entroly"
-  url "https://files.pythonhosted.org/packages/source/e/entroly/entroly-1.0.63.tar.gz"
+  url "https://files.pythonhosted.org/packages/source/e/entroly/entroly-1.0.64.tar.gz"
   sha256 "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
   license "Apache-2.0"
   head "https://github.com/juyterman1000/entroly.git", branch: "main"

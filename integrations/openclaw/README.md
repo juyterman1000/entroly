@@ -22,7 +22,7 @@ Install the Python engine, then install the plugin from OpenClaw's official
 ClawHub registry:
 
 ```bash
-pip install "entroly>=1.0.63"
+pip install "entroly>=1.0.64"
 openclaw plugins install clawhub:entroly-openclaw
 openclaw plugins enable entroly
 ```
@@ -37,7 +37,7 @@ openclaw plugins enable entroly
 From an Entroly source checkout:
 
 ```bash
-pip install "entroly>=1.0.63"
+pip install "entroly>=1.0.64"
 openclaw plugins install ./integrations/openclaw
 openclaw plugins enable entroly
 ```
@@ -65,7 +65,7 @@ After the first agent turn, run `/entroly-context` in any connected channel to
 see the estimated before/after context size, reduction, warnings, and receipt.
 Run `/entroly-context doctor` to verify the configured Python executable and
 local JSONL bridge before inviting users onto the Gateway. The plugin requires
-the Entroly 1.0.63 bridge v2 protocol; doctor reports an actionable upgrade
+the Entroly 1.0.64 bridge v2 protocol; doctor reports an actionable upgrade
 instead of accepting an older, incompatible Python installation.
 
 OpenClaw's resolved prompt token budget is authoritative. When an older or
