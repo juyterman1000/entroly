@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.2",
   "name": "entroly",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "description": "Open-source Context OS for AI agents: context engineering, memory, recovery, receipts, verification, provider controls, and guarded learning.",
   "author": {
     "name": "juyterman1000",

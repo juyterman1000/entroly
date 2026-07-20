@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "description": "Open-source Context OS for AI coding agents: context engineering, memory, recovery, verification, receipts, provider controls, and guarded learning.",
   "homepage": "https://github.com/juyterman1000/entroly",
   "repository": "https://github.com/juyterman1000/entroly",
