@@ -1,9 +1,12 @@
 """
-Experiment 1 — Verifier Recall Under Controlled Evidence Ablation
-=================================================================
+Experiment 1 — Verifier Recall Under Controlled Evidence Ablation (protocol v2)
+===============================================================================
 
 Preregistration: benchmarks/VERIFIER_ABLATION_PREREGISTRATION.md
-(criteria locked at commit c45d3073fb8ac3ed963920a0903796bd76f18098).
+(criteria locked at c45d3073; protocol v2 declared at ac0178c7 — tie-corrected
+AUROC, uniform formatting pipeline, fresh eval items. Thresholds unchanged.
+The v1 run and its FAIL verdict remain committed in git history and in
+benchmarks/results/verifier_ablation_recall.json.)
 
 Measures whether EICV detects *compression-induced evidence gaps*: a correct
 claim whose supporting evidence has been removed from the context. This is the
@@ -50,8 +53,9 @@ CHAR_CAP = 0.50      # E3: critical ablation must remove <= 50% of chars
 LEN_TOL = 0.30       # E5: random ablation length match +/- 30%
 E5_ATTEMPTS = 50
 DEV_FPR_CAP = 0.20   # operating-point selection on dev
+V2_POOL_START = 492  # v1 consumed pool[0:492] (eval scan + calibration); v2 items are fresh
 PREREG_DOC = "benchmarks/VERIFIER_ABLATION_PREREGISTRATION.md"
-PREREG_COMMIT = "c45d3073fb8ac3ed963920a0903796bd76f18098"
+PREREG_COMMIT = "ac0178c70f7b62f7071b6050f59d8a28b4f9fc5c"  # v2 declaration
 RESULTS_DIR = _THIS / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -63,12 +67,30 @@ def _sentences(text: str) -> list[str]:
 
 
 def _auroc(scores: list[float], labels: list[int]) -> float:
-    pairs = sorted(zip(scores, labels))
-    n0 = sum(1 for _, y in pairs if y == 0)
-    n1 = sum(1 for _, y in pairs if y == 1)
+    """Mann-Whitney AUROC with midrank tie correction.
+
+    Tied scores receive their midrank regardless of label, so identical score
+    distributions yield exactly 0.5. The uncorrected variant (sorted (score,
+    label) tuples) breaks ties by label and fabricates high AUROC under heavy
+    ties — see benchmarks/results/diagnose_ablation_artifact.json.
+    """
+    n = len(scores)
+    order = sorted(range(n), key=lambda i: scores[i])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and scores[order[j + 1]] == scores[order[i]]:
+            j += 1
+        midrank = (i + j) / 2 + 1
+        for k in range(i, j + 1):
+            ranks[order[k]] = midrank
+        i = j + 1
+    n1 = sum(labels)
+    n0 = n - n1
     if n0 == 0 or n1 == 0:
         return 0.5
-    rank_sum = sum(r for r, (_, y) in enumerate(pairs, 1) if y == 1)
+    rank_sum = sum(r for r, y in zip(ranks, labels) if y == 1)
     return (rank_sum - n1 * (n1 + 1) / 2) / (n0 * n1)
 
 
@@ -147,7 +169,8 @@ def build_item(ctx: str, answer: str, rng: random.Random):
 
     return {
         "answer": answer,
-        "intact": ctx,
+        # v2: all conditions share one formatting pipeline (rejoined sentences)
+        "intact": " ".join(sents),
         "critical": critical_ctx,
         "random": random_ctx,
         "sentences": sents,
@@ -208,8 +231,9 @@ def main() -> int:
     exclusions: dict[str, int] = {}
     items = []
     questions = []
-    cursor = 0
-    for cursor, (ctx, ans, q) in enumerate(pool):
+    cursor = V2_POOL_START
+    for cursor in range(V2_POOL_START, len(pool)):
+        ctx, ans, q = pool[cursor]
         item, gate = build_item(ctx, ans, rng)
         if item is None:
             exclusions[gate] = exclusions.get(gate, 0) + 1
@@ -222,7 +246,7 @@ def main() -> int:
         print(f"  FATAL: only {len(items)} eligible items (< {N_EVAL})")
         return 1
     cal_pairs = [(ctx, ans) for ctx, ans, _ in pool[cursor + 1: cursor + 1 + N_CAL]]
-    print(f"  Eligible: {len(items)}  (scanned {cursor + 1} pool items)")
+    print(f"  Eligible: {len(items)}  (scanned pool[{V2_POOL_START}:{cursor + 1}])")
     print(f"  Exclusions: {exclusions}")
     print(f"  Calibration pairs: {len(cal_pairs)} (disjoint, pool[{cursor + 1}:{cursor + 1 + N_CAL}])")
 
@@ -298,10 +322,11 @@ def main() -> int:
     print(f"    {qccr_res}")
 
     out = {
-        "schema": "verifier-ablation-recall-v1",
+        "schema": "verifier-ablation-recall-v2",
         "preregistration_doc": PREREG_DOC,
         "preregistration_commit": PREREG_COMMIT,
         "seed": SEED,
+        "pool_start": V2_POOL_START,
         "n_eval": n,
         "n_dev": N_DEV,
         "n_calibration": len(cal_pairs),
@@ -327,7 +352,7 @@ def main() -> int:
         },
         "verdict_pass": verdict,
     }
-    out_path = RESULTS_DIR / "verifier_ablation_recall.json"
+    out_path = RESULTS_DIR / "verifier_ablation_recall_v2.json"
     out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"\n  Saved: {out_path}")
     print(f"\n  Verdict: {'PASSES' if verdict else 'FAILS'} preregistered criteria "
