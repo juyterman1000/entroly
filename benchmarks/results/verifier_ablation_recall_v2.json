@@ -33,7 +33,7 @@
     0.0157,
     0.0984
   ],
-  "mean_latency_ms": 1.84,
+  "mean_latency_ms": 1.86,
   "decision_flag_rates": {
     "intact": {
       "decisions": {
@@ -85,14 +85,23 @@
     }
   },
   "qccr_real": {
-    "status": "skipped",
-    "reason": "native QCCR engine unavailable"
+    "status": "ran",
+    "n_items": 200,
+    "answer_survived": 189,
+    "answer_dropped": 11,
+    "dropped_flagged_at_tau": 11,
+    "flag_rate": 1.0,
+    "flag_rate_wilson95": [
+      0.7412,
+      1.0
+    ],
+    "s1_pass": true
   },
   "criteria": {
     "P1_auroc_critical_ge_0.85": true,
     "P2_holdout_recall_ge_0.75_fpr_le_0.25": true,
     "F1_random_artifact_auroc_gt_0.65": false,
-    "S1": "skipped"
+    "S1": true
   },
   "verdict_pass": true
 }

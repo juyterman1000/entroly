@@ -23,10 +23,26 @@ evidence was **removed from context** — the compression failure case?
 | P2 holdout recall at dev-selected τ | 0.940 [0.875, 0.972] | ≥ 0.75 | PASS |
 | P2 holdout FPR at τ | 0.040 [0.016, 0.098] | ≤ 0.25 | PASS |
 | F1 AUROC(intact vs random length-matched ablation) | 0.5000 | fails if > 0.65 | clean |
-| S1 real-QCCR condition | skipped | engine-gated | native engine unavailable |
+| S1 flag rate on real-QCCR-dropped answers | 11/11 = 1.00 [0.741, 1.0] | ≥ 0.75 | PASS (small n) |
 
 Mean scores (1−φ): intact 0.0325, random **0.0325**, critical 0.8504.
-Latency: 1.84 ms/verify. Wilson 95% CIs. Exit criteria: P1 ∧ P2 ∧ ¬F1 → **PASS**.
+Latency: 1.86 ms/verify. Wilson 95% CIs. Exit criteria: P1 ∧ P2 ∧ ¬F1 → **PASS**.
+
+## S1 — real compression, not synthetic ablation
+
+With the native engine built (`entroly_core` 1.0.62 local wheel), the S1
+condition ran real QCCR selection (`qccr.select`, query = the SQuAD question)
+at a token budget matched to the critical ablation's kept length:
+
+- **Answer survived selection in 189/200 items (94.5%)** — independently
+  consistent with the committed matched-cap frontier result (93.3% retention
+  at 4x, `compression_frontier.md`).
+- **All 11 dropped-answer cases were flagged by EICV (11/11)** at the
+  preregistered τ. Point estimate 1.00 passes the ≥ 0.75 criterion; n = 11 is
+  small and the Wilson 95% lower bound is 0.741 — the sample is too small to
+  claim recall above ~0.74 on real-compression gaps with confidence.
+- Observed span-level silent failures (answer dropped AND not flagged) across
+  200 real compressions: **0**.
 
 ## The v1 story (kept, on purpose)
 
@@ -53,8 +69,9 @@ the committed AUROC artifacts.
   here are gold spans, not model outputs; no LLM was called. Task-level
   validation is Experiment 0 (`AGENTIC_TASKS_PREREGISTRATION.md`), which this
   result gates.
-- S1 (real QCCR selection instead of synthetic ablation) requires the native
-  engine and remains open.
+- S1's n = 11 dropped-answer sample bounds real-compression recall only at
+  ≥ 0.74 (95% lower bound); a larger dropped-answer sample (tighter budgets or
+  more items) is needed before quoting a recall number for real compression.
 
 ## Reproduce
 
