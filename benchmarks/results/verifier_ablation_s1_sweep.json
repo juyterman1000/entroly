@@ -1,0 +1,88 @@
+{
+  "schema": "verifier-ablation-s1-sweep-v1",
+  "preregistration_doc": "benchmarks/VERIFIER_ABLATION_PREREGISTRATION.md#10",
+  "preregistration_commit": "38bc576275a4b4d69cfb3bff2c72560f84deea63",
+  "seed": 42,
+  "tau": 0.3608,
+  "n_items": 200,
+  "budget_fractions": [
+    1.0,
+    0.75,
+    0.5,
+    0.25
+  ],
+  "budgets": {
+    "1.00": {
+      "survived": 189,
+      "dropped": 11,
+      "dropped_flagged": 11,
+      "drop_flag_rate": 1.0,
+      "drop_flag_wilson95": [
+        0.7412,
+        1.0
+      ],
+      "survived_flagged": 12,
+      "survived_false_alarm_rate": 0.0635,
+      "survived_fa_wilson95": [
+        0.0367,
+        0.1077
+      ]
+    },
+    "0.75": {
+      "survived": 181,
+      "dropped": 19,
+      "dropped_flagged": 19,
+      "drop_flag_rate": 1.0,
+      "drop_flag_wilson95": [
+        0.8318,
+        1.0
+      ],
+      "survived_flagged": 12,
+      "survived_false_alarm_rate": 0.0663,
+      "survived_fa_wilson95": [
+        0.0383,
+        0.1123
+      ]
+    },
+    "0.50": {
+      "survived": 155,
+      "dropped": 45,
+      "dropped_flagged": 45,
+      "drop_flag_rate": 1.0,
+      "drop_flag_wilson95": [
+        0.9213,
+        1.0
+      ],
+      "survived_flagged": 7,
+      "survived_false_alarm_rate": 0.0452,
+      "survived_fa_wilson95": [
+        0.022,
+        0.0903
+      ]
+    },
+    "0.25": {
+      "survived": 76,
+      "dropped": 124,
+      "dropped_flagged": 121,
+      "drop_flag_rate": 0.9758,
+      "drop_flag_wilson95": [
+        0.9313,
+        0.9917
+      ],
+      "survived_flagged": 3,
+      "survived_false_alarm_rate": 0.0395,
+      "survived_fa_wilson95": [
+        0.0135,
+        0.1097
+      ]
+    }
+  },
+  "unique_dropped_items": 126,
+  "elapsed_s": 1.0,
+  "criteria": {
+    "S1_EXT_a_flag_ge_0.75_per_budget_n_ge_10": true,
+    "S1_EXT_b_unique_dropped_ge_50": true,
+    "S1_EXT_c_benign_fa_le_0.15": true
+  },
+  "verdict_pass": true
+}

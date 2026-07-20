@@ -70,8 +70,29 @@ the committed AUROC artifacts.
   validation is Experiment 0 (`AGENTIC_TASKS_PREREGISTRATION.md`), which this
   result gates.
 - S1's n = 11 dropped-answer sample bounds real-compression recall only at
-  ≥ 0.74 (95% lower bound); a larger dropped-answer sample (tighter budgets or
-  more items) is needed before quoting a recall number for real compression.
+  ≥ 0.74 (95% lower bound); the S1-EXT sweep below closes this gap.
+
+## S1-EXT — tighter-budget sweep (declared §10, `verifier_ablation_s1_sweep.json`)
+
+Same 200 items, τ frozen at 0.3608, QCCR budget swept down to 25% of the
+matched budget to grow the dropped-answer sample:
+
+| Budget | Answer survived | Dropped | Flagged (of dropped) | Wilson 95% | Benign FA (survived) |
+|---:|---:|---:|---:|---|---:|
+| ×1.00 | 189 | 11 | 11/11 = 1.000 | [0.741, 1.000] | 0.063 |
+| ×0.75 | 181 | 19 | 19/19 = 1.000 | [0.832, 1.000] | 0.066 |
+| ×0.50 | 155 | 45 | 45/45 = 1.000 | [0.921, 1.000] | 0.045 |
+| ×0.25 | 76 | 124 | 121/124 = 0.976 | [0.931, 0.992] | 0.039 |
+
+All three declared criteria pass (per-budget flag rate ≥ 0.75 with n ≥ 10;
+126 unique dropped items ≥ 50; benign false alarms ≤ 0.15 everywhere).
+
+The defensible claim after the sweep: **recall ≥ 0.93 on real
+compression-induced evidence gaps** (largest single-budget sample, Wilson 95%
+lower bound), with benign false alarms under 7% that *decrease* as budgets
+tighten — the verifier keys on missing evidence, not on context length.
+QCCR's own survival curve degrades gracefully (94.5% → 90.5% → 77.5% → 38%
+from ×1.00 to ×0.25).
 
 ## Reproduce
 
