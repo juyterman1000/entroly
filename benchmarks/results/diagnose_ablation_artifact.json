@@ -1,0 +1,56 @@
+{
+  "n_dev": 100,
+  "H_fmt_formatting_artifact": {
+    "auroc_raw_vs_joined_intact": 0.9431,
+    "mean_raw": 0.035,
+    "mean_joined": 0.035
+  },
+  "auroc_joined_intact_vs_random": 0.9426,
+  "auroc_joined_intact_vs_critical": 0.9947,
+  "H_layer_per_layer_auroc": {
+    "esg_tension": {
+      "intact_joined_vs_critical": 0.9947,
+      "intact_joined_vs_random": 0.9426
+    },
+    "nli_bidir_score": {
+      "intact_joined_vs_critical": 0.9971,
+      "intact_joined_vs_random": 0.9901
+    },
+    "h_sem_norm": {
+      "intact_joined_vs_critical": 1.0,
+      "intact_joined_vs_random": 1.0
+    },
+    "unsup": {
+      "intact_joined_vs_critical": 0.9972,
+      "intact_joined_vs_random": 0.9803
+    }
+  },
+  "H_op_flag_rates_at_v1_tau": {
+    "intact_raw": 0.06,
+    "intact_joined": 0.06,
+    "critical": 0.97,
+    "random": 0.05
+  },
+  "score_percentiles": {
+    "intact_raw": {
+      "0.1": 0.0,
+      "0.5": 0.0,
+      "0.9": 0.0
+    },
+    "intact_joined": {
+      "0.1": 0.0,
+      "0.5": 0.0,
+      "0.9": 0.0
+    },
+    "critical": {
+      "0.1": 0.5792,
+      "0.5": 1.0,
+      "0.9": 1.0
+    },
+    "random": {
+      "0.1": 0.0,
+      "0.5": 0.0,
+      "0.9": 0.0
+    }
+  }
+}

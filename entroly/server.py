@@ -4322,6 +4322,121 @@ def create_mcp_server(
         result = _vault_mgr.write_action(title, content, action_type)
         return json.dumps(result, indent=2)
 
+    @mcp.tool()
+    def vault_time_travel(
+        action: str,
+        when: str = "",
+        from_when: str = "",
+        to_when: str = "",
+        entity: str = "",
+        time_axis: str = "transaction",
+        claim_id: str = "",
+        reason: str = "user_requested_erasure",
+    ) -> str:
+        """Query the vault's bitemporal belief ledger — memory time travel.
+
+        Every belief write is versioned in an append-only, hash-chained
+        ledger. This tool answers questions like "what did the vault know
+        last Tuesday?" and "what changed between two dates?".
+
+        Args:
+            action: One of:
+                as_of — snapshot of beliefs visible at `when`
+                diff — what changed between `from_when` and `to_when`
+                timeline — version history for `entity`
+                verify_chain — tamper-check the ledger hash chain
+                seed — backfill the ledger from pre-ledger belief files
+                redact — erase belief bodies (by `entity` or `claim_id`)
+                    via a chained tombstone; content is deleted, the hash
+                    chain stays verifiable
+            when: ISO-8601 instant for as_of (e.g., '2026-07-14T00:00:00+00:00')
+            from_when: ISO-8601 start instant for diff
+            to_when: ISO-8601 end instant for diff
+            entity: Entity name for timeline
+            time_axis: 'transaction' = what the vault knew at that instant
+                (default); 'valid' = what had been verified as of that instant
+        """
+        from dataclasses import asdict
+
+        from .vault_time import BeliefLedger, LedgerIntegrityError
+
+        ledger = BeliefLedger(_vault_mgr._base)
+        try:
+            if action == "as_of":
+                if not when:
+                    return json.dumps({"status": "error", "error": "as_of requires 'when'"})
+                snap = ledger.as_of(when, time_axis=time_axis)
+                return json.dumps({
+                    "as_of": when,
+                    "time_axis": time_axis,
+                    "entities": {e: asdict(v) for e, v in sorted(snap.items())},
+                    "total": len(snap),
+                }, indent=2)
+            if action == "diff":
+                if not (from_when and to_when):
+                    return json.dumps({
+                        "status": "error",
+                        "error": "diff requires 'from_when' and 'to_when'",
+                    })
+                return json.dumps(
+                    ledger.diff(from_when, to_when, time_axis=time_axis), indent=2
+                )
+            if action == "timeline":
+                if not entity:
+                    return json.dumps({"status": "error", "error": "timeline requires 'entity'"})
+                versions = ledger.timeline(entity)
+                return json.dumps({
+                    "entity": entity,
+                    "versions": [asdict(v) for v in versions],
+                    "total": len(versions),
+                }, indent=2)
+            if action == "verify_chain":
+                return json.dumps(ledger.verify_chain(), indent=2)
+            if action == "seed":
+                return json.dumps(
+                    ledger.seed_from_current(_vault_mgr._base / "beliefs"), indent=2
+                )
+            if action == "redact":
+                return json.dumps(
+                    ledger.redact(claim_id=claim_id, entity=entity, reason=reason),
+                    indent=2,
+                )
+            return json.dumps({"status": "error", "error": f"unknown action: {action}"})
+        except LedgerIntegrityError as exc:
+            # Fail closed and visibly: a broken ledger must never silently
+            # present a partial past as a complete snapshot.
+            return json.dumps({"status": "ledger_integrity_error", "error": str(exc)})
+        except ValueError as exc:
+            return json.dumps({"status": "error", "error": str(exc)})
+
+    @mcp.tool()
+    def vault_hygiene_scan(
+        contradiction_threshold: float = 0.5,
+        max_age_days: int = 30,
+    ) -> str:
+        """Scan vault beliefs against each other for knowledge decay.
+
+        Report-only living-context maintenance: pairwise ESG contradiction
+        detection between beliefs, near-duplicate merge suggestions,
+        staleness flags, and confidence flapping (entities whose recorded
+        confidence keeps reversing across ledger versions). Never rewrites
+        or deletes a belief — act on the suggestions explicitly.
+
+        Args:
+            contradiction_threshold: min ESG contradiction_fraction to flag
+                a belief pair (default 0.5)
+            max_age_days: beliefs unchecked for longer are flagged stale
+                (default 30)
+        """
+        from .vault_hygiene import VaultHygiene
+
+        report = VaultHygiene(
+            _vault_mgr._base,
+            contradiction_threshold=contradiction_threshold,
+            max_age_days=max_age_days,
+        ).scan()
+        return json.dumps(report, indent=2)
+
     # ══════════════════════════════════════════════════════════════════
     # CogOps Phase 2: Data Plane Engines (Rust preferred, Python fallback)
     #

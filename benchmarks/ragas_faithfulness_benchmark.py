@@ -51,16 +51,8 @@ def _load_dotenv() -> None:
 
 
 def _auroc(scores: list[float], labels: list[int]) -> float:
-    pairs = sorted(zip(scores, labels), key=lambda x: x[0])
-    n0 = sum(1 for _, y in pairs if y == 0)
-    n1 = sum(1 for _, y in pairs if y == 1)
-    if n0 == 0 or n1 == 0:
-        return 0.5
-    rank_sum = 0.0
-    for rank, (_, y) in enumerate(pairs, 1):
-        if y == 1:
-            rank_sum += rank
-    return (rank_sum - n1 * (n1 + 1) / 2) / (n0 * n1)
+    from entroly.metrics import tie_corrected_auroc
+    return tie_corrected_auroc(scores, labels)
 
 
 def _ci95(n: int, acc: float) -> float:

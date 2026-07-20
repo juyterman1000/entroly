@@ -1,0 +1,107 @@
+{
+  "schema": "verifier-ablation-recall-v2",
+  "preregistration_doc": "benchmarks/VERIFIER_ABLATION_PREREGISTRATION.md",
+  "preregistration_commit": "ac0178c70f7b62f7071b6050f59d8a28b4f9fc5c",
+  "seed": 42,
+  "pool_start": 492,
+  "n_eval": 200,
+  "n_dev": 100,
+  "n_calibration": 200,
+  "pool_scanned": 776,
+  "exclusions": {
+    "E2_too_few_sentences": 54,
+    "E1b_answer_crosses_sentence_boundary": 3,
+    "E5_no_length_matched_random_ablation": 15,
+    "E3_ablation_over_char_cap": 12
+  },
+  "mean_scores": {
+    "intact": 0.0325,
+    "critical": 0.8504,
+    "random": 0.0325
+  },
+  "auroc_intact_vs_critical": 0.9748,
+  "auroc_intact_vs_random": 0.5,
+  "tau": 0.3608,
+  "dev_recall_at_tau": 0.96,
+  "holdout_recall_at_tau": 0.94,
+  "holdout_recall_wilson95": [
+    0.8752,
+    0.9722
+  ],
+  "holdout_fpr_at_tau": 0.04,
+  "holdout_fpr_wilson95": [
+    0.0157,
+    0.0984
+  ],
+  "mean_latency_ms": 1.86,
+  "decision_flag_rates": {
+    "intact": {
+      "decisions": {
+        "abstain": 187,
+        "hallucinated": 13
+      },
+      "strict_flag_rate": 0.065,
+      "strict_wilson95": [
+        0.0384,
+        0.108
+      ],
+      "liberal_flag_rate": 1.0,
+      "liberal_wilson95": [
+        0.9812,
+        1.0
+      ]
+    },
+    "critical": {
+      "decisions": {
+        "hallucinated": 190,
+        "abstain": 10
+      },
+      "strict_flag_rate": 0.95,
+      "strict_wilson95": [
+        0.9104,
+        0.9726
+      ],
+      "liberal_flag_rate": 1.0,
+      "liberal_wilson95": [
+        0.9812,
+        1.0
+      ]
+    },
+    "random": {
+      "decisions": {
+        "abstain": 187,
+        "hallucinated": 13
+      },
+      "strict_flag_rate": 0.065,
+      "strict_wilson95": [
+        0.0384,
+        0.108
+      ],
+      "liberal_flag_rate": 1.0,
+      "liberal_wilson95": [
+        0.9812,
+        1.0
+      ]
+    }
+  },
+  "qccr_real": {
+    "status": "ran",
+    "n_items": 200,
+    "answer_survived": 189,
+    "answer_dropped": 11,
+    "dropped_flagged_at_tau": 11,
+    "flag_rate": 1.0,
+    "flag_rate_wilson95": [
+      0.7412,
+      1.0
+    ],
+    "s1_pass": true
+  },
+  "criteria": {
+    "P1_auroc_critical_ge_0.85": true,
+    "P2_holdout_recall_ge_0.75_fpr_le_0.25": true,
+    "F1_random_artifact_auroc_gt_0.65": false,
+    "S1": true
+  },
+  "verdict_pass": true
+}

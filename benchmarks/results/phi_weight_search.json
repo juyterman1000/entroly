@@ -4,25 +4,25 @@
   "grid_size": 66,
   "best_dro": {
     "weights": {
-      "esg": 1.0,
-      "nli": 0.0,
+      "esg": 0.6,
+      "nli": 0.4,
       "hsem": 0.0
     },
-    "squad_auroc": 0.9978,
-    "halueval_auroc": 0.9464,
-    "fever_auroc": 0.7703,
-    "worst_auroc": 0.7703
+    "squad_auroc": 0.9958,
+    "halueval_auroc": 0.9569,
+    "fever_auroc": 0.6716,
+    "worst_auroc": 0.6716
   },
   "best_erm": {
     "weights": {
-      "esg": 1.0,
-      "nli": 0.0,
+      "esg": 0.3,
+      "nli": 0.7,
       "hsem": 0.0
     },
-    "squad_auroc": 0.9978,
-    "halueval_auroc": 0.9464,
-    "fever_auroc": 0.7703,
-    "mean_auroc": 0.9048
+    "squad_auroc": 0.996,
+    "halueval_auroc": 0.9738,
+    "fever_auroc": 0.667,
+    "mean_auroc": 0.8789
   },
   "all_results": [
     {
@@ -31,11 +31,11 @@
         "nli": 0.0,
         "hsem": 1.0
       },
-      "squad": 1.0,
-      "halueval": 1.0,
-      "fever": 0.6476,
-      "worst": 0.6476,
-      "mean": 0.8825
+      "squad": 0.5133,
+      "halueval": 0.7033,
+      "fever": 0.4903,
+      "worst": 0.4903,
+      "mean": 0.569
     },
     {
       "weights": {
@@ -43,11 +43,11 @@
         "nli": 0.1,
         "hsem": 0.9
       },
-      "squad": 0.9999,
+      "squad": 0.9933,
       "halueval": 0.9895,
-      "fever": 0.5511,
-      "worst": 0.5511,
-      "mean": 0.8468
+      "fever": 0.5509,
+      "worst": 0.5509,
+      "mean": 0.8445
     },
     {
       "weights": {
@@ -55,11 +55,11 @@
         "nli": 0.2,
         "hsem": 0.8
       },
-      "squad": 0.9999,
+      "squad": 0.9933,
       "halueval": 0.9895,
-      "fever": 0.5527,
-      "worst": 0.5527,
-      "mean": 0.8474
+      "fever": 0.5525,
+      "worst": 0.5525,
+      "mean": 0.8451
     },
     {
       "weights": {
@@ -67,11 +67,11 @@
         "nli": 0.3,
         "hsem": 0.7
       },
-      "squad": 0.9999,
+      "squad": 0.9933,
       "halueval": 0.9895,
-      "fever": 0.556,
-      "worst": 0.556,
-      "mean": 0.8484
+      "fever": 0.5557,
+      "worst": 0.5557,
+      "mean": 0.8462
     },
     {
       "weights": {
@@ -79,11 +79,11 @@
         "nli": 0.4,
         "hsem": 0.6
       },
-      "squad": 0.9999,
+      "squad": 0.9933,
       "halueval": 0.9889,
-      "fever": 0.5686,
-      "worst": 0.5686,
-      "mean": 0.8525
+      "fever": 0.5684,
+      "worst": 0.5684,
+      "mean": 0.8502
     },
     {
       "weights": {
@@ -91,11 +91,11 @@
         "nli": 0.5,
         "hsem": 0.5
       },
-      "squad": 0.9999,
+      "squad": 0.9932,
       "halueval": 0.9864,
-      "fever": 0.5867,
-      "worst": 0.5867,
-      "mean": 0.8576
+      "fever": 0.5865,
+      "worst": 0.5865,
+      "mean": 0.8554
     },
     {
       "weights": {
@@ -103,11 +103,11 @@
         "nli": 0.6,
         "hsem": 0.4
       },
-      "squad": 0.9999,
+      "squad": 0.9932,
       "halueval": 0.9844,
-      "fever": 0.6033,
-      "worst": 0.6033,
-      "mean": 0.8625
+      "fever": 0.6031,
+      "worst": 0.6031,
+      "mean": 0.8602
     },
     {
       "weights": {
@@ -115,11 +115,11 @@
         "nli": 0.7,
         "hsem": 0.3
       },
-      "squad": 0.9999,
+      "squad": 0.9932,
       "halueval": 0.9828,
-      "fever": 0.6157,
-      "worst": 0.6157,
-      "mean": 0.8661
+      "fever": 0.6155,
+      "worst": 0.6155,
+      "mean": 0.8638
     },
     {
       "weights": {
@@ -127,11 +127,11 @@
         "nli": 0.8,
         "hsem": 0.2
       },
-      "squad": 0.9998,
+      "squad": 0.9931,
       "halueval": 0.982,
-      "fever": 0.6335,
-      "worst": 0.6335,
-      "mean": 0.8718
+      "fever": 0.6333,
+      "worst": 0.6333,
+      "mean": 0.8695
     },
     {
       "weights": {
@@ -139,11 +139,11 @@
         "nli": 0.9,
         "hsem": 0.1
       },
-      "squad": 0.9998,
+      "squad": 0.9931,
       "halueval": 0.9816,
-      "fever": 0.6394,
-      "worst": 0.6394,
-      "mean": 0.8736
+      "fever": 0.6392,
+      "worst": 0.6392,
+      "mean": 0.8713
     },
     {
       "weights": {
@@ -151,11 +151,11 @@
         "nli": 1.0,
         "hsem": 0.0
       },
-      "squad": 0.9997,
+      "squad": 0.9931,
       "halueval": 0.9813,
-      "fever": 0.6437,
-      "worst": 0.6437,
-      "mean": 0.8749
+      "fever": 0.6434,
+      "worst": 0.6434,
+      "mean": 0.8726
     },
     {
       "weights": {
@@ -163,11 +163,11 @@
         "nli": 0.0,
         "hsem": 0.9
       },
-      "squad": 0.998,
-      "halueval": 0.9733,
-      "fever": 0.5937,
-      "worst": 0.5937,
-      "mean": 0.855
+      "squad": 0.9897,
+      "halueval": 0.9582,
+      "fever": 0.5669,
+      "worst": 0.5669,
+      "mean": 0.8383
     },
     {
       "weights": {
@@ -175,11 +175,11 @@
         "nli": 0.1,
         "hsem": 0.8
       },
-      "squad": 0.9983,
-      "halueval": 0.9782,
-      "fever": 0.5637,
-      "worst": 0.5637,
-      "mean": 0.8467
+      "squad": 0.9962,
+      "halueval": 0.9751,
+      "fever": 0.5668,
+      "worst": 0.5668,
+      "mean": 0.846
     },
     {
       "weights": {
@@ -187,11 +187,11 @@
         "nli": 0.2,
         "hsem": 0.7
       },
-      "squad": 0.9983,
-      "halueval": 0.9854,
-      "fever": 0.566,
-      "worst": 0.566,
-      "mean": 0.8499
+      "squad": 0.9962,
+      "halueval": 0.9821,
+      "fever": 0.5681,
+      "worst": 0.5681,
+      "mean": 0.8488
     },
     {
       "weights": {
@@ -199,11 +199,11 @@
         "nli": 0.3,
         "hsem": 0.6
       },
-      "squad": 0.9983,
-      "halueval": 0.9853,
-      "fever": 0.576,
-      "worst": 0.576,
-      "mean": 0.8532
+      "squad": 0.9962,
+      "halueval": 0.9819,
+      "fever": 0.5768,
+      "worst": 0.5768,
+      "mean": 0.8516
     },
     {
       "weights": {
@@ -211,11 +211,11 @@
         "nli": 0.4,
         "hsem": 0.5
       },
-      "squad": 0.9983,
-      "halueval": 0.9851,
-      "fever": 0.5986,
-      "worst": 0.5986,
-      "mean": 0.8607
+      "squad": 0.9962,
+      "halueval": 0.9812,
+      "fever": 0.6007,
+      "worst": 0.6007,
+      "mean": 0.8594
     },
     {
       "weights": {
@@ -223,11 +223,11 @@
         "nli": 0.5,
         "hsem": 0.4
       },
-      "squad": 0.9982,
-      "halueval": 0.9829,
-      "fever": 0.6078,
-      "worst": 0.6078,
-      "mean": 0.863
+      "squad": 0.9961,
+      "halueval": 0.98,
+      "fever": 0.6088,
+      "worst": 0.6088,
+      "mean": 0.8616
     },
     {
       "weights": {
@@ -235,11 +235,11 @@
         "nli": 0.6,
         "hsem": 0.3
       },
-      "squad": 0.9982,
-      "halueval": 0.9826,
-      "fever": 0.6246,
-      "worst": 0.6246,
-      "mean": 0.8685
+      "squad": 0.9961,
+      "halueval": 0.9792,
+      "fever": 0.6253,
+      "worst": 0.6253,
+      "mean": 0.8669
     },
     {
       "weights": {
@@ -247,11 +247,11 @@
         "nli": 0.7,
         "hsem": 0.2
       },
-      "squad": 0.9981,
-      "halueval": 0.9818,
-      "fever": 0.6435,
-      "worst": 0.6435,
-      "mean": 0.8745
+      "squad": 0.996,
+      "halueval": 0.9784,
+      "fever": 0.6451,
+      "worst": 0.6451,
+      "mean": 0.8732
     },
     {
       "weights": {
@@ -259,11 +259,11 @@
         "nli": 0.8,
         "hsem": 0.1
       },
-      "squad": 0.9981,
-      "halueval": 0.9814,
-      "fever": 0.6501,
-      "worst": 0.6501,
-      "mean": 0.8765
+      "squad": 0.996,
+      "halueval": 0.9791,
+      "fever": 0.6516,
+      "worst": 0.6516,
+      "mean": 0.8756
     },
     {
       "weights": {
@@ -271,11 +271,11 @@
         "nli": 0.9,
         "hsem": 0.0
       },
-      "squad": 0.9981,
-      "halueval": 0.9812,
-      "fever": 0.6537,
-      "worst": 0.6537,
-      "mean": 0.8777
+      "squad": 0.996,
+      "halueval": 0.9789,
+      "fever": 0.6548,
+      "worst": 0.6548,
+      "mean": 0.8765
     },
     {
       "weights": {
@@ -283,11 +283,11 @@
         "nli": 0.0,
         "hsem": 0.8
       },
-      "squad": 0.998,
-      "halueval": 0.9733,
-      "fever": 0.5978,
-      "worst": 0.5978,
-      "mean": 0.8564
+      "squad": 0.9897,
+      "halueval": 0.9582,
+      "fever": 0.5704,
+      "worst": 0.5704,
+      "mean": 0.8394
     },
     {
       "weights": {
@@ -295,11 +295,11 @@
         "nli": 0.1,
         "hsem": 0.7
       },
-      "squad": 0.9982,
-      "halueval": 0.9726,
-      "fever": 0.5681,
-      "worst": 0.5681,
-      "mean": 0.8463
+      "squad": 0.9961,
+      "halueval": 0.9715,
+      "fever": 0.5719,
+      "worst": 0.5719,
+      "mean": 0.8465
     },
     {
       "weights": {
@@ -307,11 +307,11 @@
         "nli": 0.2,
         "hsem": 0.6
       },
-      "squad": 0.9983,
-      "halueval": 0.9776,
-      "fever": 0.5812,
-      "worst": 0.5812,
-      "mean": 0.8524
+      "squad": 0.9962,
+      "halueval": 0.9745,
+      "fever": 0.5839,
+      "worst": 0.5839,
+      "mean": 0.8515
     },
     {
       "weights": {
@@ -319,11 +319,11 @@
         "nli": 0.3,
         "hsem": 0.5
       },
-      "squad": 0.9983,
-      "halueval": 0.9818,
-      "fever": 0.6006,
-      "worst": 0.6006,
-      "mean": 0.8602
+      "squad": 0.9962,
+      "halueval": 0.9788,
+      "fever": 0.6032,
+      "worst": 0.6032,
+      "mean": 0.8594
     },
     {
       "weights": {
@@ -331,11 +331,11 @@
         "nli": 0.4,
         "hsem": 0.4
       },
-      "squad": 0.9982,
-      "halueval": 0.9816,
-      "fever": 0.6135,
-      "worst": 0.6135,
-      "mean": 0.8644
+      "squad": 0.9961,
+      "halueval": 0.9781,
+      "fever": 0.6162,
+      "worst": 0.6162,
+      "mean": 0.8635
     },
     {
       "weights": {
@@ -343,11 +343,11 @@
         "nli": 0.5,
         "hsem": 0.3
       },
-      "squad": 0.9982,
-      "halueval": 0.9792,
-      "fever": 0.6263,
-      "worst": 0.6263,
-      "mean": 0.8679
+      "squad": 0.9961,
+      "halueval": 0.9758,
+      "fever": 0.6284,
+      "worst": 0.6284,
+      "mean": 0.8668
     },
     {
       "weights": {
@@ -355,11 +355,11 @@
         "nli": 0.6,
         "hsem": 0.2
       },
-      "squad": 0.9981,
-      "halueval": 0.9784,
-      "fever": 0.6463,
-      "worst": 0.6463,
-      "mean": 0.8743
+      "squad": 0.996,
+      "halueval": 0.9751,
+      "fever": 0.6498,
+      "worst": 0.6498,
+      "mean": 0.8737
     },
     {
       "weights": {
@@ -367,11 +367,11 @@
         "nli": 0.7,
         "hsem": 0.1
       },
-      "squad": 0.9981,
-      "halueval": 0.9796,
-      "fever": 0.6556,
-      "worst": 0.6556,
-      "mean": 0.8777
+      "squad": 0.996,
+      "halueval": 0.9757,
+      "fever": 0.6592,
+      "worst": 0.6592,
+      "mean": 0.877
     },
     {
       "weights": {
@@ -379,11 +379,11 @@
         "nli": 0.8,
         "hsem": 0.0
       },
-      "squad": 0.9981,
-      "halueval": 0.9793,
-      "fever": 0.6603,
-      "worst": 0.6603,
-      "mean": 0.8792
+      "squad": 0.996,
+      "halueval": 0.9755,
+      "fever": 0.6625,
+      "worst": 0.6625,
+      "mean": 0.878
     },
     {
       "weights": {
@@ -391,11 +391,11 @@
         "nli": 0.0,
         "hsem": 0.7
       },
-      "squad": 0.998,
-      "halueval": 0.9732,
-      "fever": 0.604,
-      "worst": 0.604,
-      "mean": 0.8584
+      "squad": 0.9897,
+      "halueval": 0.958,
+      "fever": 0.5781,
+      "worst": 0.5781,
+      "mean": 0.842
     },
     {
       "weights": {
@@ -403,11 +403,11 @@
         "nli": 0.1,
         "hsem": 0.6
       },
-      "squad": 0.9982,
-      "halueval": 0.9684,
-      "fever": 0.5856,
-      "worst": 0.5856,
-      "mean": 0.8508
+      "squad": 0.9961,
+      "halueval": 0.9681,
+      "fever": 0.5875,
+      "worst": 0.5875,
+      "mean": 0.8506
     },
     {
       "weights": {
@@ -415,11 +415,11 @@
         "nli": 0.2,
         "hsem": 0.5
       },
-      "squad": 0.9982,
-      "halueval": 0.9713,
-      "fever": 0.6043,
-      "worst": 0.6043,
-      "mean": 0.8579
+      "squad": 0.9961,
+      "halueval": 0.9696,
+      "fever": 0.6057,
+      "worst": 0.6057,
+      "mean": 0.8571
     },
     {
       "weights": {
@@ -427,11 +427,11 @@
         "nli": 0.3,
         "hsem": 0.4
       },
-      "squad": 0.9983,
-      "halueval": 0.9752,
-      "fever": 0.6209,
-      "worst": 0.6209,
-      "mean": 0.8648
+      "squad": 0.9961,
+      "halueval": 0.972,
+      "fever": 0.6249,
+      "worst": 0.6249,
+      "mean": 0.8643
     },
     {
       "weights": {
@@ -439,11 +439,11 @@
         "nli": 0.4,
         "hsem": 0.3
       },
-      "squad": 0.9982,
-      "halueval": 0.9761,
-      "fever": 0.6252,
-      "worst": 0.6252,
-      "mean": 0.8665
+      "squad": 0.9961,
+      "halueval": 0.9739,
+      "fever": 0.6301,
+      "worst": 0.6301,
+      "mean": 0.8667
     },
     {
       "weights": {
@@ -451,11 +451,11 @@
         "nli": 0.5,
         "hsem": 0.2
       },
-      "squad": 0.9981,
-      "halueval": 0.9783,
-      "fever": 0.6387,
-      "worst": 0.6387,
-      "mean": 0.8717
+      "squad": 0.996,
+      "halueval": 0.975,
+      "fever": 0.6447,
+      "worst": 0.6447,
+      "mean": 0.8719
     },
     {
       "weights": {
@@ -463,10 +463,10 @@
         "nli": 0.6,
         "hsem": 0.1
       },
-      "squad": 0.9981,
-      "halueval": 0.9775,
-      "fever": 0.6562,
-      "worst": 0.6562,
+      "squad": 0.996,
+      "halueval": 0.9742,
+      "fever": 0.6617,
+      "worst": 0.6617,
       "mean": 0.8773
     },
     {
@@ -475,11 +475,11 @@
         "nli": 0.7,
         "hsem": 0.0
       },
-      "squad": 0.9981,
-      "halueval": 0.9771,
-      "fever": 0.6626,
-      "worst": 0.6626,
-      "mean": 0.8793
+      "squad": 0.996,
+      "halueval": 0.9738,
+      "fever": 0.667,
+      "worst": 0.667,
+      "mean": 0.8789
     },
     {
       "weights": {
@@ -487,11 +487,11 @@
         "nli": 0.0,
         "hsem": 0.6
       },
-      "squad": 0.998,
-      "halueval": 0.9721,
-      "fever": 0.6234,
-      "worst": 0.6234,
-      "mean": 0.8645
+      "squad": 0.9897,
+      "halueval": 0.9564,
+      "fever": 0.5923,
+      "worst": 0.5923,
+      "mean": 0.8462
     },
     {
       "weights": {
@@ -499,11 +499,11 @@
         "nli": 0.1,
         "hsem": 0.5
       },
-      "squad": 0.9982,
-      "halueval": 0.9672,
-      "fever": 0.6101,
-      "worst": 0.6101,
-      "mean": 0.8585
+      "squad": 0.9961,
+      "halueval": 0.9668,
+      "fever": 0.612,
+      "worst": 0.612,
+      "mean": 0.8583
     },
     {
       "weights": {
@@ -511,11 +511,11 @@
         "nli": 0.2,
         "hsem": 0.4
       },
-      "squad": 0.9982,
-      "halueval": 0.97,
-      "fever": 0.6195,
-      "worst": 0.6195,
-      "mean": 0.8626
+      "squad": 0.9961,
+      "halueval": 0.9683,
+      "fever": 0.625,
+      "worst": 0.625,
+      "mean": 0.8631
     },
     {
       "weights": {
@@ -523,11 +523,11 @@
         "nli": 0.3,
         "hsem": 0.3
       },
-      "squad": 0.9981,
-      "halueval": 0.968,
-      "fever": 0.6235,
-      "worst": 0.6235,
-      "mean": 0.8632
+      "squad": 0.996,
+      "halueval": 0.9664,
+      "fever": 0.6301,
+      "worst": 0.6301,
+      "mean": 0.8642
     },
     {
       "weights": {
@@ -535,11 +535,11 @@
         "nli": 0.4,
         "hsem": 0.2
       },
-      "squad": 0.9981,
-      "halueval": 0.971,
-      "fever": 0.637,
-      "worst": 0.637,
-      "mean": 0.8687
+      "squad": 0.996,
+      "halueval": 0.9679,
+      "fever": 0.6435,
+      "worst": 0.6435,
+      "mean": 0.8691
     },
     {
       "weights": {
@@ -547,11 +547,11 @@
         "nli": 0.5,
         "hsem": 0.1
       },
-      "squad": 0.9981,
-      "halueval": 0.9736,
-      "fever": 0.6552,
-      "worst": 0.6552,
-      "mean": 0.8756
+      "squad": 0.996,
+      "halueval": 0.9704,
+      "fever": 0.6617,
+      "worst": 0.6617,
+      "mean": 0.876
     },
     {
       "weights": {
@@ -559,11 +559,11 @@
         "nli": 0.6,
         "hsem": 0.0
       },
-      "squad": 0.9981,
-      "halueval": 0.9749,
-      "fever": 0.6608,
-      "worst": 0.6608,
-      "mean": 0.8779
+      "squad": 0.996,
+      "halueval": 0.9722,
+      "fever": 0.6672,
+      "worst": 0.6672,
+      "mean": 0.8784
     },
     {
       "weights": {
@@ -571,11 +571,11 @@
         "nli": 0.0,
         "hsem": 0.5
       },
-      "squad": 0.998,
-      "halueval": 0.9695,
-      "fever": 0.6387,
-      "worst": 0.6387,
-      "mean": 0.8688
+      "squad": 0.9897,
+      "halueval": 0.9544,
+      "fever": 0.6088,
+      "worst": 0.6088,
+      "mean": 0.851
     },
     {
       "weights": {
@@ -583,11 +583,11 @@
         "nli": 0.1,
         "hsem": 0.4
       },
-      "squad": 0.9981,
-      "halueval": 0.9658,
-      "fever": 0.6201,
-      "worst": 0.6201,
-      "mean": 0.8613
+      "squad": 0.9961,
+      "halueval": 0.9653,
+      "fever": 0.6276,
+      "worst": 0.6276,
+      "mean": 0.863
     },
     {
       "weights": {
@@ -595,11 +595,11 @@
         "nli": 0.2,
         "hsem": 0.3
       },
-      "squad": 0.9982,
-      "halueval": 0.9684,
-      "fever": 0.6251,
-      "worst": 0.6251,
-      "mean": 0.8639
+      "squad": 0.996,
+      "halueval": 0.9668,
+      "fever": 0.6317,
+      "worst": 0.6317,
+      "mean": 0.8649
     },
     {
       "weights": {
@@ -607,11 +607,11 @@
         "nli": 0.3,
         "hsem": 0.2
       },
-      "squad": 0.998,
-      "halueval": 0.9661,
-      "fever": 0.6302,
-      "worst": 0.6302,
-      "mean": 0.8648
+      "squad": 0.9959,
+      "halueval": 0.9646,
+      "fever": 0.6367,
+      "worst": 0.6367,
+      "mean": 0.8657
     },
     {
       "weights": {
@@ -619,11 +619,11 @@
         "nli": 0.4,
         "hsem": 0.1
       },
-      "squad": 0.9981,
-      "halueval": 0.9648,
-      "fever": 0.6521,
-      "worst": 0.6521,
-      "mean": 0.8717
+      "squad": 0.996,
+      "halueval": 0.9634,
+      "fever": 0.66,
+      "worst": 0.66,
+      "mean": 0.8731
     },
     {
       "weights": {
@@ -631,11 +631,11 @@
         "nli": 0.5,
         "hsem": 0.0
       },
-      "squad": 0.9981,
-      "halueval": 0.9677,
-      "fever": 0.6632,
-      "worst": 0.6632,
-      "mean": 0.8763
+      "squad": 0.996,
+      "halueval": 0.9651,
+      "fever": 0.6706,
+      "worst": 0.6706,
+      "mean": 0.8772
     },
     {
       "weights": {
@@ -643,11 +643,11 @@
         "nli": 0.0,
         "hsem": 0.4
       },
-      "squad": 0.998,
-      "halueval": 0.9668,
-      "fever": 0.6499,
-      "worst": 0.6499,
-      "mean": 0.8716
+      "squad": 0.9897,
+      "halueval": 0.9521,
+      "fever": 0.6242,
+      "worst": 0.6242,
+      "mean": 0.8553
     },
     {
       "weights": {
@@ -655,11 +655,11 @@
         "nli": 0.1,
         "hsem": 0.3
       },
-      "squad": 0.9981,
-      "halueval": 0.9618,
-      "fever": 0.6217,
-      "worst": 0.6217,
-      "mean": 0.8605
+      "squad": 0.996,
+      "halueval": 0.9625,
+      "fever": 0.6309,
+      "worst": 0.6309,
+      "mean": 0.8631
     },
     {
       "weights": {
@@ -667,11 +667,11 @@
         "nli": 0.2,
         "hsem": 0.2
       },
-      "squad": 0.998,
-      "halueval": 0.9555,
-      "fever": 0.6262,
-      "worst": 0.6262,
-      "mean": 0.8599
+      "squad": 0.9959,
+      "halueval": 0.9578,
+      "fever": 0.6354,
+      "worst": 0.6354,
+      "mean": 0.8631
     },
     {
       "weights": {
@@ -679,11 +679,11 @@
         "nli": 0.3,
         "hsem": 0.1
       },
-      "squad": 0.998,
-      "halueval": 0.9563,
-      "fever": 0.6481,
-      "worst": 0.6481,
-      "mean": 0.8674
+      "squad": 0.9959,
+      "halueval": 0.9578,
+      "fever": 0.6564,
+      "worst": 0.6564,
+      "mean": 0.87
     },
     {
       "weights": {
@@ -691,11 +691,11 @@
         "nli": 0.4,
         "hsem": 0.0
       },
-      "squad": 0.998,
-      "halueval": 0.9555,
-      "fever": 0.6632,
-      "worst": 0.6632,
-      "mean": 0.8722
+      "squad": 0.9958,
+      "halueval": 0.9569,
+      "fever": 0.6716,
+      "worst": 0.6716,
+      "mean": 0.8748
     },
     {
       "weights": {
@@ -703,11 +703,11 @@
         "nli": 0.0,
         "hsem": 0.3
       },
-      "squad": 0.998,
-      "halueval": 0.9595,
-      "fever": 0.6503,
-      "worst": 0.6503,
-      "mean": 0.8693
+      "squad": 0.9896,
+      "halueval": 0.9462,
+      "fever": 0.6307,
+      "worst": 0.6307,
+      "mean": 0.8555
     },
     {
       "weights": {
@@ -715,11 +715,11 @@
         "nli": 0.1,
         "hsem": 0.2
       },
-      "squad": 0.9979,
-      "halueval": 0.9545,
-      "fever": 0.6229,
-      "worst": 0.6229,
-      "mean": 0.8584
+      "squad": 0.9958,
+      "halueval": 0.9564,
+      "fever": 0.631,
+      "worst": 0.631,
+      "mean": 0.8611
     },
     {
       "weights": {
@@ -727,11 +727,11 @@
         "nli": 0.2,
         "hsem": 0.1
       },
-      "squad": 0.9979,
-      "halueval": 0.9512,
-      "fever": 0.6343,
-      "worst": 0.6343,
-      "mean": 0.8611
+      "squad": 0.9958,
+      "halueval": 0.9534,
+      "fever": 0.6431,
+      "worst": 0.6431,
+      "mean": 0.8641
     },
     {
       "weights": {
@@ -739,11 +739,11 @@
         "nli": 0.3,
         "hsem": 0.0
       },
-      "squad": 0.9979,
-      "halueval": 0.9516,
-      "fever": 0.6614,
-      "worst": 0.6614,
-      "mean": 0.8703
+      "squad": 0.9958,
+      "halueval": 0.9522,
+      "fever": 0.67,
+      "worst": 0.67,
+      "mean": 0.8726
     },
     {
       "weights": {
@@ -751,11 +751,11 @@
         "nli": 0.0,
         "hsem": 0.2
       },
-      "squad": 0.9978,
-      "halueval": 0.954,
-      "fever": 0.6475,
-      "worst": 0.6475,
-      "mean": 0.8664
+      "squad": 0.9894,
+      "halueval": 0.9404,
+      "fever": 0.6276,
+      "worst": 0.6276,
+      "mean": 0.8525
     },
     {
       "weights": {
@@ -763,11 +763,11 @@
         "nli": 0.1,
         "hsem": 0.1
       },
-      "squad": 0.9978,
-      "halueval": 0.9463,
-      "fever": 0.6236,
-      "worst": 0.6236,
-      "mean": 0.8559
+      "squad": 0.9957,
+      "halueval": 0.9484,
+      "fever": 0.6317,
+      "worst": 0.6317,
+      "mean": 0.8586
     },
     {
       "weights": {
@@ -775,11 +775,11 @@
         "nli": 0.2,
         "hsem": 0.0
       },
-      "squad": 0.9979,
-      "halueval": 0.9445,
-      "fever": 0.6606,
-      "worst": 0.6606,
-      "mean": 0.8677
+      "squad": 0.9958,
+      "halueval": 0.9464,
+      "fever": 0.6687,
+      "worst": 0.6687,
+      "mean": 0.8703
     },
     {
       "weights": {
@@ -787,11 +787,11 @@
         "nli": 0.0,
         "hsem": 0.1
       },
-      "squad": 0.9978,
-      "halueval": 0.9484,
-      "fever": 0.6502,
-      "worst": 0.6502,
-      "mean": 0.8655
+      "squad": 0.9894,
+      "halueval": 0.9377,
+      "fever": 0.6272,
+      "worst": 0.6272,
+      "mean": 0.8514
     },
     {
       "weights": {
@@ -799,11 +799,11 @@
         "nli": 0.1,
         "hsem": 0.0
       },
-      "squad": 0.9978,
-      "halueval": 0.9374,
-      "fever": 0.6609,
-      "worst": 0.6609,
-      "mean": 0.8654
+      "squad": 0.9957,
+      "halueval": 0.943,
+      "fever": 0.6686,
+      "worst": 0.6686,
+      "mean": 0.8691
     },
     {
       "weights": {
@@ -811,11 +811,11 @@
         "nli": 0.0,
         "hsem": 0.0
       },
-      "squad": 0.9978,
-      "halueval": 0.9464,
-      "fever": 0.7703,
-      "worst": 0.7703,
-      "mean": 0.9048
+      "squad": 0.9894,
+      "halueval": 0.9335,
+      "fever": 0.6581,
+      "worst": 0.6581,
+      "mean": 0.8603
     }
   ]
 }
