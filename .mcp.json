@@ -2,7 +2,10 @@
   "mcpServers": {
     "entroly": {
       "command": "entroly",
-      "args": [],
+      "args": ["serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1"
+      },
       "timeout": 60000
     },
     "colab-mcp": {
