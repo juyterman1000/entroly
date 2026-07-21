@@ -558,6 +558,7 @@ jobs:
             --source-ref "entroly-v${RELEASE_VERSION}" \
             --source-path "integrations/openclaw" \
             --changelog "GitHub Actions coordinated Entroly ${RELEASE_VERSION} release after live PyPI and npm probes" \
+            --manual-override-reason "Coordinated release from entroly-publish.yml after quality gate, PyPI probe, and npm probe" \
             --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
 
       # The authenticated session (RUNNER_TEMP config) must survive until after

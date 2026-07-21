@@ -314,6 +314,7 @@ jobs:
             --source-ref "$RELEASE_TAG" \
             --source-path "integrations/openclaw" \
             --changelog "Reconciled Entroly ${REQUESTED_VERSION} from its immutable GitHub release" \
+            --manual-override-reason "Manual reconciliation of missing ClawHub release from verified immutable tag" \
             --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
 
       - name: Wait for exact public release
