@@ -301,7 +301,10 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          rm -f "$CLAWHUB_CONFIG_PATH"
+          # Do NOT delete CLAWHUB_CONFIG_PATH here: the authenticated session
+          # from the "Authenticate to ClawHub" step must survive into the
+          # publish below, or `clawhub package publish` fails "Not logged in".
+          # (RUNNER_TEMP is ephemeral and discarded with the runner.)
           release_dir="$RUNNER_TEMP/entroly-clawhub-release"
           git worktree add --detach "$release_dir" "$RELEASE_SHA"
           cd "$release_dir/integrations/openclaw"
@@ -314,6 +317,7 @@ jobs:
             --source-ref "$RELEASE_TAG" \
             --source-path "integrations/openclaw" \
             --changelog "Reconciled Entroly ${REQUESTED_VERSION} from its immutable GitHub release" \
+            --manual-override-reason "Manual reconciliation of missing ClawHub release from verified immutable tag" \
             --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
 
       - name: Wait for exact public release

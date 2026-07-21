@@ -2249,6 +2249,38 @@ class EntrolyEngine:
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
 
+def _empty_context_guidance(
+    ingested_count: int, source_root: str
+) -> dict[str, Any] | None:
+    """Actionable diagnostic when optimize_context has nothing to select.
+
+    A server that indexed no source files (commonly because its working
+    directory is the MCP host's app dir, not the user's repo) previously
+    returned ``selected: []`` with ``hallucination_risk: high`` and no
+    explanation — indistinguishable, to the calling agent, from "no relevant
+    context exists". Returns a guidance dict for the empty-session case, or
+    ``None`` when fragments are present (a genuinely empty query match is not
+    an error and gets no guidance).
+    """
+    if ingested_count > 0:
+        return None
+    return {
+        "status": "no_codebase_indexed",
+        "message": (
+            "optimize_context selected nothing because this server has indexed "
+            "no source files. This usually means the MCP server's working "
+            "directory is not your project root."
+        ),
+        "resolve": [
+            "Set the ENTROLY_SOURCE environment variable (or the server's "
+            "working directory) to your repository root, then restart the "
+            "server.",
+            "Or ingest files first via remember_fragment / smart_read / ingest.",
+        ],
+        "resolved_source_root": source_root,
+    }
+
+
 def _apply_mcp_access_policy(
     mcp: Any,
     *,
@@ -3053,6 +3085,23 @@ def create_mcp_server(
             sanitize_mcp_result(result)
         except Exception:
             pass  # never fail optimize_context on sanitization
+
+        # ── Fail loud, not empty ───────────────────────────────────────
+        # When the server has indexed no codebase, tell the agent why and how
+        # to fix it instead of returning a silent empty selection.
+        try:
+            _ingested = (
+                int(engine._rust.fragment_count())
+                if engine._use_rust and hasattr(engine._rust, "fragment_count")
+                else int(getattr(engine, "_total_fragments_ingested", 0))
+            )
+        except Exception:
+            _ingested = int(getattr(engine, "_total_fragments_ingested", 0))
+        _guidance = _empty_context_guidance(
+            _ingested, os.environ.get("ENTROLY_SOURCE", os.getcwd())
+        )
+        if _guidance is not None:
+            result["guidance"] = _guidance
 
         return json.dumps(result, indent=2)
 

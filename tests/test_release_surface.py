@@ -210,7 +210,22 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "id-token: write" in clawhub_publisher
     assert "package trusted-publisher set entroly-openclaw" in clawhub_publisher
     assert '--workflow-filename "entroly-publish.yml"' in clawhub_publisher
-    assert "--manual-override-reason" not in clawhub_publisher
+    # ClawHub REQUIRES --manual-override-reason for a package that has a trusted
+    # publisher configured: `clawhub package publish` on such a package is
+    # treated as a "manual" publish and rejected without it. Observed live in
+    # run 29794820445: "Manual publishes for packages with trusted publisher
+    # config require manualOverrideReason". Assert the flag is present with a
+    # substantive, auditable justification — do NOT remove it, or the release's
+    # ClawHub publish fails and the listing stalls on the prior version.
+    override_reason = re.search(
+        r'--manual-override-reason "([^"]+)"', clawhub_publisher
+    )
+    assert override_reason is not None, (
+        "trusted-publisher ClawHub publish must pass --manual-override-reason"
+    )
+    assert len(override_reason.group(1)) >= 20, (
+        "the override reason must be an auditable justification, not a stub"
+    )
     assert '--source-commit "$GITHUB_SHA"' in clawhub_publisher
     assert '--source-ref "entroly-v${RELEASE_VERSION}"' in clawhub_publisher
     assert "Verify exact ClawHub version is public" in clawhub_publisher
