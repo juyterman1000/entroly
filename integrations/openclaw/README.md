@@ -22,7 +22,7 @@ Install the Python engine, then install the plugin from OpenClaw's official
 ClawHub registry:
 
 ```bash
-pip install "entroly>=1.0.64"
+pip install "entroly>=1.0.65"
 openclaw plugins install clawhub:entroly-openclaw
 openclaw plugins enable entroly
 ```
@@ -37,7 +37,7 @@ openclaw plugins enable entroly
 From an Entroly source checkout:
 
 ```bash
-pip install "entroly>=1.0.64"
+pip install "entroly>=1.0.65"
 openclaw plugins install ./integrations/openclaw
 openclaw plugins enable entroly
 ```

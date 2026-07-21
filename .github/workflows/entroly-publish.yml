@@ -544,7 +544,6 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --workflow-filename "entroly-publish.yml" \
             --json | tee "$RUNNER_TEMP/clawhub-trusted-publisher.json"
-          rm -f "$CLAWHUB_CONFIG_PATH"
 
       - name: Publish Entroly OpenClaw plugin with GitHub OIDC
         working-directory: integrations/openclaw
@@ -560,6 +559,14 @@ jobs:
             --source-path "integrations/openclaw" \
             --changelog "GitHub Actions coordinated Entroly ${RELEASE_VERSION} release after live PyPI and npm probes" \
             --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
+
+      # The authenticated session (RUNNER_TEMP config) must survive until after
+      # the publish step above; deleting it earlier made `clawhub package
+      # publish` fail with "Not logged in". Scrub it here, always.
+      - name: Scrub ClawHub token session
+        if: always()
+        shell: bash
+        run: rm -f "$CLAWHUB_CONFIG_PATH"
 
       - name: Verify exact ClawHub version is public
         id: public
