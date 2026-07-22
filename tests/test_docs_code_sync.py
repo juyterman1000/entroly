@@ -1,10 +1,10 @@
 """Docs-code sync gate: keep the published docs honest against the code.
 
-Motivated by a competitor (Headroom) having to retract docs whose code
-samples raised on import (``TextCompressor`` renamed to ``TextCrusher``, wrong
-config fields, dead import paths). Entroly's differentiator is verifiable
-honesty; this gate makes "every documented API actually exists" a CI invariant
-so the docs cannot silently rot.
+Published docs rot when their code samples reference APIs that were later
+renamed or removed — a documented ``from x import OldName`` that now raises on
+import, wrong config fields, dead import paths. Entroly's differentiator is
+verifiable honesty; this gate makes "every documented API actually exists" a CI
+invariant so the docs cannot silently drift from the code.
 
 Two checks, both high-signal and low-false-positive:
 

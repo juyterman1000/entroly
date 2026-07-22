@@ -1,6 +1,6 @@
 """Local retrieval store for Evidence-Locked Compression.
 
-Headroom-style reversible compression requires two pieces:
+Reversible compression requires two pieces:
 
 1. a compressed prompt that keeps enough evidence for the first pass,
 2. a local store that can retrieve omitted spans when the model needs more.
