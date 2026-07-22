@@ -107,6 +107,32 @@ def test_documented_entroly_imports_resolve() -> None:
     assert seen, "expected to find documented entroly imports to check"
 
 
+def test_documented_env_vars_are_wired() -> None:
+    """Every ENTROLY_* env var named in the docs must be read somewhere in code.
+
+    Guards against advertising configuration knobs that nothing consumes (a
+    docs-rot class competitors have shipped and had to retract).
+    """
+    documented: dict[str, str] = {}
+    var_re = re.compile(r"\bENTROLY_[A-Z0-9_]+\b")
+    for name, text in _doc_texts():
+        for var in var_re.findall(text):
+            documented.setdefault(var, name)
+    assert documented, "expected documented ENTROLY_* variables"
+
+    wired: set[str] = set()
+    for py in (ROOT / "entroly").rglob("*.py"):
+        wired.update(var_re.findall(py.read_text(encoding="utf-8", errors="replace")))
+    for rs in (ROOT / "entroly-core" / "src").rglob("*.rs"):
+        wired.update(var_re.findall(rs.read_text(encoding="utf-8", errors="replace")))
+
+    unwired = {v: f for v, f in documented.items() if v not in wired}
+    assert not unwired, (
+        "Docs advertise ENTROLY_* env vars that no code reads:\n"
+        + "\n".join(f"  {v}  (in {f})" for v, f in sorted(unwired.items()))
+    )
+
+
 def test_documented_cli_subcommands_exist() -> None:
     """Every `entroly <subcommand>` shown in a code context must be real."""
     valid = _real_cli_subcommands() | ROUTED_COMMANDS | NON_SUBCOMMAND_TOKENS
