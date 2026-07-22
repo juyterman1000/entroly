@@ -1497,7 +1497,11 @@ class EntrolyEngine:
         """Semantic recall of relevant fragments."""
         self._ensure_index_loaded()  # lazy warm-start on first request
         if self._use_rust:
-            result = self._rust.recall(query, top_k)
+            # Relevance retrieval ⇒ BM25 (recall_auto), not the SimHash
+            # fingerprint primitive (which is for near-duplicate detection and
+            # returns topically-unrelated fragments for a precise query).
+            recall_fn = getattr(self._rust, "recall_auto", None) or self._rust.recall
+            result = recall_fn(query, top_k)
             return [dict(r) for r in result]
         else:
             return self._recall_python(query, top_k)
