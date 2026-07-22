@@ -459,3 +459,18 @@ try:
     )
 except ImportError:
     pass
+
+# Air-gap mode: when ENTROLY_AIR_GAP=1, install a process-wide socket guard
+# that refuses non-loopback connections. A hard, checkable no-outbound
+# guarantee for regulated/offline deployments; a no-op otherwise.
+try:
+    from .air_gap import (  # noqa: F401
+        AirGapViolation,
+        air_gap_enabled,
+        air_gap_status,
+        install_air_gap_guard,
+    )
+
+    install_air_gap_guard()
+except Exception:  # never let the guard break import
+    pass
