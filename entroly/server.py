@@ -5365,6 +5365,18 @@ def create_mcp_server(
             "spectral_consistency": w_spectral,
         }
 
+        # ── Third-party verifier plugins (entroly.verifier entry points) ──
+        # Additive observations with attribution. They never change the core
+        # fail-closed verdict above, so a rogue plugin cannot weaken
+        # verification; a raising plugin is recorded and skipped.
+        try:
+            from .plugins import run_verifier_plugins
+            _plugin_results = run_verifier_plugins(context or prompt, response)
+            if _plugin_results:
+                verification["plugins"] = _plugin_results
+        except Exception as _plugin_err:
+            logger.debug("verifier plugins skipped: %s", _plugin_err)
+
         return json.dumps(verification, indent=2)
 
     # ── EICV Tools (Evidence-Invariant Causal Verification) ──
