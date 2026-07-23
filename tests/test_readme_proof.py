@@ -32,12 +32,16 @@ def test_artifact_proof_commands_verify_before_display(
     assert "not a universal" in output.lower()
 
 
-def test_restart_proof_keeps_failure_mechanics_in_raw_artifact(
+def test_restart_proof_renders_parity_without_leaking_raw_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    # v4 is a parity run: both systems recover 66/66 with no failed worker, so
+    # the proof surfaces the tie honestly under its no-superiority caveat and
+    # never leaks a raw backend error string or a gloating error table.
     assert readme_proof.main(["restart-recovery"]) == 0
     output = capsys.readouterr().out
-    assert "incomplete worker evidence" in output
+    assert "66/66" in output
+    assert "not a universal superiority claim" in output
     assert "database is locked" not in output
     assert "Worker errors" not in output
 
