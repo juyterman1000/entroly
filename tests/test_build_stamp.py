@@ -15,6 +15,7 @@ from entroly.server import EntrolyEngine
 
 class _FakeEngine:
     _use_rust = False
+    _build_stamp = EntrolyEngine._build_stamp  # exercise the real stamp builder
 
     def _stats_python(self) -> dict:
         return {"session": {}}
