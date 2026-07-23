@@ -76,6 +76,15 @@ def _expanded_query_tokens(query: str) -> frozenset[str]:
     return frozenset(_rust_expand_query(query))
 
 
+# Real-repo cost bound: cap the files that reach the per-file localizer and the
+# Rust sentence-level selector, whose combined cost grows super-linearly in the
+# file count (a query over an 858-file repo otherwise times out). The cap scales
+# with the token budget — no budget can pack more files than this — and floors
+# high enough that the validated small-corpus accuracy benchmarks, which pass at
+# most a few dozen files, never reach it, so their selection stays byte-identical.
+_PREFILTER_FILE_FLOOR = 128
+
+
 def select(fragments: list[dict], token_budget: int, query: str = "") -> list[dict]:
     """Query-Conditioned Compressive Retrieval.
 
@@ -102,6 +111,8 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
     for raw in fragments:
         by_file.setdefault(raw.get("source", "") or "", []).append(raw)
     file_sources = list(by_file.keys())
+    cap = max(_PREFILTER_FILE_FLOOR, int(token_budget) // 64)
+    working_fragments = fragments
     if len(file_sources) > 1:
         file_texts = [
             "\n".join((r.get("content") or "") for r in by_file[s]) for s in file_sources
@@ -120,6 +131,18 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
                 * feedback_by_file[file_sources[item[0]]]
             )
             base_ranked = [file_sources[i] for i, _ in ranked]
+            if len(base_ranked) > cap:
+                # Keep the top-`cap` BM25F-ranked files; drop the long tail
+                # before the super-linear localizer + sentence selector. The
+                # tail scores ~0 and cannot fit the budget ahead of the head.
+                base_ranked = base_ranked[:cap]
+                kept = set(base_ranked)
+                working_fragments = [
+                    r for r in fragments if (r.get("source") or "") in kept
+                ]
+                text_by_source = dict(zip(file_sources, file_texts))
+                file_sources = base_ranked
+                file_texts = [text_by_source[s] for s in base_ranked]
             preferred = base_ranked
             try:
                 from .file_localizer import localize_files
@@ -138,7 +161,7 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
                 r.get("feedback_multiplier", 1.0) or 1.0
             ),
         }
-        for r in fragments
+        for r in working_fragments
     ]
     out_json = _rust_select(
         json.dumps(slim),
