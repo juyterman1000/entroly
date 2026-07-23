@@ -74,3 +74,48 @@ def test_tight_budget_still_demotes_within_limit():
     # The demotion path must still hold the line under a tight budget.
     r = resolve(_SRC, query="resolve source root", budget=40, file_path="mod.py")
     assert r.total_tokens <= r.budget
+
+
+def test_budget_refills_after_a_huge_block_is_demoted():
+    # A single oversized, highly-relevant block forces the demotion pass, and
+    # demoting it overshoots far below budget. The freed room must then be
+    # re-claimed by promoting the most-relevant fitting blocks. Before the fix
+    # the promotion was an `elif` on demotion, so a post-demotion overshoot
+    # stranded the budget (dogfooding: smart_read used 126 of 1500 tokens on
+    # a real file with a 50K-token class).
+    giant = (
+        "def process_request_pipeline(request):\n"
+        '    """Process the request pipeline and inject context into messages."""\n'
+        + "\n".join(
+            f"    request_inject_context_messages_{i} = compute_step({i})"
+            for i in range(500)
+        )
+        + "\n    return request\n"
+    )
+    # Several mid-size relevant handlers give budget-fill real material to
+    # re-claim once the giant block is demoted out of the way.
+    handlers = "".join(
+        f"\n\ndef inject_handler_{k}(messages):\n"
+        f'    """Inject compressed context into request messages handler {k}."""\n'
+        + "\n".join(
+            f"    messages.append(context_chunk_{k}_{i})  # inject context request"
+            for i in range(20)
+        )
+        + "\n    return messages\n"
+        for k in range(6)
+    )
+    budget = 1500
+    r = resolve(
+        giant + handlers,
+        query="inject compressed context into request messages handler",
+        budget=budget,
+        file_path="proxy.py",
+    )
+    assert r.total_tokens <= budget  # never exceed
+    assert r.total_tokens >= int(budget * 0.6), (
+        f"budget stranded after demotion overshoot: "
+        f"{r.total_tokens}/{budget} (counts={r.resolution_counts})"
+    )
+    assert r.resolution_counts.get("full", 0) >= 1, (
+        f"spare budget did not surface any FULL block: {r.resolution_counts}"
+    )
