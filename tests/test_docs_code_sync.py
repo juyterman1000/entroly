@@ -149,3 +149,50 @@ def test_documented_cli_subcommands_exist() -> None:
         "(add to ROUTED_COMMANDS if routed before argparse):\n"
         + "\n".join(f"  entroly {c}  (in {f})" for c, f in sorted(unknown.items()))
     )
+
+
+# Product source trees that ship to users. Comparison benchmarks under
+# benchmarks/ are intentionally excluded: they import and run the competitor
+# package as the measured baseline and cannot avoid naming it.
+_PRODUCT_SOURCES = (
+    ("entroly", "*.py"),
+    ("entroly-core/src", "*.rs"),
+    ("entroly-qccr/src", "*.rs"),
+    ("entroly-wasm/src", "*.rs"),
+)
+
+
+def test_product_code_carries_no_competitor_name() -> None:
+    """Shipped product code must never name a competitor.
+
+    The English word "headroom" (spare response capacity) is allowed; the
+    competitor *brand*, its package name, and imports of it are not. The needle
+    is assembled from fragments so this guard file itself contains no verbatim
+    competitor name — the same rule it enforces. Benchmarks are out of scope:
+    a head-to-head cannot run without importing the competitor package.
+    """
+    brand = "head" + "room"  # assembled — no verbatim competitor name in-repo
+    forbidden = (
+        re.compile(rf"\b{brand.capitalize()}\b"),         # capitalized brand
+        re.compile(rf"{brand}-ai", re.IGNORECASE),         # the pip package
+        re.compile(rf"{brand}labs", re.IGNORECASE),        # the org
+        re.compile(rf"\b(?:import|from)\s+{brand}\b"),     # importing the package
+    )
+    hits: list[str] = []
+    for rel_root, pattern in _PRODUCT_SOURCES:
+        base = ROOT / rel_root
+        if not base.exists():
+            continue
+        for src in base.rglob(pattern):
+            for lineno, line in enumerate(
+                src.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+            ):
+                if any(pat.search(line) for pat in forbidden):
+                    hits.append(
+                        f"{src.relative_to(ROOT).as_posix()}:{lineno}: {line.strip()[:90]}"
+                    )
+    assert not hits, (
+        "Competitor name found in shipped product code (the English word "
+        "'headroom' is fine; the brand, package, or an import of it is not):\n"
+        + "\n".join(hits)
+    )
