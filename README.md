@@ -257,18 +257,20 @@ python scripts/readme_proof.py model-recovery
   <a href="docs/assets/proof_restart_recovery.mp4"><img src="docs/assets/proof_restart_recovery.gif" width="900" alt="Fresh-seed restart recovery comparing Entroly with the published Headroom 0.31.0 baseline"></a>
 </p>
 
-The prior v2 run tied at **66/66** and remains published. In the fresh-seed v3
-Windows revalidation, Entroly recovered **66/66** payloads byte-exactly after
-restart; the published Headroom 0.31.0 baseline recovered **55/66**. The raw
-artifact retains the incomplete worker and exact failure evidence. This is one
-reproducible run, not a universal durability claim.
+The prior v2 run tied at **66/66** and remains published. In the fresh-seed v4
+Windows revalidation, both Entroly and the published Headroom 0.31.0 baseline
+recovered **66/66** payloads byte-exactly after restart — both satisfy the
+recovery-integrity gate. This is **parity, not leadership**: an earlier v3 run
+recorded a single transient competitor store-lock failure (55/66) that a clean
+re-run did not reproduce. This is one reproducible run, not a universal
+durability claim.
 
 ```bash
 python scripts/readme_proof.py restart-recovery
 ```
 
 [Protocol, prior tie, and limitations](docs/benchmarks/competitive-evidence-matrix.md) ·
-[current raw artifact](benchmarks/results/recovery_resilience_holdout_revalidation_v3.json) ·
+[current raw artifact](benchmarks/results/recovery_resilience_holdout_revalidation_v4.json) ·
 [prior tie artifact](benchmarks/results/recovery_resilience_holdout_revalidation.json)
 
 The animations, MP4s, static frames, source hashes, and commands are bound in
@@ -550,17 +552,17 @@ Context Efficiency Frontier above is the required gate for a real-model claim.</
 exposed a serious Entroly failure (only 8/32 development payloads survived),
 which is preserved in the evidence. The original Entroly 1.0.59 holdout and
 the immutable v2 revalidation both recorded Entroly and the published Headroom
-0.31.0 recovering **66/66** payloads. On the fresh-seed v3 revalidation of the
-current complete-line recovery implementation, Entroly again recovered
-**66/66** byte-exactly; the published baseline recovered **55/66**. The raw
-artifact preserves the incomplete writer and exact failure evidence. Entroly
-was the participant that satisfied the frozen integrity gate on this run. That
-is a scoped concurrent-writer result; it does not establish universal recovery superiority.
+0.31.0 recovering **66/66** payloads. On the fresh-seed v4 revalidation of the
+current complete-line recovery implementation, both Entroly and the published
+baseline recovered **66/66** byte-exactly — both satisfied the frozen integrity
+gate. An earlier v3 run recorded a single transient competitor store-lock
+failure (55/66) that a clean re-run did not reproduce, so this is parity; it
+does not establish universal recovery superiority.
 
 On the current-implementation Windows/Python 3.10 revalidation, the published
-Headroom 0.31.0 baseline had lower successful store-call latency (1.786 ms
-versus 36.972 ms p50). Entroly had lower retrieval latency (0.165 ms versus
-0.876 ms p50) and a smaller live state footprint (95,438 versus 1,354,888
+Headroom 0.31.0 baseline had lower successful store-call latency (1.524 ms
+versus 34.848 ms p50). Entroly had lower retrieval latency (0.059 ms versus
+0.441 ms p50) and a smaller live state footprint (95,438 versus 1,626,736
 bytes). The baseline used SQLite WAL with
 `synchronous=NORMAL`; Entroly
 fsynced its state file on each commit, so this is not a matched power-loss
@@ -568,7 +570,7 @@ durability comparison. These are scoped workload measurements, not universal
 claims.
 
 [Frozen protocol and full result table](docs/benchmarks/competitive-evidence-matrix.md)
-| [current v3 revalidation](benchmarks/results/recovery_resilience_holdout_revalidation_v3.json) |
+| [current v4 revalidation](benchmarks/results/recovery_resilience_holdout_revalidation_v4.json) |
 [prior v2 tie](benchmarks/results/recovery_resilience_holdout_revalidation.json) |
 [original post-repair holdout](benchmarks/results/recovery_resilience_holdout.json) |
 [original failing artifact](benchmarks/results/recovery_resilience_development_before.json).

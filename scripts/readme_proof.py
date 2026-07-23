@@ -27,7 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 MODEL_REPORT = ROOT / "benchmarks/results/model_recovery_v7_holdout.json"
 RECOVERY_REPORT = (
-    ROOT / "benchmarks/results/recovery_resilience_holdout_revalidation_v3.json"
+    ROOT / "benchmarks/results/recovery_resilience_holdout_revalidation_v4.json"
 )
 PRIOR_RECOVERY_REPORT = (
     ROOT / "benchmarks/results/recovery_resilience_holdout_revalidation.json"
