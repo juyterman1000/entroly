@@ -1862,9 +1862,41 @@ class EntrolyEngine:
             rust_stats["dep_graph"] = dep_stats
             rust_stats["prefetch"] = self._prefetch.stats()
             rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
+            rust_stats["build"] = self._build_stamp()
             return rust_stats
-        else:
-            return self._stats_python()
+        stats = self._stats_python()
+        stats["build"] = self._build_stamp()
+        return stats
+
+    def _build_stamp(self) -> dict[str, Any]:
+        """Version/build identity so a caller can tell whether a shipped fix is
+        actually live. Dogfooding otherwise had to cross-check the server
+        process start time against the compiled core's mtime by hand; expose the
+        engine version, whether the native core is active, and its build time.
+        """
+        import datetime
+        import os
+        import platform
+
+        stamp: dict[str, Any] = {
+            "native_engine": bool(self._use_rust),
+            "python": platform.python_version(),
+        }
+        try:
+            import entroly
+            stamp["entroly_version"] = getattr(entroly, "__version__", "unknown")
+        except Exception:
+            pass
+        try:
+            import entroly_core
+            core_file = getattr(entroly_core, "__file__", None)
+            if core_file and os.path.exists(core_file):
+                stamp["native_core_built"] = datetime.datetime.fromtimestamp(
+                    os.path.getmtime(core_file)
+                ).isoformat(timespec="seconds")
+        except Exception:
+            pass
+        return stamp
 
     def explain_selection(self) -> dict[str, Any]:
         """Explain why each fragment was included or excluded."""
