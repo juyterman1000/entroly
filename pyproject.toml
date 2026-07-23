@@ -72,7 +72,7 @@ neural = [
     "sentence-transformers>=5.1,<6",
 ]
 neural-benchmark = [
-    "datasets>=4,<5",
+    "datasets>=4,<6",
     "sentence-transformers>=5.1,<6",
 ]
 
