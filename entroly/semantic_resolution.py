@@ -637,7 +637,13 @@ def resolve(
             )
             total_tokens -= (old_tokens - new_tokens)
 
-    elif total_tokens < budget:
+    # ── Budget-fill (runs after demotion too) ──
+    # A single oversized block (e.g. a 50K-token class) demoted to fit the
+    # budget overshoots far below it, stranding room the most-relevant fitting
+    # blocks (e.g. the actual request handler) should claim. This was an
+    # ``elif`` on the demotion branch, so a post-demotion overshoot never
+    # re-filled — smart_read under-resolved to 126/1500 on real files.
+    if total_tokens < budget:
         # ── Budget utilization via greedy promotion ──
         # Under budget → upgrade the most-relevant blocks toward FULL so the
         # spare budget actually surfaces query-relevant detail (the tool's

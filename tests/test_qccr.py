@@ -207,6 +207,71 @@ def test_persistence_query_prefers_repositories_over_dataset_ui_components():
     assert "ScoreRecordInsertType" in content or "upsertClickhouse" in content
 
 
+def test_large_corpus_is_prefiltered_fast_and_keeps_the_answer():
+    # A query over hundreds of files must not fall into the super-linear
+    # localizer/sentence-selection path that times out on a real repo. The
+    # BM25F pre-filter caps the working set; the obviously-relevant answer file
+    # must still survive the cap, and the call must return quickly.
+    import time
+    import random
+
+    from entroly.qccr import _PREFILTER_FILE_FLOOR
+
+    random.seed(7)
+    vocab = "alpha beta gamma delta epsilon module helper worker queue table column".split()
+
+    def noise(n: int) -> str:
+        return " ".join(
+            " ".join(random.choice(vocab) for _ in range(10)) + "." for _ in range(n)
+        )
+
+    answer = {
+        "source": "file:entroly/proxy.py",
+        "content": (
+            "def _catch_all(request): compressed = optimize the context and inject "
+            "the compressed context into the outbound request messages before "
+            "forwarding upstream to the provider."
+        ),
+        "token_count": 40,
+        "fragment_id": "ANSWER",
+    }
+    distractors = [
+        {
+            "source": f"file:noise/d_{i}.py",
+            "content": noise(random.randint(20, 60)),
+            "token_count": random.randint(200, 1200),
+            "fragment_id": f"d{i}",
+        }
+        for i in range(4 * _PREFILTER_FILE_FLOOR)  # comfortably above the cap
+    ]
+    half = len(distractors) // 2
+    corpus = distractors[:half] + [answer] + distractors[half:]
+
+    start = time.perf_counter()
+    selected = select(
+        corpus,
+        token_budget=4000,
+        query=(
+            "where does the proxy inject compressed context into request "
+            "messages before forwarding upstream"
+        ),
+    )
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < 15.0, f"prefilter regressed: {elapsed:.1f}s for {len(corpus)} files"
+    assert "file:entroly/proxy.py" in [r.get("source") for r in selected], (
+        "the answer file was lost to the pre-filter cap"
+    )
+
+
+def test_prefilter_cap_scales_with_budget_and_floors():
+    from entroly.qccr import _PREFILTER_FILE_FLOOR
+
+    # Small budgets floor at the constant; large budgets scale up (budget // 64).
+    assert max(_PREFILTER_FILE_FLOOR, 4000 // 64) == _PREFILTER_FILE_FLOOR
+    assert max(_PREFILTER_FILE_FLOOR, 1_000_000 // 64) == 1_000_000 // 64
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

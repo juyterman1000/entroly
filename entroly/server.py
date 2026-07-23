@@ -1501,8 +1501,13 @@ class EntrolyEngine:
             # fingerprint primitive (which is for near-duplicate detection and
             # returns topically-unrelated fragments for a precise query).
             recall_fn = getattr(self._rust, "recall_auto", None) or self._rust.recall
-            result = recall_fn(query, top_k)
-            return [dict(r) for r in result]
+            # Fetch a larger pool than requested so the path-type prior can
+            # surface the implementation even when BM25 term-frequency floats
+            # tests/docs to the top of the raw ranking; then trim to top_k.
+            pool = max(top_k * 4, 40)
+            result = recall_fn(query, pool)
+            ranked = _apply_recall_path_prior([dict(r) for r in result], query)
+            return ranked[:top_k]
         else:
             return self._recall_python(query, top_k)
 
@@ -1862,9 +1867,41 @@ class EntrolyEngine:
             rust_stats["dep_graph"] = dep_stats
             rust_stats["prefetch"] = self._prefetch.stats()
             rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
+            rust_stats["build"] = self._build_stamp()
             return rust_stats
-        else:
-            return self._stats_python()
+        stats = self._stats_python()
+        stats["build"] = self._build_stamp()
+        return stats
+
+    def _build_stamp(self) -> dict[str, Any]:
+        """Version/build identity so a caller can tell whether a shipped fix is
+        actually live. Dogfooding otherwise had to cross-check the server
+        process start time against the compiled core's mtime by hand; expose the
+        engine version, whether the native core is active, and its build time.
+        """
+        import datetime
+        import os
+        import platform
+
+        stamp: dict[str, Any] = {
+            "native_engine": bool(self._use_rust),
+            "python": platform.python_version(),
+        }
+        try:
+            import entroly
+            stamp["entroly_version"] = getattr(entroly, "__version__", "unknown")
+        except Exception:
+            pass
+        try:
+            import entroly_core
+            core_file = getattr(entroly_core, "__file__", None)
+            if core_file and os.path.exists(core_file):
+                stamp["native_core_built"] = datetime.datetime.fromtimestamp(
+                    os.path.getmtime(core_file)
+                ).isoformat(timespec="seconds")
+        except Exception:
+            pass
+        return stamp
 
     def explain_selection(self) -> dict[str, Any]:
         """Explain why each fragment was included or excluded."""
@@ -2252,6 +2289,92 @@ class EntrolyEngine:
 # ══════════════════════════════════════════════════════════════════════
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
+
+def _slim_recall_results(
+    results: list[dict[str, Any]], *, max_snippet: int = 200
+) -> list[dict[str, Any]]:
+    """Compress recall output to a ranked pointer list.
+
+    An agent asking "where is X" needs source + score + a locating snippet, not
+    the full fragment body — full bodies overflow the MCP token cap (a
+    ``top_k=8`` recall returned ~90KB and spilled to disk). Callers that truly
+    need complete text pass ``full=True`` to the tool.
+    """
+    slim: list[dict[str, Any]] = []
+    for raw in results:
+        if not isinstance(raw, dict):
+            continue
+        source = str(
+            raw.get("source") or raw.get("source_path") or raw.get("path") or ""
+        )
+        content = str(raw.get("content") or raw.get("text") or "")
+        entry: dict[str, Any] = {
+            "rank": len(slim) + 1,
+            "source": source,
+            "snippet": " ".join(content.split())[:max_snippet],
+            "fragment_id": raw.get("fragment_id") or raw.get("id"),
+        }
+        score = raw.get("relevance", raw.get("score", raw.get("relevance_score")))
+        if isinstance(score, (int, float)):
+            entry["score"] = round(float(score), 4)
+        for line_key in ("start_line", "end_line", "lines"):
+            if raw.get(line_key) is not None:
+                entry[line_key] = raw[line_key]
+        slim.append(entry)
+    return slim
+
+
+def _recall_path_prior(source: str, query_lower: str) -> float:
+    """Mild path-type prior for locator recall.
+
+    BM25 term-frequency lets test/doc/benchmark files (dense in a term like
+    "proxy") outrank the implementation an agent asked to locate — dogfooding
+    saw ``tests/_proxy_e2e.py`` rank #1 for "where the proxy injects context"
+    while ``entroly/proxy.py`` fell off the top-8. Gently demote those file
+    kinds unless the query is explicitly about them, so the impl surfaces
+    without burying a genuinely best-matching test/doc.
+    """
+    s = source.lower().removeprefix("file:").replace("\\", "/")
+    segments = set(s.split("/"))
+    base = s.rsplit("/", 1)[-1]
+    is_test = (
+        bool(segments & {"tests", "test"})
+        or base.startswith("test_") or "_test." in base
+        or ".servertest" in s or "e2e" in base
+    )
+    if is_test:
+        return 1.0 if "test" in query_lower else 0.75
+    if segments & {"benchmarks", "bench"}:
+        return 1.0 if "bench" in query_lower else 0.8
+    if s.endswith((".md", ".rst", ".txt")) or "docs" in segments:
+        wants_docs = any(t in query_lower for t in ("doc", "readme", "guide"))
+        return 1.0 if wants_docs else 0.85
+    return 1.0  # implementation / source
+
+
+def _apply_recall_path_prior(
+    results: list[dict[str, Any]], query: str
+) -> list[dict[str, Any]]:
+    """Re-rank recall results by (relevance x path prior), stable and mild."""
+    ql = (query or "").lower()
+
+    def _key(raw: dict[str, Any]) -> float:
+        base = raw.get("relevance", raw.get("score", raw.get("relevance_score", 0.0)))
+        try:
+            base = float(base)
+        except (TypeError, ValueError):
+            base = 0.0
+        src = str(
+            raw.get("source") or raw.get("source_path") or raw.get("path") or ""
+        )
+        return base * _recall_path_prior(src, ql)
+
+    return sorted(
+        (r for r in results if isinstance(r, dict)),
+        key=_key,
+        reverse=True,
+    )
+
 
 def _empty_context_guidance(
     ingested_count: int, source_root: str
@@ -3154,31 +3277,44 @@ def create_mcp_server(
     def recall_relevant(
         query: str,
         top_k: int = 5,
+        full: bool = False,
     ) -> str:
         """Semantic recall of the most relevant stored fragments.
 
-        Uses SimHash fingerprint distance + multi-dimensional scoring
-        with feedback loop (fragments that previously led to successful
-        outputs are boosted).
+        Uses BM25 relevance ranking (recall_auto) with a feedback loop
+        (fragments that previously led to successful outputs are boosted).
+
+        Returns a slim ranked pointer list by default — source, score, and a
+        locating snippet — because full fragment bodies overflow the tool
+        result cap (a ``top_k=8`` recall is ~90KB). Pass ``full=True`` only
+        when you need the complete text of every hit.
 
         Args:
             query: The search query
             top_k: Number of results to return
+            full: Return complete fragment bodies instead of the slim view
         """
         results = engine.recall_relevant(query, top_k)
-        # Same hardening as optimize_context: strip invisible chars,
-        # flag injection patterns. Wrap in dict if the engine returns
-        # a bare list so injection_scan has somewhere to live.
+        if not isinstance(results, list):
+            results = []
+        payload: dict[str, Any] = {
+            "query": query,
+            "count": len(results),
+            "results": results if full else _slim_recall_results(results),
+        }
+        if not full:
+            payload["hint"] = (
+                "slim view (source + score + snippet). Call "
+                "recall_relevant(query, full=True) for complete fragment bodies."
+            )
+        # Same hardening as optimize_context: strip invisible chars, flag
+        # injection patterns. injection_scan attaches to the payload dict.
         try:
             from .hardening import sanitize_mcp_result
-            if isinstance(results, list):
-                payload = {"results": results}
-                sanitize_mcp_result(payload)
-                return json.dumps(payload, indent=2)
-            sanitize_mcp_result(results)
+            sanitize_mcp_result(payload)
         except Exception:
             pass
-        return json.dumps(results, indent=2)
+        return json.dumps(payload, indent=2)
 
     @mcp.tool()
     def record_outcome(
@@ -5745,7 +5881,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.65"
+        _version = "1.0.66"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 
