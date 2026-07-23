@@ -13,7 +13,7 @@
       "rendered_lines_sha256": "47d8bcd15b6e3ad317a21d42ab3af17e5dda3b84edf873ad3bdc321fbf5ec3b5",
       "source_sha256": {
         "entroly/verify_claims.py": "9000e9a5c9f526865a94052a908e36b1de77bfd764618ac14c6d7d4635c3f2a6",
-        "scripts/readme_proof.py": "1ff6fafa8ef82341474965f14c40a2e8b92b0e2076e80e11ea97ca3965e434e8"
+        "scripts/readme_proof.py": "8fc62060ea8aa6a81e81af1971d69b4045c42ec90556572a8985fee48198ec09"
       }
     },
     "proof_model_recovery": {
@@ -27,22 +27,22 @@
       "source_sha256": {
         "benchmarks/model_recovery.py": "8afc297f0d75823e7b5f8c5757351640925c3530b4ed5df712aa9af18f20d8f5",
         "benchmarks/results/model_recovery_v7_holdout.json": "5446599337bc048bea24f429383ac56071f7fd381b7fe0bc7596bf3f654efa49",
-        "scripts/readme_proof.py": "1ff6fafa8ef82341474965f14c40a2e8b92b0e2076e80e11ea97ca3965e434e8"
+        "scripts/readme_proof.py": "8fc62060ea8aa6a81e81af1971d69b4045c42ec90556572a8985fee48198ec09"
       }
     },
     "proof_restart_recovery": {
       "outputs": {
-        "proof_restart_recovery.gif": "20d976ac2246be05db0044c7c2a00efa1753ab6764f592049abbf588f12a48b6",
-        "proof_restart_recovery.mp4": "efda0409f6ee86cb70aacde6d6eb4193d960f95c08839b1094ec79de55324085",
-        "proof_restart_recovery.png": "82e08cb0a362426b9be91f6d493fb07898dac2a8db2fb388b3c5394e1f9c5384"
+        "proof_restart_recovery.gif": "2734980852be734ceaffa4c998cb50b3ba292d2531e8062fc2d964a26a1e246e",
+        "proof_restart_recovery.mp4": "5bd884e3a005c1bd25bde69c62d05b6b6b835e46130d722fe276cb66f44748b0",
+        "proof_restart_recovery.png": "396cab4c4fd06751dad74c88632ae00d38c7806888f600e71d122635d37dc003"
       },
       "proof_command": "python scripts/readme_proof.py restart-recovery",
-      "rendered_lines_sha256": "6165accf013ed1fd50394de752bf79412f90ab2935c5b3df04a948d0a93f84aa",
+      "rendered_lines_sha256": "0967ac26c3b34bac539f92a63c826cb86b3892921ea39f95a40720e631c98787",
       "source_sha256": {
-        "benchmarks/recovery_resilience.py": "d4a2811f24348e915347555443179e9bebf841d330693f2df69f860a7899529c",
+        "benchmarks/recovery_resilience.py": "19d709e2d354016f2befd6a9b320e0bb63b0a5c36147ed355b810dda23a52573",
         "benchmarks/results/recovery_resilience_holdout_revalidation.json": "5b3c301c088a1f6500a6f7f27fbcb819f771fdab4d863bee286082b9b83f43bf",
-        "benchmarks/results/recovery_resilience_holdout_revalidation_v3.json": "ed3c5d3b7568f3846d7dc3685fda937adedcd6e8eeb3391c0dd126044c67d56f",
-        "scripts/readme_proof.py": "1ff6fafa8ef82341474965f14c40a2e8b92b0e2076e80e11ea97ca3965e434e8"
+        "benchmarks/results/recovery_resilience_holdout_revalidation_v4.json": "c873e54360d4204a4f5cd0a719e7a63a8fba5f82a9407d25139437cbfe1ce65b",
+        "scripts/readme_proof.py": "8fc62060ea8aa6a81e81af1971d69b4045c42ec90556572a8985fee48198ec09"
       }
     }
   }
