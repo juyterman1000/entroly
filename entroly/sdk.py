@@ -134,6 +134,21 @@ def _enforce_budget(out: str, budget: int | None) -> str:
     return _budget_bounded_head(out, budget)
 
 
+def _guard_against_inflation(out: str, content: str) -> str:
+    """A compressor must never return more than it received.
+
+    Query-agnostic structural passes (the symbol-summary prepend, format
+    markers) can, on small or already-dense inputs with no explicit budget,
+    emit an output longer than the original. Returning that would make
+    ``compress`` a net-negative operation that silently costs tokens. When it
+    happens, fall back to the original — an honest "no compression achieved",
+    never inflation. The budget path is already inflation-safe: compression
+    only runs when ``current_tokens > budget``, so ``_enforce_budget`` has
+    clamped the output below the input.
+    """
+    return content if len(out) > len(content) else out
+
+
 _CODE_SYMBOL_KEYWORDS = frozenset({
     "if", "for", "while", "switch", "catch", "return", "await", "function",
     "constructor", "super", "async",
@@ -312,6 +327,7 @@ def compress(
 
     out = _ensure_non_empty(out, content, budget, ratio)
     out = _enforce_budget(out, budget)
+    out = _guard_against_inflation(out, content)
     _track_savings(current_tokens, len(out) // 4, "compress")
     return out
 
