@@ -30,12 +30,16 @@ PROTOCOL_PATH = ROOT / "benchmarks" / "competitive_evidence_protocol.json"
 REVALIDATION_PROTOCOL_PATH = (
     ROOT / "benchmarks" / "recovery_resilience_protocol_v2.json"
 )
-CURRENT_REVALIDATION_PROTOCOL_PATH = (
+PRIOR_REVALIDATION_PROTOCOL_PATH_V3 = (
     ROOT / "benchmarks" / "recovery_resilience_protocol_v3.json"
+)
+CURRENT_REVALIDATION_PROTOCOL_PATH = (
+    ROOT / "benchmarks" / "recovery_resilience_protocol_v4.json"
 )
 KNOWN_PROTOCOL_PATHS = (
     PROTOCOL_PATH,
     REVALIDATION_PROTOCOL_PATH,
+    PRIOR_REVALIDATION_PROTOCOL_PATH_V3,
     CURRENT_REVALIDATION_PROTOCOL_PATH,
 )
 SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH")

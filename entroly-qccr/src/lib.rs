@@ -123,18 +123,68 @@ fn split_identifier(tok: &str) -> Vec<String> {
         .collect()
 }
 
+/// True for codepoints in the main CJK blocks (Han, Kana, Hangul, and CJK
+/// compatibility forms). One class, as in Lucene's CJKAnalyzer: bigrams may
+/// span Han/Kana boundaries inside a run, which is harmless for BM25 matching.
+/// Plain char-range matching — no Unicode regex classes, so it works
+/// identically under both the full `regex` and `regex-lite` builds.
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32,
+        0x3040..=0x30FF   // Hiragana + Katakana
+        | 0x3400..=0x4DBF // CJK Extension A
+        | 0x4E00..=0x9FFF // CJK Unified Ideographs
+        | 0xAC00..=0xD7AF // Hangul syllables
+        | 0xF900..=0xFAFF // CJK Compatibility Ideographs
+        | 0xFF66..=0xFF9D // Halfwidth Katakana
+    )
+}
+
+/// True when a token came from the CJK path (bigram or lone char) and must be
+/// exempt from the ASCII `len > 2` term-length gates.
+fn is_cjk_token(t: &str) -> bool {
+    !t.is_empty() && t.chars().all(is_cjk)
+}
+
+/// Emit overlapping character bigrams for each maximal CJK run in `text`
+/// (a lone CJK char emits as a unigram). Unsegmented CJK has no whitespace
+/// or identifier boundaries, so the ASCII identifier regex yields nothing —
+/// previously making ranking, selection, and query expansion silently no-op
+/// for CJK input. Overlapping bigrams are the standard IR fallback
+/// (Lucene CJKAnalyzer): recall approximates true word segmentation and
+/// BM25 term weighting supplies the precision.
+fn cjk_bigrams(text: &str, out: &mut Vec<String>) {
+    fn flush(run: &[char], out: &mut Vec<String>) {
+        match run.len() {
+            0 => {}
+            1 => out.push(run[0].to_string()),
+            _ => out.extend(run.windows(2).map(|w| w.iter().collect::<String>())),
+        }
+    }
+    let mut run: Vec<char> = Vec::new();
+    for c in text.chars() {
+        if is_cjk(c) {
+            run.push(c);
+        } else {
+            flush(&run, out);
+            run.clear();
+        }
+    }
+    flush(&run, out);
+}
+
 fn tokenize(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     for m in ident_re().find_iter(text) {
         out.extend(split_identifier(m.as_str()));
     }
+    cjk_bigrams(text, &mut out);
     out
 }
 
 fn query_tokens(query: &str) -> HashSet<String> {
     tokenize(query)
         .into_iter()
-        .filter(|t| t.chars().count() > 2)
+        .filter(|t| t.chars().count() > 2 || is_cjk_token(t))
         .collect()
 }
 
@@ -308,7 +358,10 @@ pub fn expand_query(query: &str) -> HashSet<String> {
     }
     terms
         .into_iter()
-        .filter(|t| !stopwords().contains(t.as_str()) && t.chars().count() > 2)
+        .filter(|t| {
+            !stopwords().contains(t.as_str())
+                && (t.chars().count() > 2 || is_cjk_token(t))
+        })
         .collect()
 }
 
@@ -1157,5 +1210,73 @@ mod tests {
 
         assert_eq!(out[0].source, "successful.py");
         assert!(out[0].relevance > out[1].relevance);
+    }
+
+    // ── CJK bigram tokenization ─────────────────────────────────────────
+    // Unsegmented CJK previously produced ZERO tokens (the identifier regex
+    // is ASCII-only), silently disabling ranking/selection/expansion for
+    // Chinese/Japanese/Korean input.
+
+    #[test]
+    fn cjk_query_tokenizes_to_bigrams() {
+        // "修复认证" (fix authentication) → overlapping bigrams.
+        let toks = tokenize("修复认证");
+        assert!(toks.contains(&"修复".to_string()), "got {toks:?}");
+        assert!(toks.contains(&"复认".to_string()), "got {toks:?}");
+        assert!(toks.contains(&"认证".to_string()), "got {toks:?}");
+        // A lone CJK char between non-CJK still emits (unigram).
+        assert!(tokenize("a 锁 b").contains(&"锁".to_string()));
+    }
+
+    #[test]
+    fn mixed_cjk_ascii_yields_both_token_kinds() {
+        let toks = tokenize("修复auth模块的token轮换bug");
+        assert!(toks.contains(&"auth".to_string()), "got {toks:?}");
+        assert!(toks.contains(&"token".to_string()), "got {toks:?}");
+        assert!(toks.contains(&"修复".to_string()), "got {toks:?}");
+        assert!(toks.contains(&"模块".to_string()), "got {toks:?}");
+        // ASCII inside a CJK run breaks the run: no bigram spans the boundary.
+        assert!(!toks.iter().any(|t| t.contains('a') && t.chars().any(is_cjk)));
+    }
+
+    #[test]
+    fn cjk_terms_survive_query_expansion_length_gate() {
+        // The `len > 2` ASCII gate must not drop 2-char CJK bigrams.
+        let e = expand_query("修复认证模块");
+        assert!(!e.is_empty(), "CJK query expansion must not be empty");
+        assert!(e.iter().any(|t| is_cjk_token(t)), "got {e:?}");
+        // Latin behaviour unchanged: short ASCII tokens still gated out.
+        assert!(!expand_query("go to db").contains("go"));
+    }
+
+    #[test]
+    fn cjk_query_ranks_and_selects_matching_file() {
+        // End to end: a Chinese query must rank the file whose content
+        // discusses token rotation in Chinese above an unrelated file,
+        // and select() must return its content.
+        let frags = vec![
+            InFragment {
+                source: "auth.py".into(),
+                content: "认证模块负责令牌轮换。令牌轮换错误会导致会话失效。\
+                          def rotate_token(): pass"
+                    .into(),
+                feedback_multiplier: 1.0,
+            },
+            InFragment {
+                source: "billing.py".into(),
+                content: "账单模块处理发票和付款。def create_invoice(): pass".into(),
+                feedback_multiplier: 1.0,
+            },
+        ];
+        let sources: Vec<String> = frags.iter().map(|f| f.source.clone()).collect();
+        let texts: Vec<String> = frags.iter().map(|f| f.content.clone()).collect();
+
+        let ranked = rank_files(&sources, &texts, "令牌轮换错误", &HashMap::new());
+        assert_eq!(ranked[0].0, 0, "auth.py must rank first: {ranked:?}");
+        assert!(ranked[0].1 > ranked[1].1);
+
+        let out = select(&frags, 200, "令牌轮换错误", &HashMap::new(), &[]);
+        assert!(!out.is_empty(), "CJK select must not come back empty");
+        assert_eq!(out[0].source, "auth.py");
     }
 }

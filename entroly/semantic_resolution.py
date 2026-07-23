@@ -370,23 +370,30 @@ def extract_blocks(source: str, file_path: str = "") -> list[CodeBlock]:
 # ── Relevance Scoring ────────────────────────────────────────────────
 
 def _term_overlap(query: str, text: str) -> float:
-    """Compute normalized term overlap between query and text.
+    """Query-term coverage: fraction of the query's terms present in the text.
 
-    Uses case-insensitive word-level Jaccard coefficient:
-        |Q ∩ T| / |Q ∪ T|
+        |Q ∩ T| / |Q|
 
-    This is cheap (O(|Q| + |T|)) and effective for code search.
+    NOT Jaccard (|Q ∩ T| / |Q ∪ T|): Jaccard is symmetric and dominated by the
+    larger set, so for a real code block (hundreds of tokens) against a short
+    query it collapses to ≈0.01–0.02 for *every* block — the query signal is
+    drowned out and no block is ever scored as relevant. Coverage measures "how
+    much of what I asked for does this block contain", which is the correct
+    relevance signal and is not diluted by block size.
+
+    Query terms shorter than 3 chars (``or``, ``of``, ``to``) are dropped so
+    common glue words don't inflate coverage; if that empties the query we fall
+    back to the full term set.
     """
-    q_terms = set(re.findall(r"\w+", query.lower()))
+    q_terms = {t for t in re.findall(r"\w+", query.lower()) if len(t) >= 3}
+    if not q_terms:
+        q_terms = set(re.findall(r"\w+", query.lower()))
     t_terms = set(re.findall(r"\w+", text.lower()))
 
     if not q_terms or not t_terms:
         return 0.0
 
-    intersection = len(q_terms & t_terms)
-    union = len(q_terms | t_terms)
-
-    return intersection / max(union, 1)
+    return len(q_terms & t_terms) / len(q_terms)
 
 
 def _entropy_relevance(block: CodeBlock) -> float:
@@ -629,6 +636,40 @@ def resolve(
                 tokens=new_tokens,
             )
             total_tokens -= (old_tokens - new_tokens)
+
+    elif total_tokens < budget:
+        # ── Budget utilization via greedy promotion ──
+        # Under budget → upgrade the most-relevant blocks toward FULL so the
+        # spare budget actually surfaces query-relevant detail (the tool's
+        # whole point). Without this, an under-budget read left every block at
+        # LOW even when there was room to show the matching function in full.
+        # Only LOW/MEDIUM promote — DIFF keeps its change-driven meaning and
+        # SKIP keeps irrelevant blocks omitted. Highest-relevance block first,
+        # re-scanning from the top after each upgrade so the most relevant
+        # block reaches FULL before less relevant ones gain detail.
+        _upgrade = {Resolution.LOW: Resolution.MEDIUM, Resolution.MEDIUM: Resolution.FULL}
+        by_rel_desc = sorted(range(len(resolved)), key=lambda i: -resolved[i].relevance)
+        improved = True
+        while improved and total_tokens < budget:
+            improved = False
+            for idx in by_rel_desc:
+                r = resolved[idx]
+                new_res = _upgrade.get(r.resolution)
+                if new_res is None:
+                    continue
+                new_output = _render_block(r.block, new_res)
+                new_tokens = max(0, int(len(new_output) / _CHARS_PER_TOKEN) + 1) if new_output else 0
+                if total_tokens - r.tokens + new_tokens <= budget:
+                    total_tokens += new_tokens - r.tokens
+                    resolved[idx] = ResolvedBlock(
+                        block=r.block,
+                        resolution=new_res,
+                        relevance=r.relevance,
+                        output=new_output,
+                        tokens=new_tokens,
+                    )
+                    improved = True
+                    break  # re-scan from the top (highest relevance) after each upgrade
 
     # ── Build output ──
     output_parts: list[str] = []

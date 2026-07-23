@@ -1497,7 +1497,11 @@ class EntrolyEngine:
         """Semantic recall of relevant fragments."""
         self._ensure_index_loaded()  # lazy warm-start on first request
         if self._use_rust:
-            result = self._rust.recall(query, top_k)
+            # Relevance retrieval ⇒ BM25 (recall_auto), not the SimHash
+            # fingerprint primitive (which is for near-duplicate detection and
+            # returns topically-unrelated fragments for a precise query).
+            recall_fn = getattr(self._rust, "recall_auto", None) or self._rust.recall
+            result = recall_fn(query, top_k)
             return [dict(r) for r in result]
         else:
             return self._recall_python(query, top_k)
@@ -5360,6 +5364,18 @@ def create_mcp_server(
             "epr_rate": w_epr,
             "spectral_consistency": w_spectral,
         }
+
+        # ── Third-party verifier plugins (entroly.verifier entry points) ──
+        # Additive observations with attribution. They never change the core
+        # fail-closed verdict above, so a rogue plugin cannot weaken
+        # verification; a raising plugin is recorded and skipped.
+        try:
+            from .plugins import run_verifier_plugins
+            _plugin_results = run_verifier_plugins(context or prompt, response)
+            if _plugin_results:
+                verification["plugins"] = _plugin_results
+        except Exception as _plugin_err:
+            logger.debug("verifier plugins skipped: %s", _plugin_err)
 
         return json.dumps(verification, indent=2)
 

@@ -4415,89 +4415,96 @@ impl EntrolyEngine {
             return 0;
         }
 
-        // Collect all belief files: (basename_prefix, full_content, token_count)
-        let mut beliefs: Vec<(String, String, u32)> = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("md") {
-                    continue;
-                }
-                let fname = match path.file_stem().and_then(|s| s.to_str()) {
-                    Some(s) => s.to_string(),
-                    None => continue,
-                };
-                // Extract the module name prefix before the hash suffix
-                // e.g. "knapsack_sds_18a33f4c" → "knapsack_sds"
-                // Skip architecture beliefs (arch_*) — they're cross-cutting
-                if fname.starts_with("arch_") || fname.starts_with("doc_") {
-                    continue;
-                }
-                let prefix = if let Some(pos) = fname.rfind('_') {
-                    // Check if suffix looks like a hex hash (8+ hex chars)
-                    let suffix = &fname[pos + 1..];
-                    if suffix.len() >= 8 && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
-                        fname[..pos].to_string()
-                    } else {
-                        fname.clone()
-                    }
-                } else {
-                    fname.clone()
-                };
+        // Candidate belief-file paths (cheap dir scan). Skip architecture and
+        // doc beliefs — they're cross-cutting and never basename-matched.
+        let paths: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
+            Ok(entries) => entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.extension().and_then(|e| e.to_str()) == Some("md")
+                        && p.file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| !s.starts_with("arch_") && !s.starts_with("doc_"))
+                            .unwrap_or(false)
+                })
+                .collect(),
+            Err(_) => return 0,
+        };
 
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    // Strip YAML frontmatter (between --- delimiters)
-                    let body = if let Some(stripped) = content.strip_prefix("---") {
-                        if let Some(end) = stripped.find("---") {
-                            stripped[end + 3..].trim().to_string()
-                        } else {
-                            content.clone()
-                        }
-                    } else {
-                        content.clone()
-                    };
-                    if body.is_empty() {
-                        continue;
+        // Read + parse belief files in PARALLEL. Sequential I/O over hundreds
+        // of small files was the dominant first-call cost (≈14 ms/file on
+        // Windows), and it scales with an ever-growing vault; rayon fans the
+        // reads across cores. Each file yields (module_prefix, body, tokens).
+        let beliefs: Vec<(String, String, u32)> = paths
+            .par_iter()
+            .filter_map(|path| {
+                let fname = path.file_stem()?.to_str()?.to_string();
+                // Strip an 8+ hex-char hash suffix: "knapsack_sds_18a33f4c" → "knapsack_sds"
+                let prefix = match fname.rfind('_') {
+                    Some(pos)
+                        if fname[pos + 1..].len() >= 8
+                            && fname[pos + 1..].chars().all(|c| c.is_ascii_hexdigit()) =>
+                    {
+                        fname[..pos].to_string()
                     }
-                    // Estimate tokens: ~4 chars per token for markdown
-                    let tc = (body.len() as u32 / 4).max(1);
-                    beliefs.push((prefix, body, tc));
+                    _ => fname.clone(),
+                };
+                let content = std::fs::read_to_string(path).ok()?;
+                // Strip YAML frontmatter (between --- delimiters).
+                let body = match content.strip_prefix("---") {
+                    Some(stripped) => match stripped.find("---") {
+                        Some(end) => stripped[end + 3..].trim().to_string(),
+                        None => content.clone(),
+                    },
+                    None => content.clone(),
+                };
+                if body.is_empty() {
+                    return None;
                 }
-            }
-        }
+                // Estimate tokens: ~4 chars per token for markdown.
+                let tc = (body.len() as u32 / 4).max(1);
+                Some((prefix, body, tc))
+            })
+            .collect();
 
         if beliefs.is_empty() {
             return 0;
         }
 
-        // Match beliefs to fragments by source path basename
-        let mut attached = 0usize;
+        // Index beliefs by module prefix (keep first on collision) so fragment
+        // matching is O(F + B), not the previous O(F * B) nested scan.
+        let mut by_prefix: HashMap<&str, (&str, u32)> = HashMap::with_capacity(beliefs.len());
+        for (prefix, body, tc) in &beliefs {
+            by_prefix
+                .entry(prefix.as_str())
+                .or_insert((body.as_str(), *tc));
+        }
+
+        // Attach beliefs to fragments by source-path basename.
         let frag_ids: Vec<(String, String)> = self
             .fragments
             .iter()
             .map(|(id, f)| (id.clone(), f.source.clone()))
             .collect();
 
+        let mut attached = 0usize;
         for (fid, source) in &frag_ids {
-            // Extract basename from source path (e.g. "entroly-core/src/knapsack_sds.rs" → "knapsack_sds")
-            let src_path = std::path::Path::new(source);
-            let basename = src_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let basename = std::path::Path::new(source)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
             if basename.is_empty() {
                 continue;
             }
-
-            // Find matching belief
-            for (prefix, body, tc) in &beliefs {
-                if prefix == basename {
-                    if let Some(frag) = self.fragments.get_mut(fid) {
-                        // Only attach if no belief already loaded
-                        if frag.belief_content.is_none() {
-                            frag.belief_content = Some(body.clone());
-                            frag.belief_token_count = Some(*tc);
-                            attached += 1;
-                        }
+            if let Some((body, tc)) = by_prefix.get(basename) {
+                if let Some(frag) = self.fragments.get_mut(fid) {
+                    // Only attach if no belief already loaded.
+                    if frag.belief_content.is_none() {
+                        frag.belief_content = Some((*body).to_string());
+                        frag.belief_token_count = Some(*tc);
+                        attached += 1;
                     }
-                    break;
                 }
             }
         }

@@ -96,23 +96,26 @@ process-level regression tests. The frozen holdout was not changed.
 
 The v2 fresh-seed Windows/Python 3.10 revalidation tied at 66/66 byte-exact
 recoveries. After complete-line preservation and relevance-before-fit changed
-the Entroly implementation hash, v3 froze a new seed before execution. Entroly
-1.0.60 source wrote and recovered 66/66 payloads byte-exactly after restart.
-Published Headroom 0.31.0 wrote and recovered 55/66: one of six independent
-writers exited with SQLite `OperationalError: database is locked`. There were
-no incorrect returned payloads. Entroly alone satisfied the frozen integrity
-gate on this run; the earlier tie remains evidence against generalizing this
-to universal recovery superiority.
+the Entroly implementation hash, v3 froze a new seed; on that run Entroly
+recovered 66/66 while published Headroom 0.31.0 recovered 55/66 — one of six
+writers exited with SQLite `OperationalError: database is locked`. A later
+docstring-only source cleanup changed the Entroly implementation hash again, so
+v4 froze a new seed and re-ran. On v4 both systems wrote and recovered 66/66
+payloads byte-exactly, with zero worker errors and no incorrect payloads: the
+v3 competitor failure was a transient store lock that a clean re-run did not
+reproduce. The current result is **parity** — both satisfy the frozen integrity
+gate — and neither the tie nor the transient failure generalizes to universal
+recovery superiority.
 
-| Holdout metric | Entroly 1.0.60 source | Headroom 0.31.0 |
+| Holdout metric (v4) | Entroly 1.0.65 source | Headroom 0.31.0 |
 |---|---:|---:|
-| Successful writes | **66 / 66** | 55 / 66 |
-| Byte-exact restart recovery | **66 / 66** | 55 / 66 |
-| Worker errors | **0** | 1 (`database is locked`) |
+| Successful writes | 66 / 66 | 66 / 66 |
+| Byte-exact restart recovery | 66 / 66 | 66 / 66 |
+| Worker errors | 0 | 0 |
 | Incorrect payloads | 0 | 0 |
-| Successful store-call p50 / p95 | 36.972 / 681.477 ms | **1.786 / 35.554 ms** |
-| Retrieval p50 / p95 | **0.165 / 0.341 ms** | 0.876 / 1.534 ms |
-| Live state files | **95,438 bytes** | 1,354,888 bytes |
+| Successful store-call p50 / p95 | 34.848 / 657.689 ms | **1.524 / 24.545 ms** |
+| Retrieval p50 / p95 | **0.059 / 0.075 ms** | 0.441 / 0.698 ms |
+| Live state files | **95,438 bytes** | 1,626,736 bytes |
 
 These latency and size observations describe this workload and platform; they
 are not standalone product-superiority claims. Headroom's successful calls were
@@ -123,10 +126,12 @@ file on every commit and its parent directory where supported. The suite did
 not simulate machine power loss, so the store-call latency is not a matched
 power-loss-durability comparison.
 The complete samples, environment identities, hashes, and errors are in the
-[`current v3 revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v3.json).
+[`current v4 revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v4.json).
 The immutable
+[`prior v3 run`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v3.json)
+and
 [`prior v2 tie`](../../benchmarks/results/recovery_resilience_holdout_revalidation.json)
-remains available.
+remain available.
 The original post-repair
 [`holdout artifact`](../../benchmarks/results/recovery_resilience_holdout.json)
 remains unchanged.

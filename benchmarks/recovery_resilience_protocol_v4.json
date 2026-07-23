@@ -1,0 +1,44 @@
+{
+  "schema_version": "entroly.recovery-resilience-protocol.v4",
+  "frozen_at": "2026-07-22T00:00:00Z",
+  "supersedes": {
+    "protocol": "benchmarks/recovery_resilience_protocol_v3.json",
+    "artifact": "benchmarks/results/recovery_resilience_holdout_revalidation_v3.json",
+    "reason": "Re-anchor after a docstring-only edit to entroly/compression_retrieval_store.py (competitor naming removed from source comments) changed the canonical implementation hash the v3 artifact pins. Store/retrieve behavior is unchanged. On this clean re-run both systems satisfy the recovery-integrity gate, so the result is reported as parity: the prior run's single competitor failure was a transient store lock, not a capability gap, and cannot be cherry-picked into a leadership claim. Preserve the immutable v3 protocol and result."
+  },
+  "comparison": {
+    "entroly": "1.0.65 source",
+    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+  },
+  "claim_policy": {
+    "aggregate_score_allowed": false,
+    "failures_remain_in_sample": true,
+    "negative_results_are_published": true,
+    "per_dimension_claims_only": true,
+    "universal_superiority_claim_allowed": false
+  },
+  "suites": {
+    "recovery_resilience": {
+      "development": {
+        "workers": 4,
+        "entries_per_worker": 8,
+        "seed": 20260730
+      },
+      "holdout": {
+        "workers": 6,
+        "entries_per_worker": 11,
+        "seed": 20260731
+      },
+      "gates": {
+        "worker_exit_success_rate": 1.0,
+        "write_success_rate": 1.0,
+        "restart_recovery_rate": 1.0,
+        "exact_byte_recovery_rate": 1.0,
+        "incorrect_payloads": 0
+      },
+      "latency_policy": "Report per-system p50 and p95 store/retrieve latency descriptively; correctness gates cannot be traded for speed.",
+      "development_policy": "Development results may guide implementation and remain visible but cannot support a public leadership claim.",
+      "holdout_policy": "Run once after the docstring-only source cleanup to re-anchor the implementation hash. Establishes current implementation integrity; both systems passing means parity, not leadership."
+    }
+  }
+}
