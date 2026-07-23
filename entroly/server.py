@@ -1501,8 +1501,13 @@ class EntrolyEngine:
             # fingerprint primitive (which is for near-duplicate detection and
             # returns topically-unrelated fragments for a precise query).
             recall_fn = getattr(self._rust, "recall_auto", None) or self._rust.recall
-            result = recall_fn(query, top_k)
-            return [dict(r) for r in result]
+            # Fetch a larger pool than requested so the path-type prior can
+            # surface the implementation even when BM25 term-frequency floats
+            # tests/docs to the top of the raw ranking; then trim to top_k.
+            pool = max(top_k * 4, 40)
+            result = recall_fn(query, pool)
+            ranked = _apply_recall_path_prior([dict(r) for r in result], query)
+            return ranked[:top_k]
         else:
             return self._recall_python(query, top_k)
 
@@ -2317,6 +2322,58 @@ def _slim_recall_results(
                 entry[line_key] = raw[line_key]
         slim.append(entry)
     return slim
+
+
+def _recall_path_prior(source: str, query_lower: str) -> float:
+    """Mild path-type prior for locator recall.
+
+    BM25 term-frequency lets test/doc/benchmark files (dense in a term like
+    "proxy") outrank the implementation an agent asked to locate — dogfooding
+    saw ``tests/_proxy_e2e.py`` rank #1 for "where the proxy injects context"
+    while ``entroly/proxy.py`` fell off the top-8. Gently demote those file
+    kinds unless the query is explicitly about them, so the impl surfaces
+    without burying a genuinely best-matching test/doc.
+    """
+    s = source.lower().removeprefix("file:").replace("\\", "/")
+    segments = set(s.split("/"))
+    base = s.rsplit("/", 1)[-1]
+    is_test = (
+        bool(segments & {"tests", "test"})
+        or base.startswith("test_") or "_test." in base
+        or ".servertest" in s or "e2e" in base
+    )
+    if is_test:
+        return 1.0 if "test" in query_lower else 0.75
+    if segments & {"benchmarks", "bench"}:
+        return 1.0 if "bench" in query_lower else 0.8
+    if s.endswith((".md", ".rst", ".txt")) or "docs" in segments:
+        wants_docs = any(t in query_lower for t in ("doc", "readme", "guide"))
+        return 1.0 if wants_docs else 0.85
+    return 1.0  # implementation / source
+
+
+def _apply_recall_path_prior(
+    results: list[dict[str, Any]], query: str
+) -> list[dict[str, Any]]:
+    """Re-rank recall results by (relevance x path prior), stable and mild."""
+    ql = (query or "").lower()
+
+    def _key(raw: dict[str, Any]) -> float:
+        base = raw.get("relevance", raw.get("score", raw.get("relevance_score", 0.0)))
+        try:
+            base = float(base)
+        except (TypeError, ValueError):
+            base = 0.0
+        src = str(
+            raw.get("source") or raw.get("source_path") or raw.get("path") or ""
+        )
+        return base * _recall_path_prior(src, ql)
+
+    return sorted(
+        (r for r in results if isinstance(r, dict)),
+        key=_key,
+        reverse=True,
+    )
 
 
 def _empty_context_guidance(
