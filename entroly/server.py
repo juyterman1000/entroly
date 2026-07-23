@@ -2253,6 +2253,40 @@ class EntrolyEngine:
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
 
+def _slim_recall_results(
+    results: list[dict[str, Any]], *, max_snippet: int = 200
+) -> list[dict[str, Any]]:
+    """Compress recall output to a ranked pointer list.
+
+    An agent asking "where is X" needs source + score + a locating snippet, not
+    the full fragment body — full bodies overflow the MCP token cap (a
+    ``top_k=8`` recall returned ~90KB and spilled to disk). Callers that truly
+    need complete text pass ``full=True`` to the tool.
+    """
+    slim: list[dict[str, Any]] = []
+    for raw in results:
+        if not isinstance(raw, dict):
+            continue
+        source = str(
+            raw.get("source") or raw.get("source_path") or raw.get("path") or ""
+        )
+        content = str(raw.get("content") or raw.get("text") or "")
+        entry: dict[str, Any] = {
+            "rank": len(slim) + 1,
+            "source": source,
+            "snippet": " ".join(content.split())[:max_snippet],
+            "fragment_id": raw.get("fragment_id") or raw.get("id"),
+        }
+        score = raw.get("relevance", raw.get("score", raw.get("relevance_score")))
+        if isinstance(score, (int, float)):
+            entry["score"] = round(float(score), 4)
+        for line_key in ("start_line", "end_line", "lines"):
+            if raw.get(line_key) is not None:
+                entry[line_key] = raw[line_key]
+        slim.append(entry)
+    return slim
+
+
 def _empty_context_guidance(
     ingested_count: int, source_root: str
 ) -> dict[str, Any] | None:
@@ -3154,31 +3188,44 @@ def create_mcp_server(
     def recall_relevant(
         query: str,
         top_k: int = 5,
+        full: bool = False,
     ) -> str:
         """Semantic recall of the most relevant stored fragments.
 
-        Uses SimHash fingerprint distance + multi-dimensional scoring
-        with feedback loop (fragments that previously led to successful
-        outputs are boosted).
+        Uses BM25 relevance ranking (recall_auto) with a feedback loop
+        (fragments that previously led to successful outputs are boosted).
+
+        Returns a slim ranked pointer list by default — source, score, and a
+        locating snippet — because full fragment bodies overflow the tool
+        result cap (a ``top_k=8`` recall is ~90KB). Pass ``full=True`` only
+        when you need the complete text of every hit.
 
         Args:
             query: The search query
             top_k: Number of results to return
+            full: Return complete fragment bodies instead of the slim view
         """
         results = engine.recall_relevant(query, top_k)
-        # Same hardening as optimize_context: strip invisible chars,
-        # flag injection patterns. Wrap in dict if the engine returns
-        # a bare list so injection_scan has somewhere to live.
+        if not isinstance(results, list):
+            results = []
+        payload: dict[str, Any] = {
+            "query": query,
+            "count": len(results),
+            "results": results if full else _slim_recall_results(results),
+        }
+        if not full:
+            payload["hint"] = (
+                "slim view (source + score + snippet). Call "
+                "recall_relevant(query, full=True) for complete fragment bodies."
+            )
+        # Same hardening as optimize_context: strip invisible chars, flag
+        # injection patterns. injection_scan attaches to the payload dict.
         try:
             from .hardening import sanitize_mcp_result
-            if isinstance(results, list):
-                payload = {"results": results}
-                sanitize_mcp_result(payload)
-                return json.dumps(payload, indent=2)
-            sanitize_mcp_result(results)
+            sanitize_mcp_result(payload)
         except Exception:
             pass
-        return json.dumps(results, indent=2)
+        return json.dumps(payload, indent=2)
 
     @mcp.tool()
     def record_outcome(
