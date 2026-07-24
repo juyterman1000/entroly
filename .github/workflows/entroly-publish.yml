@@ -574,7 +574,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          clawhub package publish . \
+          publish_stdout="$RUNNER_TEMP/clawhub-package-publish.json"
+          publish_stderr="$RUNNER_TEMP/clawhub-package-publish.stderr"
+          if clawhub package publish . \
             --version "$RELEASE_VERSION" \
             --tags latest \
             --source-repo "$GITHUB_REPOSITORY" \
@@ -583,7 +585,34 @@ jobs:
             --source-path "integrations/openclaw" \
             --changelog "GitHub Actions coordinated Entroly ${RELEASE_VERSION} release after live PyPI and npm probes" \
             --manual-override-reason "Coordinated release from entroly-publish.yml after quality gate, PyPI probe, and npm probe" \
-            --json | tee "$RUNNER_TEMP/clawhub-package-publish.json"
+            --json >"$publish_stdout" 2>"$publish_stderr"
+          then
+            cat "$publish_stdout"
+          elif grep -Fq "Version ${RELEASE_VERSION} already exists" "$publish_stderr"; then
+            cat "$publish_stderr" >&2
+            PUBLISH_STDOUT="$publish_stdout" python - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["PUBLISH_STDOUT"], "w", encoding="utf-8") as output:
+              json.dump(
+                  {
+                      "status": "already_exists",
+                      "version": os.environ["RELEASE_VERSION"],
+                      "action": "verify_public_immutable_artifact",
+                  },
+                  output,
+                  indent=2,
+                  sort_keys=True,
+              )
+              output.write("\n")
+          PY
+            echo "ClawHub version ${RELEASE_VERSION} already exists; continuing to exact public artifact verification."
+          else
+            cat "$publish_stderr" >&2
+            exit 1
+          fi
+          rm -f "$publish_stderr"
 
       # The authenticated session (RUNNER_TEMP config) must survive until after
       # the publish step above; deleting it earlier made `clawhub package
