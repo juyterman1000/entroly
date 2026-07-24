@@ -14,11 +14,13 @@ LPI (Lazy Progressive Index):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
 import time
 from hashlib import sha256
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -231,6 +233,29 @@ def _load_entrolyignore(project_dir: str) -> list[str]:
 # Module-level cache for ignore patterns (set per auto_index call)
 _ignore_patterns: list[str] = []
 
+# Normalized project-relative path of Entroly's own state directory (index
+# snapshots, memory, RAVS events, the duplicate ledger, ...). Set per call from
+# the engine's checkpoint_dir. Entroly must never index its own state: the
+# default ./.entroly is hidden and git-ignored so discovery skips it, but a
+# custom ENTROLY_DIR under the repo — or walk-mode discovery without git —
+# would otherwise pull internal JSON state into the index and receipts.
+_state_dir_prefix: str | None = None
+
+
+def _resolve_state_dir_prefix(engine: EntrolyEngine, project_dir: str) -> str | None:
+    """Checkpoint/state dir as a normalized rel path, only if nested in the repo."""
+    checkpoint_dir = getattr(getattr(engine, "config", None), "checkpoint_dir", None)
+    if not checkpoint_dir:
+        return None
+    try:
+        rel = os.path.relpath(os.path.abspath(str(checkpoint_dir)), os.path.abspath(project_dir))
+    except (ValueError, OSError):
+        return None
+    norm = rel.replace("\\", "/").strip("/")
+    if not norm or norm == ".." or norm.startswith("../") or os.path.isabs(rel):
+        return None  # state dir lives outside the project; discovery can't reach it
+    return norm
+
 
 def _matches_ignore(rel_path: str) -> bool:
     """Check if a path matches any .entrolyignore pattern."""
@@ -259,6 +284,12 @@ def _should_index(rel_path: str) -> bool:
 
     if _has_skipped_dir(rel_path):
         return False
+
+    # Never index Entroly's own state directory (index/memory/ledger/etc.).
+    if _state_dir_prefix:
+        norm = rel_path.replace("\\", "/").strip("/")
+        if norm == _state_dir_prefix or norm.startswith(_state_dir_prefix + "/"):
+            return False
 
     # Skip lock files and system files
     if basename in SKIP_PATTERNS:
@@ -519,6 +550,49 @@ def _export_file_fragments(engine: EntrolyEngine) -> dict[str, list[dict]]:
     return grouped
 
 
+def _duplicate_ledger_path(engine: EntrolyEngine) -> Path | None:
+    """Location of the reconcile duplicate ledger, co-located with the index."""
+    checkpoint_dir = getattr(getattr(engine, "config", None), "checkpoint_dir", None)
+    if not checkpoint_dir:
+        return None
+    return Path(checkpoint_dir) / "reconcile_duplicates.json"
+
+
+def _load_duplicate_ledger(engine: EntrolyEngine) -> dict[str, str]:
+    """Load ``source -> content-hash`` for files SimHash judged duplicate.
+
+    These files have no fragment of their own (their content lives under a
+    canonical source), so the content-addressed scan would otherwise re-detect
+    them as additions and re-attempt a full ingest — recomputing SimHash,
+    skeleton, and entropy over every byte only to reject them again — on every
+    reconcile, forever. The ledger lets an unchanged known-duplicate be skipped.
+    """
+    path = _duplicate_ledger_path(engine)
+    if path is None or not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items() if isinstance(v, str)}
+
+
+def _save_duplicate_ledger(engine: EntrolyEngine, ledger: dict[str, str]) -> None:
+    """Persist the duplicate ledger atomically; never fail reconcile over it."""
+    path = _duplicate_ledger_path(engine)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(ledger, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass  # ledger is a pure optimization; a write failure must not break reconcile
+
+
 def reconcile_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
@@ -550,8 +624,9 @@ def _reconcile_index(
     started = time.perf_counter()
     engine.wait_until_warm()
 
-    global _ignore_patterns
+    global _ignore_patterns, _state_dir_prefix
     _ignore_patterns = _load_entrolyignore(project_dir)
+    _state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
 
     discovered = _git_ls_files(project_dir)
     discovery = "git"
@@ -593,9 +668,12 @@ def _reconcile_index(
             except Exception as exc:  # fail visibly; never drop live context silently
                 reads[rel_path] = (None, 0, f"read_error:{type(exc).__name__}")
 
+    duplicate_ledger = _load_duplicate_ledger(engine)
+    current_digests: dict[str, str] = {}
     changed: list[tuple[str, str, int, bool]] = []
     unavailable: dict[str, str] = {}
     unchanged = 0
+    ledger_skipped = 0
     for rel_path in candidates:
         source = f"file:{rel_path}"
         content, _size, reason = reads[rel_path]
@@ -605,6 +683,7 @@ def _reconcile_index(
                 unavailable[source] = reason or "unavailable"
             continue
         current_digest = sha256(content.encode("utf-8")).hexdigest()
+        current_digests[source] = current_digest
         prior_digests = {
             sha256(str(fragment.get("content") or "").encode("utf-8")).hexdigest()
             for fragment in prior
@@ -613,6 +692,14 @@ def _reconcile_index(
         # even when one copy happens to match current disk content.
         if len(prior) == 1 and current_digest in prior_digests:
             unchanged += 1
+            continue
+        # A source with no fragment of its own whose content still hashes to a
+        # previously-confirmed duplicate is genuinely up to date — SimHash would
+        # reject a re-ingest again. Skip it instead of paying full ingest compute
+        # over every byte on each reconcile (the perpetual-rebuild trap).
+        if not prior and duplicate_ledger.get(source) == current_digest:
+            unchanged += 1
+            ledger_skipped += 1
             continue
         changed.append((source, content, _estimate_tokens(content), bool(prior)))
 
@@ -677,6 +764,7 @@ def _reconcile_index(
     ingested_replaced = 0
     added_sources: list[str] = []
     replaced_sources: list[str] = []
+    duplicate_sources: list[str] = []
     ingest_errors: list[str] = []
     additions_by_source = {item[0]: item for item in additions_to_apply}
     replacements_by_source = {item[0]: item for item in replacements}
@@ -697,8 +785,18 @@ def _reconcile_index(
                 token_count=weighted_tokens,
                 is_pinned=False,
             )
-            if result.get("status") not in {"ingested", "duplicate"}:
-                ingest_errors.append(f"{source}: {result.get('reason', result.get('status'))}")
+            status_ = result.get("status")
+            if status_ not in {"ingested", "duplicate"}:
+                ingest_errors.append(f"{source}: {result.get('reason', status_)}")
+            elif status_ == "duplicate":
+                # SimHash judged this content already represented in the index
+                # (e.g. entroly-wasm/src/*.rs are ports of entroly-core/src/*.rs).
+                # It did NOT enter the store, so it is not a mutation. Counting it
+                # as one flips `mutated` True and forces a full dependency-graph
+                # rebuild on every reconcile forever — the source has no prior
+                # fragment, so it is re-detected as an addition each pass. Record
+                # it honestly and treat it as a no-op.
+                duplicate_sources.append(source)
             elif had_prior:
                 ingested_replaced += 1
                 replaced_sources.append(source)
@@ -756,6 +854,27 @@ def _reconcile_index(
         replaced_sources = []
         mutated = False
 
+    # Refresh the duplicate ledger unless the transaction rolled back (in which
+    # case nothing this pass is trustworthy). Record freshly-confirmed
+    # duplicates; drop entries whose source vanished or became a first-class
+    # indexed fragment. A stable ledger makes every later reconcile — and every
+    # fresh process start — skip the known duplicates instead of re-paying full
+    # ingest compute and the dependency-graph rebuild it used to trigger.
+    if not rolled_back:
+        present_sources = {f"file:{rel}" for rel in current_paths}
+        promoted = set(added_sources) | set(replaced_sources)
+        refreshed_ledger = {
+            src: dig
+            for src, dig in duplicate_ledger.items()
+            if src in present_sources and src not in promoted
+        }
+        for source in duplicate_sources:
+            digest = current_digests.get(source)
+            if digest:
+                refreshed_ledger[source] = digest
+        if refreshed_ledger != duplicate_ledger:
+            _save_duplicate_ledger(engine, refreshed_ledger)
+
     pending = max(0, len(removal_reasons) + len(additions) - len(ordered_mutations) - len(additions_to_apply))
     status = "partial" if errors or pending else "updated" if mutated else "current"
     return {
@@ -766,6 +885,8 @@ def _reconcile_index(
         "files_unchanged": unchanged,
         "files_added": ingested_added,
         "files_replaced": ingested_replaced,
+        "files_duplicate": len(duplicate_sources),
+        "files_duplicate_skipped": ledger_skipped,
         "files_removed": len(removed_canonical - set(replacements_by_source)),
         "removed_fragments": (
             0 if rolled_back else int(removal_result.get("removed_fragments", 0))
@@ -831,8 +952,9 @@ def _auto_index(
     engine.wait_until_warm()
 
     # Load .entrolyignore patterns
-    global _ignore_patterns
+    global _ignore_patterns, _state_dir_prefix
     _ignore_patterns = _load_entrolyignore(project_dir)
+    _state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
     if _ignore_patterns:
         logger.info(f".entrolyignore loaded: {len(_ignore_patterns)} patterns")
 

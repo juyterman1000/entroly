@@ -150,6 +150,83 @@ def test_warm_start_reconciles_and_persists_changed_workspace(tmp_path: Path):
     assert "'new'" in restored[0]["content"]
 
 
+_DUP_BODY = (
+    '"""A substantial module so SimHash has real signal to dedup on."""\n\n'
+    + "\n".join(
+        f"def handler_{i}(request):\n"
+        f"    value = compute_step_{i}(request.payload, index={i})\n"
+        f"    return normalize(value, scale={i * 7 + 3})\n"
+        for i in range(40)
+    )
+    + "\n"
+)
+
+
+def test_duplicate_is_not_a_mutation_and_never_rebuilds_the_graph(tmp_path: Path):
+    # Two files with identical content: SimHash keeps one fragment and dedups the
+    # other, leaving the twin with no fragment of its own. Before the fix the
+    # content-addressed scan re-detected that fragment-less twin as an addition
+    # on EVERY reconcile, counted the duplicate ingest as a mutation, and forced
+    # a full dependency-graph rebuild forever (~40s startup stalls). It must now
+    # be a no-op: no mutation, no rebuild, and skipped via the ledger next time.
+    (tmp_path / "original.py").write_text(_DUP_BODY, encoding="utf-8")
+    (tmp_path / "twin.py").write_text(_DUP_BODY, encoding="utf-8")
+    engine = _native_engine(tmp_path, persistent=True)
+    auto_index(engine, project_dir=str(tmp_path), force=True)
+
+    fragments = engine._rust.export_fragments()
+    dup_sources = {f.get("source") for f in fragments} & {"file:original.py", "file:twin.py"}
+    if len(dup_sources) != 1:
+        pytest.skip("installed entroly-core did not dedup identical files")
+
+    first = reconcile_index(engine, str(tmp_path))
+    assert first["files_added"] == 0
+    assert first["files_replaced"] == 0
+    assert first["files_duplicate"] >= 1
+    assert first["status"] == "current"  # a duplicate is not a mutation
+    assert first["dependency_refresh"]["status"] != "rebuilt"
+
+    # Second pass in the same process: the ledger skips the known duplicate.
+    second = reconcile_index(engine, str(tmp_path))
+    assert second["files_duplicate"] == 0
+    assert second["files_duplicate_skipped"] >= 1
+    assert second["status"] == "current"
+
+    # A fresh process (server restart) loads the ledger from disk and stays fast.
+    restarted = _native_engine(tmp_path, persistent=True)
+    restarted.wait_until_warm()
+    warm = reconcile_index(restarted, str(tmp_path))
+    assert warm["files_duplicate_skipped"] >= 1
+    assert warm["dependency_refresh"]["status"] != "rebuilt"
+
+
+def test_duplicate_ledger_reingests_when_the_twin_actually_changes(tmp_path: Path):
+    # The skip must be content-addressed: if the deduped (fragment-less) twin is
+    # edited into genuinely unique content, it must be re-ingested, not silently
+    # skipped by a now-stale ledger entry.
+    both = {"file:original.py", "file:twin.py"}
+    (tmp_path / "original.py").write_text(_DUP_BODY, encoding="utf-8")
+    (tmp_path / "twin.py").write_text(_DUP_BODY, encoding="utf-8")
+    engine = _native_engine(tmp_path, persistent=True)
+    auto_index(engine, project_dir=str(tmp_path), force=True)
+
+    kept = {f.get("source") for f in engine._rust.export_fragments()} & both
+    if len(kept) != 1:
+        pytest.skip("installed entroly-core did not dedup identical files")
+    reconcile_index(engine, str(tmp_path))  # records the deduped twin in the ledger
+
+    deduped_source = next(iter(both - kept))  # the fragment-less one that got deduped
+    deduped_path = tmp_path / deduped_source.removeprefix("file:")
+    deduped_path.write_text(
+        "def wholly_unique_symbol_42(): return 'no longer a twin'\n", encoding="utf-8"
+    )
+    receipt = reconcile_index(engine, str(tmp_path))
+
+    assert receipt["files_added"] + receipt["files_replaced"] >= 1
+    assert receipt["files_duplicate_skipped"] == 0
+    assert _file_fragments(engine, deduped_source)
+
+
 def test_remove_sources_is_exact_and_preserves_non_file_context(tmp_path: Path):
     engine = _native_engine(tmp_path)
     engine.ingest_fragment("old file", "file:target.py", 4)
