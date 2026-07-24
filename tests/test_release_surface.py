@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import sys
+import textwrap
 import zipfile
 from pathlib import Path
 
@@ -269,7 +273,10 @@ def test_release_artifacts_have_one_quality_gated_publisher() -> None:
     assert "needs: [release-metadata, quality-gate, release-anchor]" in coordinated
     assert "needs: [release-metadata, quality-gate, github-release]" in coordinated
     assert "tag: ${{ needs.release-metadata.outputs.tag }}" in coordinated
-    assert '"Release v${PACKAGE_VERSION}"' in coordinated
+    assert "BEFORE_SHA: ${{ github.event.before }}" in coordinated
+    assert 'git show "${BEFORE_SHA}:pyproject.toml"' in coordinated
+    assert "refusing non-increasing release transition" in coordinated
+    assert "Previous main commit is unavailable; refusing automatic publication." in coordinated
     assert "group: entroly-production-publication" in coordinated
     assert "Create or verify the canonical release tag" in coordinated
     assert "GitHub Actions coordinated Entroly" in coordinated
@@ -288,6 +295,164 @@ def test_release_artifacts_have_one_quality_gated_publisher() -> None:
         assert "workflow_call:" in triggers
         assert "\n  push:" not in triggers
         assert "\n  workflow_dispatch:" not in triggers
+
+
+def test_commit_identity_guard_scopes_dependabot_to_dependency_paths() -> None:
+    guard = (ROOT / ".github/workflows/commit-identity-guard.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "trusted_dependabot_author" in guard
+    assert '== "dependabot[bot]"' in guard
+    assert 'str(head.get("ref", "")).startswith("dependabot/")' in guard
+    assert 'head_repository.get("full_name")' in guard
+    assert 'os.environ["GITHUB_REPOSITORY"]' in guard
+    assert "all(dependency_path(path) for path in paths)" in guard
+    assert 'path.startswith(".github/workflows/")' in guard
+    assert 'event.get("sender", {}).get("login") != expected_login' in guard
+
+
+def test_commit_identity_guard_accepts_only_path_scoped_dependabot(
+    tmp_path: Path,
+) -> None:
+    guard = (ROOT / ".github/workflows/commit-identity-guard.yml").read_text(
+        encoding="utf-8"
+    )
+    embedded = guard.split("          python - <<'PY'\n", 1)[1].split(
+        "\n          PY", 1
+    )[0]
+    script = textwrap.dedent(embedded)
+    compile(script, "commit-identity-guard", "exec")
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+
+    def git(*args: str, env: dict[str, str] | None = None) -> str:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=repository,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    owner_env = os.environ.copy()
+    owner_env.update(
+        {
+            "GIT_AUTHOR_NAME": "juyterman1000",
+            "GIT_AUTHOR_EMAIL": "208309368+juyterman1000@users.noreply.github.com",
+            "GIT_COMMITTER_NAME": "juyterman1000",
+            "GIT_COMMITTER_EMAIL": (
+                "208309368+juyterman1000@users.noreply.github.com"
+            ),
+        }
+    )
+    bot_env = os.environ.copy()
+    bot_env.update(
+        {
+            "GIT_AUTHOR_NAME": "dependabot[bot]",
+            "GIT_AUTHOR_EMAIL": (
+                "49699333+dependabot[bot]@users.noreply.github.com"
+            ),
+            "GIT_COMMITTER_NAME": "GitHub",
+            "GIT_COMMITTER_EMAIL": "noreply@github.com",
+        }
+    )
+
+    git("init", "-b", "main")
+    (repository / "pyproject.toml").write_text(
+        '[project]\nname = "entroly"\nversion = "1.0.66"\n',
+        encoding="utf-8",
+    )
+    git("add", "pyproject.toml")
+    git("commit", "-m", "initial", env=owner_env)
+    base = git("rev-parse", "HEAD")
+
+    (repository / "pyproject.toml").write_text(
+        '[project]\nname = "entroly"\nversion = "1.0.66"\n'
+        '[project.optional-dependencies]\nbenchmark = ["tiktoken>=0.9,<0.14"]\n',
+        encoding="utf-8",
+    )
+    git("add", "pyproject.toml")
+    git(
+        "commit",
+        "-m",
+        "build(deps-dev): update tiktoken requirement",
+        env=bot_env,
+    )
+    trusted_head = git("rev-parse", "HEAD")
+
+    event_path = tmp_path / "event.json"
+
+    def run_guard(base_sha: str, head_sha: str) -> subprocess.CompletedProcess[str]:
+        event_path.write_text(
+            json.dumps(
+                {
+                    "pull_request": {
+                        "base": {"sha": base_sha},
+                        "head": {
+                            "sha": head_sha,
+                            "ref": "dependabot/pip/tiktoken",
+                            "repo": {"full_name": "juyterman1000/entroly"},
+                        },
+                        "user": {"login": "dependabot[bot]"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        guard_env = os.environ.copy()
+        guard_env.update(
+            {
+                "EXPECTED_LOGIN": "juyterman1000",
+                "EXPECTED_NOREPLY_EMAIL": (
+                    "208309368+juyterman1000@users.noreply.github.com"
+                ),
+                "EXPECTED_ACCOUNT_EMAIL": "fastrunner10090@gmail.com",
+                "GITHUB_EVENT_NAME": "pull_request",
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_REPOSITORY": "juyterman1000/entroly",
+            }
+        )
+        return subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=repository,
+            env=guard_env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    trusted = run_guard(base, trusted_head)
+    assert trusted.returncode == 0, trusted.stdout + trusted.stderr
+
+    (repository / "entroly").mkdir()
+    (repository / "entroly" / "server.py").write_text(
+        "UNRELATED_CODE = True\n",
+        encoding="utf-8",
+    )
+    git("add", "entroly/server.py")
+    git("commit", "-m", "build(deps): change runtime code", env=bot_env)
+    untrusted_head = git("rev-parse", "HEAD")
+
+    untrusted = run_guard(trusted_head, untrusted_head)
+    assert untrusted.returncode != 0
+    assert "Commit identity guard failed." in untrusted.stdout
+
+
+def test_benchmark_verifies_frozen_evidence_before_latest_tokenizer_smoke() -> None:
+    benchmark = (ROOT / ".github/workflows/benchmark.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'EVIDENCE_TIKTOKEN_VERSION: "0.9.0"' in benchmark
+    assert '"tiktoken==${EVIDENCE_TIKTOKEN_VERSION}"' in benchmark
+    assert 'python -m pip install --upgrade "tiktoken>=0.9,<0.14"' in benchmark
+    assert benchmark.index("Verify compression evidence artifact") < benchmark.index(
+        "Smoke-test the supported tokenizer ceiling"
+    )
 
 
 def test_release_version_dispatch_input_is_validated_via_environment() -> None:
