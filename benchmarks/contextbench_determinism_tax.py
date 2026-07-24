@@ -12,7 +12,16 @@ Line-interval gold spans mean file+line metrics need no AST parser; block-level
 from __future__ import annotations
 
 import json
+import math
+import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+
+_WORD = re.compile(r"[A-Za-z0-9_]+")
+
+
+def _tokenize(text: str) -> list[str]:
+    return _WORD.findall(text.lower())
 
 
 # ── Metric core (pure, deterministic, unit-tested) ─────────────────────────────
@@ -209,6 +218,76 @@ def entroly_select(engine, repo_dir: str, query: str, budget: int):
         for f in fragments
     }
     selected = qccr.select(pool, budget, query)
+    return map_selection(selected, origin_by_id, repo_dir)
+
+
+def entroly_rank_files(engine, repo_dir: str, query: str) -> list[str]:
+    """Entroly's full file ranking (huge budget so qccr returns all files in order)."""
+    records = entroly_select(engine, repo_dir, query, 10_000_000)
+    seen: list[str] = []
+    for r in records:
+        if r.path not in seen:
+            seen.append(r.path)
+    return seen
+
+
+def _bm25_corpus(engine):
+    """Group ingested fragments into per-file documents for BM25."""
+    fragments = [dict(f) for f in engine._rust.export_fragments()]
+    by_source: dict[str, dict] = defaultdict(lambda: {"content": [], "tokens": 0, "ids": []})
+    for f in fragments:
+        s = str(f.get("source", ""))
+        by_source[s]["content"].append(f.get("content", "") or "")
+        by_source[s]["tokens"] += int(f.get("token_count", 0) or 0)
+        by_source[s]["ids"].append(str(f.get("fragment_id", "")))
+    return fragments, by_source
+
+
+def bm25_rank_files(engine, query: str, *, k1: float = 1.5, b: float = 0.75):
+    """Deterministic BM25 file ranking (score DESC, source ASC tie-break)."""
+    fragments, by_source = _bm25_corpus(engine)
+    docs = {s: _tokenize("\n".join(d["content"])) for s, d in by_source.items()}
+    n_docs = len(docs) or 1
+    df: Counter = Counter()
+    for toks in docs.values():
+        df.update(set(toks))
+    avgdl = (sum(len(t) for t in docs.values()) / n_docs) or 1.0
+    q_terms = set(_tokenize(query))
+    ranked = []
+    for source, toks in docs.items():
+        tf = Counter(toks)
+        dl = len(toks)
+        score = 0.0
+        for t in q_terms:
+            if t in tf:
+                idf = math.log(1 + (n_docs - df[t] + 0.5) / (df[t] + 0.5))
+                score += idf * (tf[t] * (k1 + 1)) / (tf[t] + k1 * (1 - b + b * dl / avgdl))
+        ranked.append((source, score, by_source[source]["ids"], by_source[source]["tokens"]))
+    ranked.sort(key=lambda r: (-r[1], r[0]))
+    return ranked, fragments
+
+
+def bm25_select(engine, repo_dir: str, query: str, budget: int):
+    """Deterministic BM25 whole-file selection under a token budget (reference floor)."""
+    from benchmarks.contextbench_span_adapter import map_selection
+
+    ranked, fragments = bm25_rank_files(engine, query)
+    selected, cum = [], 0
+    for source, score, ids, tokens in ranked:
+        if score <= 0:
+            break
+        if cum + tokens > budget and selected:
+            break
+        cum += tokens
+        selected.append(
+            {"source": source, "source_fragment_ids": ids, "relevance": score, "token_count": tokens}
+        )
+        if cum >= budget:
+            break
+    origin_by_id = {
+        str(f.get("fragment_id", "")): {"source": f.get("source", ""), "content": f.get("content", "")}
+        for f in fragments
+    }
     return map_selection(selected, origin_by_id, repo_dir)
 
 

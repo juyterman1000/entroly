@@ -9,6 +9,32 @@ the preregistration and must be declared as a protocol revision (v2).
 - **Reference baseline commit:** `77067bc` (deterministic ingest/reconcile ordering)
 - **Seed:** 42 (single fixed seed; task subsampling only, no seed selection)
 
+## Protocol revision v2 (declared after the pilot, commit `64d4f71`)
+
+The 5-task Astropy pilot (harness/adapter validated: 5/5 executed, 100%
+reproducible, 0 unmapped) surfaced two structural facts that invalidate the v1
+**primary** metric:
+
+1. **Size cap:** the default 50 KB source cap skips gold-bearing core files
+   (astropy `table.py` = 147 KB) → guaranteed 0 recall. **Runs raise the cap to
+   500 KB** (`ENTROLY_MAX_SOURCE_FILE_BYTES=500000`), the native hard ceiling.
+2. **Granularity:** Entroly selects **whole files** — file recall 1.0 but line
+   precision ~0.002. **Line-level F1 measures selection granularity, not
+   determinism**, so it cannot be the primary decision metric: a passage-level
+   neural reranker would score high line-F1 purely by selecting narrower spans.
+
+**v2 changes (this supersedes the v1 primary metric in §5):**
+- **Primary decision metric → FILE-level F1 determinism tax.** Entroly, BM25, and
+  file-rerankers all operate at file granularity, isolating *determinism* from
+  *granularity*. The decision table thresholds are unchanged, applied to the
+  file-level tax.
+- **Line-level F1 → secondary, explicitly flagged granularity-limited.**
+- Recorded finding (not a metric): competitive *line*-level retrieval would
+  require sub-file selection + stored line offsets in Entroly (the offset gap the
+  span adapter exposed). Out of scope for the tax run; motivates a separate build.
+
+All other v1 sections stand.
+
 ## 1. Question
 
 Experiment 1 (`docs/research/exp1-reproducibility-matrix.md`) established that
