@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -47,6 +49,7 @@ jobs:
           DISPATCH_VERSION: ${{ github.event.inputs.release_version }}
           EVENT_NAME: ${{ github.event_name }}
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          BEFORE_SHA: ${{ github.event.before }}
           REF_NAME_SAFE: ${{ github.ref_name }}
           REF_SAFE: ${{ github.ref }}
         run: |
@@ -60,8 +63,29 @@ jobs:
           elif [[ "$REF_SAFE" == refs/tags/entroly-v* ]]; then
             VERSION="${REF_NAME_SAFE#entroly-v}"
             SHOULD_PUBLISH=true
-          elif [[ "$EVENT_NAME" == "push" && "$HEAD_MESSAGE" == "Release v${PACKAGE_VERSION}" ]]; then
-            SHOULD_PUBLISH=true
+          elif [[ "$EVENT_NAME" == "push" && "$REF_SAFE" == "refs/heads/main" ]]; then
+            if [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]] \
+              && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              BEFORE_VERSION="$(
+                git show "${BEFORE_SHA}:pyproject.toml" \
+                  | python -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["project"]["version"])'
+              )"
+              if [[ "$BEFORE_VERSION" != "$PACKAGE_VERSION" ]]; then
+                python - "$BEFORE_VERSION" "$PACKAGE_VERSION" <<'PY'
+          import sys
+
+          before = tuple(int(part) for part in sys.argv[1].split("."))
+          after = tuple(int(part) for part in sys.argv[2].split("."))
+          if after <= before:
+              raise SystemExit(
+                  f"refusing non-increasing release transition: {sys.argv[1]} -> {sys.argv[2]}"
+              )
+          PY
+                SHOULD_PUBLISH=true
+              fi
+            else
+              echo "Previous main commit is unavailable; refusing automatic publication." >&2
+            fi
           fi
           SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           if [[ ! "$VERSION" =~ $SEMVER_RE ]]; then
@@ -287,7 +311,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
@@ -332,7 +356,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
@@ -365,7 +389,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
@@ -398,7 +422,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.19.0'
           registry-url: 'https://registry.npmjs.org'
@@ -468,7 +492,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     steps:
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.19.0'
 
@@ -512,7 +536,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.19.0'
 
@@ -674,7 +698,7 @@ jobs:
 
       - name: Upload ClawHub publication evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clawhub-package-publish
           path: |

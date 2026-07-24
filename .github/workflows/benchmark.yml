@@ -40,6 +40,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EVIDENCE_TIKTOKEN_VERSION: "0.9.0"
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -53,7 +56,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install -e ".[test,benchmark]"
+        run: pip install -e ".[test]" "tiktoken==${EVIDENCE_TIKTOKEN_VERSION}"
 
       - name: Verify compression evidence artifact
         run: |
@@ -115,4 +118,16 @@ jobs:
               sys.exit(1)
 
           print("BENCHMARKS.md is in sync with bench/compare.py output.")
+          PY
+
+      - name: Smoke-test the supported tokenizer ceiling
+        run: |
+          python -m pip install --upgrade "tiktoken>=0.9,<0.14"
+          python - <<'PY'
+          from importlib.metadata import version
+
+          import tiktoken
+
+          assert tiktoken.get_encoding("o200k_base").encode("Entroly")
+          print(f"tiktoken {version('tiktoken')} compatibility smoke passed")
           PY

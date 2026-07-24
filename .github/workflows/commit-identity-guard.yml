@@ -70,6 +70,86 @@ jobs:
           def git_output(*args: str) -> str:
               return subprocess.check_output(["git", *args], text=True)
 
+          def changed_paths(commit: str) -> set[str]:
+              return set(
+                  git_output(
+                      "diff-tree", "--no-commit-id", "--name-only", "-r", commit
+                  ).splitlines()
+              )
+
+          def dependency_path(path: str) -> bool:
+              dependency_files = {
+                  "Cargo.lock",
+                  "Cargo.toml",
+                  "Pipfile",
+                  "Pipfile.lock",
+                  "go.mod",
+                  "go.sum",
+                  "package-lock.json",
+                  "package.json",
+                  "pnpm-lock.yaml",
+                  "poetry.lock",
+                  "pyproject.toml",
+                  "requirements-dev.txt",
+                  "requirements.txt",
+                  "uv.lock",
+                  "yarn.lock",
+              }
+              name = Path(path).name
+              return (
+                  name in dependency_files
+                  or name.startswith("requirements")
+                  and name.endswith(".txt")
+                  or path.startswith(".github/workflows/")
+                  and Path(path).suffix in {".yml", ".yaml"}
+                  or path == ".github/dependabot.yml"
+              )
+
+          def trusted_dependabot_author(
+              commit: str,
+              author_name: str,
+              author_email: str,
+              committer_name: str,
+              committer_email: str,
+          ) -> bool:
+              if (
+                  author_name != "dependabot[bot]"
+                  or author_email
+                  != "49699333+dependabot[bot]@users.noreply.github.com"
+                  or not github_service_committer(committer_name, committer_email)
+              ):
+                  return False
+
+              paths = changed_paths(commit)
+              if not paths or not all(dependency_path(path) for path in paths):
+                  return False
+
+              if event_name == "pull_request":
+                  pull_request = event.get("pull_request", {})
+                  head = pull_request.get("head", {})
+                  head_repository = head.get("repo") or {}
+                  return (
+                      (pull_request.get("user") or {}).get("login")
+                      == "dependabot[bot]"
+                      and str(head.get("ref", "")).startswith("dependabot/")
+                      and head_repository.get("full_name")
+                      == os.environ["GITHUB_REPOSITORY"]
+                  )
+
+              if event_name != "push" or event.get("ref") != "refs/heads/main":
+                  return False
+              if event.get("sender", {}).get("login") != expected_login:
+                  return False
+              subject = git_output("show", "-s", "--format=%s", commit).strip()
+              return bool(
+                  re.fullmatch(
+                      r"(?:build\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
+                      r".+ \(#\d+\)",
+                      subject,
+                      re.IGNORECASE,
+                  )
+              )
+
           def trusted_homebrew_automation_author(
               commit: str,
               author_name: str,
@@ -120,12 +200,7 @@ jobs:
               if owner_emails.isdisjoint(coauthor_emails):
                   return False
 
-              changed_paths = set(
-                  git_output(
-                      "diff-tree", "--no-commit-id", "--name-only", "-r", commit
-                  ).splitlines()
-              )
-              if changed_paths != {
+              if changed_paths(commit) != {
                   "packaging/homebrew/entroly.rb",
                   "tests/test_release_surface.py",
               }:
@@ -155,12 +230,17 @@ jobs:
               )
 
           failures = []
-          for row in rows.strip("\x1e\n").split("\x1e"):
+          for row in rows.split("\x1e"):
+              row = row.strip("\r\n")
               if not row:
                   continue
               commit, an, ae, cn, ce = row.split("\x1f")
-              if not owner_identity(an, ae) and not trusted_homebrew_automation_author(
-                  commit, an, ae, cn, ce
+              if (
+                  not owner_identity(an, ae)
+                  and not trusted_dependabot_author(commit, an, ae, cn, ce)
+                  and not trusted_homebrew_automation_author(
+                      commit, an, ae, cn, ce
+                  )
               ):
                   failures.append(f"{commit[:12]} author is {an} <{ae}>")
               if not owner_identity(cn, ce) and not github_service_committer(cn, ce):
@@ -169,6 +249,10 @@ jobs:
           if failures:
               print("Commit identity guard failed.")
               print(f"Required author account: {expected_login} via a verified owner email")
+              print(
+                  "Allowed automation: path-scoped Dependabot PRs and reviewed "
+                  "Homebrew release updates"
+              )
               print("Allowed committers: the owner account or GitHub's web-flow service identity")
               for failure in failures:
                   print(f"  - {failure}")
