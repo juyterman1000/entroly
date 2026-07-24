@@ -311,7 +311,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
@@ -356,7 +356,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
@@ -389,7 +389,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
@@ -422,7 +422,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.19.0'
           registry-url: 'https://registry.npmjs.org'
@@ -492,7 +492,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     steps:
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.19.0'
 
@@ -536,7 +536,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.19.0'
 
@@ -698,7 +698,7 @@ jobs:
 
       - name: Upload ClawHub publication evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clawhub-package-publish
           path: |

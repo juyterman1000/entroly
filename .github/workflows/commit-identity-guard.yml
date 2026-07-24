@@ -140,7 +140,7 @@ jobs:
                   return False
               if event.get("sender", {}).get("login") != expected_login:
                   return False
-              subject = git_output("show", "-s", "--format=%s", commit)
+              subject = git_output("show", "-s", "--format=%s", commit).strip()
               return bool(
                   re.fullmatch(
                       r"(?:build\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
