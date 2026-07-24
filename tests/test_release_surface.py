@@ -382,8 +382,6 @@ def test_commit_identity_guard_accepts_only_path_scoped_dependabot(
         "build(deps-dev): update tiktoken requirement",
         env=bot_env,
     )
-    trusted_head = git("rev-parse", "HEAD")
-
     event_path = tmp_path / "event.json"
 
     def run_guard(base_sha: str, head_sha: str) -> subprocess.CompletedProcess[str]:
@@ -425,7 +423,15 @@ def test_commit_identity_guard_accepts_only_path_scoped_dependabot(
             text=True,
         )
 
-    trusted = run_guard(base, trusted_head)
+    (repository / "README.md").write_text(
+        "# Entroly\n",
+        encoding="utf-8",
+    )
+    git("add", "README.md")
+    git("commit", "-m", "test: revalidate dependency update", env=owner_env)
+    revalidated_head = git("rev-parse", "HEAD")
+
+    trusted = run_guard(base, revalidated_head)
     assert trusted.returncode == 0, trusted.stdout + trusted.stderr
 
     (repository / "entroly").mkdir()
@@ -437,9 +443,55 @@ def test_commit_identity_guard_accepts_only_path_scoped_dependabot(
     git("commit", "-m", "build(deps): change runtime code", env=bot_env)
     untrusted_head = git("rev-parse", "HEAD")
 
-    untrusted = run_guard(trusted_head, untrusted_head)
+    untrusted = run_guard(revalidated_head, untrusted_head)
     assert untrusted.returncode != 0
     assert "Commit identity guard failed." in untrusted.stdout
+
+
+    workflow = repository / ".github" / "workflows" / "dependency.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: Dependency\n", encoding="utf-8")
+    git("add", ".github/workflows/dependency.yml")
+    git(
+        "commit",
+        "-m",
+        "build(deps): bump actions/example from 1 to 2 (#999)",
+        env=bot_env,
+    )
+    push_head = git("rev-parse", "HEAD")
+    event_path.write_text(
+        json.dumps(
+            {
+                "before": untrusted_head,
+                "after": push_head,
+                "ref": "refs/heads/main",
+                "sender": {"login": "juyterman1000"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    push_env = os.environ.copy()
+    push_env.update(
+        {
+            "EXPECTED_LOGIN": "juyterman1000",
+            "EXPECTED_NOREPLY_EMAIL": (
+                "208309368+juyterman1000@users.noreply.github.com"
+            ),
+            "EXPECTED_ACCOUNT_EMAIL": "fastrunner10090@gmail.com",
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_EVENT_PATH": str(event_path),
+            "GITHUB_REPOSITORY": "juyterman1000/entroly",
+        }
+    )
+    push = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repository,
+        env=push_env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert push.returncode == 0, push.stdout + push.stderr
 
 
 def test_benchmark_verifies_frozen_evidence_before_latest_tokenizer_smoke() -> None:
