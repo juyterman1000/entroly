@@ -140,7 +140,7 @@ jobs:
                   return False
               if event.get("sender", {}).get("login") != expected_login:
                   return False
-              subject = git_output("show", "-s", "--format=%s", commit)
+              subject = git_output("show", "-s", "--format=%s", commit).strip()
               return bool(
                   re.fullmatch(
                       r"(?:build\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
@@ -230,7 +230,8 @@ jobs:
               )
 
           failures = []
-          for row in rows.strip("\x1e\n").split("\x1e"):
+          for row in rows.split("\x1e"):
+              row = row.strip("\r\n")
               if not row:
                   continue
               commit, an, ae, cn, ce = row.split("\x1f")
