@@ -167,17 +167,49 @@ def load_tasks(limit: int | None = 25, language: str | None = "python") -> list[
     return tasks
 
 
-def entroly_select(repo_dir: str, query: str, budget: int) -> Spans:
-    """Ingest a checked-out repo, run the deterministic selector, map to line spans.
+def build_engine_for_repo(repo_dir: str):
+    """Ingest a checked-out repo into a fresh, non-persistent Entroly engine."""
+    import tempfile
 
-    Gated on a local checkout of repo@base_commit. Selected content is located
-    back to source line ranges by exact-substring match; unmatched content is
-    NOT credited (fail-closed — it inflates evidence-drop instead).
+    from entroly.auto_index import auto_index
+    from entroly.config import EntrolyConfig
+    from entroly.server import EntrolyEngine
+
+    checkpoint = tempfile.mkdtemp(prefix="ctxbench_cp_")
+    engine = EntrolyEngine(EntrolyConfig(use_persistent_index=False, checkpoint_dir=checkpoint))
+    if not engine._use_rust:
+        raise RuntimeError("ContextBench run requires the native engine")
+    auto_index(engine, project_dir=repo_dir, force=True)
+    return engine
+
+
+def entroly_select(engine, repo_dir: str, query: str, budget: int):
+    """Run the deterministic selector and map it to exact line spans (fail-closed).
+
+    Returns the adapter's SelectedSpan records; use `span_adapter.to_spans` for
+    the metric core. Attribution goes through `source_fragment_ids` to the origin
+    fragment (a contiguous block), never a fuzzy match of the compressed output.
     """
-    raise NotImplementedError(
-        "repo-checkout run path is gated on dataset + git checkout budget; "
-        "the metric core above is what is validated pre-run"
-    )
+    from benchmarks.contextbench_span_adapter import map_selection
+
+    from entroly import qccr
+
+    fragments = [dict(f) for f in engine._rust.export_fragments()]
+    pool = [
+        {
+            "source": f.get("source", ""),
+            "content": f.get("content", ""),
+            "fragment_id": f.get("fragment_id", ""),
+            "feedback_multiplier": float(f.get("feedback_multiplier", 1.0) or 1.0),
+        }
+        for f in fragments
+    ]
+    origin_by_id = {
+        str(f.get("fragment_id", "")): {"source": f.get("source", ""), "content": f.get("content", "")}
+        for f in fragments
+    }
+    selected = qccr.select(pool, budget, query)
+    return map_selection(selected, origin_by_id, repo_dir)
 
 
 if __name__ == "__main__":  # pragma: no cover - thin CLI
