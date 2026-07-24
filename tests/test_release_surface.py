@@ -232,6 +232,13 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     )
     assert '--source-commit "$GITHUB_SHA"' in clawhub_publisher
     assert '--source-ref "entroly-v${RELEASE_VERSION}"' in clawhub_publisher
+    assert 'grep -Fq "Version ${RELEASE_VERSION} already exists"' in clawhub_publisher
+    assert '"status": "already_exists"' in clawhub_publisher
+    assert '"action": "verify_public_immutable_artifact"' in clawhub_publisher
+    assert "continuing to exact public artifact verification" in clawhub_publisher
+    assert clawhub_publisher.index("already exists") < clawhub_publisher.index(
+        "Verify exact ClawHub version is public"
+    )
     assert "Verify exact ClawHub version is public" in clawhub_publisher
     assert "for attempt in range(1, 61)" in clawhub_publisher
     assert "package moderation-status entroly-openclaw --json" in clawhub_publisher
