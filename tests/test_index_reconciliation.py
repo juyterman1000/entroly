@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,6 +34,239 @@ def _file_fragments(engine: EntrolyEngine, source: str) -> list[dict]:
         for fragment in engine._rust.export_fragments()
         if fragment.get("source") == source
     ]
+
+
+class _FakeReconcileEngine:
+    """Deterministic orchestration double; exact matches simulate native dedup."""
+
+    def __init__(self, checkpoint_dir: Path):
+        self.config = SimpleNamespace(checkpoint_dir=checkpoint_dir)
+        self._use_rust = False
+        self._fragments: dict[str, SimpleNamespace] = {}
+        self._next_id = 1
+        self.dependency_rebuilds = 0
+        self.persistence_calls = 0
+
+    def seed(self, source: str, content: str, fragment_id: str | None = None) -> str:
+        fragment_id = fragment_id or f"fragment-{self._next_id}"
+        self._next_id += 1
+        self._fragments[fragment_id] = SimpleNamespace(
+            fragment_id=fragment_id,
+            source=source,
+            content=content,
+            token_count=max(1, len(content) // 4),
+        )
+        return fragment_id
+
+    def wait_until_warm(self):
+        return True
+
+    def snapshot_index_state(self):
+        return copy.deepcopy(self._fragments)
+
+    def restore_index_state(self, snapshot):
+        self._fragments = copy.deepcopy(snapshot)
+
+    def remove_sources(self, sources):
+        requested = set(sources)
+        removed_sources = []
+        for fragment_id, fragment in list(self._fragments.items()):
+            if fragment.source in requested:
+                removed_sources.append(fragment.source)
+                del self._fragments[fragment_id]
+        return {
+            "status": "removed",
+            "removed_fragments": len(removed_sources),
+            "removed_sources": sorted(set(removed_sources)),
+            "missing_sources": sorted(requested - set(removed_sources)),
+        }
+
+    def ingest_fragment(self, content, source, token_count, is_pinned=False):
+        del is_pinned
+        for fragment in self._fragments.values():
+            if fragment.content == content:
+                return {
+                    "status": "duplicate",
+                    "duplicate_of": fragment.fragment_id,
+                    "tokens_saved": token_count,
+                }
+        fragment_id = self.seed(source, content)
+        return {
+            "status": "ingested",
+            "fragment_id": fragment_id,
+            "token_count": token_count,
+        }
+
+    def rebuild_dependencies(self):
+        self.dependency_rebuilds += 1
+        return {"status": "rebuilt"}
+
+    def persist_index(self):
+        self.persistence_calls += 1
+        return {"status": "persisted"}
+
+
+def _fake_file_sources(engine: _FakeReconcileEngine) -> set[str]:
+    return {fragment.source for fragment in engine._fragments.values()}
+
+
+_DUP_BODY = (
+    '"""A substantial module so duplicate detection has real signal."""\n\n'
+    + "\n".join(
+        f"def handler_{i}(request):\n"
+        f"    value = compute_step_{i}(request.payload, index={i})\n"
+        f"    return normalize(value, scale={i * 7 + 3})\n"
+        for i in range(40)
+    )
+    + "\n"
+)
+
+
+def _seed_duplicate_workspace(tmp_path: Path):
+    original = tmp_path / "original.py"
+    twin = tmp_path / "twin.py"
+    original.write_text(_DUP_BODY, encoding="utf-8")
+    twin.write_text(_DUP_BODY, encoding="utf-8")
+    engine = _FakeReconcileEngine(tmp_path / "state")
+    representative_id = engine.seed("file:original.py", _DUP_BODY)
+    first = reconcile_index(engine, str(tmp_path))
+    assert first["files_duplicate"] == 1
+    assert first["files_added"] == 0
+    assert first["dependency_refresh"]["status"] != "rebuilt"
+    return engine, original, twin, representative_id
+
+
+def test_duplicate_ledger_skips_only_with_live_representative(tmp_path: Path):
+    engine, _original, _twin, _representative_id = _seed_duplicate_workspace(
+        tmp_path
+    )
+
+    second = reconcile_index(engine, str(tmp_path))
+
+    assert second["status"] == "current"
+    assert second["files_duplicate"] == 0
+    assert second["files_duplicate_skipped"] == 1
+    assert engine.dependency_rebuilds == 0
+
+
+def test_duplicate_ledger_promotes_twin_when_representative_deleted(tmp_path: Path):
+    engine, original, _twin, _representative_id = _seed_duplicate_workspace(
+        tmp_path
+    )
+    original.unlink()
+
+    receipt = reconcile_index(engine, str(tmp_path))
+
+    assert receipt["status"] == "updated"
+    assert receipt["files_duplicate_skipped"] == 0
+    assert receipt["files_added"] == 1
+    assert receipt["files_removed"] == 1
+    assert _fake_file_sources(engine) == {"file:twin.py"}
+
+
+def test_duplicate_ledger_promotes_twin_when_representative_changes(tmp_path: Path):
+    engine, original, _twin, _representative_id = _seed_duplicate_workspace(
+        tmp_path
+    )
+    original.write_text(
+        "def changed_representative(): return 'new content'\n",
+        encoding="utf-8",
+    )
+
+    receipt = reconcile_index(engine, str(tmp_path))
+
+    assert receipt["files_duplicate_skipped"] == 0
+    assert receipt["files_added"] == 1
+    assert receipt["files_replaced"] == 1
+    assert _fake_file_sources(engine) == {
+        "file:original.py",
+        "file:twin.py",
+    }
+
+
+def test_duplicate_ledger_survives_restart_with_same_fragment_identity(tmp_path: Path):
+    engine, _original, _twin, representative_id = _seed_duplicate_workspace(
+        tmp_path
+    )
+    restarted = _FakeReconcileEngine(engine.config.checkpoint_dir)
+    restarted.seed("file:original.py", _DUP_BODY, fragment_id=representative_id)
+
+    receipt = reconcile_index(restarted, str(tmp_path))
+
+    assert receipt["status"] == "current"
+    assert receipt["files_duplicate_skipped"] == 1
+    assert _fake_file_sources(restarted) == {"file:original.py"}
+
+
+@pytest.mark.parametrize(
+    "ledger_text",
+    [
+        "{not-json",
+        json.dumps({"file:twin.py": "0" * 64}),
+    ],
+)
+def test_corrupt_or_legacy_duplicate_ledger_fails_open(
+    tmp_path: Path,
+    ledger_text: str,
+):
+    original = tmp_path / "original.py"
+    twin = tmp_path / "twin.py"
+    original.write_text(_DUP_BODY, encoding="utf-8")
+    twin.write_text(_DUP_BODY, encoding="utf-8")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "reconcile_duplicates.json").write_text(
+        ledger_text,
+        encoding="utf-8",
+    )
+    engine = _FakeReconcileEngine(state_dir)
+    engine.seed("file:original.py", _DUP_BODY)
+
+    receipt = reconcile_index(engine, str(tmp_path))
+
+    assert receipt["files_duplicate_skipped"] == 0
+    assert receipt["files_duplicate"] == 1
+    persisted = json.loads(
+        (state_dir / "reconcile_duplicates.json").read_text(encoding="utf-8")
+    )
+    assert persisted["schema_version"] == 2
+    assert "file:twin.py" in persisted["entries"]
+
+
+def test_reconcile_excludes_nested_entroly_state_directory(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "internal.json").write_text('{"private": true}', encoding="utf-8")
+    (tmp_path / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    engine = _FakeReconcileEngine(state_dir)
+
+    receipt = reconcile_index(engine, str(tmp_path))
+
+    assert receipt["files_scanned"] == 1
+    assert _fake_file_sources(engine) == {"file:app.py"}
+
+
+def test_native_duplicate_is_not_counted_as_index_mutation(tmp_path: Path):
+    (tmp_path / "original.py").write_text(_DUP_BODY, encoding="utf-8")
+    (tmp_path / "twin.py").write_text(_DUP_BODY, encoding="utf-8")
+    engine = _native_engine(tmp_path, persistent=True)
+    auto_index(engine, project_dir=str(tmp_path), force=True)
+
+    sources = {
+        fragment.get("source")
+        for fragment in engine._rust.export_fragments()
+    } & {"file:original.py", "file:twin.py"}
+    if len(sources) != 1:
+        pytest.skip("installed entroly-core did not dedup identical files")
+
+    first = reconcile_index(engine, str(tmp_path))
+    second = reconcile_index(engine, str(tmp_path))
+
+    assert first["files_duplicate"] == 1
+    assert first["files_added"] == 0
+    assert first["dependency_refresh"]["status"] != "rebuilt"
+    assert second["files_duplicate_skipped"] == 1
+    assert second["dependency_refresh"]["status"] != "rebuilt"
 
 
 def test_reconcile_replaces_modified_source_without_stale_copy(tmp_path: Path):

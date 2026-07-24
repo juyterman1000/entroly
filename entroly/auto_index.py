@@ -14,11 +14,14 @@ LPI (Lazy Progressive Index):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
+import tempfile
 import time
 from hashlib import sha256
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -231,11 +234,38 @@ def _load_entrolyignore(project_dir: str) -> list[str]:
 # Module-level cache for ignore patterns (set per auto_index call)
 _ignore_patterns: list[str] = []
 
+def _resolve_state_dir_prefix(engine: EntrolyEngine, project_dir: str) -> str | None:
+    """Return the state directory relative to the project when it is nested."""
+    checkpoint_dir = getattr(getattr(engine, "config", None), "checkpoint_dir", None)
+    if not checkpoint_dir:
+        return None
+    try:
+        rel = os.path.relpath(
+            os.path.abspath(str(checkpoint_dir)),
+            os.path.abspath(project_dir),
+        )
+    except (ValueError, OSError):
+        return None
+    normalized = rel.replace("\\", "/").strip("/")
+    if (
+        not normalized
+        or normalized == ".."
+        or normalized.startswith("../")
+        or os.path.isabs(rel)
+    ):
+        return None
+    return normalized
 
-def _matches_ignore(rel_path: str) -> bool:
+
+def _matches_ignore(
+    rel_path: str,
+    patterns: list[str] | None = None,
+) -> bool:
     """Check if a path matches any .entrolyignore pattern."""
     import fnmatch
-    for pattern in _ignore_patterns:
+
+    active_patterns = _ignore_patterns if patterns is None else patterns
+    for pattern in active_patterns:
         if fnmatch.fnmatch(rel_path, pattern):
             return True
         # Also match against basename for patterns like "*.generated.ts"
@@ -253,12 +283,24 @@ def _has_skipped_dir(rel_path: str) -> bool:
     return any(part.lower() in SKIP_DIR_NAMES for part in _path_parts(rel_path))
 
 
-def _should_index(rel_path: str) -> bool:
+def _should_index(
+    rel_path: str,
+    *,
+    ignore_patterns: list[str] | None = None,
+    state_dir_prefix: str | None = None,
+) -> bool:
     """Decide whether a file should be indexed."""
     basename = os.path.basename(rel_path)
 
     if _has_skipped_dir(rel_path):
         return False
+
+    if state_dir_prefix:
+        normalized = rel_path.replace("\\", "/").strip("/")
+        if normalized == state_dir_prefix or normalized.startswith(
+            state_dir_prefix + "/"
+        ):
+            return False
 
     # Skip lock files and system files
     if basename in SKIP_PATTERNS:
@@ -270,7 +312,10 @@ def _should_index(rel_path: str) -> bool:
         return False
 
     # .entrolyignore support
-    if _ignore_patterns and _matches_ignore(rel_path):
+    active_ignore_patterns = (
+        _ignore_patterns if ignore_patterns is None else ignore_patterns
+    )
+    if active_ignore_patterns and _matches_ignore(rel_path, active_ignore_patterns):
         return False
 
     # Dockerfile special case (no extension)
@@ -519,6 +564,174 @@ def _export_file_fragments(engine: EntrolyEngine) -> dict[str, list[dict]]:
     return grouped
 
 
+_DUPLICATE_LEDGER_SCHEMA_VERSION = 2
+
+
+def _duplicate_ledger_path(engine: EntrolyEngine) -> Path | None:
+    checkpoint_dir = getattr(getattr(engine, "config", None), "checkpoint_dir", None)
+    if not checkpoint_dir:
+        return None
+    return Path(checkpoint_dir) / "reconcile_duplicates.json"
+
+
+def _valid_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def _load_duplicate_ledger(engine: EntrolyEngine) -> dict[str, dict[str, str]]:
+    """Load duplicate entries that identify their live representative fragment."""
+    path = _duplicate_ledger_path(engine)
+    if path is None or not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        logger.warning("Ignoring unreadable duplicate ledger %s: %s", path, exc)
+        return {}
+    if not isinstance(data, dict):
+        logger.warning("Ignoring malformed duplicate ledger %s", path)
+        return {}
+    if data.get("schema_version") != _DUPLICATE_LEDGER_SCHEMA_VERSION:
+        # Version 1 stored only source -> digest. It could not prove that the
+        # canonical fragment still existed, so trusting it could silently omit
+        # the only surviving copy of a file. Fail open and rebuild it.
+        logger.info(
+            "Ignoring legacy duplicate ledger %s; entries will be revalidated",
+            path,
+        )
+        return {}
+    entries = data.get("entries")
+    if not isinstance(entries, dict):
+        logger.warning("Ignoring malformed duplicate ledger entries in %s", path)
+        return {}
+
+    validated: dict[str, dict[str, str]] = {}
+    for source, entry in entries.items():
+        if not isinstance(source, str) or not source.startswith("file:"):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        content_sha256 = entry.get("content_sha256")
+        representative_id = entry.get("representative_fragment_id")
+        if not _valid_sha256(content_sha256):
+            continue
+        if not isinstance(representative_id, str) or not representative_id:
+            continue
+        validated[source] = {
+            "content_sha256": content_sha256,
+            "representative_fragment_id": representative_id,
+        }
+    return validated
+
+
+def _save_duplicate_ledger(
+    engine: EntrolyEngine,
+    ledger: dict[str, dict[str, str]],
+) -> dict[str, object]:
+    """Persist the duplicate ledger atomically and report the outcome."""
+    path = _duplicate_ledger_path(engine)
+    if path is None:
+        return {"status": "disabled"}
+    tmp_path: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": _DUPLICATE_LEDGER_SCHEMA_VERSION,
+            "entries": ledger,
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            json.dump(payload, tmp, sort_keys=True, separators=(",", ":"))
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp_path = Path(tmp.name)
+        os.replace(tmp_path, path)
+        tmp_path = None
+        return {
+            "status": "persisted",
+            "entries": len(ledger),
+            "schema_version": _DUPLICATE_LEDGER_SCHEMA_VERSION,
+        }
+    except OSError as exc:
+        logger.warning("Failed to persist duplicate ledger %s: %s", path, exc)
+        return {
+            "status": "error",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    finally:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _fragments_by_id(
+    grouped_fragments: dict[str, list[dict]],
+) -> dict[str, dict]:
+    return {
+        str(fragment["fragment_id"]): fragment
+        for fragments in grouped_fragments.values()
+        for fragment in fragments
+        if fragment.get("fragment_id")
+    }
+
+
+def _ledger_representative_is_live(
+    entry: dict[str, str],
+    *,
+    grouped_fragments: dict[str, list[dict]],
+    fragments_by_id: dict[str, dict],
+    reads: dict[str, tuple[str | None, int, str | None]],
+    current_paths: set[str],
+) -> bool:
+    """Prove a duplicate's representative will survive this reconciliation."""
+    representative_id = entry.get("representative_fragment_id", "")
+    representative = fragments_by_id.get(representative_id)
+    if representative is None:
+        return False
+
+    representative_source = str(representative.get("source") or "")
+    if not representative_source.startswith("file:"):
+        # Reconciliation only removes file sources. A live non-file fragment is
+        # therefore a stable representative for this transaction.
+        return True
+
+    canonical_source = f"file:{_canonical_rel_path(representative_source[5:])}"
+    representative_fragments = grouped_fragments.get(canonical_source, [])
+    if len(representative_fragments) != 1:
+        return False
+    if (
+        str(representative_fragments[0].get("fragment_id") or "")
+        != representative_id
+    ):
+        return False
+
+    representative_path = canonical_source[5:]
+    if representative_path not in current_paths:
+        return False
+    content, _size, _reason = reads.get(
+        representative_path,
+        (None, 0, "not_scanned"),
+    )
+    if content is None:
+        return False
+    indexed_content = str(representative.get("content") or "")
+    return sha256(content.encode("utf-8")).digest() == sha256(
+        indexed_content.encode("utf-8")
+    ).digest()
+
+
 def reconcile_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
@@ -550,21 +763,30 @@ def _reconcile_index(
     started = time.perf_counter()
     engine.wait_until_warm()
 
-    global _ignore_patterns
-    _ignore_patterns = _load_entrolyignore(project_dir)
+    ignore_patterns = _load_entrolyignore(project_dir)
+    state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
 
     discovered = _git_ls_files(project_dir)
     discovery = "git"
     if not discovered:
         discovered = _walk_fallback(project_dir)
         discovery = "walk"
-    indexable = [_canonical_rel_path(path) for path in discovered if _should_index(path)]
+    indexable = [
+        _canonical_rel_path(path)
+        for path in discovered
+        if _should_index(
+            path,
+            ignore_patterns=ignore_patterns,
+            state_dir_prefix=state_dir_prefix,
+        )
+    ]
     indexable = sorted(set(indexable), key=_priority_score, reverse=True)
     candidates = indexable[:MAX_FILES]
     # The active cap is part of the index contract. A warm cache produced with
     # a larger prior cap must not retain unchecked, potentially stale sources.
     current_paths = set(candidates)
     existing = _export_file_fragments(engine)
+    existing_by_id = _fragments_by_id(existing)
     existing_source_aliases = {
         canonical: {
             str(fragment.get("source") or canonical)
@@ -589,9 +811,12 @@ def _reconcile_index(
             except Exception as exc:  # fail visibly; never drop live context silently
                 reads[rel_path] = (None, 0, f"read_error:{type(exc).__name__}")
 
+    duplicate_ledger = _load_duplicate_ledger(engine)
+    current_digests: dict[str, str] = {}
     changed: list[tuple[str, str, int, bool]] = []
     unavailable: dict[str, str] = {}
     unchanged = 0
+    ledger_skipped = 0
     for rel_path in candidates:
         source = f"file:{rel_path}"
         content, _size, reason = reads[rel_path]
@@ -601,6 +826,7 @@ def _reconcile_index(
                 unavailable[source] = reason or "unavailable"
             continue
         current_digest = sha256(content.encode("utf-8")).hexdigest()
+        current_digests[source] = current_digest
         prior_digests = {
             sha256(str(fragment.get("content") or "").encode("utf-8")).hexdigest()
             for fragment in prior
@@ -609,6 +835,22 @@ def _reconcile_index(
         # even when one copy happens to match current disk content.
         if len(prior) == 1 and current_digest in prior_digests:
             unchanged += 1
+            continue
+        ledger_entry = duplicate_ledger.get(source)
+        if (
+            not prior
+            and ledger_entry is not None
+            and ledger_entry.get("content_sha256") == current_digest
+            and _ledger_representative_is_live(
+                ledger_entry,
+                grouped_fragments=existing,
+                fragments_by_id=existing_by_id,
+                reads=reads,
+                current_paths=current_paths,
+            )
+        ):
+            unchanged += 1
+            ledger_skipped += 1
             continue
         changed.append((source, content, _estimate_tokens(content), bool(prior)))
 
@@ -673,6 +915,8 @@ def _reconcile_index(
     ingested_replaced = 0
     added_sources: list[str] = []
     replaced_sources: list[str] = []
+    duplicate_sources: list[str] = []
+    confirmed_duplicates: dict[str, dict[str, str]] = {}
     ingest_errors: list[str] = []
     additions_by_source = {item[0]: item for item in additions_to_apply}
     replacements_by_source = {item[0]: item for item in replacements}
@@ -693,8 +937,24 @@ def _reconcile_index(
                 token_count=weighted_tokens,
                 is_pinned=False,
             )
-            if result.get("status") not in {"ingested", "duplicate"}:
-                ingest_errors.append(f"{source}: {result.get('reason', result.get('status'))}")
+            ingest_status = result.get("status")
+            if ingest_status not in {"ingested", "duplicate"}:
+                ingest_errors.append(
+                    f"{source}: {result.get('reason', ingest_status)}"
+                )
+            elif ingest_status == "duplicate":
+                # The store did not change, so a duplicate is not an addition
+                # or replacement. Bind the optimization ledger to the actual
+                # representative fragment; without that identity, deleting the
+                # representative could make this source disappear from context.
+                duplicate_sources.append(source)
+                representative_id = result.get("duplicate_of")
+                digest = current_digests.get(source)
+                if representative_id and digest:
+                    confirmed_duplicates[source] = {
+                        "content_sha256": digest,
+                        "representative_fragment_id": str(representative_id),
+                    }
             elif had_prior:
                 ingested_replaced += 1
                 replaced_sources.append(source)
@@ -752,6 +1012,48 @@ def _reconcile_index(
         replaced_sources = []
         mutated = False
 
+    duplicate_ledger_status: dict[str, object] = {
+        "status": "rolled_back" if rolled_back else "current",
+        "entries": len(duplicate_ledger),
+        "schema_version": _DUPLICATE_LEDGER_SCHEMA_VERSION,
+    }
+    if not rolled_back:
+        # Re-export after the transaction. A representative that existed at the
+        # start may have been removed or replaced during this same pass.
+        live_fragments = _export_file_fragments(engine)
+        live_fragments_by_id = _fragments_by_id(live_fragments)
+        present_sources = {f"file:{rel_path}" for rel_path in current_paths}
+        promoted_sources = set(added_sources) | set(replaced_sources)
+        refreshed_ledger: dict[str, dict[str, str]] = {}
+        for source, entry in duplicate_ledger.items():
+            if source not in present_sources or source in promoted_sources:
+                continue
+            if current_digests.get(source) != entry.get("content_sha256"):
+                continue
+            if not _ledger_representative_is_live(
+                entry,
+                grouped_fragments=live_fragments,
+                fragments_by_id=live_fragments_by_id,
+                reads=reads,
+                current_paths=current_paths,
+            ):
+                continue
+            refreshed_ledger[source] = entry
+        for source, entry in confirmed_duplicates.items():
+            if _ledger_representative_is_live(
+                entry,
+                grouped_fragments=live_fragments,
+                fragments_by_id=live_fragments_by_id,
+                reads=reads,
+                current_paths=current_paths,
+            ):
+                refreshed_ledger[source] = entry
+        if refreshed_ledger != duplicate_ledger:
+            duplicate_ledger_status = _save_duplicate_ledger(
+                engine,
+                refreshed_ledger,
+            )
+
     pending = max(0, len(removal_reasons) + len(additions) - len(ordered_mutations) - len(additions_to_apply))
     status = "partial" if errors or pending else "updated" if mutated else "current"
     return {
@@ -762,6 +1064,8 @@ def _reconcile_index(
         "files_unchanged": unchanged,
         "files_added": ingested_added,
         "files_replaced": ingested_replaced,
+        "files_duplicate": len(duplicate_sources),
+        "files_duplicate_skipped": ledger_skipped,
         "files_removed": len(removed_canonical - set(replacements_by_source)),
         "removed_fragments": (
             0 if rolled_back else int(removal_result.get("removed_fragments", 0))
@@ -774,6 +1078,7 @@ def _reconcile_index(
         "pending_changes": pending,
         "dependency_refresh": dependency_refresh,
         "persistence": persistence,
+        "duplicate_ledger": duplicate_ledger_status,
         "rolled_back": rolled_back,
         "errors": errors,
         "duration_s": round(time.perf_counter() - started, 3),
@@ -826,11 +1131,12 @@ def _auto_index(
     # cannot overwrite freshly indexed bytes with an older persisted snapshot.
     engine.wait_until_warm()
 
-    # Load .entrolyignore patterns
-    global _ignore_patterns
-    _ignore_patterns = _load_entrolyignore(project_dir)
-    if _ignore_patterns:
-        logger.info(f".entrolyignore loaded: {len(_ignore_patterns)} patterns")
+    # Resolve scan policy per invocation. Module-global policy leaks between
+    # multiple projects sharing one Python process.
+    ignore_patterns = _load_entrolyignore(project_dir)
+    state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
+    if ignore_patterns:
+        logger.info(f".entrolyignore loaded: {len(ignore_patterns)} patterns")
 
     # Skip if engine already has fragments (loaded from persistent index).
     # The skip path returns the SAME schema as the fresh-index path: callers
@@ -885,7 +1191,15 @@ def _auto_index(
         discovery = "git"
 
     # Filter to indexable files, sort by priority so hot source is first
-    all_indexable = [f for f in files if _should_index(f)]
+    all_indexable = [
+        file_path
+        for file_path in files
+        if _should_index(
+            file_path,
+            ignore_patterns=ignore_patterns,
+            state_dir_prefix=state_dir_prefix,
+        )
+    ]
     if len(all_indexable) > MAX_FILES:
         logger.warning(
             f"Codebase has {len(all_indexable)} indexable files, capping at {MAX_FILES}. "
