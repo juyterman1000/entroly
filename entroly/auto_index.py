@@ -780,7 +780,11 @@ def _reconcile_index(
             state_dir_prefix=state_dir_prefix,
         )
     ]
-    indexable = sorted(set(indexable), key=_priority_score, reverse=True)
+    # Total order (priority DESC, path ASC): the path tiebreak is essential —
+    # sorting a set by priority alone leaves equal-priority files in
+    # nondeterministic set-iteration order, which would make dedup winners and
+    # the reconcile receipt irreproducible across runs.
+    indexable = sorted(set(indexable), key=lambda p: (-_priority_score(p), p))
     candidates = indexable[:MAX_FILES]
     # The active cap is part of the index contract. A warm cache produced with
     # a larger prior cap must not retain unchecked, potentially stale sources.
@@ -1206,8 +1210,12 @@ def _auto_index(
             f"Set ENTROLY_MAX_FILES to increase the limit."
         )
 
-    # Priority sort: hot source first → entropy sample sees real code
-    all_indexable.sort(key=_priority_score, reverse=True)
+    # Priority sort: hot source first → entropy sample sees real code. The
+    # canonical-path secondary key makes this a TOTAL order, so equal-priority
+    # files ingest in a deterministic sequence regardless of filesystem/thread
+    # enumeration. That makes SimHash near-duplicate dedup winners reproducible
+    # — the corpus-construction (h(C)) half of a re-derivable context receipt.
+    all_indexable.sort(key=lambda p: (-_priority_score(p), _canonical_rel_path(p)))
     indexable = all_indexable[:MAX_FILES]
 
     t_discovery = time.perf_counter()
@@ -1225,26 +1233,37 @@ def _auto_index(
 
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
+    reads: dict[str, tuple[str | None, int, str | None]] = {}
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="lpi") as pool:
         futures = {pool.submit(_read_index_file, project_dir, rp): rp for rp in indexable}
         for future in as_completed(futures):
-            rel_path = _canonical_rel_path(futures[future])
-            content, size, reason = future.result()
-            if content is None and reason and reason.startswith("too_large:"):
-                skipped_size += 1
-                cap = int(reason.split(":", 1)[1])
-                skipped_size_paths.append((rel_path, size, cap))
-                continue
-            if content is None:
-                if reason not in {None, "empty"}:
-                    skipped_read += 1
-                continue
-            tokens = _estimate_tokens(content)
-            # Apply source-type weighting: inflate token count for config files
-            # so the knapsack deprioritizes them vs source code.
-            weight = _source_type_token_weight(rel_path)
-            weighted_tokens = int(tokens * weight)
-            batch.append((content, f"file:{rel_path}", weighted_tokens))
+            reads[_canonical_rel_path(futures[future])] = future.result()
+
+    # Assemble the batch in the deterministic `indexable` order rather than
+    # thread-completion order, so batch-ordered SimHash dedup is reproducible
+    # (the previous as_completed loop let a read race decide which of two near-
+    # duplicate files won). Reads above stay parallel for speed.
+    for raw_path in indexable:
+        rel_path = _canonical_rel_path(raw_path)
+        entry = reads.get(rel_path)
+        if entry is None:
+            continue
+        content, size, reason = entry
+        if content is None and reason and reason.startswith("too_large:"):
+            skipped_size += 1
+            cap = int(reason.split(":", 1)[1])
+            skipped_size_paths.append((rel_path, size, cap))
+            continue
+        if content is None:
+            if reason not in {None, "empty"}:
+                skipped_read += 1
+            continue
+        tokens = _estimate_tokens(content)
+        # Apply source-type weighting: inflate token count for config files
+        # so the knapsack deprioritizes them vs source code.
+        weight = _source_type_token_weight(rel_path)
+        weighted_tokens = int(tokens * weight)
+        batch.append((content, f"file:{rel_path}", weighted_tokens))
 
     t_read = time.perf_counter()
 
