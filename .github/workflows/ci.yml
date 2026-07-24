@@ -51,7 +51,7 @@ jobs:
         run: pytest tests/test_openclaw_bridge.py -q
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22.19.0"
 
