@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload ClawHub validation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clawhub-package-validation
           path: |
@@ -429,7 +429,7 @@ jobs:
 
       - name: Upload reconciliation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clawhub-release-reconciliation-${{ inputs.version }}
           path: |
