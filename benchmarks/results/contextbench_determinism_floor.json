@@ -1,0 +1,1040 @@
+{
+  "summary": {
+    "budget": 8000,
+    "tasks_run": 25,
+    "tasks_total": 25,
+    "stopped": null,
+    "delta_file_f1_mean": -0.093,
+    "delta_file_f1_ci95": [
+      -0.249,
+      0.051
+    ],
+    "entroly": {
+      "file_recall": 0.819,
+      "file_prec": 0.1,
+      "file_f1": 0.17,
+      "line_f1": 0.01,
+      "r@1": 0.37,
+      "r@5": 0.642,
+      "r@10": 0.839,
+      "drop": 0.955,
+      "tokens": 7515.44,
+      "lat_s": 2.078
+    },
+    "bm25": {
+      "file_recall": 0.24,
+      "file_prec": 0.32,
+      "file_f1": 0.263,
+      "line_f1": 0.04,
+      "r@1": 0.24,
+      "r@5": 0.528,
+      "r@10": 0.611,
+      "drop": 0.937,
+      "tokens": 13693.76,
+      "lat_s": 0.676
+    },
+    "verdict_F2": "inconclusive (CI spans 0)"
+  },
+  "per_task": [
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__08563070",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          1.0,
+          0.167,
+          0.286
+        ],
+        "line_f1": 0.045,
+        "drop": 0.977,
+        "rk": {
+          "1": 0.5,
+          "5": 0.5,
+          "10": 1.0
+        },
+        "tokens": 7998,
+        "n_sel": 12,
+        "lat_s": 1.84
+      },
+      "bm25": {
+        "file": [
+          0.5,
+          1.0,
+          0.667
+        ],
+        "line_f1": 0.029,
+        "drop": 0.984,
+        "rk": {
+          "1": 0.5,
+          "5": 0.5,
+          "10": 1.0
+        },
+        "tokens": 19806,
+        "n_sel": 1,
+        "lat_s": 0.45
+      },
+      "delta_file_f1": -0.381,
+      "rss_mb": 188
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__1a760e52",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.006,
+        "drop": 0.997,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7173,
+        "n_sel": 12,
+        "lat_s": 1.36
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 3972,
+        "n_sel": 1,
+        "lat_s": 0.41
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 189
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__1ce4c38e",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.003,
+        "drop": 0.998,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7990,
+        "n_sel": 12,
+        "lat_s": 2.15
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 9344,
+        "n_sel": 1,
+        "lat_s": 0.71
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 290
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__1d90db61",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.008,
+        "drop": 0.996,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7997,
+        "n_sel": 12,
+        "lat_s": 2.34
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 20884,
+        "n_sel": 1,
+        "lat_s": 0.96
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 379
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__27a40875",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.01,
+        "drop": 0.995,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 6396,
+        "n_sel": 12,
+        "lat_s": 2.24
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 9673,
+        "n_sel": 1,
+        "lat_s": 0.73
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 380
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__3185b834",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.009,
+        "drop": 0.995,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7997,
+        "n_sel": 12,
+        "lat_s": 2.32
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 3810,
+        "n_sel": 1,
+        "lat_s": 0.71
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 392
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__3b78a79f",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.25,
+          0.4
+        ],
+        "line_f1": 0.018,
+        "drop": 0.991,
+        "rk": {
+          "1": 0.0,
+          "5": 0.3333333333333333,
+          "10": 1.0
+        },
+        "tokens": 7949,
+        "n_sel": 12,
+        "lat_s": 2.18
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.3333333333333333,
+          "10": 0.6666666666666666
+        },
+        "tokens": 12568,
+        "n_sel": 1,
+        "lat_s": 0.75
+      },
+      "delta_file_f1": 0.4,
+      "rss_mb": 389
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__5255cd73",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.01,
+        "drop": 0.995,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 6947,
+        "n_sel": 12,
+        "lat_s": 1.22
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 2243,
+        "n_sel": 1,
+        "lat_s": 0.4
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 223
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__55a3ef80",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.004,
+        "drop": 0.998,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7988,
+        "n_sel": 12,
+        "lat_s": 1.54
+      },
+      "bm25": {
+        "file": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "line_f1": 0.033,
+        "drop": 0.983,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 14004,
+        "n_sel": 1,
+        "lat_s": 0.43
+      },
+      "delta_file_f1": -0.846,
+      "rss_mb": 274
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__65c16426",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.018,
+        "drop": 0.991,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7993,
+        "n_sel": 12,
+        "lat_s": 3.41
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 97645,
+        "n_sel": 1,
+        "lat_s": 1.14
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 401
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__6ed8d38b",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.005,
+        "drop": 0.998,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 1.0
+        },
+        "tokens": 7997,
+        "n_sel": 12,
+        "lat_s": 3.19
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 9844,
+        "n_sel": 1,
+        "lat_s": 0.91
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 550
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__71f348da",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.012,
+        "drop": 0.994,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7997,
+        "n_sel": 12,
+        "lat_s": 2.53
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 10852,
+        "n_sel": 1,
+        "lat_s": 0.89
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 486
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__881a2517",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.002,
+        "drop": 0.999,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 1.0
+        },
+        "tokens": 7998,
+        "n_sel": 12,
+        "lat_s": 2.56
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 9673,
+        "n_sel": 1,
+        "lat_s": 0.99
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 448
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__88e3486b",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.002,
+        "drop": 0.999,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 1.0
+        },
+        "tokens": 7993,
+        "n_sel": 12,
+        "lat_s": 2.52
+      },
+      "bm25": {
+        "file": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "line_f1": 0.136,
+        "drop": 0.927,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 5058,
+        "n_sel": 1,
+        "lat_s": 0.75
+      },
+      "delta_file_f1": -0.846,
+      "rss_mb": 447
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__8adb3e00",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.008,
+        "drop": 0.996,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7999,
+        "n_sel": 12,
+        "lat_s": 2.33
+      },
+      "bm25": {
+        "file": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "line_f1": 0.391,
+        "drop": 0.757,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 2469,
+        "n_sel": 1,
+        "lat_s": 0.81
+      },
+      "delta_file_f1": -0.846,
+      "rss_mb": 565
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__8fdc33d5",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.003,
+        "drop": 0.999,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7994,
+        "n_sel": 12,
+        "lat_s": 1.39
+      },
+      "bm25": {
+        "file": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "line_f1": 0.056,
+        "drop": 0.971,
+        "rk": {
+          "1": 1.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 4932,
+        "n_sel": 1,
+        "lat_s": 0.39
+      },
+      "delta_file_f1": -0.846,
+      "rss_mb": 259
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__91fb680f",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          0.75,
+          0.25,
+          0.375
+        ],
+        "line_f1": 0.025,
+        "drop": 0.987,
+        "rk": {
+          "1": 0.25,
+          "5": 0.5,
+          "10": 0.75
+        },
+        "tokens": 7984,
+        "n_sel": 12,
+        "lat_s": 1.4
+      },
+      "bm25": {
+        "file": [
+          0.25,
+          1.0,
+          0.4
+        ],
+        "line_f1": 0.017,
+        "drop": 0.991,
+        "rk": {
+          "1": 0.25,
+          "5": 0.5,
+          "10": 0.75
+        },
+        "tokens": 19909,
+        "n_sel": 1,
+        "lat_s": 0.4
+      },
+      "delta_file_f1": -0.025,
+      "rss_mb": 307
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__93721db4",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.01,
+        "drop": 0.995,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7996,
+        "n_sel": 12,
+        "lat_s": 1.36
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 25175,
+        "n_sel": 1,
+        "lat_s": 0.39
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 294
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__958ed1fd",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          1.0,
+          0.083,
+          0.154
+        ],
+        "line_f1": 0.012,
+        "drop": 0.994,
+        "rk": {
+          "1": 0.0,
+          "5": 1.0,
+          "10": 1.0
+        },
+        "tokens": 7992,
+        "n_sel": 12,
+        "lat_s": 2.6
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 11368,
+        "n_sel": 1,
+        "lat_s": 0.88
+      },
+      "delta_file_f1": 0.154,
+      "rss_mb": 430
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__9a05fe0c",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          0.5,
+          0.083,
+          0.143
+        ],
+        "line_f1": 0.007,
+        "drop": 0.996,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.5
+        },
+        "tokens": 7966,
+        "n_sel": 12,
+        "lat_s": 1.49
+      },
+      "bm25": {
+        "file": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "line_f1": 0.082,
+        "drop": 0.957,
+        "rk": {
+          "1": 0.5,
+          "5": 0.5,
+          "10": 1.0
+        },
+        "tokens": 7051,
+        "n_sel": 2,
+        "lat_s": 0.42
+      },
+      "delta_file_f1": -0.357,
+      "rss_mb": 244
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__b2cb9f4b",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          0.25,
+          0.083,
+          0.125
+        ],
+        "line_f1": 0.017,
+        "drop": 0.992,
+        "rk": {
+          "1": 0.25,
+          "5": 0.25,
+          "10": 0.25
+        },
+        "tokens": 7580,
+        "n_sel": 12,
+        "lat_s": 1.15
+      },
+      "bm25": {
+        "file": [
+          0.25,
+          0.5,
+          0.333
+        ],
+        "line_f1": 0.201,
+        "drop": 0.883,
+        "rk": {
+          "1": 0.25,
+          "5": 0.25,
+          "10": 0.25
+        },
+        "tokens": 4054,
+        "n_sel": 2,
+        "lat_s": 0.48
+      },
+      "delta_file_f1": -0.208,
+      "rss_mb": 350
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__bd3d7a3d",
+      "repo": "django",
+      "entroly": {
+        "file": [
+          0.25,
+          0.083,
+          0.125
+        ],
+        "line_f1": 0.001,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.25,
+          "5": 0.25,
+          "10": 0.25
+        },
+        "tokens": 7992,
+        "n_sel": 12,
+        "lat_s": 1.91
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.0,
+          "10": 0.0
+        },
+        "tokens": 7555,
+        "n_sel": 2,
+        "lat_s": 0.49
+      },
+      "delta_file_f1": 0.125,
+      "rss_mb": 371
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__bfcf7192",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          0.5,
+          0.083,
+          0.143
+        ],
+        "line_f1": 0.004,
+        "drop": 0.998,
+        "rk": {
+          "1": 0.5,
+          "5": 0.5,
+          "10": 0.5
+        },
+        "tokens": 7986,
+        "n_sel": 12,
+        "lat_s": 2.56
+      },
+      "bm25": {
+        "file": [
+          0.5,
+          1.0,
+          0.667
+        ],
+        "line_f1": 0.056,
+        "drop": 0.97,
+        "rk": {
+          "1": 0.5,
+          "5": 0.5,
+          "10": 1.0
+        },
+        "tokens": 21066,
+        "n_sel": 1,
+        "lat_s": 0.82
+      },
+      "delta_file_f1": -0.524,
+      "rss_mb": 497
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__deb49033",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          0.222,
+          0.167,
+          0.19
+        ],
+        "line_f1": 0.005,
+        "drop": 0.998,
+        "rk": {
+          "1": 0.0,
+          "5": 0.2222222222222222,
+          "10": 0.2222222222222222
+        },
+        "tokens": 7984,
+        "n_sel": 12,
+        "lat_s": 2.74
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 1.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.1111111111111111,
+          "10": 0.1111111111111111
+        },
+        "tokens": 9389,
+        "n_sel": 1,
+        "lat_s": 0.85
+      },
+      "delta_file_f1": 0.19,
+      "rss_mb": 605
+    },
+    {
+      "instance_id": "SWE-Bench-Verified__python__maintenance__bugfix__e5a3bf2a",
+      "repo": "astropy",
+      "entroly": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 0.0,
+        "rk": {
+          "1": 0.5,
+          "5": 0.5,
+          "10": 0.5
+        },
+        "tokens": 0,
+        "n_sel": 12,
+        "lat_s": 1.63
+      },
+      "bm25": {
+        "file": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "line_f1": 0.0,
+        "drop": 0.0,
+        "rk": {
+          "1": 0.0,
+          "5": 0.5,
+          "10": 0.5
+        },
+        "tokens": 0,
+        "n_sel": 1,
+        "lat_s": 0.74
+      },
+      "delta_file_f1": 0.0,
+      "rss_mb": 292
+    }
+  ]
+}
