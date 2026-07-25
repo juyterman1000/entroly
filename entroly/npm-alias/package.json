@@ -1,7 +1,7 @@
 {
   "name": "entroly",
   "version": "1.0.66",
-  "description": "Node/WASM Context OS for AI agents: local context engineering, compression, recovery, receipts, and verification without Python.",
+  "description": "Node/WASM Context Assurance for AI agents: reduce avoidable token usage with local evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -29,11 +29,18 @@
   "keywords": [
     "entroly",
     "entroly-wasm",
+    "context-assurance",
     "context-engineering",
     "context-compression",
     "context-management",
     "context-optimization",
     "context-receipts",
+    "ai-cost-optimization",
+    "llm-cost-optimization",
+    "reduce-ai-costs",
+    "token-reduction",
+    "token-optimization",
+    "content-addressed-recovery",
     "mcp",
     "mcp-server",
     "model-context-protocol",
@@ -44,6 +51,9 @@
     "claude-code",
     "codex",
     "openclaw",
+    "hermes-agent",
+    "opencode",
+    "local-models",
     "webassembly"
   ],
   "author": "entroly",
