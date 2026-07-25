@@ -90,3 +90,23 @@ def test_get_stats_does_not_leak_the_dollar_figure():
     stats = EntrolyEngine.get_stats(_FakeEngine())  # type: ignore[arg-type]
     assert "estimated_cost_saved_usd" not in stats["savings"]
     assert stats["savings"]["dedup_tokens_avoided"] == 5
+
+
+def test_stats_resource_counters_work_on_the_native_shape():
+    # The native core emits a `savings` block with total_-prefixed names; the
+    # pure-Python path emits `engine`. Reading only `engine` reported 0 for
+    # every counter on native installs, i.e. every real deployment.
+    from entroly.server import EntrolyEngine
+
+    native = EntrolyEngine._honest_savings_block({
+        "total_fragments_ingested": 1387,
+        "total_duplicates_caught": 402,
+        "total_optimizations": 7,
+        "total_tokens_saved": 5,
+        "estimated_cost_saved_usd": 1.23,
+    })
+    # After normalization the native block still uses total_-prefixed names for
+    # everything except the renamed token counter.
+    assert native["total_fragments_ingested"] == 1387
+    assert native["dedup_tokens_avoided"] == 5
+    assert "estimated_cost_saved_usd" not in native

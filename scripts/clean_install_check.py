@@ -24,16 +24,31 @@ REPO = Path(__file__).resolve().parent.parent
 
 def _run(cmd: list[str], cwd: str | None = None, env: dict | None = None,
          timeout: int = 900) -> tuple[int, str]:
+    """Returns (rc, combined output) for reporting."""
+    rc, out, err = _run_split(cmd, cwd=cwd, env=env, timeout=timeout)
+    return rc, out + err
+
+
+def _run_split(cmd: list[str], cwd: str | None = None, env: dict | None = None,
+               timeout: int = 900) -> tuple[int, str, str]:
+    """Returns (rc, stdout, stderr) kept separate.
+
+    Merging them is unsafe when a check parses program output: any warning a
+    dependency prints to stderr would be appended after the real answer, so
+    reading "the last line" silently yields the warning instead. That would make
+    the source-tree gate below pass on a source-tree import — the exact failure
+    this script exists to catch.
+    """
     try:
         p = subprocess.run(
             cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, timeout=timeout,
         )
-        return p.returncode, (p.stdout or "") + (p.stderr or "")
+        return p.returncode, (p.stdout or ""), (p.stderr or "")
     except subprocess.TimeoutExpired:
-        return 124, f"TIMEOUT after {timeout}s: {' '.join(cmd)}"
+        return 124, "", f"TIMEOUT after {timeout}s: {' '.join(cmd)}"
     except (OSError, ValueError) as exc:
-        return 125, f"{type(exc).__name__}: {exc}"
+        return 125, "", f"{type(exc).__name__}: {exc}"
 
 
 def main() -> int:
@@ -81,14 +96,16 @@ def main() -> int:
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("ENTROLY_") and k != "PYTHONPATH"}
 
-        rc, out = _run([str(py), "-c",
-                        "import entroly,os;print(os.path.dirname(entroly.__file__))"],
-                       cwd=str(neutral), env=env)
+        # stdout only — a stderr warning must not be mistaken for the path.
+        rc, out, err = _run_split(
+            [str(py), "-c",
+             "import entroly,os;print(os.path.dirname(entroly.__file__))"],
+            cwd=str(neutral), env=env)
         imported_from = out.strip().splitlines()[-1] if rc == 0 and out.strip() else ""
         from_repo = str(REPO).lower() in imported_from.lower()
         check("import resolves to the installed wheel, not the source tree",
               rc == 0 and bool(imported_from) and not from_repo,
-              f"imported from: {imported_from or out}")
+              f"imported from: {imported_from or '(no stdout)'} | stderr: {err.strip()[:300]}")
 
         entroly_bin = scripts / ("entroly.exe" if os.name == "nt" else "entroly")
         check("console script is installed", entroly_bin.exists(), str(entroly_bin))
@@ -112,10 +129,17 @@ def main() -> int:
         failed = [n for n, ok, _ in results if not ok]
         print(f"  {len(results) - len(failed)}/{len(results)} checks passed"
               + (f", {len(failed)} failed" if failed else ""))
-        summary = work / "clean_install_result.json"
-        summary.write_text(json.dumps(
-            {"passed": len(results) - len(failed), "total": len(results),
-             "failed": failed}, indent=2), encoding="utf-8")
+        # Written outside `work`, which the finally block deletes — otherwise the
+        # result artifact is destroyed on every default run.
+        summary = REPO / "benchmarks" / "results" / "clean_install_result.json"
+        try:
+            summary.parent.mkdir(parents=True, exist_ok=True)
+            summary.write_text(json.dumps(
+                {"passed": len(results) - len(failed), "total": len(results),
+                 "failed": failed}, indent=2), encoding="utf-8")
+            print(f"  -> {summary}")
+        except OSError as exc:
+            print(f"  (could not write result artifact: {exc})")
         return 1 if failed else 0
     finally:
         if keep:

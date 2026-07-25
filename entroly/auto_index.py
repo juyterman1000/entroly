@@ -236,16 +236,28 @@ def _run_git(args: list[str], project_dir: str, timeout: int = 10) -> str | None
     except (FileNotFoundError, OSError, ValueError):
         return None
     finally:
-        if proc is not None and proc.poll() is None:
-            try:
-                proc.kill()
-                # Bounded reap; a zombie must not block the caller either.
+        if proc is not None:
+            if proc.poll() is None:
                 try:
-                    proc.communicate(timeout=5)
-                except (subprocess.TimeoutExpired, OSError, ValueError):
+                    proc.kill()
+                    # Bounded reap; a zombie must not block the caller either.
+                    try:
+                        proc.communicate(timeout=5)
+                    except (subprocess.TimeoutExpired, OSError, ValueError):
+                        pass
+                except OSError:
                     pass
-            except OSError:
-                pass
+            # Explicitly release the pipe. If a grandchild kept the write end
+            # open, the reap above times out and communicate() never closes our
+            # read end — leaking an fd (and on Windows a parked reader thread)
+            # on every call. The watcher calls this on every scan, so an
+            # unbounded hang would become an unbounded handle leak.
+            for stream in (proc.stdout, proc.stderr, proc.stdin):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except (OSError, ValueError):
+                        pass
 
 
 def _git_ls_files(project_dir: str) -> list[str]:

@@ -735,7 +735,15 @@ class CheckpointManager:
             if cp.name.startswith(f"ckpt_{self.instance_id}_")
         ]
         peer_checkpoints = len(checkpoints) - len(own_checkpoints)
-        total_size = sum(cp.stat().st_size for cp in checkpoints)
+        # A file enumerated by the glob above can vanish before we stat it —
+        # another instance may be pruning concurrently. get_stats() must not
+        # raise FileNotFoundError just because a checkpoint was reaped mid-scan.
+        total_size = 0
+        for cp in checkpoints:
+            try:
+                total_size += cp.stat().st_size
+            except OSError:
+                continue
         return {
             "instance_id": self.instance_id,
             "total_checkpoints": len(checkpoints),

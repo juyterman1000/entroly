@@ -2640,7 +2640,25 @@ def create_mcp_server(
         """Return bounded aggregate counters without source content or paths."""
         raw = engine.get_stats()
         session = raw.get("session", {}) if isinstance(raw, dict) else {}
-        runtime = raw.get("engine", raw) if isinstance(raw, dict) else {}
+        # Two shapes reach here: the pure-Python path emits an `engine` block,
+        # the native path emits `savings` with `total_`-prefixed names. Reading
+        # only `engine` made every counter report 0 on native installs, which is
+        # every real deployment.
+        runtime = raw.get("engine") if isinstance(raw, dict) else None
+        native = raw.get("savings") if isinstance(raw, dict) else None
+        runtime = runtime if isinstance(runtime, dict) else {}
+        native = native if isinstance(native, dict) else {}
+
+        def _counter(*names: str) -> int:
+            for source in (runtime, native):
+                for name in names:
+                    if name in source:
+                        try:
+                            return int(source[name] or 0)
+                        except (TypeError, ValueError):
+                            return 0
+            return 0
+
         payload = {
             "session": {
                 "current_turn": int(session.get("current_turn", 0) or 0),
@@ -2649,10 +2667,13 @@ def create_mcp_server(
                 "pinned_fragments": int(session.get("pinned_fragments", 0) or 0),
             },
             "engine": {
-                "fragments_ingested": int(runtime.get("fragments_ingested", 0) or 0),
-                "duplicates_caught": int(runtime.get("duplicates_caught", 0) or 0),
-                "optimize_calls": int(runtime.get("optimize_calls", 0) or 0),
-                "dedup_tokens_avoided": int(runtime.get("dedup_tokens_avoided", 0) or 0),
+                "fragments_ingested": _counter(
+                    "fragments_ingested", "total_fragments_ingested"),
+                "duplicates_caught": _counter(
+                    "duplicates_caught", "total_duplicates_caught"),
+                "optimize_calls": _counter("optimize_calls", "total_optimizations"),
+                "dedup_tokens_avoided": _counter(
+                    "dedup_tokens_avoided", "total_tokens_saved"),
             },
         }
         encoded = json.dumps(payload, indent=2, sort_keys=True)
