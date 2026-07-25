@@ -393,19 +393,19 @@ Usually not directly—the subscription price is fixed. Entroly is most directly
 
 ### Does Entroly work with local models?
 
-Yes. Entroly can be used with Ollama, LM Studio, and custom local-model applications through supported SDK, proxy, or agent integrations.
+Yes. Entroly works with Ollama, LM Studio, and other local-model setups. You connect it using the method supported by your app, while your model and existing workflow stay the same.
 
-### Does Entroly send my files to its own cloud?
+### Does Entroly upload my files to its own cloud?
 
-Local indexing, selection, receipts, and recovery storage do not require an Entroly cloud service. The selected prompt still goes to the model provider chosen by the user. No outbound analytics are enabled by default.
+By default, Entroly does not require your files to be uploaded to an Entroly cloud. Local indexing, evidence selection, receipts, and recovery storage can stay on your machine. The selected prompt is still sent to the AI provider you choose, and Entroly sends no outbound analytics by default.
 
-### Can Entroly guarantee that an answer is correct?
+### Can Entroly guarantee that every answer is correct?
 
-No. WITNESS checks support against supplied evidence; it does not establish universal truth. Tests, domain review, and appropriate professional oversight still matter.
+No AI tool can guarantee that. Entroly checks whether an answer is supported by the evidence it received and helps reveal missing or weak support. Important decisions should still use tests, expert review, or appropriate professional judgment.
 
-### Is there a one-click version for nontechnical users?
+### Can nontechnical users use Entroly?
 
-Not yet. [Entroly Simple Mode](docs/product/entroly-simple-mode.md) defines the desktop experience and release gates required before “one-click” can be advertised honestly.
+Yes—after a supported tool is connected. Today, a developer or administrator may need to complete a small one-time setup. [Entroly Simple Mode](docs/product/entroly-simple-mode.md) is the planned no-terminal desktop experience for independent everyday use.
 
 ---
 
