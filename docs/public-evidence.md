@@ -43,6 +43,15 @@ These results measure artifact integrity and recovery, **not answer quality** or
 - [Artifact](../benchmarks/results/context_commit_conformance.json)
 - Reproduce: `python -m benchmarks.context_commit_conformance`
 
+### Recovery-resilience holdout
+
+The committed v4 recovery-resilience revalidation records **66/66** exact entries for Entroly and **66/66** for the Headroom 0.31.0 comparison under the frozen holdout protocol. This result establishes **parity, not leadership** for that recovery-integrity workload.
+
+The clean revalidation reproduced no Headroom worker errors. It therefore does not permit a public leadership claim and **does not establish universal recovery superiority**, production reliability, task-quality improvement, or provider-cost reduction.
+
+- [Artifact](../benchmarks/results/recovery_resilience_holdout_revalidation_v4.json)
+- [Protocol implementation](../benchmarks/recovery_resilience.py)
+
 ### WITNESS HaluEval-QA
 
 The committed faithful protocol reports **0.7976** full-dataset AUROC and **84.92%** accuracy on the **16,000**-decision held-out split. On the shared **1,200**-decision GPT sample, committed accuracy is **86.58%** for WITNESS and **86.25%** for gpt-4o-mini.
