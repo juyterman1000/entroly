@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Entroly for OpenClaw: Context Engine & Exact Recovery</title>
+  <meta name="description" content="Add Entroly to OpenClaw as a local context engine with budgeted evidence selection, Context Receipts, exact recovery, and optional proof-guided verification.">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+  <meta name="googlebot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <meta name="bingbot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html">
+  <meta property="og:site_name" content="Entroly">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Entroly for OpenClaw: Context Engine & Exact Recovery">
+  <meta property="og:description" content="A first-class OpenClaw context engine for evidence selection, receipts, exact recovery, and verification.">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html">
+  <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Entroly for OpenClaw">
+  <meta name="twitter:description" content="Context assurance, receipts, and exact recovery for OpenClaw.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://juyterman1000.github.io/entroly/#software",
+        "name": "Entroly",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "OpenClaw context engine",
+        "operatingSystem": "Windows, macOS, Linux",
+        "description": "Open-source context assurance layer and Context OS for AI agents.",
+        "codeRepository": "https://github.com/juyterman1000/entroly",
+        "downloadUrl": "https://pypi.org/project/entroly/",
+        "license": "https://opensource.org/licenses/Apache-2.0",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+      },
+      {
+        "@type": "TechArticle",
+        "@id": "https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html#article",
+        "headline": "Entroly for OpenClaw: Context Engine and Exact Recovery",
+        "description": "How to use Entroly as OpenClaw's context engine for local context assembly, receipts, exact recovery, and optional proof-guided verification.",
+        "url": "https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html",
+        "dateModified": "2026-07-25",
+        "mainEntityOfPage": "https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html",
+        "about": [
+          {"@id": "https://juyterman1000.github.io/entroly/#software"},
+          {"@type": "SoftwareApplication", "name": "OpenClaw", "sameAs": "https://github.com/openclaw/openclaw"}
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {"@type": "ListItem", "position": 1, "name": "Entroly", "item": "https://juyterman1000.github.io/entroly/docs/index.html"},
+          {"@type": "ListItem", "position": 2, "name": "Agent Integrations", "item": "https://juyterman1000.github.io/entroly/docs/agent-integrations.html"},
+          {"@type": "ListItem", "position": 3, "name": "OpenClaw Context Engine", "item": "https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html"}
+        ]
+      }
+    ]
+  }
+  </script>
+  <style>
+    :root{--bg:#07070b;--panel:#111119;--text:#f8fafc;--muted:#a3adc2;--accent:#818cf8;--border:#292938;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#a5b4fc}header,main,footer{max-width:980px;margin:auto;padding:24px}nav{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}nav a{text-decoration:none;margin-left:18px}.brand{font-weight:800;color:var(--text)}.hero{padding:82px 0 42px}.eyebrow{color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78rem}h1{font-size:clamp(2.2rem,7vw,4.2rem);line-height:1.06;letter-spacing:-.04em;margin:.25em 0}.lead{font-size:1.22rem;color:var(--muted)}.answer{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:14px;padding:24px;margin:34px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px}.card p,li{color:var(--muted)}h2{margin-top:48px}code,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace}pre{overflow:auto;background:#020204;border:1px solid var(--border);border-radius:12px;padding:18px}.faq{border-top:1px solid var(--border);padding:20px 0}.faq h3{margin-bottom:4px}.faq p{margin-top:0;color:var(--muted)}footer{color:var(--muted);border-top:1px solid var(--border);margin-top:48px}@media(max-width:720px){.grid{grid-template-columns:1fr}nav .links{display:none}}
+  </style>
+</head>
+<body>
+  <header><nav aria-label="Primary navigation"><a class="brand" href="index.html">Entroly</a><div class="links"><a href="agent-integrations.html">Integrations</a><a href="hermes-context-engine.html">Hermes</a><a href="opencode-context-assurance.html">OpenCode</a><a href="https://github.com/juyterman1000/entroly">GitHub</a></div></nav></header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">OpenClaw integration</div>
+      <h1>Entroly is a context assurance engine for OpenClaw</h1>
+      <p class="lead">Use Entroly inside OpenClaw to assemble budget-aware context, preserve provider-independent receipts, recover exact omitted messages, and optionally verify a draft before delivery—without replacing OpenClaw's Gateway, transcript, provider routing, or authentication.</p>
+    </section>
+
+    <section class="answer">
+      <strong>Direct answer:</strong> Entroly adds a first-class <em>context engine</em> to OpenClaw. OpenClaw remains the agent runtime; Entroly controls the evidence sent into each model call and records the resulting context decisions.
+    </section>
+
+    <h2>Install Entroly for OpenClaw</h2>
+    <pre><code>pip install -U entroly
+openclaw plugins install clawhub:entroly-openclaw
+openclaw plugins enable entroly</code></pre>
+    <p>Select the context engine in <code>~/.openclaw/openclaw.json</code>:</p>
+    <pre><code>{
+  plugins: {
+    slots: {
+      contextEngine: "entroly"
+    }
+  }
+}</code></pre>
+    <p>Then verify the runtime:</p>
+    <pre><code>openclaw plugins inspect entroly --runtime --json
+openclaw plugins doctor</code></pre>
+
+    <h2>What Entroly adds to OpenClaw</h2>
+    <section class="grid">
+      <article class="card"><h3>Budget-aware evidence</h3><p>Entroly scores older normalized messages against the current request, reserves budget for matching evidence, and keeps recent or protected content verbatim.</p></article>
+      <article class="card"><h3>Context Receipts</h3><p>Receipts record message-level decisions, estimated tokens, warnings, transformation state, and cryptographic commitments without persisting the request text or matched terms.</p></article>
+      <article class="card"><h3>Exact recovery</h3><p>Optional proof-guided recovery can identify omitted supporting messages and return exact text with SHA-256 commitments through a bounded revision request.</p></article>
+      <article class="card"><h3>Fail-open safety</h3><p>If a trusted model budget cannot be resolved or the bridge fails, Entroly returns the exact original OpenClaw context instead of risking a malformed or over-compressed request.</p></article>
+    </section>
+
+    <h2>OpenClaw stays authoritative</h2>
+    <ul>
+      <li>OpenClaw owns the persisted transcript, provider credentials, routing, billing behavior, retries, and delivery.</li>
+      <li>System messages, tool calls, images, signatures, reasoning blocks, and unknown content blocks are not rewritten.</li>
+      <li>Entroly does not claim provider savings unless provider-bound usage is actually observable.</li>
+      <li>OpenClaw's resolved token budget wins over Entroly fallback metadata.</li>
+    </ul>
+
+    <h2>Frequently asked questions</h2>
+    <div class="faq"><h3>Is Entroly an OpenClaw skill?</h3><p>No. Entroly integrates as a context-engine plugin, which lets it operate on OpenClaw's normalized messages before a model run.</p></div>
+    <div class="faq"><h3>Does Entroly work with every OpenClaw provider?</h3><p>The context engine operates before provider dispatch, so the same assembly path can support OpenClaw providers while OpenClaw remains responsible for provider-specific authentication and wire formats.</p></div>
+    <div class="faq"><h3>Does proof-guided recovery make another model call?</h3><p>Only when explicitly enabled. Entroly returns a bounded revision request to OpenClaw; OpenClaw performs the provider call using its normal routing and billing path.</p></div>
+    <div class="faq"><h3>Where are receipts stored?</h3><p>By default they are written under the workspace's <code>.entroly/receipts/openclaw/</code> directory, with configurable quotas and local permissions.</p></div>
+
+    <p><a href="https://github.com/juyterman1000/entroly/tree/main/integrations/openclaw">Inspect the OpenClaw integration source</a> · <a href="agent-integrations.html">Compare all Entroly agent integrations</a></p>
+  </main>
+  <footer>Apache-2.0 open source. <a href="https://github.com/juyterman1000/entroly">Entroly repository</a> · <a href="limitations.md">Limitations</a></footer>
+</body>
+</html>
