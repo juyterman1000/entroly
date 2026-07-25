@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "entroly"
 version = "1.0.66"
-description = "Open-source Context OS for AI agents: auditable context engineering, compression, recovery, receipts, and verification."
+description = "Drop-in Context Assurance for AI agents: reduce avoidable token usage with evidence selection, receipts, exact recovery, and verification."
 readme = "PYPI_README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -15,10 +15,12 @@ authors = [
     { name = "entroly", email = "fastrunner10090@gmail.com" },
 ]
 keywords = [
-    "ai-agents", "ai-coding-agents", "context-engineering", "context-management", "context-optimization", "context-compression",
-    "prompt-compression", "token-optimization", "context-window", "context-receipts", "context-control-plane", "llm-proxy",
-    "mcp", "mcp-server", "model-context-protocol", "github-copilot", "cursor", "claude-code", "codex", "openclaw",
-    "hallucination-detection", "agent-memory", "llm"
+    "ai-agents", "ai-coding-agents", "ai-cost-optimization", "llm-cost-optimization", "reduce-ai-costs",
+    "context-assurance", "context-engineering", "context-management", "context-optimization", "context-compression",
+    "prompt-compression", "token-optimization", "token-reduction", "context-window", "context-receipts",
+    "content-addressed-recovery", "context-control-plane", "llm-proxy", "local-models",
+    "mcp", "mcp-server", "model-context-protocol", "github-copilot", "cursor", "claude-code", "codex",
+    "openclaw", "hermes-agent", "opencode", "hallucination-detection", "agent-memory", "llm"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
