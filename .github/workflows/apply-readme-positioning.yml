@@ -82,6 +82,14 @@ jobs:
               raise SystemExit("PyPI README first-fold source block did not match")
           pypi.write_text(text.replace(old, new, 1), encoding="utf-8")
 
+          hub = Path("docs/agent-integrations.html")
+          text = hub.read_text(encoding="utf-8")
+          old = "<h1>Context assurance for OpenClaw, Hermes Agent, and OpenCode</h1>"
+          new = "<h1>Entroly context assurance for OpenClaw, Hermes Agent, and OpenCode</h1>"
+          if old not in text:
+              raise SystemExit("integration-hub heading did not match")
+          hub.write_text(text.replace(old, new, 1), encoding="utf-8")
+
       - name: Update discovery contract
         shell: python
         run: |
@@ -143,7 +151,7 @@ jobs:
         run: |
           git config user.name "juyterman1000"
           git config user.email "fastrunner10090@gmail.com"
-          git add README.md PYPI_README.md tests/test_discovery_metadata.py
+          git add README.md PYPI_README.md docs/agent-integrations.html tests/test_discovery_metadata.py
           if git diff --cached --quiet; then
             echo "No positioning changes required"
             exit 0
