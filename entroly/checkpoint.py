@@ -689,13 +689,22 @@ class CheckpointManager:
         if self.max_total_checkpoints <= 0:
             return
         own_prefix = f"ckpt_{self.instance_id}_"
+        # Per-file guard, not one guard around the whole enumeration: now that
+        # each instance unlinks other instances' files, a peer deleting one path
+        # between our glob() and its stat() would otherwise abort the entire
+        # retention pass and leave the cap unenforced — on exactly the
+        # multi-instance machine the cap exists for. Same reason stats() guards
+        # per file.
         try:
-            entries = [
-                (cp.stat().st_mtime, cp)
-                for cp in self.checkpoint_dir.glob("ckpt_*.json.gz")
-            ]
+            candidates = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
         except OSError:
             return
+        entries = []
+        for cp in candidates:
+            try:
+                entries.append((cp.stat().st_mtime, cp))
+            except OSError:
+                continue  # vanished under us; not our problem to report
         if len(entries) <= self.max_total_checkpoints:
             return
         entries.sort(key=lambda item: item[0], reverse=True)
@@ -708,14 +717,19 @@ class CheckpointManager:
                 pass
 
     def _prune_pattern(self, pattern: str, keep: int) -> None:
+        # Per-file stat guard: a concurrent peer prune must not abort our own
+        # retention (see _enforce_global_cap).
         try:
-            checkpoints = sorted(
-                self.checkpoint_dir.glob(pattern),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
+            candidates = list(self.checkpoint_dir.glob(pattern))
         except OSError:
             return
+        dated = []
+        for p in candidates:
+            try:
+                dated.append((p.stat().st_mtime, p))
+            except OSError:
+                continue
+        checkpoints = [p for _m, p in sorted(dated, key=lambda i: i[0], reverse=True)]
         for old_cp in checkpoints[keep:]:
             try:
                 old_cp.unlink()

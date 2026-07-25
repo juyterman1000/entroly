@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _run(cmd: list[str], cwd: str | None = None, env: dict | None = None,
@@ -122,10 +124,17 @@ def main() -> int:
             # "failed" substring over merged streams was both blind (doctor's red
             # lines read "x Config error: ...", never "failed") and falsely
             # tripped by any unrelated stderr warning containing the word.
-            red_lines = [ln for ln in dout.splitlines() if ln.lstrip().startswith("x ")]
+            # doctor colours its output unconditionally (no TTY/NO_COLOR check),
+            # so under capture_output a red line is
+            # "  \x1b[38;5;196mx\x1b[0m Installed Rust engine is stale...".
+            # Without stripping, startswith("x ") never matches and this gate
+            # silently degrades to a substring test that misses every real
+            # failure line.
+            plain = _ANSI_RE.sub("", dout)
+            red_lines = [ln for ln in plain.splitlines() if ln.lstrip().startswith("x ")]
             check("doctor reports no failed checks",
-                  not red_lines and ", 0 failed" not in dout and " failed" not in dout,
-                  "\n".join(red_lines) or dout)
+                  not red_lines and " failed" not in plain,
+                  "\n".join(red_lines) or plain)
 
         rc, out = _run([str(py), "-c",
                         "from entroly.sdk import compress; "

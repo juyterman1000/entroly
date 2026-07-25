@@ -179,3 +179,35 @@ def test_global_cap_never_drops_own_instance_checkpoints(tmp_path: Path):
     assert len(list(tmp_path.glob(f"ckpt_{_HOST}_1_*.json.gz"))) == 3, (
         "the running instance's own state must survive the global cap"
     )
+
+
+def test_global_cap_survives_a_peer_deleting_a_file_mid_scan(tmp_path: Path):
+    # Now that each instance unlinks other instances' files, a peer removing a
+    # path between our glob() and its stat() must not abort the whole retention
+    # pass — on a multi-instance machine that contention is the steady state.
+    for i in range(60):
+        _write(tmp_path, f"ckpt_{_HOST}_{9000 + i}_170000_000.json.gz", age_s=(60 - i) * 10)
+    mgr = CheckpointManager(tmp_path, instance_id=f"{_HOST}_1",
+                            max_checkpoints=10, max_total_checkpoints=40)
+
+    real_glob = type(mgr.checkpoint_dir).glob
+
+    def racing(self, pattern):
+        out = list(real_glob(self, pattern))
+        if out:
+            try:
+                out[0].unlink()      # a peer got there first
+            except OSError:
+                pass
+        return iter(out)
+
+    type(mgr.checkpoint_dir).glob = racing
+    try:
+        mgr._prune_old_checkpoints()
+    finally:
+        type(mgr.checkpoint_dir).glob = real_glob
+
+    remaining = len(list(tmp_path.glob("ckpt_*.json.gz")))
+    assert remaining <= 40, (
+        f"one concurrent unlink disabled retention: {remaining} files left"
+    )
