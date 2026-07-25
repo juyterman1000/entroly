@@ -409,6 +409,16 @@ Not yet. [Entroly Simple Mode](docs/product/entroly-simple-mode.md) defines the 
 
 ---
 
+## Advanced CLI reference
+
+Common setup commands are shown above. Advanced administration, deployment, diagnostics, and research surfaces remain available through `--help`:
+
+`entroly benchmark` · `entroly cache` · `entroly daemon` · `entroly dashboard` · `entroly demo` · `entroly explain` · `entroly perf` · `entroly proof` · `entroly ravs` · `entroly serve` · `entroly wrap`
+
+These commands are optional; use `entroly <command> --help` for their exact contract.
+
+---
+
 ## Project links
 
 - [AI cost optimization guide](docs/ai-cost-optimization.html)
