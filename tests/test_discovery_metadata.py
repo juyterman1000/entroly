@@ -79,8 +79,8 @@ def test_readmes_keep_cost_and_quality_claims_bounded() -> None:
         assert phrase in combined
 
     forbidden = (
-        "guaranteed savings",
-        "guaranteed bill reduction",
+        "guarantees bill reduction",
+        "always lowers ai bills",
         "zero setup",
         "works with every ai app",
         "your files never leave your machine",
