@@ -1,27 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://juyterman1000.github.io/entroly/</loc>
-    <lastmod>2026-07-05</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
+    <loc>https://juyterman1000.github.io/entroly/docs/index.html</loc>
+    <lastmod>2026-07-25</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/agent-integrations.html</loc>
+    <lastmod>2026-07-25</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html</loc>
+    <lastmod>2026-07-25</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html</loc>
+    <lastmod>2026-07-25</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html</loc>
+    <lastmod>2026-07-25</lastmod>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/context-engineering.html</loc>
-    <lastmod>2026-07-05</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.9</priority>
+    <lastmod>2026-07-25</lastmod>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html</loc>
-    <lastmod>2026-07-05</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <lastmod>2026-07-25</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/claude-code-setup.html</loc>
+    <lastmod>2026-07-25</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html</loc>
+    <lastmod>2026-07-25</lastmod>
   </url>
   <url>
     <loc>https://juyterman1000.github.io/entroly/docs/discord.html</loc>
-    <lastmod>2026-07-05</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
+    <lastmod>2026-07-25</lastmod>
   </url>
 </urlset>
