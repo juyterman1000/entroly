@@ -3,22 +3,33 @@ name: Agent Integration Contracts
 on:
   pull_request:
     paths:
+      - "README.md"
+      - "PYPI_README.md"
+      - "pyproject.toml"
+      - "entroly/pyproject.toml"
+      - "entroly/npm/package.json"
+      - "entroly/npm-alias/package.json"
+      - "entroly-wasm/package.json"
       - "entroly/integrations/**"
       - "integrations/hermes/**"
       - "integrations/openclaw/**"
       - "integrations/opencode/**"
+      - "docs/ai-cost-optimization.html"
       - "docs/agent-integrations.html"
       - "docs/openclaw-context-engine.html"
       - "docs/hermes-context-engine.html"
       - "docs/opencode-context-assurance.html"
+      - "docs/product/entroly-simple-mode.md"
       - "docs/robots.txt"
       - "docs/sitemap.xml"
       - "docs/llms.txt"
+      - "docs/llms-full.txt"
       - "robots.txt"
       - "sitemap.xml"
       - "llms.txt"
       - "tests/test_agent_exact_recovery_integrations.py"
       - "tests/test_agent_integration_packages.py"
+      - "tests/test_discovery_metadata.py"
       - "tests/test_search_discovery.py"
       - ".github/workflows/agent-integration-contracts.yml"
 
@@ -46,6 +57,7 @@ jobs:
           tests/test_agent_exact_recovery_integrations.py
           tests/test_agent_integration_packages.py
           tests/test_hermes_context_engine.py
+          tests/test_discovery_metadata.py
           tests/test_search_discovery.py
           --junitxml=agent-integration-${{ matrix.python-version }}.xml
       - name: Upload machine-readable result
