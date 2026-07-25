@@ -209,19 +209,19 @@ def _run_git(repo_root: str, *args: str, timeout: float = 5.0) -> str | None:
 
     We never raise from here — the entire causal layer is best-effort.
     """
+    # Delegate to the hardened runner. `subprocess.run(capture_output=True,
+    # timeout=...)` cannot bound a git call: the timeout bounds the wait, but
+    # communicate() then joins the stdout/stderr reader threads, which exit only
+    # when the pipes close. A git that stops for credentials, opens a pager, or
+    # blocks on index.lock holds a pipe open, so the call hangs forever and the
+    # timeout never fires. That is not hypothetical here — build_snapshot() runs
+    # on every optimize_context request, so a stuck git freezes the primary
+    # context tool. See docs/investigations/P1-optimize-context-timeout.md.
     try:
-        proc = subprocess.run(
-            ["git", *args],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-        if proc.returncode != 0:
-            return None
-        return proc.stdout
-    except (OSError, subprocess.SubprocessError):
+        from .auto_index import _run_git as _hardened_run_git
+
+        return _hardened_run_git(["git", *args], repo_root, timeout=int(timeout))
+    except (OSError, subprocess.SubprocessError, ImportError):
         return None
 
 

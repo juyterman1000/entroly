@@ -70,10 +70,11 @@ def test_doctor_flags_an_installed_but_incomplete_native_engine(
     assert "7/8 checks passed" in output
 
 
-def test_doctor_does_not_count_a_red_failure_as_a_pass(tuning_config, capsys) -> None:
-    # Heavy weight drift prints a red `x`. It used to still increment the pass
-    # counter, so a broken install reported "8/8 checks passed" and exited 0 —
-    # a diagnostic that can never fail is not a diagnostic.
+def test_heavy_weight_drift_warns_without_failing_the_command(tuning_config, capsys) -> None:
+    # Heavy drift used to be counted as a PASS ("8/8 checks passed"), hiding it.
+    # It must be surfaced — but it is produced by the supported `entroly
+    # autotune`, and the message only suggests a rollback, so it must not exit
+    # non-zero either or every autotuned machine fails the CLI smoke scripts.
     tuning_config(
         json.dumps(
             {"weights": {"recency": 0.95, "frequency": 0.02, "semantic": 0.02, "entropy": 0.01}}
@@ -84,9 +85,9 @@ def test_doctor_does_not_count_a_red_failure_as_a_pass(tuning_config, capsys) ->
     output = capsys.readouterr().out
 
     assert "Weights heavily drifted" in output
-    assert "8/8 checks passed" not in output
-    assert "1 failed" in output
-    assert rc == 1, "doctor must exit non-zero so it can gate automation"
+    assert "8/8 checks passed" not in output, "drift must not be reported as a pass"
+    assert "warning" in output.lower()
+    assert rc == 0, "an advisory must not break `entroly doctor` as a CI gate"
 
 
 def test_doctor_reports_an_unreadable_weights_file_instead_of_passing_silently(

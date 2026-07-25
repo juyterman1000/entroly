@@ -3232,8 +3232,12 @@ def cmd_doctor(args):
     checks_total = 0
     # Counted separately so the summary can never report a red failure as a
     # pass. A diagnostic that always prints "N/N passed" cannot be trusted or
-    # used as a gate.
+    # used as a gate. Only states in which entroly cannot work count as
+    # failures (non-zero exit); advisories that need attention but leave the
+    # tool usable are warnings, so `entroly doctor` stays usable as a CI gate
+    # without going red on a healthy install.
     checks_failed = 0
+    checks_warned = 0
 
     # 1. Check Python version
     checks_total += 1
@@ -3283,7 +3287,11 @@ def cmd_doctor(args):
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
               f"fix, not a different Python.){C.RESET}")
-        checks_failed += 1
+        # Not counted as a failure: the message above states the pure-Python
+        # fallback remains available, so entroly still works. This is also the
+        # normal state in a source checkout between a Rust edit and
+        # `maturin develop --release`. Exiting non-zero here would fail the CLI
+        # smoke scripts on a working install.
 
     # 3. Check config validity
     checks_total += 1
@@ -3355,9 +3363,13 @@ def cmd_doctor(args):
                 print(f"  {C.YELLOW}!{C.RESET} Weights drifted (drift={drift:.3f})")
                 checks_passed += 1  # warning, still usable
             else:
-                # Heavy drift is a red failure; it must not be counted as a pass.
-                print(f"  {C.RED}x{C.RESET} Weights heavily drifted ({drift:.3f}) -- consider autotune --rollback")
-                checks_failed += 1
+                # Advisory, not a broken install: heavy drift is produced by the
+                # supported `entroly autotune` doing its job, and the message
+                # itself only suggests a rollback. It must not be counted as a
+                # pass (it needs attention), but it must not fail the command
+                # either, or every autotuned machine fails `entroly doctor`.
+                print(f"  {C.YELLOW}!{C.RESET} Weights heavily drifted ({drift:.3f}) -- consider autotune --rollback")
+                checks_warned += 1
         except Exception as e:
             # Never pass silently: an unreadable weights file is a real problem
             # and previously produced no output at all.
@@ -3393,13 +3405,12 @@ def cmd_doctor(args):
         print(f"  {C.YELLOW}!{C.RESET} Hallucination verifiers not available ({e})")
         checks_passed += 1  # optional, not a failure
 
+    summary = f"\n  {C.BOLD}{checks_passed}/{checks_total} checks passed"
     if checks_failed:
-        print(
-            f"\n  {C.BOLD}{checks_passed}/{checks_total} checks passed, "
-            f"{C.RED}{checks_failed} failed{C.RESET}"
-        )
-    else:
-        print(f"\n  {C.BOLD}{checks_passed}/{checks_total} checks passed{C.RESET}")
+        summary += f", {C.RED}{checks_failed} failed{C.RESET}{C.BOLD}"
+    if checks_warned:
+        summary += f", {C.YELLOW}{checks_warned} warning(s){C.RESET}"
+    print(summary + C.RESET)
 
     # ── Privacy Audit Mode ──────────────────────────────────────
     if getattr(args, "privacy", False):

@@ -275,17 +275,26 @@ class CheckpointManager:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.auto_interval = auto_interval
         self.max_checkpoints = max_checkpoints
-        # Peer checkpoints older than this are treated as abandoned by a dead
-        # instance and reaped. Generous by default so a peer that is merely idle
-        # is never disturbed; override with ENTROLY_PEER_CHECKPOINT_TTL (seconds).
+        # Reaping another instance's checkpoints is DISABLED by default and is
+        # opt-in only. `instance_id` embeds the pid, so every restart makes the
+        # previous run's checkpoints "peers" — and cross-instance reads are
+        # exactly how resume works (`load_latest`/`find_relevant`/
+        # `merge_from_peers` glob ckpt_*). Reaping peers by default therefore
+        # deletes the resume history it is supposed to be pruning, which is a
+        # worse failure than the disk growth it was meant to bound.
+        #
+        # Opt in with ENTROLY_PEER_CHECKPOINT_TTL=<seconds>. A value <= 0, unset,
+        # or unparseable means "never reap a peer".
         if peer_retention_seconds is None:
+            raw = os.environ.get("ENTROLY_PEER_CHECKPOINT_TTL", "")
             try:
-                peer_retention_seconds = float(
-                    os.environ.get("ENTROLY_PEER_CHECKPOINT_TTL", 24 * 3600)
-                )
+                peer_retention_seconds = float(raw) if raw.strip() else 0.0
             except (TypeError, ValueError):
-                peer_retention_seconds = 24 * 3600
-        self.peer_retention_seconds = max(0.0, peer_retention_seconds)
+                peer_retention_seconds = 0.0
+        # <= 0 disables reaping entirely (never "reap everything immediately").
+        self.peer_retention_seconds = (
+            peer_retention_seconds if peer_retention_seconds > 0 else 0.0
+        )
         if instance_id:
             self.instance_id = instance_id
         else:
@@ -662,8 +671,45 @@ class CheckpointManager:
             except OSError:
                 pass
 
+    @staticmethod
+    def _pid_is_alive(pid: int) -> bool:
+        """Best-effort liveness probe. Returns True when uncertain (fail-safe)."""
+        if pid <= 0:
+            return True
+        try:
+            if os.name == "nt":
+                import ctypes
+
+                # PROCESS_QUERY_LIMITED_INFORMATION
+                handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+                if not handle:
+                    return False
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except (OSError, PermissionError, AttributeError, ValueError):
+            return True  # cannot tell — never delete on a guess
+
+    def _peer_pid(self, name: str) -> int:
+        """Extract the owning pid from `ckpt_<host>_<pid>_<n>.json.gz`, else 0."""
+        try:
+            return int(name.split("_")[2])
+        except (IndexError, ValueError):
+            return 0
+
     def _reap_abandoned_peers(self) -> None:
-        """Delete peer checkpoints left behind by instances that are gone."""
+        """Delete peer checkpoints whose owning process is provably gone.
+
+        Opt-in only (see `peer_retention_seconds`). Age alone is NOT liveness: an
+        idle-but-running instance stops writing and its checkpoints age. A peer is
+        reaped only when it is both older than the TTL *and* its pid is no longer
+        alive on this host, and anything uncertain is kept.
+        """
+        if self.peer_retention_seconds <= 0:
+            return  # disabled by default
         cutoff = time.time() - self.peer_retention_seconds
         own_prefix = f"ckpt_{self.instance_id}_"
         try:
@@ -676,6 +722,8 @@ class CheckpointManager:
             try:
                 if cp.stat().st_mtime >= cutoff:
                     continue  # recent — a peer may still be running
+                if self._pid_is_alive(self._peer_pid(cp.name)):
+                    continue  # owner is alive; its state is not ours to delete
                 cp.unlink()
             except OSError:
                 pass  # racing peer or permission issue; never fail a checkpoint
