@@ -98,3 +98,40 @@ def test_git_ls_files_still_works_on_a_real_repository(tmp_path):
     (tmp_path / "tracked.py").write_text("x = 1\n", encoding="utf-8")
     files = _git_ls_files(str(tmp_path))
     assert "tracked.py" in files, f"real discovery regressed: {files}"
+
+
+def test_run_git_captures_to_a_file_not_a_pipe(monkeypatch, tmp_path):
+    """No PIPE means no Windows communicate reader thread or pipe-handle leak."""
+    real_popen = subprocess.Popen
+    seen_stdout = []
+
+    def recording_popen(*args, **kwargs):
+        seen_stdout.append(kwargs.get("stdout"))
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr("entroly.auto_index.subprocess.Popen", recording_popen)
+    result = _run_git(
+        [sys.executable, "-c", "print('tracked.py')"],
+        str(tmp_path),
+        timeout=5,
+    )
+
+    assert result is not None and result.splitlines() == ["tracked.py"]
+    assert seen_stdout
+    assert seen_stdout[0] is not subprocess.PIPE
+    assert hasattr(seen_stdout[0], "fileno"), "stdout must be file-backed"
+
+
+def test_run_git_never_calls_communicate(monkeypatch, tmp_path):
+    """Pin the design: waiting must not depend on inherited stdout reaching EOF."""
+
+    def forbidden_communicate(*_args, **_kwargs):
+        raise AssertionError("_run_git must not use pipe-backed communicate()")
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", forbidden_communicate)
+    result = _run_git(
+        [sys.executable, "-c", "print('ok')"],
+        str(tmp_path),
+        timeout=5,
+    )
+    assert result is not None and result.splitlines() == ["ok"]

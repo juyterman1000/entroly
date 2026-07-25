@@ -274,3 +274,67 @@ def test_readers_survive_a_peer_deleting_a_checkpoint_mid_scan(tmp_path: Path):
     assert len(list(tmp_path.glob("ckpt_*.json.gz"))) < 6, (
         "the race was never triggered — this test would pass without the fix"
     )
+
+
+def test_global_cap_preserves_a_live_peers_latest_recovery_frontier(
+    tmp_path: Path, monkeypatch
+):
+    """A busy writer must not erase a quieter live peer's only resume point."""
+    import os
+
+    live_pid = os.getpid()
+    monkeypatch.setattr(
+        CheckpointManager,
+        "_pid_is_alive",
+        staticmethod(lambda pid: pid == live_pid),
+    )
+    live_paths = [
+        _write(
+            tmp_path,
+            f"ckpt_{_HOST}_{live_pid}_{i:03d}.json.gz",
+            age_s=10_000 - i,
+        )
+        for i in range(3)
+    ]
+    expected_frontier = max(live_paths, key=lambda path: path.stat().st_mtime)
+
+    # Newer abandoned history creates enough pressure to delete the live peer's
+    # entire history under the previous globally-newest-only implementation.
+    for i in range(30):
+        _write(
+            tmp_path,
+            f"ckpt_{_HOST}_{_DEAD_PID}_{i:03d}.json.gz",
+            age_s=100 - i,
+        )
+
+    mgr = CheckpointManager(
+        tmp_path,
+        instance_id=f"{_HOST}_1",
+        max_checkpoints=10,
+        max_total_checkpoints=5,
+    )
+    mgr._prune_old_checkpoints()
+
+    live_remaining = list(tmp_path.glob(f"ckpt_{_HOST}_{live_pid}_*.json.gz"))
+    assert live_remaining == [expected_frontier], (
+        "the global cap erased or duplicated a live peer's protected frontier: "
+        f"{live_remaining}"
+    )
+    assert len(list(tmp_path.glob("ckpt_*.json.gz"))) <= 5
+
+
+def test_global_cap_is_soft_when_protected_frontiers_exceed_it(tmp_path: Path):
+    """Recovery safety outranks a count cap for unclassifiable ownership."""
+    for i in range(3):
+        _write(tmp_path, f"ckpt_unknown-owner-{i}.json.gz", age_s=100 + i)
+    mgr = CheckpointManager(
+        tmp_path,
+        instance_id=f"{_HOST}_1",
+        max_total_checkpoints=1,
+    )
+
+    mgr._prune_old_checkpoints()
+
+    assert len(list(tmp_path.glob("ckpt_*.json.gz"))) == 3, (
+        "unknown ownership was treated as permission to destroy recovery state"
+    )

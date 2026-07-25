@@ -652,49 +652,92 @@ class CheckpointManager:
         self._reap_abandoned_peers()
 
     def _enforce_global_cap(self) -> None:
-        """Bound total checkpoints across ALL instances, newest-first.
+        """Bound historical checkpoints without destroying active recovery state.
 
-        Per-instance pruning cannot bound disk: `instance_id` embeds the pid, so
-        every restart orphans up to `max_checkpoints` files that the next run
-        will never match. That is the actual reported failure (127 checkpoints /
-        264 MB with `own_checkpoints: 0`).
+        The configured ceiling is strict only for *prunable history*. Recovery
+        points outrank disk-count policy. The pass protects:
 
-        Liveness is irrelevant here — keeping the globally newest N is what
-        resume already wants (`load_latest`/`find_relevant` read the most recent
-        across instances), so this bounds growth without deleting the history
-        anyone would restore from, and without guessing whether a peer is alive.
-        Own-instance checkpoints are never dropped by this pass; the per-instance
-        limit above already governs them.
+        * every retained checkpoint owned by this running instance;
+        * the newest checkpoint for each peer that is alive or whose liveness
+          cannot be proved locally (different host or unknown filename shape);
+        * the newest checkpoint across known-dead local peers, preserving one
+          restart/crash frontier while allowing older abandoned runs to collapse.
+
+        If protected frontiers alone exceed the ceiling, the cap becomes soft.
+        Deleting a live peer's last checkpoint would violate the stronger resume
+        invariant and is never an acceptable way to satisfy a storage target.
         """
         if self.max_total_checkpoints <= 0:
             return
-        own_prefix = f"ckpt_{self.instance_id}_"
-        # Per-file guard, not one guard around the whole enumeration: now that
-        # each instance unlinks other instances' files, a peer deleting one path
-        # between our glob() and its stat() would otherwise abort the entire
-        # retention pass and leave the cap unenforced — on exactly the
-        # multi-instance machine the cap exists for. Same reason stats() guards
-        # per file.
         try:
             candidates = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
         except OSError:
             return
-        entries = []
-        for cp in candidates:
+
+        entries: list[tuple[float, Path]] = []
+        for checkpoint in candidates:
             try:
-                entries.append((cp.stat().st_mtime, cp))
+                entries.append((checkpoint.stat().st_mtime, checkpoint))
             except OSError:
-                continue  # vanished under us; not our problem to report
+                continue
         if len(entries) <= self.max_total_checkpoints:
             return
         entries.sort(key=lambda item: item[0], reverse=True)
-        for _mtime, cp in entries[self.max_total_checkpoints:]:
-            if cp.name.startswith(own_prefix):
-                continue  # governed by the per-instance limit
+
+        own_prefix = f"ckpt_{self.instance_id}_"
+        own_host = self.instance_id.split("_", 1)[0]
+        protected: set[Path] = {
+            checkpoint
+            for _mtime, checkpoint in entries
+            if checkpoint.name.startswith(own_prefix)
+        }
+        seen_peer_instances: set[str] = set()
+        newest_dead_frontier: Path | None = None
+
+        for _mtime, checkpoint in entries:
+            if checkpoint in protected:
+                continue
+            owner = self._checkpoint_owner(checkpoint.name)
+            if owner is None:
+                # Unknown ownership is not permission to delete a recovery point.
+                protected.add(checkpoint)
+                continue
+            owner_id, host_hash, pid = owner
+            if owner_id in seen_peer_instances:
+                continue
+            seen_peer_instances.add(owner_id)
+
+            if host_hash != own_host or self._pid_is_alive(pid):
+                protected.add(checkpoint)
+            elif newest_dead_frontier is None:
+                # Keep one newest historical frontier for restart/crash recovery.
+                newest_dead_frontier = checkpoint
+
+        if newest_dead_frontier is not None:
+            protected.add(newest_dead_frontier)
+
+        remaining = len(entries)
+        for _mtime, checkpoint in reversed(entries):
+            if remaining <= self.max_total_checkpoints:
+                break
+            if checkpoint in protected:
+                continue
             try:
-                cp.unlink()
+                checkpoint.unlink()
             except OSError:
-                pass
+                continue
+            remaining -= 1
+
+        if remaining > self.max_total_checkpoints:
+            import logging
+
+            logging.getLogger("entroly.checkpoint").warning(
+                "Checkpoint cap is soft: %d protected recovery frontier(s) "
+                "require %d files, above configured cap %d",
+                len(protected),
+                remaining,
+                self.max_total_checkpoints,
+            )
 
     def _globbed_newest_first(self, pattern: str) -> list[Path]:
         """Glob and sort by mtime, tolerating files that vanish mid-scan.
@@ -788,17 +831,25 @@ class CheckpointManager:
     # caller-supplied id (e.g. "prod_2") would make an arbitrary field be probed
     # as a pid, and a low number is very likely a live unrelated process — or
     # worse, a dead one, deleting a running peer's state.
-    _AUTO_ID_RE = re.compile(r"^ckpt_[0-9a-f]{12}_(\d+)_")
+    _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\d+)_")
+
+    @classmethod
+    def _checkpoint_owner(cls, name: str) -> tuple[str, str, int] | None:
+        """Return ``(instance_id, host_hash, pid)`` for an auto filename."""
+        match = cls._AUTO_ID_RE.match(name)
+        if not match:
+            return None
+        try:
+            pid = int(match.group(2))
+        except ValueError:
+            return None
+        host_hash = match.group(1)
+        return f"{host_hash}_{pid}", host_hash, pid
 
     def _peer_pid(self, name: str) -> int:
-        """Owning pid from an auto-generated `ckpt_<hex12>_<pid>_...` name, else 0."""
-        match = self._AUTO_ID_RE.match(name)
-        if not match:
-            return 0  # unknown shape — never guessed
-        try:
-            return int(match.group(1))
-        except ValueError:
-            return 0
+        """Owning pid from an auto-generated checkpoint name, else 0."""
+        owner = self._checkpoint_owner(name)
+        return owner[2] if owner is not None else 0
 
     def _reap_abandoned_peers(self) -> None:
         """Delete peer checkpoints whose owning process is provably gone.

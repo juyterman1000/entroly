@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 import tempfile
 import time
@@ -198,81 +199,99 @@ def _git_env() -> dict[str, str]:
     return env
 
 
-def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | None:
-    """Run a git command that can never hang the caller. Returns stdout or None.
+def _terminate_process_tree(
+    proc: subprocess.Popen[bytes], *, timeout: float = 1.0
+) -> None:
+    """Best-effort termination of a process and descendants, then reap it.
 
-    `subprocess.run(capture_output=True, timeout=...)` is NOT safe here: the
-    timeout bounds the *wait*, but `communicate()` then joins the stdout/stderr
-    reader threads, and those threads only exit when the pipes close. A child
-    (or grandchild) holding a pipe open blocks that join forever — the timeout
-    never fires and the calling thread is stuck permanently. Observed in
-    production: the incremental watcher hung inside `git ls-files` while holding
-    the index mutation lock, which stalled all index maintenance indefinitely.
-
-    So: kill the process on timeout, then reap it with a bounded second wait,
-    and never let a stuck child propagate into the caller.
+    The command is started in an isolated POSIX session or Windows process group.
+    On POSIX, killing the process group also closes inherited descriptors held by
+    grandchildren. On Windows, ``taskkill /T`` is the supported tree primitive;
+    direct ``kill`` remains the fail-safe fallback.
     """
-    proc = None
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=max(0.1, timeout),
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
     try:
-        proc = subprocess.Popen(
-            args,
-            cwd=project_dir,
-            stdin=subprocess.DEVNULL,   # a child that inherits a console can block on input
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,  # unread stderr is one way the pipe stays open
-            text=True,
-            env=_git_env(),
-        )
-        stdout, _ = proc.communicate(timeout=timeout)
-        if proc.returncode == 0:
-            return stdout
-        return None
-    except subprocess.TimeoutExpired:
-        logger.warning(
-            "git %s timed out after %ss in %s; killing it and falling back to a "
-            "filesystem walk", args[1] if len(args) > 1 else "", timeout, project_dir,
-        )
-        return None
+        proc.wait(timeout=max(0.1, timeout))
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        # The caller must still return. There are no pipe-reader threads or pipe
+        # handles to leak because stdout is a temporary file, not PIPE.
+        pass
+
+
+def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | None:
+    """Run a git command with a hard wall-clock bound and no pipe-reader leak.
+
+    ``Popen(..., stdout=PIPE).communicate(timeout=...)`` is unsafe on Windows:
+    ``communicate`` owns background reader threads, and a descendant that keeps
+    stdout inherited can leave those threads and handles alive after the direct
+    child is killed. Capture into an anonymous temporary file instead. Waiting
+    for the process is then independent of EOF, and every Python-owned resource
+    closes deterministically on every path.
+    """
+    proc: subprocess.Popen[bytes] | None = None
+    timeout = max(0.01, float(timeout))
+    try:
+        with tempfile.TemporaryFile(mode="w+b") as capture:
+            proc = subprocess.Popen(
+                args,
+                cwd=project_dir,
+                stdin=subprocess.DEVNULL,
+                stdout=capture,
+                stderr=subprocess.DEVNULL,
+                env=_git_env(),
+                start_new_session=os.name != "nt",
+                creationflags=(
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if os.name == "nt"
+                    else 0
+                ),
+            )
+            try:
+                returncode = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "git %s timed out after %ss in %s; terminating its process "
+                    "tree and falling back to a filesystem walk",
+                    args[1] if len(args) > 1 else "",
+                    timeout,
+                    project_dir,
+                )
+                _terminate_process_tree(proc)
+                return None
+
+            if returncode != 0:
+                return None
+            capture.flush()
+            capture.seek(0)
+            return capture.read().decode("utf-8", errors="replace")
     except (FileNotFoundError, OSError, ValueError):
         return None
     finally:
-        if proc is not None:
-            reaped = proc.poll() is not None
-            if not reaped:
-                try:
-                    proc.kill()
-                    # Bounded reap, kept short: it is added to the caller's
-                    # timeout budget, and these calls sit on the optimize_context
-                    # hot path. A killed process that has not been reaped within
-                    # a second is not going to be.
-                    try:
-                        proc.communicate(timeout=1)
-                        reaped = True
-                    except (subprocess.TimeoutExpired, OSError, ValueError):
-                        reaped = False
-                except OSError:
-                    reaped = False
-            # close() can BLOCK — but only on Windows, and only when the reap
-            # failed. There, Popen._communicate leaves its _readerthread inside
-            # fh.read() holding the stream lock, so closing from this thread
-            # would wait on that lock forever, reintroducing the very hang this
-            # function exists to prevent while the watcher holds the index
-            # mutation lock. POSIX _communicate uses selectors with no reader
-            # thread, so closing is always safe there. Skipping the close
-            # unconditionally leaked a pipe per call — and these run per
-            # optimize_context request, so "bounded leak" was not bounded.
-            if reaped or os.name != "nt":
-                for stream in (proc.stdout, proc.stderr, proc.stdin):
-                    if stream is not None:
-                        try:
-                            stream.close()
-                        except (OSError, ValueError):
-                            pass
-            else:
-                logger.warning(
-                    "git left its pipe open after kill; leaking one handle rather "
-                    "than blocking on close (Windows only, see _run_git)."
-                )
+        if proc is not None and proc.poll() is None:
+            _terminate_process_tree(proc)
 
 
 def _git_ls_files(project_dir: str) -> list[str]:
