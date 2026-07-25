@@ -471,11 +471,7 @@ class CheckpointManager:
 
         Returns None if no checkpoints exist or all are unreadable.
         """
-        checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        checkpoints = self._globbed_newest_first("ckpt_*.json.gz")
 
         for cp in checkpoints:
             result = self._load_file(cp)
@@ -486,11 +482,7 @@ class CheckpointManager:
 
     def _load_latest_for_instance(self) -> Checkpoint | None:
         """Load this live instance's latest checkpoint for metadata continuity."""
-        paths = sorted(
-            self.checkpoint_dir.glob(f"ckpt_{self.instance_id}_*.json.gz"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
+        paths = self._globbed_newest_first(f"ckpt_{self.instance_id}_*.json.gz")
         for path in paths:
             checkpoint = self._load_file(path)
             if checkpoint is not None:
@@ -507,11 +499,7 @@ class CheckpointManager:
     ) -> CheckpointMatch | None:
         """Return the best task-relevant checkpoint, or None below threshold."""
         checkpoints: list[Checkpoint] = []
-        paths = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
+        paths = self._globbed_newest_first("ckpt_*.json.gz")
         for path in paths:
             checkpoint = self._load_file(path)
             if checkpoint is not None:
@@ -557,11 +545,7 @@ class CheckpointManager:
         Returns the merged fragment list combining local + peer knowledge.
         Uses most-recent-writer-wins conflict resolution.
         """
-        all_checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        all_checkpoints = self._globbed_newest_first("ckpt_*.json.gz")
 
         merged = list(local_fragments)
         seen_instances = {self.instance_id}
@@ -599,11 +583,7 @@ class CheckpointManager:
 
     def list_checkpoints(self) -> list[dict[str, Any]]:
         """List all available checkpoints with metadata."""
-        checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        checkpoints = self._globbed_newest_first("ckpt_*.json.gz")
 
         result = []
         for cp_path in checkpoints:
@@ -715,6 +695,29 @@ class CheckpointManager:
                 cp.unlink()
             except OSError:
                 pass
+
+    def _globbed_newest_first(self, pattern: str) -> list[Path]:
+        """Glob and sort by mtime, tolerating files that vanish mid-scan.
+
+        `sorted(glob(...), key=lambda p: p.stat().st_mtime)` raises
+        FileNotFoundError when a path disappears between the glob and the stat.
+        That window is now reachable cross-process: the global cap makes one
+        instance unlink another instance's checkpoints, so a peer's retention
+        pass can delete a file while this instance is enumerating. Readers must
+        degrade to "that checkpoint is gone", never raise out of an MCP tool.
+        """
+        try:
+            candidates = list(self.checkpoint_dir.glob(pattern))
+        except OSError:
+            return []
+        dated: list[tuple[float, Path]] = []
+        for path in candidates:
+            try:
+                dated.append((path.stat().st_mtime, path))
+            except OSError:
+                continue  # vanished under us
+        dated.sort(key=lambda item: item[0], reverse=True)
+        return [path for _mtime, path in dated]
 
     def _prune_pattern(self, pattern: str, keep: int) -> None:
         # Per-file stat guard: a concurrent peer prune must not abort our own

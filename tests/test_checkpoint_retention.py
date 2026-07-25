@@ -211,3 +211,35 @@ def test_global_cap_survives_a_peer_deleting_a_file_mid_scan(tmp_path: Path):
     assert remaining <= 40, (
         f"one concurrent unlink disabled retention: {remaining} files left"
     )
+
+
+def test_readers_survive_a_peer_deleting_a_checkpoint_mid_scan(tmp_path: Path):
+    # The global cap is the first code that makes one instance unlink ANOTHER
+    # instance's files, so every reader that globs-then-stats can now race a
+    # peer's retention pass. A vanished file must read as "gone", never raise
+    # FileNotFoundError out of an MCP tool.
+    for i in range(6):
+        _write(tmp_path, f"ckpt_{_HOST}_{100 + i}_170000_000.json.gz")
+    mgr = CheckpointManager(tmp_path, instance_id=f"{_HOST}_1")
+
+    real_glob = type(mgr.checkpoint_dir).glob
+
+    def racing(self, pattern):
+        out = list(real_glob(self, pattern))
+        if out:
+            try:
+                out[0].unlink()
+            except OSError:
+                pass
+        return iter(out)
+
+    type(mgr.checkpoint_dir).glob = racing
+    try:
+        mgr.load_latest()
+        mgr._load_latest_for_instance()
+        mgr.find_relevant("refactor the proxy")
+        mgr.list_checkpoints()
+        mgr.merge_from_peers([])
+        mgr.stats()
+    finally:
+        type(mgr.checkpoint_dir).glob = real_glob
