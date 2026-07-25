@@ -21,7 +21,12 @@ _RECOVERY_MARKER = "<entroly_exact_recovery"
 
 
 def _canonical_messages(messages: list[dict[str, Any]]) -> str:
-    return json.dumps(messages, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return json.dumps(
+        messages,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
 def _is_recovery_marker(message: dict[str, Any]) -> bool:
@@ -30,6 +35,12 @@ def _is_recovery_marker(message: dict[str, Any]) -> bool:
         and isinstance(message.get("content"), str)
         and _RECOVERY_MARKER in message["content"]
     )
+
+
+def _without_recovery_markers(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [message for message in messages if not _is_recovery_marker(message)]
 
 
 def _insert_after_leading_systems(
@@ -52,9 +63,11 @@ class ModernHermesContextMixin:
         source_messages: list[dict[str, Any]],
         selected_messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        previous_markers = [message for message in source_messages if _is_recovery_marker(message)]
-        original = [message for message in source_messages if not _is_recovery_marker(message)]
-        selected = [message for message in selected_messages if not _is_recovery_marker(message)]
+        previous_markers = [
+            message for message in source_messages if _is_recovery_marker(message)
+        ]
+        original = _without_recovery_markers(source_messages)
+        selected = _without_recovery_markers(selected_messages)
         if _canonical_messages(original) == _canonical_messages(selected):
             result = list(selected)
             for marker in previous_markers:
@@ -94,8 +107,15 @@ class ModernHermesContextMixin:
     ) -> list[dict[str, Any]]:
         """Use the existing Entroly compressor and attach one exact replay handle."""
 
-        selected = super().compress(messages, current_tokens, focus_topic)  # type: ignore[misc]
-        if not isinstance(selected, list) or not all(isinstance(item, dict) for item in selected):
+        payload = _without_recovery_markers(messages)
+        selected = super().compress(  # type: ignore[misc]
+            payload,
+            current_tokens,
+            focus_topic,
+        )
+        if not isinstance(selected, list) or not all(
+            isinstance(item, dict) for item in selected
+        ):
             return messages
         try:
             return self._attach_exact_recovery(messages, selected)
@@ -132,8 +152,9 @@ class ModernHermesContextMixin:
         try:
             from ..hermes import safe_compress_hermes
 
+            payload = _without_recovery_markers(request_messages)
             selected = safe_compress_hermes(
-                [dict(item) for item in request_messages],
+                [dict(item) for item in payload],
                 budget=int(budget_tokens),
                 preserve_last_n=max(2, int(getattr(self, "protect_last_n", 6))),
             )
@@ -168,7 +189,10 @@ class ModernHermesContextMixin:
         if isinstance(context_length, int) and not isinstance(context_length, bool):
             if context_length > 0:
                 self.context_length = context_length
-        threshold = kwargs.get("threshold_percent", getattr(self, "threshold_percent", 0.75))
+        threshold = kwargs.get(
+            "threshold_percent",
+            getattr(self, "threshold_percent", 0.75),
+        )
         try:
             threshold_value = float(threshold)
         except (TypeError, ValueError):
@@ -212,7 +236,9 @@ class ModernHermesContextMixin:
             "context_length": int(getattr(self, "context_length", 0)),
             "threshold_tokens": int(getattr(self, "threshold_tokens", 0)),
             "last_prompt_tokens": int(getattr(self, "last_prompt_tokens", 0)),
-            "last_completion_tokens": int(getattr(self, "last_completion_tokens", 0)),
+            "last_completion_tokens": int(
+                getattr(self, "last_completion_tokens", 0)
+            ),
             "last_total_tokens": int(getattr(self, "last_total_tokens", 0)),
             "compression_count": int(getattr(self, "compression_count", 0)),
             "exact_recovery": {
