@@ -1,0 +1,91 @@
+name: One-time README FAQ refinement
+
+on:
+  push:
+    branches:
+      - feat/context-assurance-agent-integrations
+
+permissions:
+  contents: write
+
+jobs:
+  refine-faq:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/context-assurance-agent-integrations
+
+      - name: Replace technical FAQ wording with plain language
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("README.md")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''### Does Entroly work with local models?
+
+          Yes. Entroly can be used with Ollama, LM Studio, and custom local-model applications through supported SDK, proxy, or agent integrations.
+
+          ### Does Entroly send my files to its own cloud?
+
+          Local indexing, selection, receipts, and recovery storage do not require an Entroly cloud service. The selected prompt still goes to the model provider chosen by the user. No outbound analytics are enabled by default.
+
+          ### Can Entroly guarantee that an answer is correct?
+
+          No. WITNESS checks support against supplied evidence; it does not establish universal truth. Tests, domain review, and appropriate professional oversight still matter.
+
+          ### Is there a one-click version for nontechnical users?
+
+          Not yet. [Entroly Simple Mode](docs/product/entroly-simple-mode.md) defines the desktop experience and release gates required before “one-click” can be advertised honestly.
+          '''
+
+          new = '''### Does Entroly work with local models?
+
+          Yes. Entroly works with Ollama, LM Studio, and other local-model setups. You connect it using the method supported by your app, while your model and existing workflow stay the same.
+
+          ### Does Entroly upload my files to its own cloud?
+
+          By default, Entroly does not require your files to be uploaded to an Entroly cloud. Local indexing, evidence selection, receipts, and recovery storage can stay on your machine. The selected prompt is still sent to the AI provider you choose, and Entroly sends no outbound analytics by default.
+
+          ### Can Entroly guarantee that every answer is correct?
+
+          No AI tool can guarantee that. Entroly checks whether an answer is supported by the evidence it received and helps reveal missing or weak support. Important decisions should still use tests, expert review, or appropriate professional judgment.
+
+          ### Can nontechnical users use Entroly?
+
+          Yes—after a supported tool is connected. Today, a developer or administrator may need to complete a small one-time setup. [Entroly Simple Mode](docs/product/entroly-simple-mode.md) is the planned no-terminal desktop experience for independent everyday use.
+          '''
+
+          if old in text:
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding="utf-8")
+          elif new not in text:
+              raise SystemExit("Expected FAQ block was not found; refusing a partial rewrite")
+
+          updated = path.read_text(encoding="utf-8")
+          required = (
+              "Does Entroly upload my files to its own cloud?",
+              "Can Entroly guarantee that every answer is correct?",
+              "Can nontechnical users use Entroly?",
+              "Entroly sends no outbound analytics by default.",
+          )
+          for phrase in required:
+              if phrase not in updated:
+                  raise SystemExit(f"Missing required FAQ wording: {phrase}")
+          if "or agent integrations." in updated:
+              raise SystemExit("Awkward legacy FAQ fragment remains")
+          PY
+
+      - name: Commit the FAQ refinement
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README FAQ is already refined."
+            exit 0
+          fi
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(readme): make privacy and usability FAQ clearer"
+          git push origin HEAD:feat/context-assurance-agent-integrations
