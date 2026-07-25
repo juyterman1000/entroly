@@ -25,6 +25,7 @@ Entroly sits between your AI application and the model. It selects the useful in
 <p align="center">
   <a href="#start-here"><b>Start here</b></a> ·
   <a href="#what-entroly-does-in-plain-language"><b>Plain-language guide</b></a> ·
+  <a href="docs/ai-cost-optimization.html"><b>AI cost guide</b></a> ·
   <a href="#works-with-your-ai-tools"><b>Integrations</b></a> ·
   <a href="#technical-section"><b>Technical section</b></a> ·
   <a href="#evidence-and-limitations"><b>Evidence</b></a> ·
@@ -70,6 +71,8 @@ Your chosen AI model
 - **No architecture rewrite:** connect through a supported proxy, wrapper, plugin, MCP, or SDK path.
 
 Savings and answer quality depend on the workload, model, budget, provider, and integration. Entroly reports what it can observe and does not promise a universal compression percentage or guaranteed bill reduction.
+
+Read the [plain-language AI cost optimization guide](docs/ai-cost-optimization.html) for provider-bound measurement, fixed-subscription limits, and evidence-preserving token reduction.
 
 ---
 
@@ -408,6 +411,7 @@ Not yet. [Entroly Simple Mode](docs/product/entroly-simple-mode.md) defines the 
 
 ## Project links
 
+- [AI cost optimization guide](docs/ai-cost-optimization.html)
 - [Documentation](https://juyterman1000.github.io/entroly/docs/index.html)
 - [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html)
 - [PyPI](https://pypi.org/project/entroly/)
