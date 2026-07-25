@@ -9,6 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SITE = "https://juyterman1000.github.io/entroly"
 PAGES = {
+    "docs/ai-cost-optimization.html": {
+        "canonical": f"{SITE}/docs/ai-cost-optimization.html",
+        "title_terms": ("AI Cost Optimization", "Entroly"),
+        "body_terms": (
+            "Context Assurance",
+            "lower LLM API input costs",
+            "Fixed ChatGPT or Claude subscription",
+        ),
+    },
     "docs/agent-integrations.html": {
         "canonical": f"{SITE}/docs/agent-integrations.html",
         "title_terms": ("Entroly", "OpenClaw", "Hermes", "OpenCode"),
@@ -62,7 +71,7 @@ def test_search_and_answer_crawlers_are_explicitly_allowed() -> None:
     assert f"Sitemap: {SITE}/sitemap.xml" in robots
 
 
-def test_integration_sitemap_is_current_and_complete() -> None:
+def test_discovery_sitemap_is_current_and_complete() -> None:
     root = ET.fromstring(_text("sitemap.xml"))
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     entries = {
@@ -76,7 +85,7 @@ def test_integration_sitemap_is_current_and_complete() -> None:
     assert entries[f"{SITE}/docs/index.html"] == "2026-07-25"
 
 
-def test_integration_pages_have_unique_search_metadata_and_valid_json_ld() -> None:
+def test_intent_pages_have_unique_search_metadata_and_valid_json_ld() -> None:
     titles: set[str] = set()
     canonicals: set[str] = set()
     for path, spec in PAGES.items():
@@ -121,9 +130,10 @@ def test_integration_pages_have_unique_search_metadata_and_valid_json_ld() -> No
         assert '"review"' not in encoded
 
 
-def test_integration_hub_links_every_intent_page() -> None:
+def test_integration_hub_links_cost_and_every_agent_intent_page() -> None:
     hub = _text("docs/agent-integrations.html")
     for path in (
+        "ai-cost-optimization.html",
         "openclaw-context-engine.html",
         "hermes-context-engine.html",
         "opencode-context-assurance.html",
@@ -131,11 +141,12 @@ def test_integration_hub_links_every_intent_page() -> None:
         assert f'href="{path}"' in hub
 
 
-def test_llms_index_names_each_integration_and_exact_recovery() -> None:
+def test_llms_index_names_cost_and_integrations_with_bounded_answers() -> None:
     canonical = _text("llms.txt")
     mirror = _text("docs/llms.txt")
     assert canonical == mirror
     for path in (
+        "ai-cost-optimization.html",
         "agent-integrations.html",
         "openclaw-context-engine.html",
         "hermes-context-engine.html",
@@ -144,4 +155,7 @@ def test_llms_index_names_each_integration_and_exact_recovery() -> None:
         assert f"{SITE}/docs/{path}" in canonical
     assert "hash-only lookup" in canonical
     assert "does not accept a query" in canonical
-    assert "Does Entroly replace an agent?" in canonical
+    assert "How can Entroly reduce AI costs?" in canonical
+    assert "Does Entroly lower ChatGPT Plus or Claude subscription prices?" in canonical
+    assert "No fixed percentage is guaranteed" in canonical
+    assert "not yet shipped" in canonical
