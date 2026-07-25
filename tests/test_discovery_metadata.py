@@ -9,15 +9,20 @@ ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "https://github.com/juyterman1000/entroly"
 HOMEPAGE = "https://juyterman1000.github.io/entroly/docs/index.html"
 CATEGORY = "context engineering"
-IDENTITY = "context os"
+PRODUCT_IDENTITY = "context assurance"
 PACKAGE_KEYWORDS = {
     "ai-agents",
+    "ai-cost-optimization",
+    "context-assurance",
     "context-engineering",
     "context-compression",
     "context-management",
     "context-optimization",
+    "llm-cost-optimization",
     "mcp",
     "model-context-protocol",
+    "reduce-ai-costs",
+    "token-reduction",
 }
 
 
@@ -38,14 +43,50 @@ def _toml_section(path: str, section: str) -> str:
     return match.group(1)
 
 
-def test_readme_first_fold_names_the_category_and_supported_clients() -> None:
+def test_readme_first_fold_explains_context_assurance_in_plain_language() -> None:
     for path in ("README.md", "PYPI_README.md"):
-        first_fold = _text(path)[:5_000].casefold()
-        assert "entroly — the open-source context os for ai agents" in first_fold
-        assert IDENTITY in first_fold
-        assert "context compression" in first_fold or "compress" in first_fold
-        for client in ("claude code", "codex", "openclaw", "github copilot", "mcp"):
+        first_fold = _text(path)[:7_500].casefold()
+        assert "entroly — context assurance that helps lower ai costs" in first_fold
+        assert PRODUCT_IDENTITY in first_fold
+        assert "unnecessary ai context" in first_fold
+        assert "recoverable" in first_fold
+        assert "no agent-architecture rewrite" in first_fold
+        assert "one-time setup" in first_fold
+        for client in (
+            "claude code",
+            "codex",
+            "openclaw",
+            "hermes agent",
+            "opencode",
+            "github copilot",
+            "local models",
+            "mcp",
+        ):
             assert client in first_fold, f"{path} does not identify {client} above the fold"
+
+
+def test_readmes_keep_cost_and_quality_claims_bounded() -> None:
+    combined = (_text("README.md") + _text("PYPI_README.md")).casefold()
+    required = (
+        "does not promise a universal compression percentage",
+        "fixed-price subscription",
+        "subscription price may not change",
+        "not a provider invoice",
+        "does not establish universal truth",
+        "not shipped yet",
+    )
+    for phrase in required:
+        assert phrase in combined
+
+    forbidden = (
+        "guaranteed savings",
+        "guaranteed bill reduction",
+        "zero setup",
+        "works with every ai app",
+        "your files never leave your machine",
+    )
+    for phrase in forbidden:
+        assert phrase not in combined
 
 
 def test_python_package_metadata_is_searchable_and_connected() -> None:
@@ -53,9 +94,9 @@ def test_python_package_metadata_is_searchable_and_connected() -> None:
         project = _toml_section(path, "project").casefold()
         urls = _toml_section(path, "project.urls")
 
-        assert CATEGORY in project
-        assert IDENTITY in project
+        assert PRODUCT_IDENTITY in project
         assert "ai agents" in project
+        assert "reduce avoidable token usage" in project
         for keyword in PACKAGE_KEYWORDS:
             assert f'"{keyword}"' in project, f"{path} is missing keyword {keyword}"
         assert f'Homepage = "{HOMEPAGE}"' in urls
@@ -64,7 +105,7 @@ def test_python_package_metadata_is_searchable_and_connected() -> None:
         assert f'"Release Notes" = "{REPOSITORY}/releases"' in urls
 
 
-def test_npm_packages_share_discovery_terms_and_trust_links() -> None:
+def test_npm_packages_share_cost_discovery_terms_and_trust_links() -> None:
     for path in (
         "entroly/npm/package.json",
         "entroly/npm-alias/package.json",
@@ -74,23 +115,23 @@ def test_npm_packages_share_discovery_terms_and_trust_links() -> None:
         description = package["description"].casefold()
         keywords = set(package["keywords"])
 
-        assert CATEGORY in description
-        assert IDENTITY in description
+        assert PRODUCT_IDENTITY in description
         assert "ai agent" in description
+        assert "token usage" in description
         assert PACKAGE_KEYWORDS <= keywords
         assert package["repository"]["url"] == REPOSITORY
         assert package["homepage"] == HOMEPAGE
         assert package["bugs"]["url"] == f"{REPOSITORY}/issues"
 
 
-def test_mcp_and_docs_metadata_use_the_same_verified_positioning() -> None:
+def test_mcp_and_docs_metadata_keep_the_verified_context_os_boundary() -> None:
     manifest = _json("server.json")
     description = manifest["description"]
     homepage = _text("docs/index.html")
 
     assert len(description) <= 100
     assert CATEGORY in description.casefold()
-    assert IDENTITY in description.casefold()
+    assert "context os" in description.casefold()
     assert "recovery" in description.casefold()
     assert "receipts" in description.casefold()
     assert "verification" in description.casefold()
