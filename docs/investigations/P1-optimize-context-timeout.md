@@ -1,8 +1,41 @@
 # P1 — `optimize_context` MCP tool times out (investigation record)
 
-**Status:** reproduced, **not root-caused**. No fix shipped — a speculative fix
-would be worse than none. This record exists so the next engineer does not
-repeat the elimination work.
+**Status:** **ROOT-CAUSED AND FIXED** — see "Resolution" below. The elimination
+work is kept because it is what forced the search to the right place, and
+because two plausible-sounding hypotheses were disproved along the way.
+
+## Resolution
+
+A `py-spy` thread dump of the live server (PID 50232) found the incremental
+watcher permanently blocked:
+
+```
+Thread 61176: "entroly-watcher"
+    _wait_for_tstate_lock (threading.py:1105)
+    join -> _communicate -> communicate -> run (subprocess.py:512)
+    _git_ls_files (auto_index.py:187)
+    _reconcile_index (auto_index.py:769)
+    reconcile_index (auto_index.py:746)   <- holds _index_mutation_lock
+```
+
+`subprocess.run(capture_output=True, timeout=10)` does not bound this call. The
+timeout bounds the *wait*; `communicate()` then joins the stdout/stderr reader
+threads, which exit only when the pipes close. A git that stops for credentials,
+opens a pager, or blocks on `index.lock` holds a pipe open, so the join never
+returns and the timeout never fires. Two orphaned `_readerthread`s were parked
+in the same dump. The watcher then held `_index_mutation_lock` **forever**, so
+every later ingest/reconcile/auto-index blocked and the index silently stopped
+updating.
+
+Fixed by `_run_git`: explicit `Popen`, `stdin=DEVNULL`, `stderr=DEVNULL`, kill on
+timeout plus a bounded reap, and a strictly non-interactive git environment.
+Discovery degrades to the filesystem walk instead of hanging. Regression tests:
+`tests/test_git_discovery_cannot_hang.py`.
+
+**Lesson worth generalising:** no component measurement could have found this.
+Every phase was fast in isolation; the fault was a *stuck thread holding a lock*,
+visible only in a dump of the live process. When components measure fast but the
+system is slow, dump the process before restarting it.
 
 **Journey affected:** D (MCP user) / E (Claude/Codex/Cursor) — "call the primary
 context tool". `optimize_context` is documented as *"the core tool — call it
