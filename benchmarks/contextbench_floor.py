@@ -40,7 +40,9 @@ def paired_bootstrap(deltas: list[float], iters: int = 10000, seed: int = 42):
 
 
 def _tokens(records) -> int:
-    return sum(r.token_cost for r in records if r.mapped)
+    # Unmapped selected evidence still consumed the budget and must never
+    # disappear from efficiency accounting.
+    return sum(r.token_cost for r in records)
 
 
 def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
@@ -48,6 +50,7 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
         bm25_rank_files,
         bm25_select,
         build_engine_for_repo,
+        entroly_rank_files,
         entroly_select,
         evidence_drop,
         file_score,
@@ -55,9 +58,21 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
         parse_gold,
     )
     from benchmarks.contextbench_pilot import _download, _extract_stripped
-    from benchmarks.contextbench_span_adapter import canonical_path, to_spans
+    from benchmarks.contextbench_span_adapter import (
+        canonical_path,
+        to_spans,
+        unmapped_line_count,
+    )
 
-    tasks = json.load(open(tasks_json, encoding="utf-8"))[:n]
+    if budget <= 0 or n <= 0:
+        raise ValueError("budget and n must be positive")
+    with open(tasks_json, encoding="utf-8") as task_file:
+        available_tasks = json.load(task_file)
+    if not isinstance(available_tasks, list):
+        raise ValueError("tasks file must contain a list")
+    tasks = available_tasks[:n]
+    if len(tasks) != n:
+        raise ValueError(f"requested {n} tasks but only {len(tasks)} are available")
     os.makedirs(co_root, exist_ok=True)
     try:
         import psutil
@@ -75,9 +90,13 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
         try:
             if os.path.isdir(dest):
                 shutil.rmtree(dest, ignore_errors=True)
-            _extract_stripped(_download(task["repo_url"], task["base_commit"]), dest)
+            nfiles = _extract_stripped(_download(task["repo_url"], task["base_commit"]), dest)
+            if nfiles <= 0:
+                raise RuntimeError("checkout archive produced no files")
             engine = build_engine_for_repo(dest)
             gold = parse_gold(task["gold_context"])
+            if not gold:
+                raise ValueError("task has empty or malformed gold context")
             gold_files = set(gold)
             q = task["problem_statement"]
 
@@ -85,7 +104,7 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
             e_rec = entroly_select(engine, dest, q, budget)
             e_lat = time.time() - t0
             e_pred = to_spans(e_rec)
-            e_rank = list(dict.fromkeys(r.path for r in e_rec))
+            e_rank = entroly_rank_files(engine, dest, q)
 
             t0 = time.time()
             b_rec = bm25_select(engine, dest, q, budget)
@@ -93,20 +112,48 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
             b_pred = to_spans(b_rec)
             b_ranked, _ = bm25_rank_files(engine, q)
             b_rank = list(dict.fromkeys(canonical_path(s) for s, sc, _, _ in b_ranked if sc > 0))
+            e_tokens = _tokens(e_rec)
+            b_tokens = _tokens(b_rec)
+            if e_tokens > budget or b_tokens > budget:
+                raise RuntimeError(
+                    f"budget parity violated: Entroly={e_tokens}, BM25={b_tokens}, budget={budget}"
+                )
 
             e_f, e_l = file_score(e_pred, gold), line_score(e_pred, gold)
             b_f, b_l = file_score(b_pred, gold), line_score(b_pred, gold)
             row["entroly"] = {
                 "file": (round(e_f.recall, 3), round(e_f.precision, 3), round(e_f.f1, 3)),
-                "line_f1": round(e_l.f1, 3), "drop": round(evidence_drop(e_pred, gold), 3),
-                "rk": recall_at_k(e_rank, gold_files), "tokens": _tokens(e_rec),
-                "n_sel": len(e_rec), "lat_s": round(e_lat, 2),
+                "line_f1": round(e_l.f1, 3),
+                "drop": round(
+                    evidence_drop(e_pred, gold, unmapped_lines=unmapped_line_count(e_rec)), 3
+                ),
+                "rk": recall_at_k(e_rank, gold_files), "tokens": e_tokens,
+                "n_sel": len(e_rec),
+                "n_unmapped": sum(
+                    not r.mapped or r.unmapped_blocks > 0 for r in e_rec
+                ),
+                "unmapped_lines": unmapped_line_count(e_rec),
+                "lat_s": round(e_lat, 2),
             }
             row["bm25"] = {
                 "file": (round(b_f.recall, 3), round(b_f.precision, 3), round(b_f.f1, 3)),
-                "line_f1": round(b_l.f1, 3), "drop": round(evidence_drop(b_pred, gold), 3),
-                "rk": recall_at_k(b_rank, gold_files), "tokens": _tokens(b_rec),
-                "n_sel": len(b_rec), "lat_s": round(b_lat, 2),
+                "line_f1": round(b_l.f1, 3),
+                "drop": round(
+                    evidence_drop(b_pred, gold, unmapped_lines=unmapped_line_count(b_rec)), 3
+                ),
+                "rk": recall_at_k(b_rank, gold_files), "tokens": b_tokens,
+                "n_sel": len(b_rec),
+                "n_unmapped": sum(
+                    not r.mapped or r.unmapped_blocks > 0 for r in b_rec
+                ),
+                "unmapped_lines": unmapped_line_count(b_rec),
+                "lat_s": round(b_lat, 2),
+            }
+            index_receipt = getattr(engine, "_contextbench_index_receipt", {})
+            row["index"] = {
+                "files_indexed": index_receipt.get("files_indexed"),
+                "skipped_too_large": index_receipt.get("skipped_too_large"),
+                "skipped_unreadable": index_receipt.get("skipped_unreadable"),
             }
             row["delta_file_f1"] = round(e_f.f1 - b_f.f1, 3)
             if proc is not None:
@@ -155,9 +202,20 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
                "BM25 > Entroly (CI<0)" if hi < 0 else "inconclusive (CI spans 0)")
     summary["verdict_F2"] = verdict
 
+    complete = len(ok) == len(tasks) or stopped is not None
+    valid = complete and not any(row.get("error") for row in rows)
     os.makedirs("benchmarks/results", exist_ok=True)
-    out = {"summary": summary, "per_task": rows}
-    json.dump(out, open("benchmarks/results/contextbench_determinism_floor.json", "w", encoding="utf-8"), indent=2)
+    out = {
+        "schema_version": "entroly.contextbench.floor.v2",
+        "valid": valid,
+        "summary": summary,
+        "per_task": rows,
+    }
+    with open(
+        "benchmarks/results/contextbench_determinism_floor.json", "w", encoding="utf-8"
+    ) as result_file:
+        json.dump(out, result_file, indent=2)
+        result_file.write("\n")
 
     print("\n=== 25-task deterministic floor (file-level primary; line-level granularity-limited) ===")
     print(f"  tasks: {len(ok)}/{len(tasks)}  budget={budget}")
@@ -166,7 +224,7 @@ def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
     print(f"  delta file-F1 (Entroly-BM25): {summary['delta_file_f1_mean']:+.3f}  CI95 {summary['delta_file_f1_ci95']}")
     print(f"  F2 verdict: {verdict}")
     print("  -> results/contextbench_determinism_floor.json")
-    return 0
+    return 0 if valid else 1
 
 
 def _dig(d: dict, path: str):

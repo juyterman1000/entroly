@@ -1,29 +1,31 @@
 # Preregistration — Determinism Tax on ContextBench
 
-**Status:** criteria locked at the commit that introduces this document, before the
-first full run of the harness. Any later edit to the criteria sections invalidates
-the preregistration and must be declared as a protocol revision (v2).
+**Status:** prospective protocol v3; no accepted result has been produced. The
+earlier pilot/floor artifacts were invalidated during harness review and must
+not be used as evidence. Any later criteria change requires a newly declared
+protocol revision before another run.
 
 - **Harness:** `benchmarks/contextbench_determinism_tax.py`
 - **Result artifact:** `benchmarks/results/contextbench_determinism_tax.json`
-- **Reference baseline commit:** `77067bc` (deterministic ingest/reconcile ordering)
+- **Reference implementation:** full commit SHA recorded by the run artifact
 - **Seed:** 42 (single fixed seed; task subsampling only, no seed selection)
 
-## Protocol revision v2 (declared after the pilot, commit `64d4f71`)
+## Protocol history
 
-The 5-task Astropy pilot (harness/adapter validated: 5/5 executed, 100%
-reproducible, 0 unmapped) surfaced two structural facts that invalidate the v1
-**primary** metric:
+An exploratory 5-task Astropy pilot surfaced two structural facts that
+invalidated the v1 **primary** metric. The pilot itself is not accepted evidence:
+later review found that same-file selections could be overwritten during metric
+aggregation and partially unmapped evidence could pass the zero-unmapped gate.
 
 1. **Size cap:** the default 50 KB source cap skips gold-bearing core files
    (astropy `table.py` = 147 KB) → guaranteed 0 recall. **Runs raise the cap to
    500 KB** (`ENTROLY_MAX_SOURCE_FILE_BYTES=500000`), the native hard ceiling.
-2. **Granularity:** Entroly selects **whole files** — file recall 1.0 but line
-   precision ~0.002. **Line-level F1 measures selection granularity, not
-   determinism**, so it cannot be the primary decision metric: a passage-level
-   neural reranker would score high line-F1 purely by selecting narrower spans.
+2. **Granularity:** the exploratory run appeared to select evidence at
+   effectively whole-file granularity. That observation must be remeasured under
+   v3. Independently of its outcome, line-level F1 mixes ranking quality with
+   selection granularity, so it cannot be the sole determinism metric.
 
-**v2 changes (this supersedes the v1 primary metric in §5):**
+**v2 changes:**
 - **Primary decision metric → FILE-level F1 determinism tax.** Entroly, BM25, and
   file-rerankers all operate at file granularity, isolating *determinism* from
   *granularity*. The decision table thresholds are unchanged, applied to the
@@ -33,13 +35,15 @@ reproducible, 0 unmapped) surfaced two structural facts that invalidate the v1
   require sub-file selection + stored line offsets in Entroly (the offset gap the
   span adapter exposed). Out of scope for the tax run; motivates a separate build.
 
-All other v1 sections stand.
+The operative protocol is the complete v3 document below; readers do not need
+to reconstruct rules from superseded revisions.
 
 ## 1. Question
 
-Experiment 1 (`docs/research/exp1-reproducibility-matrix.md`) established that
-Entroly *reproduces* its own selection byte-for-byte on a fixed architecture. It
-did **not** establish that the reproducible selection is *good enough*.
+Experiment 1 (`docs/research/exp1-reproducibility-matrix.md`) now defines the
+strict evidence contract required to test whether Entroly reproduces its own
+selection byte-for-byte. Its earlier observation was retired and must be rerun
+before determinism is treated as established.
 
 This experiment measures the **determinism tax**: the retrieval-quality gap
 between Entroly's strictly-deterministic selector and the best available
@@ -65,10 +69,11 @@ gold_context, patch, test_patch, problem_statement, f2p, p2p, source
   generate a passing patch from context alone.
 
 **Subset.** ContextBench **Lite** (500 tasks) is the primary evaluation set. A
-**pilot** of the first 25 Python tasks (sorted by `instance_id`) is run first to
-validate the harness end-to-end; pilot numbers are reported but are **not** the
-decision basis. Task subsampling beyond Lite, if any, is by `instance_id` sort —
-never by result.
+**pilot** of the first 25 Python tasks after materializing the eligible stream
+and sorting by `instance_id` is run first to
+validate the harness end-to-end; pilot numbers may be reported only in an
+artifact marked as a pilot and are **not** the decision basis. Task subsampling
+beyond Lite, if any, is by `instance_id` sort — never by result.
 
 ## 3. Systems compared
 
@@ -76,7 +81,7 @@ All systems receive the **identical** corpus snapshot, query, and token budget
 `B` (budget parity is mandatory — recall/precision trade against `B`, so an
 unequal budget invalidates the comparison). Budgets swept: `B ∈ {2000, 8000}`.
 
-1. **Entroly-deterministic** — `qccr.select` at commit `77067bc`.
+1. **Entroly candidate** — `qccr.select` at the full commit recorded in the run.
 2. **BM25-deterministic** — a plain BM25 file/chunk ranker with a total-order
    tie-break (deterministic reference floor).
 3. **Neural reranker** — deterministic candidate generation (BM25 top-k) +
@@ -108,14 +113,16 @@ gate). For predicted spans `P` and gold spans `G` (per task, then macro-averaged
 - **Repeatability** — byte-identity rate across 2 runs (Entroly must be 1.000;
   neural arms measured, not assumed).
 
-Line-level mapping: Entroly's selected content is located back to source line
-ranges by exact-substring match; unmatched selected content is counted toward
-evidence drop, never toward recall (fail-closed).
+Line-level mapping: Entroly's selected origin fragments are located back to
+source line ranges by a unique exact-substring match. The compressed selection
+itself is never treated as a source slice. Partially or wholly unmatched
+selected evidence remains in token accounting and is counted toward evidence
+drop, never toward recall (fail-closed).
 
 ## 5. Preregistered decision table
 
-Primary decision metric: **block-unavailable ⇒ line-level F1** determinism tax,
-in percentage points, `Tax = F1(best nondeterministic) − F1(Entroly-deterministic)`,
+Primary decision metric: **file-level F1** determinism tax,
+in percentage points, `Tax = F1(best nondeterministic) − F1(Entroly candidate)`,
 macro-averaged over ContextBench Lite at the budget that maximizes each system's
 own F1 (each system evaluated at its best budget, reported per budget too).
 
@@ -143,13 +150,13 @@ reported finding.
 
 ## 7. Falsification conditions
 
-- **F1** (primary kill): if the line-level determinism tax exceeds 15 pp on Lite,
+- **F1** (primary kill): if the file-level determinism tax exceeds 15 pp on Lite,
   the broad "reproducible selection is competitive" thesis is rejected for
   general use; RCP is repositioned as a high-assurance/compliance feature.
-- **F2:** if Entroly-deterministic does not beat the BM25-deterministic floor,
+- **F2:** if the Entroly candidate does not beat the BM25-deterministic floor,
   the specific selector adds no value over a trivial deterministic baseline.
-- **F3:** if Entroly repeatability is < 1.000 on this real-repo pipeline (vs the
-  frozen-corpus result in Exp 1), the end-to-end reproducibility claim fails and
+- **F3:** if Entroly repeatability is < 1.000 on this real-repo pipeline or the
+  v2 frozen-corpus matrix is not complete, the reproducibility claim fails and
   must be fixed or narrowed before the tax number is meaningful.
 - **F4 (evidence quality):** if Entroly's evidence-drop is materially worse than
   neural at equal recall, the reproducibility win comes at a precision cost that

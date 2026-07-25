@@ -117,6 +117,8 @@ def rank_and_select(
     Ordering is total (score DESC, path ASC, byte_start ASC) so the selection is
     reproducible regardless of unit enumeration order.
     """
+    if budget < 0:
+        raise ValueError("budget must be non-negative")
     by_path = dict(files)
     texts = [by_path[p][bs:be].decode("utf-8", "replace") for (p, bs, be, _rep) in units]
     scores = bm25_scores(texts, query)
@@ -128,11 +130,13 @@ def rank_and_select(
             break
         p, bs, be, rep = units[i]
         tokens = est_tokens(be - bs)
-        if cum + tokens > budget and spans:
-            break
+        if tokens > budget - cum:
+            # Preserve strict budget parity while allowing a smaller,
+            # lower-ranked unit to fit after an oversized candidate.
+            continue
         cum += tokens
         spans.append(_make_span(p, by_path[p], bs, be, rep, source_commit))
-        if cum >= budget:
+        if cum == budget:
             break
     return spans
 

@@ -16,6 +16,7 @@ import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 
 _WORD = re.compile(r"[A-Za-z0-9_]+")
 
@@ -41,15 +42,34 @@ def parse_gold(gold_context_json: str) -> Spans:
         entries = json.loads(gold_context_json)
     except (ValueError, TypeError):
         return spans
-    for e in entries or []:
-        path = str(e.get("file") or "")
-        try:
-            start = int(e.get("start_line"))
-            end = int(e.get("end_line"))
-        except (TypeError, ValueError):
-            continue
-        if not path or start < 1 or end < start:
-            continue
+    if not isinstance(entries, list):
+        return spans
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return {}
+        raw_path = entry.get("file")
+        if not isinstance(raw_path, str) or "\\" in raw_path:
+            return {}
+        path_object = PurePosixPath(raw_path)
+        if (
+            not raw_path
+            or path_object.is_absolute()
+            or path_object.as_posix() != raw_path
+            or any(part in {"", ".", ".."} for part in path_object.parts)
+        ):
+            return {}
+        start = entry.get("start_line")
+        end = entry.get("end_line")
+        if (
+            not isinstance(start, int)
+            or isinstance(start, bool)
+            or not isinstance(end, int)
+            or isinstance(end, bool)
+            or start < 1
+            or end < start
+        ):
+            return {}
+        path = path_object.as_posix()
         spans.setdefault(path, set()).update(range(start, end + 1))
     return spans
 
@@ -73,6 +93,12 @@ class Score:
 
 
 def _prf(overlap: int, pred_total: int, gold_total: int) -> Score:
+    if (
+        min(overlap, pred_total, gold_total) < 0
+        or overlap > pred_total
+        or overlap > gold_total
+    ):
+        raise ValueError("overlap totals must be non-negative and internally consistent")
     recall = overlap / gold_total if gold_total else 0.0
     precision = overlap / pred_total if pred_total else 0.0
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
@@ -91,9 +117,11 @@ def file_score(pred: Spans, gold: Spans) -> Score:
     return _prf(inter, len(pf), len(gf))
 
 
-def evidence_drop(pred: Spans, gold: Spans) -> float:
+def evidence_drop(pred: Spans, gold: Spans, *, unmapped_lines: int = 0) -> float:
     """Fraction of predicted lines that overlap no gold span (retrieved-but-useless)."""
-    total = _total_lines(pred)
+    if unmapped_lines < 0:
+        raise ValueError("unmapped_lines must be non-negative")
+    total = _total_lines(pred) + unmapped_lines
     if not total:
         return 0.0
     useful = _overlap_lines(pred, gold)
@@ -119,6 +147,13 @@ def composite_q(f1_line: float, pass_at_1: float, efficiency: float, ev_drop: fl
 
 def determinism_tax(f1_best_nondeterministic: float, f1_deterministic: float) -> float:
     """Primary decision metric, in percentage points."""
+    if (
+        not math.isfinite(f1_best_nondeterministic)
+        or not math.isfinite(f1_deterministic)
+        or not 0.0 <= f1_best_nondeterministic <= 1.0
+        or not 0.0 <= f1_deterministic <= 1.0
+    ):
+        raise ValueError("F1 inputs must be finite values in [0, 1]")
     return 100.0 * (f1_best_nondeterministic - f1_deterministic)
 
 
@@ -131,6 +166,8 @@ DECISION_TABLE = (
 
 
 def decide(tax_pp: float) -> str:
+    if not math.isfinite(tax_pp):
+        raise ValueError("determinism tax must be finite")
     for threshold, verdict in DECISION_TABLE:
         if tax_pp <= threshold:
             return verdict
@@ -151,9 +188,16 @@ class Task:
 
 
 def load_tasks(limit: int | None = 25, language: str | None = "python") -> list[Task]:
-    """Load ContextBench tasks (streaming). Requires network to HuggingFace."""
+    """Load and deterministically sample ContextBench tasks.
+
+    The complete eligible stream is sorted before applying ``limit``. Sorting
+    only an arbitrary streaming prefix would not implement the preregistered
+    "first N by instance_id" sample.
+    """
     from datasets import load_dataset
 
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be non-negative or None")
     ds = load_dataset("Contextbench/ContextBench", "default", split="train", streaming=True)
     tasks: list[Task] = []
     for row in ds:
@@ -170,10 +214,8 @@ def load_tasks(limit: int | None = 25, language: str | None = "python") -> list[
                 gold=parse_gold(str(row["gold_context"])),
             )
         )
-        if limit and len(tasks) >= limit:
-            break
     tasks.sort(key=lambda t: t.instance_id)  # deterministic order, never by result
-    return tasks
+    return tasks if limit is None else tasks[:limit]
 
 
 def build_engine_for_repo(repo_dir: str):
@@ -184,12 +226,46 @@ def build_engine_for_repo(repo_dir: str):
     from entroly.config import EntrolyConfig
     from entroly.server import EntrolyEngine
 
-    checkpoint = tempfile.mkdtemp(prefix="ctxbench_cp_")
-    engine = EntrolyEngine(EntrolyConfig(use_persistent_index=False, checkpoint_dir=checkpoint))
-    if not engine._use_rust:
-        raise RuntimeError("ContextBench run requires the native engine")
-    auto_index(engine, project_dir=repo_dir, force=True)
-    return engine
+    checkpoint = tempfile.TemporaryDirectory(prefix="ctxbench_cp_")
+    try:
+        engine = EntrolyEngine(
+            EntrolyConfig(
+                use_persistent_index=False,
+                checkpoint_dir=checkpoint.name,
+            )
+        )
+        if not engine._use_rust:
+            raise RuntimeError("ContextBench run requires the native engine")
+        index_receipt = auto_index(engine, project_dir=repo_dir, force=True)
+        if (
+            index_receipt.get("status") != "indexed"
+            or index_receipt.get("skipped_unreadable")
+            or index_receipt.get("files_indexed", 0) <= 0
+        ):
+            raise RuntimeError(f"ContextBench indexing was incomplete: {index_receipt}")
+        engine._contextbench_index_receipt = index_receipt
+        return engine
+    finally:
+        checkpoint.cleanup()
+
+
+def _origin_index(fragments: list[dict]) -> dict[str, dict[str, str]]:
+    """Build a one-to-one fragment origin map or invalidate the corpus."""
+    origins: dict[str, dict[str, str]] = {}
+    for fragment in fragments:
+        fragment_id = fragment.get("fragment_id")
+        source = fragment.get("source")
+        content = fragment.get("content")
+        if (
+            not isinstance(fragment_id, str)
+            or not fragment_id
+            or fragment_id in origins
+            or not isinstance(source, str)
+            or not isinstance(content, str)
+        ):
+            raise ValueError("indexed fragments require unique non-empty string identities")
+        origins[fragment_id] = {"source": source, "content": content}
+    return origins
 
 
 def entroly_select(engine, repo_dir: str, query: str, budget: int):
@@ -213,10 +289,7 @@ def entroly_select(engine, repo_dir: str, query: str, budget: int):
         }
         for f in fragments
     ]
-    origin_by_id = {
-        str(f.get("fragment_id", "")): {"source": f.get("source", ""), "content": f.get("content", "")}
-        for f in fragments
-    }
+    origin_by_id = _origin_index(fragments)
     selected = qccr.select(pool, budget, query)
     return map_selection(selected, origin_by_id, repo_dir)
 
@@ -271,23 +344,22 @@ def bm25_select(engine, repo_dir: str, query: str, budget: int):
     """Deterministic BM25 whole-file selection under a token budget (reference floor)."""
     from benchmarks.contextbench_span_adapter import map_selection
 
+    if budget < 0:
+        raise ValueError("budget must be non-negative")
     ranked, fragments = bm25_rank_files(engine, query)
     selected, cum = [], 0
     for source, score, ids, tokens in ranked:
         if score <= 0:
             break
-        if cum + tokens > budget and selected:
-            break
+        if tokens > budget - cum:
+            continue
         cum += tokens
         selected.append(
             {"source": source, "source_fragment_ids": ids, "relevance": score, "token_count": tokens}
         )
-        if cum >= budget:
+        if cum == budget:
             break
-    origin_by_id = {
-        str(f.get("fragment_id", "")): {"source": f.get("source", ""), "content": f.get("content", "")}
-        for f in fragments
-    }
+    origin_by_id = _origin_index(fragments)
     return map_selection(selected, origin_by_id, repo_dir)
 
 

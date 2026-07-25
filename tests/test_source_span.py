@@ -8,6 +8,8 @@ whole-file, post-receipt source mutation, out-of-bounds, serialization round-tri
 
 from __future__ import annotations
 
+import pytest
+
 from entroly.source_span import (
     SCHEMA_VERSION,
     Representation,
@@ -44,6 +46,15 @@ def test_derive_lines_handles_no_final_newline_and_empty_span():
     assert derive_lines(no_nl, 0, len(no_nl)) == (1, 3)
     assert derive_lines(no_nl, 4, 5) == (3, 3)   # 'c'
     assert derive_lines(no_nl, 2, 2) == (2, 2)   # empty span sits on one line
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [(-1, 0), (2, 1), (0, len(SRC) + 1), (True, 1)],
+)
+def test_derive_lines_rejects_invalid_offsets(start, end):
+    with pytest.raises(ValueError, match="byte offsets"):
+        derive_lines(SRC, start, end)
 
 
 def test_duplicate_block_is_ambiguous_fail_closed():
@@ -96,6 +107,21 @@ def test_verify_fails_on_out_of_bounds():
     assert bad.verify(SRC) is False
 
 
+def test_verify_fails_when_derived_line_metadata_is_tampered():
+    good = compute_span(SRC, b"    return 1", "m.py")
+    assert isinstance(good, SourceSpan)
+    bad = SourceSpan(
+        good.source_path,
+        good.source_digest,
+        good.byte_start,
+        good.byte_end,
+        good.line_start + 1,
+        good.line_end + 1,
+        good.fragment_digest,
+    )
+    assert bad.verify(SRC) is False
+
+
 def test_merge_overlapping_and_adjacent_spans_stay_verifiable():
     s1 = compute_span(SRC, b"def alpha():\n    return 1", "m.py")            # bytes 0..25 (lines 1-2)
     s2 = compute_span(SRC, b"    return 1\n\ndef beta():", "m.py")           # overlaps s1 tail
@@ -124,10 +150,79 @@ def test_merge_refuses_inconsistent_snapshots():
     assert len(merged) == 2                      # never merged across snapshots
 
 
+def test_merge_refuses_source_bytes_from_a_different_snapshot():
+    a = compute_span(SRC, b"def alpha():", "m.py")
+    b = compute_span(SRC, b"def beta():", "m.py")
+    assert isinstance(a, SourceSpan) and isinstance(b, SourceSpan)
+    changed = SRC.replace(b"return x", b"return changed")
+    merged = merge_spans([a, b], {"m.py": changed})
+    assert merged == [a, b]
+    assert all(span.source_digest == digest(SRC) for span in merged)
+
+
+def test_merge_refuses_different_commit_identities_even_for_same_bytes():
+    a = compute_span(SRC, b"def alpha():", "m.py", source_commit="a" * 40)
+    b = compute_span(SRC, b"def beta():", "m.py", source_commit="b" * 40)
+    assert isinstance(a, SourceSpan) and isinstance(b, SourceSpan)
+    assert merge_spans([a, b], {"m.py": SRC}) == [a, b]
+
+
 def test_serialization_round_trip_and_schema_version():
-    span = compute_span(SRC, b"    return 1", "m.py", source_commit="abc123")
+    span = compute_span(SRC, b"    return 1", "m.py", source_commit="a" * 40)
     assert isinstance(span, SourceSpan)
     d = span.to_dict()
     assert d["schema_version"] == SCHEMA_VERSION
     assert SourceSpan.from_dict(d) == span
     assert digest(b"") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+def test_from_dict_rejects_unknown_schema_and_malformed_fields():
+    span = compute_span(SRC, b"    return 1", "m.py")
+    assert isinstance(span, SourceSpan)
+    payload = span.to_dict()
+    payload["schema_version"] = 1
+    with pytest.raises(ValueError, match="schema_version"):
+        SourceSpan.from_dict(payload)
+
+    payload = span.to_dict()
+    payload["representation"] = "invented"
+    with pytest.raises(ValueError, match="representation"):
+        SourceSpan.from_dict(payload)
+
+    payload = span.to_dict()
+    payload["source_path"] = "../outside.py"
+    with pytest.raises(ValueError, match="source_path"):
+        SourceSpan.from_dict(payload)
+
+    payload = span.to_dict()
+    payload["source_path"] = None
+    with pytest.raises(ValueError, match="source_path"):
+        SourceSpan.from_dict(payload)
+
+    payload = span.to_dict()
+    payload["source_commit"] = 0
+    with pytest.raises(ValueError, match="source_commit"):
+        SourceSpan.from_dict(payload)
+
+
+@pytest.mark.parametrize("source_path", ["a//b.py", "a/./b.py", "a/../b.py", r"a\b.py"])
+def test_source_span_rejects_noncanonical_paths(source_path):
+    with pytest.raises(ValueError, match="source_path"):
+        compute_span(SRC, b"    return 1", source_path)
+
+
+@pytest.mark.parametrize("source_commit", ["abc123", "A" * 40, "g" * 40])
+def test_source_span_rejects_noncanonical_commit_identity(source_commit):
+    with pytest.raises(ValueError, match="source_commit"):
+        compute_span(SRC, b"    return 1", "m.py", source_commit=source_commit)
+
+
+@pytest.mark.parametrize("field", ["byte_start", "byte_end", "line_start", "line_end"])
+@pytest.mark.parametrize("value", [True, "1", 1.5])
+def test_from_dict_rejects_coerced_offsets(field, value):
+    span = compute_span(SRC, b"    return 1", "m.py")
+    assert isinstance(span, SourceSpan)
+    payload = span.to_dict()
+    payload[field] = value
+    with pytest.raises(ValueError, match=field):
+        SourceSpan.from_dict(payload)

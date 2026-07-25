@@ -7,12 +7,15 @@ missing files, renamed/stale paths, and whole-file selection.
 
 from __future__ import annotations
 
+import pytest
+
 from benchmarks.contextbench_span_adapter import (
     SelectedSpan,
     canonical_path,
     locate_block,
     map_selection,
     to_spans,
+    unmapped_line_count,
 )
 
 # A source file with a UNIQUE marker per region plus a DUPLICATED block, so the
@@ -48,7 +51,8 @@ def _reader(files: dict[str, str]):
 def test_canonical_path_normalizes_prefix_and_separators():
     assert canonical_path("file:pkg\\mod.py") == "pkg/mod.py"
     assert canonical_path("./a/b.py") == "a/b.py"
-    assert canonical_path("/x/y.py") == "x/y.py"
+    with pytest.raises(ValueError, match="unsafe"):
+        canonical_path("/x/y.py")
 
 
 def test_whole_file_selection_maps_all_lines():
@@ -68,6 +72,10 @@ def test_repeated_identical_text_fails_closed():
 
 def test_absent_block_fails_closed():
     assert locate_block("def omega():\n    pass", SRC) == "not_found"
+
+
+def test_whole_file_mapping_does_not_ignore_boundary_newlines():
+    assert locate_block("alpha", "\nalpha\n") == (2, 2)
 
 
 def test_crlf_source_matches_lf_block():
@@ -130,3 +138,95 @@ def test_no_origin_metadata_fails_closed_not_guessed():
 def test_intervals_helper_merges_runs():
     s = SelectedSpan(path="x", score=0, rank=0, token_cost=0, lines={3, 1, 2, 7, 8})
     assert s.intervals() == [(1, 3), (7, 8)]
+
+
+def test_partial_mapping_retains_unmapped_evidence_mass_and_reason():
+    files = {"m.py": SRC}
+    origin = {}
+    origin.update(_origin("good", "file:m.py", "def alpha():\n    return 1"))
+    origin.update(_origin("bad", "file:m.py", "def absent():\n    pass"))
+    spans = map_selection(
+        [_sel("file:m.py", ["good", "bad"])],
+        origin,
+        "/repo",
+        read_file=_reader(files),
+    )
+    assert spans[0].mapped is True
+    assert spans[0].mapped_blocks == 1
+    assert spans[0].unmapped_blocks == 1
+    assert spans[0].reason == "not_found"
+    assert unmapped_line_count(spans) == 2
+
+
+def test_origin_source_mismatch_fails_closed():
+    files = {"m.py": SRC}
+    origin = _origin("f1", "file:other.py", "def alpha():\n    return 1")
+    spans = map_selection(
+        [_sel("file:m.py", ["f1"])],
+        origin,
+        "/repo",
+        read_file=_reader(files),
+    )
+    assert spans[0].mapped is False
+    assert spans[0].reason == "origin_source_mismatch"
+    assert spans[0].unmapped_lines == 2
+
+
+def test_parent_traversal_source_is_rejected_before_read():
+    spans = map_selection(
+        [_sel("file:../../secret.txt", ["f1"])],
+        _origin("f1", "file:../../secret.txt", "secret"),
+        "/repo",
+        read_file=lambda *_: (_ for _ in ()).throw(AssertionError("must not read")),
+    )
+    assert spans[0].mapped is False
+    assert spans[0].reason == "unsafe_source_path"
+
+
+def test_string_origin_ids_fail_closed_instead_of_becoming_characters():
+    selected = _sel("file:m.py", ["f1"])
+    selected["source_fragment_ids"] = "f1"
+    spans = map_selection(
+        [selected],
+        _origin("f1", "file:m.py", "def alpha():\n    return 1"),
+        "/repo",
+        read_file=_reader({"m.py": SRC}),
+    )
+    assert spans[0].mapped is False
+    assert spans[0].reason == "invalid_origin_metadata"
+
+
+def test_duplicate_origin_ids_fail_closed():
+    selected = _sel("file:m.py", ["f1", "f1"])
+    spans = map_selection(
+        [selected],
+        _origin("f1", "file:m.py", "def alpha():\n    return 1"),
+        "/repo",
+        read_file=_reader({"m.py": SRC}),
+    )
+    assert spans[0].mapped is False
+    assert spans[0].reason == "invalid_origin_metadata"
+
+
+@pytest.mark.parametrize("token_count", [True, 2.5, "10", -1])
+def test_invalid_token_cost_is_rejected(token_count):
+    selected = _sel("file:m.py", ["f1"])
+    selected["token_count"] = token_count
+    with pytest.raises(ValueError, match="token_count"):
+        map_selection(
+            [selected],
+            _origin("f1", "file:m.py", "def alpha():\n    return 1"),
+            "/repo",
+            read_file=_reader({"m.py": SRC}),
+        )
+
+
+def test_nonfinite_relevance_is_rejected():
+    selected = _sel("file:m.py", ["f1"], score=float("nan"))
+    with pytest.raises(ValueError, match="relevance"):
+        map_selection(
+            [selected],
+            _origin("f1", "file:m.py", "def alpha():\n    return 1"),
+            "/repo",
+            read_file=_reader({"m.py": SRC}),
+        )

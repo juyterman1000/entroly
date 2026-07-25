@@ -19,7 +19,9 @@ Invariants:
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 
 
 def canonical_path(source: str) -> str:
@@ -28,9 +30,19 @@ def canonical_path(source: str) -> str:
     if s.startswith("file:"):
         s = s[5:]
     s = s.replace("\\", "/")
+    if s.startswith("/"):
+        raise ValueError(f"unsafe source path: {source!r}")
     while s.startswith("./"):
         s = s[2:]
-    return s.lstrip("/")
+    path = PurePosixPath(s)
+    if (
+        not s
+        or ":" in path.parts[0]
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise ValueError(f"unsafe source path: {source!r}")
+    return path.as_posix()
 
 
 def _normalize_newlines(text: str) -> str:
@@ -51,12 +63,12 @@ def locate_block(block: str, source_text: str) -> tuple[int, int] | str:
     trailing newlines) maps to the whole file. A block occurring zero or more than
     one time fails closed (returns a reason string), never a guess.
     """
-    block_n = _normalize_newlines(block).strip("\n")
+    block_n = _normalize_newlines(block)
     source_n = _normalize_newlines(source_text)
-    if not block_n.strip():
+    if not block_n:
         return "empty_block"
     total_lines = _count_lines(source_n)
-    if block_n == source_n.strip("\n"):
+    if block_n == source_n:
         return (1, total_lines)
     occurrences = source_n.count(block_n)
     if occurrences == 0:
@@ -80,6 +92,9 @@ class SelectedSpan:
     lines: set[int] = field(default_factory=set)
     mapped: bool = False
     reason: str = ""
+    mapped_blocks: int = 0
+    unmapped_blocks: int = 0
+    unmapped_lines: int = 0
 
     def intervals(self) -> list[tuple[int, int]]:
         """Contiguous [start, end] runs of the covered lines (merged, sorted)."""
@@ -99,7 +114,13 @@ class SelectedSpan:
 
 
 def _default_read(repo_dir: str, path: str) -> str | None:
-    full = os.path.join(repo_dir, *path.split("/"))
+    root = os.path.realpath(repo_dir)
+    full = os.path.realpath(os.path.join(root, *path.split("/")))
+    try:
+        if os.path.commonpath([root, full]) != root:
+            return None
+    except ValueError:
+        return None
     if not os.path.isfile(full):
         return None
     try:
@@ -123,34 +144,108 @@ def map_selection(
     """
     spans: list[SelectedSpan] = []
     for rank, frag in enumerate(selected):
-        path = canonical_path(frag.get("source"))
         score = float(frag.get("relevance", frag.get("relevance_score", 0.0)) or 0.0)
-        token_cost = int(frag.get("token_count", 0) or 0)
-        origin_ids = list(frag.get("source_fragment_ids") or [])
+        if not math.isfinite(score):
+            raise ValueError("selected fragment relevance must be finite")
+        raw_token_cost = frag.get("token_count", 0) or 0
+        if not isinstance(raw_token_cost, int) or isinstance(raw_token_cost, bool):
+            raise ValueError("selected fragment token_count must be an integer")
+        token_cost = raw_token_cost
+        if token_cost < 0:
+            raise ValueError("selected fragment token_count must be non-negative")
+        raw_origin_ids = frag.get("source_fragment_ids") or []
+        if (
+            not isinstance(raw_origin_ids, (list, tuple))
+            or any(not isinstance(item, str) or not item for item in raw_origin_ids)
+            or len(set(raw_origin_ids)) != len(raw_origin_ids)
+        ):
+            fallback_lines = max(1, _count_lines(str(frag.get("content") or "")))
+            spans.append(
+                SelectedSpan(
+                    path="",
+                    score=score,
+                    rank=rank,
+                    token_cost=token_cost,
+                    reason="invalid_origin_metadata",
+                    unmapped_blocks=1,
+                    unmapped_lines=fallback_lines,
+                )
+            )
+            continue
+        origin_ids = list(raw_origin_ids)
+        try:
+            path = canonical_path(frag.get("source"))
+        except ValueError:
+            fallback_lines = max(1, _count_lines(str(frag.get("content") or "")))
+            spans.append(
+                SelectedSpan(
+                    path="",
+                    score=score,
+                    rank=rank,
+                    token_cost=token_cost,
+                    reason="unsafe_source_path",
+                    unmapped_blocks=max(1, len(origin_ids)),
+                    unmapped_lines=fallback_lines,
+                )
+            )
+            continue
         span = SelectedSpan(path=path, score=score, rank=rank, token_cost=token_cost)
+
+        blocks: list[str] = []
+        reasons: list[str] = []
+        for origin_id in origin_ids:
+            origin = origin_by_id.get(origin_id)
+            if not origin:
+                reasons.append("missing_origin_metadata")
+                span.unmapped_blocks += 1
+                span.unmapped_lines += 1
+                continue
+            block = str(origin.get("content") or "")
+            try:
+                origin_path = canonical_path(origin.get("source"))
+            except ValueError:
+                reasons.append("unsafe_origin_path")
+                span.unmapped_blocks += 1
+                span.unmapped_lines += max(1, _count_lines(block))
+                continue
+            if origin_path != path:
+                reasons.append("origin_source_mismatch")
+                span.unmapped_blocks += 1
+                span.unmapped_lines += max(1, _count_lines(block))
+                continue
+            blocks.append(block)
+        if not blocks:
+            if not reasons:
+                reasons.append("no_origin_metadata")
+                span.unmapped_blocks = 1
+                span.unmapped_lines = max(1, _count_lines(str(frag.get("content") or "")))
+            span.reason = ";".join(sorted(set(reasons)))
+            spans.append(span)
+            continue
 
         text = read_file(repo_dir, path)
         if text is None:
-            span.reason = "missing_file"
+            reasons.append("missing_file")
+            span.unmapped_blocks += len(blocks)
+            span.unmapped_lines += sum(max(1, _count_lines(block)) for block in blocks)
+            span.reason = ";".join(sorted(set(reasons)))
             spans.append(span)
             continue
 
-        blocks = [origin_by_id[i]["content"] for i in origin_ids if i in origin_by_id]
-        if not blocks:
-            span.reason = "no_origin_metadata"
-            spans.append(span)
-            continue
-
-        reasons: list[str] = []
         for block in blocks:
             res = locate_block(str(block or ""), text)
             if isinstance(res, tuple):
                 span.lines.update(range(res[0], res[1] + 1))
+                span.mapped_blocks += 1
             else:
                 reasons.append(res)
+                span.unmapped_blocks += 1
+                span.unmapped_lines += max(1, _count_lines(block))
         span.mapped = bool(span.lines)
-        if not span.mapped:
-            span.reason = ";".join(sorted(set(reasons))) or "unmapped"
+        if reasons:
+            span.reason = ";".join(sorted(set(reasons)))
+        elif not span.mapped:
+            span.reason = "unmapped"
         spans.append(span)
     return spans
 
@@ -162,3 +257,8 @@ def to_spans(records: list[SelectedSpan]) -> dict[str, set[int]]:
         if r.mapped and r.lines:
             out.setdefault(r.path, set()).update(r.lines)
     return out
+
+
+def unmapped_line_count(records: list[SelectedSpan]) -> int:
+    """Return selected evidence mass that could not be attributed to source."""
+    return sum(record.unmapped_lines for record in records)

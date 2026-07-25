@@ -53,7 +53,7 @@ def _dedup_winner(tmp_path: Path) -> str | None:
         "file:b_twin.py",
     }
     if len(kept) != 1:
-        pytest.skip("installed entroly-core did not dedup identical files")
+        pytest.fail(f"native engine did not deduplicate identical files: {kept}")
     return next(iter(kept))
 
 
@@ -71,6 +71,10 @@ def test_selection_is_invariant_to_fragment_input_order(tmp_path: Path):
     # presented (e.g. filesystem enumeration order). Same corpus, reversed input
     # order -> byte-identical ordered selection.
     from entroly import qccr
+    from entroly.native_status import QCCR_SYMBOLS, native_status
+
+    if not native_status(QCCR_SYMBOLS).ok:
+        pytest.skip("selection invariance requires the native QCCR engine")
 
     fragments = [
         {"source": f"file:mod_{i}.py", "content": body, "fragment_id": f"f{i}"}
@@ -88,7 +92,7 @@ def test_selection_is_invariant_to_fragment_input_order(tmp_path: Path):
     forward = qccr.select(fragments, 400, query)
     reverse = qccr.select(list(reversed(fragments)), 400, query)
     if forward == fragments or reverse == list(reversed(fragments)):
-        pytest.skip("qccr returned input unchanged (no native compression path)")
+        pytest.fail("native qccr returned input unchanged instead of exercising selection")
 
     def order(sel: list[dict]) -> list[tuple[str, str]]:
         return [(str(f.get("source") or ""), f.get("content") or "") for f in sel]

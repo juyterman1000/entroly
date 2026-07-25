@@ -3,6 +3,8 @@ increasingly line-precise spans."""
 
 from __future__ import annotations
 
+import pytest
+
 from benchmarks.subfile_modes import (
     block_units,
     file_units,
@@ -78,3 +80,19 @@ def test_non_python_and_syntax_error_fall_back_without_crashing():
              ("broken.py", b"def x(:\n  pass\n")]
     spans = rank_and_select(files, block_units(files), "parse_manifest docs", BUDGET)
     assert verify_rate(spans, files) == 1.0
+
+
+def test_strict_budget_skips_oversized_head_and_keeps_searching():
+    oversized = b"needle " * 100
+    fitting = b"needle result\n"
+    files = [("a_big.py", oversized), ("b_small.py", fitting)]
+    budget = 8
+    spans = rank_and_select(files, file_units(files), "needle", budget)
+    assert [span.source_path for span in spans] == ["b_small.py"]
+    assert sum((span.byte_len() // 4) or 1 for span in spans) <= budget
+
+
+def test_zero_budget_selects_nothing_and_negative_budget_is_invalid():
+    assert rank_and_select(FILES, file_units(FILES), QUERY, 0) == []
+    with pytest.raises(ValueError, match="budget"):
+        rank_and_select(FILES, file_units(FILES), QUERY, -1)

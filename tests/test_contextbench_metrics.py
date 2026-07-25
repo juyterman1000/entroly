@@ -7,13 +7,20 @@ spans, so the numbers a real run produces are trustworthy. No dataset or network
 from __future__ import annotations
 
 import math
+import sys
+from types import SimpleNamespace
+
+import pytest
 
 from benchmarks.contextbench_determinism_tax import (
+    bm25_select,
     decide,
     determinism_tax,
     evidence_drop,
     file_score,
     line_score,
+    load_tasks,
+    _origin_index,
     parse_gold,
 )
 
@@ -30,6 +37,12 @@ def test_parse_gold_is_fail_closed_on_malformed():
     assert parse_gold("not json") == {}
     assert parse_gold('[{"file": "a.py", "start_line": 9, "end_line": 3}]') == {}  # end<start
     assert parse_gold('[{"file": "", "start_line": 1, "end_line": 2}]') == {}  # no path
+    assert parse_gold('{"file": "a.py", "start_line": 1, "end_line": 2}') == {}
+    assert parse_gold('[{"file": "../a.py", "start_line": 1, "end_line": 2}]') == {}
+    assert parse_gold('[{"file": "a.py", "start_line": true, "end_line": 2}]') == {}
+    assert parse_gold(
+        '[{"file": "a.py", "start_line": 1, "end_line": 2}, "malformed"]'
+    ) == {}
 
 
 def test_line_score_perfect_overlap():
@@ -68,6 +81,7 @@ def test_evidence_drop_is_useless_retrieved_fraction():
     pred = {"a.py": {1, 2, 3, 4}}             # 2 of 4 useful -> 0.5 dropped
     assert evidence_drop(pred, gold) == 0.5
     assert evidence_drop({}, gold) == 0.0     # nothing retrieved, nothing dropped
+    assert evidence_drop({"a.py": {1, 2}}, gold, unmapped_lines=2) == 0.5
 
 
 def test_determinism_tax_and_decision_table():
@@ -77,3 +91,76 @@ def test_determinism_tax_and_decision_table():
     assert decide(5.0) == "Strong high-trust product"
     assert decide(12.0) == "Compliance / security niche"
     assert decide(20.0).startswith("Reject")
+
+
+@pytest.mark.parametrize(
+    ("best", "deterministic"),
+    [(float("nan"), 0.5), (1.1, 0.5), (0.5, -0.1)],
+)
+def test_determinism_tax_rejects_invalid_metrics(best, deterministic):
+    with pytest.raises(ValueError, match="F1"):
+        determinism_tax(best, deterministic)
+
+
+def test_load_tasks_sorts_the_full_eligible_stream_before_limiting(monkeypatch):
+    def row(instance_id: str, language: str = "python"):
+        return {
+            "instance_id": instance_id,
+            "repo": "owner/repo",
+            "repo_url": "https://github.com/owner/repo",
+            "base_commit": "a" * 40,
+            "language": language,
+            "problem_statement": "query",
+            "gold_context": "[]",
+        }
+
+    dataset = [row("z"), row("a"), row("ignored", "go"), row("m")]
+    monkeypatch.setitem(
+        sys.modules,
+        "datasets",
+        SimpleNamespace(load_dataset=lambda *args, **kwargs: dataset),
+    )
+    assert [task.instance_id for task in load_tasks(limit=2)] == ["a", "m"]
+
+
+def test_bm25_budget_skips_oversized_first_file(tmp_path):
+    large = "needle " * 200
+    small = "needle result\n"
+    (tmp_path / "large.py").write_text(large, encoding="utf-8")
+    (tmp_path / "small.py").write_text(small, encoding="utf-8")
+    fragments = [
+        {
+            "fragment_id": "large",
+            "source": "file:large.py",
+            "content": large,
+            "token_count": 500,
+        },
+        {
+            "fragment_id": "small",
+            "source": "file:small.py",
+            "content": small,
+            "token_count": 4,
+        },
+    ]
+
+    class Rust:
+        @staticmethod
+        def export_fragments():
+            return fragments
+
+    engine = SimpleNamespace(_rust=Rust())
+    selected = bm25_select(engine, str(tmp_path), "needle", budget=10)
+    assert [record.path for record in selected] == ["small.py"]
+    assert sum(record.token_cost for record in selected) <= 10
+
+
+def test_origin_index_rejects_duplicate_or_empty_fragment_identity():
+    with pytest.raises(ValueError, match="unique"):
+        _origin_index(
+            [
+                {"fragment_id": "f1", "source": "file:a.py", "content": "a"},
+                {"fragment_id": "f1", "source": "file:b.py", "content": "b"},
+            ]
+        )
+    with pytest.raises(ValueError, match="unique"):
+        _origin_index([{"fragment_id": "", "source": "file:a.py", "content": "a"}])
