@@ -1,6 +1,7 @@
-"""Verify every README claim against actual codebase."""
-import hashlib
-import json
+"""Verify the simplified README against Entroly's actual product contracts."""
+
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -11,274 +12,282 @@ if str(ROOT) not in sys.path:
 passed = 0
 failed = 0
 
+
 def check(name, fn):
     global passed, failed
     try:
         result = fn()
         print(f"  [OK] {name}: {result}")
         passed += 1
-    except Exception as e:
-        print(f"  [FAIL] {name}: {e}")
+    except Exception as exc:  # noqa: BLE001 - verifier reports every failure
+        print(f"  [FAIL] {name}: {exc}")
         failed += 1
 
-# === SDK ===
-check("SDK: compress import", lambda: __import__("entroly").compress and "OK")
-check("SDK: compress_messages import", lambda: __import__("entroly").compress_messages and "OK")
-check("SDK: compress works", lambda: f"{len(__import__('entroly').compress('hello ' * 500, budget=50))} chars")
 
-# === CLI: wrap ===
+def require(condition: bool, message: str) -> str:
+    if not condition:
+        raise AssertionError(message)
+    return "OK"
+
+
 from entroly.cli import _WRAP_AGENTS  # noqa: E402
-from benchmarks.neural_evidence_frontier import (  # noqa: E402
-    render_svg as render_neural_evidence_svg,
-    verify_report as verify_neural_evidence_report,
-)
 from verify_public_trust import collect_offline_failures  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
+PYPI_TEXT = Path("PYPI_README.md").read_text(encoding="utf-8")
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
 INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
-NEURAL_EVIDENCE_TEXT = Path("docs/benchmarks/neural-evidence-frontier.md").read_text(
-    encoding="utf-8"
-)
+OPENCLAW_TEXT = Path("integrations/openclaw/README.md").read_text(encoding="utf-8")
 
-
-def verify_readme_proof_media():
-    """Reject missing, modified, or source-stale README proof media."""
-    manifest_path = Path("docs/assets/proof_media_manifest.json")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    videos = manifest.get("videos", {})
-    if manifest.get("schema_version") != "entroly.readme-proof-media.v1":
-        raise ValueError("unexpected proof media manifest schema")
-    if len(videos) != 3:
-        raise ValueError(f"expected 3 proof videos, found {len(videos)}")
-
-    for name, entry in videos.items():
-        command = entry.get("proof_command", "")
-        if command not in README_TEXT and name != "proof_local":
-            raise ValueError(f"README does not expose proof command for {name}")
-        for source, expected in entry.get("source_sha256", {}).items():
-            actual = hashlib.sha256(Path(source).read_bytes()).hexdigest()
-            if actual != expected:
-                raise ValueError(f"proof source changed; regenerate media: {source}")
-        for filename, expected in entry.get("outputs", {}).items():
-            media_path = manifest_path.parent / filename
-            actual = hashlib.sha256(media_path.read_bytes()).hexdigest()
-            if actual != expected:
-                raise ValueError(f"proof media hash mismatch: {media_path}")
-            if filename.endswith((".gif", ".mp4")) and str(media_path).replace("\\", "/") not in README_TEXT:
-                raise ValueError(f"README does not link proof media: {media_path}")
-
-    normalized_readme = " ".join(README_TEXT.split())
-    required_scope = (
-        "not a savings or model-quality benchmark",
-        "not a universal product or model claim",
-        "not a universal durability claim",
-    )
-    missing_scope = [text for text in required_scope if text not in normalized_readme]
-    if missing_scope:
-        raise ValueError(f"README proof scope missing: {missing_scope}")
-    return f"{len(videos)} source-bound videos"
-
-
-def verify_neural_evidence_story():
-    """Bind the prominent negative result to raw trials and its caveats."""
-    report_path = Path("benchmarks/results/neural_evidence_frontier.json")
-    card_path = Path("docs/assets/neural_evidence_frontier.svg")
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    verify_neural_evidence_report(report)
-
-    metrics = report["test_metrics"]
-    protocol = report["protocol"]
-    paired = metrics["paired"]
-    guard = metrics["dual_channel_guard"]
-    required_readme = (
-        "Keep your agent. Give it a Context OS.",
-        "One measured job of the Context OS",
-        "Frontier models reason. OpenClaw and Hermes run agents.",
-        f"**{metrics['lexical_bm25']['top1_correct']} of {protocol['test_trials']}**",
-        f"**{metrics['local_transformer']['top1_correct']} of {protocol['test_trials']}**",
-        f"**{guard['answer_passage_correct']} of {protocol['test_trials']}**",
-        f"**{guard['average_selected_passages']:.2f} of {protocol['candidates_per_trial']} passages**",
-        f"`p={paired['mcnemar_exact_p']:.5f}`",
-        "this experiment measures retrieval",
-        "docs/assets/neural_evidence_frontier.svg",
-        "benchmarks/results/neural_evidence_frontier.json",
-    )
-    missing = [value for value in required_readme if value not in README_TEXT]
-    if missing:
-        raise ValueError(f"README neural evidence story drifted: {missing}")
-
-    model = report["model"]
-    required_provenance = (
-        model["repository"],
-        model["revision"],
-        model["fingerprint_sha256"],
-        report["implementation"]["git_commit"],
-    )
-    missing = [value for value in required_provenance if value not in NEURAL_EVIDENCE_TEXT]
-    if missing:
-        raise ValueError(f"neural evidence provenance is incomplete: {missing}")
-    if card_path.read_text(encoding="utf-8") != render_neural_evidence_svg(report):
-        raise ValueError("neural evidence card is stale; rerun render-card")
-    return f"{protocol['trials']} source-bound trials"
-
-check("wrap claude", lambda: "claude" in _WRAP_AGENTS and "OK")
-check("wrap codex", lambda: "codex" in _WRAP_AGENTS and "OK")
-check("wrap aider", lambda: "aider" in _WRAP_AGENTS and "OK")
-check("wrap cursor", lambda: "cursor" in _WRAP_AGENTS and "OK")
-check("wrap copilot", lambda: "copilot" in _WRAP_AGENTS and "OK" or (_ for _ in ()).throw(Exception("MISSING")))
-
-README_WRAP_SLUGS = [
-    "claude", "cursor", "codex", "aider", "gemini", "qwen", "opencode",
-    "crush", "hermes", "pi", "ollama", "windsurf", "vscode",
-    "claude-desktop", "claude-code", "zed", "cline", "roo", "continue",
-    "cody", "amp", "kiro", "qoder", "trae", "antigravity", "amazonq",
-    "verdent", "jetbrains", "helix", "tabby", "twinny", "sublime",
-    "emacs", "neovim", "fittencode", "tabnine", "supermaven",
-]
+# === Plain-language product identity ===
 check(
-    "wrap README slug coverage",
-    lambda: (
-        not [slug for slug in README_WRAP_SLUGS if slug not in _WRAP_AGENTS]
-        and f"{len(README_WRAP_SLUGS)} slugs"
-    ) or (_ for _ in ()).throw(Exception("README lists missing wrapper slug")),
+    "README Context Assurance identity",
+    lambda: require(
+        all(
+            phrase in README_TEXT
+            for phrase in (
+                "Entroly — Context Assurance That Helps Lower AI Costs",
+                "What Entroly does in plain language",
+                "unnecessary AI context",
+                "content-addressed evidence",
+                "Context Receipts",
+                "no agent-architecture rewrite",
+                "small one-time setup",
+            )
+        ),
+        "README first fold no longer states the Context Assurance product contract",
+    ),
 )
 check(
-    "README print-only wording",
-    lambda: (
-        "Paste once, restart, done" not in README_TEXT
-        and "prints the exact file path and field name" not in README_TEXT
-        and "best-effort endpoint/config hint" in README_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("README overpromises print-only wrappers")),
+    "PyPI Context Assurance identity",
+    lambda: require(
+        all(
+            phrase in PYPI_TEXT
+            for phrase in (
+                "Entroly — Context Assurance That Helps Lower AI Costs",
+                "small one-time setup",
+                "no agent-architecture rewrite",
+                "Context Receipts",
+                "content-addressed recovery handles",
+            )
+        ),
+        "PyPI first fold drifted from the README identity",
+    ),
+)
+
+# === Honest claim boundaries ===
+check(
+    "README cost and quality scope",
+    lambda: require(
+        all(
+            phrase in (README_TEXT + PYPI_TEXT)
+            for phrase in (
+                "does not promise a universal compression percentage",
+                "guaranteed bill reduction",
+                "subscription price may not change",
+                "not a provider invoice",
+                "does not establish universal truth",
+                "not shipped yet",
+            )
+        ),
+        "README/PyPI is missing a required cost, quality, or Simple Mode caveat",
+    ),
 )
 check(
-    "Gemini base URL env spelling",
-    lambda: (
-        "export GEMINI_BASE_URL" not in README_TEXT
-        and "export GEMINI_BASE_URL" not in COOKBOOK_TEXT
+    "README rejects universal promises",
+    lambda: require(
+        all(
+            phrase.lower() not in (README_TEXT + PYPI_TEXT).lower()
+            for phrase in (
+                "we guarantee savings",
+                "zero setup required",
+                "works with every ai app",
+                "70–95% savings",
+                "same accuracy",
+            )
+        ),
+        "README/PyPI contains an unverified universal promise",
+    ),
+)
+
+# === Trust and discovery links ===
+check(
+    "README canonical trust links",
+    lambda: require(
+        all(
+            link in README_TEXT
+            for link in (
+                "docs/ai-cost-optimization.html",
+                "docs/public-evidence.md",
+                "docs/limitations.md",
+                "docs/benchmarks/neural-evidence-frontier.md",
+                "docs/benchmarks/model-triggered-recovery.md",
+                "benchmarks/results/context_commit_conformance.json",
+            )
+        ),
+        "README must link the cost guide, evidence policy, limitations, and artifacts",
+    ),
+)
+check(
+    "supported integration names",
+    lambda: require(
+        all(
+            client in README_TEXT
+            for client in (
+                "Claude Code",
+                "Codex",
+                "OpenClaw",
+                "Hermes Agent",
+                "OpenCode",
+                "GitHub Copilot",
+                "local models",
+            )
+        ),
+        "README is missing a supported integration named in the product surface",
+    ),
+)
+
+# === Runtime and command contracts ===
+for agent in ("claude", "codex", "aider", "cursor", "copilot", "opencode", "hermes"):
+    check(
+        f"wrap registry: {agent}",
+        lambda agent=agent: require(agent in _WRAP_AGENTS, f"missing wrapper {agent}"),
+    )
+check(
+    "Gemini base URL spelling",
+    lambda: require(
+        "export GEMINI_BASE_URL" not in README_TEXT + COOKBOOK_TEXT
         and "GOOGLE_GEMINI_BASE_URL" in README_TEXT
-        and "GOOGLE_GEMINI_BASE_URL" in COOKBOOK_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("Use GOOGLE_GEMINI_BASE_URL in docs")),
+        and "GOOGLE_GEMINI_BASE_URL" in COOKBOOK_TEXT,
+        "Use GOOGLE_GEMINI_BASE_URL in public setup instructions",
+    ),
 )
 check(
-    "team brief telemetry wording",
-    lambda: (
+    "MCP launch distinction",
+    lambda: require(
+        "For an MCP client, register the installed `entroly` command with no arguments"
+        in PYPI_TEXT
+        and "uvx --from entroly entroly" in PYPI_TEXT
+        and "npx -y entroly-mcp" in PYPI_TEXT
+        and "uvx --from entroly entroly serve" not in PYPI_TEXT,
+        "PyPI MCP instructions no longer match the installed stdio launcher",
+    ),
+)
+check(
+    "OpenClaw public install path",
+    lambda: require(
+        "openclaw plugins install npm:entroly-openclaw" in OPENCLAW_TEXT
+        and "openclaw plugins enable entroly" in OPENCLAW_TEXT
+        and "openclaw gateway restart" in OPENCLAW_TEXT
+        and "openclaw plugins install clawhub:entroly-openclaw" not in OPENCLAW_TEXT,
+        "OpenClaw docs must default to the public npm package",
+    ),
+)
+check(
+    "outbound analytics wording",
+    lambda: require(
         "no telemetry by default" not in README_TEXT.lower()
         and "no telemetry by default" not in FOR_TEAMS_TEXT.lower()
         and "no outbound analytics by default" in README_TEXT.lower()
-        and "no outbound analytics by default" in FOR_TEAMS_TEXT.lower()
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("Distinguish local metrics from outbound analytics")),
+        and "no outbound analytics by default" in FOR_TEAMS_TEXT.lower(),
+        "Distinguish local metrics from outbound analytics",
+    ),
 )
 check(
-    "team brief verify-claims scope",
-    lambda: (
-        "Measure *your* number in 60 seconds" not in FOR_TEAMS_TEXT
-        and "hand to finance" not in FOR_TEAMS_TEXT
-        and "bounded install smoke test" in FOR_TEAMS_TEXT
-        and "representative proxy pilot" in FOR_TEAMS_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("verify-claims is a bounded smoke test, not an ROI receipt")),
-)
-check(
-    "team brief determinism scope",
-    lambda: (
-        "bit-identical output" not in FOR_TEAMS_TEXT
-        and "Auditable local core" in FOR_TEAMS_TEXT
-        and "Evaluate stateful learning, exploration, routing" in FOR_TEAMS_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("Scope determinism claims to the tested local paths")),
-)
-check(
-    "README proof-first star CTA",
-    lambda: (
-        'href="https://github.com/juyterman1000/entroly"' in README_TEXT
-        and "img.shields.io/github/stars/juyterman1000/entroly?style=social" in README_TEXT
-        and "Deciding whether to star?" in README_TEXT
-        and "entroly verify-claims && entroly simulate" in README_TEXT
-        and "open an issue with the verification JSON" in README_TEXT
-        and "Token_Savings-tested_70--95%25" not in README_TEXT
-        and "Token_savings-measure_your_workload" in README_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("README must ask for stars through local proof, not broad first-fold claims")),
-)
-check("README proof media bindings", verify_readme_proof_media)
-check("README neural evidence story", verify_neural_evidence_story)
-check(
-    "README competitor comparison tone",
-    lambda: (
-        "Using Headroom today?" in README_TEXT
-        and "published Headroom 0.31.0 baseline" in README_TEXT
-        and "database is locked" not in README_TEXT
-        and "not a verdict on every Headroom or Entroly workload" in README_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("Keep competitor claims user-led, versioned, and evidence-linked")),
-)
-check(
-    "community links avoid expired Discord invites",
-    lambda: (
+    "community link integrity",
+    lambda: require(
         "discord.gg/Xp7VwWnJNY" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
         and "discord.gg/entroly" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
         and "https://discord.gg/G833X5c7R6" in DOCS_DISCORD_TEXT
         and "https://juyterman1000.github.io/entroly/docs/discord.html" in README_TEXT
-        and "https://juyterman1000.github.io/entroly/docs/discord.html" in INSTALL_TEXT
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("Public community links must not route to expired Discord invites")),
+        and "https://juyterman1000.github.io/entroly/docs/discord.html" in INSTALL_TEXT,
+        "Public community links must not route to expired invites",
+    ),
+)
+
+# === Shared public-trust gate ===
+check(
+    "Context Assurance public trust contracts",
+    lambda: require(
+        not (failures := collect_offline_failures()),
+        "; ".join(failures),
+    ),
+)
+
+# === SDK and runtime smoke checks ===
+check("SDK: compress import", lambda: __import__("entroly").compress and "OK")
+check(
+    "SDK: compress_messages import",
+    lambda: __import__("entroly").compress_messages and "OK",
 )
 check(
-    "prominent public trust contracts",
-    lambda: (
-        not (failures := collect_offline_failures())
-        and "OK"
-    ) or (_ for _ in ()).throw(Exception("; ".join(failures))),
+    "SDK: compress works",
+    lambda: f"{len(__import__('entroly').compress('hello ' * 500, budget=50))} chars",
+)
+check(
+    "Proxy: PromptCompilerProxy",
+    lambda: __import__("entroly.proxy", fromlist=["PromptCompilerProxy"]).PromptCompilerProxy
+    and "OK",
+)
+check(
+    "Proxy: ProxyConfig port=9377",
+    lambda: f"port={__import__('entroly.proxy_config', fromlist=['ProxyConfig']).ProxyConfig.from_env().port}",
 )
 
-# === Proxy ===
-check("Proxy: PromptCompilerProxy", lambda: __import__("entroly.proxy", fromlist=["PromptCompilerProxy"]).PromptCompilerProxy and "OK")
-check("Proxy: ProxyConfig port=9377", lambda: f"port={__import__('entroly.proxy_config', fromlist=['ProxyConfig']).ProxyConfig.from_env().port}")
-
-# === Engine ===
 from entroly.server import EntrolyEngine  # noqa: E402
-e = EntrolyEngine()
-check("Engine: Rust backend", lambda: f"use_rust={e._use_rust}")
-check("Engine: ingest_fragment", lambda: e.ingest_fragment("def foo(): pass", "test.py", 5) and "OK")
-r = e.optimize_context(token_budget=8000, query="foo")
-check("Engine: optimize_context", lambda: f"{len(r.get('selected_fragments',[]))} frags")
 
-# === Federation ===
-check("Federation", lambda: __import__("entroly.federation", fromlist=["FederationClient"]).FederationClient and "OK")
+engine = EntrolyEngine()
+check("Engine: backend", lambda: f"use_rust={engine._use_rust}")
+check(
+    "Engine: ingest_fragment",
+    lambda: engine.ingest_fragment("def foo(): pass", "test.py", 5) and "OK",
+)
+result = engine.optimize_context(token_budget=8000, query="foo")
+check(
+    "Engine: optimize_context",
+    lambda: f"{len(result.get('selected_fragments', []))} frags",
+)
+check(
+    "Federation",
+    lambda: __import__("entroly.federation", fromlist=["FederationClient"]).FederationClient
+    and "OK",
+)
+check(
+    "CCR reversible",
+    lambda: __import__("entroly.ccr", fromlist=["get_ccr_store"]).get_ccr_store
+    and "OK",
+)
 
-# === CCR (reversible) ===
-check("CCR reversible", lambda: __import__("entroly.ccr", fromlist=["get_ccr_store"]).get_ccr_store and "OK")
-
-# === Value tracker ===
 from entroly.value_tracker import estimate_cost  # noqa: E402
+
 check("estimate_cost", lambda: f"10K gpt-4o = ${estimate_cost(10000, 'gpt-4o'):.4f}")
+check(
+    "Dashboard",
+    lambda: __import__("entroly.dashboard", fromlist=["start_dashboard"]).start_dashboard
+    and "OK",
+)
+check(
+    "auto_index",
+    lambda: __import__("entroly.auto_index", fromlist=["auto_index"]).auto_index
+    and "OK",
+)
 
-# === Dashboard ===
-check("Dashboard", lambda: __import__("entroly.dashboard", fromlist=["start_dashboard"]).start_dashboard and "OK")
-
-# === auto_index ===
-check("auto_index", lambda: __import__("entroly.auto_index", fromlist=["auto_index"]).auto_index and "OK")
-
-# === Language support ===
 from entroly.auto_index import SUPPORTED_EXTENSIONS  # noqa: E402
+
 check("Language extensions", lambda: f"{len(SUPPORTED_EXTENSIONS)} extensions supported")
+check(
+    "bench/accuracy.py",
+    lambda: Path("bench/accuracy.py").exists() and "OK",
+)
 
-# === bench/accuracy.py ===
-check("bench/accuracy.py", lambda: __import__("pathlib").Path("bench/accuracy.py").exists() and "OK")
-
-# === Summary ===
-print(f"\n{'='*50}")
+print(f"\n{'=' * 50}")
 print(f"  PASSED: {passed}  |  FAILED: {failed}")
 if failed:
-    print(f"  README has {failed} unverified claim(s)!")
+    print(f"  README has {failed} failed product or trust contract(s).")
 else:
-    print("  Automated README contracts passed.")
+    print("  Simplified README and runtime contracts passed.")
     print("  This does not certify every product or benchmark claim.")
-print(f"{'='*50}")
+print(f"{'=' * 50}")
 sys.exit(1 if failed else 0)
