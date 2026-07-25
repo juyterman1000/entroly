@@ -33,11 +33,7 @@
         "downloadUrl": "https://pypi.org/project/entroly/",
         "license": "https://opensource.org/licenses/Apache-2.0",
         "description": "A local-first Context Assurance layer that reduces avoidable AI token usage through budgeted evidence selection, recoverable compression, Context Receipts, and verification.",
-        "offers": {
-          "@type": "Offer",
-          "price": "0.00",
-          "priceCurrency": "USD"
-        }
+        "offers": {"@type": "Offer", "price": "0.00", "priceCurrency": "USD"}
       },
       {
         "@type": "TechArticle",
@@ -45,27 +41,13 @@
         "description": "An evidence-bounded guide to reducing avoidable AI context and LLM API input costs.",
         "url": "https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html",
         "dateModified": "2026-07-25",
-        "author": {
-          "@type": "Organization",
-          "name": "Entroly",
-          "url": "https://github.com/juyterman1000/entroly"
-        }
+        "author": {"@type": "Organization", "name": "Entroly", "url": "https://github.com/juyterman1000/entroly"}
       },
       {
         "@type": "BreadcrumbList",
         "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Entroly",
-            "item": "https://juyterman1000.github.io/entroly/docs/index.html"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "AI Cost Optimization",
-            "item": "https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html"
-          }
+          {"@type": "ListItem", "position": 1, "name": "Entroly", "item": "https://juyterman1000.github.io/entroly/docs/index.html"},
+          {"@type": "ListItem", "position": 2, "name": "AI Cost Optimization", "item": "https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html"}
         ]
       },
       {
@@ -74,26 +56,17 @@
           {
             "@type": "Question",
             "name": "How can Entroly reduce AI costs?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Entroly can reduce avoidable model input by selecting useful evidence under a budget, removing duplicate or low-value context, and sending the optimized request through a supported provider-bound route. Actual savings depend on the workload, provider, model, pricing, and integration."
-            }
+            "acceptedAnswer": {"@type": "Answer", "text": "Entroly can reduce avoidable model input by selecting useful evidence under a budget, removing duplicate or low-value context, and sending the optimized request through a supported provider-bound route. Actual savings depend on the workload, provider, model, pricing, cache behavior, and integration."}
           },
           {
             "@type": "Question",
             "name": "Does Entroly lower fixed ChatGPT or Claude subscription prices?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Usually not directly. Fixed subscription prices may remain unchanged. Entroly is most directly measurable for API applications, coding agents, local models, and supported routes where provider-bound input can be observed."
-            }
+            "acceptedAnswer": {"@type": "Answer", "text": "Usually not directly. Fixed subscription prices may remain unchanged. Entroly is most directly measurable for API applications, coding agents, local models, and supported routes where provider-bound input can be observed."}
           },
           {
             "@type": "Question",
             "name": "Does Entroly blindly trim prompts?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "No. Entroly performs budgeted evidence selection, preserves exact originals through content-addressed handles, produces Context Receipts, and can verify whether claims are supported by supplied evidence."
-            }
+            "acceptedAnswer": {"@type": "Answer", "text": "No. Entroly performs budgeted evidence selection, preserves exact originals through content-addressed handles, produces Context Receipts, and can verify whether claims are supported by supplied evidence."}
           }
         ]
       }
@@ -101,51 +74,27 @@
   }
   </script>
   <style>
-    :root { color-scheme: dark; --bg:#07070b; --panel:#111119; --text:#f8fafc; --muted:#a1a1aa; --accent:#8b5cf6; --line:#27272a; --green:#4ade80; }
-    * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--text); font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    main { max-width:920px; margin:auto; padding:56px 24px 90px; }
-    nav { margin-bottom:52px; color:var(--muted); font-size:15px; }
-    nav a, a { color:#c4b5fd; }
-    h1 { font-size:clamp(2.4rem,6vw,4.5rem); line-height:1.05; letter-spacing:-.04em; margin:.2em 0; }
-    h2 { margin-top:2.3em; font-size:1.85rem; }
-    h3 { margin-top:1.8em; }
-    .eyebrow { color:#c4b5fd; text-transform:uppercase; letter-spacing:.12em; font-weight:800; font-size:13px; }
-    .lead { color:#d4d4d8; font-size:1.25rem; max-width:790px; }
-    .answer { background:linear-gradient(145deg,rgba(139,92,246,.16),rgba(74,222,128,.06)); border:1px solid rgba(139,92,246,.4); border-radius:18px; padding:24px 28px; margin:34px 0; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; }
-    .card h3 { margin-top:0; }
-    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
-    pre { background:#000; border:1px solid var(--line); border-radius:14px; padding:20px; overflow:auto; }
-    table { width:100%; border-collapse:collapse; background:var(--panel); }
-    th, td { border:1px solid var(--line); padding:14px; vertical-align:top; text-align:left; }
-    .note { border-left:4px solid var(--green); padding:10px 18px; background:rgba(74,222,128,.06); }
-    footer { margin-top:70px; padding-top:28px; border-top:1px solid var(--line); color:var(--muted); }
+    :root{color-scheme:dark;--bg:#07070b;--panel:#111119;--text:#f8fafc;--muted:#a1a1aa;--accent:#8b5cf6;--line:#27272a;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:920px;margin:auto;padding:56px 24px 90px}nav{margin-bottom:52px;color:var(--muted);font-size:15px}nav a,a{color:#c4b5fd}h1{font-size:clamp(2.4rem,6vw,4.5rem);line-height:1.05;letter-spacing:-.04em;margin:.2em 0}h2{margin-top:2.3em;font-size:1.85rem}.eyebrow{color:#c4b5fd;text-transform:uppercase;letter-spacing:.12em;font-weight:800;font-size:13px}.lead{color:#d4d4d8;font-size:1.25rem;max-width:790px}.answer{background:linear-gradient(145deg,rgba(139,92,246,.16),rgba(74,222,128,.06));border:1px solid rgba(139,92,246,.4);border-radius:18px;padding:24px 28px;margin:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px}.card h3{margin-top:0}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:#000;border:1px solid var(--line);border-radius:14px;padding:20px;overflow:auto}table{width:100%;border-collapse:collapse;background:var(--panel)}th,td{border:1px solid var(--line);padding:14px;vertical-align:top;text-align:left}.note{border-left:4px solid var(--green);padding:10px 18px;background:rgba(74,222,128,.06)}footer{margin-top:70px;padding-top:28px;border-top:1px solid var(--line);color:var(--muted)}
   </style>
 </head>
 <body>
 <main>
   <nav><a href="index.html">Entroly</a> / AI cost optimization</nav>
-
   <p class="eyebrow">AI cost optimization with evidence protection</p>
-  <h1>Reduce avoidable AI token usage without losing the evidence that matters.</h1>
+  <h1>Entroly reduces avoidable AI token usage without losing important evidence.</h1>
   <p class="lead">Entroly is a model-neutral Context Assurance layer. It selects useful information under a budget, removes avoidable repetition, preserves exact originals, and records what the model received.</p>
 
-  <div class="answer">
-    <strong>Direct answer:</strong> Entroly can help lower LLM API input costs by reducing unnecessary context before a supported provider-bound request. It does not promise a fixed percentage, and it does not blindly shorten prompts. It combines budgeted evidence selection, recoverable compression, Context Receipts, and optional verification.
-  </div>
+  <div class="answer"><strong>Direct answer:</strong> Entroly can help lower LLM API input costs by reducing unnecessary context before a supported provider-bound request. It does not promise a fixed percentage, and it does not blindly shorten prompts.</div>
 
   <h2>Why AI input becomes expensive</h2>
-  <p>AI agents and long-running applications frequently resend large chat histories, repeated files, logs, tool output, and material that is unrelated to the current decision. That can increase token usage, request latency, and the chance that important evidence is buried.</p>
-
+  <p>AI agents and long-running applications frequently resend large chat histories, repeated files, logs, tool output, and material unrelated to the current decision. That can increase token usage, request latency, and the chance that important evidence is buried.</p>
   <div class="grid">
     <div class="card"><h3>Repeated context</h3><p>The same instructions, files, and history may be sent again on every request.</p></div>
     <div class="card"><h3>Low-value context</h3><p>Large dumps can contain duplicate, stale, or irrelevant information.</p></div>
     <div class="card"><h3>Hidden quality risk</h3><p>Blind trimming can remove the exact evidence the model needs.</p></div>
   </div>
 
-  <h2>How Entroly approaches AI cost reduction</h2>
+  <h2>How Entroly approaches cost reduction</h2>
   <pre>Available context
       ↓
 Select useful evidence under a budget
@@ -165,7 +114,7 @@ Send through your existing model or agent route</pre>
     <thead><tr><th>Usage path</th><th>What Entroly can say</th></tr></thead>
     <tbody>
       <tr><td>Provider-bound proxy request</td><td>Observed pre/post input-token counts and modeled input-cost avoidance with pricing provenance. This is not a provider invoice.</td></tr>
-      <tr><td>SDK, MCP, plugin, or npm operation</td><td>Local context reduction. Entroly claims $0 provider savings when delivery to a paid provider is not observable.</td></tr>
+      <tr><td>SDK, MCP, plugin, or npm operation</td><td>Local context reduction. Entroly claims $0 provider savings when provider delivery is not observable.</td></tr>
       <tr><td>Fixed ChatGPT or Claude subscription</td><td>The subscription price may not change. Context efficiency may still help supported long-session or usage-limit workflows.</td></tr>
       <tr><td>Tiny prompt or already-small context</td><td>Entroly should pass through rather than invent a savings claim.</td></tr>
     </tbody>
@@ -176,12 +125,10 @@ Send through your existing model or agent route</pre>
 entroly verify-claims
 entroly simulate
 entroly value</pre>
-
-  <p><code>verify-claims</code> is a local installation smoke test. <code>simulate</code> estimates context reduction without calling a model. <code>value</code> separates provider-observed usage from local-only reductions.</p>
+  <p><code>verify-claims</code> is a local smoke test. <code>simulate</code> estimates context reduction without a model call. <code>value</code> separates provider-observed usage from local-only reductions.</p>
 
   <h2>Where Entroly fits</h2>
   <p>Entroly supports proxy, wrapper, plugin, MCP, CLI, SDK, and local-model paths. It integrates with Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, Ollama, LM Studio, and compatible custom applications through the appropriate setup path.</p>
-
   <p><a href="agent-integrations.html">See the integration guide</a> or <a href="https://github.com/juyterman1000/entroly#start-here">start from the README</a>.</p>
 
   <h2>Why this is more than prompt compression</h2>
@@ -190,16 +137,15 @@ entroly value</pre>
     <li><strong>Exact recovery:</strong> retrieve a stored original through a strict <code>ccr:&lt;24-hex&gt;</code> content handle.</li>
     <li><strong>Context Receipts:</strong> record included, omitted, and risky evidence.</li>
     <li><strong>Verification:</strong> evaluate whether generated claims are supported by supplied evidence.</li>
-    <li><strong>Model neutrality:</strong> keep the same context layer when models or agent runtimes change.</li>
+    <li><strong>Model neutrality:</strong> keep the same context layer when models or runtimes change.</li>
   </ul>
 
   <div class="note"><strong>Important:</strong> savings and answer quality vary by workload, provider, model, token budget, cache behavior, and integration. WITNESS evaluates evidence support; it does not establish universal truth.</div>
 
   <h2>Can nontechnical users use Entroly?</h2>
-  <p>Today's product is easiest for supported developer tools, agents, local models, and API-compatible applications, and it requires a small one-time setup. A future desktop experience called <a href="https://github.com/juyterman1000/entroly/blob/main/docs/product/entroly-simple-mode.md">Entroly Simple Mode</a> is specified for people who should not need to learn about tokens, proxies, MCP, or JSON. It is not shipped yet.</p>
+  <p>Today's product requires a small one-time setup and is easiest for supported developer tools, agents, local models, and API-compatible applications. A future desktop experience called <a href="https://github.com/juyterman1000/entroly/blob/main/docs/product/entroly-simple-mode.md">Entroly Simple Mode</a> is specified but not shipped yet.</p>
 
   <h2>Evidence</h2>
-  <p>Entroly publishes scoped benchmark artifacts and limitations rather than a universal savings claim.</p>
   <ul>
     <li><a href="https://github.com/juyterman1000/entroly/blob/main/docs/benchmarks/neural-evidence-frontier.md">Evidence-selection benchmark</a></li>
     <li><a href="https://github.com/juyterman1000/entroly/blob/main/docs/benchmarks/model-triggered-recovery.md">Model-triggered recovery benchmark</a></li>
@@ -207,9 +153,7 @@ entroly value</pre>
     <li><a href="https://github.com/juyterman1000/entroly/tree/main/benchmarks/results">Raw benchmark artifacts</a></li>
   </ul>
 
-  <footer>
-    <p><a href="https://github.com/juyterman1000/entroly">GitHub</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · <a href="index.html">Documentation</a> · Apache-2.0</p>
-  </footer>
+  <footer><a href="https://github.com/juyterman1000/entroly">GitHub</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · <a href="index.html">Documentation</a> · Apache-2.0</footer>
 </main>
 </body>
 </html>
