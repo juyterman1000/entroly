@@ -6,6 +6,11 @@ on:
     paths:
       - scripts/apply_round7_runtime_fixes.py
       - .github/workflows/round7-runtime-repair.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/apply_round7_runtime_fixes.py
+      - .github/workflows/round7-runtime-repair.yml
   workflow_dispatch:
 
 permissions:
@@ -60,6 +65,7 @@ jobs:
   commit:
     name: Commit validated repair
     needs: validate
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
