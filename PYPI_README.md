@@ -2,14 +2,28 @@
   <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly_wordmark.svg" width="760" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+<h1 align="center">Entroly — Context Assurance That Helps Lower AI Costs</h1>
 
-<p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
-The observability, governance, and decision layer for AI context.</p>
+<p align="center"><b>Use less unnecessary AI context without rebuilding how you work.</b><br>
+Entroly selects useful evidence, removes avoidable repetition, keeps important originals recoverable, and records what your AI received.</p>
 
-Entroly is an open-source Context OS for AI agents: auditable context
-engineering, recoverable compression, memory, verification, provider controls,
-receipts, security, and guarded outcome learning in one local layer.
+Entroly is a local-first Context Assurance layer for developers, teams, and AI applications. It works through supported proxy, wrapper, plugin, SDK, and MCP paths with Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.
+
+A small one-time setup is required. Entroly does not replace your model, codebase, or agent architecture.
+
+## What Entroly does
+
+AI applications often send repeated files, long histories, logs, and low-value material to a model. Entroly can:
+
+- select useful evidence under an explicit budget;
+- remove duplicate or low-value context;
+- preserve omitted originals through content-addressed recovery handles;
+- create Context Receipts showing what was included, omitted, and risky;
+- verify whether output claims are supported by supplied evidence;
+- report provider-observed usage separately from local-only reductions;
+- work across cloud and local models without locking you to one agent runtime.
+
+Savings and quality depend on the workload, provider, model, budget, and integration. Entroly does not promise a universal compression percentage or guaranteed bill reduction.
 
 ## Install
 
@@ -17,7 +31,7 @@ receipts, security, and guarded outcome learning in one local layer.
 pip install -U entroly
 ```
 
-Run the local, no-key verification path:
+Check the local path before connecting a paid model:
 
 ```bash
 entroly verify-claims
@@ -25,63 +39,55 @@ entroly simulate
 entroly value
 ```
 
-`entroly value` keeps provider-bound cost avoidance separate from SDK, MCP,
-and npm reductions. Local-only operations report tokens reduced with `$0`
-claimed; modeled provider cost avoidance includes pricing provenance and is
-not a provider invoice.
+- `verify-claims` checks installation, receipts, recovery, and verification.
+- `simulate` estimates context reduction locally without making a model call.
+- `value` separates observed provider-bound usage from local-only reductions.
 
-## MCP server
+## Connect a supported AI tool
 
-For an MCP client, register the installed `entroly` command with no arguments.
-When an MCP client launches it with a stdio pipe, Entroly starts the installed
-Python server directly:
+Automatic project setup:
+
+```bash
+cd /your/repo
+entroly go
+```
+
+Examples:
+
+```bash
+# Claude Code
+entroly attach create --client claude --project . --ttl 4h --install
+
+# Codex
+entroly attach create --client codex --project . --ttl 4h --install
+
+# OpenClaw
+entroly attach create --client openclaw --project . --ttl 4h --install
+
+# Pay-as-you-go API or custom application
+entroly proxy
+```
+
+For an MCP client, register the installed `entroly` command with no arguments:
 
 ```bash
 entroly
 ```
 
-Or register a package runner, also with no `serve` argument:
+Package-runner alternatives:
 
 ```bash
 uvx --from entroly entroly
 npx -y entroly-mcp
 ```
 
-`entroly serve` is a different deployment path: it uses the Entroly Docker
-image by default. For the installed Python runtime in an interactive shell, use
-`ENTROLY_NO_DOCKER=1 entroly serve` on macOS/Linux or set
-`ENTROLY_NO_DOCKER=1` in the client environment.
-
-Entroly works with Claude Code, Codex, OpenClaw, GitHub Copilot in VS Code,
-Cursor, Windsurf, Cline, Continue, Zed, and other MCP-compatible clients.
-
-### GitHub Copilot / VS Code
-
-Create `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "entroly": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["--from", "entroly", "entroly"]
-    }
-  }
-}
-```
-
-External MCP galleries can lag a release. Direct stdio registration above is
-the canonical setup; confirm a gallery entry's package version and validation
-status before relying on it.
-
-### Claude Code
+Claude Code MCP registration:
 
 ```bash
 claude mcp add entroly -- uvx --from entroly entroly
 ```
 
-### Generic MCP configuration
+Generic MCP configuration:
 
 ```json
 {
@@ -94,44 +100,63 @@ claude mcp add entroly -- uvx --from entroly entroly
 }
 ```
 
-## What Entroly adds
+## How it works
 
-- **Context selection** under explicit token and cost budgets
-- **Context Commits** linking selected, omitted, and recoverable evidence
-- **Context Receipts** for replay, audit, and omission explanations
-- **Exact recovery** of compressed fragments through stable handles
-- **Proof-guided recovery** that verifies drafts, recovers exact omitted
-  evidence, and stops under declared round/token bounds; local prepare and
-  advance operations never call a provider
-- **Local verification** through WITNESS and receipt checks
-- **Context Check** coverage evidence for changed files and CI risk gates
-- **Verified model-based dreaming** (experimental, opt-in): real transitions
-  train the model, synthetic rollouts only rank experiments, and real holdout
-  evidence remains mandatory for promotion
-- **Pure-Python base runtime**, optional Rust acceleration, and a separate npm/WASM runtime
-- **Local-first operation** with no outbound analytics by default
-
-Prepare a restart-safe model request without a provider call:
-
-```bash
-entroly proof prepare ./docs --query "What evidence supports this answer?" \
-  --budget 8000 --idempotency-key request-001
+```text
+Files, documents, history, and tool output
+                  ↓
+       Entroly Context Assurance
+       • rank useful evidence
+       • select under budget
+       • preserve exact originals
+       • create a receipt
+       • optionally verify output
+                  ↓
+        Your existing AI model
 ```
 
-The caller sends the returned request through its existing model route and
-returns the draft with `entroly proof advance`. See the repository's
-proof-guided protocol guide for MCP, proxy, and opt-in OpenClaw automation.
+Local indexing, selection, receipts, and recovery storage do not require an Entroly cloud service. The selected prompt still goes to the provider configured by your application. No outbound analytics are enabled by default.
+
+## Honest cost reporting
+
+Entroly keeps different evidence classes separate:
+
+| Path | What can be reported |
+|---|---|
+| Provider-bound proxy request | Observed pre/post input tokens and modeled input-cost avoidance with pricing provenance |
+| SDK, MCP, plugin, or npm operation | Local context reduction; `$0` claimed when provider delivery is not observable |
+| Fixed-price subscription | Context efficiency where supported; the subscription price may not change |
+| Unknown or legacy history | Preserved operational history; excluded from savings claims |
+
+## Technical capabilities
+
+- budgeted evidence selection;
+- recoverable compression;
+- Context Receipts and Context Commits;
+- strict `ccr:<24-hex>` exact-recovery handles;
+- hash-only full-content retrieval with no semantic-query fallback;
+- WITNESS evidence-support verification;
+- pure-Python runtime with optional Rust acceleration;
+- separate Node/WASM runtime;
+- MCP, proxy, CLI, SDK, CI, OpenClaw, Hermes Agent, and OpenCode integrations;
+- local-first operation and fail-open adapter behavior.
+
+WITNESS evaluates support against supplied evidence; it does not establish universal truth.
+
+## Everyday users
+
+A future desktop experience, [Entroly Simple Mode](https://github.com/juyterman1000/entroly/blob/main/docs/product/entroly-simple-mode.md), is specified for people who do not want to learn about tokens, proxies, MCP, JSON, or agent architecture. It is not shipped yet, and Entroly does not claim a one-click consumer experience today.
 
 ## Links
 
 - Repository: https://github.com/juyterman1000/entroly
 - Documentation: https://juyterman1000.github.io/entroly/docs/index.html
+- Agent integrations: https://juyterman1000.github.io/entroly/docs/agent-integrations.html
 - PyPI: https://pypi.org/project/entroly/
 - npm runtime: https://www.npmjs.com/package/entroly
 - npm MCP bridge: https://www.npmjs.com/package/entroly-mcp
-- Public evidence policy: https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md
-
-## MCP Registry identity
+- Evidence policy: https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md
+- Limitations: https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md
 
 `mcp-name: io.github.juyterman1000/entroly`
 
