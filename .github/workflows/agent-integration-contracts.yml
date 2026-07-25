@@ -7,8 +7,19 @@ on:
       - "integrations/hermes/**"
       - "integrations/openclaw/**"
       - "integrations/opencode/**"
+      - "docs/agent-integrations.html"
+      - "docs/openclaw-context-engine.html"
+      - "docs/hermes-context-engine.html"
+      - "docs/opencode-context-assurance.html"
+      - "docs/robots.txt"
+      - "docs/sitemap.xml"
+      - "docs/llms.txt"
+      - "robots.txt"
+      - "sitemap.xml"
+      - "llms.txt"
       - "tests/test_agent_exact_recovery_integrations.py"
       - "tests/test_agent_integration_packages.py"
+      - "tests/test_search_discovery.py"
       - ".github/workflows/agent-integration-contracts.yml"
 
 permissions:
@@ -29,12 +40,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install package and test dependencies
         run: python -m pip install -e ".[test]"
-      - name: Run focused integration contracts
+      - name: Run focused integration and discovery contracts
         run: >-
           python -m pytest -q
           tests/test_agent_exact_recovery_integrations.py
           tests/test_agent_integration_packages.py
           tests/test_hermes_context_engine.py
+          tests/test_search_discovery.py
           --junitxml=agent-integration-${{ matrix.python-version }}.xml
       - name: Upload machine-readable result
         if: always()
