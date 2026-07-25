@@ -45,17 +45,25 @@ jobs:
         run: |
           set -o pipefail
           python scripts/verify_public_trust.py 2>&1 | tee public-trust.log
+      - name: Verify simplified README and runtime contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/verify_readme.py 2>&1 | tee verify-readme.log
+      - name: Run public trust regressions
+        run: >-
+          python -m pytest -q tests/test_public_trust.py
+          --junitxml=public-trust-tests.xml
       - name: Upload public trust diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: public-trust-diagnostics
-          path: public-trust.log
-          if-no-files-found: error
-      - name: Verify simplified README and runtime contracts
-        run: python scripts/verify_readme.py
-      - name: Run public trust regressions
-        run: python -m pytest -q tests/test_public_trust.py
+          path: |
+            public-trust.log
+            verify-readme.log
+            public-trust-tests.xml
+          if-no-files-found: warn
 
   online-destinations:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
