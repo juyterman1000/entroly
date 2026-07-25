@@ -134,7 +134,7 @@ Entroly is a local Context OS for AI agents. It unifies the full lifecycle of th
 | **Remember** | Maintains working, episodic, semantic, checkpoint, and knowledge-vault context locally. |
 | **Trust** | Checks prompts, code, provenance, and generated claims with layered security and verification. |
 | **Recover** | Keeps omitted originals reachable through content-addressed handles and replayable Context Commits. |
-| **Spend** | Preserves cache boundaries, accounts for provider usage, and applies explicit routing and budget policy. |
+| **Spend** | Keeps changing evidence in a live zone after stable history, accounts from provider usage, and applies explicit routing and budget policy. |
 | **Learn** | Uses tests, CI, command exits, edits, and user outcomes to improve guarded local policies and skills. |
 
 Most compression tools shrink whatever text the agent already chose. Entroly starts one step earlier: it chooses the highest-value evidence first, compresses only after selection, keeps originals recoverable, then verifies the answer against the evidence.
@@ -143,7 +143,7 @@ Most compression tools shrink whatever text the agent already chose. Entroly sta
 - **Select** - ranks your repo or document set, then sends the answer-relevant context under a token budget.
 - **Verify** - WITNESS can check an answer against supplied evidence locally, without an additional model call. See the scoped benchmark under [Proof](#proof).
 - **Route** - sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
-- **Cache-align** - keeps the injected prefix byte-stable so provider prefix caches can keep hitting where terms and API shape allow it.
+- **Cache-safe live zone** - keeps stable system/history bytes ahead of changing Entroly evidence; exact matches may be reused, but changed evidence is never replaced by a merely similar stale block.
 - **Learn** - adapts local ranking signals from recorded outcomes. No embeddings API or training job is required for that path.
 
 Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in as an **MCP server**, or import the **library**.
@@ -152,7 +152,7 @@ Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in 
 
 | What usually breaks AI coding at scale | What Entroly adds |
 |---|---|
-| Context windows fill with logs, duplicate files, and irrelevant chunks | Budgeted selection that favors answer-critical files, dependency links, failures, and anomalies |
+| Autonomous loops keep appending logs until the provider rejects or the session crashes | An in-proxy high-water guard that compacts old tool output recoverably, preserves the recent tail, and blocks unsafe overflow before it reaches the provider |
 | Token savings look good but quality silently drops | Accuracy-retention benchmarks, receipts, and WITNESS verification |
 | Agents lose the exact line, stack trace, or omitted file they later need | Reversible compressed fragments and retrieval handles |
 | First-time setup depends on one IDE or one provider | CLI, SDK, MCP, proxy, npm, PyPI, Docker, and local simulation paths |
@@ -167,7 +167,7 @@ Entroly ships as a full local runtime, not one proxy command:
 | **CLI** | `attach`, `context-commit`, `verify-claims`, `simulate`, `value`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
 | **SDK** | `compress`, `compress_messages`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
 | **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification |
-| **Proxy** | Anthropic/OpenAI-compatible local optimization path for API-key users and custom apps |
+| **Proxy** | OpenAI, Anthropic, Gemini, and compatible local optimization paths for API-key users and custom apps |
 | **Node/WASM** | `entroly`, `entroly-mcp`, and `entroly-wasm` packages for npm users |
 | **Trust layer** | WITNESS, EICV, STAVE, receipt proofs, provenance checks, prompt-injection scanning, and local verification reports |
 | **Proof-guided recovery** | Durable prepare/advance sessions turn unsupported claims into evidence obligations, recover exact omitted chunks, and stop under explicit round/token bounds |
@@ -198,11 +198,42 @@ your agent  ──►  Entroly (local)  ──►  LLM provider
                  ├─ rank the repo        (BM25 + entropy + dep-graph)
                  ├─ select under budget  (knapsack, reversible)
                  ├─ emit receipt         (included, omitted, risks)
-                 ├─ cache-align prefix    (keep provider cache hot)
+                 ├─ stable prefix + live zone (protect native cache boundaries)
+                 ├─ rescue runaway logs  (recoverable high-water checkpoints)
                  └─ verify the reply      (WITNESS hallucination guard)
 ```
 
 Critical files go in full. Supporting files can become signatures. Other material can become a reference that can be expanded on demand. Exact recovery is available only while the corresponding receipt and recovery store are retained; deleting that state deletes Entroly's recovery path.
+
+### Runaway-session rescue without cache churn
+
+When traffic passes through `entroly proxy`, Entroly now guards every outbound
+request before the provider sees it:
+
+- repetitive terminal, test, and function output is compressed in the live
+  zone while errors, failures, paths, and structural metadata remain visible;
+- the complete original tool block is persisted locally **before** mutation,
+  and the forwarded block carries an `entroly-recovery` receipt/span handle;
+- stable system and historical bytes stay ahead of changing Entroly context,
+  rather than rewriting the system prefix on every turn;
+- at soft pressure, a provider-observed warm cache defers optional reshaping;
+  a detected loop or hard pressure overrides that deferral to prevent overflow;
+- recent user/tool turns are preserved; if recoverable compaction still cannot
+  get below the safety watermark, the proxy returns an actionable `413` instead
+  of forwarding a request that is expected to fail upstream.
+
+The guard supports OpenAI messages and Responses input, Anthropic
+`tool_result`, and known textual Gemini `functionResponse` /
+`codeExecutionResult` fields. Gemini IDs, part order, and thought signatures
+are not rewritten. Unknown or ambiguous structures pass through unchanged and
+can trigger the explicit capacity error rather than being guessed at.
+
+This protects only requests routed through the Entroly proxy; it does not mutate
+an agent application's saved transcript in the background. Provider-reported
+cached-token and cache-write usage remains the source of truth—Entroly does not
+convert an internal exact-match counter into a dollar-savings claim.
+
+[Configuration, recovery, and operational limits](docs/session-rescue.md)
 
 ---
 
