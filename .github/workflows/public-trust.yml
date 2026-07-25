@@ -40,6 +40,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
       - name: Verify public claims against committed evidence
         shell: bash
         run: |
@@ -73,5 +75,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
       - name: Check canonical public destinations
         run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20
