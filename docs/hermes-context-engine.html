@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Entroly for Hermes Agent: Context Engine & Exact Recovery</title>
+  <meta name="description" content="Use Entroly as the Hermes Agent context engine for request-only evidence selection, usage tracking, model-window updates, receipts, and hash-only exact recovery.">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+  <meta name="googlebot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <meta name="bingbot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html">
+  <meta property="og:site_name" content="Entroly">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Entroly for Hermes Agent: Context Engine & Exact Recovery">
+  <meta property="og:description" content="A Hermes ContextEngine for budgeted evidence selection, status reporting, and exact full-conversation recovery.">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html">
+  <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Entroly for Hermes Agent">
+  <meta name="twitter:description" content="Context assurance and exact recovery for Hermes Agent.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://juyterman1000.github.io/entroly/#software",
+        "name": "Entroly",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Hermes Agent context engine",
+        "operatingSystem": "Windows, macOS, Linux",
+        "description": "Open-source context assurance layer and Context OS for AI agents.",
+        "codeRepository": "https://github.com/juyterman1000/entroly",
+        "downloadUrl": "https://pypi.org/project/entroly/",
+        "license": "https://opensource.org/licenses/Apache-2.0",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+      },
+      {
+        "@type": "TechArticle",
+        "@id": "https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html#article",
+        "headline": "Entroly for Hermes Agent: Context Engine and Exact Recovery",
+        "description": "How to use Entroly as a Hermes Agent ContextEngine with request-only selection, usage observation, model updates, status reporting, and exact recovery.",
+        "url": "https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html",
+        "dateModified": "2026-07-25",
+        "mainEntityOfPage": "https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html",
+        "about": [
+          {"@id": "https://juyterman1000.github.io/entroly/#software"},
+          {"@type": "SoftwareApplication", "name": "Hermes Agent", "sameAs": "https://github.com/NousResearch/hermes-agent"}
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {"@type": "ListItem", "position": 1, "name": "Entroly", "item": "https://juyterman1000.github.io/entroly/docs/index.html"},
+          {"@type": "ListItem", "position": 2, "name": "Agent Integrations", "item": "https://juyterman1000.github.io/entroly/docs/agent-integrations.html"},
+          {"@type": "ListItem", "position": 3, "name": "Hermes Context Engine", "item": "https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html"}
+        ]
+      }
+    ]
+  }
+  </script>
+  <style>
+    :root{--bg:#07070b;--panel:#111119;--text:#f8fafc;--muted:#a3adc2;--accent:#818cf8;--border:#292938;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#a5b4fc}header,main,footer{max-width:980px;margin:auto;padding:24px}nav{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}nav a{text-decoration:none;margin-left:18px}.brand{font-weight:800;color:var(--text)}.hero{padding:82px 0 42px}.eyebrow{color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78rem}h1{font-size:clamp(2.2rem,7vw,4.2rem);line-height:1.06;letter-spacing:-.04em;margin:.25em 0}.lead{font-size:1.22rem;color:var(--muted)}.answer{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:14px;padding:24px;margin:34px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px}.card p,li{color:var(--muted)}h2{margin-top:48px}code,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace}pre{overflow:auto;background:#020204;border:1px solid var(--border);border-radius:12px;padding:18px}.faq{border-top:1px solid var(--border);padding:20px 0}.faq h3{margin-bottom:4px}.faq p{margin-top:0;color:var(--muted)}footer{color:var(--muted);border-top:1px solid var(--border);margin-top:48px}@media(max-width:720px){.grid{grid-template-columns:1fr}nav .links{display:none}}
+  </style>
+</head>
+<body>
+  <header><nav aria-label="Primary navigation"><a class="brand" href="index.html">Entroly</a><div class="links"><a href="agent-integrations.html">Integrations</a><a href="openclaw-context-engine.html">OpenClaw</a><a href="opencode-context-assurance.html">OpenCode</a><a href="https://github.com/juyterman1000/entroly">GitHub</a></div></nav></header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Hermes Agent integration</div>
+      <h1>Entroly is a context engine for Hermes Agent</h1>
+      <p class="lead">Entroly implements the Hermes ContextEngine contract so Hermes can select request-only evidence under a model budget, observe completed-turn usage, adapt when the model window changes, report bounded status, and recover the exact pre-compression conversation through a hash-only tool.</p>
+    </section>
+
+    <section class="answer">
+      <strong>Direct answer:</strong> Hermes Agent runs the conversation, tools, models, and learning loop. Entroly supplies the context assurance layer: what evidence enters a request, how omitted content can be recovered, and what the integration can report about its context decisions.
+    </section>
+
+    <h2>Install the Hermes context engine</h2>
+    <pre><code>pip install -U entroly</code></pre>
+    <p>Install the Entroly context-engine directory into Hermes' context-engine plugin location, then choose Entroly in the Hermes configuration:</p>
+    <pre><code>context:
+  engine: "entroly"</code></pre>
+    <p>The implementation remains importable without making <code>hermes-agent</code> a required Entroly dependency. When Hermes is installed, Entroly uses the host's ContextEngine interface.</p>
+
+    <h2>What Entroly adds to Hermes Agent</h2>
+    <section class="grid">
+      <article class="card"><h3>Request-only selection</h3><p><code>select_context()</code> can return a bounded replacement only for the current request. Returning <code>None</code> preserves the original request when it already fits or when safe selection cannot be produced.</p></article>
+      <article class="card"><h3>Model-aware thresholds</h3><p><code>update_model()</code> recalculates the compaction threshold when Hermes switches models or context windows, rather than assuming one fixed budget.</p></article>
+      <article class="card"><h3>Usage and status</h3><p><code>on_turn_complete()</code> observes normalized usage, while <code>get_status()</code> exposes bounded counters and the most recent recovery handle.</p></article>
+      <article class="card"><h3>Exact replay</h3><p>When compression changes the request, Entroly stores the canonical pre-compression conversation and exposes one <code>entroly_retrieve(hash)</code> tool for exact full-content recovery.</p></article>
+    </section>
+
+    <h2>Hash-only recovery contract</h2>
+    <pre><code>{
+  "name": "entroly_retrieve",
+  "arguments": {
+    "hash": "ccr:0123456789abcdef01234567"
+  }
+}</code></pre>
+    <ul>
+      <li>The tool accepts exactly one <code>hash</code> argument.</li>
+      <li>Source paths, natural-language queries, partial hashes, and extra properties are rejected.</li>
+      <li>The complete stored original is returned; recovery is not another ranking step.</li>
+      <li>A missing historical handle remains a miss and is not replaced with a newer source revision.</li>
+    </ul>
+
+    <h2>Hermes stays authoritative</h2>
+    <ul>
+      <li>Hermes owns the persisted conversation, model provider, authentication, tool loop, memory backend, and agent behavior.</li>
+      <li>Entroly does not mutate Hermes' persisted history when selecting request context.</li>
+      <li>System and tool-related messages are protected by the underlying integration's fail-open rules.</li>
+      <li>The adapter returns the original request when safe bounded context cannot be produced.</li>
+    </ul>
+
+    <h2>Frequently asked questions</h2>
+    <div class="faq"><h3>Does Entroly replace Hermes' learning loop?</h3><p>No. Entroly operates at the context boundary. Hermes remains responsible for agent learning, skills, tools, and long-running behavior.</p></div>
+    <div class="faq"><h3>Does the Entroly tool search for related content?</h3><p>No. <code>entroly_retrieve</code> is deliberately hash-only. Discovery and ranking happen before a recovery handle is known.</p></div>
+    <div class="faq"><h3>What happens if Entroly fails?</h3><p>The adapter follows a fail-open context policy and preserves the Hermes request rather than breaking the turn.</p></div>
+    <div class="faq"><h3>Can Hermes switch models?</h3><p>Yes. The integration updates the context length and threshold when Hermes reports a model change.</p></div>
+
+    <p><a href="https://github.com/juyterman1000/entroly/tree/main/entroly/integrations/hermes_context_engine">Inspect the Hermes integration source</a> · <a href="agent-integrations.html">Compare all Entroly agent integrations</a></p>
+  </main>
+  <footer>Apache-2.0 open source. <a href="https://github.com/juyterman1000/entroly">Entroly repository</a> · <a href="limitations.md">Limitations</a></footer>
+</body>
+</html>

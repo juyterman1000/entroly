@@ -8,9 +8,22 @@ on:
       - server.json
       - benchmarks/results/context_commit_conformance.json
       - benchmarks/results/halueval_qa_faithful.json
+      - docs/ai-cost-optimization.html
+      - docs/agent-integrations.html
+      - docs/openclaw-context-engine.html
+      - docs/hermes-context-engine.html
+      - docs/opencode-context-assurance.html
       - docs/discord.html
       - docs/public-evidence.md
+      - docs/sitemap.xml
+      - sitemap.xml
+      - llms.txt
+      - docs/llms.txt
+      - llms-full.txt
+      - scripts/verify_context_assurance_public.py
       - scripts/verify_public_trust.py
+      - scripts/verify_readme.py
+      - tests/test_public_trust.py
       - .github/workflows/public-trust.yml
   schedule:
     - cron: "23 9 * * 1"
@@ -27,8 +40,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
       - name: Verify public claims against committed evidence
-        run: python scripts/verify_public_trust.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/verify_public_trust.py 2>&1 | tee public-trust.log
+      - name: Verify simplified README and runtime contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/verify_readme.py 2>&1 | tee verify-readme.log
+      - name: Run public trust regressions
+        run: >-
+          python -m pytest -q tests/test_public_trust.py
+          --junitxml=public-trust-tests.xml
+      - name: Upload public trust diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-trust-diagnostics
+          path: |
+            public-trust.log
+            verify-readme.log
+            public-trust-tests.xml
+          if-no-files-found: warn
 
   online-destinations:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -38,5 +75,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
       - name: Check canonical public destinations
         run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20

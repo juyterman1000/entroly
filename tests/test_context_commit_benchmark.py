@@ -20,18 +20,20 @@ def test_context_commit_conformance_benchmark_falsification_gate():
     assert aggregate["tamper_trials"] >= 18
 
 
-def test_committed_context_commit_claims_match_readme():
+def test_committed_context_commit_claims_match_public_evidence():
     root = Path(__file__).resolve().parents[1]
     result = json.loads(
         (root / "benchmarks/results/context_commit_conformance.json").read_text(
             encoding="utf-8"
         )
     )
-    readme = (root / "README.md").read_text(encoding="utf-8")
+    evidence = (root / "docs/public-evidence.md").read_text(encoding="utf-8")
     aggregate = result["aggregate"]
 
-    assert f"**{aggregate['cases']} / {aggregate['cases']}**" in readme
+    assert f"**{aggregate['cases']}/{aggregate['cases']}**" in evidence
     recovered = aggregate["omitted_chunks_verified"]
-    assert f"**{recovered} / {recovered}**" in readme
+    assert f"**{recovered}/{recovered}**" in evidence
     tampered = aggregate["tamper_trials"]
-    assert f"**{tampered} / {tampered}**" in readme
+    assert f"**{tampered}/{tampered}**" in evidence
+    assert "not answer quality" in evidence
+    assert "context_commit_conformance.json" in evidence

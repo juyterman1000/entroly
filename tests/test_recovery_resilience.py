@@ -130,7 +130,7 @@ def test_verifier_rejects_payload_tampering() -> None:
         resilience.verify_report(tampered)
 
 
-def test_committed_holdout_is_current_verified_and_scoped_in_readme() -> None:
+def test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy() -> None:
     report = json.loads(
         (
             ROOT
@@ -144,7 +144,7 @@ def test_committed_holdout_is_current_verified_and_scoped_in_readme() -> None:
             ROOT / "entroly/compression_retrieval_store.py",
         )
     )
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    evidence = (ROOT / "docs/public-evidence.md").read_text(encoding="utf-8")
 
     assert (
         report["participants"]["entroly"]["runtime"]["implementation_sha256"]
@@ -162,5 +162,7 @@ def test_committed_holdout_is_current_verified_and_scoped_in_readme() -> None:
         for error in worker["errors"]
     ]
     assert headroom_errors == []
-    assert "parity, not leadership" in readme
-    assert "does not establish universal recovery superiority" in readme
+    assert "**66/66** exact entries for Entroly" in evidence
+    assert "**66/66** for the Headroom 0.31.0 comparison" in evidence
+    assert "parity, not leadership" in evidence
+    assert "does not establish universal recovery superiority" in evidence

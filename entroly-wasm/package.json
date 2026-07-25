@@ -1,7 +1,7 @@
 {
   "name": "entroly-wasm",
   "version": "1.0.66",
-  "description": "WebAssembly Context OS for AI agents: local context engineering, compression, recovery, receipts, and verification without Python.",
+  "description": "WebAssembly Context Assurance for AI agents: reduce avoidable token usage with local evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
@@ -51,8 +51,12 @@
     "test": "node test_wasm_e2e.js"
   },
   "keywords": [
-    "entroly", "ai-agents", "ai-coding-agents", "context-engineering", "context-compression", "context-management", "context-receipts", "context-control-plane", "context-optimization", "mcp", "mcp-server", "model-context-protocol", "claude-code", "codex", "openclaw",
-    "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
+    "entroly", "ai-agents", "ai-coding-agents", "context-assurance", "context-engineering",
+    "context-compression", "context-management", "context-receipts", "context-control-plane",
+    "context-optimization", "ai-cost-optimization", "llm-cost-optimization", "reduce-ai-costs",
+    "token-reduction", "token-optimization", "content-addressed-recovery", "mcp", "mcp-server",
+    "model-context-protocol", "claude-code", "codex", "openclaw", "hermes-agent", "opencode",
+    "local-models", "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
   ],
   "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },
   "homepage": "https://juyterman1000.github.io/entroly/docs/index.html",

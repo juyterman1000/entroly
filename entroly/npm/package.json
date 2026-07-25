@@ -2,7 +2,7 @@
   "name": "entroly-mcp",
   "version": "1.0.66",
   "mcpName": "io.github.juyterman1000/entroly",
-  "description": "NPX bridge to Entroly's Context OS: auditable AI agent context engineering, recovery, receipts, and verification.",
+  "description": "MCP bridge for AI agents using Entroly Context Assurance: reduce avoidable AI token usage with evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "bin": {
     "entroly-mcp": "./bin/entroly-mcp.js"
@@ -29,12 +29,19 @@
     "mcp",
     "mcp-server",
     "model-context-protocol",
+    "context-assurance",
     "context-engineering",
     "context-compression",
     "context-management",
     "context-receipts",
     "context-control-plane",
     "context-optimization",
+    "ai-cost-optimization",
+    "llm-cost-optimization",
+    "reduce-ai-costs",
+    "token-reduction",
+    "token-optimization",
+    "content-addressed-recovery",
     "entroly",
     "ai",
     "agents",
@@ -43,8 +50,11 @@
     "claude-code",
     "codex",
     "openclaw",
+    "hermes-agent",
+    "opencode",
     "github-copilot",
-    "cursor"
+    "cursor",
+    "local-models"
   ],
   "author": "entroly",
   "license": "Apache-2.0"

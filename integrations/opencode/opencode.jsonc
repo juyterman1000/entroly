@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "entroly": {
+      "type": "local",
+      "command": ["entroly", "serve"],
+      "enabled": true,
+      "timeout": 60000,
+      "environment": {
+        "ENTROLY_NO_DOCKER": "1"
+      }
+    }
+  },
+  "permission": {
+    "entroly_*": "ask"
+  },
+  "compaction": {
+    "auto": true,
+    "reserved": 10000
+  }
+}

@@ -117,7 +117,7 @@ def test_superiority_gate_requires_every_statistical_and_downstream_guard() -> N
     assert not gate["reasons"]
 
 
-def test_committed_frontier_artifacts_and_readme_are_in_sync() -> None:
+def test_committed_frontier_artifacts_and_public_scope_are_in_sync() -> None:
     result_path = ROOT / "benchmarks" / "results" / "compression_frontier.json"
     report = json.loads(result_path.read_text(encoding="utf-8"))
 
@@ -130,17 +130,16 @@ def test_committed_frontier_artifacts_and_readme_are_in_sync() -> None:
         encoding="utf-8"
     ) == render_svg(report)
 
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    public_evidence = (ROOT / "docs" / "public-evidence.md").read_text(
+        encoding="utf-8"
+    )
     for expected in (
-        "**95.0%**",
-        "**93.3%**",
-        "**88.3%**",
-        "The published Headroom 0.31.0 baseline retained **1.7%**",
-        "Headroom 0.31.0 baseline at 12.5%",
-        "Using Headroom today?",
-        "1.0.59 source candidate",
+        "Token reduction and task quality",
+        "Token reduction varies by corpus, query, budget, tokenizer, integration",
+        "not production-outcome evidence",
+        "Context Efficiency Frontier protocol",
     ):
-        assert expected in readme
+        assert expected in public_evidence
 
     tampered = copy.deepcopy(report)
     tampered["downstream"]["rows"][0]["exact_match"] = not tampered["downstream"][

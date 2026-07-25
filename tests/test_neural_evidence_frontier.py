@@ -160,24 +160,43 @@ def test_share_card_is_bound_to_verified_trial_evidence() -> None:
     assert card_path.read_text(encoding="utf-8") == rendered
 
 
-def test_public_story_keeps_the_negative_result_and_provenance_attached() -> None:
+def test_public_story_keeps_negative_result_and_provenance_attached() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    public_evidence = (ROOT / "docs" / "public-evidence.md").read_text(
+        encoding="utf-8"
+    )
     evidence_page = (
         ROOT / "docs" / "benchmarks" / "neural-evidence-frontier.md"
     ).read_text(encoding="utf-8")
 
-    for claim in (
-        "Keep your agent. Give it a Context OS.",
-        "One measured job of the Context OS",
-        "Frontier models reason. OpenClaw and Hermes run agents.",
-        "**297 of 300**",
-        "**293 of 300**",
-        "**298 of 300**",
-        "**1.02 of 16 passages**",
-        "`p=0.21875`",
-        "this experiment measures retrieval",
+    for summary in (
+        "Frozen evidence-selection benchmark",
+        "298 of 300",
+        "1.02 of 16 passages",
+        "p=0.21875",
+        "experiment measures retrieval",
     ):
-        assert claim in readme
+        assert summary in readme
+
+    for claim in (
+        "PRISM-R is an opt-in research prototype, not the default compressor.",
+        "87.0%",
+        "60.5%",
+        "9.0%",
+        "90.5%",
+        "50.6%",
+        "do not measure generated answers",
+    ):
+        assert claim in public_evidence
+
+    for held_out_result in (
+        "99.0%",
+        "97.7%",
+        "99.3%",
+        "p=0.21875",
+        "does not support a statistically significant primary-selector claim",
+    ):
+        assert held_out_result in evidence_page
 
     for provenance in (
         "sentence-transformers/all-MiniLM-L6-v2",

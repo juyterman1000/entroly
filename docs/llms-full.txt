@@ -1,29 +1,81 @@
 # Entroly Extended Documentation Index
 
-> Entroly is an open-source, local-first Context OS for AI agents. This file routes readers to source, documentation, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
+> Entroly is an open-source, local-first Context Assurance layer and Context OS for AI agents. This file routes readers to product facts, AI cost guidance, integrations, source, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
 
-Entroly can index, select, and compress repository context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering source content. WITNESS can evaluate whether output claims are supported by supplied evidence.
+Entroly can index, select, and compress repository or application context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering exact stored content. WITNESS can evaluate whether output claims are supported by supplied evidence.
 
 Local indexing, selection, compression, receipts, and recovery storage do not require an external model call. When enabled with its default local verifier, WITNESS also avoids an external model call. When Entroly is used as a proxy, selected context is still sent to the LLM provider configured by the user. No outbound analytics are enabled by default.
 
-Measured savings and quality vary by repository, query, budget, provider, baseline, and enabled features. WITNESS does not establish universal truth, and strict suppression is opt-in rather than the default proxy policy.
+Measured savings and quality vary by repository, query, budget, provider, pricing, cache behavior, model, baseline, and enabled features. WITNESS does not establish universal truth, and strict suppression is opt-in rather than the default proxy policy.
+
+## AI Cost Optimization Facts
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
+- Entroly can reduce avoidable provider-bound input by selecting useful evidence under a budget and removing duplicate or low-value context.
+- Entroly does not claim a universal compression percentage, guaranteed bill reduction, or guaranteed answer-quality improvement.
+- Provider-bound proxy requests may report observed pre/post input tokens and modeled input-cost avoidance with pricing provenance. This is not a provider invoice.
+- SDK, MCP, plugin, and npm operations may report local context reduction, but Entroly claims $0 provider savings when delivery to a paid provider is not observable.
+- Fixed ChatGPT or Claude subscription prices may not change. Entroly is most directly measurable for API applications, coding agents, local models, and supported routes where provider-bound input can be observed.
+- If a request is already small or under budget, Entroly should pass through rather than invent savings.
+- Entroly is more than prompt compression: it selects evidence before compression, preserves exact originals, produces receipts, and can evaluate evidence support.
+
+## Nontechnical User Status
+
+- Product requirement: https://github.com/juyterman1000/entroly/blob/main/docs/product/entroly-simple-mode.md
+- Intended future experience: install Entroly, choose a supported AI application, turn on Context Assurance, use the application normally, and view plain-language usage and evidence receipts.
+- Current status: Entroly Simple Mode is not shipped. Today's product requires a small one-time setup through a supported proxy, wrapper, plugin, SDK, or MCP path.
+- Entroly must not be described as zero-setup or one-click for nontechnical users until its installer, connectors, privacy controls, recovery, accessibility, and usability gates pass.
 
 ## Product Documentation
 
-- [README and quick start](https://github.com/juyterman1000/entroly): Installation, product model, commands, and benchmark summary.
-- [Documentation site](https://juyterman1000.github.io/entroly/): Integration and workflow guides.
+- [README and quick start](https://github.com/juyterman1000/entroly): Plain-language product explanation followed by technical architecture, commands, evidence, and limitations.
+- [Documentation site](https://juyterman1000.github.io/entroly/docs/index.html): Integration and workflow guides.
+- [AI cost optimization](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Evidence-bounded guide to reducing avoidable token usage and understanding measurable versus unobservable savings.
+- [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html): Context Assurance for OpenClaw, Hermes Agent, and OpenCode.
 - [Architecture](https://github.com/juyterman1000/entroly/blob/main/docs/DETAILS.md): Components, algorithms, and system boundaries.
 - [Limitations](https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md): Known constraints and non-guarantees.
 - [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment and evaluation considerations.
 - [Memory system](https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md): Local memory architecture and controls.
+
+## Exact Recovery Contract
+
+Entroly can emit a content-addressed handle shaped as `ccr:<24-hex>`. The strict `entroly_retrieve` path accepts one exact handle, performs no natural-language query or fuzzy ranking, returns the complete stored original, rejects source paths and extra arguments, and does not silently substitute a newer source revision when a historical hash is unavailable.
+
+Discovery and recovery are separate operations. Ranking may identify which evidence matters. Once a CCR handle is known, recovery is a deterministic lookup.
+
+## Agent Integrations
+
+### OpenClaw
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html
+- Source: https://github.com/juyterman1000/entroly/tree/main/integrations/openclaw
+- Role: first-class OpenClaw context engine operating on normalized messages before provider dispatch.
+- Adds: budget-aware evidence selection, Context Receipts, trusted context-window handling, local bridge processing, and optional proof-guided exact-message recovery.
+- Boundary: OpenClaw remains authoritative for the transcript, provider credentials, routing, billing, retries, tools, and delivery.
+
+### Hermes Agent
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html
+- Source: https://github.com/juyterman1000/entroly/tree/main/entroly/integrations/hermes_context_engine
+- Role: Hermes ContextEngine implementation.
+- Adds: request-only selection, usage observation, model-window updates, bounded status reporting, and native `entroly_retrieve(hash)` exact conversation recovery.
+- Boundary: Hermes remains authoritative for the conversation, provider, tools, memory backend, permissions, and learning loop.
+
+### OpenCode
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html
+- Source: https://github.com/juyterman1000/entroly/tree/main/integrations/opencode
+- Role: local MCP Context Assurance plus evidence-preserving compaction instructions.
+- Preserves: exact paths, symbols, branches, commits, pull request identifiers, executed commands and results, errors, blockers, rejected hypotheses, verification status, safety boundaries, and all CCR handles.
+- Boundary: OpenCode remains authoritative for its session, model provider, permissions, tools, edits, and interface.
 
 ## Verification And Benchmarks
 
 - [Packaged verifier source](https://github.com/juyterman1000/entroly/blob/main/entroly/verify_claims.py): Bounded install, indexing, token-budget, synthetic recovery, and engine checks.
 - [Benchmark artifacts](https://github.com/juyterman1000/entroly/tree/main/benchmarks/results): Machine-readable workload results and reports.
 - [Benchmark runner](https://github.com/juyterman1000/entroly/blob/main/benchmarks/run_readme_benchmarks.py): Reproduction path for README measurements.
-- [Context receipt example](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.md): Human-readable selection and risk record.
-- [Context receipt JSON](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.json): Machine-readable receipt example.
+- [Context Receipt example](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.md): Human-readable selection and risk record.
+- [Context Receipt JSON](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.json): Machine-readable receipt example.
 
 ## Verification Components
 
