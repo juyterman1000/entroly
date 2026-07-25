@@ -73,10 +73,11 @@ jobs:
 
           Entroly selects useful evidence under an explicit budget, removes redundant
           context, keeps omitted originals recoverable through content-addressed handles,
-          and records what was included, omitted, or risky. It can fit around supported
-          developer tools, agent runtimes, local models, and OpenAI/Anthropic-compatible
+          and records what was included, omitted, or risky. Supported proxy, wrapper,
+          plugin, and MCP paths work with Claude Code, Codex, OpenClaw, Hermes Agent,
+          OpenCode, GitHub Copilot, local models, and OpenAI/Anthropic-compatible
           applications without an agent-architecture rewrite. A small one-time setup is
-          required for the selected proxy, wrapper, plugin, or MCP path.'''
+          required for the selected integration path.'''
           if old not in text:
               raise SystemExit("PyPI README first-fold source block did not match")
           pypi.write_text(text.replace(old, new, 1), encoding="utf-8")
@@ -88,11 +89,13 @@ jobs:
 
           path = Path("tests/test_discovery_metadata.py")
           text = path.read_text(encoding="utf-8")
-          text = text.replace(
+          old = (
               'assert "entroly — the open-source context os for ai agents" in first_fold\n'
               '        assert IDENTITY in first_fold\n'
               '        assert "context compression" in first_fold or "compress" in first_fold\n'
-              '        for client in ("claude code", "codex", "openclaw", "github copilot", "mcp"):',
+              '        for client in ("claude code", "codex", "openclaw", "github copilot", "mcp"):'
+          )
+          new = (
               'assert "entroly — drop-in context assurance for lower ai bills" in first_fold\n'
               '        assert "context assurance" in first_fold\n'
               '        assert "token waste" in first_fold\n'
@@ -107,9 +110,11 @@ jobs:
               '            "github copilot",\n'
               '            "local models",\n'
               '            "mcp",\n'
-              '        ):',
+              '        ):'
           )
-          path.write_text(text, encoding="utf-8")
+          if old not in text:
+              raise SystemExit("discovery-contract source block did not match")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
       - name: Validate positioning and discovery tests
         run: |
@@ -125,6 +130,9 @@ jobs:
                   "token waste",
                   "recoverable",
                   "no agent-architecture rewrite",
+                  "hermes agent",
+                  "opencode",
+                  "local models",
               )
               missing = [term for term in required if term not in text]
               if missing:
