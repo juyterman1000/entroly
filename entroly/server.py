@@ -1882,7 +1882,14 @@ class EntrolyEngine:
         out = dict(savings)
         out.pop("estimated_cost_saved_usd", None)
         if "total_tokens_saved" in out:
-            out["dedup_tokens_avoided"] = out.pop("total_tokens_saved")
+            # Coerce: the raw value passed through verbatim, so a None or
+            # non-numeric counter reached consumers as-is and any arithmetic on
+            # it raised TypeError. A counter is always an int here.
+            raw = out.pop("total_tokens_saved")
+            try:
+                out["dedup_tokens_avoided"] = int(raw or 0)
+            except (TypeError, ValueError):
+                out["dedup_tokens_avoided"] = 0
         out["baseline"] = (
             "dedup/selection telemetry only; counts candidates not selected. "
             "Not a provider bill delta and not a dollar-savings claim."

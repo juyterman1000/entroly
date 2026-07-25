@@ -110,3 +110,17 @@ def test_stats_resource_counters_work_on_the_native_shape():
     assert native["total_fragments_ingested"] == 1387
     assert native["dedup_tokens_avoided"] == 5
     assert "estimated_cost_saved_usd" not in native
+
+
+def test_token_counter_is_always_an_int_never_none():
+    # The raw value used to pass through verbatim, so a None or non-numeric
+    # counter reached consumers and any arithmetic on it raised TypeError.
+    from entroly.server import EntrolyEngine
+
+    for raw in (None, "", "not-a-number", [], 7):
+        out = EntrolyEngine._honest_savings_block({"total_tokens_saved": raw})
+        value = out["dedup_tokens_avoided"]
+        assert isinstance(value, int), f"{raw!r} -> {value!r} is not an int"
+        assert value + 1 > 0 or value == 0   # arithmetic must not raise
+    assert EntrolyEngine._honest_savings_block(
+        {"total_tokens_saved": 7})["dedup_tokens_avoided"] == 7
