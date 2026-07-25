@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Entroly for OpenCode: MCP Context Assurance</title>
+  <meta name="description" content="Connect Entroly to OpenCode through local MCP and preserve exact paths, commands, errors, verification status, and recovery handles during compaction.">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+  <meta name="googlebot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <meta name="bingbot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html">
+  <meta property="og:site_name" content="Entroly">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Entroly for OpenCode: MCP Context Assurance">
+  <meta property="og:description" content="Local MCP context assurance and evidence-preserving compaction for OpenCode.">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html">
+  <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Entroly for OpenCode">
+  <meta name="twitter:description" content="MCP context assurance and exact recovery for OpenCode.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://juyterman1000.github.io/entroly/#software",
+        "name": "Entroly",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "OpenCode context assurance",
+        "operatingSystem": "Windows, macOS, Linux",
+        "description": "Open-source context assurance layer and Context OS for AI agents.",
+        "codeRepository": "https://github.com/juyterman1000/entroly",
+        "downloadUrl": "https://pypi.org/project/entroly/",
+        "license": "https://opensource.org/licenses/Apache-2.0",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+      },
+      {
+        "@type": "TechArticle",
+        "@id": "https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html#article",
+        "headline": "Entroly for OpenCode: MCP Context Assurance",
+        "description": "How to connect Entroly to OpenCode through local MCP and preserve decision-critical evidence during compaction.",
+        "url": "https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html",
+        "dateModified": "2026-07-25",
+        "mainEntityOfPage": "https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html",
+        "about": [
+          {"@id": "https://juyterman1000.github.io/entroly/#software"},
+          {"@type": "SoftwareApplication", "name": "OpenCode", "sameAs": "https://github.com/anomalyco/opencode"}
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {"@type": "ListItem", "position": 1, "name": "Entroly", "item": "https://juyterman1000.github.io/entroly/docs/index.html"},
+          {"@type": "ListItem", "position": 2, "name": "Agent Integrations", "item": "https://juyterman1000.github.io/entroly/docs/agent-integrations.html"},
+          {"@type": "ListItem", "position": 3, "name": "OpenCode Context Assurance", "item": "https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html"}
+        ]
+      }
+    ]
+  }
+  </script>
+  <style>
+    :root{--bg:#07070b;--panel:#111119;--text:#f8fafc;--muted:#a3adc2;--accent:#818cf8;--border:#292938;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#a5b4fc}header,main,footer{max-width:980px;margin:auto;padding:24px}nav{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}nav a{text-decoration:none;margin-left:18px}.brand{font-weight:800;color:var(--text)}.hero{padding:82px 0 42px}.eyebrow{color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:.78rem}h1{font-size:clamp(2.2rem,7vw,4.2rem);line-height:1.06;letter-spacing:-.04em;margin:.25em 0}.lead{font-size:1.22rem;color:var(--muted)}.answer{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:14px;padding:24px;margin:34px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px}.card p,li{color:var(--muted)}h2{margin-top:48px}code,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace}pre{overflow:auto;background:#020204;border:1px solid var(--border);border-radius:12px;padding:18px}.faq{border-top:1px solid var(--border);padding:20px 0}.faq h3{margin-bottom:4px}.faq p{margin-top:0;color:var(--muted)}footer{color:var(--muted);border-top:1px solid var(--border);margin-top:48px}@media(max-width:720px){.grid{grid-template-columns:1fr}nav .links{display:none}}
+  </style>
+</head>
+<body>
+  <header><nav aria-label="Primary navigation"><a class="brand" href="index.html">Entroly</a><div class="links"><a href="agent-integrations.html">Integrations</a><a href="openclaw-context-engine.html">OpenClaw</a><a href="hermes-context-engine.html">Hermes</a><a href="https://github.com/juyterman1000/entroly">GitHub</a></div></nav></header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">OpenCode integration</div>
+      <h1>Entroly adds context assurance to OpenCode through MCP</h1>
+      <p class="lead">The Entroly OpenCode integration starts the local Entroly MCP server and adds a compaction hook that preserves exact paths, symbols, commands, errors, verification status, rejected hypotheses, and every <code>ccr:</code> recovery handle.</p>
+    </section>
+
+    <section class="answer">
+      <strong>Direct answer:</strong> OpenCode remains the coding agent and tool host. Entroly supplies a local context-assurance service and evidence-preservation contract so compaction does not silently discard the details needed to continue or verify the task.
+    </section>
+
+    <h2>Install Entroly for OpenCode</h2>
+    <pre><code>pip install -U entroly
+cp integrations/opencode/opencode.jsonc ./opencode.jsonc
+mkdir -p .opencode/plugins
+cp integrations/opencode/.opencode/plugins/entroly-context-assurance.ts \
+  .opencode/plugins/</code></pre>
+    <p>The included configuration launches the local MCP server with:</p>
+    <pre><code>entroly serve</code></pre>
+    <p>Entroly tools remain approval-gated so the user can inspect sensitive or state-changing operations before they run.</p>
+
+    <h2>What Entroly adds to OpenCode</h2>
+    <section class="grid">
+      <article class="card"><h3>Local MCP context tools</h3><p>OpenCode can call Entroly for context optimization, exact retrieval, receipts, verification, security checks, and codebase-health operations without replacing OpenCode's own model and tool loop.</p></article>
+      <article class="card"><h3>Evidence-preserving compaction</h3><p>The plugin extends OpenCode's compaction prompt with a strict list of details that must survive, including file paths, symbols, commands, errors, verification state, and rejected hypotheses.</p></article>
+      <article class="card"><h3>Exact recovery handles</h3><p>Every <code>ccr:&lt;24-hex&gt;</code> handle is preserved verbatim. When the original is needed, the agent performs a hash-only full-content lookup rather than inventing a search query.</p></article>
+      <article class="card"><h3>Honest completion state</h3><p>The compaction contract requires the summary to distinguish executed tests and reviews from proposed work, reducing false claims after a long session is compressed.</p></article>
+    </section>
+
+    <h2>What the compaction hook preserves</h2>
+    <ul>
+      <li>Exact repository paths, symbol names, branch names, commit hashes, and pull request identifiers.</li>
+      <li>Commands that were actually executed and their observed exit status.</li>
+      <li>Errors, unresolved blockers, failed approaches, and rejected hypotheses.</li>
+      <li>Verification status: what passed, what failed, and what remains unverified.</li>
+      <li>Every Entroly Context Receipt or <code>ccr:</code> exact-recovery handle.</li>
+      <li>Safety and approval boundaries that OpenCode must continue to respect.</li>
+    </ul>
+
+    <h2>OpenCode stays authoritative</h2>
+    <ul>
+      <li>OpenCode owns its session, model provider, permissions, tools, edits, and user interface.</li>
+      <li>Entroly does not bypass OpenCode's approval model.</li>
+      <li>The MCP server runs locally unless the user separately configures a remote model or service.</li>
+      <li>No test, review, push, merge, or release is treated as complete unless an observable tool result supports it.</li>
+    </ul>
+
+    <h2>Frequently asked questions</h2>
+    <div class="faq"><h3>Is Entroly an OpenCode model provider?</h3><p>No. Entroly manages context and evidence. OpenCode remains responsible for model selection and provider requests.</p></div>
+    <div class="faq"><h3>Does Entroly rewrite OpenCode's entire session?</h3><p>No. The integration adds local MCP tools and a compaction instruction hook. OpenCode remains the owner of the session.</p></div>
+    <div class="faq"><h3>Why preserve rejected hypotheses?</h3><p>Without them, a compacted agent may repeat an already disproven approach. Preserving the rejection and its evidence lowers repeated-investigation risk.</p></div>
+    <div class="faq"><h3>Can OpenCode recover exact omitted content?</h3><p>Yes while the CCR entry remains retained. The agent passes the exact handle to <code>entroly_retrieve</code>; it does not search by natural-language relevance.</p></div>
+
+    <p><a href="https://github.com/juyterman1000/entroly/tree/main/integrations/opencode">Inspect the OpenCode integration source</a> · <a href="agent-integrations.html">Compare all Entroly agent integrations</a></p>
+  </main>
+  <footer>Apache-2.0 open source. <a href="https://github.com/juyterman1000/entroly">Entroly repository</a> · <a href="limitations.md">Limitations</a></footer>
+</body>
+</html>
