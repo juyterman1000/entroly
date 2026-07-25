@@ -71,9 +71,9 @@ hallucination prevention from this run.
 ### Token reduction and task quality
 
 Token reduction depends on the corpus, query, budget, tokenizer, integration,
-and recovery behavior. The README's accuracy-retention table links each row to
-its exact committed artifact. Those rows are examples from small benchmark
-runs, not a universal savings range.
+and recovery behavior. Public product pages link measured results to their exact
+committed artifacts. Those results are examples from bounded benchmark runs,
+not a universal savings range.
 
 Use `entroly simulate` for a no-network local estimate. Use provider-observed
 request usage and the [Context Efficiency Frontier protocol](benchmarks/context-efficiency-frontier.md)
@@ -156,10 +156,9 @@ tests do not change that public state. Only the
 [live LobeHub page](https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score)
 can establish the current external result.
 
-The LobeHub ownership badge remains in the README's marketplace section so the
-external claim workflow can detect it. It is deliberately excluded from the
-top distribution and evidence rows until the listing reflects the current
-release and passes external validation.
+Marketplace badges are deliberately excluded from the simplified README. The
+live listing and this evidence policy are the canonical places for marketplace
+status until external indexing reflects the current release and validation.
 
 ## Quarantined public surfaces
 
