@@ -16,23 +16,22 @@ history is compressed around those evidence pins. The receipt records every
 score, query-term match count, allocation, and transformation without storing
 the request text or matched terms.
 
-## Install from ClawHub
+## Install from the public npm package
 
-Install the Python engine, then install the plugin from OpenClaw's official
-ClawHub registry:
+Install the Python engine, then install the publicly verifiable OpenClaw plugin
+package from npm:
 
 ```bash
 pip install "entroly>=1.0.65"
-openclaw plugins install clawhub:entroly-openclaw
-openclaw plugins enable entroly
-```
-
-The npm-only fallback remains available as:
-
-```bash
 openclaw plugins install npm:entroly-openclaw
 openclaw plugins enable entroly
+openclaw gateway restart
 ```
+
+ClawHub is an optional registry source. Use it only when
+`openclaw plugins search "entroly"` returns a current public package and its
+install hint. Do not guess a ClawHub slug or treat unpublished metadata as an
+installable release.
 
 From an Entroly source checkout:
 
@@ -40,6 +39,7 @@ From an Entroly source checkout:
 pip install "entroly>=1.0.65"
 openclaw plugins install ./integrations/openclaw
 openclaw plugins enable entroly
+openclaw gateway restart
 ```
 
 Select the engine in `~/.openclaw/openclaw.json`:
@@ -54,7 +54,7 @@ Select the engine in `~/.openclaw/openclaw.json`:
 }
 ```
 
-Restart the Gateway and verify the loaded plugin with:
+Verify the loaded plugin with:
 
 ```bash
 openclaw plugins inspect entroly --runtime --json
