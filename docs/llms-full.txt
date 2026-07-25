@@ -1,6 +1,6 @@
 # Entroly Extended Documentation Index
 
-> Entroly is an open-source, local-first Context OS for AI agents. This file routes readers to source, documentation, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
+> Entroly is an open-source, local-first Context OS and context assurance layer for AI agents. This file routes readers to source, documentation, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
 
 Entroly can index, select, and compress repository context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering source content. WITNESS can evaluate whether output claims are supported by supplied evidence.
 
@@ -11,11 +11,44 @@ Measured savings and quality vary by repository, query, budget, provider, baseli
 ## Product Documentation
 
 - [README and quick start](https://github.com/juyterman1000/entroly): Installation, product model, commands, and benchmark summary.
-- [Documentation site](https://juyterman1000.github.io/entroly/): Integration and workflow guides.
+- [Documentation site](https://juyterman1000.github.io/entroly/docs/index.html): Integration and workflow guides.
+- [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html): Context assurance for OpenClaw, Hermes Agent, and OpenCode.
 - [Architecture](https://github.com/juyterman1000/entroly/blob/main/docs/DETAILS.md): Components, algorithms, and system boundaries.
 - [Limitations](https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md): Known constraints and non-guarantees.
 - [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment and evaluation considerations.
 - [Memory system](https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md): Local memory architecture and controls.
+
+## Exact Recovery Contract
+
+Entroly can emit a content-addressed handle shaped as `ccr:<24-hex>`. The strict `entroly_retrieve` path accepts one exact handle, performs no natural-language query or fuzzy ranking, returns the complete stored original, rejects source paths and extra arguments, and does not silently substitute a newer source revision when a historical hash is unavailable.
+
+Discovery and recovery are separate operations. Ranking may identify which evidence matters. Once a CCR handle is known, recovery is a deterministic lookup.
+
+## Agent Integrations
+
+### OpenClaw
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html
+- Source: https://github.com/juyterman1000/entroly/tree/main/integrations/openclaw
+- Role: first-class OpenClaw context engine operating on normalized messages before provider dispatch.
+- Adds: budget-aware evidence selection, Context Receipts, trusted context-window handling, local bridge processing, and optional proof-guided exact-message recovery.
+- Boundary: OpenClaw remains authoritative for the transcript, provider credentials, routing, billing, retries, tools, and delivery.
+
+### Hermes Agent
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html
+- Source: https://github.com/juyterman1000/entroly/tree/main/entroly/integrations/hermes_context_engine
+- Role: Hermes ContextEngine implementation.
+- Adds: request-only selection, usage observation, model-window updates, bounded status reporting, and native `entroly_retrieve(hash)` exact conversation recovery.
+- Boundary: Hermes remains authoritative for the conversation, provider, tools, memory backend, permissions, and learning loop.
+
+### OpenCode
+
+- Canonical guide: https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html
+- Source: https://github.com/juyterman1000/entroly/tree/main/integrations/opencode
+- Role: local MCP context assurance plus evidence-preserving compaction instructions.
+- Preserves: exact paths, symbols, branches, commits, pull request identifiers, executed commands and results, errors, blockers, rejected hypotheses, verification status, safety boundaries, and all CCR handles.
+- Boundary: OpenCode remains authoritative for its session, model provider, permissions, tools, edits, and interface.
 
 ## Verification And Benchmarks
 
