@@ -377,7 +377,7 @@ class VerifiedWorldState:
         self._claims[claim_id] = updated
 
         if target is ClaimStatus.INVALIDATED:
-            self._propagate_invalidation(claim_id, merged_evidence)
+            self._propagate_invalidation(claim_id)
         return updated
 
     @staticmethod
@@ -415,11 +415,7 @@ class VerifiedWorldState:
                 + ", ".join(stale)
             )
 
-    def _propagate_invalidation(
-        self,
-        root_claim_id: str,
-        evidence: tuple[EvidenceRef, ...],
-    ) -> None:
+    def _propagate_invalidation(self, root_claim_id: str) -> None:
         queue = [root_claim_id]
         visited = {root_claim_id}
         while queue:
@@ -437,7 +433,6 @@ class VerifiedWorldState:
                 self._claims[dependent_id] = replace(
                     dependent,
                     status=ClaimStatus.INVALIDATED,
-                    evidence=self._merge_evidence(dependent.evidence, evidence),
                     invalidated_by=f"dependency:{invalid_id}",
                 )
                 visited.add(dependent_id)
@@ -523,6 +518,10 @@ class VerifiedWorldState:
             claim = WorldClaim.from_dict(raw_claim)
             if claim.claim_id in state._claims:
                 raise SnapshotIntegrityError(f"duplicate claim_id: {claim.claim_id}")
+            try:
+                state._ensure_evidence_current(claim.repo_sha, claim.evidence)
+            except VerificationRequired as exc:
+                raise SnapshotIntegrityError(str(exc)) from exc
             state._claims[claim.claim_id] = claim
         for claim in state._claims.values():
             missing = sorted(set(claim.depends_on) - state._claims.keys())
