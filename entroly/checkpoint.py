@@ -270,10 +270,22 @@ class CheckpointManager:
         auto_interval: int = 5,
         max_checkpoints: int = 10,
         instance_id: str | None = None,
+        peer_retention_seconds: float | None = None,
     ):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.auto_interval = auto_interval
         self.max_checkpoints = max_checkpoints
+        # Peer checkpoints older than this are treated as abandoned by a dead
+        # instance and reaped. Generous by default so a peer that is merely idle
+        # is never disturbed; override with ENTROLY_PEER_CHECKPOINT_TTL (seconds).
+        if peer_retention_seconds is None:
+            try:
+                peer_retention_seconds = float(
+                    os.environ.get("ENTROLY_PEER_CHECKPOINT_TTL", 24 * 3600)
+                )
+            except (TypeError, ValueError):
+                peer_retention_seconds = 24 * 3600
+        self.peer_retention_seconds = max(0.0, peer_retention_seconds)
         if instance_id:
             self.instance_id = instance_id
         else:
@@ -618,20 +630,55 @@ class CheckpointManager:
         )
 
     def _prune_old_checkpoints(self) -> None:
-        """Remove old checkpoints beyond the retention limit (own instance only)."""
-        # Only prune this instance's checkpoints, leave peers' alone
-        own_pattern = f"ckpt_{self.instance_id}_*.json.gz"
-        checkpoints = sorted(
-            self.checkpoint_dir.glob(own_pattern),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        """Enforce retention for this instance, and reap abandoned peer checkpoints.
 
-        for old_cp in checkpoints[self.max_checkpoints:]:
+        Pruning only ever covered the current instance. Every restart mints a new
+        instance id, so the previous run's checkpoints became permanently
+        unprunable "peers" and accumulated without bound — an observed dev
+        machine held 127 checkpoints / 264 MB with `own_checkpoints: 0`, at ~40 MB
+        per write.
+
+        Peers belonging to a *live* process are still left alone (another server
+        may legitimately be running). Peers older than `peer_retention_seconds`
+        are treated as abandoned by a dead instance and reaped.
+        """
+        self._prune_pattern(
+            f"ckpt_{self.instance_id}_*.json.gz", keep=self.max_checkpoints
+        )
+        self._reap_abandoned_peers()
+
+    def _prune_pattern(self, pattern: str, keep: int) -> None:
+        try:
+            checkpoints = sorted(
+                self.checkpoint_dir.glob(pattern),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return
+        for old_cp in checkpoints[keep:]:
             try:
                 old_cp.unlink()
             except OSError:
                 pass
+
+    def _reap_abandoned_peers(self) -> None:
+        """Delete peer checkpoints left behind by instances that are gone."""
+        cutoff = time.time() - self.peer_retention_seconds
+        own_prefix = f"ckpt_{self.instance_id}_"
+        try:
+            candidates = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
+        except OSError:
+            return
+        for cp in candidates:
+            if cp.name.startswith(own_prefix):
+                continue
+            try:
+                if cp.stat().st_mtime >= cutoff:
+                    continue  # recent — a peer may still be running
+                cp.unlink()
+            except OSError:
+                pass  # racing peer or permission issue; never fail a checkpoint
 
     def stats(self) -> dict:
         checkpoints = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
