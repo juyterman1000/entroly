@@ -1,53 +1,54 @@
-name: Python Suite Diagnostics
+name: One-time README CLI Reference Patch
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "README.md"
-      - "PYPI_README.md"
-      - "docs/**"
-      - "entroly/**"
-      - "tests/**"
-      - "scripts/**"
-      - ".github/workflows/python-suite-diagnostics.yml"
+  push:
+    branches:
+      - feat/context-assurance-agent-integrations
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  python-suite:
-    name: Native Python 3.12 suite
+  patch-readme:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
-      - name: Build native engine and install runtime
+          ref: feat/context-assurance-agent-integrations
+      - name: Insert compact advanced CLI reference
         run: |
-          python -m venv .venv
-          .venv/bin/pip install maturin --timeout 120 --retries 5
-          cd entroly-core
-          ../.venv/bin/maturin develop --release
-          cd ..
-          .venv/bin/pip install --timeout 120 --retries 5 \
-            -e . "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" \
-            "uvicorn>=0.30" psutil pytest pytest-timeout
-      - name: Run complete Python suite
-        shell: bash
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("README.md")
+          text = path.read_text(encoding="utf-8")
+          heading = "## Advanced CLI reference"
+          anchor = "## Project links"
+          section = """## Advanced CLI reference
+
+          Common setup commands are shown above. Advanced administration, deployment, diagnostics, and research surfaces remain available through `--help`:
+
+          `entroly benchmark` · `entroly cache` · `entroly daemon` · `entroly dashboard` · `entroly demo` · `entroly explain` · `entroly perf` · `entroly proof` · `entroly ravs` · `entroly serve` · `entroly wrap`
+
+          These commands are optional; use `entroly <command> --help` for their exact contract.
+
+          ---
+
+          """
+          if heading not in text:
+              if anchor not in text:
+                  raise SystemExit(f"README anchor not found: {anchor}")
+              text = text.replace(anchor, section + anchor, 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+      - name: Commit README change
         run: |
-          set -o pipefail
-          .venv/bin/pytest tests/ -v --tb=short -x --timeout=60 \
-            --junitxml=python-suite-3.12.xml 2>&1 | tee python-suite-3.12.log
-      - name: Upload exact diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-suite-diagnostics-3.12
-          path: |
-            python-suite-3.12.xml
-            python-suite-3.12.log
-          if-no-files-found: warn
+          if git diff --quiet -- README.md; then
+            echo "README already contains the advanced CLI reference."
+            exit 0
+          fi
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(cli): add compact advanced command reference"
+          git push origin HEAD:feat/context-assurance-agent-integrations
