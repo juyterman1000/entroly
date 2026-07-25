@@ -181,21 +181,82 @@ def _resolve_project_file(project_dir: str, rel_path: str) -> str | None:
     return candidate
 
 
+def _git_env() -> dict[str, str]:
+    """Environment that keeps `git` strictly non-interactive.
+
+    A git that stops to ask for credentials, opens a pager, or blocks on the
+    index lock never closes its pipes, which is what makes the discovery call
+    hang indefinitely.
+    """
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"     # never prompt for credentials
+    env["GIT_OPTIONAL_LOCKS"] = "0"      # don't block on / take index.lock
+    env["GIT_PAGER"] = "cat"
+    env["GIT_ASKPASS"] = ""
+    env["SSH_ASKPASS"] = ""
+    env.pop("GIT_EDITOR", None)
+    return env
+
+
+def _run_git(args: list[str], project_dir: str, timeout: int = 10) -> str | None:
+    """Run a git command that can never hang the caller. Returns stdout or None.
+
+    `subprocess.run(capture_output=True, timeout=...)` is NOT safe here: the
+    timeout bounds the *wait*, but `communicate()` then joins the stdout/stderr
+    reader threads, and those threads only exit when the pipes close. A child
+    (or grandchild) holding a pipe open blocks that join forever — the timeout
+    never fires and the calling thread is stuck permanently. Observed in
+    production: the incremental watcher hung inside `git ls-files` while holding
+    the index mutation lock, which stalled all index maintenance indefinitely.
+
+    So: kill the process on timeout, then reap it with a bounded second wait,
+    and never let a stuck child propagate into the caller.
+    """
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            args,
+            cwd=project_dir,
+            stdin=subprocess.DEVNULL,   # a child that inherits a console can block on input
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # unread stderr is one way the pipe stays open
+            text=True,
+            env=_git_env(),
+        )
+        stdout, _ = proc.communicate(timeout=timeout)
+        if proc.returncode == 0:
+            return stdout
+        return None
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "git %s timed out after %ss in %s; killing it and falling back to a "
+            "filesystem walk", args[1] if len(args) > 1 else "", timeout, project_dir,
+        )
+        return None
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    finally:
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.kill()
+                # Bounded reap; a zombie must not block the caller either.
+                try:
+                    proc.communicate(timeout=5)
+                except (subprocess.TimeoutExpired, OSError, ValueError):
+                    pass
+            except OSError:
+                pass
+
+
 def _git_ls_files(project_dir: str) -> list[str]:
     """Get all git-tracked files, respecting .gitignore."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return [f.strip() for f in result.stdout.splitlines() if f.strip()]
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-    return []
+    stdout = _run_git(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        project_dir,
+    )
+    if stdout is None:
+        return []
+    return [f.strip() for f in stdout.splitlines() if f.strip()]
 
 
 def _walk_fallback(project_dir: str) -> list[str]:
