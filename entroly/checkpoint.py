@@ -45,6 +45,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import socket
 import tempfile
 import time
@@ -729,10 +730,21 @@ class CheckpointManager:
         try:
             if os.name == "nt":
                 import ctypes
+                from ctypes import wintypes
 
-                kernel32 = ctypes.windll.kernel32
-                # PROCESS_QUERY_LIMITED_INFORMATION
-                handle = kernel32.OpenProcess(0x1000, False, pid)
+                # Declare the signatures: the default restype is c_int, which
+                # truncates a HANDLE >= 0x80000000 to a negative int and makes
+                # the subsequent CloseHandle fail (leaking a process handle per
+                # probe). use_last_error captures errno at the call boundary
+                # rather than via a second foreign call that can clobber it.
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.OpenProcess.restype = wintypes.HANDLE
+                kernel32.OpenProcess.argtypes = (
+                    wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+                kernel32.CloseHandle.restype = wintypes.BOOL
+                kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+                handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED
                 if handle:
                     kernel32.CloseHandle(handle)
                     return True
@@ -740,7 +752,7 @@ class CheckpointManager:
                 # means the process is alive but owned by another user or
                 # elevated — treating that as dead would delete a running peer's
                 # state. Only ERROR_INVALID_PARAMETER (87) means "no such pid".
-                return kernel32.GetLastError() != 87
+                return ctypes.get_last_error() != 87
             os.kill(pid, 0)
             return True
         except ProcessLookupError:
@@ -748,11 +760,20 @@ class CheckpointManager:
         except (OSError, PermissionError, AttributeError, ValueError):
             return True  # cannot tell — never delete on a guess
 
+    # Only the auto-generated instance_id is `<12-hex-hosthash>_<pid>`. A
+    # caller-supplied id (e.g. "prod_2") would make an arbitrary field be probed
+    # as a pid, and a low number is very likely a live unrelated process — or
+    # worse, a dead one, deleting a running peer's state.
+    _AUTO_ID_RE = re.compile(r"^ckpt_[0-9a-f]{12}_(\d+)_")
+
     def _peer_pid(self, name: str) -> int:
-        """Extract the owning pid from `ckpt_<host>_<pid>_<n>.json.gz`, else 0."""
+        """Owning pid from an auto-generated `ckpt_<hex12>_<pid>_...` name, else 0."""
+        match = self._AUTO_ID_RE.match(name)
+        if not match:
+            return 0  # unknown shape — never guessed
         try:
-            return int(name.split("_")[2])
-        except (IndexError, ValueError):
+            return int(match.group(1))
+        except ValueError:
             return 0
 
     def _reap_abandoned_peers(self) -> None:

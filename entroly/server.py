@@ -2664,7 +2664,12 @@ def create_mcp_server(
                 "current_turn": int(session.get("current_turn", 0) or 0),
                 "total_fragments": int(session.get("total_fragments", 0) or 0),
                 "total_tokens_tracked": int(session.get("total_tokens_tracked", 0) or 0),
-                "pinned_fragments": int(session.get("pinned_fragments", 0) or 0),
+                # Native emits `pinned`; only the Python path spells it
+                # `pinned_fragments`. Reading one name hard-zeroed this on every
+                # native install — the same defect as the engine counters above.
+                "pinned_fragments": int(
+                    session.get("pinned_fragments", session.get("pinned", 0)) or 0
+                ),
             },
             "engine": {
                 "fragments_ingested": _counter(

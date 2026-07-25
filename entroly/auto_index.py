@@ -241,24 +241,27 @@ def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | 
             if not reaped:
                 try:
                     proc.kill()
-                    # Bounded reap; a zombie must not block the caller either.
+                    # Bounded reap, kept short: it is added to the caller's
+                    # timeout budget, and these calls sit on the optimize_context
+                    # hot path. A killed process that has not been reaped within
+                    # a second is not going to be.
                     try:
-                        proc.communicate(timeout=5)
+                        proc.communicate(timeout=1)
                         reaped = True
                     except (subprocess.TimeoutExpired, OSError, ValueError):
                         reaped = False
                 except OSError:
                     reaped = False
-            if reaped:
-                # Safe to release the pipes: no reader thread is still parked on
-                # them. Closing is only done on this path because close() itself
-                # can BLOCK. On Windows, Popen._communicate leaves its
-                # _readerthread inside fh.read() holding the stream lock when it
-                # times out, so closing from this thread would wait on that lock
-                # forever — reintroducing the very hang this function exists to
-                # prevent, while the watcher holds the index mutation lock.
-                # If the reap failed we deliberately leak the handle instead: a
-                # bounded resource leak is strictly better than a permanent stall.
+            # close() can BLOCK — but only on Windows, and only when the reap
+            # failed. There, Popen._communicate leaves its _readerthread inside
+            # fh.read() holding the stream lock, so closing from this thread
+            # would wait on that lock forever, reintroducing the very hang this
+            # function exists to prevent while the watcher holds the index
+            # mutation lock. POSIX _communicate uses selectors with no reader
+            # thread, so closing is always safe there. Skipping the close
+            # unconditionally leaked a pipe per call — and these run per
+            # optimize_context request, so "bounded leak" was not bounded.
+            if reaped or os.name != "nt":
                 for stream in (proc.stdout, proc.stderr, proc.stdin):
                     if stream is not None:
                         try:
@@ -267,8 +270,8 @@ def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | 
                             pass
             else:
                 logger.warning(
-                    "git did not terminate after kill; leaking its pipe rather "
-                    "than blocking on close (see _run_git)."
+                    "git left its pipe open after kill; leaking one handle rather "
+                    "than blocking on close (Windows only, see _run_git)."
                 )
 
 

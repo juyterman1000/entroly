@@ -26,7 +26,7 @@ def _write(dir_: Path, name: str, *, age_s: float = 0.0) -> Path:
 
 
 # instance_id is "<hosthash>_<pid>"; peers on the SAME host share the hosthash.
-_HOST = "host"
+_HOST = "abc123def456"   # auto-generated ids are a 12-hex host hash
 
 
 def _mgr(tmp_path: Path, **kw) -> CheckpointManager:

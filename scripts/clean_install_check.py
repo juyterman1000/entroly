@@ -114,10 +114,18 @@ def main() -> int:
             rc, out = _run([str(entroly_bin), "--help"], cwd=str(neutral), env=env, timeout=180)
             check("documented first command `entroly --help` succeeds", rc == 0, out)
 
-            rc, out = _run([str(entroly_bin), "doctor"], cwd=str(neutral), env=env, timeout=300)
+            rc, dout, derr = _run_split(
+                [str(entroly_bin), "doctor"], cwd=str(neutral), env=env, timeout=300)
             # doctor now exits non-zero on real failures; on a clean box it must pass.
-            check("`entroly doctor` succeeds on a clean install", rc == 0, out)
-            check("doctor reports no failed checks", "failed" not in out.lower(), out)
+            check("`entroly doctor` succeeds on a clean install", rc == 0, dout + derr)
+            # Match doctor's actual failure markers on STDOUT only. A bare
+            # "failed" substring over merged streams was both blind (doctor's red
+            # lines read "x Config error: ...", never "failed") and falsely
+            # tripped by any unrelated stderr warning containing the word.
+            red_lines = [ln for ln in dout.splitlines() if ln.lstrip().startswith("x ")]
+            check("doctor reports no failed checks",
+                  not red_lines and ", 0 failed" not in dout and " failed" not in dout,
+                  "\n".join(red_lines) or dout)
 
         rc, out = _run([str(py), "-c",
                         "from entroly.sdk import compress; "
