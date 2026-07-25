@@ -1859,6 +1859,36 @@ class EntrolyEngine:
             }
         return result
 
+    @staticmethod
+    def _honest_savings_block(savings: Any) -> dict[str, Any]:
+        """Strip the fabricated dollar figure from the native `savings` block.
+
+        The Rust core emits `estimated_cost_saved_usd` derived from
+        `total_tokens_saved`, which is accumulated per call as
+        (every candidate fragment) - (selected fragments). That counterfactual
+        assumes the whole index would otherwise have been sent, so it grows
+        without bound and routinely exceeds the corpus itself — an observed
+        session reported 6.07M tokens "saved" against 2.58M tokens tracked, and
+        a single 3,000-token request claimed 2.5M tokens saved.
+
+        `optimize_context` already documents that MCP results "never fund
+        evolution or support a dollar-savings claim"; the dashboard already
+        strips this field for the same reason. This makes the MCP stats surface
+        agree with both instead of publishing a number the code itself
+        disclaims. Token telemetry is kept, renamed to say what it measures.
+        """
+        if not isinstance(savings, dict):
+            return {} if savings is None else savings
+        out = dict(savings)
+        out.pop("estimated_cost_saved_usd", None)
+        if "total_tokens_saved" in out:
+            out["dedup_tokens_avoided"] = out.pop("total_tokens_saved")
+        out["baseline"] = (
+            "dedup/selection telemetry only; counts candidates not selected. "
+            "Not a provider bill delta and not a dollar-savings claim."
+        )
+        return out
+
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive session statistics."""
         if self._use_rust:
@@ -1868,6 +1898,9 @@ class EntrolyEngine:
             rust_stats["prefetch"] = self._prefetch.stats()
             rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
             rust_stats["build"] = self._build_stamp()
+            rust_stats["savings"] = self._honest_savings_block(
+                rust_stats.get("savings")
+            )
             return rust_stats
         stats = self._stats_python()
         stats["build"] = self._build_stamp()
