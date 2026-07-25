@@ -158,6 +158,7 @@ def test_invalidation_propagates_only_to_downstream_dependents():
     assert state.claim("root").invalidated_by == "test_failed"
     assert state.claim("child").invalidated_by == "dependency:root"
     assert state.claim("grandchild").invalidated_by == "dependency:child"
+    assert invalidation not in state.claim("child").evidence
     assert state.claim("independent").status is ClaimStatus.VERIFIED
     assert [claim.claim_id for claim in state.verified_frontier()] == ["independent"]
 
@@ -239,4 +240,34 @@ def test_snapshot_rejects_missing_dependency_even_with_recomputed_digest():
     snapshot["state_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     with pytest.raises(SnapshotIntegrityError, match="missing dependencies"):
+        VerifiedWorldState.from_snapshot(snapshot)
+
+
+def test_snapshot_rejects_stale_repository_evidence_even_when_rehashed():
+    evidence = _evidence("stale", repo_sha="old")
+    claim = WorldClaim(
+        claim_id="c1",
+        subject="cache",
+        predicate="failed",
+        object_value="yes",
+        status=ClaimStatus.OBSERVED,
+        evidence=(evidence,),
+        repo_sha="new",
+    )
+    payload = {
+        "schema": "entroly.world-state.v1",
+        "claims": [claim.to_dict()],
+        "model_authority": {},
+    }
+
+    import hashlib
+
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    snapshot = {
+        **payload,
+        "state_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    }
+    with pytest.raises(SnapshotIntegrityError, match="stale or unversioned"):
         VerifiedWorldState.from_snapshot(snapshot)
