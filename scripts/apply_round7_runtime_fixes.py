@@ -143,7 +143,11 @@ def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | 
 def patch_checkpoint() -> None:
     path = ROOT / "entroly" / "checkpoint.py"
     text = path.read_text(encoding="utf-8")
-    if "preserve a recovery frontier for every live or unclassifiable peer" in text:
+    if (
+        "Bound historical checkpoints without destroying active recovery state"
+        in text
+        and "def _checkpoint_owner(" in text
+    ):
         return
     replacement = '''    def _enforce_global_cap(self) -> None:
         """Bound historical checkpoints without destroying active recovery state.
@@ -240,7 +244,7 @@ def patch_checkpoint() -> None:
         replacement,
         label="checkpoint._enforce_global_cap",
     )
-    old = '''    _AUTO_ID_RE = re.compile(r"^ckpt_[0-9a-f]{12}_(\\d+)_")
+    old = '''    _AUTO_ID_RE = re.compile(r"^ckpt_[0-9a-f]{12}_(\d+)_")
 
     def _peer_pid(self, name: str) -> int:
         """Owning pid from an auto-generated `ckpt_<hex12>_<pid>_...` name, else 0."""
@@ -252,7 +256,7 @@ def patch_checkpoint() -> None:
         except ValueError:
             return 0
 '''
-    new = '''    _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\\d+)_")
+    new = '''    _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\d+)_")
 
     @classmethod
     def _checkpoint_owner(cls, name: str) -> tuple[str, str, int] | None:
@@ -283,12 +287,17 @@ def patch_tests() -> None:
         ROOT / "tests" / "test_checkpoint_retention.py",
         "test_global_cap_preserves_a_live_peers_latest_recovery_frontier",
         '''def test_global_cap_preserves_a_live_peers_latest_recovery_frontier(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch
 ):
     """A busy writer must not erase a quieter live peer's only resume point."""
     import os
 
     live_pid = os.getpid()
+    monkeypatch.setattr(
+        CheckpointManager,
+        "_pid_is_alive",
+        staticmethod(lambda pid: pid == live_pid),
+    )
     live_paths = [
         _write(
             tmp_path,
@@ -359,7 +368,7 @@ def test_global_cap_is_soft_when_protected_frontiers_exceed_it(tmp_path: Path):
         timeout=5,
     )
 
-    assert result == "tracked.py\n"
+    assert result is not None and result.splitlines() == ["tracked.py"]
     assert seen_stdout
     assert seen_stdout[0] is not subprocess.PIPE
     assert hasattr(seen_stdout[0], "fileno"), "stdout must be file-backed"
@@ -377,7 +386,7 @@ def test_run_git_never_calls_communicate(monkeypatch, tmp_path):
         str(tmp_path),
         timeout=5,
     )
-    assert result == "ok\n"''',
+    assert result is not None and result.splitlines() == ["ok"]''',
     )
 
 
