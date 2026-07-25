@@ -3287,11 +3287,15 @@ def cmd_doctor(args):
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
               f"fix, not a different Python.){C.RESET}")
-        # Not counted as a failure: the message above states the pure-Python
-        # fallback remains available, so entroly still works. This is also the
-        # normal state in a source checkout between a Rust edit and
-        # `maturin develop --release`. Exiting non-zero here would fail the CLI
-        # smoke scripts on a working install.
+        # Not a failure: the message above states the pure-Python fallback
+        # remains available, so entroly still works, and this is the normal state
+        # in a source checkout between a Rust edit and `maturin develop
+        # --release`. But it must still be COUNTED — incrementing nothing left
+        # passed+failed+warned < total, so the summary read "7/8 checks passed"
+        # with no failure and no warning, and the degraded install passed every
+        # gate. That is the same false-green this split-counter scheme exists to
+        # prevent.
+        checks_warned += 1
 
     # 3. Check config validity
     checks_total += 1

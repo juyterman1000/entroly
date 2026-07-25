@@ -132,3 +132,50 @@ def test_ttl_zero_and_malformed_disable_reaping_rather_than_wiping(
 def test_pruning_never_raises_on_an_unreadable_directory(tmp_path: Path):
     mgr = CheckpointManager(tmp_path / "missing", instance_id="me")
     mgr._prune_old_checkpoints()  # must not raise — checkpointing is best-effort
+
+
+def test_total_checkpoints_are_bounded_across_restarts_by_default(tmp_path: Path):
+    # THE reported bug: instance_id embeds the pid, so each restart orphans up
+    # to max_checkpoints files that no later run will ever match. Per-instance
+    # pruning alone left 127 checkpoints / 264 MB with own_checkpoints: 0.
+    # The global cap must bound this with NO env var and NO liveness guessing.
+    for restart in range(20):
+        for i in range(5):
+            _write(tmp_path, f"ckpt_{_HOST}_{9000 + restart}_{i:03d}.json.gz",
+                   age_s=(20 - restart) * 100 + i)
+    assert len(list(tmp_path.glob("ckpt_*.json.gz"))) == 100
+
+    mgr = CheckpointManager(tmp_path, instance_id=f"{_HOST}_1",
+                            max_checkpoints=10, max_total_checkpoints=40)
+    mgr._prune_old_checkpoints()
+
+    remaining = list(tmp_path.glob("ckpt_*.json.gz"))
+    assert len(remaining) <= 40, (
+        f"unbounded checkpoint growth is still unfixed: {len(remaining)} files"
+    )
+
+
+def test_global_cap_keeps_the_newest_because_resume_reads_the_newest(tmp_path: Path):
+    for i in range(30):
+        _write(tmp_path, f"ckpt_{_HOST}_{8000 + i}_000.json.gz", age_s=(30 - i) * 100)
+    mgr = CheckpointManager(tmp_path, instance_id=f"{_HOST}_1",
+                            max_total_checkpoints=10)
+    mgr._prune_old_checkpoints()
+    kept = sorted(p.stat().st_mtime for p in tmp_path.glob("ckpt_*.json.gz"))
+    assert len(kept) == 10
+    # The survivors must be the most recent — that is what load_latest reads.
+    newest = _write(tmp_path, "probe.tmp")
+    assert all(m <= newest.stat().st_mtime for m in kept)
+
+
+def test_global_cap_never_drops_own_instance_checkpoints(tmp_path: Path):
+    for i in range(30):
+        _write(tmp_path, f"ckpt_{_HOST}_{7000 + i}_000.json.gz", age_s=1000)
+    for i in range(3):
+        _write(tmp_path, f"ckpt_{_HOST}_1_{i:03d}.json.gz", age_s=5000)  # older!
+    mgr = CheckpointManager(tmp_path, instance_id=f"{_HOST}_1",
+                            max_checkpoints=10, max_total_checkpoints=5)
+    mgr._prune_old_checkpoints()
+    assert len(list(tmp_path.glob(f"ckpt_{_HOST}_1_*.json.gz"))) == 3, (
+        "the running instance's own state must survive the global cap"
+    )

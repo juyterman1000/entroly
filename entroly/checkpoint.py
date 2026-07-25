@@ -271,6 +271,7 @@ class CheckpointManager:
         max_checkpoints: int = 10,
         instance_id: str | None = None,
         peer_retention_seconds: float | None = None,
+        max_total_checkpoints: int | None = None,
     ):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.auto_interval = auto_interval
@@ -295,6 +296,18 @@ class CheckpointManager:
         self.peer_retention_seconds = (
             peer_retention_seconds if peer_retention_seconds > 0 else 0.0
         )
+        # Hard ceiling on total checkpoints across every instance. This is the
+        # default-on mechanism that actually bounds disk; peer reaping above is
+        # an optional extra. Override with ENTROLY_MAX_TOTAL_CHECKPOINTS; <= 0
+        # disables the cap.
+        if max_total_checkpoints is None:
+            try:
+                max_total_checkpoints = int(
+                    os.environ.get("ENTROLY_MAX_TOTAL_CHECKPOINTS", "") or 40
+                )
+            except (TypeError, ValueError):
+                max_total_checkpoints = 40
+        self.max_total_checkpoints = max_total_checkpoints
         if instance_id:
             self.instance_id = instance_id
         else:
@@ -654,7 +667,44 @@ class CheckpointManager:
         self._prune_pattern(
             f"ckpt_{self.instance_id}_*.json.gz", keep=self.max_checkpoints
         )
+        self._enforce_global_cap()
         self._reap_abandoned_peers()
+
+    def _enforce_global_cap(self) -> None:
+        """Bound total checkpoints across ALL instances, newest-first.
+
+        Per-instance pruning cannot bound disk: `instance_id` embeds the pid, so
+        every restart orphans up to `max_checkpoints` files that the next run
+        will never match. That is the actual reported failure (127 checkpoints /
+        264 MB with `own_checkpoints: 0`).
+
+        Liveness is irrelevant here — keeping the globally newest N is what
+        resume already wants (`load_latest`/`find_relevant` read the most recent
+        across instances), so this bounds growth without deleting the history
+        anyone would restore from, and without guessing whether a peer is alive.
+        Own-instance checkpoints are never dropped by this pass; the per-instance
+        limit above already governs them.
+        """
+        if self.max_total_checkpoints <= 0:
+            return
+        own_prefix = f"ckpt_{self.instance_id}_"
+        try:
+            entries = [
+                (cp.stat().st_mtime, cp)
+                for cp in self.checkpoint_dir.glob("ckpt_*.json.gz")
+            ]
+        except OSError:
+            return
+        if len(entries) <= self.max_total_checkpoints:
+            return
+        entries.sort(key=lambda item: item[0], reverse=True)
+        for _mtime, cp in entries[self.max_total_checkpoints:]:
+            if cp.name.startswith(own_prefix):
+                continue  # governed by the per-instance limit
+            try:
+                cp.unlink()
+            except OSError:
+                pass
 
     def _prune_pattern(self, pattern: str, keep: int) -> None:
         try:
