@@ -77,9 +77,12 @@
     </section>
 
     <h2>Install Entroly for OpenClaw</h2>
+    <p>The npm package is the currently verifiable public install source:</p>
     <pre><code>pip install -U entroly
-openclaw plugins install clawhub:entroly-openclaw
-openclaw plugins enable entroly</code></pre>
+openclaw plugins install npm:entroly-openclaw
+openclaw plugins enable entroly
+openclaw gateway restart</code></pre>
+    <p>ClawHub is supported only when <code>openclaw plugins search "entroly"</code> returns a current public listing and install hint. Do not guess a ClawHub package name.</p>
     <p>Select the context engine in <code>~/.openclaw/openclaw.json</code>:</p>
     <pre><code>{
   plugins: {
@@ -88,7 +91,7 @@ openclaw plugins enable entroly</code></pre>
     }
   }
 }</code></pre>
-    <p>Then verify the runtime:</p>
+    <p>Then verify the loaded runtime:</p>
     <pre><code>openclaw plugins inspect entroly --runtime --json
 openclaw plugins doctor</code></pre>
 
