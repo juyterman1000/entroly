@@ -1,0 +1,144 @@
+name: Apply Universal Context Assurance Positioning
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/apply-readme-positioning.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feat/context-assurance-agent-integrations'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply first-fold product positioning
+        shell: python
+        run: |
+          from pathlib import Path
+
+          readme = Path("README.md")
+          text = readme.read_text(encoding="utf-8")
+          old = '''<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+
+          <p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
+          The observability, governance, and decision layer for AI context.<br>
+          Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
+
+          <p align="center">
+            <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+          </p>
+
+          <p align="center">
+            <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
+          </p>'''
+          new = '''<h1 align="center">Entroly — Drop-In Context Assurance for Lower AI Bills</h1>
+
+          <p align="center"><b>Reduce token waste without rebuilding how you work.</b><br>
+          Entroly fits around the AI tools you already use and controls what evidence enters each model call—helping reduce unnecessary inference spend and context-induced failures without replacing your model, codebase, or agent architecture.</p>
+
+          <p align="center">
+            <sub>For developers, teams, and everyday AI users. Works through supported proxy, wrapper, plugin, and MCP paths with Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications. A small one-time setup is required; no agent-architecture rewrite.</sub>
+          </p>
+
+          <p align="center">
+            <sub>Budgeted context selection · recoverable compression · content-addressed exact evidence · receipts for included, omitted, and risky context · local-first · model and runtime neutral</sub>
+          </p>'''
+          if old not in text:
+              raise SystemExit("README first-fold source block did not match")
+          readme.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          pypi = Path("PYPI_README.md")
+          text = pypi.read_text(encoding="utf-8")
+          old = '''<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+
+          <p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
+          The observability, governance, and decision layer for AI context.</p>
+
+          Entroly is an open-source Context OS for AI agents: auditable context
+          engineering, recoverable compression, memory, verification, provider controls,
+          receipts, security, and guarded outcome learning in one local layer.'''
+          new = '''<h1 align="center">Entroly — Drop-In Context Assurance for Lower AI Bills</h1>
+
+          <p align="center"><b>Reduce token waste without rebuilding how you work.</b><br>
+          A local-first context assurance layer for the AI tools you already use.</p>
+
+          Entroly selects useful evidence under an explicit budget, removes redundant
+          context, keeps omitted originals recoverable through content-addressed handles,
+          and records what was included, omitted, or risky. It can fit around supported
+          developer tools, agent runtimes, local models, and OpenAI/Anthropic-compatible
+          applications without an agent-architecture rewrite. A small one-time setup is
+          required for the selected proxy, wrapper, plugin, or MCP path.'''
+          if old not in text:
+              raise SystemExit("PyPI README first-fold source block did not match")
+          pypi.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Update discovery contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("tests/test_discovery_metadata.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              'assert "entroly — the open-source context os for ai agents" in first_fold\n'
+              '        assert IDENTITY in first_fold\n'
+              '        assert "context compression" in first_fold or "compress" in first_fold\n'
+              '        for client in ("claude code", "codex", "openclaw", "github copilot", "mcp"):',
+              'assert "entroly — drop-in context assurance for lower ai bills" in first_fold\n'
+              '        assert "context assurance" in first_fold\n'
+              '        assert "token waste" in first_fold\n'
+              '        assert "no agent-architecture rewrite" in first_fold\n'
+              '        assert "recoverable" in first_fold\n'
+              '        for client in (\n'
+              '            "claude code",\n'
+              '            "codex",\n'
+              '            "openclaw",\n'
+              '            "hermes agent",\n'
+              '            "opencode",\n'
+              '            "github copilot",\n'
+              '            "local models",\n'
+              '            "mcp",\n'
+              '        ):',
+          )
+          path.write_text(text, encoding="utf-8")
+
+      - name: Validate positioning and discovery tests
+        run: |
+          python -m pip install -e ".[test]"
+          python -m pytest -q tests/test_discovery_metadata.py tests/test_search_discovery.py
+          python - <<'PY'
+          from pathlib import Path
+          for name in ("README.md", "PYPI_README.md"):
+              text = Path(name).read_text(encoding="utf-8")[:6000].casefold()
+              required = (
+                  "context assurance",
+                  "lower ai bills",
+                  "token waste",
+                  "recoverable",
+                  "no agent-architecture rewrite",
+              )
+              missing = [term for term in required if term not in text]
+              if missing:
+                  raise SystemExit(f"{name} missing positioning terms: {missing}")
+          PY
+
+      - name: Commit applied copy
+        run: |
+          git config user.name "juyterman1000"
+          git config user.email "fastrunner10090@gmail.com"
+          git add README.md PYPI_README.md tests/test_discovery_metadata.py
+          if git diff --cached --quiet; then
+            echo "No positioning changes required"
+            exit 0
+          fi
+          git commit -m "docs(product): position Entroly as drop-in context assurance"
+          git push origin HEAD:${{ github.head_ref }}
