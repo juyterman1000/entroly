@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_EXACT_HANDLE_RE = re.compile(r"^(?:ccr:)?([0-9a-fA-F]{24})$")
+_EXACT_HANDLE_RE = re.compile(r"^(?:ccr:)?([0-9a-f]{24})$", re.IGNORECASE)
 
 
 class ExactRecoveryError(ValueError):
@@ -86,7 +86,7 @@ def exact_recovery_tool_schema() -> dict[str, Any]:
             "properties": {
                 "hash": {
                     "type": "string",
-                    "pattern": r"^(?:ccr:)?[0-9a-fA-F]{24}$",
+                    "pattern": r"^(?:[cC][cC][rR]:)?[0-9a-fA-F]{24}$",
                     "description": "Exact ccr:<24-hex> recovery handle.",
                 }
             },
