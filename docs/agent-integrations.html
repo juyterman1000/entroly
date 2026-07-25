@@ -69,14 +69,14 @@
   <header>
     <nav aria-label="Primary navigation">
       <a class="brand" href="index.html">Entroly</a>
-      <div class="links"><a href="openclaw-context-engine.html">OpenClaw</a><a href="hermes-context-engine.html">Hermes</a><a href="opencode-context-assurance.html">OpenCode</a><a href="https://github.com/juyterman1000/entroly">GitHub</a></div>
+      <div class="links"><a href="ai-cost-optimization.html">AI Cost</a><a href="openclaw-context-engine.html">OpenClaw</a><a href="hermes-context-engine.html">Hermes</a><a href="opencode-context-assurance.html">OpenCode</a><a href="https://github.com/juyterman1000/entroly">GitHub</a></div>
     </nav>
   </header>
   <main>
     <section class="hero">
       <div class="eyebrow">Agent integrations</div>
-      <h1>Context assurance for OpenClaw, Hermes Agent, and OpenCode</h1>
-      <p class="lead"><strong>Entroly is the open-source context assurance layer for AI agents.</strong> It helps each host select evidence under a budget, record what was included or omitted, preserve exact originals behind content-addressed handles, and verify claims without replacing the host runtime or model provider.</p>
+      <h1>Entroly Context Assurance for OpenClaw, Hermes Agent, and OpenCode</h1>
+      <p class="lead"><strong>Entroly is the open-source Context Assurance layer for AI agents.</strong> It helps each host select evidence under a budget, record what was included or omitted, preserve exact originals behind content-addressed handles, and verify claims without replacing the host runtime or model provider.</p>
     </section>
 
     <section class="grid" aria-label="Supported agent integrations">
@@ -93,7 +93,7 @@
       <article class="card">
         <h2>Entroly for OpenCode</h2>
         <p>A local MCP setup plus a compaction hook that protects paths, symbols, commands, errors, verification status, rejected hypotheses, and every exact recovery handle.</p>
-        <a class="cta" href="opencode-context-assurance.html">OpenCode context assurance guide →</a>
+        <a class="cta" href="opencode-context-assurance.html">OpenCode Context Assurance guide →</a>
       </article>
     </section>
 
@@ -106,11 +106,11 @@
     <section>
       <h2>What Entroly does—and does not do</h2>
       <div class="faq"><h3>Does Entroly replace OpenClaw, Hermes, or OpenCode?</h3><p>No. The host remains responsible for its agent loop, transcript, permissions, provider authentication, tool execution, retries, and user experience.</p></div>
-      <div class="faq"><h3>Does Entroly guarantee lower cost or better answers?</h3><p>No universal guarantee is claimed. Entroly exposes local context measurements, provider-bound evidence where observable, receipts, recovery, and verification so teams can evaluate their own workload.</p></div>
+      <div class="faq"><h3>Does Entroly guarantee lower cost or better answers?</h3><p>No universal guarantee is claimed. Entroly exposes local context measurements, provider-bound evidence where observable, receipts, recovery, and verification so teams can evaluate their own workload. See the <a href="ai-cost-optimization.html">AI cost optimization guide</a>.</p></div>
       <div class="faq"><h3>Can omitted content be recovered exactly?</h3><p>Yes while the referenced CCR entry remains retained. Exact recovery uses the content handle, not fuzzy search or a generated summary.</p></div>
       <div class="faq"><h3>Can the integrations run locally?</h3><p>The context-selection, receipt, verification, and CCR paths are local-first. A host may still send the selected prompt to the model provider configured by the user.</p></div>
     </section>
   </main>
-  <footer>Entroly is Apache-2.0 open source. <a href="https://github.com/juyterman1000/entroly">Source</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · <a href="limitations.md">Limitations</a></footer>
+  <footer>Entroly is Apache-2.0 open source. <a href="ai-cost-optimization.html">AI cost optimization</a> · <a href="https://github.com/juyterman1000/entroly">Source</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · <a href="limitations.md">Limitations</a></footer>
 </body>
 </html>
