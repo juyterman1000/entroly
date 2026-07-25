@@ -25,15 +25,41 @@ def _write(dir_: Path, name: str, *, age_s: float = 0.0) -> Path:
     return p
 
 
+# instance_id is "<hosthash>_<pid>"; peers on the SAME host share the hosthash.
+_HOST = "host"
+
+
 def _mgr(tmp_path: Path, **kw) -> CheckpointManager:
-    return CheckpointManager(tmp_path, instance_id="me", **kw)
+    return CheckpointManager(tmp_path, instance_id=f"{_HOST}_1", **kw)
 
 
 def test_own_checkpoints_respect_the_retention_limit(tmp_path: Path):
     for i in range(15):
-        _write(tmp_path, f"ckpt_me_{i:03d}.json.gz", age_s=15 - i)
+        _write(tmp_path, f"ckpt_{_HOST}_1_{i:03d}.json.gz", age_s=15 - i)
     _mgr(tmp_path, max_checkpoints=10)._prune_old_checkpoints()
-    assert len(list(tmp_path.glob("ckpt_me_*.json.gz"))) == 10
+    assert len(list(tmp_path.glob(f"ckpt_{_HOST}_1_*.json.gz"))) == 10
+
+
+def test_a_peer_from_a_different_host_is_never_reaped(tmp_path: Path):
+    # Shared volumes / NFS homes: pids live in independent namespaces, so a
+    # local pid probe would judge a live remote peer dead.
+    for i in range(4):
+        _write(tmp_path, f"ckpt_otherhost_{_DEAD_PID}_{i:03d}.json.gz", age_s=90_000)
+    _mgr(tmp_path, max_checkpoints=10, peer_retention_seconds=1)._prune_old_checkpoints()
+    assert len(list(tmp_path.glob(f"ckpt_otherhost_{_DEAD_PID}_*.json.gz"))) == 4
+
+
+def test_windows_access_denied_is_not_treated_as_a_dead_process():
+    # OpenProcess returns NULL for both "no such pid" and "access denied"; only
+    # the former means dead. PID 4 (System) is always running but not openable.
+    import os as _os
+
+    assert CheckpointManager._pid_is_alive(_os.getpid()) is True
+    if _os.name == "nt":
+        assert CheckpointManager._pid_is_alive(4) is True, (
+            "an alive-but-protected process must never be reported dead"
+        )
+    assert CheckpointManager._pid_is_alive(_DEAD_PID) is False
 
 
 # Real layout is ckpt_<hosthash>_<pid>_<counter>.json.gz; instance_id is
@@ -46,18 +72,18 @@ def test_peer_reaping_is_off_by_default(tmp_path: Path):
     # are "peers" — and cross-instance reads are exactly how resume works.
     # Reaping peers by default would delete the resume history.
     for i in range(20):
-        _write(tmp_path, f"ckpt_host_{_DEAD_PID}_{i:03d}.json.gz", age_s=90_000)
+        _write(tmp_path, f"ckpt_{_HOST}_{_DEAD_PID}_{i:03d}.json.gz", age_s=90_000)
     _mgr(tmp_path, max_checkpoints=10)._prune_old_checkpoints()
-    assert len(list(tmp_path.glob(f"ckpt_host_{_DEAD_PID}_*.json.gz"))) == 20, (
+    assert len(list(tmp_path.glob(f"ckpt_{_HOST}_{_DEAD_PID}_*.json.gz"))) == 20, (
         "peer reaping must be opt-in; resume history must survive a restart"
     )
 
 
 def test_opted_in_reaping_removes_peers_whose_process_is_gone(tmp_path: Path):
     for i in range(20):
-        _write(tmp_path, f"ckpt_host_{_DEAD_PID}_{i:03d}.json.gz", age_s=90_000)
+        _write(tmp_path, f"ckpt_{_HOST}_{_DEAD_PID}_{i:03d}.json.gz", age_s=90_000)
     _mgr(tmp_path, max_checkpoints=10, peer_retention_seconds=3600)._prune_old_checkpoints()
-    assert list(tmp_path.glob(f"ckpt_host_{_DEAD_PID}_*.json.gz")) == []
+    assert list(tmp_path.glob(f"ckpt_{_HOST}_{_DEAD_PID}_*.json.gz")) == []
 
 
 def test_a_live_peer_is_never_reaped_even_when_stale(tmp_path: Path):
@@ -67,18 +93,18 @@ def test_a_live_peer_is_never_reaped_even_when_stale(tmp_path: Path):
 
     live = _os.getpid()
     for i in range(3):
-        _write(tmp_path, f"ckpt_host_{live}_{i:03d}.json.gz", age_s=90_000)
+        _write(tmp_path, f"ckpt_{_HOST}_{live}_{i:03d}.json.gz", age_s=90_000)
     _mgr(tmp_path, max_checkpoints=10, peer_retention_seconds=1)._prune_old_checkpoints()
-    assert len(list(tmp_path.glob(f"ckpt_host_{live}_*.json.gz"))) == 3, (
+    assert len(list(tmp_path.glob(f"ckpt_{_HOST}_{live}_*.json.gz"))) == 3, (
         "a running peer's checkpoints must never be deleted on age alone"
     )
 
 
 def test_recent_peer_checkpoints_are_left_alone(tmp_path: Path):
     for i in range(5):
-        _write(tmp_path, f"ckpt_host_{_DEAD_PID}_{i:03d}.json.gz", age_s=10)
+        _write(tmp_path, f"ckpt_{_HOST}_{_DEAD_PID}_{i:03d}.json.gz", age_s=10)
     _mgr(tmp_path, max_checkpoints=10, peer_retention_seconds=3600)._prune_old_checkpoints()
-    assert len(list(tmp_path.glob(f"ckpt_host_{_DEAD_PID}_*.json.gz"))) == 5
+    assert len(list(tmp_path.glob(f"ckpt_{_HOST}_{_DEAD_PID}_*.json.gz"))) == 5
 
 
 def test_unparseable_pid_is_kept_not_guessed(tmp_path: Path):
@@ -98,9 +124,9 @@ def test_ttl_zero_and_malformed_disable_reaping_rather_than_wiping(
         monkeypatch.setenv("ENTROLY_PEER_CHECKPOINT_TTL", raw)
         mgr = CheckpointManager(tmp_path, instance_id="me")
         assert mgr.peer_retention_seconds == 0.0, f"TTL={raw!r} must disable reaping"
-        _write(tmp_path, f"ckpt_host_{_DEAD_PID}_900.json.gz", age_s=90_000)
+        _write(tmp_path, f"ckpt_{_HOST}_{_DEAD_PID}_900.json.gz", age_s=90_000)
         mgr._prune_old_checkpoints()
-        assert (tmp_path / f"ckpt_host_{_DEAD_PID}_900.json.gz").exists()
+        assert (tmp_path / f"ckpt_{_HOST}_{_DEAD_PID}_900.json.gz").exists()
 
 
 def test_pruning_never_raises_on_an_unreadable_directory(tmp_path: Path):

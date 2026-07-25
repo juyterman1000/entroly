@@ -198,7 +198,7 @@ def _git_env() -> dict[str, str]:
     return env
 
 
-def _run_git(args: list[str], project_dir: str, timeout: int = 10) -> str | None:
+def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | None:
     """Run a git command that can never hang the caller. Returns stdout or None.
 
     `subprocess.run(capture_output=True, timeout=...)` is NOT safe here: the
@@ -237,27 +237,39 @@ def _run_git(args: list[str], project_dir: str, timeout: int = 10) -> str | None
         return None
     finally:
         if proc is not None:
-            if proc.poll() is None:
+            reaped = proc.poll() is not None
+            if not reaped:
                 try:
                     proc.kill()
                     # Bounded reap; a zombie must not block the caller either.
                     try:
                         proc.communicate(timeout=5)
+                        reaped = True
                     except (subprocess.TimeoutExpired, OSError, ValueError):
-                        pass
+                        reaped = False
                 except OSError:
-                    pass
-            # Explicitly release the pipe. If a grandchild kept the write end
-            # open, the reap above times out and communicate() never closes our
-            # read end — leaking an fd (and on Windows a parked reader thread)
-            # on every call. The watcher calls this on every scan, so an
-            # unbounded hang would become an unbounded handle leak.
-            for stream in (proc.stdout, proc.stderr, proc.stdin):
-                if stream is not None:
-                    try:
-                        stream.close()
-                    except (OSError, ValueError):
-                        pass
+                    reaped = False
+            if reaped:
+                # Safe to release the pipes: no reader thread is still parked on
+                # them. Closing is only done on this path because close() itself
+                # can BLOCK. On Windows, Popen._communicate leaves its
+                # _readerthread inside fh.read() holding the stream lock when it
+                # times out, so closing from this thread would wait on that lock
+                # forever — reintroducing the very hang this function exists to
+                # prevent, while the watcher holds the index mutation lock.
+                # If the reap failed we deliberately leak the handle instead: a
+                # bounded resource leak is strictly better than a permanent stall.
+                for stream in (proc.stdout, proc.stderr, proc.stdin):
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except (OSError, ValueError):
+                            pass
+            else:
+                logger.warning(
+                    "git did not terminate after kill; leaking its pipe rather "
+                    "than blocking on close (see _run_git)."
+                )
 
 
 def _git_ls_files(project_dir: str) -> list[str]:

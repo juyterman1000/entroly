@@ -220,7 +220,10 @@ def _run_git(repo_root: str, *args: str, timeout: float = 5.0) -> str | None:
     try:
         from .auto_index import _run_git as _hardened_run_git
 
-        return _hardened_run_git(["git", *args], repo_root, timeout=int(timeout))
+        # Do NOT int() the timeout: a sub-second value would truncate to 0 and
+        # make every call time out immediately, silently degrading causal
+        # attribution to "no git data".
+        return _hardened_run_git(["git", *args], repo_root, timeout=max(1.0, float(timeout)))
     except (OSError, subprocess.SubprocessError, ImportError):
         return None
 

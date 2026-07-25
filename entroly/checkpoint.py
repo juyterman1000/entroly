@@ -680,12 +680,17 @@ class CheckpointManager:
             if os.name == "nt":
                 import ctypes
 
+                kernel32 = ctypes.windll.kernel32
                 # PROCESS_QUERY_LIMITED_INFORMATION
-                handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-                if not handle:
-                    return False
-                ctypes.windll.kernel32.CloseHandle(handle)
-                return True
+                handle = kernel32.OpenProcess(0x1000, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return True
+                # A NULL handle does NOT mean "dead". ERROR_ACCESS_DENIED (5)
+                # means the process is alive but owned by another user or
+                # elevated — treating that as dead would delete a running peer's
+                # state. Only ERROR_INVALID_PARAMETER (87) means "no such pid".
+                return kernel32.GetLastError() != 87
             os.kill(pid, 0)
             return True
         except ProcessLookupError:
@@ -716,12 +721,19 @@ class CheckpointManager:
             candidates = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
         except OSError:
             return
+        # A pid probe only means anything for peers on THIS host. Checkpoint dirs
+        # are shared across containers and NFS homes, where pids are reused in
+        # independent namespaces — probing there would judge a live peer dead.
+        own_host = self.instance_id.split("_")[0]
         for cp in candidates:
             if cp.name.startswith(own_prefix):
                 continue
             try:
                 if cp.stat().st_mtime >= cutoff:
                     continue  # recent — a peer may still be running
+                parts = cp.name.split("_")
+                if len(parts) < 3 or parts[1] != own_host:
+                    continue  # different (or unknown) host — never our call
                 if self._pid_is_alive(self._peer_pid(cp.name)):
                     continue  # owner is alive; its state is not ours to delete
                 cp.unlink()
