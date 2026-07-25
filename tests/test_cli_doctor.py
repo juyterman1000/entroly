@@ -107,7 +107,21 @@ def test_doctor_reports_an_unreadable_weights_file_instead_of_passing_silently(
     assert rc == 1
 
 
-def test_doctor_passes_cleanly_when_nothing_is_wrong(tuning_config, capsys) -> None:
+def test_doctor_passes_cleanly_when_nothing_is_wrong(
+    tuning_config, capsys, monkeypatch
+) -> None:
+    # Pin the native status like the sibling tests do. Otherwise a stale-but-
+    # loadable core — which the code itself calls "the normal state in a source
+    # checkout between a Rust edit and maturin develop" — makes doctor report
+    # "7/8 checks passed, 1 warning(s)" and fails this test for a reason
+    # unrelated to what it checks.
+    monkeypatch.setattr(
+        "entroly.native_status.native_status",
+        lambda _: NativeStatus(
+            available=True, module=None, version="1.0.66", path=None,
+            missing_symbols=(), version_ok=True,
+        ),
+    )
     # Defaults (no tuning_config.json present) must still be a clean 8/8 exit 0;
     # informational lines (proxy/docker/index absent) are not failures.
     rc = cli.cmd_doctor(Namespace(port=9377, privacy=False))

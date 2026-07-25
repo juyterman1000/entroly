@@ -127,6 +127,11 @@ class TestSelfImprovingLoop:
 
         assert 0 < reward <= 1
         assert loop.stats.n_observations == 1
+        # The test is named "updates_weights" but never checked that: w_before
+        # was captured and discarded, so it passed even if learning was a no-op.
+        assert dict(loop.current_weights) != w_before, (
+            f"observe_witness did not update PRISM weights: {w_before}"
+        )
 
     def test_observe_recovery_penalizes(self):
         from entroly.self_improving import SelfImprovingLoop

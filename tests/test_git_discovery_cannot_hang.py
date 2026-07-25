@@ -80,10 +80,19 @@ def test_git_ls_files_parses_real_output(monkeypatch, tmp_path):
     assert _git_ls_files(str(tmp_path)) == ["a.py", "b/c.py"]
 
 
-@pytest.mark.skipif(
-    subprocess.run(["git", "--version"], capture_output=True).returncode != 0,
-    reason="git not available",
-)
+def _git_available() -> bool:
+    """Probe safely: a bare subprocess.run in a decorator raises at COLLECTION
+    time when git is absent, aborting the whole module — including the tests
+    that need no git at all — in exactly the case the skip exists for."""
+    try:
+        return subprocess.run(
+            ["git", "--version"], capture_output=True, stdin=subprocess.DEVNULL
+        ).returncode == 0
+    except (OSError, ValueError):
+        return False
+
+
+@pytest.mark.skipif(not _git_available(), reason="git not available")
 def test_git_ls_files_still_works_on_a_real_repository(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / "tracked.py").write_text("x = 1\n", encoding="utf-8")

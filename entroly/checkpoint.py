@@ -774,6 +774,13 @@ class CheckpointManager:
             return True
         except ProcessLookupError:
             return False
+        except OverflowError:
+            # os.kill raises OverflowError (NOT OSError) for a pid above
+            # INT_MAX, so it escapes the tuple below. Uncaught, it propagates
+            # out of _reap_abandoned_peers -> _prune_old_checkpoints -> save(),
+            # turning a best-effort prune into a raised exception. Such a pid
+            # cannot name a live process, but "unknown" is the fail-safe answer.
+            return True
         except (OSError, PermissionError, AttributeError, ValueError):
             return True  # cannot tell — never delete on a guess
 

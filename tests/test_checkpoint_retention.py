@@ -64,7 +64,22 @@ def test_windows_access_denied_is_not_treated_as_a_dead_process():
 
 # Real layout is ckpt_<hosthash>_<pid>_<counter>.json.gz; instance_id is
 # "<hosthash>_<pid>", so the owning pid is the third underscore field.
-_DEAD_PID = 4_294_967_290  # never a live pid on this host
+def _make_dead_pid() -> int:
+    """A pid that definitely belonged to a process and definitely exited.
+
+    An out-of-range sentinel is NOT usable: os.kill raises OverflowError for a
+    pid above INT_MAX, which _pid_is_alive fail-safes to "alive". Spawning and
+    reaping a real process gives a pid that is dead on every platform.
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+_DEAD_PID = _make_dead_pid()
 
 
 def test_peer_reaping_is_off_by_default(tmp_path: Path):
@@ -234,12 +249,28 @@ def test_readers_survive_a_peer_deleting_a_checkpoint_mid_scan(tmp_path: Path):
         return iter(out)
 
     type(mgr.checkpoint_dir).glob = racing
+    raised: dict[str, str] = {}
     try:
-        mgr.load_latest()
-        mgr._load_latest_for_instance()
-        mgr.find_relevant("refactor the proxy")
-        mgr.list_checkpoints()
-        mgr.merge_from_peers([])
-        mgr.stats()
+        for name, call in (
+            ("load_latest", lambda: mgr.load_latest()),
+            ("_load_latest_for_instance", lambda: mgr._load_latest_for_instance()),
+            ("find_relevant", lambda: mgr.find_relevant("refactor the proxy")),
+            ("list_checkpoints", lambda: mgr.list_checkpoints()),
+            ("merge_from_peers", lambda: mgr.merge_from_peers([])),
+            ("stats", lambda: mgr.stats()),
+        ):
+            try:
+                call()
+            except Exception as exc:  # noqa: BLE001 — the point is to catch any
+                raised[name] = f"{type(exc).__name__}: {exc}"
     finally:
         type(mgr.checkpoint_dir).glob = real_glob
+
+    assert raised == {}, (
+        f"a peer's prune made these readers raise instead of degrading: {raised}"
+    )
+    # Non-vacuity: the racing glob must actually have deleted something, or the
+    # test would pass even with the guard reverted.
+    assert len(list(tmp_path.glob("ckpt_*.json.gz"))) < 6, (
+        "the race was never triggered — this test would pass without the fix"
+    )
