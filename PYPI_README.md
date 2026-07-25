@@ -9,7 +9,7 @@ Entroly selects useful evidence, removes avoidable repetition, keeps important o
 
 Entroly is a local-first Context Assurance layer for developers, teams, and AI applications. It works through supported proxy, wrapper, plugin, SDK, and MCP paths with Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.
 
-A small one-time setup is required. Entroly does not replace your model, codebase, or agent architecture.
+A small one-time setup is required; no agent-architecture rewrite.
 
 ## What Entroly does
 
@@ -128,6 +128,8 @@ Entroly keeps different evidence classes separate:
 | Fixed-price subscription | Context efficiency where supported; the subscription price may not change |
 | Unknown or legacy history | Preserved operational history; excluded from savings claims |
 
+Modeled provider cost avoidance is not a provider invoice.
+
 ## Technical capabilities
 
 - budgeted evidence selection;
@@ -149,6 +151,7 @@ A future desktop experience, [Entroly Simple Mode](https://github.com/juyterman1
 
 ## Links
 
+- AI cost optimization: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
 - Repository: https://github.com/juyterman1000/entroly
 - Documentation: https://juyterman1000.github.io/entroly/docs/index.html
 - Agent integrations: https://juyterman1000.github.io/entroly/docs/agent-integrations.html
