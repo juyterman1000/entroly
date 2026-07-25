@@ -1,32 +1,36 @@
 User-agent: *
 Allow: /
 
-# AI Crawlers — explicitly allowed for AI search indexing
-User-agent: GPTBot
+# Search and answer-engine crawlers
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: OAI-SearchBot
 Allow: /
 
 User-agent: ChatGPT-User
 Allow: /
 
-User-agent: Google-Extended
+User-agent: Claude-SearchBot
 Allow: /
 
-User-agent: Claude-Web
+User-agent: Claude-User
 Allow: /
 
 User-agent: PerplexityBot
 Allow: /
 
-User-agent: Bytespider
+# Optional AI indexing and model-development crawlers
+User-agent: GPTBot
 Allow: /
 
-User-agent: CCBot
+User-agent: ClaudeBot
 Allow: /
 
-User-agent: anthropic-ai
-Allow: /
-
-User-agent: cohere-ai
+User-agent: Google-Extended
 Allow: /
 
 User-agent: Applebot-Extended
@@ -35,10 +39,11 @@ Allow: /
 User-agent: Meta-ExternalFetcher
 Allow: /
 
-Sitemap: https://juyterman1000.github.io/entroly/docs/sitemap.xml
+User-agent: CCBot
+Allow: /
 
-# AI documentation files
-# See https://llmstxt.org/
-# Canonical llms.txt: https://juyterman1000.github.io/entroly/llms.txt
-# Legacy mirror: https://juyterman1000.github.io/entroly/docs/llms.txt
-# Extended index: https://juyterman1000.github.io/entroly/docs/llms-full.txt
+Sitemap: https://juyterman1000.github.io/entroly/sitemap.xml
+
+# Machine-readable product and integration index
+# https://juyterman1000.github.io/entroly/llms.txt
+# https://juyterman1000.github.io/entroly/docs/llms-full.txt
