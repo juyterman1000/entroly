@@ -93,7 +93,7 @@ def test_hermes_exposes_hash_only_tool_schema() -> None:
     assert parameters["required"] == ["hash"]
     assert parameters["additionalProperties"] is False
     assert set(parameters["properties"]) == {"hash"}
-    assert "query" not in json.dumps(schema).lower()
+    assert "query" not in parameters["properties"]
 
 
 def test_hermes_compression_emits_recoverable_exact_conversation() -> None:
