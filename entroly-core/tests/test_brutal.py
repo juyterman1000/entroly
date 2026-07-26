@@ -715,12 +715,14 @@ test("Recall respects k limit", test_recall_top_k_respected)
 print("\n═══ L. AUTH.PY SAFETY DETECTION ═══")
 
 def test_auth_content_safety():
-    """auth.py contains 'api_key' keyword → should be auto-pinned as safety signal."""
+    """auth.py contains 'api_key' keyword → should be auto-protected as safety signal."""
     e = sc.EntrolyEngine()
     r = e.ingest(REAL_FILES["auth.py"], "auth.py", 0, False)
-    assert r["is_pinned"], \
+    assert r["is_protected"], \
         f"auth.py contains api_key → should be auto-pinned: {r}"
-test("auth.py auto-pinned (contains api_key)", test_auth_content_safety)
+    assert not r["is_pinned"], \
+        f"a safety signal must not force inclusion in every query: {r}"
+test("auth.py auto-protected (contains api_key)", test_auth_content_safety)
 
 
 # ═══════════════════════

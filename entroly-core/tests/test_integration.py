@@ -95,7 +95,10 @@ test("Token estimation: code vs prose", test_token_estimation_code_vs_prose)
 def test_pinned_ingest():
     e = sc.EntrolyEngine()
     r = e.ingest("important data", "data.txt", 0, True)
+    # An explicit operator pin is the one thing that still forces
+    # inclusion; only criticality-derived pins became protection.
     assert r["is_pinned"]
+    assert not r["is_protected"]
 test("Pinned ingest", test_pinned_ingest)
 
 def test_empty_content():
@@ -166,7 +169,14 @@ def test_criticality(path, expected_crit):
         assert r["criticality"] == expected_crit, \
             f"{path}: expected {expected_crit}, got {r['criticality']}"
         if expected_crit in ("Critical", "Safety"):
-            assert r["is_pinned"], f"{path} should be auto-pinned"
+            # Criticality guarantees the file is never evicted from the store.
+            # It deliberately does NOT force the file into every query's
+            # context: that conflation spent ~50% of every token budget on
+            # manifests regardless of the question. Pinning is operator policy.
+            assert r["is_protected"], f"{path} should be auto-protected"
+            assert not r["is_pinned"], (
+                f"{path} must not be force-included in every query"
+            )
     return _test
 
 for path, crit in CRITICAL_FILES + SAFETY_FILES + IMPORTANT_FILES + NORMAL_FILES:
@@ -181,13 +191,15 @@ def test_license_safety():
     # files is NOT auto-pinned (intentional — broad content matching destroyed
     # budgets in real codebases).
     r = e.ingest("MIT License\nCopyright 2024", "LICENSE", 0, False)
-    assert r["is_pinned"], "LICENSE file should be auto-pinned via Safety criticality"
+    assert r["is_protected"], "LICENSE should be auto-protected via Safety criticality"
+    assert not r["is_pinned"], "LICENSE must not be force-included in every query"
 test("License file auto-pinned", test_license_safety)
 
 def test_security_warning_safety():
     e = sc.EntrolyEngine()
     r = e.ingest("# SECURITY WARNING: do not expose API keys\nAPI_KEY = os.environ['KEY']", "config.py", 0, False)
-    assert r["is_pinned"]
+    assert r["is_protected"]
+    assert not r["is_pinned"]
 test("Security warning auto-pinned", test_security_warning_safety)
 
 def test_normal_code_not_pinned():
