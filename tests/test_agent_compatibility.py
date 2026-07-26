@@ -49,3 +49,20 @@ def test_public_matrix_keeps_subscription_and_validation_boundaries():
     assert "Cortex Code" in readme and "Not validated as a wrap target" in readme
     assert "Provider-bound token and cost measurements exist only" in guide
     assert "MCP-only integrations" in guide
+
+
+
+def test_kimi_attachment_uses_official_stdio_mcp_shape(tmp_path):
+    grant = SimpleNamespace(
+        grant_id="att_fedcba9876543210",
+        client="kimi",
+        project_root=str(tmp_path),
+    )
+    install = attachment_install_commands(grant, tmp_path, tmp_path / "token")
+    command = install[0]
+    assert command[:5] == ("kimi", "mcp", "add", "--transport", "stdio")
+    assert "--env" in command and "--" in command
+    assert attachment_remove_commands(grant) == (
+        ("kimi", "mcp", "remove", "entroly-att_fedcba9876543210"),
+    )
+    assert "kimi" in ATTACHMENT_CLIENTS

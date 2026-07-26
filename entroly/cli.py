@@ -2297,12 +2297,12 @@ def cmd_wrap(args):
         args.agent_args.remove("--force")
     key_env = spec.get("api_key_env")
     if key_env and not os.environ.get(key_env) and not force_flag:
-        print(f"  {C.GRAY}No {key_env} set — looks like a {spec['name']} subscription login.{C.RESET}\n")
+        print(f"  {C.GRAY}No {key_env} set — this proxy path has no explicit provider credential.{C.RESET}\n")
         alt = spec.get("subscription_alt")
         if alt:
-            print(f"  {C.BOLD}Best setup for a subscription — the MCP integration:{C.RESET}")
+            print(f"  {C.BOLD}Best setup for a signed-in or subscription session — the MCP integration:{C.RESET}")
             print(f"    {C.CYAN}{alt}{C.RESET}")
-            print(f"  {C.GRAY}(Claude Code stays your client; Entroly adds its tools.){C.RESET}\n")
+            print(f"  {C.GRAY}(Your agent stays the client; Entroly adds scoped context tools.){C.RESET}\n")
         print(f"  {C.BOLD}See your savings right now — no API call needed:{C.RESET}")
         print(f"    {C.CYAN}entroly simulate{C.RESET}\n")
         print(f"  {C.GRAY}Prefer proxy mode? Set a pay-as-you-go key: "
