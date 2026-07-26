@@ -24,8 +24,13 @@ from entroly.auto_index import MAX_FILE_BYTES, auto_index
 
 
 def _fragment_sources(engine) -> list[str]:
+    """Inspect indexed sources without assuming the native backend exists."""
+    if engine._use_rust:
+        fragments = engine._rust.export_fragments()
+        return [str(fragment.get("source") or "") for fragment in fragments]
     return [
-        str(f.get("source") or "") for f in engine._rust.export_fragments()
+        str(getattr(fragment, "source", "") or "")
+        for fragment in engine._fragments.values()
     ]
 
 
