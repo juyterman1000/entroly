@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable, Mapping
 
 from .cache_retention import CacheRetentionForecaster
@@ -201,6 +201,26 @@ class CacheAwareRouter:
             self._leases[conversation_id] = lease
             self._evict(now)
             return lease
+
+    def lease_snapshot(
+        self,
+        conversation_id: str,
+        *,
+        now: float | None = None,
+    ) -> ConversationCacheLease | None:
+        """Return a detached, unexpired provider-observed cache lease.
+
+        Callers use this only as a conservative signal.  A lease never proves
+        that a future request will hit; provider usage metadata remains the
+        source of truth.
+        """
+        if not conversation_id:
+            return None
+        timestamp = time.time() if now is None else float(now)
+        with self._lock:
+            self._evict(timestamp)
+            lease = self._leases.get(conversation_id)
+            return replace(lease) if lease is not None else None
 
     def get_lease(self, conversation_id: str) -> ConversationCacheLease | None:
         with self._lock:

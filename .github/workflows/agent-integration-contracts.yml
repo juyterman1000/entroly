@@ -46,7 +46,7 @@ jobs:
         python-version: ["3.10", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package and test dependencies
@@ -62,7 +62,7 @@ jobs:
           --junitxml=agent-integration-${{ matrix.python-version }}.xml
       - name: Upload machine-readable result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agent-integration-${{ matrix.python-version }}
           path: agent-integration-${{ matrix.python-version }}.xml

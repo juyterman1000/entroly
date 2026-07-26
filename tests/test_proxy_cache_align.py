@@ -56,18 +56,21 @@ def test_conversation_key_empty_without_anchor():
     assert _key({"messages": [{"role": "assistant", "content": "x"}]}) == ""
 
 
-def test_align_reuses_similar_context_verbatim():
-    """An unchanged/near-identical injected block on the next turn is reused
-    byte-for-byte => provider cached prefix hits."""
+def test_align_reuses_only_identical_context_verbatim():
+    """Exact context bytes may be reused; changed evidence must not go stale."""
     a = CacheAligner()
     ctx = "\n".join(f"file{i}.py: def f{i}(): return {i}" for i in range(50))
     out1, hit1 = a.align("conv1", ctx)
     assert out1 == ctx and hit1 is False  # first turn: stored
-    # next turn: one line changed (>=90% Jaccard similar)
+    # A one-line semantic change must be a miss, even when token overlap is high.
     ctx2 = ctx.replace("file49.py: def f49(): return 49", "file49.py: def f49(): return 99")
     out2, hit2 = a.align("conv1", ctx2)
-    assert hit2 is True
-    assert out2 == ctx  # reused verbatim -> stable prefix -> cache hit
+    assert hit2 is False
+    assert out2 == ctx2
+
+    out3, hit3 = a.align("conv1", ctx2)
+    assert hit3 is True
+    assert out3 == ctx2
 
 
 def test_align_does_not_reuse_materially_changed_context():
@@ -82,7 +85,7 @@ def test_align_does_not_reuse_materially_changed_context():
     assert out == different
 
 
-def test_align_treats_code_punctuation_as_token_boundaries():
+def test_align_treats_code_punctuation_as_material_bytes():
     aligner = CacheAligner(similarity_threshold=1.0)
     original = "def calculate_total(items): return sum(items)"
     aligner.align("code", original)
@@ -91,5 +94,16 @@ def test_align_treats_code_punctuation_as_token_boundaries():
         "code", "def calculate_total items return sum items"
     )
 
-    assert hit is True
-    assert aligned == original
+    assert hit is False
+    assert aligned == "def calculate_total items return sum items"
+
+
+def test_align_stats_do_not_invent_provider_savings():
+    aligner = CacheAligner()
+    aligner.align("code", "same")
+    aligner.align("code", "same")
+
+    stats = aligner.stats()
+
+    assert stats["match_policy"] == "exact_sha256"
+    assert "estimated_savings_pct" not in stats

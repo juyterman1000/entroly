@@ -1,24 +1,23 @@
-name: Entroly Cost Check
+name: Entroly Context Footprint
 on: [pull_request]
 
 permissions:
   pull-requests: write
 
 jobs:
-  cost-check:
+  context-footprint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Analyze PR Token Cost
+      - name: Report observable PR context footprint
         uses: actions/github-script@v9
         with:
           script: |
-            const CHARS_PER_TOKEN = 4;
-            const COMPRESSION_RATIO = 0.07;
-            const COST_PER_MILLION = 3.00;
+            // This workflow reports only facts observable from the GitHub PR.
+            // It does not run Entroly selection, observe a provider-bound request,
+            // know the user's tokenizer or negotiated model rate, or establish an
+            // alternative full-context baseline. Therefore it must never publish
+            // a compression percentage, dollar saving, or monthly projection.
+            const CHARS_PER_TOKEN_HEURISTIC = 4;
 
             const CODE_EXTS = new Set([
               '.js','.ts','.jsx','.tsx','.py','.rs','.go','.java','.c','.cpp',
@@ -26,65 +25,80 @@ jobs:
               '.sh','.yaml','.yml','.json','.toml','.html','.css','.md'
             ]);
 
-            function isCode(f) {
-              const ext = f.slice(f.lastIndexOf('.')).toLowerCase();
+            function isCode(filename) {
+              const dot = filename.lastIndexOf('.');
+              const ext = dot >= 0 ? filename.slice(dot).toLowerCase() : '';
               return CODE_EXTS.has(ext);
             }
 
-            const { data: files } = await github.rest.pulls.listFiles({
+            const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number,
-              per_page: 300
+              per_page: 100
             });
 
-            const codeFiles = files.filter(f => isCode(f.filename));
+            const codeFiles = files.filter(file => isCode(file.filename));
             if (codeFiles.length === 0) {
-              console.log('No code files changed — skipping.');
+              console.log('No code-like files changed — skipping.');
               return;
             }
 
-            let totalChars = 0;
-            for (const f of codeFiles) {
-              totalChars += (f.patch || '').length * 3;
+            let observedPatchChars = 0;
+            let filesWithoutPatch = 0;
+            for (const file of codeFiles) {
+              if (typeof file.patch === 'string') {
+                observedPatchChars += file.patch.length;
+              } else {
+                filesWithoutPatch += 1;
+              }
             }
 
-            const fullCtx = totalChars * 12;
-            const tokensWithout = Math.ceil(fullCtx / CHARS_PER_TOKEN);
-            const tokensWith = Math.ceil(tokensWithout * COMPRESSION_RATIO);
-            const costWithout = (tokensWithout / 1e6) * COST_PER_MILLION;
-            const costWith = (tokensWith / 1e6) * COST_PER_MILLION;
-            const saved = costWithout - costWith;
-            const pct = Math.round((1 - COMPRESSION_RATIO) * 100);
-            const monthly = saved * 80;
+            const heuristicTokens = Math.ceil(
+              observedPatchChars / CHARS_PER_TOKEN_HEURISTIC
+            );
+            const fmt = value => value.toLocaleString('en-US');
 
-            const fmt = n => n.toLocaleString('en-US');
-            const usd = n => `$${n.toFixed(2)}`;
+            const coverageNote = filesWithoutPatch === 0
+              ? 'All code-like files exposed patch text through the GitHub API.'
+              : `${filesWithoutPatch} code-like file(s) had no patch text in the API, so the observed footprint is incomplete.`;
 
             const body = [
-              `### 📊 Entroly Token Cost Analysis`,
+              `### Entroly Context Footprint`,
               ``,
-              `This PR touches **${codeFiles.length} code files**.`,
+              `This reports the **observable PR diff footprint only**. It is not a token-savings, quality-retention, provider-billing, or ROI claim.`,
               ``,
-              `| Metric | Without Entroly | With Entroly |`,
-              `|--------|:-:|:-:|`,
-              `| Context tokens | ${fmt(tokensWithout)} | ${fmt(tokensWith)} |`,
-              `| Estimated cost | ${usd(costWithout)} | ${usd(costWith)} |`,
-              `| **Savings** | — | **${pct}% (${usd(saved)})** |`,
+              `| Observable | Value |`,
+              `|---|---:|`,
+              `| Code-like files changed | ${fmt(codeFiles.length)} |`,
+              `| Patch characters exposed by GitHub | ${fmt(observedPatchChars)} |`,
+              `| Heuristic token-equivalent (4 chars/token) | ${fmt(heuristicTokens)} |`,
+              `| Files without exposed patch text | ${fmt(filesWithoutPatch)} |`,
               ``,
-              `> 💡 **Monthly projection:** ${usd(monthly)}/mo saved (est. 80 PRs/mo).`,
+              `**Coverage:** ${coverageNote}`,
               ``,
-              `<sub>Powered by <a href="https://github.com/juyterman1000/entroly">Entroly</a> — the self-evolving context engine.</sub>`,
+              `**Evidence boundary**`,
+              `- No Entroly context-selection run was executed by this workflow.`,
+              `- No provider-bound request or billed token count was observed.`,
+              `- No compression percentage, dollar saving, or monthly projection is claimed.`,
+              ``,
+              `For workload-specific evidence, run \`entroly simulate\` locally, then use a supported proxy path and \`entroly value\` for provider-observed accounting.`,
+              ``,
+              `<sub>Powered by <a href="https://github.com/juyterman1000/entroly">Entroly</a> — local-first context assurance for AI agents.</sub>`,
             ].join('\n');
 
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number
+              issue_number: context.payload.pull_request.number,
+              per_page: 100
             });
 
-            const existing = comments.find(c =>
-              c.body && c.body.includes('Entroly Token Cost Analysis')
+            const existing = comments.find(comment =>
+              comment.body && (
+                comment.body.includes('Entroly Context Footprint') ||
+                comment.body.includes('Entroly Token Cost Analysis')
+              )
             );
 
             if (existing) {

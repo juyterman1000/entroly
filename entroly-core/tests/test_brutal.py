@@ -290,19 +290,21 @@ def test_real_session_full():
     assert any("rate" in s for s in selected2), \
         f"rates.py should still be preferred after positive feedback: {selected2}"
 
-    # Turn 3: LICENSE and requirements.txt must ALWAYS be in context (pinned)
-    e.advance_turn()
-    e.advance_turn()
-    opt3 = e.optimize(10000, "")
-    selected3 = [f["source"] for f in opt3["selected"]]
-    assert "LICENSE" in selected3, f"LICENSE must always be included: {selected3}"
-    assert "requirements.txt" in selected3, f"requirements.txt must be included: {selected3}"
+    # Turn 3: safety/critical files remain in the store but are not forced into
+    # every answer. Only explicit operator pins consume guaranteed answer budget.
+    exported = {f["source"]: f for f in e.export_fragments()}
+    for source in ("LICENSE", "requirements.txt", "auth.py"):
+        assert exported[source]["is_protected"], f"{source} must be protected"
+        assert not exported[source]["is_pinned"], f"{source} must not be force-pinned"
 
-    # Turn 4: Advance many turns — unpinned low-relevance frags should decay
+    # Turn 4: Advance many turns — ordinary stale fragments may decay, while
+    # protected files survive without being injected into unrelated answers.
     for _ in range(30):
         e.advance_turn()
-    # Pinned files (LICENSE, requirements.txt, auth.py with SECRET_KEY) should survive
-    assert e.fragment_count() > 0, "Should still have pinned fragments"
+    surviving = {f["source"] for f in e.export_fragments()}
+    assert {"LICENSE", "requirements.txt", "auth.py"}.issubset(surviving), (
+        f"protected fragments were evicted: {surviving}"
+    )
 
 test("Full real multi-turn debug session", test_real_session_full)
 
@@ -715,12 +717,14 @@ test("Recall respects k limit", test_recall_top_k_respected)
 print("\n═══ L. AUTH.PY SAFETY DETECTION ═══")
 
 def test_auth_content_safety():
-    """auth.py contains 'api_key' keyword → should be auto-pinned as safety signal."""
+    """auth.py safety signal protects storage without force-including answers."""
     e = sc.EntrolyEngine()
     r = e.ingest(REAL_FILES["auth.py"], "auth.py", 0, False)
-    assert r["is_pinned"], \
-        f"auth.py contains api_key → should be auto-pinned: {r}"
-test("auth.py auto-pinned (contains api_key)", test_auth_content_safety)
+    assert r["is_protected"], \
+        f"auth.py contains api_key → should be protected from eviction: {r}"
+    assert not r["is_pinned"], \
+        f"safety detection must not force auth.py into every answer: {r}"
+test("auth.py protected (contains api_key)", test_auth_content_safety)
 
 
 # ═══════════════════════

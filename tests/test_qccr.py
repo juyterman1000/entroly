@@ -258,7 +258,16 @@ def test_large_corpus_is_prefiltered_fast_and_keeps_the_answer():
     )
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 15.0, f"prefilter regressed: {elapsed:.1f}s for {len(corpus)} files"
+    # Budget derivation, so this stays a real gate rather than a formality.
+    # Measured on this workload (513 files): 0.10-0.13s, median 0.12s. The old
+    # 15s ceiling was ~125x that, so a 100x algorithmic regression — an O(n^2)
+    # blowup or an unbounded rescan — passed silently. 3s is ~25x the local
+    # median, which absorbs slower CI hardware, cold caches, and noise while
+    # still catching any regression that changes the complexity class.
+    assert elapsed < 3.0, (
+        f"prefilter regressed: {elapsed:.2f}s for {len(corpus)} files "
+        f"(expected ~0.12s; budget 3.0s allows ~25x for CI variance)"
+    )
     assert "file:entroly/proxy.py" in [r.get("source") for r in selected], (
         "the answer file was lost to the pre-filter cap"
     )

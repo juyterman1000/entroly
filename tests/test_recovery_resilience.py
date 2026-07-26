@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -130,11 +131,49 @@ def test_verifier_rejects_payload_tampering() -> None:
         resilience.verify_report(tampered)
 
 
+def test_adapter_preserves_virtualenv_launcher_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = tmp_path / "venv" / "bin" / "python"
+    launcher.parent.mkdir(parents=True)
+    try:
+        launcher.symlink_to(Path(sys.executable))
+    except OSError:
+        pytest.skip("platform does not permit symlink creation")
+
+    captured: dict[str, object] = {}
+
+    class _Completed:
+        returncode = 0
+        stdout = json.dumps({"system": "headroom"})
+        stderr = ""
+
+    def fake_run(command: list[str], **kwargs: object) -> _Completed:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return _Completed()
+
+    monkeypatch.setattr(resilience.subprocess, "run", fake_run)
+
+    result = resilience._invoke_adapter(
+        str(launcher),
+        "headroom",
+        {"workers": 1, "entries_per_worker": 1, "seed": 7},
+        timeout=1.0,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[0] == str(launcher.absolute())
+    assert command[0] != str(launcher.resolve())
+    assert result["system"] == "headroom"
+
+
 def test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy() -> None:
     report = json.loads(
         (
             ROOT
-            / "benchmarks/results/recovery_resilience_holdout_revalidation_v4.json"
+            / "benchmarks/results/recovery_resilience_holdout_revalidation_v5.json"
         ).read_text(encoding="utf-8")
     )
     resilience.verify_report(report)

@@ -43,8 +43,10 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 import math
 import os
+import re
 import socket
 import tempfile
 import time
@@ -81,6 +83,8 @@ except ImportError:
         access_count: int = 0
         is_pinned: bool = False
         simhash: int = 0
+
+logger = logging.getLogger("entroly.checkpoint")
 
 # Checkpoint schema version — increment when serialization format changes.
 # Migration functions handle loading older versions.
@@ -270,10 +274,44 @@ class CheckpointManager:
         auto_interval: int = 5,
         max_checkpoints: int = 10,
         instance_id: str | None = None,
+        peer_retention_seconds: float | None = None,
+        max_total_checkpoints: int | None = None,
     ):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.auto_interval = auto_interval
         self.max_checkpoints = max_checkpoints
+        # Reaping another instance's checkpoints is DISABLED by default and is
+        # opt-in only. `instance_id` embeds the pid, so every restart makes the
+        # previous run's checkpoints "peers" — and cross-instance reads are
+        # exactly how resume works (`load_latest`/`find_relevant`/
+        # `merge_from_peers` glob ckpt_*). Reaping peers by default therefore
+        # deletes the resume history it is supposed to be pruning, which is a
+        # worse failure than the disk growth it was meant to bound.
+        #
+        # Opt in with ENTROLY_PEER_CHECKPOINT_TTL=<seconds>. A value <= 0, unset,
+        # or unparseable means "never reap a peer".
+        if peer_retention_seconds is None:
+            raw = os.environ.get("ENTROLY_PEER_CHECKPOINT_TTL", "")
+            try:
+                peer_retention_seconds = float(raw) if raw.strip() else 0.0
+            except (TypeError, ValueError):
+                peer_retention_seconds = 0.0
+        # <= 0 disables reaping entirely (never "reap everything immediately").
+        self.peer_retention_seconds = (
+            peer_retention_seconds if peer_retention_seconds > 0 else 0.0
+        )
+        # Hard ceiling on total checkpoints across every instance. This is the
+        # default-on mechanism that actually bounds disk; peer reaping above is
+        # an optional extra. Override with ENTROLY_MAX_TOTAL_CHECKPOINTS; <= 0
+        # disables the cap.
+        if max_total_checkpoints is None:
+            try:
+                max_total_checkpoints = int(
+                    os.environ.get("ENTROLY_MAX_TOTAL_CHECKPOINTS", "") or 40
+                )
+            except (TypeError, ValueError):
+                max_total_checkpoints = 40
+        self.max_total_checkpoints = max_total_checkpoints
         if instance_id:
             self.instance_id = instance_id
         else:
@@ -436,11 +474,7 @@ class CheckpointManager:
 
         Returns None if no checkpoints exist or all are unreadable.
         """
-        checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        checkpoints = self._globbed_newest_first("ckpt_*.json.gz")
 
         for cp in checkpoints:
             result = self._load_file(cp)
@@ -451,11 +485,7 @@ class CheckpointManager:
 
     def _load_latest_for_instance(self) -> Checkpoint | None:
         """Load this live instance's latest checkpoint for metadata continuity."""
-        paths = sorted(
-            self.checkpoint_dir.glob(f"ckpt_{self.instance_id}_*.json.gz"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
+        paths = self._globbed_newest_first(f"ckpt_{self.instance_id}_*.json.gz")
         for path in paths:
             checkpoint = self._load_file(path)
             if checkpoint is not None:
@@ -472,11 +502,7 @@ class CheckpointManager:
     ) -> CheckpointMatch | None:
         """Return the best task-relevant checkpoint, or None below threshold."""
         checkpoints: list[Checkpoint] = []
-        paths = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
+        paths = self._globbed_newest_first("ckpt_*.json.gz")
         for path in paths:
             checkpoint = self._load_file(path)
             if checkpoint is not None:
@@ -522,11 +548,7 @@ class CheckpointManager:
         Returns the merged fragment list combining local + peer knowledge.
         Uses most-recent-writer-wins conflict resolution.
         """
-        all_checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        all_checkpoints = self._globbed_newest_first("ckpt_*.json.gz")
 
         merged = list(local_fragments)
         seen_instances = {self.instance_id}
@@ -564,11 +586,7 @@ class CheckpointManager:
 
     def list_checkpoints(self) -> list[dict[str, Any]]:
         """List all available checkpoints with metadata."""
-        checkpoints = sorted(
-            self.checkpoint_dir.glob("ckpt_*.json.gz"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        checkpoints = self._globbed_newest_first("ckpt_*.json.gz")
 
         result = []
         for cp_path in checkpoints:
@@ -618,20 +636,330 @@ class CheckpointManager:
         )
 
     def _prune_old_checkpoints(self) -> None:
-        """Remove old checkpoints beyond the retention limit (own instance only)."""
-        # Only prune this instance's checkpoints, leave peers' alone
-        own_pattern = f"ckpt_{self.instance_id}_*.json.gz"
-        checkpoints = sorted(
-            self.checkpoint_dir.glob(own_pattern),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
+        """Enforce retention for this instance, and reap abandoned peer checkpoints.
+
+        Pruning only ever covered the current instance. Every restart mints a new
+        instance id, so the previous run's checkpoints became permanently
+        unprunable "peers" and accumulated without bound — an observed dev
+        machine held 127 checkpoints / 264 MB with `own_checkpoints: 0`, at ~40 MB
+        per write.
+
+        Peers belonging to a *live* process are still left alone (another server
+        may legitimately be running). Peers older than `peer_retention_seconds`
+        are treated as abandoned by a dead instance and reaped.
+        """
+        self._prune_pattern(
+            f"ckpt_{self.instance_id}_*.json.gz", keep=self.max_checkpoints
+        )
+        self._enforce_global_cap()
+        self._reap_abandoned_peers()
+
+    @staticmethod
+    def plan_global_cap_deletions(
+        entries: list[tuple[float, Path]],
+        *,
+        own_prefix: str,
+        own_host: str,
+        owner_of,
+        is_alive,
+    ) -> list[Path]:
+        """Pure policy: which checkpoints to drop, least valuable first.
+
+        Deliberately I/O-free and side-effect-free so the policy can be tested
+        exhaustively without simulating filesystem races. The previous design
+        interleaved liveness probes, a `protected` set carrying three different
+        meanings, and TWO deletion loops that each maintained their own counter.
+        Those counters diverged, and the resulting overcount deleted a live
+        peer's only recovery frontier — four consecutive review rounds found a
+        new defect in that shape. Ordering the candidates once, here, removes
+        the whole class.
+
+        Priority, least valuable first:
+          1. peer checkpoints superseded by a newer one from the same peer
+          2. frontiers of peers proven dead, oldest first
+          3. the newest dead-peer frontier (one restart/crash recovery point,
+             given up only under real pressure)
+          4. frontiers of peers that are alive or unprovable, oldest first
+
+        A running peer's frontier is its ONLY resume point, so it outranks a
+        crashed process's history: every dead frontier is planned before any
+        live one. Exempting the newest dead frontier entirely — as the first
+        version of this policy did — meant cap pressure destroyed live peers'
+        resume points to preserve a dead process's file.
+
+        Never returned: this instance's own checkpoints, and any file whose
+        owner cannot be identified — deleting on a guess is the one thing this
+        module does not do.
+        """
+        ordered = sorted(entries, key=lambda item: item[0], reverse=True)
+        superseded: list[Path] = []
+        dead_frontiers: list[Path] = []
+        live_frontiers: list[Path] = []
+        seen_peers: set[str] = set()
+
+        for _mtime, checkpoint in ordered:
+            if checkpoint.name.startswith(own_prefix):
+                continue                      # never ours
+            owner = owner_of(checkpoint.name)
+            if owner is None:
+                continue                      # unknown ownership: never a guess
+            owner_id, host_hash, pid = owner
+            if owner_id in seen_peers:
+                superseded.append(checkpoint)  # a newer one from this peer exists
+                continue
+            seen_peers.add(owner_id)
+            if host_hash != own_host or is_alive(pid):
+                live_frontiers.append(checkpoint)
+            else:
+                dead_frontiers.append(checkpoint)
+
+        # `ordered` is newest-first, so each bucket is too; delete oldest first.
+        plan = list(reversed(superseded))
+        plan += list(reversed(dead_frontiers[1:]))   # older dead frontiers
+        plan += dead_frontiers[:1]                   # newest dead: before any live
+        plan += list(reversed(live_frontiers))       # last resort, keeps cap hard
+        return plan
+
+    def _enforce_global_cap(self) -> None:
+        """Bound total checkpoints across all instances, newest-first.
+
+        Per-instance pruning cannot bound disk: `instance_id` embeds the pid, so
+        every restart orphans up to `max_checkpoints` files the next run can
+        never match — the reported 127-file / 264 MB condition.
+
+        Policy lives in `plan_global_cap_deletions`; this only executes it, with
+        a single counter rule: a file stops counting toward the total when it is
+        gone, whether we removed it or a peer did first.
+        """
+        if self.max_total_checkpoints <= 0:
+            return
+        try:
+            candidates = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
+        except OSError:
+            return
+
+        entries: list[tuple[float, Path]] = []
+        for checkpoint in candidates:
+            try:
+                entries.append((checkpoint.stat().st_mtime, checkpoint))
+            except OSError:
+                continue          # vanished mid-scan; not ours to report
+        remaining = len(entries)
+        if remaining <= self.max_total_checkpoints:
+            return
+
+        plan = self.plan_global_cap_deletions(
+            entries,
+            own_prefix=f"ckpt_{self.instance_id}_",
+            own_host=self.instance_id.split("_", 1)[0],
+            owner_of=self._checkpoint_owner,
+            is_alive=self._pid_is_alive,
         )
 
-        for old_cp in checkpoints[self.max_checkpoints:]:
+        for checkpoint in plan:
+            if remaining <= self.max_total_checkpoints:
+                break
+            try:
+                checkpoint.unlink()
+            except FileNotFoundError:
+                remaining -= 1    # a peer removed it; it is still gone
+                continue
+            except OSError:
+                continue          # still present (permissions, lock)
+            remaining -= 1
+
+        if remaining > self.max_total_checkpoints:
+            logger.warning(
+                "Checkpoint cap is soft: %d file(s) remain above the configured "
+                "cap %d. Remaining files are this instance's own state, files "
+                "whose owner could not be identified, or files that could not "
+                "be removed (locked or permission-denied); %d deletion(s) were "
+                "planned",
+                remaining,
+                self.max_total_checkpoints,
+                len(plan),
+            )
+
+    def _globbed_newest_first(self, pattern: str) -> list[Path]:
+        """Glob and sort by mtime, tolerating files that vanish mid-scan.
+
+        `sorted(glob(...), key=lambda p: p.stat().st_mtime)` raises
+        FileNotFoundError when a path disappears between the glob and the stat.
+        That window is now reachable cross-process: the global cap makes one
+        instance unlink another instance's checkpoints, so a peer's retention
+        pass can delete a file while this instance is enumerating. Readers must
+        degrade to "that checkpoint is gone", never raise out of an MCP tool.
+        """
+        try:
+            candidates = list(self.checkpoint_dir.glob(pattern))
+        except OSError:
+            return []
+        dated: list[tuple[tuple[int, int, int, str], Path]] = []
+        for path in candidates:
+            try:
+                stat = path.stat()
+            except OSError:
+                continue  # vanished under us
+            # Some filesystems expose coarse mtimes. Multiple checkpoints saved
+            # in one tick then compare equal and glob order decides what
+            # ``load_latest`` returns. The checkpoint ID already carries a
+            # per-instance sequence, so use it as a deterministic tie-breaker.
+            # Keep mtime first so tests/operators that deliberately age files
+            # retain the established ordering semantics.
+            match = re.search(r"_(\d+)_(\d+)\.json\.gz$", path.name)
+            checkpoint_second = int(match.group(1)) if match else 0
+            checkpoint_sequence = int(match.group(2)) if match else -1
+            dated.append((
+                (
+                    int(getattr(stat, "st_mtime_ns", stat.st_mtime * 1_000_000_000)),
+                    checkpoint_second,
+                    checkpoint_sequence,
+                    path.name,
+                ),
+                path,
+            ))
+        dated.sort(key=lambda item: item[0], reverse=True)
+        return [path for _sort_key, path in dated]
+
+    def _prune_pattern(self, pattern: str, keep: int) -> None:
+        # Per-file stat guard: a concurrent peer prune must not abort our own
+        # retention (see _enforce_global_cap).
+        try:
+            candidates = list(self.checkpoint_dir.glob(pattern))
+        except OSError:
+            return
+        dated = []
+        for p in candidates:
+            try:
+                dated.append((p.stat().st_mtime, p))
+            except OSError:
+                continue
+        checkpoints = [p for _m, p in sorted(dated, key=lambda i: i[0], reverse=True)]
+        for old_cp in checkpoints[keep:]:
             try:
                 old_cp.unlink()
             except OSError:
                 pass
+
+    @staticmethod
+    def _pid_is_alive(pid: int) -> bool:
+        """Best-effort liveness probe. Returns True when uncertain (fail-safe)."""
+        if pid <= 0:
+            return True
+        if pid > 0xFFFFFFFF:
+            # No OS pid is this large, and the two platforms disagree about it in
+            # dangerous ways: POSIX os.kill raises OverflowError, while Windows
+            # ctypes silently MASKS the value to pid mod 2**32 under the DWORD
+            # argtype and probes an unrelated process — so a corrupted filename
+            # could report "dead" and get a live peer's checkpoint deleted.
+            # Unknown is the fail-safe answer on both.
+            return True
+        try:
+            if os.name == "nt":
+                import ctypes
+                from ctypes import wintypes
+
+                # Declare the signatures: the default restype is c_int, which
+                # truncates a HANDLE >= 0x80000000 to a negative int and makes
+                # the subsequent CloseHandle fail (leaking a process handle per
+                # probe). use_last_error captures errno at the call boundary
+                # rather than via a second foreign call that can clobber it.
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.OpenProcess.restype = wintypes.HANDLE
+                kernel32.OpenProcess.argtypes = (
+                    wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+                kernel32.CloseHandle.restype = wintypes.BOOL
+                kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+                handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return True
+                # A NULL handle does NOT mean "dead". ERROR_ACCESS_DENIED (5)
+                # means the process is alive but owned by another user or
+                # elevated — treating that as dead would delete a running peer's
+                # state. Only ERROR_INVALID_PARAMETER (87) means "no such pid".
+                return ctypes.get_last_error() != 87
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except OverflowError:
+            # os.kill raises OverflowError (NOT OSError) for a pid above
+            # INT_MAX, so it escapes the tuple below. Uncaught, it propagates
+            # out of _reap_abandoned_peers -> _prune_old_checkpoints -> save(),
+            # turning a best-effort prune into a raised exception. Such a pid
+            # cannot name a live process, but "unknown" is the fail-safe answer.
+            return True
+        except (OSError, PermissionError, AttributeError, ValueError):
+            return True  # cannot tell — never delete on a guess
+        except Exception:
+            # Deliberately broad, and only here. ctypes raises ArgumentError
+            # (a direct Exception subclass, not OSError/ValueError) for an
+            # out-of-range argument, which would otherwise propagate out of
+            # _reap_abandoned_peers -> _prune_old_checkpoints -> save() and turn
+            # a best-effort prune into a raised exception. A liveness probe must
+            # never be able to fail a checkpoint; unknown means "keep it".
+            return True
+
+    # Only the auto-generated instance_id is `<12-hex-hosthash>_<pid>`. A
+    # caller-supplied id (e.g. "prod_2") would make an arbitrary field be probed
+    # as a pid, and a low number is very likely a live unrelated process — or
+    # worse, a dead one, deleting a running peer's state.
+    _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\d+)_")
+
+    @classmethod
+    def _checkpoint_owner(cls, name: str) -> tuple[str, str, int] | None:
+        """Return ``(instance_id, host_hash, pid)`` for an auto filename."""
+        match = cls._AUTO_ID_RE.match(name)
+        if not match:
+            return None
+        try:
+            pid = int(match.group(2))
+        except ValueError:
+            return None
+        host_hash = match.group(1)
+        return f"{host_hash}_{pid}", host_hash, pid
+
+    def _peer_pid(self, name: str) -> int:
+        """Owning pid from an auto-generated checkpoint name, else 0."""
+        owner = self._checkpoint_owner(name)
+        return owner[2] if owner is not None else 0
+
+    def _reap_abandoned_peers(self) -> None:
+        """Delete peer checkpoints whose owning process is provably gone.
+
+        Opt-in only (see `peer_retention_seconds`). Age alone is NOT liveness: an
+        idle-but-running instance stops writing and its checkpoints age. A peer is
+        reaped only when it is both older than the TTL *and* its pid is no longer
+        alive on this host, and anything uncertain is kept.
+        """
+        if self.peer_retention_seconds <= 0:
+            return  # disabled by default
+        cutoff = time.time() - self.peer_retention_seconds
+        own_prefix = f"ckpt_{self.instance_id}_"
+        try:
+            candidates = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
+        except OSError:
+            return
+        # A pid probe only means anything for peers on THIS host. Checkpoint dirs
+        # are shared across containers and NFS homes, where pids are reused in
+        # independent namespaces — probing there would judge a live peer dead.
+        own_host = self.instance_id.split("_")[0]
+        for cp in candidates:
+            if cp.name.startswith(own_prefix):
+                continue
+            try:
+                if cp.stat().st_mtime >= cutoff:
+                    continue  # recent — a peer may still be running
+                parts = cp.name.split("_")
+                if len(parts) < 3 or parts[1] != own_host:
+                    continue  # different (or unknown) host — never our call
+                if self._pid_is_alive(self._peer_pid(cp.name)):
+                    continue  # owner is alive; its state is not ours to delete
+                cp.unlink()
+            except OSError:
+                pass  # racing peer or permission issue; never fail a checkpoint
 
     def stats(self) -> dict:
         checkpoints = list(self.checkpoint_dir.glob("ckpt_*.json.gz"))
@@ -640,7 +968,15 @@ class CheckpointManager:
             if cp.name.startswith(f"ckpt_{self.instance_id}_")
         ]
         peer_checkpoints = len(checkpoints) - len(own_checkpoints)
-        total_size = sum(cp.stat().st_size for cp in checkpoints)
+        # A file enumerated by the glob above can vanish before we stat it —
+        # another instance may be pruning concurrently. get_stats() must not
+        # raise FileNotFoundError just because a checkpoint was reaped mid-scan.
+        total_size = 0
+        for cp in checkpoints:
+            try:
+                total_size += cp.stat().st_size
+            except OSError:
+                continue
         return {
             "instance_id": self.instance_id,
             "total_checkpoints": len(checkpoints),

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 import tempfile
 import time
@@ -131,6 +132,22 @@ SOURCE_FILE_SOFT_MAX_BYTES = _resolve_source_file_soft_max_bytes()
 # Hard ceiling for massive files (500 KB) — never even attempt to read
 ABSOLUTE_MAX_BYTES = 500 * 1024
 
+# Target size for a chunk of an oversized source file. This is a RETRIEVAL
+# parameter, not a storage one, and must not be confused with the ingest cap.
+#
+# BM25 divides term frequency by (1 - b + b * dl / avgdl). Measured on this
+# repository, avgdl is ~2,700 tokens; chunking at the 50 KB ingest cap produced
+# ~12,600-token chunks, so dl/avgdl ~= 4.6 and the normalizer ~= 3.7 — every
+# term in a large file was penalized nearly 4x purely for living in a big file.
+# The same chunks then consumed 6x a typical 2,000-token budget, so only ~7
+# files fit and anything ranked 8th or later was unreachable at any budget.
+#
+# Sizing a chunk near avgdl makes the normalizer ~= 1 (scoring becomes
+# length-neutral) and lets many more candidates fit a budget. 8 KB ~= 2,000
+# tokens, which is the same principle the sub-file provenance experiment
+# measured: finer granularity retrieves the relevant part instead of the file.
+CHUNK_TARGET_BYTES = 8 * 1024
+
 # Binary/media file extensions — skip without error
 BINARY_EXTENSIONS = frozenset({
     # Images
@@ -181,21 +198,127 @@ def _resolve_project_file(project_dir: str, rel_path: str) -> str | None:
     return candidate
 
 
+def _git_env() -> dict[str, str]:
+    """Environment that keeps `git` strictly non-interactive.
+
+    A git that stops to ask for credentials, opens a pager, or blocks on the
+    index lock never closes its pipes, which is what makes the discovery call
+    hang indefinitely.
+    """
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"     # never prompt for credentials
+    env["GIT_OPTIONAL_LOCKS"] = "0"      # don't block on / take index.lock
+    env["GIT_PAGER"] = "cat"
+    env["GIT_ASKPASS"] = ""
+    env["SSH_ASKPASS"] = ""
+    env.pop("GIT_EDITOR", None)
+    return env
+
+
+def _terminate_process_tree(
+    proc: subprocess.Popen[bytes], *, timeout: float = 1.0
+) -> None:
+    """Best-effort termination of a process and descendants, then reap it.
+
+    The command is started in an isolated POSIX session or Windows process group.
+    On POSIX, killing the process group also closes inherited descriptors held by
+    grandchildren. On Windows, ``taskkill /T`` is the supported tree primitive;
+    direct ``kill`` remains the fail-safe fallback.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=max(0.1, timeout),
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=max(0.1, timeout))
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        # The caller must still return. There are no pipe-reader threads or pipe
+        # handles to leak because stdout is a temporary file, not PIPE.
+        pass
+
+
+def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | None:
+    """Run a git command with a hard wall-clock bound and no pipe-reader leak.
+
+    ``Popen(..., stdout=PIPE).communicate(timeout=...)`` is unsafe on Windows:
+    ``communicate`` owns background reader threads, and a descendant that keeps
+    stdout inherited can leave those threads and handles alive after the direct
+    child is killed. Capture into an anonymous temporary file instead. Waiting
+    for the process is then independent of EOF, and every Python-owned resource
+    closes deterministically on every path.
+    """
+    proc: subprocess.Popen[bytes] | None = None
+    timeout = max(0.01, float(timeout))
+    try:
+        with tempfile.TemporaryFile(mode="w+b") as capture:
+            proc = subprocess.Popen(
+                args,
+                cwd=project_dir,
+                stdin=subprocess.DEVNULL,
+                stdout=capture,
+                stderr=subprocess.DEVNULL,
+                env=_git_env(),
+                start_new_session=os.name != "nt",
+                creationflags=(
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if os.name == "nt"
+                    else 0
+                ),
+            )
+            try:
+                returncode = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "git %s timed out after %ss in %s; terminating its process "
+                    "tree and falling back to a filesystem walk",
+                    args[1] if len(args) > 1 else "",
+                    timeout,
+                    project_dir,
+                )
+                _terminate_process_tree(proc)
+                return None
+
+            if returncode != 0:
+                return None
+            capture.flush()
+            capture.seek(0)
+            return capture.read().decode("utf-8", errors="replace")
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    finally:
+        if proc is not None and proc.poll() is None:
+            _terminate_process_tree(proc)
+
+
 def _git_ls_files(project_dir: str) -> list[str]:
     """Get all git-tracked files, respecting .gitignore."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return [f.strip() for f in result.stdout.splitlines() if f.strip()]
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-    return []
+    stdout = _run_git(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        project_dir,
+    )
+    if stdout is None:
+        return []
+    return [f.strip() for f in stdout.splitlines() if f.strip()]
 
 
 def _walk_fallback(project_dir: str) -> list[str]:
@@ -500,6 +623,75 @@ def _canonical_rel_path(rel_path: str) -> str:
     while normalized.startswith("./"):
         normalized = normalized[2:]
     return normalized.lstrip("/")
+
+
+
+
+def _logical_rel_path(rel_path: str) -> str:
+    """Strip a `#N` chunk suffix to recover the path that exists on disk.
+
+    An oversized source is indexed as `path`, `path#1`, `path#2`, ... None of
+    the suffixed names exist on disk, so any check that asks "is this file still
+    there?" using the raw source answers no for every chunk and deletes the
+    file's evidence on the next reconcile. Only a trailing all-digit suffix is a
+    chunk marker; a real path may legitimately contain `#`.
+    """
+    head, sep, tail = rel_path.rpartition("#")
+    return head if sep and tail.isdigit() else rel_path
+
+
+def _is_source_file(rel_path: str) -> bool:
+    """Source code worth chunking, as opposed to bulk we are happy to skip."""
+    _, ext = os.path.splitext(rel_path)
+    if ext.lower() not in SOURCE_CODE_EXTENSIONS:
+        return False
+    lowered = "/" + rel_path.replace("\\", "/").lower()
+    return not any(marker in lowered for marker in LOW_VALUE_LARGE_PATH_MARKERS)
+
+
+def _read_oversized_source(project_dir: str, rel_path: str) -> str:
+    """Read a file that exceeded the per-file cap, bounded by the hard ceiling."""
+    abs_path = _resolve_project_file(project_dir, rel_path)
+    if abs_path is None:
+        return ""
+    try:
+        with open(abs_path, "rb") as handle:
+            head = handle.read(ABSOLUTE_MAX_BYTES)
+        if bytes([0]) in head[:8192]:
+            return ""            # binary; never chunk
+        return head.decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def chunk_oversized_source(content: str, max_bytes: int) -> list[str]:
+    """Split a too-large source file into ingestible chunks at line boundaries.
+
+    Dropping the file instead makes its contents permanently unretrievable: no
+    token budget can recover something that was never indexed. Measured on this
+    repository, every gold file above the cap missed at every budget (2k/8k/32k)
+    while every file below it was retrieved — the largest modules, which is
+    where answers usually live, were simply invisible.
+
+    Chunks never split a line, so each one stays independently readable, and a
+    single line longer than the budget is emitted whole rather than truncated:
+    losing evidence is the failure this exists to prevent.
+    """
+    if max_bytes <= 0 or not content:
+        return [content] if content else []
+    chunks: list[str] = []
+    current: list[str] = []
+    current_bytes = 0
+    for line in content.splitlines(keepends=True):
+        line_bytes = len(line.encode("utf-8", "surrogatepass"))
+        if current and current_bytes + line_bytes > max_bytes:
+            chunks.append("".join(current))
+            current, current_bytes = [], 0
+        current.append(line)
+        current_bytes += line_bytes
+    if current:
+        chunks.append("".join(current))
+    return chunks
 
 
 def _read_index_file(project_dir: str, rel_path: str) -> tuple[str | None, int, str | None]:
@@ -816,6 +1008,25 @@ def _reconcile_index(
                 reads[rel_path] = (None, 0, f"read_error:{type(exc).__name__}")
 
     duplicate_ledger = _load_duplicate_ledger(engine)
+    # Ordered chunk group per logical source: `file:x.py`, `file:x.py#1`, ...
+    # Ordering is by chunk index, not dict order, so the comparison below is a
+    # content check rather than an accident of iteration order.
+    chunk_sources_by_logical: dict[str, list[dict]] = {}
+    _chunk_parts: dict[str, list[tuple[int, list[dict]]]] = {}
+    for _source, _frags in existing.items():
+        _head, _sep, _tail = _source.rpartition("#")
+        if not (_sep and _tail.isdigit()):
+            continue
+        _chunk_parts.setdefault(_head, []).append((int(_tail), _frags))
+    for _logical, _parts in _chunk_parts.items():
+        _ordered = list(existing.get(_logical, [])[:1])
+        for _, _frags in sorted(_parts, key=lambda item: item[0]):
+            _ordered.extend(_frags)
+        chunk_sources_by_logical[_logical] = _ordered
+    chunk_sources_by_logical_names: dict[str, list[str]] = {
+        _logical: [f"{_logical}#{_idx}" for _idx, _ in sorted(_parts, key=lambda i: i[0])]
+        for _logical, _parts in _chunk_parts.items()
+    }
     current_digests: dict[str, str] = {}
     changed: list[tuple[str, str, int, bool]] = []
     unavailable: dict[str, str] = {}
@@ -825,6 +1036,15 @@ def _reconcile_index(
         source = f"file:{rel_path}"
         content, _size, reason = reads[rel_path]
         prior = existing.get(source, [])
+        if content is None and reason and reason.startswith("too_large:"):
+            # Indexing chunks an oversized source rather than dropping it.
+            # Reconcile used to mark the same file "unavailable" and delete it,
+            # so the first re-index silently removed what indexing had
+            # deliberately kept. The two paths must apply one rule.
+            if _size <= ABSOLUTE_MAX_BYTES and _is_source_file(rel_path):
+                recovered = _read_oversized_source(project_dir, rel_path)
+                if recovered:
+                    content = recovered
         if content is None:
             if prior:
                 unavailable[source] = reason or "unavailable"
@@ -840,6 +1060,24 @@ def _reconcile_index(
         if len(prior) == 1 and current_digest in prior_digests:
             unchanged += 1
             continue
+        # An oversized source is stored as an ordered chunk group, so it never
+        # has exactly one fragment and the check above can never clear it. Left
+        # there it is re-ingested on every pass. Compare the group instead: the
+        # file is unchanged iff re-chunking today reproduces the stored chunks
+        # in the same order.
+        chunk_group = chunk_sources_by_logical.get(source)
+        if chunk_group:
+            stored = [
+                sha256(str(f.get("content") or "").encode("utf-8")).hexdigest()
+                for f in chunk_group
+            ]
+            fresh = [
+                sha256(part.encode("utf-8")).hexdigest()
+                for part in chunk_oversized_source(content, CHUNK_TARGET_BYTES)
+            ]
+            if stored and stored == fresh:
+                unchanged += 1
+                continue
         ledger_entry = duplicate_ledger.get(source)
         if (
             not prior
@@ -860,7 +1098,9 @@ def _reconcile_index(
 
     deleted: list[str] = []
     for source in existing:
-        rel_path = source[5:]
+        # Chunks of an oversized file (`path#1`, `path#2`, ...) live under the
+        # logical path; asking whether `path#7` is on disk always says no.
+        rel_path = _logical_rel_path(source[5:])
         if rel_path not in current_paths:
             deleted.append(source)
 
@@ -869,6 +1109,12 @@ def _reconcile_index(
         **unavailable,
         **{source: "content_changed" for source, _, _, had_prior in changed if had_prior},
     }
+    # A chunked file is one logical unit: if it changed, its siblings `#1..#N`
+    # are stale too. Removing only chunk 0 would leave the old tail of the file
+    # in the index, answering queries with content that no longer exists.
+    for _source in list(removal_reasons):
+        for _sibling in chunk_sources_by_logical_names.get(_source, ()):
+            removal_reasons.setdefault(_sibling, removal_reasons[_source])
     additions = [item for item in changed if not item[3]]
     replacements = [item for item in changed if item[3]]
 
@@ -932,8 +1178,31 @@ def _reconcile_index(
             and existing_source_aliases.get(source, {source}).issubset(removed_exact)
         )
 
+    # Mirror the indexing path: an oversized source is re-ingested as its chunk
+    # group, never as one giant fragment (which the store rejects, which is how
+    # chunk 0 of every large file went missing on the first re-index).
+    _expanded: list[tuple[str, str, int, bool]] = []
+    for _source, _content, _tokens, _had_prior in safe_items:
+        _rel = _logical_rel_path(_source[5:])
+        _cap = _max_bytes_for_path(_rel)
+        _parts: list[str] = []
+        if _is_source_file(_rel) and len(_content.encode("utf-8")) > _cap:
+            _parts = chunk_oversized_source(_content, min(CHUNK_TARGET_BYTES, _cap))
+        if len(_parts) > 1:
+            for _idx, _text in enumerate(_parts):
+                _expanded.append((
+                    _source if _idx == 0 else f"{_source}#{_idx}",
+                    _text,
+                    _estimate_tokens(_text),
+                    _had_prior,
+                ))
+        else:
+            _expanded.append((_source, _content, _tokens, _had_prior))
+    safe_items = _expanded
+
     for source, content, tokens, had_prior in safe_items:
-        weighted_tokens = int(tokens * _source_type_token_weight(source[5:]))
+        # `#N` has no file extension; weighting the chunk needs the real path.
+        weighted_tokens = int(tokens * _source_type_token_weight(_logical_rel_path(source[5:])))
         try:
             result = engine.ingest_fragment(
                 content=content,
@@ -1146,16 +1415,37 @@ def _auto_index(
     # The skip path returns the SAME schema as the fresh-index path: callers
     # read files_indexed / total_tokens / duration_s without caring whether
     # work was performed this call. `status` tells them.
-    if not force and engine._use_rust:
-        existing = engine._rust.fragment_count()
+    if not force:
+        existing = (
+            int(engine._rust.fragment_count())
+            if engine._use_rust
+            else len(engine._fragments)
+        )
         if existing > 0:
-            # A persisted index is a cache, not authority. Reconcile it against
-            # exact workspace bytes before allowing retrieval to trust it.
+            # A loaded index is a cache, not authority. Reconcile it against
+            # exact workspace bytes before allowing retrieval to trust it. This
+            # contract applies to the supported Python fallback too; otherwise
+            # repeated indexing can strand stale chunks from edited large files.
             reconciliation = reconcile_index(engine, project_dir)
             try:
-                frags = list(engine._rust.export_fragments())
-                existing_files = len({f.get("source", "") for f in frags if f.get("source")})
-                existing_tokens = sum(int(f.get("token_count", 0)) for f in frags)
+                if engine._use_rust:
+                    frags = [dict(fragment) for fragment in engine._rust.export_fragments()]
+                else:
+                    frags = [
+                        {
+                            "source": fragment.source,
+                            "token_count": fragment.token_count,
+                        }
+                        for fragment in engine._fragments.values()
+                    ]
+                existing_files = len({
+                    fragment.get("source", "")
+                    for fragment in frags
+                    if fragment.get("source")
+                })
+                existing_tokens = sum(
+                    int(fragment.get("token_count", 0)) for fragment in frags
+                )
             except Exception:
                 # Fragment export failed; degrade honestly — caller sees
                 # status=skipped and existing_fragments still gives them
@@ -1164,7 +1454,7 @@ def _auto_index(
                 existing_tokens = 0
             logger.info(
                 f"Auto-index skipped: {existing} fragments ({existing_files} files) "
-                f"already loaded from persistent index"
+                f"already loaded from index"
             )
             return {
                 "status": "skipped",
@@ -1180,7 +1470,11 @@ def _auto_index(
                 "project_dir": project_dir,
                 # Skip-specific diagnostics (kept for callers that care):
                 "reason": "persistent_index_loaded",
-                "existing_fragments": int(engine._rust.fragment_count()),
+                "existing_fragments": (
+                    int(engine._rust.fragment_count())
+                    if engine._use_rust
+                    else len(engine._fragments)
+                ),
                 "reconciliation": reconciliation,
             }
 
@@ -1230,6 +1524,7 @@ def _auto_index(
     # WHICH file got dropped, not just "1 too large". Cap at 5 to keep
     # the log line readable on chatty repos.
     skipped_size_paths: list[tuple[str, int, int]] = []
+    chunked_large = 0
 
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
@@ -1250,9 +1545,32 @@ def _auto_index(
             continue
         content, size, reason = entry
         if content is None and reason and reason.startswith("too_large:"):
-            skipped_size += 1
             cap = int(reason.split(":", 1)[1])
-            skipped_size_paths.append((rel_path, size, cap))
+            # Chunk instead of drop. Skipping made the file permanently
+            # unretrievable — no token budget can recover something that was
+            # never indexed — and measurement showed every gold file above the
+            # cap missed at every budget while every file below it was found.
+            # Source stays chunked; genuinely low-value bulk (lockfiles,
+            # generated blobs, anything past the hard ceiling) is still skipped.
+            chunks: list[str] = []
+            if size <= ABSOLUTE_MAX_BYTES and _is_source_file(rel_path):
+                raw = _read_oversized_source(project_dir, rel_path)
+                if raw:
+                    chunks = chunk_oversized_source(
+                        raw, min(CHUNK_TARGET_BYTES, cap)
+                    )
+            if not chunks:
+                skipped_size += 1
+                skipped_size_paths.append((rel_path, size, cap))
+                continue
+            weight = _source_type_token_weight(rel_path)
+            for part, text in enumerate(chunks):
+                batch.append((
+                    text,
+                    f"file:{rel_path}" if part == 0 else f"file:{rel_path}#{part}",
+                    int(_estimate_tokens(text) * weight),
+                ))
+            chunked_large += 1
             continue
         if content is None:
             if reason not in {None, "empty"}:

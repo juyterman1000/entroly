@@ -33,6 +33,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import sys
 import threading
 from functools import wraps
@@ -487,6 +488,119 @@ def _build_rust_engine(config: EntrolyConfig):
     except TypeError:
         # Older entroly-core without the extended kwargs — core six still work.
         return RustEngine(**base)
+
+
+
+_EVIDENCE_WORD = re.compile(r"[A-Za-z0-9_]{3,}")
+
+
+def _query_terms(query: str) -> set[str]:
+    """Content-bearing query terms, lowercased. Stopwords carry no evidence."""
+    stop = {
+        "the", "and", "for", "are", "was", "were", "does", "did", "how", "why",
+        "what", "where", "when", "which", "who", "into", "from", "with", "this",
+        "that", "these", "those", "you", "your", "our", "not", "but", "can",
+        "will", "would", "should", "could", "has", "have", "had", "been", "its",
+    }
+    return {t.lower() for t in _EVIDENCE_WORD.findall(query or "")} - stop
+
+
+def _score_distribution_is_degenerate(selected: list) -> bool:
+    """True when the ranker produced no discrimination between candidates.
+
+    A ranker that found real evidence separates candidates; one that found none
+    cannot. Measured on this repository (955 fragments):
+
+        real query  -> 0.8534, 0.7220, 0.7095, 0.6971   (spread 0.156)
+        no-match    -> 0.0800, 0.0800, 0.0800, 0.0800   (spread 0.000)
+
+    So the discriminator is variance, not magnitude — which is why thresholding
+    the score itself never worked: 0.08 and 0.62 are both "positive", but only
+    one of them is a ranking. A flat distribution means every candidate is
+    equally (un)related, i.e. the ordering carries no information.
+
+    Requires >= 2 non-pinned candidates; a single result cannot be flat or
+    spread, so it is judged by the lexical check instead.
+    """
+    scores = []
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        for key in ("relevance", "relevance_score", "score"):
+            if key in frag:
+                try:
+                    scores.append(float(frag[key] or 0.0))
+                except (TypeError, ValueError):
+                    pass
+                break
+    if len(scores) < 2:
+        return False
+    spread = max(scores) - min(scores)
+    # Exact-equality would be too brittle for float arithmetic; this tolerance
+    # is far below the separation any real query produces.
+    return spread < 1e-9
+
+
+def _selection_matches_query(query: str, selected: list) -> bool:
+    """Does the returned context actually contain any query term?
+
+    Relevance scores cannot answer this: the native ranker floors and normalizes,
+    so a query matching nothing still comes back at ~0.6. Verified on this
+    repository — "zzqqxx blorptastic wubbleflux" scored 0.5969. Checking the
+    delivered text is the one signal the scoring pipeline cannot fabricate, and
+    it is what "evidence-backed" has to mean.
+    """
+    terms = _query_terms(query)
+    if not terms:
+        return True          # no lexical intent to satisfy; not a no-match
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        haystack = (
+            str(frag.get("content") or "")
+            + " "
+            + str(frag.get("source") or "")
+        ).lower()
+        if any(t in haystack for t in terms):
+            return True
+    return False
+
+
+def _evidence_backed(selected: list) -> bool:
+    """True when at least one non-pinned selection carries positive relevance.
+
+    A query whose terms match nothing still produces a ranked list: score
+    normalization floors and uniform fallbacks give every fragment a middling
+    score, so the engine returns confident-looking but unrelated files. Measured
+    on this repo: the nonsense query "zzqqxx blorptastic wubbleflux" selected 8
+    files at ~0.6 relevance, sharing its top hits with a real query.
+
+    Pinned fragments are excluded from this test: they are included by operator
+    policy, not by evidence, so they must never make a no-match look matched.
+    """
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        for key in ("relevance", "relevance_score", "score"):
+            if key in frag:
+                try:
+                    if float(frag[key] or 0.0) > 0.0:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+                break
+    return False
+
+
+def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
+    """Savings only count when the selection is actually evidence-backed.
+
+    `corpus - selected` credits every fragment that was never going to be sent,
+    so it stayed ~constant regardless of query and was largest exactly when the
+    engine found nothing. Withholding context because nothing matched is not a
+    saving.
+    """
+    return max(0, int(tokens_saved or 0)) if _evidence_backed(selected) else 0
 
 
 class EntrolyEngine:
@@ -1037,7 +1151,9 @@ class EntrolyEngine:
                     total_available_tokens = sum(
                         _fragment_tokens(f) for f in candidates if isinstance(f, dict)
                     )
-                    tokens_saved = max(0, total_available_tokens - tokens_used)
+                    tokens_saved = _honest_tokens_saved(
+                        selected, total_available_tokens - tokens_used
+                    )
                     self._total_tokens_saved += tokens_saved
                     selected_count = len(selected)
                     total_relevance = round(sum(
@@ -1859,6 +1975,43 @@ class EntrolyEngine:
             }
         return result
 
+    @staticmethod
+    def _honest_savings_block(savings: Any) -> dict[str, Any]:
+        """Strip the fabricated dollar figure from the native `savings` block.
+
+        The Rust core emits `estimated_cost_saved_usd` derived from
+        `total_tokens_saved`, which is accumulated per call as
+        (every candidate fragment) - (selected fragments). That counterfactual
+        assumes the whole index would otherwise have been sent, so it grows
+        without bound and routinely exceeds the corpus itself — an observed
+        session reported 6.07M tokens "saved" against 2.58M tokens tracked, and
+        a single 3,000-token request claimed 2.5M tokens saved.
+
+        `optimize_context` already documents that MCP results "never fund
+        evolution or support a dollar-savings claim"; the dashboard already
+        strips this field for the same reason. This makes the MCP stats surface
+        agree with both instead of publishing a number the code itself
+        disclaims. Token telemetry is kept, renamed to say what it measures.
+        """
+        if not isinstance(savings, dict):
+            return {} if savings is None else savings
+        out = dict(savings)
+        out.pop("estimated_cost_saved_usd", None)
+        if "total_tokens_saved" in out:
+            # Coerce: the raw value passed through verbatim, so a None or
+            # non-numeric counter reached consumers as-is and any arithmetic on
+            # it raised TypeError. A counter is always an int here.
+            raw = out.pop("total_tokens_saved")
+            try:
+                out["dedup_tokens_avoided"] = int(raw or 0)
+            except (TypeError, ValueError):
+                out["dedup_tokens_avoided"] = 0
+        out["baseline"] = (
+            "dedup/selection telemetry only; counts candidates not selected. "
+            "Not a provider bill delta and not a dollar-savings claim."
+        )
+        return out
+
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive session statistics."""
         if self._use_rust:
@@ -1868,6 +2021,9 @@ class EntrolyEngine:
             rust_stats["prefetch"] = self._prefetch.stats()
             rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
             rust_stats["build"] = self._build_stamp()
+            rust_stats["savings"] = self._honest_savings_block(
+                rust_stats.get("savings")
+            )
             return rust_stats
         stats = self._stats_python()
         stats["build"] = self._build_stamp()
@@ -2182,7 +2338,16 @@ class EntrolyEngine:
         )
 
         total_available_tokens = sum(f.token_count for f in fragments)
-        tokens_saved = total_available_tokens - stats["total_tokens"]
+        tokens_saved = _honest_tokens_saved(
+            [
+                {"relevance": _py_compute_relevance(
+                    f, self.config.weight_recency, self.config.weight_frequency,
+                    self.config.weight_semantic_sim, self.config.weight_entropy),
+                 "is_pinned": f.is_pinned}
+                for f in selected
+            ],
+            total_available_tokens - stats["total_tokens"],
+        )
         self._total_tokens_saved += max(0, tokens_saved)
 
         for frag in selected:
@@ -2607,19 +2772,45 @@ def create_mcp_server(
         """Return bounded aggregate counters without source content or paths."""
         raw = engine.get_stats()
         session = raw.get("session", {}) if isinstance(raw, dict) else {}
-        runtime = raw.get("engine", raw) if isinstance(raw, dict) else {}
+        # Two shapes reach here: the pure-Python path emits an `engine` block,
+        # the native path emits `savings` with `total_`-prefixed names. Reading
+        # only `engine` made every counter report 0 on native installs, which is
+        # every real deployment.
+        runtime = raw.get("engine") if isinstance(raw, dict) else None
+        native = raw.get("savings") if isinstance(raw, dict) else None
+        runtime = runtime if isinstance(runtime, dict) else {}
+        native = native if isinstance(native, dict) else {}
+
+        def _counter(*names: str) -> int:
+            for source in (runtime, native):
+                for name in names:
+                    if name in source:
+                        try:
+                            return int(source[name] or 0)
+                        except (TypeError, ValueError):
+                            return 0
+            return 0
+
         payload = {
             "session": {
                 "current_turn": int(session.get("current_turn", 0) or 0),
                 "total_fragments": int(session.get("total_fragments", 0) or 0),
                 "total_tokens_tracked": int(session.get("total_tokens_tracked", 0) or 0),
-                "pinned_fragments": int(session.get("pinned_fragments", 0) or 0),
+                # Native emits `pinned`; only the Python path spells it
+                # `pinned_fragments`. Reading one name hard-zeroed this on every
+                # native install — the same defect as the engine counters above.
+                "pinned_fragments": int(
+                    session.get("pinned_fragments", session.get("pinned", 0)) or 0
+                ),
             },
             "engine": {
-                "fragments_ingested": int(runtime.get("fragments_ingested", 0) or 0),
-                "duplicates_caught": int(runtime.get("duplicates_caught", 0) or 0),
-                "optimize_calls": int(runtime.get("optimize_calls", 0) or 0),
-                "dedup_tokens_avoided": int(runtime.get("dedup_tokens_avoided", 0) or 0),
+                "fragments_ingested": _counter(
+                    "fragments_ingested", "total_fragments_ingested"),
+                "duplicates_caught": _counter(
+                    "duplicates_caught", "total_duplicates_caught"),
+                "optimize_calls": _counter("optimize_calls", "total_optimizations"),
+                "dedup_tokens_avoided": _counter(
+                    "dedup_tokens_avoided", "total_tokens_saved"),
             },
         }
         encoded = json.dumps(payload, indent=2, sort_keys=True)
@@ -2977,6 +3168,53 @@ def create_mcp_server(
                 "reason": "requested token budget is too small for a safe capsule",
             }
 
+        # ── No-match contract ────────────────────────────────────────
+        # A query matching nothing still yields a ranked list, so the tool used
+        # to hand back confident-looking unrelated files and bill the omitted
+        # corpus as "savings". Say so explicitly instead: keep pinned/required
+        # evidence (operator policy, not relevance), drop the rest, and credit
+        # zero savings. Withholding context because nothing matched is not a
+        # saving, and unrelated context is worse than none.
+        if query:
+            _sel = result.get("selected_fragments") or result.get("selected") or []
+            _degenerate = _score_distribution_is_degenerate(_sel)
+            if _sel and (
+                _degenerate
+                or not (
+                    _evidence_backed(_sel)
+                    and _selection_matches_query(query, _sel)
+                )
+            ):
+                _pinned = [
+                    f for f in _sel if isinstance(f, dict) and f.get("is_pinned")
+                ]
+                result["selected_fragments"] = _pinned
+                result["selected"] = _pinned
+                result["selected_count"] = len(_pinned)
+                result["tokens_used"] = sum(
+                    int(f.get("token_count", 0) or 0) for f in _pinned
+                )
+                result["total_tokens"] = result["tokens_used"]
+                result["tokens_saved"] = 0
+                result["tokens_saved_this_call"] = 0
+                result["status"] = "no_match"
+                result["no_match"] = {
+                    "reason": (
+                        "the ranker produced no discrimination for this query "
+                        "(flat score distribution) or the returned text shared "
+                        "no term with it; returning pinned evidence only rather "
+                        "than unrelated files"
+                    ),
+                    "degenerate_ranking": _degenerate,
+                    "query": query,
+                    "candidates_considered": result.get("total_fragments", 0),
+                    "pinned_retained": len(_pinned),
+                    "remediation": (
+                        "rephrase with identifiers from the codebase, or run "
+                        "`entroly health` to confirm the repository is indexed"
+                    ),
+                }
+
         # CCR: compressed IOS variants must remain exactly recoverable.
         # Attach content-addressed handles before serializing the MCP result.
         try:
@@ -3186,13 +3424,22 @@ def create_mcp_server(
         # Surface lifetime + session cost savings so the agent/user can
         # see the value Entroly delivers. Pure read from in-memory state.
         try:
-            from .value_tracker import estimate_cost
             _this_tokens = result.get("tokens_saved", 0)
-            _this_model = result.get("model", "")
             result["savings"] = {
                 "this_call": {
                     "tokens_saved": _this_tokens,
-                    "cost_saved_usd": round(estimate_cost(_this_tokens, _this_model), 6),
+                    # No per-call dollar figure. `tokens_saved` here is
+                    # (every candidate fragment) - (selected fragments), i.e. it
+                    # assumes the whole index would otherwise have been sent.
+                    # Pricing that produced a real-looking number from a
+                    # counterfactual nobody would run — the same figure
+                    # _honest_savings_block strips from get_stats, and the same
+                    # claim already removed from the PR comment. This path
+                    # cannot prove the result reached a paid provider.
+                    "baseline": (
+                        "candidates not selected; local telemetry only, "
+                        "not a provider bill delta"
+                    ),
                 },
                 "session": _value_tracker.get_session(),
                 "lifetime": {
