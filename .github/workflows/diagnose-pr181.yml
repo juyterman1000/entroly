@@ -45,25 +45,46 @@ jobs:
           git diff --check
 
       - name: Re-run frozen v5 recovery evidence
+        id: evidence
+        shell: bash
         run: |
-          python -m venv .headroom-venv
-          .headroom-venv/bin/python -m pip install --upgrade pip
-          .headroom-venv/bin/pip install "headroom-ai==0.31.0"
-          python -m benchmarks.recovery_resilience run \
-            --protocol benchmarks/recovery_resilience_protocol_v5.json \
-            --phase holdout \
-            --headroom-python .headroom-venv/bin/python \
-            --timeout 60 \
-            --output benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
-          python -m benchmarks.recovery_resilience verify \
+          set +e
+          {
+            python -m venv .headroom-venv
+            .headroom-venv/bin/python -m pip install --upgrade pip
+            .headroom-venv/bin/pip install "headroom-ai==0.31.0"
+            python -m benchmarks.recovery_resilience run \
+              --protocol benchmarks/recovery_resilience_protocol_v5.json \
+              --phase holdout \
+              --headroom-python .headroom-venv/bin/python \
+              --timeout 60 \
+              --output benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
+            python -m benchmarks.recovery_resilience verify \
+              benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
+            pytest tests/test_recovery_resilience.py -q --tb=short
+            python scripts/verify_public_trust.py
+          } > >(tee v5-evidence.log) 2>&1
+          status=$?
+          printf '%s\n' "$status" > v5-evidence-exit-code.txt
+          exit "$status"
+
+      - name: Upload v5 evidence diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr181-v5-evidence-diagnostic
+          path: |
+            v5-evidence.log
+            v5-evidence-exit-code.txt
+            benchmarks/recovery_resilience_protocol_v5.json
             benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
-          pytest tests/test_recovery_resilience.py -q --tb=short
-          python scripts/verify_public_trust.py
+          if-no-files-found: warn
 
       - name: Create clean latest-main stabilization branch
         shell: bash
         run: |
           rm -rf .headroom-venv
+          rm -f v5-evidence.log v5-evidence-exit-code.txt
           rm -f .github/workflows/diagnose-pr181.yml
           rm -f .github/workflows/repair-pr181.yml
           rm -f scripts/repair_pr181_branch.py
