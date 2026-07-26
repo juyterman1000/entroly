@@ -1023,6 +1023,10 @@ def _reconcile_index(
         for _, _frags in sorted(_parts, key=lambda item: item[0]):
             _ordered.extend(_frags)
         chunk_sources_by_logical[_logical] = _ordered
+    chunk_sources_by_logical_names: dict[str, list[str]] = {
+        _logical: [f"{_logical}#{_idx}" for _idx, _ in sorted(_parts, key=lambda i: i[0])]
+        for _logical, _parts in _chunk_parts.items()
+    }
     current_digests: dict[str, str] = {}
     changed: list[tuple[str, str, int, bool]] = []
     unavailable: dict[str, str] = {}
@@ -1032,6 +1036,15 @@ def _reconcile_index(
         source = f"file:{rel_path}"
         content, _size, reason = reads[rel_path]
         prior = existing.get(source, [])
+        if content is None and reason and reason.startswith("too_large:"):
+            # Indexing chunks an oversized source rather than dropping it.
+            # Reconcile used to mark the same file "unavailable" and delete it,
+            # so the first re-index silently removed what indexing had
+            # deliberately kept. The two paths must apply one rule.
+            if _size <= ABSOLUTE_MAX_BYTES and _is_source_file(rel_path):
+                recovered = _read_oversized_source(project_dir, rel_path)
+                if recovered:
+                    content = recovered
         if content is None:
             if prior:
                 unavailable[source] = reason or "unavailable"
@@ -1096,6 +1109,12 @@ def _reconcile_index(
         **unavailable,
         **{source: "content_changed" for source, _, _, had_prior in changed if had_prior},
     }
+    # A chunked file is one logical unit: if it changed, its siblings `#1..#N`
+    # are stale too. Removing only chunk 0 would leave the old tail of the file
+    # in the index, answering queries with content that no longer exists.
+    for _source in list(removal_reasons):
+        for _sibling in chunk_sources_by_logical_names.get(_source, ()):
+            removal_reasons.setdefault(_sibling, removal_reasons[_source])
     additions = [item for item in changed if not item[3]]
     replacements = [item for item in changed if item[3]]
 
@@ -1159,8 +1178,31 @@ def _reconcile_index(
             and existing_source_aliases.get(source, {source}).issubset(removed_exact)
         )
 
+    # Mirror the indexing path: an oversized source is re-ingested as its chunk
+    # group, never as one giant fragment (which the store rejects, which is how
+    # chunk 0 of every large file went missing on the first re-index).
+    _expanded: list[tuple[str, str, int, bool]] = []
+    for _source, _content, _tokens, _had_prior in safe_items:
+        _rel = _logical_rel_path(_source[5:])
+        _cap = _max_bytes_for_path(_rel)
+        _parts: list[str] = []
+        if _is_source_file(_rel) and len(_content.encode("utf-8")) > _cap:
+            _parts = chunk_oversized_source(_content, min(CHUNK_TARGET_BYTES, _cap))
+        if len(_parts) > 1:
+            for _idx, _text in enumerate(_parts):
+                _expanded.append((
+                    _source if _idx == 0 else f"{_source}#{_idx}",
+                    _text,
+                    _estimate_tokens(_text),
+                    _had_prior,
+                ))
+        else:
+            _expanded.append((_source, _content, _tokens, _had_prior))
+    safe_items = _expanded
+
     for source, content, tokens, had_prior in safe_items:
-        weighted_tokens = int(tokens * _source_type_token_weight(source[5:]))
+        # `#N` has no file extension; weighting the chunk needs the real path.
+        weighted_tokens = int(tokens * _source_type_token_weight(_logical_rel_path(source[5:])))
         try:
             result = engine.ingest_fragment(
                 content=content,
