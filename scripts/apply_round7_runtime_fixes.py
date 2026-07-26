@@ -143,11 +143,15 @@ def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | 
 def patch_checkpoint() -> None:
     path = ROOT / "entroly" / "checkpoint.py"
     text = path.read_text(encoding="utf-8")
-    if (
-        "Bound historical checkpoints without destroying active recovery state"
-        in text
-        and "def _checkpoint_owner(" in text
-    ):
+    # Idempotence must key on CODE, not prose. This previously keyed on a
+    # docstring sentence, so simply rewording that docstring would make this
+    # script regex-replace the whole _enforce_global_cap body with the older
+    # round-7 version — silently reverting the hard-cap and FileNotFoundError
+    # fixes — and the workflow would then commit and push that revert.
+    if "def _checkpoint_owner(" in text:
+        return
+    if "Checkpoint cap is soft" in text or "_enforce_global_cap" in text:
+        # Newer logic is already present in some form; never overwrite it.
         return
     replacement = '''    def _enforce_global_cap(self) -> None:
         """Bound historical checkpoints without destroying active recovery state.

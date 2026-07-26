@@ -666,9 +666,13 @@ class CheckpointManager:
         * the newest checkpoint across known-dead local peers, preserving one
           restart/crash frontier while allowing older abandoned runs to collapse.
 
-        If protected frontiers alone exceed the ceiling, the cap becomes soft.
-        Deleting a live peer's last checkpoint would violate the stronger resume
-        invariant and is never an acceptable way to satisfy a storage target.
+        If protected frontiers alone exceed the ceiling, a second pass trims
+        them oldest-first so the cap stays HARD: an advisory cap is what let the
+        reported 127-file / 264 MB condition return, because `_pid_is_alive`
+        fail-safes to "alive" for recycled pids and access-denied probes and so
+        protects every historical frontier on a busy host. This instance's own
+        files are never sacrificed, and files whose owner cannot be identified
+        are still never deleted — the cap is soft only for those.
         """
         if self.max_total_checkpoints <= 0:
             return
@@ -727,6 +731,13 @@ class CheckpointManager:
                 continue
             try:
                 checkpoint.unlink()
+            except FileNotFoundError:
+                # Already gone (a peer pruned it). It still no longer counts
+                # toward the total. Not decrementing here inflates `remaining`,
+                # which spills into the second pass and deletes a live peer's
+                # only recovery frontier to satisfy a cap that was already met.
+                remaining -= 1
+                continue
             except OSError:
                 continue
             remaining -= 1
@@ -772,7 +783,8 @@ class CheckpointManager:
         if remaining > self.max_total_checkpoints:
             logger.warning(
                 "Checkpoint cap is soft: %d file(s) remain above the configured "
-                "cap %d because they belong to this instance",
+                "cap %d; they could not be attributed to an owner, so deleting "
+                "them would be a guess",
                 remaining,
                 self.max_total_checkpoints,
             )

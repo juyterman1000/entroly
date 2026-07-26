@@ -349,9 +349,12 @@ def test_cap_is_hard_when_peer_frontiers_are_merely_unprovable(tmp_path: Path):
     # peers must not defeat the bound.
     import os as _os
 
+    # DISTINCT pids: one protected frontier per peer. With a single shared pid
+    # only ONE file is protected and the first pass alone satisfies the cap, so
+    # the second pass never runs and the test passes even without the fix.
     live = _os.getpid()
     for i in range(100):
-        _write(tmp_path, f"ckpt_{_HOST}_{live}_170000_{i:03d}.json.gz", age_s=200 - i)
+        _write(tmp_path, f"ckpt_{_HOST}_{live + i}_170000_000.json.gz", age_s=200 - i)
     CheckpointManager(
         tmp_path, instance_id=f"{_HOST}_1", max_checkpoints=10, max_total_checkpoints=40
     )._prune_old_checkpoints()
@@ -360,3 +363,5 @@ def test_cap_is_hard_when_peer_frontiers_are_merely_unprovable(tmp_path: Path):
     assert remaining <= 40, (
         f"cap went soft on live-looking peers: {remaining} files remain (cap 40)"
     )
+
+
