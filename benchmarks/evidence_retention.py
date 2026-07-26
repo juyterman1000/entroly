@@ -58,6 +58,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--budget", type=int, default=2000)
     ap.add_argument("--json", dest="json_out", default="")
+    ap.add_argument("--reindex", action="store_true",
+                    help="re-ingest before measuring instead of trusting the "
+                         "restored checkpoint (which may predate a fix)")
     args = ap.parse_args()
 
     os.environ.setdefault("ENTROLY_SOURCE", os.getcwd())
@@ -66,9 +69,38 @@ def main() -> int:
     engine = EntrolyEngine(config=EntrolyConfig())
     engine._ensure_index_loaded()
     fragments = list(engine._rust.export_fragments())
+    if not fragments or args.reindex:
+        # `_ensure_index_loaded` restores a checkpoint; it never ingests. Left
+        # alone it will happily score whatever stale corpus is on disk.
+        from entroly.auto_index import auto_index
+        auto_index(engine)
+        fragments = list(engine._rust.export_fragments())
     corpus_tokens = sum(int(f.get("token_count", 0) or 0) for f in fragments)
     if not fragments:
-        raise SystemExit("index is empty; run an ingest first")
+        raise SystemExit("index is empty and ingest produced nothing")
+
+    # A retrieval benchmark whose gold answers are absent from the corpus is not
+    # measuring retrieval — it is measuring ingest, and reporting the result as a
+    # recall score. That happened here: cli.py (266 KB), proxy.py (255 KB) and
+    # auto_index.py (65 KB) all exceeded the oversized-file cap and were dropped
+    # at index time, so recall sat at 0.62/0.75 no matter what the ranker did.
+    # Four structurally different ranking changes produced bit-identical scores
+    # before anyone checked the corpus. Fail loudly instead.
+    present = {
+        str(f.get("source") or "").removeprefix("file:") for f in fragments
+    }
+    def _indexed(path: str) -> bool:
+        return any(p == path or p.startswith(path + "#") for p in present)
+
+    missing = sorted({
+        g for _, gold in GOLD for g in gold if not _indexed(g)
+    } - {g for _, gold in GOLD for g in gold if any(_indexed(a) for a in gold)})
+    if missing:
+        raise SystemExit(
+            "gold files absent from the index, so retrieval cannot be scored: "
+            + ", ".join(missing)
+            + "\nthis is an ingest defect, not a ranking result"
+        )
 
     rows = []
     for query, gold in GOLD:

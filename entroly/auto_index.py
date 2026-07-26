@@ -627,6 +627,19 @@ def _canonical_rel_path(rel_path: str) -> str:
 
 
 
+def _logical_rel_path(rel_path: str) -> str:
+    """Strip a `#N` chunk suffix to recover the path that exists on disk.
+
+    An oversized source is indexed as `path`, `path#1`, `path#2`, ... None of
+    the suffixed names exist on disk, so any check that asks "is this file still
+    there?" using the raw source answers no for every chunk and deletes the
+    file's evidence on the next reconcile. Only a trailing all-digit suffix is a
+    chunk marker; a real path may legitimately contain `#`.
+    """
+    head, sep, tail = rel_path.rpartition("#")
+    return head if sep and tail.isdigit() else rel_path
+
+
 def _is_source_file(rel_path: str) -> bool:
     """Source code worth chunking, as opposed to bulk we are happy to skip."""
     _, ext = os.path.splitext(rel_path)
@@ -995,6 +1008,21 @@ def _reconcile_index(
                 reads[rel_path] = (None, 0, f"read_error:{type(exc).__name__}")
 
     duplicate_ledger = _load_duplicate_ledger(engine)
+    # Ordered chunk group per logical source: `file:x.py`, `file:x.py#1`, ...
+    # Ordering is by chunk index, not dict order, so the comparison below is a
+    # content check rather than an accident of iteration order.
+    chunk_sources_by_logical: dict[str, list[dict]] = {}
+    _chunk_parts: dict[str, list[tuple[int, list[dict]]]] = {}
+    for _source, _frags in existing.items():
+        _head, _sep, _tail = _source.rpartition("#")
+        if not (_sep and _tail.isdigit()):
+            continue
+        _chunk_parts.setdefault(_head, []).append((int(_tail), _frags))
+    for _logical, _parts in _chunk_parts.items():
+        _ordered = list(existing.get(_logical, [])[:1])
+        for _, _frags in sorted(_parts, key=lambda item: item[0]):
+            _ordered.extend(_frags)
+        chunk_sources_by_logical[_logical] = _ordered
     current_digests: dict[str, str] = {}
     changed: list[tuple[str, str, int, bool]] = []
     unavailable: dict[str, str] = {}
@@ -1019,6 +1047,24 @@ def _reconcile_index(
         if len(prior) == 1 and current_digest in prior_digests:
             unchanged += 1
             continue
+        # An oversized source is stored as an ordered chunk group, so it never
+        # has exactly one fragment and the check above can never clear it. Left
+        # there it is re-ingested on every pass. Compare the group instead: the
+        # file is unchanged iff re-chunking today reproduces the stored chunks
+        # in the same order.
+        chunk_group = chunk_sources_by_logical.get(source)
+        if chunk_group:
+            stored = [
+                sha256(str(f.get("content") or "").encode("utf-8")).hexdigest()
+                for f in chunk_group
+            ]
+            fresh = [
+                sha256(part.encode("utf-8")).hexdigest()
+                for part in chunk_oversized_source(content, CHUNK_TARGET_BYTES)
+            ]
+            if stored and stored == fresh:
+                unchanged += 1
+                continue
         ledger_entry = duplicate_ledger.get(source)
         if (
             not prior
@@ -1039,7 +1085,9 @@ def _reconcile_index(
 
     deleted: list[str] = []
     for source in existing:
-        rel_path = source[5:]
+        # Chunks of an oversized file (`path#1`, `path#2`, ...) live under the
+        # logical path; asking whether `path#7` is on disk always says no.
+        rel_path = _logical_rel_path(source[5:])
         if rel_path not in current_paths:
             deleted.append(source)
 
