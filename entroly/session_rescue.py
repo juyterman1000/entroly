@@ -340,9 +340,14 @@ class SessionRescueController:
             if frozen is not None:
                 messages[index] = copy.deepcopy(frozen)
                 continue
+            # Frozen historical bytes must not depend on the newest user
+            # query. Otherwise a daemon restart or state eviction can
+            # recompress the same old tool output differently and churn the
+            # provider-cache prefix. Session rescue is structural, so use a
+            # stable query-independent compression contract.
             compacted, message_receipts = self._compact_message(
                 message,
-                query=query,
+                query="",
             )
             if compacted == message:
                 continue
@@ -483,12 +488,12 @@ class SessionRescueController:
                 ).hexdigest(),
             },
         )
-        span_ids = ",".join(span.span_id for span in stored.spans)
-        marker = (
-            "[entroly-recovery: "
-            f"receipt={stored.receipt_id}; spans={span_ids or 'none'}; "
-            f"original_sha256={stored.original_hash}]"
-        )
+        if len(stored.spans) != 1:
+            raise RuntimeError(
+                "session rescue requires one exact full-original recovery span"
+            )
+        span_id = stored.spans[0].span_id
+        marker = f"[entroly-recovery:{stored.receipt_id}:{span_id}]"
         rendered = f"{result.with_receipt_header()}\n{marker}"
         if estimate_tokens(rendered) >= original_tokens:
             return text, None

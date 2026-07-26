@@ -136,6 +136,35 @@ def test_retrieval_store_saves_and_fetches_omitted_spans(tmp_path) -> None:
     assert restored_span.content == span.content
 
 
+@pytest.mark.parametrize(
+    "original",
+    [
+        "line one\nline two\n",
+        "line one\r\nline two\r\n",
+    ],
+)
+def test_full_span_recovery_preserves_exact_line_endings(
+    tmp_path, original: str
+) -> None:
+    path = tmp_path / "exact-line-endings.json"
+    stored = CompressionRetrievalStore(path).put(
+        original_text=original,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": 10,
+            "compressed_tokens": 2,
+            "omitted_spans": [{"start_line": 1, "end_line": 2}],
+        },
+    )
+
+    assert stored.spans[0].content == original
+    restored = CompressionRetrievalStore(path).get_span(
+        stored.receipt_id, stored.spans[0].span_id
+    )
+    assert restored is not None
+    assert restored.content == original
+
+
 def test_recovery_store_byte_limit_fails_before_commit(tmp_path) -> None:
     path = tmp_path / "bounded.json"
     store = CompressionRetrievalStore(path, max_bytes=128)
