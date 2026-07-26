@@ -49,7 +49,7 @@ This path can provide scoped context selection, Context Receipts, exact recovery
 
 ### BYOK/custom provider: proxy route
 
-Current Copilot CLI custom-provider settings use `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY`, and `COPILOT_MODEL`. The Entroly wrapper must use those variables and the current `copilot` executable. This route is separately billed by the configured provider; it is not GitHub-hosted subscription inference.
+Current Copilot CLI custom-provider settings use `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY`, and `COPILOT_MODEL`. Entroly uses the current `copilot` executable, sets the base URL and provider type, and leaves the provider key optional because local endpoints such as Ollama may not require authentication. `COPILOT_MODEL` is still required for custom-provider mode. This route is separately billed by the configured provider; it is not GitHub-hosted subscription inference.
 
 ## Grok CLI
 
