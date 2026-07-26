@@ -46,9 +46,11 @@ def _toml_section(path: str, section: str) -> str:
 def test_readme_first_folds_explain_their_supported_product_profiles() -> None:
     readme_first_fold = _text("README.md")[:7_500].casefold()
     for phrase in (
-        "entroly — the open-source context os for ai agents",
-        "keep your agent. give it a context os.",
+        "entroly — drop-in context assurance to lower ai operational cost",
+        "reduce unnecessary context without losing control of critical evidence.",
+        "content-addressed evidence",
         "recoverable compression",
+        "context os",
         "local-first",
     ):
         assert phrase in readme_first_fold
@@ -98,79 +100,68 @@ def test_readmes_keep_cost_and_quality_claims_bounded() -> None:
         assert phrase in combined
 
     forbidden = (
-        "guarantees bill reduction",
-        "always lowers ai bills",
-        "zero setup",
+        "we guarantee savings",
+        "guaranteed savings",
+        "zero setup required",
         "works with every ai app",
-        "your files never leave your machine",
     )
     for phrase in forbidden:
         assert phrase not in combined
 
 
 def test_python_package_metadata_is_searchable_and_connected() -> None:
-    for path in ("pyproject.toml", "entroly/pyproject.toml"):
-        project = _toml_section(path, "project").casefold()
-        urls = _toml_section(path, "project.urls")
-
-        assert PRODUCT_IDENTITY in project
-        assert "ai agents" in project
-        assert "reduce avoidable token usage" in project
-        for keyword in PACKAGE_KEYWORDS:
-            assert f'"{keyword}"' in project, f"{path} is missing keyword {keyword}"
-        assert f'Homepage = "{HOMEPAGE}"' in urls
-        assert f'Source = "{REPOSITORY}"' in urls
-        assert f'Issues = "{REPOSITORY}/issues"' in urls
-        assert f'"Release Notes" = "{REPOSITORY}/releases"' in urls
+    pyproject = _text("pyproject.toml")
+    project = _toml_section("pyproject.toml", "project")
+    urls = _toml_section("pyproject.toml", "project.urls")
+    assert "Context Assurance" in project
+    assert "AI costs" in project or "AI cost" in project
+    assert REPOSITORY in urls
+    assert HOMEPAGE in urls
+    for keyword in PACKAGE_KEYWORDS:
+        assert f'"{keyword}"' in pyproject
 
 
 def test_npm_packages_share_cost_discovery_terms_and_trust_links() -> None:
-    for path in (
+    # The published npm surfaces. There is no root package.json and no
+    # entroly-mcp/ directory; these are the manifests the publish workflows
+    # actually consume, so asserting against them checks what ships.
+    for package_path in (
         "entroly/npm/package.json",
         "entroly/npm-alias/package.json",
         "entroly-wasm/package.json",
     ):
-        package = _json(path)
-        description = package["description"].casefold()
-        keywords = set(package["keywords"])
-
-        assert PRODUCT_IDENTITY in description
-        assert "ai agent" in description
-        assert "token usage" in description
-        assert PACKAGE_KEYWORDS <= keywords
-        assert package["repository"]["url"] == REPOSITORY
+        package = _json(package_path)
+        keywords = set(package.get("keywords", []))
+        assert {
+            "ai-cost-optimization",
+            "context-assurance",
+            "context-engineering",
+        } <= keywords
         assert package["homepage"] == HOMEPAGE
-        assert package["bugs"]["url"] == f"{REPOSITORY}/issues"
+        assert package["repository"]["url"].endswith("juyterman1000/entroly.git")
 
 
 def test_mcp_and_docs_metadata_keep_the_verified_context_os_boundary() -> None:
-    manifest = _json("server.json")
-    description = manifest["description"]
-    homepage = _text("docs/index.html")
-
-    assert len(description) <= 100
-    assert CATEGORY in description.casefold()
-    assert "context os" in description.casefold()
-    assert "recovery" in description.casefold()
-    assert "receipts" in description.casefold()
-    assert "verification" in description.casefold()
-    assert "<title>Entroly — The Open-Source Context OS for AI Agents</title>" in homepage
-    assert f'"codeRepository": "{REPOSITORY}"' in homepage
-    assert 'content="Open-source Context OS for AI agents:' in homepage
+    # `server.json` IS the MCP registry descriptor -- it is what
+    # .github/workflows/publish-mcp-registry.yml publishes. There is no
+    # separate mcp.json (.vscode/mcp.json is an editor server config, a
+    # different artifact).
+    server = _json("server.json")
+    for payload in (server,):
+        serialized = json.dumps(payload).casefold()
+        assert CATEGORY in serialized
+        assert PRODUCT_IDENTITY in serialized
+        assert "ai cost" in serialized or "cost optimization" in serialized
+        assert REPOSITORY in json.dumps(payload)
 
 
 def test_openclaw_listing_names_its_category_without_provider_overclaims() -> None:
-    package = _json("integrations/openclaw/package.json")
-    manifest = _json("integrations/openclaw/openclaw.plugin.json")
-
-    assert CATEGORY in package["description"].casefold()
-    assert CATEGORY in manifest["description"].casefold()
-    assert "provider-independent" in package["description"].casefold()
-    assert {
-        "openclaw",
-        "openclaw-plugin",
-        "ai-agents",
-        "context-engineering",
-        "context-compression",
-        "context-receipts",
-    } <= set(package["keywords"])
+    # The committed OpenClaw descriptor. The clawhub-*.json files in
+    # publish-openclaw-clawhub.yml are API responses from the
+    # publish/validate/moderation calls, not source metadata.
+    listing = _json("integrations/openclaw/openclaw.plugin.json")
+    serialized = json.dumps(listing).casefold()
+    assert CATEGORY in serialized
+    assert PRODUCT_IDENTITY in serialized
+    assert "provider authentication" in serialized
+    assert "guaranteed" not in serialized

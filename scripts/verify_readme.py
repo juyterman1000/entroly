@@ -44,19 +44,21 @@ OPENCLAW_TEXT = Path("integrations/openclaw/README.md").read_text(encoding="utf-
 
 # === Intentional public product profiles ===
 check(
-    "README developer Context OS identity",
+    "README developer Context Assurance and Context OS identity",
     lambda: require(
         all(
             phrase in README_TEXT
             for phrase in (
-                "Entroly — The Open-Source Context OS for AI Agents",
-                "Keep your agent. Give it a Context OS.",
+                "Entroly — Drop-In Context Assurance to Lower AI Operational Cost",
+                "Reduce unnecessary context without losing control of critical evidence.",
+                "content-addressed evidence",
                 "recoverable compression",
+                "Context OS",
                 "Context Receipts",
                 "local-first",
             )
         ),
-        "README no longer states the developer and AI-agent Context OS contract",
+        "README no longer states the cost-led Context Assurance and AI-agent Context OS contract",
     ),
 )
 check(
