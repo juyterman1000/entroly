@@ -70,6 +70,27 @@ For live traffic, inspect response headers such as:
 Provider invoices and provider usage metadata remain the billing source of
 truth.
 
+## Session Rescue and Cache Safety
+
+Session rescue runs only for traffic routed through `entroly proxy`. It does
+not edit a host application's stored transcript, terminate the host's loop, or
+recover a session that never sends another request through Entroly.
+
+The guard preserves ordinary user messages and recent turns. If old recoverable
+tool output is insufficient to bring a request under the safety watermark, the
+proxy returns an actionable `413` rather than silently deleting user evidence
+or forwarding a likely provider rejection.
+
+Recovery is local, not magic: the session-rescue JSON store contains the full
+original tool output in plaintext. Losing or deleting that store removes
+Entroly's recovery path. Protect it with filesystem permissions, source-control
+exclusions, retention policy, and backups appropriate for the underlying data.
+
+Live-zone layout and exact context matching improve prefix stability but do not
+guarantee provider cache hits or savings. Provider thresholds, TTL, pricing,
+routing, and account behavior remain authoritative. See
+[runaway-session rescue and prompt-cache safety](session-rescue.md).
+
 ## Image Inputs
 
 Image optimization is opt-in. The default behavior is to preserve image bytes

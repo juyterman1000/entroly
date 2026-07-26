@@ -1,0 +1,100 @@
+name: Build Verified PR181 Replacement
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-verified-pr181-replacement
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.head_ref == 'fix/session-rescue-trust-recovery-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Apply regression-first trust fixes
+        run: |
+          python scripts/repair_pr181_branch.py
+          python scripts/repair_recovery_evidence_v5.py
+
+      - name: Install Entroly test surface
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-deps -e .
+          pip install "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil pytest pytest-timeout ruff
+
+      - name: Validate focused trust contracts
+        run: |
+          pytest tests/test_session_rescue.py tests/test_compression_retrieval_store.py tests/test_proxy_session_rescue.py tests/test_cache_stable_live_zone.py -q --tb=short --timeout=60
+          ruff check entroly/session_rescue.py entroly/compression_retrieval_store.py tests/test_session_rescue.py tests/test_compression_retrieval_store.py tests/test_recovery_resilience.py benchmarks/recovery_resilience.py
+          git diff --check
+
+      - name: Re-run frozen v5 recovery evidence
+        id: evidence
+        shell: bash
+        run: |
+          set +e
+          (
+            set -euo pipefail
+            python -m venv .headroom-venv
+            .headroom-venv/bin/python -m pip install --upgrade pip
+            .headroom-venv/bin/pip install "headroom-ai==0.31.0"
+            .headroom-venv/bin/python -c 'import importlib.metadata, sys; print(sys.executable); print(importlib.metadata.version("headroom-ai"))'
+            python -m benchmarks.recovery_resilience run \
+              --protocol benchmarks/recovery_resilience_protocol_v5.json \
+              --phase holdout \
+              --headroom-python .headroom-venv/bin/python \
+              --timeout 60 \
+              --output benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
+            python -m benchmarks.recovery_resilience verify \
+              benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
+            pytest tests/test_recovery_resilience.py -q --tb=short
+            python scripts/verify_public_trust.py
+          ) > >(tee v5-evidence.log) 2>&1
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > v5-evidence-exit-code.txt
+          exit "$status"
+
+      - name: Upload v5 evidence diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr181-v5-evidence-diagnostic
+          path: |
+            v5-evidence.log
+            v5-evidence-exit-code.txt
+            benchmarks/recovery_resilience_protocol_v5.json
+            benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
+          if-no-files-found: warn
+
+      - name: Create clean latest-main stabilization branch
+        shell: bash
+        run: |
+          rm -rf .headroom-venv
+          rm -f v5-evidence.log v5-evidence-exit-code.txt
+          rm -f .github/workflows/diagnose-pr181.yml
+          rm -f .github/workflows/repair-pr181.yml
+          rm -f scripts/repair_pr181_branch.py
+          rm -f scripts/repair_recovery_evidence_v5.py
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A
+          git add -f benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
+          git diff --cached --check
+          git commit -m "fix(session-rescue): preserve exact cache-stable recovery"
+          git push origin HEAD:refs/heads/fix/session-rescue-trust-recovery-final-v3

@@ -55,6 +55,7 @@ from .proxy_transform import (
     format_hierarchical_context,
     inject_context_anthropic,
     inject_context_gemini,
+    inject_context_live_zone,
     inject_context_openai,
     inject_context_responses,
     strip_anthropic_unsupported_params,
@@ -62,6 +63,8 @@ from .proxy_transform import (
 from .behavioral_waste import BehavioralWasteDetector, observe_canonical_messages
 from .cache_aligner import CacheAligner
 from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
+from .compression_proxy import compress_proxy_payload
+from .compression_retrieval_store import CompressionRetrievalStore
 from .control_plane import (
     ControlAudit,
     ControlPlaneDecision,
@@ -81,6 +84,11 @@ from .provider_policy import (
 )
 from .optimization_ledger import OptimizationEvent, OptimizationLedger, SavingsTier
 from .stable_prefix import conversation_anchor
+from .session_rescue import (
+    SessionRescueController,
+    SessionRescuePolicy,
+    estimate_message_tokens,
+)
 from .usage_ledger import (
     TokenUsage,
     UsageLedger,
@@ -1054,15 +1062,11 @@ class PromptCompilerProxy:
         self._total_output_original_tokens: int = 0
         self._total_output_compressed_tokens: int = 0
 
-        # ── Cache Aligner ──
-        # Stabilizes Entroly's injected CONTEXT block across turns of the same
-        # conversation so the provider's prefix/KV cache keeps hitting
-        # (Anthropic 90% / OpenAI 50% read discount) on chatty, stable-context
-        # sessions — the dominant cost on large repos. Context-only: it does
-        # not alter the model, generation params, tools, or the user's messages.
-        # Provider terms and data-handling rules still apply to whatever the
-        # user sends through their configured provider. Disable with
-        # ENTROLY_CACHE_ALIGN=0. Fail-open.
+        # ── Exact Context Identity ──
+        # Approximate reuse is forbidden because it can hide changed evidence.
+        # Dynamic context is injected in the live zone, after the stable
+        # provider prefix. Provider usage is the source of truth for savings.
+        # Disable identity tracking with ENTROLY_CACHE_ALIGN=0.
         self._cache_align_enabled = os.environ.get("ENTROLY_CACHE_ALIGN", "1") != "0"
         self._cache_aligner = CacheAligner() if self._cache_align_enabled else None
 
@@ -1100,6 +1104,73 @@ class PromptCompilerProxy:
         self._behavior_findings = 0
         self._behavior_failures = 0
         self._behavior_last: list[dict[str, Any]] = []
+
+        # Active session rescue runs inside the always-on proxy daemon.  It
+        # freezes already-compressed message bytes, persists every omission
+        # before mutation, and refuses an unsafe over-limit forward.
+        self._session_rescue_enabled = (
+            os.environ.get("ENTROLY_SESSION_RESCUE", "1").lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self._session_rescue: SessionRescueController | None = None
+        self._session_rescue_store: CompressionRetrievalStore | None = None
+        self._session_rescue_last: dict[str, Any] | None = None
+        self._session_rescue_init_error = ""
+        if self._session_rescue_enabled:
+            try:
+                rescue_root = Path(
+                    os.environ.get(
+                        "ENTROLY_DIR",
+                        str(Path.home() / ".entroly"),
+                    )
+                )
+                rescue_path = Path(
+                    os.environ.get(
+                        "ENTROLY_SESSION_RESCUE_STORE",
+                        str(rescue_root / "session_rescue_recovery.json"),
+                    )
+                )
+                self._session_rescue_store = CompressionRetrievalStore(
+                    rescue_path,
+                    max_bytes=max(
+                        1,
+                        _env_int(
+                            "ENTROLY_SESSION_RESCUE_STORE_MAX_BYTES",
+                            512 * 1024 * 1024,
+                        ),
+                    ),
+                )
+                self._session_rescue = SessionRescueController(
+                    recovery_store=self._session_rescue_store,
+                    policy=SessionRescuePolicy(
+                        soft_watermark=_env_float(
+                            "ENTROLY_SESSION_SOFT_WATERMARK", 0.70
+                        ),
+                        hard_watermark=_env_float(
+                            "ENTROLY_SESSION_HARD_WATERMARK", 0.88
+                        ),
+                        target_watermark=_env_float(
+                            "ENTROLY_SESSION_TARGET_WATERMARK", 0.62
+                        ),
+                        failure_watermark=_env_float(
+                            "ENTROLY_SESSION_FAILURE_WATERMARK", 0.98
+                        ),
+                        loop_min_watermark=_env_float(
+                            "ENTROLY_SESSION_LOOP_MIN_WATERMARK", 0.40
+                        ),
+                        tail_messages=max(
+                            2,
+                            _env_int("ENTROLY_SESSION_TAIL_MESSAGES", 8),
+                        ),
+                    ),
+                )
+            except Exception as exc:
+                self._session_rescue_init_error = str(exc)
+                logger.error(
+                    "Session rescue disabled because its recoverable store "
+                    "could not be initialized: %s",
+                    exc,
+                )
         optimization_path = os.environ.get(
             "ENTROLY_OPTIMIZATION_LEDGER", ""
         ).strip()
@@ -1916,6 +1987,9 @@ class PromptCompilerProxy:
         usage_dimensions = self._usage_dimensions(headers)
         provider = detect_provider(path, headers, body)
         gateway_adapter = None
+        behavior_findings = ()
+        conversation_id = ""
+        session_rescue_result = None
         try:
             gateway_adapter = canonical_request_from_provider_body(
                 provider,
@@ -1940,6 +2014,7 @@ class PromptCompilerProxy:
                         gateway_adapter.canonical.messages,
                         model=gateway_adapter.canonical.model,
                     )
+                    behavior_findings = findings
                     if findings:
                         rendered_findings = [
                             {
@@ -2003,7 +2078,153 @@ class PromptCompilerProxy:
         except Exception as e:
             logger.debug("Control-plane planning skipped: %s", e)
 
-        if "messages" in body:
+        sequence_key = (
+            "messages"
+            if (
+                isinstance(body.get("messages"), list)
+                and all(isinstance(item, dict) for item in body["messages"])
+            )
+            else "input"
+            if (
+                isinstance(body.get("input"), list)
+                and all(isinstance(item, dict) for item in body["input"])
+            )
+            else "contents"
+            if (
+                provider == "gemini"
+                and isinstance(body.get("contents"), list)
+                and all(isinstance(item, dict) for item in body["contents"])
+            )
+            else ""
+        )
+        if (
+            sequence_key
+            and not self._bypass
+            and self._session_rescue is not None
+            and self._session_rescue_store is not None
+        ):
+            # Live-zone ELC replaces the legacy lossy pruning stack.  It
+            # compresses tool output deterministically, stores every omission,
+            # and leaves normal user text untouched.
+            try:
+                tool_result = compress_proxy_payload(
+                    body,
+                    provider=provider,
+                    # Keep old tool-output bytes independent of each new user
+                    # turn. Evidence anchors remain deterministic; exact full
+                    # recovery is available by handle.
+                    query="",
+                    budget_tokens=max(
+                        64,
+                        _env_int("ENTROLY_SESSION_TOOL_BUDGET", 1200),
+                    ),
+                    mode="elc",
+                    include_receipt_header=True,
+                    compress_user_messages=False,
+                    retrieval_store=self._session_rescue_store,
+                )
+                body = tool_result.body
+                control_headers.update(tool_result.headers())
+            except Exception as exc:
+                logger.warning(
+                    "Recoverable tool-output compression skipped: %s",
+                    exc,
+                )
+                control_headers["X-Entroly-Compression-Error"] = (
+                    "recovery-store-failure"
+                )
+
+            try:
+                if not conversation_id:
+                    conversation_id = self._routing_conversation_id(body, provider)
+                if conversation_id:
+                    lease = self._cache_router.lease_snapshot(conversation_id)
+                    model = extract_model(body, path) or str(body.get("model", ""))
+                    context_window = (
+                        context_window_for_model(model)
+                        if model
+                        else getattr(self.config, "context_window", 128_000)
+                    )
+                    rescue_messages = body[sequence_key]
+                    if sequence_key == "contents":
+                        rescue_messages = []
+                        for item in body["contents"]:
+                            normalized = dict(item)
+                            normalized["content"] = copy.deepcopy(
+                                normalized.pop("parts", [])
+                            )
+                            rescue_messages.append(normalized)
+                    rescue = self._session_rescue.rescue(
+                        conversation_id,
+                        rescue_messages,
+                        context_window=context_window,
+                        query=extract_user_message(body, provider),
+                        loop_detected=bool(behavior_findings),
+                        cache_warm=bool(
+                            lease is not None and lease.cached_prefix_tokens > 0
+                        ),
+                    )
+                    if sequence_key == "contents":
+                        restored_contents = []
+                        for item in rescue.messages:
+                            restored = dict(item)
+                            restored["parts"] = restored.pop("content", [])
+                            restored_contents.append(restored)
+                        body["contents"] = restored_contents
+                    else:
+                        body[sequence_key] = rescue.messages
+                    session_rescue_result = rescue
+                    control_headers.update(rescue.headers())
+                    self._session_rescue_last = {
+                        "action": rescue.action,
+                        "original_tokens": rescue.original_tokens,
+                        "forwarded_tokens": rescue.forwarded_tokens,
+                        "tokens_saved": rescue.tokens_saved,
+                        "stable_prefix_messages": rescue.stable_prefix_messages,
+                        "recovery_receipts": len(rescue.recovery_receipts),
+                        "cache_deferred": rescue.cache_deferred,
+                        "blocked": rescue.blocked,
+                        "error": rescue.error,
+                    }
+                    if rescue.blocked:
+                        return JSONResponse(
+                            {
+                                "error": "session_context_rescue_required",
+                                "detail": rescue.error,
+                                "action": (
+                                    "Start a fresh agent turn or retrieve the "
+                                    "listed local Entroly recovery receipts, "
+                                    "then retry with less active history."
+                                ),
+                                "original_tokens_estimate": rescue.original_tokens,
+                                "forwarded_tokens_estimate": rescue.forwarded_tokens,
+                                "context_window": context_window,
+                                "recovery_receipts": list(
+                                    rescue.recovery_receipts
+                                ),
+                            },
+                            status_code=413,
+                            headers=control_headers,
+                        )
+            except Exception as exc:
+                logger.exception("Session rescue failed before provider forward")
+                return JSONResponse(
+                    {
+                        "error": "session_rescue_failed",
+                        "detail": str(exc),
+                        "action": (
+                            "The original request was not forwarded or discarded. "
+                            "Check the Entroly session-rescue store and retry."
+                        ),
+                    },
+                    status_code=503,
+                    headers=control_headers,
+                )
+        elif (
+            "messages" in body
+            and not self._bypass
+            and not self._session_rescue_enabled
+        ):
             from .proxy_transform import compress_tool_messages
             # Stage 1: age-tiered pruning (collapses old tool outputs to digests).
             # Runs first so content-aware compression in stage 2 only pays for
@@ -2027,7 +2248,12 @@ class PromptCompilerProxy:
             if tool_tokens_saved > 0:
                 logger.info(f"Tool output compression: {tool_tokens_saved} tokens saved")
 
-        if "messages" in body and self.config.enable_conversation_compression:
+        if (
+            "messages" in body
+            and self.config.enable_conversation_compression
+            and not self._session_rescue_enabled
+            and not self._bypass
+        ):
             body["messages"] = compress_conversation_messages(
                 body["messages"],
                 context_window=getattr(self.config, "context_window", 128_000),
@@ -2205,7 +2431,83 @@ class PromptCompilerProxy:
                                 _sanitize_report.matches,
                             )
 
-                    if provider == "gemini":
+                    cache_stable_injection = (
+                        os.environ.get(
+                            "ENTROLY_CACHE_STABLE_INJECTION",
+                            "1",
+                        ).lower()
+                        in {"1", "true", "yes", "on"}
+                    )
+                    if (
+                        cache_stable_injection
+                        and session_rescue_result is not None
+                        and session_rescue_result.cache_deferred
+                    ):
+                        # A provider-reported warm cache is currently worth
+                        # more than a changing optional context suffix.
+                        control_headers[
+                            "X-Entroly-Context-Injection"
+                        ] = "cache-deferred"
+                    elif cache_stable_injection:
+                        live_zone_body, injected = inject_context_live_zone(
+                            body,
+                            context_text,
+                            provider,
+                        )
+                        if injected:
+                            projected_messages = live_zone_body.get("messages")
+                            if projected_messages is None:
+                                projected_messages = live_zone_body.get("input")
+                            if isinstance(projected_messages, str):
+                                projected_messages = [
+                                    {
+                                        "role": "user",
+                                        "content": projected_messages,
+                                    }
+                                ]
+                            if projected_messages is None and isinstance(
+                                live_zone_body.get("contents"),
+                                list,
+                            ):
+                                projected_messages = [
+                                    {
+                                        "role": item.get("role", ""),
+                                        "content": item.get("parts", []),
+                                    }
+                                    for item in live_zone_body["contents"]
+                                    if isinstance(item, dict)
+                                ]
+                            projected_tokens = (
+                                estimate_message_tokens(projected_messages)
+                                if isinstance(projected_messages, list)
+                                else 0
+                            )
+                            model_window = context_window_for_model(
+                                extract_model(body, path) or ""
+                            )
+                            failure_watermark = (
+                                self._session_rescue.policy.failure_watermark
+                                if self._session_rescue is not None
+                                else 0.98
+                            )
+                            if (
+                                projected_tokens
+                                and projected_tokens
+                                >= int(model_window * failure_watermark)
+                            ):
+                                control_headers[
+                                    "X-Entroly-Context-Injection"
+                                ] = "capacity-deferred"
+                            else:
+                                body = live_zone_body
+                                control_headers[
+                                    "X-Entroly-Context-Injection"
+                                ] = "live-zone"
+                        else:
+                            control_headers[
+                                "X-Entroly-Context-Injection"
+                            ] = "shape-deferred"
+                    elif provider == "gemini":
                         body = inject_context_gemini(body, context_text)
                     elif provider == "anthropic":
                         body = inject_context_anthropic(body, context_text)
@@ -2215,7 +2517,10 @@ class PromptCompilerProxy:
                         body = inject_context_openai(body, context_text)
 
                     # Entropic Conversation Pruning
-                    if provider != "gemini":
+                    if (
+                        provider != "gemini"
+                        and not self._session_rescue_enabled
+                    ):
                         try:
                             from .proxy_transform import entropic_conversation_prune
                             from .hardening import ECP_THRASH_GUARD
@@ -2519,14 +2824,16 @@ class PromptCompilerProxy:
                 allow_model_change=_ravs_swapped,
             )
             control_outcome = "optimized" if body != control_before else "observed"
-            control_headers = self._control_headers(
-                control_decision,
-                control_audit,
-                body=body,
-                headers=headers,
-                provider=provider,
-                path=path,
-                outcome=control_outcome,
+            control_headers.update(
+                self._control_headers(
+                    control_decision,
+                    control_audit,
+                    body=body,
+                    headers=headers,
+                    provider=provider,
+                    path=path,
+                    outcome=control_outcome,
+                )
             )
             if not control_audit.compliant:
                 logger.warning(
@@ -2965,15 +3272,10 @@ class PromptCompilerProxy:
                 f"{total_tokens} tokens{ios_str}"
             )
 
-        # ── Cache-aligned context reuse (provider prefix-cache hits) ──
-        # When this turn's injected context block is >=90% similar to the
-        # previous one for the same conversation, reuse the previous block
-        # verbatim so the provider's cached prefix keeps hitting (Anthropic 90%
-        # / OpenAI 50% read discount) — the dominant cost on chatty large-repo
-        # sessions. This rewrites ONLY Entroly's own injected context string;
-        # it never mutates the model, generation params, tools, or the user's
-        # messages. Provider terms and data-handling rules still apply.
-        # Fail-open: on any error the freshly optimized context is used.
+        # ── Exact context identity (no approximate/stale reuse) ──
+        # Exact identity permits byte-for-byte reuse without hiding changed
+        # evidence. ``handle_proxy`` places dynamic context in the live zone so
+        # a changing selection cannot invalidate the provider cache at token 1.
         if context_text and self._cache_aligner is not None:
             try:
                 _ckey = self._conversation_key(body)
@@ -5387,6 +5689,17 @@ async def _proxy_stats(request: Request) -> JSONResponse:
         "failures": proxy._behavior_failures,
         "last_findings": proxy._behavior_last,
         "optimization_ledger_enabled": proxy._optimization_ledger is not None,
+    }
+    stats["session_rescue"] = {
+        "enabled": proxy._session_rescue is not None,
+        "configured": proxy._session_rescue_enabled,
+        "init_error": proxy._session_rescue_init_error or None,
+        "last": proxy._session_rescue_last,
+        **(
+            proxy._session_rescue.stats()
+            if proxy._session_rescue is not None
+            else {}
+        ),
     }
     usage_accounting: dict[str, Any] = {
         "enabled": proxy._usage_ledger is not None,
