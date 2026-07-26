@@ -70,3 +70,5 @@ Compatibility is not inferred merely because a client uses the word “OpenAI-co
 ## Status policy
 
 A green status requires a code-backed setup path and a regression or end-to-end contract. Clients with documented custom endpoints but no Entroly request-flow test remain **guided** or **validation pending**. Hosted subscription interception is never inferred from MCP compatibility.
+
+Preview a wrapper without changing configuration or launching the client with `entroly wrap <agent> --dry-run`; after a real proxy session, use the watchdog, receipt, or `entroly value` output to confirm that traffic actually traversed Entroly.
