@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 from entroly.checkpoint_relevance import (
@@ -123,3 +124,29 @@ def test_checkpoint_manager_preserves_decisions_and_selects_relevant_task(tmp_pa
         "Keep the provider cache warm",
         "Use canonical provider adapters",
     ]
+
+
+def test_load_latest_breaks_coarse_mtime_ties_with_checkpoint_sequence(
+    tmp_path, monkeypatch
+) -> None:
+    from entroly.checkpoint import CheckpointManager
+
+    # Freeze wall-clock seconds so every checkpoint ID shares the same timestamp.
+    monkeypatch.setattr("entroly.checkpoint.time.time", lambda: 1_700_000_000.0)
+    manager = CheckpointManager(
+        tmp_path, auto_interval=5, max_checkpoints=5, instance_id="test_instance"
+    )
+    manager.save([], {}, {}, 1, metadata={"task": "one"})
+    manager.save([], {}, {}, 2, metadata={"task": "two"})
+    manager.save([], {}, {}, 3, metadata={"task": "three"})
+
+    # Simulate a filesystem with one-second mtime granularity. Without the
+    # sequence tie-breaker, glob order can return any of the three files.
+    same_tick = 1_700_000_000_000_000_000
+    for checkpoint in tmp_path.glob("ckpt_*.json.gz"):
+        os.utime(checkpoint, ns=(same_tick, same_tick))
+
+    latest = manager.load_latest()
+    assert latest is not None
+    assert latest.current_turn == 3
+    assert latest.metadata["task"] == "three"

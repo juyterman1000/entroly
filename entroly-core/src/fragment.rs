@@ -42,6 +42,17 @@ pub struct ContextFragment {
     pub access_count: u32,
     #[pyo3(get, set)]
     pub is_pinned: bool,
+    /// Eviction protection, distinct from `is_pinned`.
+    ///
+    /// `is_pinned` means "the operator required this in the answer" and forces
+    /// inclusion in every selection. `is_protected` means "never drop this from
+    /// the store" and does not. Criticality used to set `is_pinned`, conflating
+    /// the two, so a manifest or security file was force-included in every
+    /// query regardless of relevance. Absent from older serialized indexes,
+    /// hence `serde(default)`; see the migration in `migrate_pin_semantics`.
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub is_protected: bool,
     #[pyo3(get, set)]
     pub simhash: u64,
     /// True iff simhash was computed from actual file content.
@@ -118,6 +129,7 @@ impl ContextFragment {
             turn_last_accessed: 0,
             access_count: 0,
             is_pinned: false,
+            is_protected: false,
             simhash: 0,
             has_simhash: false, // must be set explicitly after content processing
             skeleton_content: None,

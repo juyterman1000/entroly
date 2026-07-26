@@ -794,14 +794,32 @@ class CheckpointManager:
             candidates = list(self.checkpoint_dir.glob(pattern))
         except OSError:
             return []
-        dated: list[tuple[float, Path]] = []
+        dated: list[tuple[tuple[int, int, int, str], Path]] = []
         for path in candidates:
             try:
-                dated.append((path.stat().st_mtime, path))
+                stat = path.stat()
             except OSError:
                 continue  # vanished under us
+            # Some filesystems expose coarse mtimes. Multiple checkpoints saved
+            # in one tick then compare equal and glob order decides what
+            # ``load_latest`` returns. The checkpoint ID already carries a
+            # per-instance sequence, so use it as a deterministic tie-breaker.
+            # Keep mtime first so tests/operators that deliberately age files
+            # retain the established ordering semantics.
+            match = re.search(r"_(\d+)_(\d+)\.json\.gz$", path.name)
+            checkpoint_second = int(match.group(1)) if match else 0
+            checkpoint_sequence = int(match.group(2)) if match else -1
+            dated.append((
+                (
+                    int(getattr(stat, "st_mtime_ns", stat.st_mtime * 1_000_000_000)),
+                    checkpoint_second,
+                    checkpoint_sequence,
+                    path.name,
+                ),
+                path,
+            ))
         dated.sort(key=lambda item: item[0], reverse=True)
-        return [path for _mtime, path in dated]
+        return [path for _sort_key, path in dated]
 
     def _prune_pattern(self, pattern: str, keep: int) -> None:
         # Per-file stat guard: a concurrent peer prune must not abort our own

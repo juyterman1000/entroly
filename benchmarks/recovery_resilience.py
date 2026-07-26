@@ -33,13 +33,17 @@ REVALIDATION_PROTOCOL_PATH = (
 PRIOR_REVALIDATION_PROTOCOL_PATH_V3 = (
     ROOT / "benchmarks" / "recovery_resilience_protocol_v3.json"
 )
-CURRENT_REVALIDATION_PROTOCOL_PATH = (
+PRIOR_REVALIDATION_PROTOCOL_PATH_V4 = (
     ROOT / "benchmarks" / "recovery_resilience_protocol_v4.json"
+)
+CURRENT_REVALIDATION_PROTOCOL_PATH = (
+    ROOT / "benchmarks" / "recovery_resilience_protocol_v5.json"
 )
 KNOWN_PROTOCOL_PATHS = (
     PROTOCOL_PATH,
     REVALIDATION_PROTOCOL_PATH,
     PRIOR_REVALIDATION_PROTOCOL_PATH_V3,
+    PRIOR_REVALIDATION_PROTOCOL_PATH_V4,
     CURRENT_REVALIDATION_PROTOCOL_PATH,
 )
 SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH")
@@ -586,7 +590,10 @@ def _invoke_adapter(
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix=f"entroly-{system}-recovery-") as temp:
         command = [
-            str(Path(python).resolve()),
+            # Preserve a virtualenv launcher's symlink path. Resolving it would
+            # bypass the virtualenv and execute the base interpreter without the
+            # benchmark participant's installed site-packages.
+            str(Path(python).absolute()),
             "-m",
             "benchmarks.recovery_resilience",
             "adapter",

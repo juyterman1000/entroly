@@ -301,7 +301,7 @@ python scripts/readme_proof.py restart-recovery
 ```
 
 [Protocol, prior tie, and limitations](docs/benchmarks/competitive-evidence-matrix.md) ·
-[current raw artifact](benchmarks/results/recovery_resilience_holdout_revalidation_v4.json) ·
+[current raw artifact](benchmarks/results/recovery_resilience_holdout_revalidation_v5.json) ·
 [prior tie artifact](benchmarks/results/recovery_resilience_holdout_revalidation.json)
 
 The animations, MP4s, static frames, source hashes, and commands are bound in
@@ -601,7 +601,7 @@ durability comparison. These are scoped workload measurements, not universal
 claims.
 
 [Frozen protocol and full result table](docs/benchmarks/competitive-evidence-matrix.md)
-| [current v4 revalidation](benchmarks/results/recovery_resilience_holdout_revalidation_v4.json) |
+| [current v4 revalidation](benchmarks/results/recovery_resilience_holdout_revalidation_v5.json) |
 [prior v2 tie](benchmarks/results/recovery_resilience_holdout_revalidation.json) |
 [original post-repair holdout](benchmarks/results/recovery_resilience_holdout.json) |
 [original failing artifact](benchmarks/results/recovery_resilience_development_before.json).
