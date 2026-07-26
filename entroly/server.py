@@ -3252,13 +3252,22 @@ def create_mcp_server(
         # Surface lifetime + session cost savings so the agent/user can
         # see the value Entroly delivers. Pure read from in-memory state.
         try:
-            from .value_tracker import estimate_cost
             _this_tokens = result.get("tokens_saved", 0)
-            _this_model = result.get("model", "")
             result["savings"] = {
                 "this_call": {
                     "tokens_saved": _this_tokens,
-                    "cost_saved_usd": round(estimate_cost(_this_tokens, _this_model), 6),
+                    # No per-call dollar figure. `tokens_saved` here is
+                    # (every candidate fragment) - (selected fragments), i.e. it
+                    # assumes the whole index would otherwise have been sent.
+                    # Pricing that produced a real-looking number from a
+                    # counterfactual nobody would run — the same figure
+                    # _honest_savings_block strips from get_stats, and the same
+                    # claim already removed from the PR comment. This path
+                    # cannot prove the result reached a paid provider.
+                    "baseline": (
+                        "candidates not selected; local telemetry only, "
+                        "not a provider bill delta"
+                    ),
                 },
                 "session": _value_tracker.get_session(),
                 "lifetime": {

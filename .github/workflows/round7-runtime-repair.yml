@@ -27,7 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: dogfood/bug-hunt
+          # Never pin a branch here: on pull_request this validated a fixed
+          # branch instead of the PR head, so a green check certified code the
+          # job never ran — and it fails outright once that branch is deleted.
           fetch-depth: 0
 
       - uses: actions/setup-python@v6
@@ -70,7 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: dogfood/bug-hunt
+          # Never pin a branch here: on pull_request this validated a fixed
+          # branch instead of the PR head, so a green check certified code the
+          # job never ran — and it fails outright once that branch is deleted.
           fetch-depth: 0
 
       - name: Apply exact repair patch
@@ -83,5 +87,9 @@ jobs:
           git add entroly/checkpoint.py entroly/auto_index.py \
             tests/test_checkpoint_retention.py tests/test_git_discovery_cannot_hang.py
           git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "repair patch already applied; nothing to commit"
+            exit 0
+          fi
           git commit -m "fix(review): preserve peer recovery and eliminate git pipe leaks"
-          git push origin HEAD:dogfood/bug-hunt
+          git push origin HEAD:${GITHUB_REF_NAME}

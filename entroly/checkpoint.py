@@ -758,6 +758,13 @@ class CheckpointManager:
                     continue
                 try:
                     checkpoint.unlink()
+                except FileNotFoundError:
+                    # Already gone (a peer pruned it). It still no longer counts
+                    # toward the total, so decrement — otherwise the loop keeps
+                    # deleting live recovery points to reach a count that was
+                    # already satisfied.
+                    remaining -= 1
+                    continue
                 except OSError:
                     continue
                 remaining -= 1
@@ -818,6 +825,14 @@ class CheckpointManager:
         """Best-effort liveness probe. Returns True when uncertain (fail-safe)."""
         if pid <= 0:
             return True
+        if pid > 0xFFFFFFFF:
+            # No OS pid is this large, and the two platforms disagree about it in
+            # dangerous ways: POSIX os.kill raises OverflowError, while Windows
+            # ctypes silently MASKS the value to pid mod 2**32 under the DWORD
+            # argtype and probes an unrelated process — so a corrupted filename
+            # could report "dead" and get a live peer's checkpoint deleted.
+            # Unknown is the fail-safe answer on both.
+            return True
         try:
             if os.name == "nt":
                 import ctypes
@@ -857,6 +872,14 @@ class CheckpointManager:
             return True
         except (OSError, PermissionError, AttributeError, ValueError):
             return True  # cannot tell — never delete on a guess
+        except Exception:
+            # Deliberately broad, and only here. ctypes raises ArgumentError
+            # (a direct Exception subclass, not OSError/ValueError) for an
+            # out-of-range argument, which would otherwise propagate out of
+            # _reap_abandoned_peers -> _prune_old_checkpoints -> save() and turn
+            # a best-effort prune into a raised exception. A liveness probe must
+            # never be able to fail a checkpoint; unknown means "keep it".
+            return True
 
     # Only the auto-generated instance_id is `<12-hex-hosthash>_<pid>`. A
     # caller-supplied id (e.g. "prod_2") would make an arbitrary field be probed
