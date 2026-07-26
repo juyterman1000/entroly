@@ -1,0 +1,86 @@
+--- a/entroly/auto_index.py
++++ b/entroly/auto_index.py
+@@ -1415,16 +1415,37 @@
+     # The skip path returns the SAME schema as the fresh-index path: callers
+     # read files_indexed / total_tokens / duration_s without caring whether
+     # work was performed this call. `status` tells them.
+-    if not force and engine._use_rust:
+-        existing = engine._rust.fragment_count()
++    if not force:
++        existing = (
++            int(engine._rust.fragment_count())
++            if engine._use_rust
++            else len(engine._fragments)
++        )
+         if existing > 0:
+-            # A persisted index is a cache, not authority. Reconcile it against
+-            # exact workspace bytes before allowing retrieval to trust it.
++            # A loaded index is a cache, not authority. Reconcile it against
++            # exact workspace bytes before allowing retrieval to trust it. This
++            # contract applies to the supported Python fallback too; otherwise
++            # repeated indexing can strand stale chunks from edited large files.
+             reconciliation = reconcile_index(engine, project_dir)
+             try:
+-                frags = list(engine._rust.export_fragments())
+-                existing_files = len({f.get("source", "") for f in frags if f.get("source")})
+-                existing_tokens = sum(int(f.get("token_count", 0)) for f in frags)
++                if engine._use_rust:
++                    frags = [dict(fragment) for fragment in engine._rust.export_fragments()]
++                else:
++                    frags = [
++                        {
++                            "source": fragment.source,
++                            "token_count": fragment.token_count,
++                        }
++                        for fragment in engine._fragments.values()
++                    ]
++                existing_files = len({
++                    fragment.get("source", "")
++                    for fragment in frags
++                    if fragment.get("source")
++                })
++                existing_tokens = sum(
++                    int(fragment.get("token_count", 0)) for fragment in frags
++                )
+             except Exception:
+                 # Fragment export failed; degrade honestly — caller sees
+                 # status=skipped and existing_fragments still gives them
+@@ -1433,7 +1454,7 @@
+                 existing_tokens = 0
+             logger.info(
+                 f"Auto-index skipped: {existing} fragments ({existing_files} files) "
+-                f"already loaded from persistent index"
++                f"already loaded from index"
+             )
+             return {
+                 "status": "skipped",
+@@ -1449,7 +1470,11 @@
+                 "project_dir": project_dir,
+                 # Skip-specific diagnostics (kept for callers that care):
+                 "reason": "persistent_index_loaded",
+-                "existing_fragments": int(engine._rust.fragment_count()),
++                "existing_fragments": (
++                    int(engine._rust.fragment_count())
++                    if engine._use_rust
++                    else len(engine._fragments)
++                ),
+                 "reconciliation": reconciliation,
+             }
+ 
+--- a/tests/test_reindex_preserves_large_files.py
++++ b/tests/test_reindex_preserves_large_files.py
+@@ -24,8 +24,13 @@
+ 
+ 
+ def _fragment_sources(engine) -> list[str]:
++    """Inspect indexed sources without assuming the native backend exists."""
++    if engine._use_rust:
++        fragments = engine._rust.export_fragments()
++        return [str(fragment.get("source") or "") for fragment in fragments]
+     return [
+-        str(f.get("source") or "") for f in engine._rust.export_fragments()
++        str(getattr(fragment, "source", "") or "")
++        for fragment in engine._fragments.values()
+     ]
+ 
+ 
