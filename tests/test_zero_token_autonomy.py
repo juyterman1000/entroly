@@ -661,7 +661,7 @@ class TestCacheAligner:
         _, hit = ca.align("client1", "completely different unrelated code block xyz")
         assert not hit  # Very different → cache miss
 
-    def test_similar_context_hits(self):
+    def test_similar_but_changed_context_misses(self):
         ca = self._make_aligner()
         # Use a sufficiently large context so minor change keeps Jaccard > 90%
         base_tokens = ["def", "foo():", "x", "=", "1", "y", "=", "2",
@@ -673,8 +673,9 @@ class TestCacheAligner:
         modified_tokens = base_tokens.copy()
         modified_tokens[5] = "99"  # change "2" → "99"
         modified = " ".join(modified_tokens)
-        _, hit = ca.align("c1", modified)
-        assert hit  # >90% Jaccard → reuse
+        aligned, hit = ca.align("c1", modified)
+        assert not hit
+        assert aligned == modified
 
     def test_stats_tracks_hits_and_misses(self):
         ca = self._make_aligner()

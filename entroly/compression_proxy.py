@@ -17,6 +17,7 @@ back by receipt/span id.
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 from dataclasses import asdict, dataclass, field
@@ -213,6 +214,19 @@ def compress_proxy_payload(
             compressed_blocks += changed_count
             receipts.extend(block_receipts)
 
+    if "contents" in body and isinstance(body.get("contents"), list):
+        new_contents, changed_count, block_receipts = _compress_gemini_contents(
+            body["contents"],
+            query=query,
+            budget_tokens=budget_tokens,
+            include_receipt_header=include_receipt_header,
+            retrieval_store=retrieval_store,
+        )
+        if changed_count:
+            new_body["contents"] = new_contents
+            compressed_blocks += changed_count
+            receipts.extend(block_receipts)
+
     compressed_tokens = _estimate_body_tokens(new_body)
     saved = max(0, original_tokens - compressed_tokens)
     receipt = ProxyCompressionReceipt(
@@ -324,6 +338,64 @@ def _compress_input_items(
     return out, changed_count, receipts
 
 
+def _compress_gemini_contents(
+    contents: list[Any],
+    *,
+    query: str,
+    budget_tokens: int,
+    include_receipt_header: bool,
+    retrieval_store: CompressionRetrievalStore | None,
+) -> tuple[list[Any], int, list[dict[str, object]]]:
+    """Compress only textual tool-result payloads inside Gemini Parts.
+
+    Function-call IDs, thought signatures, part ordering, and every unsupported
+    field are copied byte-for-byte. Ambiguous structured results are left
+    untouched instead of risking an invalid Gemini request.
+    """
+    output = copy.deepcopy(contents)
+    changed_count = 0
+    receipts: list[dict[str, object]] = []
+    for content in output:
+        if not isinstance(content, dict) or not isinstance(
+            content.get("parts"),
+            list,
+        ):
+            continue
+        for part in content["parts"]:
+            if not isinstance(part, dict):
+                continue
+            targets: list[tuple[dict[str, Any], str]] = []
+            function_response = part.get("functionResponse")
+            if isinstance(function_response, dict):
+                response = function_response.get("response")
+                if isinstance(response, dict):
+                    targets.extend(
+                        (response, key)
+                        for key in ("output", "result", "content", "text")
+                        if isinstance(response.get(key), str)
+                    )
+            code_result = part.get("codeExecutionResult")
+            if isinstance(code_result, dict) and isinstance(
+                code_result.get("output"),
+                str,
+            ):
+                targets.append((code_result, "output"))
+            for container, key in targets:
+                compressed, changed, receipt = _compress_text_block(
+                    container[key],
+                    query=query,
+                    budget_tokens=budget_tokens,
+                    include_receipt_header=include_receipt_header,
+                    retrieval_store=retrieval_store,
+                )
+                if not changed:
+                    continue
+                container[key] = compressed
+                changed_count += 1
+                receipts.append(receipt)
+    return output, changed_count, receipts
+
+
 def _compress_content_blocks(
     blocks: list[Any],
     *,
@@ -392,11 +464,34 @@ def _compress_text_block(
     receipt = result.receipt.as_dict()
     if not result.changed:
         return text, False, receipt
+    rendered = (
+        result.with_receipt_header()
+        if include_receipt_header
+        else result.compressed
+    )
     if retrieval_store is not None:
+        # Reserve enough space for the deterministic recovery marker before
+        # writing anything. Borderline compression must not create an unused
+        # recovery record and then forward the original block.
+        if estimate_tokens(rendered) + 32 >= estimate_tokens(text):
+            return text, False, receipt
+        # The ELC receipt intentionally caps its diagnostic omission list.
+        # A recovery handle must have a stronger contract: one exact span for
+        # the complete original block, regardless of that diagnostic cap.
+        recovery_receipt = dict(receipt)
+        line_count = max(1, text.count("\n") + 1)
+        recovery_receipt["omitted_spans"] = [
+            {
+                "start_line": 1,
+                "end_line": line_count,
+                "line_count": line_count,
+                "reason": "compression_proxy_full_recovery",
+            }
+        ]
         stored = retrieval_store.put(
             original_text=text,
             compressed_text=result.compressed,
-            receipt=receipt,
+            receipt=recovery_receipt,
             metadata={"query": query, "cleaned_query": cleaned_query, "component": "compression_proxy"},
         )
         receipt["retrieval"] = {
@@ -404,7 +499,13 @@ def _compress_text_block(
             "span_count": len(stored.spans),
             "span_ids": [span.span_id for span in stored.spans],
         }
-    rendered = result.with_receipt_header() if include_receipt_header else result.compressed
+        span_id = stored.spans[0].span_id if stored.spans else "none"
+        rendered = (
+            f"{rendered}\n"
+            f"[entroly-recovery:{stored.receipt_id}:{span_id}]"
+        )
+    if estimate_tokens(rendered) >= estimate_tokens(text):
+        return text, False, receipt
     return rendered, True, receipt
 
 
