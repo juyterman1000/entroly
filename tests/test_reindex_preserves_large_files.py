@@ -24,21 +24,14 @@ from entroly.auto_index import MAX_FILE_BYTES, auto_index
 
 
 def _fragment_sources(engine) -> list[str]:
-    """Fragment sources from either engine.
-
-    Chunking an oversized file is Python-side behaviour, so this contract has
-    to hold on the engine-less install too. Reading `engine._rust` directly
-    made all three cases fail with AttributeError on the pure-Python fallback,
-    which is exactly the configuration the guarantee matters most in.
-    """
-    rust = getattr(engine, "_rust", None)
-    if rust is not None and hasattr(rust, "export_fragments"):
-        return [str(f.get("source") or "") for f in rust.export_fragments()]
-    sources: list[str] = []
-    for frag in getattr(engine, "_fragments", {}).values():
-        source = frag.get("source") if isinstance(frag, dict) else getattr(frag, "source", None)
-        sources.append(str(source or ""))
-    return sources
+    """Inspect indexed sources without assuming the native backend exists."""
+    if engine._use_rust:
+        fragments = engine._rust.export_fragments()
+        return [str(fragment.get("source") or "") for fragment in fragments]
+    return [
+        str(getattr(fragment, "source", "") or "")
+        for fragment in engine._fragments.values()
+    ]
 
 
 @pytest.fixture()
@@ -75,15 +68,18 @@ def test_reindexing_unchanged_repo_preserves_every_chunk(indexed_project):
     engine, project = indexed_project
     auto_index(engine, project)
     first = sorted(_fragment_sources(engine))
-    auto_index(engine, project)
+    second_result = auto_index(engine, project)
     second = sorted(_fragment_sources(engine))
 
+    assert second_result["status"] == "skipped"
+    assert second_result["reconciliation"]["status"] == "current"
     lost = sorted(set(first) - set(second))
     assert not lost, f"re-indexing an unchanged repo deleted evidence: {lost}"
     assert first == second
 
     # And it must stay stable, not merely survive one extra pass.
-    auto_index(engine, project)
+    third_result = auto_index(engine, project)
+    assert third_result["reconciliation"]["status"] == "current"
     assert sorted(_fragment_sources(engine)) == first
 
 
