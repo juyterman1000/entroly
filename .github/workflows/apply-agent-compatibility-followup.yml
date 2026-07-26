@@ -1,0 +1,38 @@
+name: Apply Agent Compatibility Follow-up
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/agent-compatibility-matrix' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Apply fail-closed follow-up
+        run: python .github/apply_agent_compatibility_followup.py
+      - name: Validate compatibility contracts
+        run: |
+          python -m pip install -U pip pytest
+          python -m compileall -q entroly/cli.py entroly/session_attach.py
+          python -m pytest -q tests/test_agent_compatibility.py tests/test_session_attach.py tests/test_cli.py tests/test_cli_audit.py
+      - name: Commit product-only result
+        run: |
+          rm -f .github/apply_agent_compatibility_followup.py
+          rm -f .github/workflows/apply-agent-compatibility-followup.yml
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git add -A
+          git commit -m "fix(integrations): add scoped Kimi MCP attachment"
+          git push origin HEAD:${{ github.head_ref }}
