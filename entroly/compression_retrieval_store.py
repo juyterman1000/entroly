@@ -151,13 +151,26 @@ class CompressionRetrievalStore:
         path: str | Path | None = None,
         *,
         optimization_ledger: OptimizationLedger | None = None,
+        max_bytes: int | None = None,
     ) -> None:
         self.path = Path(path) if path is not None else None
         self.optimization_ledger = optimization_ledger
+        if max_bytes is not None and int(max_bytes) < 1:
+            raise ValueError("max_bytes must be positive when configured")
+        self.max_bytes = int(max_bytes) if max_bytes is not None else None
         self._items: dict[str, StoredCompression] = {}
         self._lock = threading.RLock()
         self._disk_signature: tuple[int, int, int] | None = None
         if self.path is not None and self.path.exists():
+            if (
+                self.max_bytes is not None
+                and self.path.stat().st_size > self.max_bytes
+            ):
+                raise OSError(
+                    errno.ENOSPC,
+                    "recovery store already exceeds its configured byte limit",
+                    str(self.path),
+                )
             self._load()
         if self.optimization_ledger is not None:
             for item in self._items.values():
@@ -248,7 +261,10 @@ class CompressionRetrievalStore:
         receipt_id = _short_hash(
             json.dumps(receipt, sort_keys=True, default=str) + original_hash
         )
-        lines = original_text.splitlines()
+        # Preserve the original line terminators. Recovery is an integrity
+        # boundary: CRLF/LF and a trailing newline are source bytes, not
+        # presentation details.
+        lines = original_text.splitlines(keepends=True)
         spans: list[StoredSpan] = []
         for raw in receipt.get("omitted_spans", []) or []:
             if not isinstance(raw, dict):
@@ -257,7 +273,7 @@ class CompressionRetrievalStore:
             end = int(raw.get("end_line", start))
             start = max(1, min(start, len(lines) or 1))
             end = max(start, min(end, len(lines) or start))
-            content = "\n".join(lines[start - 1 : end])
+            content = "".join(lines[start - 1 : end])
             span_id = _short_hash(f"{receipt_id}:{start}:{end}:{_sha256_text(content)}")
             spans.append(
                 StoredSpan(
@@ -915,6 +931,16 @@ class CompressionRetrievalStore:
             ],
         }
         serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        serialized_bytes = len(serialized.encode("utf-8"))
+        if self.max_bytes is not None and serialized_bytes > self.max_bytes:
+            raise OSError(
+                errno.ENOSPC,
+                (
+                    "recovery store write would exceed its configured "
+                    f"{self.max_bytes}-byte limit"
+                ),
+                str(self.path),
+            )
         tmp = self.path.with_name(
             f".{self.path.name}.{os.getpid()}.{threading.get_ident()}."
             f"{time.time_ns()}.tmp"

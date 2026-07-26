@@ -93,3 +93,48 @@ def test_compression_proxy_off_mode_is_passthrough() -> None:
     assert result.changed is False
     assert result.body == body
     assert result.receipt.tokens_saved == 0
+
+
+def test_compression_proxy_preserves_gemini_function_metadata(tmp_path) -> None:
+    from entroly.compression_retrieval_store import CompressionRetrievalStore
+
+    heavy = "\n".join(
+        ["pytest worker complete" for _ in range(400)]
+        + ["FATAL payment-service E_CONNRESET"]
+    )
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "thoughtSignature": "opaque-signature",
+                        "functionResponse": {
+                            "id": "call-1",
+                            "name": "run_tests",
+                            "response": {"output": heavy},
+                        },
+                    }
+                ],
+            }
+        ]
+    }
+
+    result = compress_proxy_payload(
+        body,
+        provider="gemini",
+        budget_tokens=160,
+        retrieval_store=CompressionRetrievalStore(tmp_path / "store.json"),
+    )
+
+    block = result.body["contents"][0]["parts"][0]
+    assert result.changed
+    assert block["thoughtSignature"] == "opaque-signature"
+    assert block["functionResponse"]["id"] == "call-1"
+    assert block["functionResponse"]["name"] == "run_tests"
+    assert "FATAL payment-service E_CONNRESET" in (
+        block["functionResponse"]["response"]["output"]
+    )
+    assert "[entroly-recovery:" in (
+        block["functionResponse"]["response"]["output"]
+    )

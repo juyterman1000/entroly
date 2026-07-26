@@ -126,7 +126,7 @@ file on every commit and its parent directory where supported. The suite did
 not simulate machine power loss, so the store-call latency is not a matched
 power-loss-durability comparison.
 The complete samples, environment identities, hashes, and errors are in the
-[`current v4 revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v4.json).
+[`current v4 revalidation`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v5.json).
 The immutable
 [`prior v3 run`](../../benchmarks/results/recovery_resilience_holdout_revalidation_v3.json)
 and

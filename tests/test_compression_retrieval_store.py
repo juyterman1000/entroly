@@ -123,14 +123,65 @@ def test_retrieval_store_saves_and_fetches_omitted_spans(tmp_path) -> None:
     span = store.get_span(receipt_id, span_id)
 
     assert result.changed
-    assert retrieval["span_count"] >= 1
+    assert retrieval["span_count"] == 1
     assert span is not None
-    assert "background line" in span.content
+    assert span.content == heavy
+    assert f"[entroly-recovery:{receipt_id}:{span_id}]" in (
+        result.body["messages"][1]["content"]
+    )
 
     restored = CompressionRetrievalStore(store_path)
     restored_span = restored.get_span(receipt_id, span_id)
     assert restored_span is not None
     assert restored_span.content == span.content
+
+
+@pytest.mark.parametrize(
+    "original",
+    [
+        "line one\nline two\n",
+        "line one\r\nline two\r\n",
+    ],
+)
+def test_full_span_recovery_preserves_exact_line_endings(
+    tmp_path, original: str
+) -> None:
+    path = tmp_path / "exact-line-endings.json"
+    stored = CompressionRetrievalStore(path).put(
+        original_text=original,
+        compressed_text="[omitted]",
+        receipt={
+            "original_tokens": 10,
+            "compressed_tokens": 2,
+            "omitted_spans": [{"start_line": 1, "end_line": 2}],
+        },
+    )
+
+    assert stored.spans[0].content == original
+    restored = CompressionRetrievalStore(path).get_span(
+        stored.receipt_id, stored.spans[0].span_id
+    )
+    assert restored is not None
+    assert restored.content == original
+
+
+def test_recovery_store_byte_limit_fails_before_commit(tmp_path) -> None:
+    path = tmp_path / "bounded.json"
+    store = CompressionRetrievalStore(path, max_bytes=128)
+
+    with pytest.raises(OSError, match="configured 128-byte limit"):
+        store.put(
+            original_text="sensitive tool output " * 100,
+            compressed_text="short",
+            receipt={
+                "original_tokens": 500,
+                "compressed_tokens": 2,
+                "omitted_spans": [{"start_line": 1, "end_line": 1}],
+            },
+        )
+
+    assert store.list_receipts() == []
+    assert not path.exists()
 
 
 def test_long_lived_reader_observes_another_store_commit(tmp_path) -> None:
