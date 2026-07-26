@@ -1,0 +1,42 @@
+name: Repair PR 205 README Contracts
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.head_ref == 'feat/agent-compatibility-matrix' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Apply fail-closed README repair
+        run: python .github/repair_pr205_readme.py
+      - name: Validate README structure
+        run: |
+          ! grep -q 'lobehub.com/badge/' README.md
+          grep -q 'content-addressed evidence' README.md
+          grep -q 'docs/ai-cost-optimization.html' README.md
+          grep -q 'alt="Entroly GitHub stars"' README.md
+          grep -q 'PRISM-R is an opt-in research prototype' README.md
+          git diff --check
+      - name: Commit README repair
+        run: |
+          rm -f .github/repair_pr205_readme.py
+          rm -f .github/workflows/repair-pr205-readme.yml
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(docs): align cost positioning with trust contracts'
+          git push origin HEAD:${{ github.head_ref }}
