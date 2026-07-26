@@ -2,14 +2,13 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+<h1 align="center">Entroly — Drop-In Context Assurance to Reduce AI Agent Costs Without Losing Critical Evidence</h1>
 
-<p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
-The observability, governance, and decision layer for AI context.<br>
-Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
+<p align="center"><b>Keep your agent and model. Reduce unnecessary context.</b><br>
+Entroly uses budgeted context selection, content-addressed recovery, and auditable receipts to lower inference expenditure and context-induced failures—without rewriting your codebase or agent architecture.</p>
 
 <p align="center">
-  <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+  <sub>Works with Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, MCP clients, local models, and OpenAI/Anthropic-compatible applications through supported proxy, plugin, wrapper, SDK, and MCP paths.</sub>
 </p>
 
 <p align="center">
