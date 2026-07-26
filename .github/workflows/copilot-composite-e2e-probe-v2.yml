@@ -1,0 +1,77 @@
+name: Copilot Composite E2E Probe v2
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-real-client:
+    if: github.head_ref == 'feat/agent-compatibility-matrix'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install Entroly and pinned Copilot CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          npm install --global '@github/copilot@1.0.74'
+      - name: Canonicalize Copilot argument ordering for probe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/copilot_composite_e2e_probe.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''                    "-s",
+                    "-p",
+                    f"Use the get_stats tool from MCP server {server_name} exactly once. "
+                    "After the tool succeeds, return exactly E2E_OK.",
+                    f"--allow-tool={server_name}",
+                    "--no-color",
+                    "--no-ask-user",
+                    "--no-auto-update",
+                    "--no-custom-instructions",
+                    "--disable-builtin-mcps",
+                    "--no-remote",
+                    "--no-remote-export",
+          '''
+          new = '''                    "-s",
+                    f"--allow-tool={server_name}",
+                    "--no-color",
+                    "--no-ask-user",
+                    "--no-auto-update",
+                    "--no-custom-instructions",
+                    "--disable-builtin-mcps",
+                    "--no-remote",
+                    "--no-remote-export",
+                    f"--prompt=Use the get_stats tool from MCP server {server_name} exactly once. After the tool succeeds, return exactly E2E_OK.",
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected Copilot command block was not found exactly once')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Run real Copilot proxy and MCP composite probe
+        env:
+          ENTROLY_DISABLE_UPDATE_CHECK: '1'
+        run: python .github/copilot_composite_e2e_probe.py
+      - name: Upload composite E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: copilot-composite-e2e-probe-v2
+          path: |
+            copilot-composite-e2e.json
+            copilot-composite-e2e.log
+          if-no-files-found: error
+          retention-days: 14
