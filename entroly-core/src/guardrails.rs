@@ -48,7 +48,14 @@ fn path_depth(path: &str) -> usize {
 /// budget = 8K). Only ROOT-level configs are Critical; nested copies are
 /// Important (score-boosted but budget-constrained).
 pub fn file_criticality(path: &str) -> Criticality {
+    // Fragment sources are stored as `file:<path>`. The basename below is taken
+    // with rsplit('/'), so a root-level source like `file:LICENSE` produced the
+    // basename "file:license" and matched nothing: root-level LICENSE,
+    // Cargo.toml and package.json were never classified critical, while nested
+    // paths like `file:crate/Cargo.toml` split correctly and were. Strip the
+    // scheme so depth and basename describe the actual file.
     let lower = path.to_lowercase();
+    let lower = lower.strip_prefix("file:").unwrap_or(&lower).to_string();
     let basename = lower
         .rsplit('/')
         .next()
