@@ -99,6 +99,10 @@ def test_hard_pressure_overrides_cache_and_persists_recovery(
     stored = store.get_receipt(result.recovery_receipts[0])
     assert stored is not None and stored.spans
     assert stored.spans[0].content == tool["content"]
+    assert (
+        f"[entroly-recovery:{stored.receipt_id}:{stored.spans[0].span_id}]"
+        in result.messages[1]["content"]
+    )
 
 
 def test_frozen_history_remains_byte_identical_when_turns_append(
@@ -129,6 +133,74 @@ def test_frozen_history_remains_byte_identical_when_turns_append(
 
     assert first.messages[1] == second.messages[1]
     assert second.stable_prefix_messages >= 4
+
+
+def test_restart_with_different_query_keeps_rescued_prefix_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import entroly.session_rescue as rescue_module
+
+    class _Receipt:
+        def as_dict(self) -> dict[str, object]:
+            return {
+                "original_tokens": 500,
+                "compressed_tokens": 5,
+                "omitted_spans": [],
+            }
+
+    class _Result:
+        changed = True
+        receipt = _Receipt()
+
+        def __init__(self, query: str) -> None:
+            self.compressed = f"structural-summary query={query}"
+
+        def with_receipt_header(self) -> str:
+            return self.compressed
+
+    def query_sensitive_compressor(
+        _text: str, *, query: str, budget_tokens: int, min_savings: float
+    ) -> _Result:
+        assert budget_tokens > 0
+        assert min_savings > 0
+        return _Result(query)
+
+    monkeypatch.setattr(
+        rescue_module, "compress_evidence_locked", query_sensitive_compressor
+    )
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    policy = {
+        "soft_watermark": 0.20,
+        "hard_watermark": 0.30,
+        "target_watermark": 0.10,
+        "failure_watermark": 0.95,
+        "loop_min_watermark": 0.05,
+        "tail_messages": 2,
+    }
+    first, _ = _controller(first_dir, **policy)
+    restarted, _ = _controller(second_dir, **policy)
+    messages = [
+        {"role": "system", "content": "stable policy"},
+        {"role": "tool", "content": "old tool output " * 500},
+        {"role": "assistant", "content": "checking"},
+        {"role": "user", "content": "continue"},
+    ]
+
+    before_restart = first.rescue(
+        "conv", messages, context_window=4_000, query="payment failure"
+    )
+    after_restart = restarted.rescue(
+        "conv", messages, context_window=4_000, query="unrelated auth question"
+    )
+
+    assert before_restart.messages[1] == after_restart.messages[1]
+    assert before_restart.recovery_receipts == after_restart.recovery_receipts
+    assert "query=" in before_restart.messages[1]["content"]
+    assert "payment failure" not in before_restart.messages[1]["content"]
+    assert "unrelated auth question" not in after_restart.messages[1]["content"]
 
 
 def test_loop_signal_triggers_before_hard_watermark(tmp_path: Path) -> None:

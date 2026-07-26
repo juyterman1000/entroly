@@ -134,7 +134,7 @@ def test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy() -
     report = json.loads(
         (
             ROOT
-            / "benchmarks/results/recovery_resilience_holdout_revalidation_v4.json"
+            / "benchmarks/results/recovery_resilience_holdout_revalidation_v5.json"
         ).read_text(encoding="utf-8")
     )
     resilience.verify_report(report)

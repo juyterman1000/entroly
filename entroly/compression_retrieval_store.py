@@ -261,7 +261,10 @@ class CompressionRetrievalStore:
         receipt_id = _short_hash(
             json.dumps(receipt, sort_keys=True, default=str) + original_hash
         )
-        lines = original_text.splitlines()
+        # Preserve the original line terminators. Recovery is an integrity
+        # boundary: CRLF/LF and a trailing newline are source bytes, not
+        # presentation details.
+        lines = original_text.splitlines(keepends=True)
         spans: list[StoredSpan] = []
         for raw in receipt.get("omitted_spans", []) or []:
             if not isinstance(raw, dict):
@@ -270,7 +273,7 @@ class CompressionRetrievalStore:
             end = int(raw.get("end_line", start))
             start = max(1, min(start, len(lines) or 1))
             end = max(start, min(end, len(lines) or start))
-            content = "\n".join(lines[start - 1 : end])
+            content = "".join(lines[start - 1 : end])
             span_id = _short_hash(f"{receipt_id}:{start}:{end}:{_sha256_text(content)}")
             spans.append(
                 StoredSpan(
