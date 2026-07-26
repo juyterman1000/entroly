@@ -2,18 +2,18 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+<h1 align="center">Entroly — Lower the Operational Cost of AI Agents</h1>
 
-<p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
-The observability, governance, and decision layer for AI context.<br>
-Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
+<p align="center"><b>Reduce token usage. Preserve answer-critical evidence. Prove what your agent saw.</b><br>
+A low-friction, drop-in context assurance layer for the models and developer tools you already use.<br>
+Entroly selects context under an explicit budget, keeps omitted evidence recoverable, and emits receipts—without replacing your model, codebase, or agent architecture.</p>
 
 <p align="center">
-  <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+  <sub>Works with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, local models, and compatible provider applications through supported proxy, MCP, CLI, SDK, and wrapper paths.</sub>
 </p>
 
 <p align="center">
-  <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
+  <sub>Budgeted context selection · content-addressed evidence · included/omitted evidence receipts · recoverable compression · local-first · optional Rust acceleration</sub>
 </p>
 
 <!-- Distribution and licensing: registry badges report live package metadata. -->
