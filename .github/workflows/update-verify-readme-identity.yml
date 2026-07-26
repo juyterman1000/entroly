@@ -1,0 +1,41 @@
+name: Update README Identity Verifier
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.head_ref == 'feat/agent-compatibility-matrix' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Update the stale verifier contract
+        run: python .github/update_verify_readme_identity.py
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Validate public README contracts
+        run: |
+          python scripts/verify_public_trust.py
+          python scripts/verify_readme.py
+          git diff --check
+      - name: Commit contract update
+        run: |
+          rm -f .github/update_verify_readme_identity.py
+          rm -f .github/workflows/update-verify-readme-identity.yml
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git add -A
+          git commit -m 'test(trust): align README identity contract'
+          git push origin HEAD:${{ github.head_ref }}
