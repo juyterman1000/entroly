@@ -22,6 +22,7 @@ def test_copilot_attachment_uses_current_cli_contract(tmp_path):
         ("copilot", "mcp", "remove", "entroly-att_0123456789abcdef"),
     )
     assert "copilot" in ATTACHMENT_CLIENTS
+    assert "kimi" not in ATTACHMENT_CLIENTS
 
 
 def test_copilot_wrapper_uses_byok_provider_variables():
