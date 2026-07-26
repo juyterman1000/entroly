@@ -63,5 +63,7 @@ for relative in (
     ".github/workflows/finalize-agent-compatibility-e2e-v2.yml",
     ".github/workflows/finalize-agent-compatibility-e2e.yml",
     "tests/e2e/kimi_mcp_real_client.py",
+    ".github/remove_kimi.py",
+    ".github/workflows/remove-kimi.yml",
 ):
     (ROOT / relative).unlink(missing_ok=True)
