@@ -71,7 +71,23 @@ KNOWN_PROTOCOL_PATHS = (
 '''
 if benchmark.count(old) != 1:
     raise SystemExit("recovery-resilience protocol registry changed")
-benchmark_path.write_text(benchmark.replace(old, new, 1), encoding="utf-8")
+benchmark = benchmark.replace(old, new, 1)
+
+python_command_old = '''        command = [
+            str(Path(python).resolve()),
+            "-m",
+'''
+python_command_new = '''        command = [
+            # Preserve a virtualenv launcher's symlink path. Resolving it would
+            # bypass the virtualenv and execute the base interpreter without the
+            # benchmark participant's installed site-packages.
+            str(Path(python).absolute()),
+            "-m",
+'''
+if benchmark.count(python_command_old) != 1:
+    raise SystemExit("recovery-resilience interpreter command changed")
+benchmark = benchmark.replace(python_command_old, python_command_new, 1)
+benchmark_path.write_text(benchmark, encoding="utf-8")
 
 artifact_old = "recovery_resilience_holdout_revalidation_v4.json"
 artifact_new = "recovery_resilience_holdout_revalidation_v5.json"
@@ -80,7 +96,6 @@ for relative in (
     "docs/public-evidence.md",
     "scripts/readme_proof.py",
     "docs/benchmarks/competitive-evidence-matrix.md",
-    "tests/test_recovery_resilience.py",
 ):
     path = ROOT / relative
     text = path.read_text(encoding="utf-8")
@@ -93,3 +108,63 @@ for relative in (
             "The committed v5 recovery-resilience revalidation",
         )
     path.write_text(text, encoding="utf-8")
+
+test_path = ROOT / "tests/test_recovery_resilience.py"
+tests = test_path.read_text(encoding="utf-8")
+if "import sys\n" not in tests:
+    import_anchor = "import json\n"
+    if tests.count(import_anchor) != 1:
+        raise SystemExit("recovery-resilience import anchor changed")
+    tests = tests.replace(import_anchor, import_anchor + "import sys\n", 1)
+
+venv_test = '''
+
+def test_adapter_preserves_virtualenv_launcher_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = tmp_path / "venv" / "bin" / "python"
+    launcher.parent.mkdir(parents=True)
+    try:
+        launcher.symlink_to(Path(sys.executable))
+    except OSError:
+        pytest.skip("platform does not permit symlink creation")
+
+    captured: dict[str, object] = {}
+
+    class _Completed:
+        returncode = 0
+        stdout = json.dumps({"system": "headroom"})
+        stderr = ""
+
+    def fake_run(command: list[str], **kwargs: object) -> _Completed:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return _Completed()
+
+    monkeypatch.setattr(resilience.subprocess, "run", fake_run)
+
+    result = resilience._invoke_adapter(
+        str(launcher),
+        "headroom",
+        {"workers": 1, "entries_per_worker": 1, "seed": 7},
+        timeout=1.0,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[0] == str(launcher.absolute())
+    assert command[0] != str(launcher.resolve())
+    assert result["system"] == "headroom"
+'''
+venv_anchor = (
+    "\n\ndef test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy"
+)
+if "test_adapter_preserves_virtualenv_launcher_path" not in tests:
+    if tests.count(venv_anchor) != 1:
+        raise SystemExit("recovery-resilience venv-test anchor changed")
+    tests = tests.replace(venv_anchor, venv_test + venv_anchor, 1)
+
+if artifact_old not in tests:
+    raise SystemExit("tests/test_recovery_resilience.py: v4 artifact reference is missing")
+tests = tests.replace(artifact_old, artifact_new)
+test_path.write_text(tests, encoding="utf-8")
