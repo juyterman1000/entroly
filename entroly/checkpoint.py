@@ -43,6 +43,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -82,6 +83,8 @@ except ImportError:
         access_count: int = 0
         is_pinned: bool = False
         simhash: int = 0
+
+logger = logging.getLogger("entroly.checkpoint")
 
 # Checkpoint schema version — increment when serialization format changes.
 # Migration functions handle loading older versions.
@@ -729,12 +732,40 @@ class CheckpointManager:
             remaining -= 1
 
         if remaining > self.max_total_checkpoints:
-            import logging
+            # Second pass: the protected set alone exceeds the ceiling, so the
+            # cap would be purely advisory. That is the original defect — an
+            # observed dev box held 127 checkpoints / 264 MB — and it is
+            # reachable whenever many peer frontiers look alive, which happens
+            # routinely under pid reuse and on Windows where an unprovable pid
+            # fail-safes to "alive".
+            #
+            # Recovery still outranks disk policy where it matters: we never
+            # touch this instance's own files, and we drop the OLDEST peer
+            # frontiers first, so the most recent recovery points — the ones
+            # load_latest/find_relevant actually read — survive.
+            for _mtime, checkpoint in reversed(entries):
+                if remaining <= self.max_total_checkpoints:
+                    break
+                if checkpoint.name.startswith(own_prefix):
+                    continue  # our own state is never sacrificed to the cap
+                if checkpoint not in protected:
+                    continue  # already handled by the first pass
+                if self._checkpoint_owner(checkpoint.name) is None:
+                    # Unknown ownership stays protected: we cannot say whose
+                    # recovery point this is, and deleting on a guess is the one
+                    # thing this module never does. The cap stays soft in that
+                    # (pathological) case and says so.
+                    continue
+                try:
+                    checkpoint.unlink()
+                except OSError:
+                    continue
+                remaining -= 1
 
-            logging.getLogger("entroly.checkpoint").warning(
-                "Checkpoint cap is soft: %d protected recovery frontier(s) "
-                "require %d files, above configured cap %d",
-                len(protected),
+        if remaining > self.max_total_checkpoints:
+            logger.warning(
+                "Checkpoint cap is soft: %d file(s) remain above the configured "
+                "cap %d because they belong to this instance",
                 remaining,
                 self.max_total_checkpoints,
             )

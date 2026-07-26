@@ -338,3 +338,25 @@ def test_global_cap_is_soft_when_protected_frontiers_exceed_it(tmp_path: Path):
     assert len(list(tmp_path.glob("ckpt_*.json.gz"))) == 3, (
         "unknown ownership was treated as permission to destroy recovery state"
     )
+
+
+def test_cap_is_hard_when_peer_frontiers_are_merely_unprovable(tmp_path: Path):
+    # Regression: protecting the newest checkpoint of EVERY peer that looks
+    # alive made the cap advisory. _pid_is_alive fail-safes to "alive" for
+    # recycled pids and access-denied probes, so on a busy host every historical
+    # frontier is protected and the 264 MB / 127-file condition returns.
+    # Unknown-OWNER files stay protected (see the soft-cap test); parseable
+    # peers must not defeat the bound.
+    import os as _os
+
+    live = _os.getpid()
+    for i in range(100):
+        _write(tmp_path, f"ckpt_{_HOST}_{live}_170000_{i:03d}.json.gz", age_s=200 - i)
+    CheckpointManager(
+        tmp_path, instance_id=f"{_HOST}_1", max_checkpoints=10, max_total_checkpoints=40
+    )._prune_old_checkpoints()
+
+    remaining = len(list(tmp_path.glob("ckpt_*.json.gz")))
+    assert remaining <= 40, (
+        f"cap went soft on live-looking peers: {remaining} files remain (cap 40)"
+    )
