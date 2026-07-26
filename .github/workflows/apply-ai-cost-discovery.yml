@@ -1,0 +1,484 @@
+name: Apply AI Cost Discovery Update
+
+on:
+  push:
+    branches:
+      - docs/ai-cost-model-discovery
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: docs/ai-cost-model-discovery
+          fetch-depth: 0
+
+      - name: Apply model, README, SEO, and AEO changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+
+          ROOT = Path('.')
+          TODAY = '2026-07-26'
+          MODEL_SOURCE = 'https://platform.claude.com/docs/en/about-claude/models/overview'
+
+          def read(path: str) -> str:
+              return (ROOT / path).read_text(encoding='utf-8')
+
+          def write(path: str, text: str) -> None:
+              p = ROOT / path
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(text, encoding='utf-8')
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              text = read(path)
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'{path}: expected block not found')
+              write(path, text.replace(old, new, 1))
+
+          # README hero: lead with the user outcome, then state the assurance mechanism.
+          old_hero = '''<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+
+          <p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
+          The observability, governance, and decision layer for AI context.<br>
+          Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
+
+          <p align="center">
+            <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+          </p>
+
+          <p align="center">
+            <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
+          </p>'''
+          new_hero = '''<h1 align="center">Entroly — Lower the Operational Cost of AI Agents</h1>
+
+          <p align="center"><b>Reduce token usage. Preserve answer-critical evidence. Prove what your agent saw.</b><br>
+          A low-friction, drop-in Context Assurance layer for the models and developer tools you already use.<br>
+          Entroly selects context under an explicit budget, keeps omitted evidence recoverable, and emits receipts—without replacing your model, codebase, or agent architecture.</p>
+
+          <p align="center">
+            <sub>Works with Claude Fable 5, Claude Opus 5, Claude Sonnet 5, GPT-5.6, Gemini, local models, Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and compatible provider applications through supported proxy, wrapper, MCP, CLI, and SDK paths.</sub>
+          </p>
+
+          <p align="center">
+            <sub>Budgeted context selection · content-addressed evidence · included/omitted evidence receipts · exact recovery · local-first · optional Rust acceleration</sub>
+          </p>'''
+          replace_once('README.md', old_hero, new_hero)
+
+          readme = read('README.md')
+          cost_section = '''## Lower AI operational cost without blind trimming
+
+          **Direct answer:** Entroly can lower provider-bound AI input costs by selecting answer-relevant evidence under a token budget before a supported request reaches the model. A zero-code proxy route is available for compatible API traffic; wrappers, MCP, CLI, SDK, and native integrations cover developer tools and local models. Savings are workload-specific, so Entroly reports measured reduction and provenance instead of promising one universal percentage.
+
+          | Current model or platform | Supported Entroly path | What Entroly adds |
+          |---|---|---|
+          | **Claude Fable 5, Claude Opus 5, Claude Sonnet 5** | Anthropic-compatible proxy/API routes | Budgeted input selection, Context Receipts, exact recovery, and provider-observed input-cost accounting where visible |
+          | **GPT-5.6 and OpenAI-compatible models** | Responses/chat-compatible proxy and SDK routes | Evidence selection before inference, cache-aware context handling, receipts, and measured provider-bound reduction |
+          | **Gemini, Bedrock, Ollama, LM Studio, and local models** | Provider-specific or compatible proxy/SDK routes | Model-neutral context selection and recovery; dollar savings are claimed only where provider delivery and pricing are observable |
+          | **Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, and Aider** | Attach, wrapper, MCP, plugin, or integration path | Low-friction adoption without replacing the agent loop or rewriting the codebase |
+
+          Entroly is not a blind text trimmer. It chooses evidence before compression, records what was included and omitted, keeps exact originals addressable, and can verify generated claims against the supplied evidence.
+
+          [Read the AI cost optimization guide](docs/ai-cost-optimization.html) · [Compare Entroly and Headroom](docs/entroly-vs-headroom.html)
+
+          ---
+
+          '''
+          marker = '## See value in your first session\n'
+          if cost_section.strip() not in readme:
+              if marker not in readme:
+                  raise SystemExit('README insertion marker missing')
+              readme = readme.replace(marker, cost_section + marker, 1)
+              write('README.md', readme)
+
+          # Keep the PyPI landing page aligned, without claiming a universal saving.
+          pypi = read('PYPI_README.md')
+          pypi = pypi.replace(
+              '<h1 align="center">Entroly — Context Assurance That Helps Lower AI Costs</h1>',
+              '<h1 align="center">Entroly — Lower the Operational Cost of AI Agents</h1>',
+              1,
+          )
+          pypi = pypi.replace(
+              '<p align="center"><b>Use less unnecessary AI context without rebuilding how you work.</b><br>\nEntroly selects useful evidence, removes avoidable repetition, keeps important originals recoverable, and records what your AI received.</p>',
+              '<p align="center"><b>Reduce token usage without blindly trimming answer-critical evidence.</b><br>\nEntroly selects useful evidence under a budget, keeps omitted originals recoverable, and records what your AI received.</p>',
+              1,
+          )
+          pypi = pypi.replace(
+              'It works through supported proxy, wrapper, plugin, SDK, and MCP paths with Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.',
+              'It works through supported proxy, wrapper, plugin, SDK, and MCP paths with Claude Fable 5, Claude Opus 5, Claude Sonnet 5, GPT-5.6, Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, local models, and compatible provider applications.',
+              1,
+          )
+          write('PYPI_README.md', pypi)
+
+          # Explicitly register current Claude models in both Python and Rust snapshots.
+          current_models = [
+              {
+                  'id': 'anthropic/claude-fable-5',
+                  'provider': 'anthropic',
+                  'aliases': ['anthropic/claude-fable-5', 'claude-fable-5'],
+                  'context_window': 1_000_000,
+                  'max_output_tokens': 128_000,
+                  'supports_tools': True,
+                  'supports_vision': True,
+                  'supports_reasoning': True,
+                  'input_price_per_million': 10.0,
+                  'output_price_per_million': 50.0,
+                  'trust': 'verified',
+                  'source': MODEL_SOURCE,
+                  'verified_at': TODAY,
+              },
+              {
+                  'id': 'anthropic/claude-opus-5',
+                  'provider': 'anthropic',
+                  'aliases': ['anthropic/claude-opus-5', 'claude-opus-5'],
+                  'context_window': 1_000_000,
+                  'max_output_tokens': 128_000,
+                  'supports_tools': True,
+                  'supports_vision': True,
+                  'supports_reasoning': True,
+                  'input_price_per_million': 5.0,
+                  'output_price_per_million': 25.0,
+                  'trust': 'verified',
+                  'source': MODEL_SOURCE,
+                  'verified_at': TODAY,
+              },
+              {
+                  'id': 'anthropic/claude-sonnet-5',
+                  'provider': 'anthropic',
+                  'aliases': ['anthropic/claude-sonnet-5', 'claude-sonnet-5'],
+                  'context_window': 1_000_000,
+                  'max_output_tokens': 128_000,
+                  'supports_tools': True,
+                  'supports_vision': True,
+                  'supports_reasoning': True,
+                  'input_price_per_million': 3.0,
+                  'output_price_per_million': 15.0,
+                  'trust': 'verified',
+                  'source': MODEL_SOURCE,
+                  'verified_at': TODAY,
+              },
+          ]
+          registry_path = ROOT / 'entroly/models/registry.json'
+          registry = json.loads(registry_path.read_text(encoding='utf-8'))
+          registry['generated_at'] = TODAY
+          replace_ids = {item['id'] for item in current_models}
+          models = [m for m in registry['models'] if m.get('id') not in replace_ids]
+          insert_at = next(
+              (i for i, model in enumerate(models) if model.get('id') == 'anthropic/claude-opus-4.6'),
+              len(models),
+          )
+          models[insert_at:insert_at] = current_models
+          registry['models'] = models
+          registry_text = json.dumps(registry, indent=2, ensure_ascii=False) + '\n'
+          write('entroly/models/registry.json', registry_text)
+          write('entroly-core/model_registry.json', registry_text)
+
+          # Model-registry regression proving current aliases, budgets, and prices.
+          model_tests = read('tests/test_model_registry.py')
+          current_test = '''\n\n@pytest.mark.parametrize(\n    ("alias", "model_id", "input_price", "output_price"),\n    [\n        ("claude-fable-5", "anthropic/claude-fable-5", 10.0, 50.0),\n        ("claude-opus-5", "anthropic/claude-opus-5", 5.0, 25.0),\n        ("claude-sonnet-5", "anthropic/claude-sonnet-5", 3.0, 15.0),\n    ],\n)\ndef test_current_claude_5_models_have_verified_context_and_pricing(\n    alias, model_id, input_price, output_price\n):\n    result = get_model_registry().resolve(alias)\n\n    assert result.capability is not None\n    assert result.capability.id == model_id\n    assert result.trust is RegistryTrust.VERIFIED\n    assert result.context_window == 1_000_000\n    assert result.capability.max_output_tokens == 128_000\n    assert result.capability.input_price_per_million == input_price\n    assert result.capability.output_price_per_million == output_price\n    assert result.capability.supports_reasoning is True\n    assert result.warning is None\n'''
+          if 'test_current_claude_5_models_have_verified_context_and_pricing' not in model_tests:
+              model_tests = model_tests.replace(
+                  '\n\ndef test_unknown_model_fails_visibly_with_conservative_fallback():',
+                  current_test + '\n\ndef test_unknown_model_fails_visibly_with_conservative_fallback():',
+                  1,
+              )
+              write('tests/test_model_registry.py', model_tests)
+
+          # Search-facing AI cost page: concise title, visible direct answer, current models, and FAQ parity.
+          cost = read('docs/ai-cost-optimization.html')
+          replacements = {
+              '<title>AI Cost Optimization: Reduce Token Waste with Entroly</title>': '<title>Reduce AI Operational Costs with Entroly Context Assurance</title>',
+              'content="Learn how Entroly reduces avoidable AI token usage with budgeted evidence selection, recoverable compression, receipts, and model-neutral Context Assurance."': 'content="Lower provider-bound AI input costs for Claude Opus 5, Fable 5, Sonnet 5, GPT-5.6, coding agents, and local models with evidence selection, receipts, and exact recovery."',
+              'content="AI Cost Optimization: Reduce Token Waste with Entroly"': 'content="Reduce AI Operational Costs with Entroly Context Assurance"',
+              'content="Reduce unnecessary model input while preserving exact evidence, receipts, and verification."': 'content="Lower avoidable AI input costs while preserving exact evidence, receipts, recovery, and verification."',
+              'content="AI Cost Optimization with Entroly"': 'content="Reduce AI Operational Costs with Entroly"',
+              'content="Context Assurance for reducing avoidable token usage without replacing your AI model or agent."': 'content="Context Assurance for Claude Opus 5, Fable 5, Sonnet 5, GPT-5.6, coding agents, and local models."',
+              '"headline": "AI Cost Optimization: Reduce Token Waste with Entroly"': '"headline": "Reduce AI Operational Costs with Entroly Context Assurance"',
+              '"dateModified": "2026-07-25"': f'"dateModified": "{TODAY}"',
+              '<p class="eyebrow">AI cost optimization with evidence protection</p>': '<p class="eyebrow">Lower AI operational cost with evidence protection</p>',
+              '<h1>Entroly reduces avoidable AI token usage without losing important evidence.</h1>': '<h1>Entroly lowers AI operational costs without blindly trimming context.</h1>',
+              '<p class="lead">Entroly is a model-neutral Context Assurance layer. It selects useful information under a budget, removes avoidable repetition, preserves exact originals, and records what the model received.</p>': '<p class="lead">Entroly is a model-neutral Context Assurance layer for Claude Fable 5, Claude Opus 5, Claude Sonnet 5, GPT-5.6, coding agents, and local models. It selects useful evidence under a budget, removes avoidable repetition, preserves exact originals, and records what the model received.</p>',
+              '<div class="answer"><strong>Direct answer:</strong> Entroly can help lower LLM API input costs by reducing unnecessary context before a supported provider-bound request. It does not promise a fixed percentage, and it does not blindly shorten prompts.</div>': '<div class="answer"><strong>Direct answer:</strong> Entroly can lower provider-bound AI input costs by selecting answer-relevant evidence before a supported request reaches Claude Opus 5, Fable 5, Sonnet 5, GPT-5.6, or another compatible model. It does not promise a fixed percentage, and it does not blindly shorten prompts.</div>',
+          }
+          for old, new in replacements.items():
+              if old not in cost:
+                  raise SystemExit(f'cost page replacement missing: {old[:80]}')
+              cost = cost.replace(old, new, 1)
+
+          model_section = '''\n  <h2>Current models and developer tools</h2>\n  <table>\n    <thead><tr><th>Model or platform</th><th>How Entroly fits</th></tr></thead>\n    <tbody>\n      <tr><td>Claude Fable 5, Claude Opus 5, Claude Sonnet 5</td><td>Use a supported Anthropic-compatible proxy or API route. Entroly recognizes the current model IDs and applies the correct 1M-token window and published input/output pricing metadata.</td></tr>\n      <tr><td>GPT-5.6 and OpenAI-compatible models</td><td>Use a supported Responses or chat-compatible path for provider-bound measurement, receipts, evidence selection, and exact recovery.</td></tr>\n      <tr><td>Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider</td><td>Use the supported attach, wrapper, MCP, plugin, or integration path. A small one-time setup is required; the agent loop and codebase architecture remain yours.</td></tr>\n      <tr><td>Ollama, LM Studio, and other local models</td><td>Use a compatible local route for context selection and receipts. Entroly reports context reduction but does not invent provider-dollar savings where no paid provider request is observed.</td></tr>\n    </tbody>\n  </table>\n  <p>Model names are not merely search keywords: the bundled registry records context windows, output limits, pricing provenance, and verification dates used by Entroly's budget and cost calculations.</p>\n'''
+          anchor = '\n  <h2>What is measured—and what is not</h2>'
+          if 'Current models and developer tools' not in cost:
+              if anchor not in cost:
+                  raise SystemExit('cost page model-section anchor missing')
+              cost = cost.replace(anchor, model_section + anchor, 1)
+
+          comparison_link = '<p>For a feature-by-feature positioning review, see <a href="entroly-vs-headroom.html">Entroly vs Headroom: Context Assurance or Compression?</a></p>\n'
+          if 'entroly-vs-headroom.html' not in cost:
+              cost = cost.replace('\n  <h2>Why this is more than prompt compression</h2>', '\n  ' + comparison_link + '\n  <h2>Why this is more than prompt compression</h2>', 1)
+
+          # Add visible FAQs and matching JSON-LD questions.
+          visible_faq = '''\n  <h2>Frequently asked questions</h2>\n  <h3>Can Entroly reduce Claude Opus 5 or Fable 5 API costs?</h3>\n  <p>Entroly can reduce provider-bound input tokens before a supported request reaches those models. The actual dollar effect depends on the selected evidence, model pricing, prompt caching, output usage, and workload. Entroly does not claim to lower a fixed Claude subscription price.</p>\n  <h3>Does Entroly require changes to my agent architecture?</h3>\n  <p>No architecture rewrite is required. Compatible API traffic can use the proxy path; developer tools can use attach, wrapper, MCP, plugin, or native integration paths. Each path still requires a small one-time setup.</p>\n  <h3>How is Entroly different from Headroom?</h3>\n  <p>Both projects provide local context optimization and reversible paths. Headroom publicly emphasizes broad content compression, wrappers, and output shaping. Entroly emphasizes Context Assurance: budgeted evidence selection, included/omitted evidence receipts, exact hash recovery, verification, and fail-closed savings accounting.</p>\n'''
+          if '<h2>Frequently asked questions</h2>' not in cost:
+              cost = cost.replace('\n  <h2>Evidence</h2>', visible_faq + '\n  <h2>Evidence</h2>', 1)
+
+          faq_marker = '''          {\n            "@type": "Question",\n            "name": "Does Entroly blindly trim prompts?",\n            "acceptedAnswer": {"@type": "Answer", "text": "No. Entroly performs budgeted evidence selection, preserves exact originals through content-addressed handles, produces Context Receipts, and can verify whether claims are supported by supplied evidence."}\n          }'''
+          faq_replacement = faq_marker + ''',\n          {\n            "@type": "Question",\n            "name": "Can Entroly reduce Claude Opus 5 or Fable 5 API costs?",\n            "acceptedAnswer": {"@type": "Answer", "text": "Entroly can reduce provider-bound input tokens before a supported request reaches Claude Opus 5 or Fable 5. Actual cost impact depends on model pricing, selected evidence, prompt caching, output usage, and workload."}\n          },\n          {\n            "@type": "Question",\n            "name": "How is Entroly different from Headroom?",\n            "acceptedAnswer": {"@type": "Answer", "text": "Both provide local context optimization and reversible paths. Headroom emphasizes broad content compression, wrappers, and output shaping. Entroly emphasizes Context Assurance through budgeted evidence selection, Context Receipts, exact hash recovery, verification, and fail-closed accounting."}\n          }'''
+          if 'Can Entroly reduce Claude Opus 5 or Fable 5 API costs?' not in cost.split('</script>', 1)[0]:
+              if faq_marker not in cost:
+                  raise SystemExit('cost page FAQ JSON-LD marker missing')
+              cost = cost.replace(faq_marker, faq_replacement, 1)
+          write('docs/ai-cost-optimization.html', cost)
+
+          # Dedicated, factual comparison intent page. This is deliberately balanced.
+          comparison = '''<!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Entroly vs Headroom: Context Assurance or Compression?</title>
+            <meta name="description" content="Compare Entroly and Headroom for AI token reduction, context compression, proxy deployment, exact recovery, evidence receipts, verification, and agent integrations.">
+            <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+            <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html">
+            <meta property="og:site_name" content="Entroly">
+            <meta property="og:type" content="article">
+            <meta property="og:title" content="Entroly vs Headroom: Context Assurance or Compression?">
+            <meta property="og:description" content="A factual comparison of two local AI context optimization projects and the different problems they prioritize.">
+            <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html">
+            <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+            <meta name="twitter:card" content="summary">
+            <meta name="twitter:title" content="Entroly vs Headroom">
+            <meta name="twitter:description" content="Context Assurance compared with broad context compression for AI agents.">
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@graph": [
+                {
+                  "@type": "SoftwareApplication",
+                  "name": "Entroly",
+                  "applicationCategory": "DeveloperApplication",
+                  "applicationSubCategory": "AI Cost Optimization and Context Assurance",
+                  "operatingSystem": "Windows, macOS, Linux",
+                  "url": "https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html",
+                  "codeRepository": "https://github.com/juyterman1000/entroly",
+                  "downloadUrl": "https://pypi.org/project/entroly/",
+                  "license": "https://opensource.org/licenses/Apache-2.0",
+                  "description": "A local-first Context Assurance layer with budgeted evidence selection, Context Receipts, exact recovery, verification, and evidence-classified cost accounting.",
+                  "offers": {"@type": "Offer", "price": "0.00", "priceCurrency": "USD"}
+                },
+                {
+                  "@type": "TechArticle",
+                  "headline": "Entroly vs Headroom: Context Assurance or Compression?",
+                  "description": "A dated, source-linked comparison of local AI context optimization approaches.",
+                  "url": "https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html",
+                  "dateModified": "2026-07-26",
+                  "author": {"@type": "Organization", "name": "Entroly", "url": "https://github.com/juyterman1000/entroly"}
+                },
+                {
+                  "@type": "BreadcrumbList",
+                  "itemListElement": [
+                    {"@type": "ListItem", "position": 1, "name": "Entroly", "item": "https://juyterman1000.github.io/entroly/docs/index.html"},
+                    {"@type": "ListItem", "position": 2, "name": "Entroly vs Headroom", "item": "https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html"}
+                  ]
+                },
+                {
+                  "@type": "FAQPage",
+                  "mainEntity": [
+                    {
+                      "@type": "Question",
+                      "name": "Is Entroly better than Headroom?",
+                      "acceptedAnswer": {"@type": "Answer", "text": "There is no universal winner. Headroom is a strong fit when broad content compression, wrappers, and output shaping are the primary requirement. Entroly is designed for teams prioritizing budgeted evidence selection, Context Receipts, exact recovery, verification, and fail-closed savings accounting."}
+                    },
+                    {
+                      "@type": "Question",
+                      "name": "Do Entroly and Headroom both support zero-code proxy deployment?",
+                      "acceptedAnswer": {"@type": "Answer", "text": "Both projects document proxy deployment paths. Exact setup and supported traffic vary by provider, client, and release, so users should verify the current integration guide for their environment."}
+                    },
+                    {
+                      "@type": "Question",
+                      "name": "Which tool should I use to reduce AI bills without losing evidence?",
+                      "acceptedAnswer": {"@type": "Answer", "text": "Evaluate both on the same workload. Entroly is differentiated by evidence receipts, exact content-addressed recovery, verification, and accounting that does not credit retrieval failures as useful savings."}
+                    }
+                  ]
+                }
+              ]
+            }
+            </script>
+            <style>
+              :root{color-scheme:dark;--bg:#07070b;--panel:#111119;--text:#f8fafc;--muted:#a1a1aa;--accent:#8b5cf6;--line:#27272a;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:980px;margin:auto;padding:56px 24px 90px}nav{margin-bottom:52px;color:var(--muted);font-size:15px}nav a,a{color:#c4b5fd}h1{font-size:clamp(2.4rem,6vw,4.4rem);line-height:1.05;letter-spacing:-.04em;margin:.2em 0}h2{margin-top:2.2em;font-size:1.8rem}.eyebrow{color:#c4b5fd;text-transform:uppercase;letter-spacing:.12em;font-weight:800;font-size:13px}.lead{color:#d4d4d8;font-size:1.2rem;max-width:830px}.answer{background:linear-gradient(145deg,rgba(139,92,246,.16),rgba(74,222,128,.06));border:1px solid rgba(139,92,246,.4);border-radius:18px;padding:24px 28px;margin:34px 0}table{width:100%;border-collapse:collapse;background:var(--panel)}th,td{border:1px solid var(--line);padding:14px;vertical-align:top;text-align:left}.note{border-left:4px solid var(--green);padding:10px 18px;background:rgba(74,222,128,.06)}footer{margin-top:70px;padding-top:28px;border-top:1px solid var(--line);color:var(--muted)}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+            </style>
+          </head>
+          <body>
+          <main>
+            <nav><a href="index.html">Entroly</a> / Entroly vs Headroom</nav>
+            <p class="eyebrow">AI context optimization comparison</p>
+            <h1>Entroly vs Headroom: choose Context Assurance or broad compression.</h1>
+            <p class="lead">Both are open-source, local-first projects designed to reduce unnecessary AI context. Their public positioning overlaps, but the center of gravity is different.</p>
+            <div class="answer"><strong>Direct answer:</strong> Headroom publicly emphasizes broad content-aware compression, agent wrappers, proxy deployment, and output shaping. Entroly emphasizes budgeted evidence selection before compression, included/omitted evidence receipts, exact content-addressed recovery, verification, and fail-closed accounting. Test both on the same workload; there is no universal winner.</div>
+
+            <h2>Publicly documented positioning</h2>
+            <table>
+              <thead><tr><th>Area</th><th>Entroly</th><th>Headroom</th></tr></thead>
+              <tbody>
+                <tr><td>Primary framing</td><td>Context Assurance and Context OS: decide what evidence enters, record the decision, retain exact recovery, and verify support.</td><td>Context compression and optimization: compress tool outputs, logs, files, RAG chunks, and history before the LLM.</td></tr>
+                <tr><td>Deployment</td><td>Proxy, attach/wrapper, MCP, CLI, SDK, OpenClaw/Hermes/OpenCode integrations, npm/WASM, and local routes.</td><td>Proxy, library, middleware, MCP, and extensive coding-agent wrappers.</td></tr>
+                <tr><td>Reversibility</td><td>Content-addressed <code>ccr:&lt;24-hex&gt;</code> handles with hash-only exact retrieval and Context Commit replay.</td><td>CCR-based reversible compression with originals available for on-demand retrieval.</td></tr>
+                <tr><td>Evidence record</td><td>Context Receipts record included, omitted, dependency-linked, and risky evidence with fingerprints and recovery handles.</td><td>Public docs emphasize compression stats, reversible originals, dashboards, and savings reporting.</td></tr>
+                <tr><td>Quality control</td><td>WITNESS/STAVE verification and fail-closed retrieval/savings contracts; omitted tokens are not credited as useful savings when evidence is not found.</td><td>Public docs emphasize accuracy benchmarks, content-aware routing, reversible compressors, and optional output shaping.</td></tr>
+                <tr><td>Best fit</td><td>Teams that need lower input cost together with auditability, exact evidence recovery, provenance, verification, and conservative accounting.</td><td>Teams that prioritize broad compression coverage, wrappers, framework integrations, and input/output shaping.</td></tr>
+              </tbody>
+            </table>
+
+            <h2>What Entroly adopted from the market gap</h2>
+            <p>Headroom's public documentation is strong at making deployment choices obvious: proxy, library, MCP, and agent wrappers are visible immediately. Entroly now leads with the same low-friction question—how to lower AI operational cost—while keeping its own differentiated contract: budgeted evidence selection, receipts, exact recovery, and verification.</p>
+
+            <h2>How to evaluate fairly</h2>
+            <ol>
+              <li>Use the same model, prompt, repository, and token budget.</li>
+              <li>Measure provider-bound input and output separately.</li>
+              <li>Pre-register answer-critical evidence and score whether it survives.</li>
+              <li>Test no-match behavior; a retrieval miss must not be counted as useful savings.</li>
+              <li>Measure latency, cache behavior, restart recovery, and exact retrieval.</li>
+            </ol>
+            <div class="note"><strong>Reviewed July 26, 2026:</strong> Headroom facts on this page are based on its public repository and documentation. Product behavior changes over time; verify current releases before making a deployment decision.</div>
+
+            <h2>Sources and next steps</h2>
+            <ul>
+              <li><a href="https://github.com/headroomlabs-ai/headroom">Headroom public repository</a></li>
+              <li><a href="https://headroomlabs.ai/">Headroom public product page</a></li>
+              <li><a href="ai-cost-optimization.html">Entroly AI cost optimization guide</a></li>
+              <li><a href="https://github.com/juyterman1000/entroly/tree/main/benchmarks/results">Entroly benchmark artifacts</a></li>
+              <li><a href="https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md">Entroly limitations</a></li>
+            </ul>
+            <footer><a href="https://github.com/juyterman1000/entroly">GitHub</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · <a href="index.html">Documentation</a> · Apache-2.0</footer>
+          </main>
+          </body>
+          </html>
+          '''
+          # Remove workflow indentation from the literal page.
+          comparison = '\n'.join(line[10:] if line.startswith('          ') else line for line in comparison.splitlines()) + '\n'
+          write('docs/entroly-vs-headroom.html', comparison)
+
+          # Internal links: help users and crawlers reach the intent page naturally.
+          hub = read('docs/agent-integrations.html')
+          if 'entroly-vs-headroom.html' not in hub:
+              hub = hub.replace(
+                  '<div class="faq"><h3>Does Entroly guarantee lower cost or better answers?</h3><p>No universal guarantee is claimed. Entroly exposes local context measurements, provider-bound evidence where observable, receipts, recovery, and verification so teams can evaluate their own workload. See the <a href="ai-cost-optimization.html">AI cost optimization guide</a>.</p></div>',
+                  '<div class="faq"><h3>Does Entroly guarantee lower cost or better answers?</h3><p>No universal guarantee is claimed. Entroly exposes local context measurements, provider-bound evidence where observable, receipts, recovery, and verification so teams can evaluate their own workload. See the <a href="ai-cost-optimization.html">AI cost optimization guide</a> and the factual <a href="entroly-vs-headroom.html">Entroly vs Headroom comparison</a>.</p></div>',
+                  1,
+              )
+              hub = hub.replace(
+                  '<footer>Entroly is Apache-2.0 open source. <a href="ai-cost-optimization.html">AI cost optimization</a>',
+                  '<footer>Entroly is Apache-2.0 open source. <a href="ai-cost-optimization.html">AI cost optimization</a> · <a href="entroly-vs-headroom.html">Entroly vs Headroom</a>',
+                  1,
+              )
+              write('docs/agent-integrations.html', hub)
+
+          index = read('docs/index.html')
+          index_replacements = {
+              '<title>Entroly — The Open-Source Context OS for AI Agents</title>': '<title>Entroly — Lower AI Agent Operational Costs with Context Assurance</title>',
+              'content="Open-source Context OS for AI agents: auditable context engineering, recoverable compression, memory, receipts, verification, and MCP integrations."': 'content="Lower AI agent operational costs with budgeted context selection, exact recovery, evidence receipts, verification, and integrations for Claude, Codex, OpenClaw, and local models."',
+              'content="context engineering, AI agents, AI coding agents, context compression, context optimization, context management, context window, token optimization, MCP server, Model Context Protocol, Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, hallucination detection"': 'content="reduce AI bills, lower AI operational costs, AI token reduction, context assurance, context engineering, context compression, Claude Fable 5, Claude Opus 5, Claude Sonnet 5, GPT-5.6, Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, MCP server, local models"',
+              'content="Entroly — The Open-Source Context OS for AI Agents"': 'content="Entroly — Lower AI Agent Operational Costs with Context Assurance"',
+              'content="Select the right evidence, compress context recoverably, inspect omissions and receipts, then verify the answer locally."': 'content="Reduce provider-bound tokens, preserve answer-critical evidence, recover exact omissions, and verify what your AI agent used."',
+              'content="Context selection, recoverable compression, receipts, and local verification for AI agents."': 'content="Lower AI operational costs with budgeted context selection, exact recovery, receipts, and local verification."',
+              '"description": "Open-source Context OS for AI agents with auditable context engineering, recoverable compression, memory, Context Receipts, MCP tools, and local verification."': '"description": "Open-source Context Assurance for lowering AI agent operational costs with budgeted evidence selection, exact recovery, Context Receipts, MCP tools, and local verification."',
+          }
+          for old, new in index_replacements.items():
+              if old not in index:
+                  raise SystemExit(f'index replacement missing: {old[:80]}')
+              index = index.replace(old, new, 1)
+          if 'entroly-vs-headroom.html' not in index:
+              index = index.replace(
+                  '</footer>',
+                  '<p><a href="ai-cost-optimization.html">AI cost optimization</a> · <a href="entroly-vs-headroom.html">Entroly vs Headroom</a></p>\n  </footer>',
+                  1,
+              )
+          write('docs/index.html', index)
+
+          # AEO index: direct, bounded answers with current models and comparison intent.
+          llms = read('llms.txt')
+          llms = llms.replace(
+              '> Entroly is the open-source, local-first Context Assurance layer and Context OS for AI agents. It reduces avoidable model input through budgeted evidence selection, recoverable compression, Context Receipts, and verification without replacing the model or agent runtime.',
+              '> Entroly is the open-source, local-first Context Assurance layer for lowering AI agent operational costs. It reduces avoidable model input through budgeted evidence selection, exact recovery, Context Receipts, and verification without replacing the model, codebase, or agent runtime.',
+              1,
+          )
+          direct_anchor = '- **Does Entroly guarantee lower cost or better answers?** No universal guarantee is claimed. Entroly provides workload-specific measurements, provider-bound evidence where observable, receipts, recovery, and verification.\n'
+          direct_add = direct_anchor + '- **Does Entroly support Claude Fable 5, Claude Opus 5, and Claude Sonnet 5?** Yes. The bundled model registry recognizes `claude-fable-5`, `claude-opus-5`, and `claude-sonnet-5` with verified context-window, output-limit, and list-price metadata. The usable route still depends on the selected proxy, API, agent, or local integration.\n- **Can Entroly reduce Claude Opus 5 or Fable 5 API costs?** It can reduce provider-bound input tokens before a supported request reaches the model. Output usage, prompt caching, subscription pricing, and workload shape remain separate cost factors.\n- **How is Entroly different from Headroom?** Both provide local context optimization and reversible paths. Headroom emphasizes broad content compression, wrappers, and output shaping. Entroly emphasizes budgeted evidence selection, included/omitted Context Receipts, exact hash recovery, verification, and fail-closed savings accounting.\n'
+          if 'Does Entroly support Claude Fable 5' not in llms:
+              if direct_anchor not in llms:
+                  raise SystemExit('llms direct-answer anchor missing')
+              llms = llms.replace(direct_anchor, direct_add, 1)
+          model_index = '''\n## Current Models And Developer Tools\n\n- **Claude models:** Claude Fable 5 (`claude-fable-5`), Claude Opus 5 (`claude-opus-5`), Claude Sonnet 5 (`claude-sonnet-5`), and compatible Anthropic routes.\n- **OpenAI models:** GPT-5.6 and compatible Responses/chat routes.\n- **Developer tools:** Claude Code, Codex, OpenClaw, Hermes Agent, OpenCode, GitHub Copilot, Cursor, Aider, and MCP clients through their documented integration paths.\n- **Local models:** Ollama, LM Studio, and OpenAI-compatible local endpoints. Entroly reports context reduction but claims no provider-dollar savings when no paid provider request is observed.\n\n## Comparisons\n\n- [Entroly vs Headroom](https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html): A dated, source-linked comparison of broad context compression and Entroly's Context Assurance approach.\n'''
+          if '## Current Models And Developer Tools' not in llms:
+              llms = llms.replace('\n## AI Cost Optimization\n', model_index + '\n## AI Cost Optimization\n', 1)
+          write('llms.txt', llms)
+          write('docs/llms.txt', llms)
+
+          # Sitemap parity and significant-content lastmod update.
+          sitemap = read('sitemap.xml').replace('<lastmod>2026-07-25</lastmod>', f'<lastmod>{TODAY}</lastmod>')
+          new_url = f'''  <url>\n    <loc>https://juyterman1000.github.io/entroly/docs/entroly-vs-headroom.html</loc>\n    <lastmod>{TODAY}</lastmod>\n  </url>\n'''
+          if 'entroly-vs-headroom.html' not in sitemap:
+              sitemap = sitemap.replace('</urlset>', new_url + '</urlset>')
+          write('sitemap.xml', sitemap)
+          write('docs/sitemap.xml', sitemap)
+
+          # Discovery regression: unique intent metadata, sitemap, links, and answer index.
+          discovery = read('tests/test_search_discovery.py')
+          page_entry = '''    "docs/entroly-vs-headroom.html": {\n        "canonical": f"{SITE}/docs/entroly-vs-headroom.html",\n        "title_terms": ("Entroly", "Headroom"),\n        "body_terms": ("budgeted evidence selection", "exact recovery", "Headroom"),\n    },\n'''
+          if 'docs/entroly-vs-headroom.html' not in discovery.split('def _text', 1)[0]:
+              discovery = discovery.replace(
+                  '    "docs/agent-integrations.html": {',
+                  page_entry + '    "docs/agent-integrations.html": {',
+                  1,
+              )
+          discovery = discovery.replace('"2026-07-25"', '"2026-07-26"')
+          discovery = discovery.replace(
+              '        "ai-cost-optimization.html",\n        "openclaw-context-engine.html",',
+              '        "ai-cost-optimization.html",\n        "entroly-vs-headroom.html",\n        "openclaw-context-engine.html",',
+              1,
+          )
+          discovery = discovery.replace(
+              '        "ai-cost-optimization.html",\n        "agent-integrations.html",',
+              '        "ai-cost-optimization.html",\n        "entroly-vs-headroom.html",\n        "agent-integrations.html",',
+              1,
+          )
+          assertion_anchor = '    assert "not yet shipped" in canonical\n'
+          assertion_add = assertion_anchor + '    assert "Claude Fable 5" in canonical\n    assert "Claude Opus 5" in canonical\n    assert "Claude Sonnet 5" in canonical\n    assert "How is Entroly different from Headroom?" in canonical\n'
+          if 'assert "Claude Fable 5" in canonical' not in discovery:
+              if assertion_anchor not in discovery:
+                  raise SystemExit('discovery assertion anchor missing')
+              discovery = discovery.replace(assertion_anchor, assertion_add, 1)
+          write('tests/test_search_discovery.py', discovery)
+
+          # Remove temporary workflow/trigger from the product commit.
+          (ROOT / '.github/workflows/apply-ai-cost-discovery.yml').unlink(missing_ok=True)
+          (ROOT / '.ai-cost-discovery-trigger').unlink(missing_ok=True)
+          PY
+
+      - name: Validate focused surfaces
+        shell: bash
+        run: |
+          python -m json.tool entroly/models/registry.json >/dev/null
+          cmp entroly/models/registry.json entroly-core/model_registry.json
+          python -m py_compile tests/test_model_registry.py tests/test_search_discovery.py
+          python -m pytest -q tests/test_model_registry.py tests/test_search_discovery.py
+
+      - name: Commit product-only change
+        shell: bash
+        run: |
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git add -A
+          git commit -m "docs(discovery): lead with lower AI operational cost"
+          git push origin HEAD:docs/ai-cost-model-discovery
