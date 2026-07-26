@@ -1456,46 +1456,63 @@ impl EntrolyEngine {
                         response,
                         tokens_saved,
                     } => {
-                        self.total_tokens_saved += tokens_saved as u64;
+                        // Cache hits avoid optimizer CPU work; they do not reduce
+                        // the selected context sent downstream, so do not credit
+                        // them as token savings.
                         // Deserialize cached JSON result back to Python dict
                         if let Ok(cached_value) =
                             serde_json::from_str::<serde_json::Value>(&response)
                         {
-                            let cache_result = PyDict::new(py);
-                            // Populate result from cached JSON
-                            if let Some(obj) = cached_value.as_object() {
-                                for (k, v) in obj {
-                                    if k == "selected_ids" {
-                                        continue;
-                                    } // handled separately
-                                    match v {
-                                        serde_json::Value::Number(n) => {
-                                            if let Some(i) = n.as_i64() {
-                                                let _ = cache_result.set_item(k.as_str(), i);
-                                            } else if let Some(f) = n.as_f64() {
-                                                let _ = cache_result.set_item(k.as_str(), f);
+                            let evidence_backed = cached_value
+                                .get("relevance_evidence_found")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false)
+                                && self.cached_selection_has_query_evidence(&cached_value, &query);
+                            if evidence_backed {
+                                let cache_result = PyDict::new(py);
+                                // Populate result from cached JSON
+                                if let Some(obj) = cached_value.as_object() {
+                                    for (k, v) in obj {
+                                        if k == "selected_ids" {
+                                            continue;
+                                        } // handled separately
+                                        match v {
+                                            serde_json::Value::Number(n) => {
+                                                if let Some(i) = n.as_i64() {
+                                                    let _ = cache_result.set_item(k.as_str(), i);
+                                                } else if let Some(f) = n.as_f64() {
+                                                    let _ = cache_result.set_item(k.as_str(), f);
+                                                }
                                             }
+                                            serde_json::Value::String(s) => {
+                                                let _ =
+                                                    cache_result.set_item(k.as_str(), s.as_str());
+                                            }
+                                            serde_json::Value::Bool(b) => {
+                                                let _ = cache_result.set_item(k.as_str(), *b);
+                                            }
+                                            _ => {}
                                         }
-                                        serde_json::Value::String(s) => {
-                                            let _ = cache_result.set_item(k.as_str(), s.as_str());
-                                        }
-                                        serde_json::Value::Bool(b) => {
-                                            let _ = cache_result.set_item(k.as_str(), *b);
-                                        }
-                                        _ => {}
                                     }
                                 }
+                                // Reconstruct selected_fragments from cached IDs + live fragments
+                                let selected_list =
+                                    self.rebuild_selected_list(py, &cached_value)?;
+                                cache_result.set_item("selected", selected_list)?;
+                                cache_result.set_item("cache_hit", true)?;
+                                cache_result.set_item("cache_hit_type", "exact")?;
+                                cache_result.set_item("cache_tokens_saved", 0)?;
+                                cache_result
+                                    .set_item("cache_context_tokens_reused", tokens_saved)?;
+                                cache_result.set_item(
+                                    "cache_savings_kind",
+                                    "compute_reuse_not_token_reduction",
+                                )?;
+                                cache_result.set_item("cache_eligible", true)?;
+                                cache_result.set_item("optimization_policy", "exploit")?;
+                                self.last_cache_feedback_eligible = true;
+                                return Ok(cache_result.into());
                             }
-                            // Reconstruct selected_fragments from cached IDs + live fragments
-                            let selected_list = self.rebuild_selected_list(py, &cached_value)?;
-                            cache_result.set_item("selected", selected_list)?;
-                            cache_result.set_item("cache_hit", true)?;
-                            cache_result.set_item("cache_hit_type", "exact")?;
-                            cache_result.set_item("cache_tokens_saved", tokens_saved)?;
-                            cache_result.set_item("cache_eligible", true)?;
-                            cache_result.set_item("optimization_policy", "exploit")?;
-                            self.last_cache_feedback_eligible = true;
-                            return Ok(cache_result.into());
                         }
                     }
                     CacheLookup::SemanticHit {
@@ -1504,49 +1521,64 @@ impl EntrolyEngine {
                         hamming_distance: ham,
                         jaccard_similarity: jac,
                     } => {
-                        self.total_tokens_saved += tokens_saved as u64;
+                        // Semantic cache reuse is compute reuse, not context reduction.
                         if let Ok(cached_value) =
                             serde_json::from_str::<serde_json::Value>(&response)
                         {
-                            let cache_result = PyDict::new(py);
-                            if let Some(obj) = cached_value.as_object() {
-                                for (k, v) in obj {
-                                    if k == "selected_ids" {
-                                        continue;
-                                    }
-                                    match v {
-                                        serde_json::Value::Number(n) => {
-                                            if let Some(i) = n.as_i64() {
-                                                let _ = cache_result.set_item(k.as_str(), i);
-                                            } else if let Some(f) = n.as_f64() {
-                                                let _ = cache_result.set_item(k.as_str(), f);
+                            let evidence_backed = cached_value
+                                .get("relevance_evidence_found")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false)
+                                && self.cached_selection_has_query_evidence(&cached_value, &query);
+                            if evidence_backed {
+                                let cache_result = PyDict::new(py);
+                                if let Some(obj) = cached_value.as_object() {
+                                    for (k, v) in obj {
+                                        if k == "selected_ids" {
+                                            continue;
+                                        }
+                                        match v {
+                                            serde_json::Value::Number(n) => {
+                                                if let Some(i) = n.as_i64() {
+                                                    let _ = cache_result.set_item(k.as_str(), i);
+                                                } else if let Some(f) = n.as_f64() {
+                                                    let _ = cache_result.set_item(k.as_str(), f);
+                                                }
                                             }
+                                            serde_json::Value::String(s) => {
+                                                let _ =
+                                                    cache_result.set_item(k.as_str(), s.as_str());
+                                            }
+                                            serde_json::Value::Bool(b) => {
+                                                let _ = cache_result.set_item(k.as_str(), *b);
+                                            }
+                                            _ => {}
                                         }
-                                        serde_json::Value::String(s) => {
-                                            let _ = cache_result.set_item(k.as_str(), s.as_str());
-                                        }
-                                        serde_json::Value::Bool(b) => {
-                                            let _ = cache_result.set_item(k.as_str(), *b);
-                                        }
-                                        _ => {}
                                     }
                                 }
+                                // Reconstruct selected_fragments from cached IDs + live fragments
+                                let selected_list =
+                                    self.rebuild_selected_list(py, &cached_value)?;
+                                cache_result.set_item("selected", selected_list)?;
+                                cache_result.set_item("cache_hit", true)?;
+                                cache_result.set_item("cache_hit_type", "semantic")?;
+                                cache_result.set_item("cache_tokens_saved", 0)?;
+                                cache_result
+                                    .set_item("cache_context_tokens_reused", tokens_saved)?;
+                                cache_result.set_item(
+                                    "cache_savings_kind",
+                                    "compute_reuse_not_token_reduction",
+                                )?;
+                                cache_result.set_item("cache_hamming_distance", ham)?;
+                                cache_result.set_item(
+                                    "cache_jaccard_similarity",
+                                    (jac * 10000.0).round() / 10000.0,
+                                )?;
+                                cache_result.set_item("cache_eligible", true)?;
+                                cache_result.set_item("optimization_policy", "exploit")?;
+                                self.last_cache_feedback_eligible = true;
+                                return Ok(cache_result.into());
                             }
-                            // Reconstruct selected_fragments from cached IDs + live fragments
-                            let selected_list = self.rebuild_selected_list(py, &cached_value)?;
-                            cache_result.set_item("selected", selected_list)?;
-                            cache_result.set_item("cache_hit", true)?;
-                            cache_result.set_item("cache_hit_type", "semantic")?;
-                            cache_result.set_item("cache_tokens_saved", tokens_saved)?;
-                            cache_result.set_item("cache_hamming_distance", ham)?;
-                            cache_result.set_item(
-                                "cache_jaccard_similarity",
-                                (jac * 10000.0).round() / 10000.0,
-                            )?;
-                            cache_result.set_item("cache_eligible", true)?;
-                            cache_result.set_item("optimization_policy", "exploit")?;
-                            self.last_cache_feedback_eligible = true;
-                            return Ok(cache_result.into());
                         }
                     }
                     CacheLookup::Miss => {} // Continue to full optimization
@@ -1567,6 +1599,12 @@ impl EntrolyEngine {
             // are collected here and force-pinned before IOS/knapsack runs.
             // This vector survives the query block scope.
             let mut precision_file_ids: Vec<(String, f64)> = Vec::new();
+            // A non-empty query must earn its context with observable lexical,
+            // path, or identifier evidence. This prevents recency/entropy from
+            // turning a complete retrieval miss into arbitrary context and
+            // misleading "token savings".
+            let mut query_has_evidence = query.trim().is_empty();
+            let mut query_evidence_ids: HashSet<String> = HashSet::new();
             if !query.is_empty() {
                 let query_terms: Vec<String> = bm25::tokenize_code(&query);
 
@@ -1633,6 +1671,10 @@ impl EntrolyEngine {
                     let identifiers = extract_identifiers(&frag.content);
                     let score =
                         bm25_idx.score(&query_terms, &frag.content, &frag.source, &identifiers);
+                    if score.query_coverage > 0.0 && score.combined > 0.0 {
+                        query_has_evidence = true;
+                        query_evidence_ids.insert(fid.clone());
+                    }
                     // Store CONTENT-ONLY score (bm25_base + coverage bonus)
                     // Do NOT include path_boost here — path is handled by the tier system
                     let coverage_bonus = score.query_coverage.powf(1.5) * 0.5 * score.bm25_base;
@@ -1722,9 +1764,17 @@ impl EntrolyEngine {
                     let frag = &self.fragments[fid];
                     let src_lower = frag.source.to_lowercase();
 
-                    // (a) Normalize content score to [0.01, 0.99]
+                    // (a) Normalize content score only when the document has
+                    // observable query evidence. A zero-evidence document must
+                    // stay at zero; assigning it a floor makes arbitrary files
+                    // look relevant on a complete miss.
                     let raw = bm25_raw.get(fid).copied().unwrap_or(0.0);
-                    let norm_content = ((raw - min_raw) / range * 0.98 + 0.01).clamp(0.01, 0.99);
+                    let has_evidence = query_evidence_ids.contains(fid);
+                    let norm_content = if has_evidence && max_raw > 0.0 {
+                        ((raw - min_raw) / range * 0.98 + 0.01).clamp(0.01, 0.99)
+                    } else {
+                        0.0
+                    };
 
                     // (b) Continuous Path-IDF tier score
                     // Sum Path-IDF of ALL query terms that appear in the path.
@@ -1787,7 +1837,11 @@ impl EntrolyEngine {
                     // A file with path_tier=3 (one match) is GUARANTEED
                     // above ANY content-only file. This invariant holds
                     // through any monotone normalization.
-                    let tpks = path_tier.powi(2) + norm_content * hub_dampen * test_penalty;
+                    let tpks = if has_evidence || path_tier > 0.0 {
+                        path_tier.powi(2) + norm_content * hub_dampen * test_penalty
+                    } else {
+                        0.0
+                    };
 
                     tpks_scores.insert(fid.clone(), tpks);
                 }
@@ -1821,14 +1875,24 @@ impl EntrolyEngine {
                         .then_with(|| a.0.cmp(&b.0))
                 });
 
-                // Assign rank-percentile scores
-                let total = sorted_tpks.len().max(1) as f64;
+                // Assign rank-percentile scores only inside the evidence-backed
+                // candidate set. Zero-evidence files remain exactly zero.
+                let evidence_total = sorted_tpks
+                    .iter()
+                    .filter(|(_, score)| *score > 0.0)
+                    .count()
+                    .max(1) as f64;
+                let mut evidence_rank = 0usize;
                 let mut rank_scores: HashMap<String, f64> =
                     HashMap::with_capacity(sorted_tpks.len());
-                for (rank, (fid, _)) in sorted_tpks.iter().enumerate() {
-                    // Rank 0 (best) → 1.0, rank N-1 (worst) → 0.05
-                    let percentile = 1.0 - (rank as f64 / total);
-                    let score = (percentile * 0.95 + 0.05).clamp(0.05, 1.0);
+                for (fid, tpks) in &sorted_tpks {
+                    let score = if *tpks > 0.0 {
+                        let percentile = 1.0 - (evidence_rank as f64 / evidence_total);
+                        evidence_rank += 1;
+                        (percentile * 0.95 + 0.05).clamp(0.05, 1.0)
+                    } else {
+                        0.0
+                    };
                     rank_scores.insert(fid.clone(), score);
                 }
 
@@ -1860,6 +1924,7 @@ impl EntrolyEngine {
                 // NCD (top-50 by TPKS, tie-breaker only)
                 let top_candidates: Vec<String> = sorted_tpks
                     .iter()
+                    .filter(|(_, score)| *score > 0.0)
                     .take(50)
                     .map(|(id, _)| id.clone())
                     .collect();
@@ -1879,7 +1944,7 @@ impl EntrolyEngine {
                 // Assign scores: path-tier files get ALL dimensions boosted
                 for (fid, frag) in self.fragments.iter_mut() {
                     let tpks = tpks_scores.get(fid).copied().unwrap_or(0.0);
-                    let base = rank_scores.get(fid).copied().unwrap_or(0.05);
+                    let base = rank_scores.get(fid).copied().unwrap_or(0.0);
 
                     // Structural tie-breakers (max 3% total influence)
                     let causal_adj = if causal_set.contains(fid) { 0.015 } else { 0.0 };
@@ -1998,6 +2063,20 @@ impl EntrolyEngine {
                         }
                     }
                 }
+            }
+
+            // Complete query miss: fail closed before any entropy/recency,
+            // exploration, skeleton, cache, or causal path can manufacture a
+            // plausible-looking selection. Pinned safety evidence is preserved,
+            // but omitted tokens are explicitly *not* credited as savings.
+            if !query.is_empty() && !query_has_evidence {
+                return self.build_no_match_optimization_result(
+                    py,
+                    token_budget,
+                    effective_budget,
+                    recommended_budget,
+                    &task_type_label,
+                );
             }
 
             // ── Cold-Start Weight Adaptation ──────────────────────────────
@@ -2139,6 +2218,20 @@ impl EntrolyEngine {
             // here recovers stable ingest order without changing the scoring policy.
             let mut frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
             frags.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
+
+            // For query-conditioned optimization, only evidence-backed seeds
+            // may compete on recency/frequency/entropy. Structurally linked
+            // dependencies can still enter in the second pass through dep boosts.
+            if !query.is_empty() {
+                for frag in &mut frags {
+                    if !query_evidence_ids.contains(&frag.fragment_id) && !frag.is_pinned {
+                        frag.recency_score = 0.0;
+                        frag.frequency_score = 0.0;
+                        frag.semantic_score = 0.0;
+                        frag.entropy_score = 0.0;
+                    }
+                }
+            }
 
             // ── SKS Phase 1: Pin precision files ─────────────────────
             // Temporarily mark path-matched files as pinned so IOS/knapsack
@@ -3015,7 +3108,23 @@ impl EntrolyEngine {
             )?;
             py_result.set_item("skeleton_count", skeleton_indices.len())?;
             py_result.set_item("skeleton_tokens", skeleton_tokens_used)?;
+            py_result.set_item("source_tokens", total_available)?;
+            py_result.set_item("selected_tokens", final_tokens)?;
+            py_result.set_item("tokens_withheld", saved)?;
             py_result.set_item("tokens_saved", saved)?;
+            py_result.set_item("savings_eligible", true)?;
+            py_result.set_item("savings_status", "mechanical_reduction_unverified")?;
+            py_result.set_item("verified_useful_tokens_saved", 0)?;
+            py_result.set_item("savings_baseline", "all_indexed_context")?;
+            py_result.set_item(
+                "retrieval_status",
+                if query.is_empty() {
+                    "unconditioned"
+                } else {
+                    "matched"
+                },
+            )?;
+            py_result.set_item("relevance_evidence_found", query_has_evidence)?;
             py_result.set_item("effective_budget", effective_budget)?;
             py_result.set_item("user_budget", token_budget)?;
             py_result.set_item("recommended_budget", recommended_budget)?;
@@ -3291,7 +3400,16 @@ impl EntrolyEngine {
                     "selected_count": ordered_indices.len() + skeleton_indices.len(),
                     "skeleton_count": skeleton_indices.len(),
                     "skeleton_tokens": skeleton_tokens_used,
+                    "source_tokens": total_available,
+                    "selected_tokens": final_tokens,
+                    "tokens_withheld": saved,
                     "tokens_saved": saved,
+                    "savings_eligible": true,
+                    "savings_status": "mechanical_reduction_unverified",
+                    "verified_useful_tokens_saved": 0,
+                    "savings_baseline": "all_indexed_context",
+                    "retrieval_status": if query.is_empty() { "unconditioned" } else { "matched" },
+                    "relevance_evidence_found": query_has_evidence,
                     "effective_budget": effective_budget,
                     "budget_utilization": if effective_budget > 0 { (final_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0 } else { 0.0 },
                     "sufficiency": (sufficiency * 10000.0).round() / 10000.0,
@@ -3442,10 +3560,10 @@ impl EntrolyEngine {
             let mut scored: Vec<(&ContextFragment, bm25::BM25Score)> = self
                 .fragments
                 .values()
-                .map(|f| {
+                .filter_map(|f| {
                     let identifiers = depgraph::extract_identifiers(&f.content);
                     let score = bm25_idx.score(&query_terms, &f.content, &f.source, &identifiers);
-                    (f, score)
+                    (score.query_coverage > 0.0 && score.combined > 0.0).then_some((f, score))
                 })
                 .collect();
 
@@ -3544,6 +3662,12 @@ impl EntrolyEngine {
             savings.set_item("total_duplicates_caught", self.total_duplicates_caught)?;
             savings.set_item("total_optimizations", self.total_optimizations)?;
             savings.set_item("total_fragments_ingested", self.total_fragments_ingested)?;
+            savings.set_item(
+                "accounting_scope",
+                "mechanical_context_reduction_and_dedup_only",
+            )?;
+            savings.set_item("task_quality_verified", false)?;
+            savings.set_item("cache_compute_reuse_excluded", true)?;
             savings.set_item(
                 "estimated_cost_saved_usd",
                 (self.total_tokens_saved as f64 * 0.000003 * 10000.0).round() / 10000.0,
@@ -6154,6 +6278,171 @@ fn py_witness_risk(claim: &str, context: &str, adequacy: f64, question: &str) ->
 
 // ── Non-PyO3 helper methods (can't be in #[pymethods] due to serde types) ──
 impl EntrolyEngine {
+    /// Build an explicit fail-closed response for a query with no observable
+    /// lexical, path, or identifier evidence in the indexed corpus.
+    ///
+    /// Pinned operator/safety context is preserved when it fits the hard budget,
+    /// but corpus tokens withheld because retrieval failed are never credited as
+    /// savings. This keeps selection behavior and savings accounting separate.
+    fn build_no_match_optimization_result(
+        &mut self,
+        py: Python<'_>,
+        user_budget: u32,
+        effective_budget: u32,
+        recommended_budget: u32,
+        task_type: &str,
+    ) -> PyResult<PyObject> {
+        let source_tokens: u32 = self.fragments.values().map(|f| f.token_count).sum();
+        let mut pinned: Vec<&ContextFragment> =
+            self.fragments.values().filter(|f| f.is_pinned).collect();
+        pinned.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
+
+        let selected = pyo3::types::PyList::empty(py);
+        let mut selected_tokens = 0u32;
+        let mut selected_ids = Vec::<String>::new();
+        let mut weighted_entropy = 0.0f64;
+        let mut total_relevance = 0.0f64;
+
+        for f in pinned {
+            if selected_tokens.saturating_add(f.token_count) > effective_budget {
+                continue;
+            }
+            selected_tokens = selected_tokens.saturating_add(f.token_count);
+            selected_ids.push(f.fragment_id.clone());
+            weighted_entropy += f.entropy_score * f.token_count as f64;
+
+            let feedback = self.feedback.learned_value(&f.fragment_id);
+            let relevance = compute_relevance(
+                f,
+                self.w_recency,
+                self.w_frequency,
+                self.w_semantic,
+                self.w_entropy,
+                feedback,
+            );
+            total_relevance += relevance;
+
+            let item = PyDict::new(py);
+            item.set_item("id", &f.fragment_id)?;
+            item.set_item("source", &f.source)?;
+            item.set_item("token_count", f.token_count)?;
+            item.set_item("variant", "full")?;
+            item.set_item("relevance", (relevance * 10000.0).round() / 10000.0)?;
+            item.set_item(
+                "entropy_score",
+                (f.entropy_score * 10000.0).round() / 10000.0,
+            )?;
+            let preview = if f.content.len() > 100 {
+                let mut end = 100;
+                while end < f.content.len() && !f.content.is_char_boundary(end) {
+                    end += 1;
+                }
+                format!("{}...", &f.content[..end])
+            } else {
+                f.content.clone()
+            };
+            item.set_item("preview", preview)?;
+            item.set_item("content", &f.content)?;
+            selected.append(item)?;
+        }
+
+        let tokens_withheld = source_tokens.saturating_sub(selected_tokens);
+        let context_efficiency = if selected_tokens > 0 {
+            weighted_entropy / selected_tokens as f64
+        } else {
+            0.0
+        };
+
+        self.prev_selected_ids = selected_ids;
+        self.prev_explored_ids.clear();
+        self.last_cache_feedback_eligible = false;
+        self.last_optimization = None;
+
+        let result = PyDict::new(py);
+        result.set_item("method", "no_match_fail_closed")?;
+        result.set_item("total_tokens", selected_tokens)?;
+        result.set_item("selected_tokens", selected_tokens)?;
+        result.set_item("source_tokens", source_tokens)?;
+        result.set_item("tokens_withheld", tokens_withheld)?;
+        result.set_item("tokens_saved", 0)?;
+        result.set_item("verified_useful_tokens_saved", 0)?;
+        result.set_item("savings_eligible", false)?;
+        result.set_item("savings_status", "not_credited_no_relevance_evidence")?;
+        result.set_item("savings_baseline", "all_indexed_context")?;
+        result.set_item("retrieval_status", "no_match")?;
+        result.set_item("relevance_evidence_found", false)?;
+        result.set_item("selected_count", self.prev_selected_ids.len())?;
+        result.set_item("skeleton_count", 0)?;
+        result.set_item("skeleton_tokens", 0)?;
+        result.set_item(
+            "context_efficiency",
+            (context_efficiency * 10000.0).round() / 10000.0,
+        )?;
+        result.set_item(
+            "total_relevance",
+            (total_relevance * 10000.0).round() / 10000.0,
+        )?;
+        result.set_item("effective_budget", effective_budget)?;
+        result.set_item("user_budget", user_budget)?;
+        result.set_item("recommended_budget", recommended_budget)?;
+        result.set_item("task_type", task_type)?;
+        result.set_item(
+            "budget_utilization",
+            if effective_budget > 0 {
+                (selected_tokens as f64 / effective_budget as f64 * 10000.0).round() / 10000.0
+            } else {
+                0.0
+            },
+        )?;
+        result.set_item("sufficiency", 0.0)?;
+        result.set_item(
+            "sufficiency_warning",
+            "No query evidence matched the indexed corpus; only explicitly pinned context was preserved.",
+        )?;
+        result.set_item("coverage", 0.0)?;
+        result.set_item("coverage_confidence", 1.0)?;
+        result.set_item("coverage_gap", self.fragments.len())?;
+        result.set_item("coverage_risk", "high")?;
+        result.set_item("selected", selected)?;
+        result.set_item("cache_hit", false)?;
+        result.set_item("cache_eligible", false)?;
+        result.set_item("optimization_policy", "fail_closed")?;
+        Ok(result.into())
+    }
+
+    /// Validate that a cached selection has observable lexical/path evidence
+    /// for the *current* query. This prevents semantic-cache reuse from reviving
+    /// a pre-fix arbitrary selection or serving a nearby-but-unsupported query.
+    fn cached_selection_has_query_evidence(
+        &self,
+        cached_value: &serde_json::Value,
+        query: &str,
+    ) -> bool {
+        let query_terms: HashSet<String> = bm25::tokenize_code(query).into_iter().collect();
+        if query_terms.is_empty() {
+            return false;
+        }
+        let Some(entries) = cached_value
+            .get("selected_ids")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return false;
+        };
+
+        entries.iter().any(|entry| {
+            let Some(fragment_id) = entry.get("id").and_then(serde_json::Value::as_str) else {
+                return false;
+            };
+            let Some(fragment) = self.fragments.get(fragment_id) else {
+                return false;
+            };
+            bm25::tokenize_code(&fragment.content)
+                .into_iter()
+                .chain(bm25::tokenize_code(&fragment.source))
+                .any(|term| query_terms.contains(&term))
+        })
+    }
+
     /// Reconstruct the `selected` PyList from cached fragment IDs + live fragment data.
     ///
     /// On cache hit, the stored JSON contains `selected_ids: [{id, variant}, ...]`.

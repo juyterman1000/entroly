@@ -305,17 +305,32 @@ class OmittedContextItem:
 class CompressionRatio:
     source_tokens: int
     selected_tokens: int
+    tokens_withheld: int
     tokens_saved: int
+    savings_eligible: bool
+    savings_status: str
+    savings_baseline: str
     selected_to_source_ratio: float
     source_to_selected_ratio: float
     reduction_pct: float
+    withheld_pct: float
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CompressionRatio":
         return cls(
             source_tokens=_int_or_default(data.get("source_tokens")),
             selected_tokens=_int_or_default(data.get("selected_tokens")),
+            tokens_withheld=_int_or_default(
+                data.get("tokens_withheld", data.get("tokens_saved"))
+            ),
             tokens_saved=_int_or_default(data.get("tokens_saved")),
+            savings_eligible=_bool_or_default(data.get("savings_eligible", True)),
+            savings_status=_str_or_default(
+                data.get("savings_status"), "legacy_mechanical_reduction"
+            ),
+            savings_baseline=_str_or_default(
+                data.get("savings_baseline"), "all_ingested_context"
+            ),
             selected_to_source_ratio=_float_or_default(
                 data.get("selected_to_source_ratio")
             ),
@@ -323,6 +338,9 @@ class CompressionRatio:
                 data.get("source_to_selected_ratio"), 1.0
             ),
             reduction_pct=_float_or_default(data.get("reduction_pct")),
+            withheld_pct=_float_or_default(
+                data.get("withheld_pct", data.get("reduction_pct"))
+            ),
         )
 
 
