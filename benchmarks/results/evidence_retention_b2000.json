@@ -1,0 +1,82 @@
+{
+  "corpus_tokens": 2658461,
+  "fragments": 956,
+  "budget": 2000,
+  "recall": 0.5,
+  "credited_reduction": 0.999248249269032,
+  "verdict": "PARTIAL \u2014 evidence lost on some tasks; not a clean saving",
+  "rows": [
+    {
+      "query": "where is the global checkpoint cap enforced",
+      "gold": "entroly/checkpoint.py",
+      "retained": true,
+      "tokens_used": 1994,
+      "selected": 7,
+      "latency_s": 1.119,
+      "status": "ok"
+    },
+    {
+      "query": "how does git file discovery avoid hanging the watcher",
+      "gold": "entroly/auto_index.py",
+      "retained": false,
+      "tokens_used": 1982,
+      "selected": 7,
+      "latency_s": 0.99,
+      "status": "ok"
+    },
+    {
+      "query": "where does the proxy inject compressed context into requests",
+      "gold": "entroly/proxy.py",
+      "retained": false,
+      "tokens_used": 2000,
+      "selected": 8,
+      "latency_s": 1.243,
+      "status": "ok"
+    },
+    {
+      "query": "what does entroly doctor check and how does it report failures",
+      "gold": "entroly/cli.py",
+      "retained": false,
+      "tokens_used": 1989,
+      "selected": 7,
+      "latency_s": 0.962,
+      "status": "ok"
+    },
+    {
+      "query": "how is a byte range verified against a source snapshot",
+      "gold": "entroly/source_span.py",
+      "retained": true,
+      "tokens_used": 2000,
+      "selected": 7,
+      "latency_s": 0.95,
+      "status": "ok"
+    },
+    {
+      "query": "where are query conditioned fragments selected under a token budget",
+      "gold": "entroly/qccr.py",
+      "retained": false,
+      "tokens_used": 1999,
+      "selected": 7,
+      "latency_s": 1.16,
+      "status": "ok"
+    },
+    {
+      "query": "how are vault beliefs listed and read",
+      "gold": "entroly/vault.py",
+      "retained": true,
+      "tokens_used": 2000,
+      "selected": 7,
+      "latency_s": 1.009,
+      "status": "ok"
+    },
+    {
+      "query": "where is the air gap outbound guard installed",
+      "gold": "entroly/air_gap.py",
+      "retained": true,
+      "tokens_used": 2000,
+      "selected": 7,
+      "latency_s": 0.952,
+      "status": "ok"
+    }
+  ]
+}

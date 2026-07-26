@@ -1,0 +1,129 @@
+"""Does compression retain answer-critical evidence — or just withhold context?
+
+The standard this measures:
+
+    real token saving = fewer tokens AND the answer-critical evidence retained
+
+A compressor that drops the answer is not saving tokens, it is losing the task.
+So savings are only credited on tasks where the gold file survived selection;
+recall and cost are reported separately and never averaged into one headline.
+
+Ground truth is a query -> answer-file mapping over this repository. Each pair is
+one a maintainer can verify by reading the named file, so the gold set is
+auditable rather than asserted.
+
+    python benchmarks/evidence_retention.py [--budget 2000] [--json out.json]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+
+# (query, file that actually answers it). Verifiable by reading the file.
+GOLD: list[tuple[str, str]] = [
+    ("where is the global checkpoint cap enforced",
+     "entroly/checkpoint.py"),
+    ("how does git file discovery avoid hanging the watcher",
+     "entroly/auto_index.py"),
+    ("where does the proxy inject compressed context into requests",
+     "entroly/proxy.py"),
+    ("what does entroly doctor check and how does it report failures",
+     "entroly/cli.py"),
+    ("how is a byte range verified against a source snapshot",
+     "entroly/source_span.py"),
+    ("where are query conditioned fragments selected under a token budget",
+     "entroly/qccr.py"),
+    ("how are vault beliefs listed and read",
+     "entroly/vault.py"),
+    ("where is the air gap outbound guard installed",
+     "entroly/air_gap.py"),
+]
+
+
+def _sources(selection) -> set[str]:
+    out = set()
+    for frag in selection or []:
+        if not isinstance(frag, dict):
+            continue
+        src = str(frag.get("source") or "")
+        out.add(src.removeprefix("file:"))
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--budget", type=int, default=2000)
+    ap.add_argument("--json", dest="json_out", default="")
+    args = ap.parse_args()
+
+    os.environ.setdefault("ENTROLY_SOURCE", os.getcwd())
+    from entroly.server import EntrolyConfig, EntrolyEngine
+
+    engine = EntrolyEngine(config=EntrolyConfig())
+    engine._ensure_index_loaded()
+    fragments = list(engine._rust.export_fragments())
+    corpus_tokens = sum(int(f.get("token_count", 0) or 0) for f in fragments)
+    if not fragments:
+        raise SystemExit("index is empty; run an ingest first")
+
+    rows = []
+    for query, gold in GOLD:
+        start = time.perf_counter()
+        result = engine.optimize_context(args.budget, query)
+        latency = time.perf_counter() - start
+        selection = result.get("selected_fragments") or result.get("selected") or []
+        sources = _sources(selection)
+        retained = gold in sources
+        used = int(result.get("tokens_used") or result.get("total_tokens") or 0)
+        rows.append({
+            "query": query,
+            "gold": gold,
+            "retained": retained,
+            "tokens_used": used,
+            "selected": len(selection),
+            "latency_s": round(latency, 3),
+            "status": result.get("status", "ok"),
+        })
+        print(f"  {'HIT ' if retained else 'MISS'}  {used:>6} tok  "
+              f"{latency:5.2f}s  {gold:<34} {query[:44]}", flush=True)
+
+    hits = [r for r in rows if r["retained"]]
+    recall = len(hits) / len(rows)
+    # Savings are credited ONLY on tasks whose evidence survived. A miss
+    # contributes zero, never a "saving" — that is the accounting error this
+    # benchmark exists to prevent.
+    credited = sum(max(0, corpus_tokens - r["tokens_used"]) for r in hits)
+    naive = corpus_tokens * len(hits)
+    reduction = (credited / naive) if naive else 0.0
+    mean_used = (sum(r["tokens_used"] for r in hits) / len(hits)) if hits else 0
+
+    print(f"\n  corpus                : {corpus_tokens:,} tokens over {len(fragments)} fragments")
+    print(f"  evidence retention    : {len(hits)}/{len(rows)}  (recall {recall:.2f})")
+    print(f"  mean tokens on hits   : {mean_used:,.0f}")
+    print(f"  credited reduction    : {reduction:.4%}  (misses credited 0)")
+    print(f"  max latency           : {max(r['latency_s'] for r in rows):.2f}s")
+    verdict = (
+        "USEFUL SAVING PROVEN" if recall == 1.0
+        else "PARTIAL — evidence lost on some tasks; not a clean saving"
+        if hits else "NOT PROVEN — no evidence retained"
+    )
+    print(f"  verdict               : {verdict}")
+
+    if args.json_out:
+        with open(args.json_out, "w", encoding="utf-8") as fh:
+            json.dump({
+                "corpus_tokens": corpus_tokens,
+                "fragments": len(fragments),
+                "budget": args.budget,
+                "recall": recall,
+                "credited_reduction": reduction,
+                "verdict": verdict,
+                "rows": rows,
+            }, fh, indent=2)
+    return 0 if recall == 1.0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
