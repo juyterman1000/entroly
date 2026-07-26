@@ -49,7 +49,7 @@ Issues = "https://github.com/juyterman1000/entroly/issues"
 proxy = [
     "httpx>=0.27",
     "starlette>=0.37",
-    "uvicorn>=0.30",
+    "uvicorn>=0.51.0",
 ]
 native = [
     "entroly-core>=1.0.66,<2",
@@ -62,7 +62,7 @@ full = [
     "entroly-core>=1.0.66,<2",
     "httpx>=0.27",
     "starlette>=0.37",
-    "uvicorn>=0.30",
+    "uvicorn>=0.51.0",
 ]
 test = [
     "pytest>=8,<9",
