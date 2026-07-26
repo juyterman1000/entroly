@@ -122,9 +122,12 @@ def test_python_package_metadata_is_searchable_and_connected() -> None:
 
 
 def test_npm_packages_share_cost_discovery_terms_and_trust_links() -> None:
+    # The published npm surfaces. There is no root package.json and no
+    # entroly-mcp/ directory; these are the manifests the publish workflows
+    # actually consume, so asserting against them checks what ships.
     for package_path in (
-        "package.json",
-        "entroly-mcp/package.json",
+        "entroly/npm/package.json",
+        "entroly/npm-alias/package.json",
         "entroly-wasm/package.json",
     ):
         package = _json(package_path)
@@ -139,9 +142,12 @@ def test_npm_packages_share_cost_discovery_terms_and_trust_links() -> None:
 
 
 def test_mcp_and_docs_metadata_keep_the_verified_context_os_boundary() -> None:
+    # `server.json` IS the MCP registry descriptor -- it is what
+    # .github/workflows/publish-mcp-registry.yml publishes. There is no
+    # separate mcp.json (.vscode/mcp.json is an editor server config, a
+    # different artifact).
     server = _json("server.json")
-    mcp = _json("mcp.json")
-    for payload in (server, mcp):
+    for payload in (server,):
         serialized = json.dumps(payload).casefold()
         assert CATEGORY in serialized
         assert PRODUCT_IDENTITY in serialized
@@ -150,7 +156,10 @@ def test_mcp_and_docs_metadata_keep_the_verified_context_os_boundary() -> None:
 
 
 def test_openclaw_listing_names_its_category_without_provider_overclaims() -> None:
-    listing = _json("integrations/openclaw/clawhub.json")
+    # The committed OpenClaw descriptor. The clawhub-*.json files in
+    # publish-openclaw-clawhub.yml are API responses from the
+    # publish/validate/moderation calls, not source metadata.
+    listing = _json("integrations/openclaw/openclaw.plugin.json")
     serialized = json.dumps(listing).casefold()
     assert CATEGORY in serialized
     assert PRODUCT_IDENTITY in serialized
