@@ -33,6 +33,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import sys
 import threading
 from functools import wraps
@@ -487,6 +488,119 @@ def _build_rust_engine(config: EntrolyConfig):
     except TypeError:
         # Older entroly-core without the extended kwargs — core six still work.
         return RustEngine(**base)
+
+
+
+_EVIDENCE_WORD = re.compile(r"[A-Za-z0-9_]{3,}")
+
+
+def _query_terms(query: str) -> set[str]:
+    """Content-bearing query terms, lowercased. Stopwords carry no evidence."""
+    stop = {
+        "the", "and", "for", "are", "was", "were", "does", "did", "how", "why",
+        "what", "where", "when", "which", "who", "into", "from", "with", "this",
+        "that", "these", "those", "you", "your", "our", "not", "but", "can",
+        "will", "would", "should", "could", "has", "have", "had", "been", "its",
+    }
+    return {t.lower() for t in _EVIDENCE_WORD.findall(query or "")} - stop
+
+
+def _score_distribution_is_degenerate(selected: list) -> bool:
+    """True when the ranker produced no discrimination between candidates.
+
+    A ranker that found real evidence separates candidates; one that found none
+    cannot. Measured on this repository (955 fragments):
+
+        real query  -> 0.8534, 0.7220, 0.7095, 0.6971   (spread 0.156)
+        no-match    -> 0.0800, 0.0800, 0.0800, 0.0800   (spread 0.000)
+
+    So the discriminator is variance, not magnitude — which is why thresholding
+    the score itself never worked: 0.08 and 0.62 are both "positive", but only
+    one of them is a ranking. A flat distribution means every candidate is
+    equally (un)related, i.e. the ordering carries no information.
+
+    Requires >= 2 non-pinned candidates; a single result cannot be flat or
+    spread, so it is judged by the lexical check instead.
+    """
+    scores = []
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        for key in ("relevance", "relevance_score", "score"):
+            if key in frag:
+                try:
+                    scores.append(float(frag[key] or 0.0))
+                except (TypeError, ValueError):
+                    pass
+                break
+    if len(scores) < 2:
+        return False
+    spread = max(scores) - min(scores)
+    # Exact-equality would be too brittle for float arithmetic; this tolerance
+    # is far below the separation any real query produces.
+    return spread < 1e-9
+
+
+def _selection_matches_query(query: str, selected: list) -> bool:
+    """Does the returned context actually contain any query term?
+
+    Relevance scores cannot answer this: the native ranker floors and normalizes,
+    so a query matching nothing still comes back at ~0.6. Verified on this
+    repository — "zzqqxx blorptastic wubbleflux" scored 0.5969. Checking the
+    delivered text is the one signal the scoring pipeline cannot fabricate, and
+    it is what "evidence-backed" has to mean.
+    """
+    terms = _query_terms(query)
+    if not terms:
+        return True          # no lexical intent to satisfy; not a no-match
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        haystack = (
+            str(frag.get("content") or "")
+            + " "
+            + str(frag.get("source") or "")
+        ).lower()
+        if any(t in haystack for t in terms):
+            return True
+    return False
+
+
+def _evidence_backed(selected: list) -> bool:
+    """True when at least one non-pinned selection carries positive relevance.
+
+    A query whose terms match nothing still produces a ranked list: score
+    normalization floors and uniform fallbacks give every fragment a middling
+    score, so the engine returns confident-looking but unrelated files. Measured
+    on this repo: the nonsense query "zzqqxx blorptastic wubbleflux" selected 8
+    files at ~0.6 relevance, sharing its top hits with a real query.
+
+    Pinned fragments are excluded from this test: they are included by operator
+    policy, not by evidence, so they must never make a no-match look matched.
+    """
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        for key in ("relevance", "relevance_score", "score"):
+            if key in frag:
+                try:
+                    if float(frag[key] or 0.0) > 0.0:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+                break
+    return False
+
+
+def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
+    """Savings only count when the selection is actually evidence-backed.
+
+    `corpus - selected` credits every fragment that was never going to be sent,
+    so it stayed ~constant regardless of query and was largest exactly when the
+    engine found nothing. Withholding context because nothing matched is not a
+    saving.
+    """
+    return max(0, int(tokens_saved or 0)) if _evidence_backed(selected) else 0
 
 
 class EntrolyEngine:
@@ -1037,7 +1151,9 @@ class EntrolyEngine:
                     total_available_tokens = sum(
                         _fragment_tokens(f) for f in candidates if isinstance(f, dict)
                     )
-                    tokens_saved = max(0, total_available_tokens - tokens_used)
+                    tokens_saved = _honest_tokens_saved(
+                        selected, total_available_tokens - tokens_used
+                    )
                     self._total_tokens_saved += tokens_saved
                     selected_count = len(selected)
                     total_relevance = round(sum(
@@ -2222,7 +2338,16 @@ class EntrolyEngine:
         )
 
         total_available_tokens = sum(f.token_count for f in fragments)
-        tokens_saved = total_available_tokens - stats["total_tokens"]
+        tokens_saved = _honest_tokens_saved(
+            [
+                {"relevance": _py_compute_relevance(
+                    f, self.config.weight_recency, self.config.weight_frequency,
+                    self.config.weight_semantic_sim, self.config.weight_entropy),
+                 "is_pinned": f.is_pinned}
+                for f in selected
+            ],
+            total_available_tokens - stats["total_tokens"],
+        )
         self._total_tokens_saved += max(0, tokens_saved)
 
         for frag in selected:
@@ -3042,6 +3167,53 @@ def create_mcp_server(
                 "status": "skipped",
                 "reason": "requested token budget is too small for a safe capsule",
             }
+
+        # ── No-match contract ────────────────────────────────────────
+        # A query matching nothing still yields a ranked list, so the tool used
+        # to hand back confident-looking unrelated files and bill the omitted
+        # corpus as "savings". Say so explicitly instead: keep pinned/required
+        # evidence (operator policy, not relevance), drop the rest, and credit
+        # zero savings. Withholding context because nothing matched is not a
+        # saving, and unrelated context is worse than none.
+        if query:
+            _sel = result.get("selected_fragments") or result.get("selected") or []
+            _degenerate = _score_distribution_is_degenerate(_sel)
+            if _sel and (
+                _degenerate
+                or not (
+                    _evidence_backed(_sel)
+                    and _selection_matches_query(query, _sel)
+                )
+            ):
+                _pinned = [
+                    f for f in _sel if isinstance(f, dict) and f.get("is_pinned")
+                ]
+                result["selected_fragments"] = _pinned
+                result["selected"] = _pinned
+                result["selected_count"] = len(_pinned)
+                result["tokens_used"] = sum(
+                    int(f.get("token_count", 0) or 0) for f in _pinned
+                )
+                result["total_tokens"] = result["tokens_used"]
+                result["tokens_saved"] = 0
+                result["tokens_saved_this_call"] = 0
+                result["status"] = "no_match"
+                result["no_match"] = {
+                    "reason": (
+                        "the ranker produced no discrimination for this query "
+                        "(flat score distribution) or the returned text shared "
+                        "no term with it; returning pinned evidence only rather "
+                        "than unrelated files"
+                    ),
+                    "degenerate_ranking": _degenerate,
+                    "query": query,
+                    "candidates_considered": result.get("total_fragments", 0),
+                    "pinned_retained": len(_pinned),
+                    "remediation": (
+                        "rephrase with identifiers from the codebase, or run "
+                        "`entroly health` to confirm the repository is indexed"
+                    ),
+                }
 
         # CCR: compressed IOS variants must remain exactly recoverable.
         # Attach content-addressed handles before serializing the MCP result.
