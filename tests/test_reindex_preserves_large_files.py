@@ -24,8 +24,13 @@ from entroly.auto_index import MAX_FILE_BYTES, auto_index
 
 
 def _fragment_sources(engine) -> list[str]:
+    """Inspect indexed sources without assuming the native backend exists."""
+    if engine._use_rust:
+        fragments = engine._rust.export_fragments()
+        return [str(fragment.get("source") or "") for fragment in fragments]
     return [
-        str(f.get("source") or "") for f in engine._rust.export_fragments()
+        str(getattr(fragment, "source", "") or "")
+        for fragment in engine._fragments.values()
     ]
 
 
@@ -63,15 +68,18 @@ def test_reindexing_unchanged_repo_preserves_every_chunk(indexed_project):
     engine, project = indexed_project
     auto_index(engine, project)
     first = sorted(_fragment_sources(engine))
-    auto_index(engine, project)
+    second_result = auto_index(engine, project)
     second = sorted(_fragment_sources(engine))
 
+    assert second_result["status"] == "skipped"
+    assert second_result["reconciliation"]["status"] == "current"
     lost = sorted(set(first) - set(second))
     assert not lost, f"re-indexing an unchanged repo deleted evidence: {lost}"
     assert first == second
 
     # And it must stay stable, not merely survive one extra pass.
-    auto_index(engine, project)
+    third_result = auto_index(engine, project)
+    assert third_result["reconciliation"]["status"] == "current"
     assert sorted(_fragment_sources(engine)) == first
 
 
