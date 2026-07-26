@@ -31,21 +31,20 @@ receipt = result.receipt.as_dict()
 
 ## Live HTTP proxy mode
 
-Set these before starting the Entroly proxy:
+The live proxy enables recoverable session rescue by default:
 
 ```bash
-export ENTROLY_COMPRESSION_PROXY_MODE=elc
-export ENTROLY_ELC_BUDGET_TOKENS=1200
-export ENTROLY_COMPRESSION_STORE=.entroly/compression-store.json
+export ENTROLY_SESSION_RESCUE_STORE=.entroly/session_rescue_recovery.json
+export ENTROLY_SESSION_TOOL_BUDGET=1200
 entroly proxy
 ```
 
-When `ENTROLY_COMPRESSION_PROXY_MODE=elc`, Entroly installs the live proxy hook
-at package import time. The hook replaces the existing tool-output compression
-function with the Evidence-Locked Compression proxy surface. If the env var is
-absent or different, nothing changes.
+On every supported outbound request, the proxy compresses eligible textual tool
+output, persists one exact full-original recovery span, evaluates the active
+context against the model window, and either forwards, rescues, or returns an
+actionable capacity error. See [session rescue](session-rescue.md).
 
-Programmatic helper:
+The separate environment-driven programmatic helper remains opt-in:
 
 ```python
 from entroly import compress_proxy_payload_from_env
@@ -63,7 +62,12 @@ By default Entroly compresses:
 - OpenAI `role=tool` messages,
 - OpenAI `role=function` messages,
 - Anthropic `tool_result` blocks,
-- OpenAI Responses-style tool/text blocks when enabled.
+- OpenAI Responses-style tool/text blocks when enabled,
+- known textual fields in Gemini `functionResponse` and
+  `codeExecutionResult` parts.
+
+Gemini function-call IDs, part order, thought signatures, and unknown
+structured fields are preserved. Ambiguous structures pass through unchanged.
 
 Entroly preserves user and assistant text by default because the latest user
 message is usually the semantic target. User-message compression is explicit:
@@ -89,18 +93,24 @@ Every compressed block can emit:
 - omitted spans,
 - recoverability metadata.
 
-When a `CompressionRetrievalStore` is supplied, omitted spans are stored locally.
-The receipt includes:
+When a `CompressionRetrievalStore` is supplied, one span containing the complete
+original textual block is stored locally before the forwarded copy is changed.
+This is stronger than depending on the compressor's bounded diagnostic
+omission list. The receipt includes:
 
 ```json
 {
   "retrieval": {
     "receipt_id": "...",
-    "span_count": 3,
+    "span_count": 1,
     "span_ids": ["..."]
   }
 }
 ```
+
+The forwarded block also contains
+`[entroly-recovery:<receipt-id>:<span-id>]`, so an agent can request the exact
+original without relying on response headers.
 
 Fetch a span:
 
@@ -146,6 +156,9 @@ x-entroly-compressed-tokens
 x-entroly-tokens-saved
 x-entroly-savings-ratio
 x-entroly-compressed-blocks
+X-Entroly-Session-Rescue
+X-Entroly-Session-Recovery-Receipts
+X-Entroly-Context-Injection
 ```
 
 ## Benchmark gate

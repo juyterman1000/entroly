@@ -1,0 +1,44 @@
+{
+  "claim_policy": {
+    "aggregate_score_allowed": false,
+    "failures_remain_in_sample": true,
+    "negative_results_are_published": true,
+    "per_dimension_claims_only": true,
+    "universal_superiority_claim_allowed": false
+  },
+  "comparison": {
+    "entroly": "1.0.66 source",
+    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+  },
+  "frozen_at": "2026-07-25T00:00:00Z",
+  "schema_version": "entroly.recovery-resilience-protocol.v5",
+  "suites": {
+    "recovery_resilience": {
+      "development": {
+        "entries_per_worker": 8,
+        "seed": 20260730,
+        "workers": 4
+      },
+      "development_policy": "Development results may guide implementation and remain visible but cannot support a public leadership claim.",
+      "gates": {
+        "exact_byte_recovery_rate": 1.0,
+        "incorrect_payloads": 0,
+        "restart_recovery_rate": 1.0,
+        "worker_exit_success_rate": 1.0,
+        "write_success_rate": 1.0
+      },
+      "holdout": {
+        "entries_per_worker": 11,
+        "seed": 20260731,
+        "workers": 6
+      },
+      "holdout_policy": "Run once after the exact line-ending recovery correction to re-anchor the implementation hash. Both systems passing means parity, not leadership.",
+      "latency_policy": "Report per-system p50 and p95 store/retrieve latency descriptively; correctness gates cannot be traded for speed."
+    }
+  },
+  "supersedes": {
+    "artifact": "benchmarks/results/recovery_resilience_holdout_revalidation_v4.json",
+    "protocol": "benchmarks/recovery_resilience_protocol_v4.json",
+    "reason": "Re-anchor after the recovery store was corrected to preserve CRLF/LF and trailing newlines exactly. The implementation hash therefore changed for a user-visible integrity fix. The v4 protocol and artifact remain immutable. Re-run the same frozen 66-entry matrix without changing gates or claim policy; both systems passing remains parity, not leadership."
+  }
+}
