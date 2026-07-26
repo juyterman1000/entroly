@@ -1952,6 +1952,27 @@ def _resolved_wrap_env(spec: dict, port: int) -> dict[str, str]:
     return values
 
 
+def _split_wrap_agent_args(
+    agent_args: list[str] | None,
+) -> tuple[list[str], list[str], bool]:
+    """Split Entroly options from client arguments at the first ``--``.
+
+    ``argparse.REMAINDER`` can return Entroly options followed by the separator,
+    for example ``["--port", "9377", "--", "-p", "hello"]``. Entroly may
+    recover known wrapper options only from the left side. The separator itself
+    is consumed, and the right side is forwarded byte-for-byte as argv tokens.
+
+    When there is no separator, the same mutable list is returned for wrapper
+    parsing and client launch so recovered Entroly flags are removed before the
+    remaining tokens are forwarded.
+    """
+    values = list(agent_args or ())
+    if "--" in values:
+        index = values.index("--")
+        return values[:index], values[index + 1 :], True
+    return values, values, False
+
+
 def _start_proxy_if_needed(port: int) -> bool:
     """Start the proxy daemon if it isn't already listening on `port`."""
     if _is_entroly_proxy_running(port):
@@ -2242,25 +2263,29 @@ def cmd_wrap(args):
         if not getattr(args, 'force', False):
             return
 
+    wrapper_args, agent_args, explicit_separator = _split_wrap_agent_args(
+        args.agent_args
+    )
+
     port = args.port
-    # Recover --port if argparse.REMAINDER swallowed it after the agent name.
-    if port is None and "--port" in args.agent_args:
-        idx = args.agent_args.index("--port")
-        if idx + 1 < len(args.agent_args):
+    # argparse.REMAINDER may swallow Entroly's own --port after the agent name.
+    # Only the left side of an explicit separator belongs to Entroly.
+    if port is None and "--port" in wrapper_args:
+        idx = wrapper_args.index("--port")
+        if idx + 1 < len(wrapper_args):
             try:
-                port = int(args.agent_args[idx + 1])
-                args.agent_args.pop(idx)
-                args.agent_args.pop(idx)
+                port = int(wrapper_args[idx + 1])
+                wrapper_args.pop(idx)
+                wrapper_args.pop(idx)
             except ValueError:
                 pass
     port = port or 9377
 
-    # --dry-run can be swallowed by agent_args (argparse.REMAINDER), exactly
-    # like --port above. Recover it from either source.
+    # Recover Entroly's --dry-run only from the wrapper side of the separator.
     dry_run = bool(getattr(args, "dry_run", False))
-    if "--dry-run" in args.agent_args:
+    if "--dry-run" in wrapper_args:
         dry_run = True
-        args.agent_args.remove("--dry-run")
+        wrapper_args.remove("--dry-run")
 
     suffix = f"  {C.YELLOW}[dry-run]{C.RESET}" if dry_run else ""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Wrap — {spec['name']}{C.RESET}{suffix}\n")
@@ -2291,9 +2316,9 @@ def cmd_wrap(args):
     # / --dry-run above); recover it so the escape hatch works and it isn't passed
     # on to the wrapped agent.
     force_flag = bool(getattr(args, "force", False))
-    if "--force" in args.agent_args:
+    if "--force" in wrapper_args:
         force_flag = True
-        args.agent_args.remove("--force")
+        wrapper_args.remove("--force")
     key_env = spec.get("api_key_env")
     if key_env and not os.environ.get(key_env) and not force_flag:
         print(f"  {C.GRAY}No {key_env} set — this proxy path has no explicit provider credential.{C.RESET}\n")
@@ -2313,7 +2338,7 @@ def cmd_wrap(args):
     if dry_run:
         resolved_env = _resolved_wrap_env(spec, port)
         env_text = ", ".join(f"{key}={value}" for key, value in resolved_env.items())
-        launch = " ".join(spec["cmd"] + (args.agent_args or []))
+        launch = " ".join(spec["cmd"] + agent_args)
         print(f"  {C.GRAY}[dry-run] would start the proxy on :{port}, set "
               f"{env_text}, and launch "
               f"`{launch}`. No changes made.{C.RESET}\n")
@@ -2357,7 +2382,7 @@ def cmd_wrap(args):
 
     try:
         import shutil
-        agent_cmd = spec["cmd"] + args.agent_args
+        agent_cmd = spec["cmd"] + agent_args
         # On Windows, npm installs .cmd files which subprocess doesn't automatically resolve
         executable = shutil.which(agent_cmd[0])
         if executable is None:

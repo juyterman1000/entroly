@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from entroly.cli import _WRAP_AGENTS, _resolved_wrap_env
+from entroly.cli import _WRAP_AGENTS, _resolved_wrap_env, _split_wrap_agent_args
 from entroly.session_attach import (
     ATTACHMENT_CLIENTS,
     attachment_install_commands,
@@ -66,3 +66,47 @@ def test_kimi_attachment_uses_official_stdio_mcp_shape(tmp_path):
         ("kimi", "mcp", "remove", "entroly-att_fedcba9876543210"),
     )
     assert "kimi" in ATTACHMENT_CLIENTS
+
+
+
+def test_wrap_splits_wrapper_options_from_client_arguments():
+    wrapper_args, client_args, explicit = _split_wrap_agent_args(
+        [
+            "--port",
+            "7777",
+            "--force",
+            "--",
+            "--port",
+            "8888",
+            "--dry-run",
+            "--prompt=Hello world",
+        ]
+    )
+    assert explicit is True
+    assert wrapper_args == ["--port", "7777", "--force"]
+    assert client_args == [
+        "--port",
+        "8888",
+        "--dry-run",
+        "--prompt=Hello world",
+    ]
+
+
+def test_wrap_consumes_separator_when_it_is_first():
+    wrapper_args, client_args, explicit = _split_wrap_agent_args(
+        ["--", "-s", "--prompt=Hello world"]
+    )
+    assert explicit is True
+    assert wrapper_args == []
+    assert client_args == ["-s", "--prompt=Hello world"]
+
+
+def test_wrap_without_separator_shares_recoverable_argument_list():
+    wrapper_args, client_args, explicit = _split_wrap_agent_args(
+        ["--port", "9379", "-p", "hello"]
+    )
+    assert explicit is False
+    assert wrapper_args is client_args
+    wrapper_args.pop(0)
+    wrapper_args.pop(0)
+    assert client_args == ["-p", "hello"]
