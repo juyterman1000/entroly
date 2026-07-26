@@ -1,0 +1,65 @@
+name: Apply Rust Token Savings Trust Fix
+
+on:
+  push:
+    branches:
+      - fix/rust-token-savings-trust
+    paths:
+      - .ci/rust-token-savings-patch/**
+      - .github/workflows/apply-rust-token-savings-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dedicated branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/rust-token-savings-trust
+          fetch-depth: 0
+
+      - name: Reassemble and validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .ci/rust-token-savings-patch/part-* > /tmp/rust-token-savings.patch
+          git apply --check /tmp/rust-token-savings.patch
+          git apply /tmp/rust-token-savings.patch
+
+      - name: Format Rust changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-core/Cargo.toml --all
+
+      - name: Compile Python package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q entroly
+
+      - name: Run focused receipt regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q pytest
+          python -m pytest -q \
+            tests/test_context_receipts.py \
+            tests/test_context_fixed_point.py \
+            tests/test_recoverable_receipts.py
+
+      - name: Commit validated product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .ci/rust-token-savings-patch
+          rm -f .github/workflows/apply-rust-token-savings-fix.yml
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(core): make token savings evidence-backed'
+          git push origin HEAD:fix/rust-token-savings-trust
