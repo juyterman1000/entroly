@@ -42,7 +42,7 @@ jobs:
       - name: Set up Python
         # pyo3 needs libpython at link time for the binary (extension-module
         # feature is off here).
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
