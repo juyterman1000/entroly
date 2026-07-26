@@ -29,19 +29,25 @@ def _start_proxy_if_needed(port: int) -> bool:''',
     return values
 
 
-def _split_wrap_agent_args(agent_args: list[str] | None) -> tuple[list[str], bool]:
-    """Consume Entroly's explicit ``--`` separator without forwarding it.
+def _split_wrap_agent_args(
+    agent_args: list[str] | None,
+) -> tuple[list[str], list[str], bool]:
+    """Split Entroly options from client arguments at the first ``--``.
 
-    ``argparse.REMAINDER`` preserves the separator in ``agent_args``. Passing
-    that token to clients such as Copilot changes their parsing semantics and
-    turns later options into prompt text. When the separator is present,
-    everything after it belongs to the client and Entroly must not recover its
-    own ``--port``, ``--dry-run``, or ``--force`` flags from that tail.
+    ``argparse.REMAINDER`` can return Entroly options followed by the separator,
+    for example ``["--port", "9377", "--", "-p", "hello"]``. Entroly may
+    recover known wrapper options only from the left side. The separator itself
+    is consumed, and the right side is forwarded byte-for-byte as argv tokens.
+
+    When there is no separator, the same mutable list is returned for wrapper
+    parsing and client launch so recovered Entroly flags are removed before the
+    remaining tokens are forwarded.
     """
     values = list(agent_args or ())
-    if values and values[0] == "--":
-        return values[1:], True
-    return values, False
+    if "--" in values:
+        index = values.index("--")
+        return values[:index], values[index + 1 :], True
+    return values, values, False
 
 
 def _start_proxy_if_needed(port: int) -> bool:''',
@@ -68,27 +74,29 @@ replace_once(
     if "--dry-run" in args.agent_args:
         dry_run = True
         args.agent_args.remove("--dry-run")''',
-    '''    agent_args, explicit_separator = _split_wrap_agent_args(args.agent_args)
+    '''    wrapper_args, agent_args, explicit_separator = _split_wrap_agent_args(
+        args.agent_args
+    )
 
     port = args.port
-    # Without an explicit separator, argparse.REMAINDER may swallow Entroly's
-    # own --port after the agent name. With `--`, the tail belongs to the client.
-    if not explicit_separator and port is None and "--port" in agent_args:
-        idx = agent_args.index("--port")
-        if idx + 1 < len(agent_args):
+    # argparse.REMAINDER may swallow Entroly's own --port after the agent name.
+    # Only the left side of an explicit separator belongs to Entroly.
+    if port is None and "--port" in wrapper_args:
+        idx = wrapper_args.index("--port")
+        if idx + 1 < len(wrapper_args):
             try:
-                port = int(agent_args[idx + 1])
-                agent_args.pop(idx)
-                agent_args.pop(idx)
+                port = int(wrapper_args[idx + 1])
+                wrapper_args.pop(idx)
+                wrapper_args.pop(idx)
             except ValueError:
                 pass
     port = port or 9377
 
-    # Recover Entroly's --dry-run only when no explicit client separator exists.
+    # Recover Entroly's --dry-run only from the wrapper side of the separator.
     dry_run = bool(getattr(args, "dry_run", False))
-    if not explicit_separator and "--dry-run" in agent_args:
+    if "--dry-run" in wrapper_args:
         dry_run = True
-        agent_args.remove("--dry-run")''',
+        wrapper_args.remove("--dry-run")''',
 )
 
 replace_once(
@@ -98,9 +106,9 @@ replace_once(
         force_flag = True
         args.agent_args.remove("--force")''',
     '''    force_flag = bool(getattr(args, "force", False))
-    if not explicit_separator and "--force" in agent_args:
+    if "--force" in wrapper_args:
         force_flag = True
-        agent_args.remove("--force")''',
+        wrapper_args.remove("--force")''',
 )
 
 replace_once(
@@ -126,23 +134,46 @@ text = path.read_text(encoding="utf-8")
 text += '''
 
 
-def test_wrap_consumes_explicit_separator_and_preserves_client_options():
-    client_args, explicit = _split_wrap_agent_args(
-        ["--", "--port", "7777", "--force", "--dry-run", "--prompt=Hello world"]
+def test_wrap_splits_wrapper_options_from_client_arguments():
+    wrapper_args, client_args, explicit = _split_wrap_agent_args(
+        [
+            "--port",
+            "7777",
+            "--force",
+            "--",
+            "--port",
+            "8888",
+            "--dry-run",
+            "--prompt=Hello world",
+        ]
     )
     assert explicit is True
+    assert wrapper_args == ["--port", "7777", "--force"]
     assert client_args == [
         "--port",
-        "7777",
-        "--force",
+        "8888",
         "--dry-run",
         "--prompt=Hello world",
     ]
 
 
-def test_wrap_without_separator_keeps_recoverable_entroly_options():
-    agent_args, explicit = _split_wrap_agent_args(["--port", "9379", "-p", "hello"])
+def test_wrap_consumes_separator_when_it_is_first():
+    wrapper_args, client_args, explicit = _split_wrap_agent_args(
+        ["--", "-s", "--prompt=Hello world"]
+    )
+    assert explicit is True
+    assert wrapper_args == []
+    assert client_args == ["-s", "--prompt=Hello world"]
+
+
+def test_wrap_without_separator_shares_recoverable_argument_list():
+    wrapper_args, client_args, explicit = _split_wrap_agent_args(
+        ["--port", "9379", "-p", "hello"]
+    )
     assert explicit is False
-    assert agent_args == ["--port", "9379", "-p", "hello"]
+    assert wrapper_args is client_args
+    wrapper_args.pop(0)
+    wrapper_args.pop(0)
+    assert client_args == ["-p", "hello"]
 '''
 path.write_text(text, encoding="utf-8")
