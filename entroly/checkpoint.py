@@ -676,9 +676,16 @@ class CheckpointManager:
 
         Priority, least valuable first:
           1. peer checkpoints superseded by a newer one from the same peer
-          2. frontiers of peers proven dead, except the single newest such
-             frontier (kept as one restart/crash recovery point)
-          3. frontiers of peers that are alive or unprovable, oldest first
+          2. frontiers of peers proven dead, oldest first
+          3. the newest dead-peer frontier (one restart/crash recovery point,
+             given up only under real pressure)
+          4. frontiers of peers that are alive or unprovable, oldest first
+
+        A running peer's frontier is its ONLY resume point, so it outranks a
+        crashed process's history: every dead frontier is planned before any
+        live one. Exempting the newest dead frontier entirely — as the first
+        version of this policy did — meant cap pressure destroyed live peers'
+        resume points to preserve a dead process's file.
 
         Never returned: this instance's own checkpoints, and any file whose
         owner cannot be identified — deleting on a guess is the one thing this
@@ -708,7 +715,8 @@ class CheckpointManager:
 
         # `ordered` is newest-first, so each bucket is too; delete oldest first.
         plan = list(reversed(superseded))
-        plan += list(reversed(dead_frontiers[1:]))   # keep the newest dead frontier
+        plan += list(reversed(dead_frontiers[1:]))   # older dead frontiers
+        plan += dead_frontiers[:1]                   # newest dead: before any live
         plan += list(reversed(live_frontiers))       # last resort, keeps cap hard
         return plan
 
@@ -763,10 +771,13 @@ class CheckpointManager:
         if remaining > self.max_total_checkpoints:
             logger.warning(
                 "Checkpoint cap is soft: %d file(s) remain above the configured "
-                "cap %d; they are this instance's own state or could not be "
-                "attributed to an owner, so removing them would be a guess",
+                "cap %d. Remaining files are this instance's own state, files "
+                "whose owner could not be identified, or files that could not "
+                "be removed (locked or permission-denied); %d deletion(s) were "
+                "planned",
                 remaining,
                 self.max_total_checkpoints,
+                len(plan),
             )
 
     def _globbed_newest_first(self, pattern: str) -> list[Path]:

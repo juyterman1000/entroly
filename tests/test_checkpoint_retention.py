@@ -415,12 +415,31 @@ def test_policy_drops_superseded_peer_files_before_any_frontier():
     assert "ckpt_me_200_c.json.gz" not in plan[:2]
 
 
-def test_policy_keeps_exactly_one_dead_frontier_for_crash_recovery():
+def test_policy_gives_up_the_newest_dead_frontier_last_among_dead():
+    # The newest dead frontier is the crash-recovery point: planned, but only
+    # after every other dead frontier.
     plan = _plan(["ckpt_me_300_x.json.gz", "ckpt_me_301_x.json.gz",
                   "ckpt_me_302_x.json.gz"], alive=())
-    # three dead peers -> the newest frontier survives, the other two are planned
-    assert "ckpt_me_300_x.json.gz" not in plan
-    assert set(plan) == {"ckpt_me_301_x.json.gz", "ckpt_me_302_x.json.gz"}
+    assert plan == ["ckpt_me_302_x.json.gz", "ckpt_me_301_x.json.gz",
+                    "ckpt_me_300_x.json.gz"], (
+        "dead frontiers must be planned oldest-first, newest last"
+    )
+
+
+def test_policy_never_sacrifices_a_live_peer_before_a_dead_one():
+    # A running peer's frontier is its ONLY resume point; a dead peer's file is
+    # history. Exempting the newest dead frontier entirely made cap pressure
+    # destroy live peers' resume points to preserve a crashed process's file.
+    plan = _plan(
+        ["ckpt_me_501_x.json.gz", "ckpt_me_502_x.json.gz",   # live (newer)
+         "ckpt_me_999_dead.json.gz"],                        # dead (oldest)
+        alive=(501, 502),
+    )
+    assert plan, "cap must remain enforceable"
+    assert "dead" in plan[0], (
+        f"a live peer was sacrificed before a dead one: {plan}"
+    )
+    assert plan.index("ckpt_me_999_dead.json.gz") < plan.index("ckpt_me_501_x.json.gz")
 
 
 def test_policy_sacrifices_live_frontiers_last_and_oldest_first():
@@ -439,10 +458,12 @@ def test_policy_orders_tiers_least_valuable_first():
         ["ckpt_me_1_own.json.gz",        # ours — never
          "ckpt_me_500_new.json.gz",      # live frontier — last resort
          "ckpt_me_500_old.json.gz",      # superseded — first
-         "ckpt_me_600_dead.json.gz"],    # dead frontier (newest dead) — kept
+         "ckpt_me_600_dead.json.gz"],    # dead frontier — before any live one
         alive=(500,),
     )
-    assert plan[0] == "ckpt_me_500_old.json.gz"      # superseded goes first
-    assert plan[-1] == "ckpt_me_500_new.json.gz"     # live frontier goes last
-    assert "ckpt_me_1_own.json.gz" not in plan
-    assert "ckpt_me_600_dead.json.gz" not in plan    # sole dead frontier kept
+    assert plan == [
+        "ckpt_me_500_old.json.gz",   # superseded: least valuable
+        "ckpt_me_600_dead.json.gz",  # dead frontier: history
+        "ckpt_me_500_new.json.gz",   # live frontier: only resume point, last
+    ], f"tier order wrong: {plan}"
+    assert "ckpt_me_1_own.json.gz" not in plan       # ours is never planned
