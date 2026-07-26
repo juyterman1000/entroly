@@ -1,0 +1,180 @@
+--- a/entroly-core/tests/test_integration.py
++++ b/entroly-core/tests/test_integration.py
+@@ -166,7 +166,10 @@
+         assert r["criticality"] == expected_crit, \
+             f"{path}: expected {expected_crit}, got {r['criticality']}"
+         if expected_crit in ("Critical", "Safety"):
+-            assert r["is_pinned"], f"{path} should be auto-pinned"
++            assert r["is_protected"], f"{path} should be protected from eviction"
++            assert not r["is_pinned"], (
++                f"{path} is policy-protected, not operator-pinned for every answer"
++            )
+     return _test
+ 
+ for path, crit in CRITICAL_FILES + SAFETY_FILES + IMPORTANT_FILES + NORMAL_FILES:
+@@ -177,18 +180,19 @@
+ 
+ def test_license_safety():
+     e = sc.EntrolyEngine()
+-    # License *files* (by name) are Safety-pinned; license *text* in normal
+-    # files is NOT auto-pinned (intentional — broad content matching destroyed
+-    # budgets in real codebases).
++    # License *files* (by name) are safety-protected from eviction; license
++    # *text* in normal files is not force-pinned into every answer.
+     r = e.ingest("MIT License\nCopyright 2024", "LICENSE", 0, False)
+-    assert r["is_pinned"], "LICENSE file should be auto-pinned via Safety criticality"
+-test("License file auto-pinned", test_license_safety)
++    assert r["is_protected"], "LICENSE file should be protected via Safety criticality"
++    assert not r["is_pinned"], "Safety classification must not consume every query budget"
++test("License file safety-protected", test_license_safety)
+ 
+ def test_security_warning_safety():
+     e = sc.EntrolyEngine()
+     r = e.ingest("# SECURITY WARNING: do not expose API keys\nAPI_KEY = os.environ['KEY']", "config.py", 0, False)
+-    assert r["is_pinned"]
+-test("Security warning auto-pinned", test_security_warning_safety)
++    assert r["is_protected"]
++    assert not r["is_pinned"]
++test("Security warning safety-protected", test_security_warning_safety)
+ 
+ def test_normal_code_not_pinned():
+     e = sc.EntrolyEngine()
+@@ -526,7 +530,7 @@
+     e.ingest("numpy==2.0", "requirements.txt", 10, False)
+     for _ in range(50):
+         e.advance_turn()
+-    assert e.fragment_count() == 1, "Critical auto-pinned file should survive decay"
++    assert e.fragment_count() == 1, "Critical protected file should survive decay"
+ test("Critical file survives decay", test_critical_file_survives_decay)
+ 
+ 
+--- a/entroly-core/tests/test_brutal.py
++++ b/entroly-core/tests/test_brutal.py
+@@ -290,19 +290,21 @@
+     assert any("rate" in s for s in selected2), \
+         f"rates.py should still be preferred after positive feedback: {selected2}"
+ 
+-    # Turn 3: LICENSE and requirements.txt must ALWAYS be in context (pinned)
+-    e.advance_turn()
+-    e.advance_turn()
+-    opt3 = e.optimize(10000, "")
+-    selected3 = [f["source"] for f in opt3["selected"]]
+-    assert "LICENSE" in selected3, f"LICENSE must always be included: {selected3}"
+-    assert "requirements.txt" in selected3, f"requirements.txt must be included: {selected3}"
++    # Turn 3: safety/critical files remain in the store but are not forced into
++    # every answer. Only explicit operator pins consume guaranteed answer budget.
++    exported = {f["source"]: f for f in e.export_fragments()}
++    for source in ("LICENSE", "requirements.txt", "auth.py"):
++        assert exported[source]["is_protected"], f"{source} must be protected"
++        assert not exported[source]["is_pinned"], f"{source} must not be force-pinned"
+ 
+-    # Turn 4: Advance many turns — unpinned low-relevance frags should decay
++    # Turn 4: Advance many turns — ordinary stale fragments may decay, while
++    # protected files survive without being injected into unrelated answers.
+     for _ in range(30):
+         e.advance_turn()
+-    # Pinned files (LICENSE, requirements.txt, auth.py with SECRET_KEY) should survive
+-    assert e.fragment_count() > 0, "Should still have pinned fragments"
++    surviving = {f["source"] for f in e.export_fragments()}
++    assert {"LICENSE", "requirements.txt", "auth.py"}.issubset(surviving), (
++        f"protected fragments were evicted: {surviving}"
++    )
+ 
+ test("Full real multi-turn debug session", test_real_session_full)
+ 
+@@ -715,12 +717,14 @@
+ print("\n═══ L. AUTH.PY SAFETY DETECTION ═══")
+ 
+ def test_auth_content_safety():
+-    """auth.py contains 'api_key' keyword → should be auto-pinned as safety signal."""
++    """auth.py safety signal protects storage without force-including answers."""
+     e = sc.EntrolyEngine()
+     r = e.ingest(REAL_FILES["auth.py"], "auth.py", 0, False)
+-    assert r["is_pinned"], \
+-        f"auth.py contains api_key → should be auto-pinned: {r}"
+-test("auth.py auto-pinned (contains api_key)", test_auth_content_safety)
++    assert r["is_protected"], \
++        f"auth.py contains api_key → should be protected from eviction: {r}"
++    assert not r["is_pinned"], \
++        f"safety detection must not force auth.py into every answer: {r}"
++test("auth.py protected (contains api_key)", test_auth_content_safety)
+ 
+ 
+ # ═══════════════════════
+--- a/entroly/checkpoint.py
++++ b/entroly/checkpoint.py
+@@ -794,14 +794,32 @@
+             candidates = list(self.checkpoint_dir.glob(pattern))
+         except OSError:
+             return []
+-        dated: list[tuple[float, Path]] = []
++        dated: list[tuple[tuple[int, int, int, str], Path]] = []
+         for path in candidates:
+             try:
+-                dated.append((path.stat().st_mtime, path))
++                stat = path.stat()
+             except OSError:
+                 continue  # vanished under us
++            # Some filesystems expose coarse mtimes. Multiple checkpoints saved
++            # in one tick then compare equal and glob order decides what
++            # ``load_latest`` returns. The checkpoint ID already carries a
++            # per-instance sequence, so use it as a deterministic tie-breaker.
++            # Keep mtime first so tests/operators that deliberately age files
++            # retain the established ordering semantics.
++            match = re.search(r"_(\d+)_(\d+)\.json\.gz$", path.name)
++            checkpoint_second = int(match.group(1)) if match else 0
++            checkpoint_sequence = int(match.group(2)) if match else -1
++            dated.append((
++                (
++                    int(getattr(stat, "st_mtime_ns", stat.st_mtime * 1_000_000_000)),
++                    checkpoint_second,
++                    checkpoint_sequence,
++                    path.name,
++                ),
++                path,
++            ))
+         dated.sort(key=lambda item: item[0], reverse=True)
+-        return [path for _mtime, path in dated]
++        return [path for _sort_key, path in dated]
+ 
+     def _prune_pattern(self, pattern: str, keep: int) -> None:
+         # Per-file stat guard: a concurrent peer prune must not abort our own
+--- a/tests/test_checkpoint_relevance.py
++++ b/tests/test_checkpoint_relevance.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import os
+ from types import SimpleNamespace
+ 
+ from entroly.checkpoint_relevance import (
+@@ -123,3 +124,29 @@
+         "Keep the provider cache warm",
+         "Use canonical provider adapters",
+     ]
++
++
++def test_load_latest_breaks_coarse_mtime_ties_with_checkpoint_sequence(
++    tmp_path, monkeypatch
++) -> None:
++    from entroly.checkpoint import CheckpointManager
++
++    # Freeze wall-clock seconds so every checkpoint ID shares the same timestamp.
++    monkeypatch.setattr("entroly.checkpoint.time.time", lambda: 1_700_000_000.0)
++    manager = CheckpointManager(
++        tmp_path, auto_interval=5, max_checkpoints=5, instance_id="test_instance"
++    )
++    manager.save([], {}, {}, 1, metadata={"task": "one"})
++    manager.save([], {}, {}, 2, metadata={"task": "two"})
++    manager.save([], {}, {}, 3, metadata={"task": "three"})
++
++    # Simulate a filesystem with one-second mtime granularity. Without the
++    # sequence tie-breaker, glob order can return any of the three files.
++    same_tick = 1_700_000_000_000_000_000
++    for checkpoint in tmp_path.glob("ckpt_*.json.gz"):
++        os.utime(checkpoint, ns=(same_tick, same_tick))
++
++    latest = manager.load_latest()
++    assert latest is not None
++    assert latest.current_turn == 3
++    assert latest.metadata["task"] == "three"
