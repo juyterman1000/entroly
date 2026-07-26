@@ -49,8 +49,8 @@ text = ensure_regex(
     r"<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets,.*?</sub>",
     "<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets. They\n"
     "do not measure generated answers and are not downstream answer-quality, latency,\n"
-    "production-savings, or general neural superiority claims. PRISM-R is an opt-in\n"
-    "research prototype, is not the default compressor, and remains opt-in research code.</sub>",
+    "production-savings, or general neural superiority claims. PRISM-R is an opt-in research prototype,\n"
+    "is not the default compressor, and remains opt-in research code.</sub>",
     "PRISM-R is an opt-in research prototype",
     "PRISM-R scope",
 )
