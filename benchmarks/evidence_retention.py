@@ -92,6 +92,29 @@ def main() -> int:
     if not fragments:
         raise SystemExit("index is empty and ingest produced nothing")
 
+    # Self-contamination: this harness carries every gold query verbatim next to
+    # its answer path, so indexing it hands the retriever the answer key. It was
+    # measured being retrieved at rank 4 for a gold query on the strength of the
+    # query text it holds. Any document that quotes a gold query is evicted
+    # before scoring, and the eviction is reported rather than done silently --
+    # a contaminated corpus that scores well is not evidence of anything.
+    contaminated: set[str] = set()
+    for frag in fragments:
+        text = str(frag.get("content") or "")
+        if any(query in text for query, _ in GOLD):
+            contaminated.add(str(frag.get("source") or ""))
+    contaminated -= {
+        f"file:{g}" for _, gold in GOLD for g in gold
+    }
+    if contaminated:
+        removed = engine.remove_sources(sorted(contaminated))
+        print(f"  contamination : evicted {len(contaminated)} doc(s) quoting a "
+              f"gold query ({removed.get('status', 'ok')})")
+        for source in sorted(contaminated):
+            print(f"                  - {source}")
+        fragments = list(engine._rust.export_fragments())
+        corpus_tokens = sum(int(f.get("token_count", 0) or 0) for f in fragments)
+
     # A retrieval benchmark whose gold answers are absent from the corpus is not
     # measuring retrieval — it is measuring ingest, and reporting the result as a
     # recall score. That happened here: cli.py (266 KB), proxy.py (255 KB) and
