@@ -166,7 +166,10 @@ def test_criticality(path, expected_crit):
         assert r["criticality"] == expected_crit, \
             f"{path}: expected {expected_crit}, got {r['criticality']}"
         if expected_crit in ("Critical", "Safety"):
-            assert r["is_pinned"], f"{path} should be auto-pinned"
+            assert r["is_protected"], f"{path} should be protected from eviction"
+            assert not r["is_pinned"], (
+                f"{path} is policy-protected, not operator-pinned for every answer"
+            )
     return _test
 
 for path, crit in CRITICAL_FILES + SAFETY_FILES + IMPORTANT_FILES + NORMAL_FILES:
@@ -177,18 +180,19 @@ print("\n═══ 4. SAFETY SIGNAL DETECTION ═══")
 
 def test_license_safety():
     e = sc.EntrolyEngine()
-    # License *files* (by name) are Safety-pinned; license *text* in normal
-    # files is NOT auto-pinned (intentional — broad content matching destroyed
-    # budgets in real codebases).
+    # License *files* (by name) are safety-protected from eviction; license
+    # *text* in normal files is not force-pinned into every answer.
     r = e.ingest("MIT License\nCopyright 2024", "LICENSE", 0, False)
-    assert r["is_pinned"], "LICENSE file should be auto-pinned via Safety criticality"
-test("License file auto-pinned", test_license_safety)
+    assert r["is_protected"], "LICENSE file should be protected via Safety criticality"
+    assert not r["is_pinned"], "Safety classification must not consume every query budget"
+test("License file safety-protected", test_license_safety)
 
 def test_security_warning_safety():
     e = sc.EntrolyEngine()
     r = e.ingest("# SECURITY WARNING: do not expose API keys\nAPI_KEY = os.environ['KEY']", "config.py", 0, False)
-    assert r["is_pinned"]
-test("Security warning auto-pinned", test_security_warning_safety)
+    assert r["is_protected"]
+    assert not r["is_pinned"]
+test("Security warning safety-protected", test_security_warning_safety)
 
 def test_normal_code_not_pinned():
     e = sc.EntrolyEngine()
@@ -570,7 +574,7 @@ def test_critical_file_survives_decay():
     e.ingest("numpy==2.0", "requirements.txt", 10, False)
     for _ in range(50):
         e.advance_turn()
-    assert e.fragment_count() == 1, "Critical auto-pinned file should survive decay"
+    assert e.fragment_count() == 1, "Critical protected file should survive decay"
 test("Critical file survives decay", test_critical_file_survives_decay)
 
 

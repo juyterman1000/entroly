@@ -84,8 +84,38 @@ use guardrails::{
     TaskType,
 };
 use knapsack::{compute_lambda_star, knapsack_optimize, ScoringWeights};
+
 use knapsack_sds::{ios_select, InfoFactors, Resolution};
 use prism::PrismOptimizer;
+
+/// Reclassify pins from indexes written before pin/protection were split.
+///
+/// Older indexes stored one boolean: criticality set `is_pinned`, which
+/// force-included the fragment in every query. Loading such an index
+/// unchanged would keep that behaviour forever. A pin that a criticality
+/// rule would have produced is reclassified as protection; anything else is
+/// left alone, because only an operator could have set it. `is_protected`
+/// is absent from those files and defaults to false, so this is idempotent:
+/// after one migration the pins are gone and there is nothing left to move.
+fn migrate_pin_semantics(fragments: &mut HashMap<String, ContextFragment>) -> usize {
+    let mut migrated = 0usize;
+    for frag in fragments.values_mut() {
+        if !frag.is_pinned || frag.is_protected {
+            continue;
+        }
+        let criticality = file_criticality(&frag.source);
+        if criticality == Criticality::Safety
+            || criticality == Criticality::Critical
+            || has_safety_signal(&frag.content)
+        {
+            frag.is_pinned = false;
+            frag.is_protected = true;
+            migrated += 1;
+        }
+    }
+    migrated
+}
+
 use prism::PrismOptimizer5D;
 use query_persona::QueryPersonaManifold;
 use resonance::ResonanceMatrix;
@@ -497,7 +527,9 @@ impl EntrolyEngine {
         let to_evict: Vec<String> = self
             .fragments
             .iter()
-            .filter(|(_, f)| f.recency_score < self.min_relevance && !f.is_pinned)
+            .filter(|(_, f)| {
+                f.recency_score < self.min_relevance && !f.is_pinned && !f.is_protected
+            })
             .map(|(k, _)| k.clone())
             .collect();
 
@@ -505,7 +537,7 @@ impl EntrolyEngine {
             self.dedup_index.remove(id);
         }
         self.fragments
-            .retain(|_, f| f.recency_score >= self.min_relevance || f.is_pinned);
+            .retain(|_, f| f.recency_score >= self.min_relevance || f.is_pinned || f.is_protected);
 
         // Rebuild LSH slot index after eviction (slots may have shifted).
         // This is O(N) but eviction is infrequent (happens once per turn).
@@ -677,8 +709,13 @@ impl EntrolyEngine {
             let has_safety = has_safety_signal(&content);
 
             // Force-pin safety and critical files
-            let effective_pinned = is_pinned
-                || criticality == Criticality::Safety
+            // Pinning is operator policy; protection is a storage guarantee.
+            // Deriving pins from criticality force-included every manifest and
+            // security file in EVERY query: measured 56 fragments / 223,288
+            // tokens pinned, consuming 50.6% of delivered tokens at an
+            // 8,000-token budget, allocated identically regardless of query.
+            let effective_pinned = is_pinned;
+            let effective_protected = criticality == Criticality::Safety
                 || criticality == Criticality::Critical
                 || has_safety;
 
@@ -707,6 +744,7 @@ impl EntrolyEngine {
             frag.turn_last_accessed = self.current_turn;
             frag.access_count = 1;
             frag.is_pinned = effective_pinned;
+            frag.is_protected = effective_protected;
             frag.simhash = fp;
             frag.has_simhash = true; // content-derived fingerprint
 
@@ -775,6 +813,7 @@ impl EntrolyEngine {
             )?;
             result.set_item("criticality", format!("{:?}", criticality))?;
             result.set_item("is_pinned", effective_pinned)?;
+            result.set_item("is_protected", effective_protected)?;
             result.set_item("total_fragments", self.fragments.len())?;
             result.set_item("has_skeleton", has_skeleton)?;
             if let Some(stc) = skel_tc_for_result {
@@ -935,6 +974,7 @@ impl EntrolyEngine {
                 frag.simhash = stub_fp; // sentinel: excluded from all similarity ops
                 frag.has_simhash = false; // stubs never participate in LSH or SimHash similarity
                 frag.is_pinned = false;
+                frag.is_protected = false;
 
                 let _slot = self.fragment_slot_ids.len();
                 self.fragment_slot_ids.push(frag_id.clone());
@@ -1320,7 +1360,10 @@ impl EntrolyEngine {
                     continue;
                 }
 
-                let effective_pinned = pre.has_safety
+                // The batch tuple carries no pin flag, so nothing here is an
+                // operator pin; every one of these was criticality-derived.
+                let effective_pinned = false;
+                let effective_protected = pre.has_safety
                     || pre.criticality == Criticality::Safety
                     || pre.criticality == Criticality::Critical;
 
@@ -1339,6 +1382,7 @@ impl EntrolyEngine {
                 frag.turn_last_accessed = self.current_turn;
                 frag.access_count = 1;
                 frag.is_pinned = effective_pinned;
+                frag.is_protected = effective_protected;
                 frag.simhash = pre.simhash;
                 frag.has_simhash = true; // content-derived fingerprint
                                          // TPSE Phase A: skeleton_token_count = speculative estimate.
@@ -4186,6 +4230,7 @@ impl EntrolyEngine {
             })?;
         let n = snapshot.fragments.len();
         self.fragments = snapshot.fragments;
+        migrate_pin_semantics(&mut self.fragments);
         self.fragment_slot_ids = snapshot.fragment_slot_ids;
         self.w_recency = snapshot.w_recency;
         self.w_frequency = snapshot.w_frequency;
@@ -4972,6 +5017,7 @@ impl EntrolyEngine {
         })?;
         let dedup_threshold = state.dedup_index.hamming_threshold();
         self.fragments = state.fragments;
+        migrate_pin_semantics(&mut self.fragments);
         self.dedup_index = DedupIndex::new(dedup_threshold);
         self.dep_graph = state.dep_graph;
         self.feedback = state.feedback;
@@ -5262,6 +5308,7 @@ impl EntrolyEngine {
                 d.set_item("token_count", frag.token_count)?;
                 d.set_item("source", &frag.source)?;
                 d.set_item("is_pinned", frag.is_pinned)?;
+                d.set_item("is_protected", frag.is_protected)?;
                 d.set_item("recency_score", frag.recency_score)?;
                 d.set_item("frequency_score", frag.frequency_score)?;
                 d.set_item("semantic_score", frag.semantic_score)?;
