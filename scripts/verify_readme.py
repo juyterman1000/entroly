@@ -1,4 +1,4 @@
-"""Verify the simplified README against Entroly's actual product contracts."""
+"""Verify Entroly's public README profiles against actual product contracts."""
 
 from __future__ import annotations
 
@@ -35,29 +35,28 @@ from verify_public_trust import collect_offline_failures  # noqa: E402
 
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
 PYPI_TEXT = Path("PYPI_README.md").read_text(encoding="utf-8")
+PUBLIC_TEXT = README_TEXT + "\n" + PYPI_TEXT
 COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
 INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
 OPENCLAW_TEXT = Path("integrations/openclaw/README.md").read_text(encoding="utf-8")
 
-# === Plain-language product identity ===
+# === Intentional public product profiles ===
 check(
-    "README Context Assurance identity",
+    "README developer Context OS identity",
     lambda: require(
         all(
             phrase in README_TEXT
             for phrase in (
-                "Entroly — Context Assurance That Helps Lower AI Costs",
-                "What Entroly does in plain language",
-                "unnecessary AI context",
-                "content-addressed evidence",
+                "Entroly — The Open-Source Context OS for AI Agents",
+                "Keep your agent. Give it a Context OS.",
+                "recoverable compression",
                 "Context Receipts",
-                "no agent-architecture rewrite",
-                "small one-time setup",
+                "local-first",
             )
         ),
-        "README first fold no longer states the Context Assurance product contract",
+        "README no longer states the developer and AI-agent Context OS contract",
     ),
 )
 check(
@@ -73,16 +72,16 @@ check(
                 "content-addressed recovery handles",
             )
         ),
-        "PyPI first fold drifted from the README identity",
+        "PyPI first fold drifted from the Context Assurance identity",
     ),
 )
 
 # === Honest claim boundaries ===
 check(
-    "README cost and quality scope",
+    "public cost and quality scope",
     lambda: require(
         all(
-            phrase in (README_TEXT + PYPI_TEXT)
+            phrase in PUBLIC_TEXT
             for phrase in (
                 "does not promise a universal compression percentage",
                 "guaranteed bill reduction",
@@ -96,10 +95,10 @@ check(
     ),
 )
 check(
-    "README rejects universal promises",
+    "public copy rejects universal promises",
     lambda: require(
         all(
-            phrase.lower() not in (README_TEXT + PYPI_TEXT).lower()
+            phrase.lower() not in PUBLIC_TEXT.lower()
             for phrase in (
                 "we guarantee savings",
                 "zero setup required",
@@ -114,10 +113,10 @@ check(
 
 # === Trust and discovery links ===
 check(
-    "README canonical trust links",
+    "canonical trust links across public profiles",
     lambda: require(
         all(
-            link in README_TEXT
+            link in PUBLIC_TEXT
             for link in (
                 "docs/ai-cost-optimization.html",
                 "docs/public-evidence.md",
@@ -127,14 +126,14 @@ check(
                 "benchmarks/results/context_commit_conformance.json",
             )
         ),
-        "README must link the cost guide, evidence policy, limitations, and artifacts",
+        "README/PyPI must link the cost guide, evidence policy, limitations, and artifacts",
     ),
 )
 check(
     "supported integration names",
     lambda: require(
         all(
-            client in README_TEXT
+            client in PUBLIC_TEXT
             for client in (
                 "Claude Code",
                 "Codex",
@@ -145,7 +144,7 @@ check(
                 "local models",
             )
         ),
-        "README is missing a supported integration named in the product surface",
+        "README/PyPI is missing a supported integration named in the product surface",
     ),
 )
 
@@ -209,7 +208,7 @@ check(
 
 # === Shared public-trust gate ===
 check(
-    "Context Assurance public trust contracts",
+    "public trust contracts",
     lambda: require(
         not (failures := collect_offline_failures()),
         "; ".join(failures),
@@ -285,9 +284,9 @@ check(
 print(f"\n{'=' * 50}")
 print(f"  PASSED: {passed}  |  FAILED: {failed}")
 if failed:
-    print(f"  README has {failed} failed product or trust contract(s).")
+    print(f"  Public README profiles have {failed} failed product or trust contract(s).")
 else:
-    print("  Simplified README and runtime contracts passed.")
+    print("  Developer README, PyPI profile, and runtime contracts passed.")
     print("  This does not certify every product or benchmark claim.")
 print(f"{'=' * 50}")
 sys.exit(1 if failed else 0)

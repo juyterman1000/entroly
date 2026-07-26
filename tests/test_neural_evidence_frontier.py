@@ -169,8 +169,14 @@ def test_public_story_keeps_negative_result_and_provenance_attached() -> None:
         ROOT / "docs" / "benchmarks" / "neural-evidence-frontier.md"
     ).read_text(encoding="utf-8")
 
+    assert (
+        "Frozen evidence-selection benchmark" in readme
+        or (
+            "One measured job of the Context OS" in readme
+            and "frozen retrieval test" in readme
+        )
+    )
     for summary in (
-        "Frozen evidence-selection benchmark",
         "298 of 300",
         "1.02 of 16 passages",
         "p=0.21875",
