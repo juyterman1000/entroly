@@ -1,0 +1,50 @@
+name: Sync PR 198 With Main
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.head_ref == 'fix/rust-token-savings-trust' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Merge current main
+        run: |
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git fetch origin main
+          git merge --no-edit origin/main
+      - name: Install focused test tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest ruff
+      - name: Validate focused core contracts
+        run: |
+          python -m compileall -q entroly/context_receipts
+          python -m ruff check entroly/context_receipts tests/test_context_receipts.py
+          python -m pytest -q \
+            tests/test_context_receipts.py \
+            tests/test_context_fixed_point.py \
+            tests/test_recoverable_receipts.py
+          cargo fmt --manifest-path entroly-core/Cargo.toml --check
+      - name: Remove temporary workflow and push
+        run: |
+          rm -f .github/workflows/sync-pr198-main.yml
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(core): remove temporary synchronization workflow'
+          fi
+          git push origin HEAD:${{ github.head_ref }}
