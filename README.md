@@ -5,7 +5,7 @@
 <h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
 
 <p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
-Entroly uses budgeted context selection, content-addressed recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
+Entroly uses budgeted context selection, content-addressed evidence, exact recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
 
 <p align="center">
   <sub>Works through supported proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.</sub>
@@ -32,7 +32,7 @@ Entroly uses budgeted context selection, content-addressed recovery, and auditab
 
 <!-- Community signals are not product or benchmark verification. -->
 <p align="center">
-  <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly repository and GitHub stars"></a>
+  <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
   <a href="https://juyterman1000.github.io/entroly/docs/discord.html"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white" alt="Entroly Discord community"></a>
 </p>
 
@@ -45,6 +45,7 @@ Entroly uses budgeted context selection, content-addressed recovery, and auditab
 <p align="center">
   <a href="#get-started"><b>Get started</b></a> ·
   <a href="#see-value-in-your-first-session"><b>See value</b></a> ·
+  <a href="docs/ai-cost-optimization.html"><b>AI cost guide</b></a> ·
   <a href="#proof-in-30-seconds"><b>Proof videos</b></a> ·
   <a href="#proof"><b>Proof</b></a> ·
   <a href="#works-with-your-stack"><b>Integrations</b></a> ·
@@ -663,9 +664,10 @@ its evidence retention from 9.0% to 90.5%. Active plus recovered context was
 [held-out retrieval artifact](benchmarks/results/neural_evidence_frontier.json) ·
 [query-shift artifact](benchmarks/results/neural_query_shift.json).
 
-<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets, not
-downstream answer-quality, latency, production-savings, or general neural
-superiority claims. PRISM-R remains opt-in research code.</sub>
+<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets. They
+do not measure generated answers and are not downstream answer-quality, latency,
+production-savings, or general neural superiority claims. PRISM-R is an opt-in research prototype,
+is not the default compressor, and remains opt-in research code.</sub>
 
 The tables below link each reported number to its committed result. Treat them
 as evidence for those specific datasets, budgets, models, and commits—not as a
@@ -1025,8 +1027,6 @@ audit. Use the live page for current external status and the
 [LobeHub score audit](docs/lobehub-score-audit.md) for the dated baseline. Until
 the listing matches the published package and passes external validation,
 install from PyPI or npm using the instructions above.
-
-<a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="Current external Entroly status on LobeHub"></a>
 
 <p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>
