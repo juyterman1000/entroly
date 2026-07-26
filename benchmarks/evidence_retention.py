@@ -44,13 +44,26 @@ GOLD: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
+def _logical(path: str) -> str:
+    """Resolve a chunk of an oversized file back to the file itself.
+
+    A large file is indexed as `path`, `path#1`, `path#2`, ... so retrieving
+    `entroly/cli.py#16` IS retrieving entroly/cli.py. Comparing the raw source
+    against the gold path scores every chunked file as a miss no matter how well
+    it ranked -- and the only files large enough to be chunked here were exactly
+    the three this benchmark reported as permanently unretrievable.
+    """
+    head, sep, tail = path.rpartition("#")
+    return head if sep and tail.isdigit() else path
+
+
 def _sources(selection) -> set[str]:
     out = set()
     for frag in selection or []:
         if not isinstance(frag, dict):
             continue
         src = str(frag.get("source") or "")
-        out.add(src.removeprefix("file:"))
+        out.add(_logical(src.removeprefix("file:")))
     return out
 
 
