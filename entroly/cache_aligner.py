@@ -4,17 +4,10 @@ Entroly Cache Aligner — Provider KV Cache Optimization
 
 Stabilizes message prefixes so LLM provider KV caches actually work.
 
-Problem: Anthropic offers a 90% read discount on cached prefixes, and
-OpenAI caches repeated prefixes automatically. But if Entroly injects
-different context on every request, the prefix changes every time and
-the cache never hits.
-
-Solution: CacheAligner hashes the injected context and stabilizes it
-when the content hasn't materially changed. If the new context is
->90% similar to the previous injection for the same client, we reuse
-the previous context verbatim — preserving the provider's cache prefix.
-
-This is free money: same quality, 90% cheaper on cache-hit turns.
+Provider prompt caches match exact prefixes.  Reusing an older context merely
+because its token set is similar can silently hide changed evidence.  This
+aligner therefore reuses a block only when its canonical bytes are identical.
+Provider-reported usage remains the source of truth for cache savings.
 
 Thread-safe. Per-client tracking with LRU eviction.
 """
@@ -22,7 +15,6 @@ Thread-safe. Per-client tracking with LRU eviction.
 from __future__ import annotations
 
 import hashlib
-import re
 import threading
 from collections import OrderedDict
 from typing import Any
@@ -45,15 +37,10 @@ except Exception:
 class CacheAligner:
     """Stabilize context prefixes for LLM provider KV cache optimization.
 
-    Tracks per-client context injections. When a new injection is
-    sufficiently similar to the previous one (>similarity_threshold),
-    the previous injection is reused verbatim to preserve cache hits.
-
-    Similarity is measured by token-level Jaccard coefficient:
-        |A ∩ B| / |A ∪ B|
-
-    This is cheaper than computing embeddings and perfectly adequate
-    for detecting near-identical context blocks.
+    Tracks per-client context injections and returns the previous object only
+    for an exact SHA-256 match.  ``similarity_threshold`` remains accepted for
+    API compatibility, but approximate reuse is intentionally disabled:
+    correctness and fresh evidence take precedence over a speculative cache hit.
     """
 
     def __init__(
@@ -61,6 +48,10 @@ class CacheAligner:
         similarity_threshold: float = 0.90,
         max_clients: int = 100,
     ):
+        if not 0.0 <= similarity_threshold <= 1.0:
+            raise ValueError("similarity_threshold must be between zero and one")
+        if max_clients < 1:
+            raise ValueError("max_clients must be at least one")
         self._threshold = similarity_threshold
         self._max_clients = max_clients
         self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -79,29 +70,25 @@ class CacheAligner:
             (aligned_context, cache_hit): The context to use and whether
             the previous cached version was reused.
         """
-        context_tokens = set(re.findall(r'\w+', context))
+        if not client_key:
+            raise ValueError("client_key is required")
+        if not isinstance(context, str):
+            raise TypeError("context must be a string")
+        digest = hashlib.sha256(context.encode("utf-8")).hexdigest()
 
         with self._lock:
             prev = self._cache.get(client_key)
 
-            if prev is not None:
-                prev_tokens = prev["tokens"]
-
-                # Jaccard similarity
-                intersection = len(context_tokens & prev_tokens)
-                union = len(context_tokens | prev_tokens)
-                similarity = intersection / max(union, 1)
-
-                if similarity >= self._threshold:
-                    # Cache hit — reuse previous context verbatim
-                    self._cache.move_to_end(client_key)
-                    self._hits += 1
-                    return prev["context"], True
+            if prev is not None and prev["digest"] == digest:
+                # Exact hit — reuse the existing string object byte-for-byte.
+                self._cache.move_to_end(client_key)
+                self._hits += 1
+                return prev["context"], True
 
             # Cache miss — store new context
             self._cache[client_key] = {
                 "context": context,
-                "tokens": context_tokens,
+                "digest": digest,
             }
             self._cache.move_to_end(client_key)
             self._misses += 1
@@ -126,5 +113,5 @@ class CacheAligner:
                 "cache_misses": self._misses,
                 "hit_rate": round(self._hits / max(total, 1), 4),
                 "active_clients": len(self._cache),
-                "estimated_savings_pct": round(self._hits * 90 / max(total, 1), 1),
+                "match_policy": "exact_sha256",
             }

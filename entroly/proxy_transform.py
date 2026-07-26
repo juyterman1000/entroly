@@ -880,6 +880,98 @@ def inject_context_gemini(
     return body
 
 
+def inject_context_live_zone(
+    body: dict[str, Any],
+    context_text: str,
+    provider: str,
+) -> tuple[dict[str, Any], bool]:
+    """Append dynamic context after the request's stable provider prefix.
+
+    Rewriting a system prompt on every turn invalidates the provider cache from
+    its first token. This helper instead appends Entroly's changing evidence to
+    the newest user/tool turn. On the next request, the raw historical turn
+    still matches up to the point where the prior live-zone suffix began, so
+    the largest safe prefix remains reusable.
+
+    Unsupported or ambiguous message shapes are returned unchanged. A cache
+    optimization must never corrupt provider role/tool sequencing.
+    """
+    if not context_text:
+        return copy.deepcopy(body), False
+    wrapped = (
+        "\n\n<entroly_dynamic_context>\n"
+        f"{context_text}\n"
+        "</entroly_dynamic_context>"
+    )
+    updated = copy.deepcopy(body)
+
+    if provider == "gemini":
+        contents = updated.get("contents")
+        if not isinstance(contents, list):
+            return updated, False
+        for item in reversed(contents):
+            if not isinstance(item, dict) or item.get("role") != "user":
+                continue
+            parts = item.get("parts")
+            if not isinstance(parts, list):
+                return updated, False
+            parts.append({"text": wrapped.lstrip()})
+            return updated, True
+        return updated, False
+
+    if "messages" in updated:
+        messages = updated.get("messages")
+        if not isinstance(messages, list):
+            return updated, False
+        allowed_roles = (
+            {"user"}
+            if provider == "anthropic"
+            else {"user", "tool", "function"}
+        )
+        for message in reversed(messages):
+            if (
+                not isinstance(message, dict)
+                or str(message.get("role", "")) not in allowed_roles
+            ):
+                continue
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = f"{content}{wrapped}"
+                return updated, True
+            if isinstance(content, list) and message.get("role") == "user":
+                content.append({"type": "text", "text": wrapped.lstrip()})
+                return updated, True
+            return updated, False
+        return updated, False
+
+    input_value = updated.get("input")
+    if isinstance(input_value, str):
+        updated["input"] = f"{input_value}{wrapped}"
+        return updated, True
+    if not isinstance(input_value, list):
+        return updated, False
+    for item in reversed(input_value):
+        if not isinstance(item, dict):
+            continue
+        if (
+            item.get("type") == "function_call_output"
+            and isinstance(item.get("output"), str)
+        ):
+            item["output"] = f"{item['output']}{wrapped}"
+            return updated, True
+        if item.get("role") != "user":
+            continue
+        content = item.get("content")
+        if isinstance(content, str):
+            item["content"] = f"{content}{wrapped}"
+            return updated, True
+        if isinstance(content, list):
+            content.append({"type": "input_text", "text": wrapped.lstrip()})
+            return updated, True
+        return updated, False
+    return updated, False
+
+
 # ══════════════════════════════════════════════════════════════════════
 _LANG_MAP = {
     ".py": "python",
