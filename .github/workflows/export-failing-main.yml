@@ -1,0 +1,40 @@
+name: Export Failing Main
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    if: github.head_ref == 'chore/ci-failure-export-temp'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact failing commit
+        uses: actions/checkout@v6
+        with:
+          ref: 5e3368e441ef91d842f0d197eeb5510b855e70fd
+          fetch-depth: 1
+
+      - name: Record source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > FAILING_SOURCE_SHA.txt
+
+      - name: Build source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude=.git -czf "$RUNNER_TEMP/entroly-failing-main.tar.gz" .
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: entroly-failing-main
+          path: ${{ runner.temp }}/entroly-failing-main.tar.gz
+          if-no-files-found: error
+          retention-days: 1
