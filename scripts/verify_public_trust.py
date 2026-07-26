@@ -28,7 +28,10 @@ _FALSE_POSITIVE_GUARANTEE = (
 _EXPLICIT_NON_GUARANTEE = (
     "does not promise a universal compression percentage or guaranteed bill reduction"
 )
-_LEGACY_README_TITLE = "Entroly — The Open-Source Context OS for AI Agents"
+_SUPPORTED_README_TITLES = (
+    "Entroly — The Open-Source Context OS for AI Agents",
+    "Entroly — Drop-In Context Assurance to Lower AI Operational Cost",
+)
 
 
 def _normalized(text: str) -> str:
@@ -49,8 +52,11 @@ def _has_scoped_readme_prism_r(readme: str) -> bool:
         "benchmarks/results/neural_evidence_frontier.json",
         "benchmarks/results/neural_query_shift.json",
         "offline exact-evidence pilots",
+        "do not measure generated answers",
         "not downstream answer-quality",
-        "prism-r remains opt-in research code",
+        "prism-r is an opt-in research prototype",
+        "not the default compressor",
+        "remains opt-in research code",
     )
     return all(marker in normalized for marker in required)
 
@@ -89,9 +95,9 @@ def collect_offline_failures() -> list[str]:
             if failure != _FALSE_POSITIVE_GUARANTEE
         ]
 
-    if _LEGACY_README_TITLE in readme:
+    if any(title in readme for title in _SUPPORTED_README_TITLES):
         removable: set[str] = set()
-        if "content-addressed handles" in public_copy:
+        if "content-addressed evidence" in public_copy:
             removable.add(
                 "README/PyPI identity is missing 'content-addressed evidence'"
             )
@@ -101,13 +107,13 @@ def collect_offline_failures() -> list[str]:
             )
         if (
             'href="https://github.com/juyterman1000/entroly"' in readme
-            and 'alt="Entroly repository and GitHub stars"' in readme
+            and 'alt="Entroly GitHub stars"' in readme
         ):
             removable.add(
                 "badge 'Entroly GitHub stars' links to None, expected "
                 "'https://github.com/juyterman1000/entroly'"
             )
-        if "lobehub.com/badge/" not in readme[:7_500]:
+        if "lobehub.com/badge/" not in readme:
             removable.add(
                 "external marketplace badge must not appear in the README first fold"
             )
