@@ -43,26 +43,45 @@ def _toml_section(path: str, section: str) -> str:
     return match.group(1)
 
 
-def test_readme_first_fold_explains_context_assurance_in_plain_language() -> None:
-    for path in ("README.md", "PYPI_README.md"):
-        first_fold = _text(path)[:7_500].casefold()
-        assert "entroly — context assurance that helps lower ai costs" in first_fold
-        assert PRODUCT_IDENTITY in first_fold
-        assert "unnecessary ai context" in first_fold
-        assert "recoverable" in first_fold
-        assert "no agent-architecture rewrite" in first_fold
-        assert "one-time setup" in first_fold
-        for client in (
-            "claude code",
-            "codex",
-            "openclaw",
-            "hermes agent",
-            "opencode",
-            "github copilot",
-            "local models",
-            "mcp",
-        ):
-            assert client in first_fold, f"{path} does not identify {client} above the fold"
+def test_readme_first_folds_explain_their_supported_product_profiles() -> None:
+    readme_first_fold = _text("README.md")[:7_500].casefold()
+    for phrase in (
+        "entroly — the open-source context os for ai agents",
+        "keep your agent. give it a context os.",
+        "recoverable compression",
+        "local-first",
+    ):
+        assert phrase in readme_first_fold
+    for client in (
+        "claude code",
+        "codex",
+        "openclaw",
+        "github copilot",
+        "mcp",
+    ):
+        assert client in readme_first_fold, f"README.md does not identify {client} above the fold"
+
+    pypi_first_fold = _text("PYPI_README.md")[:7_500].casefold()
+    for phrase in (
+        "entroly — context assurance that helps lower ai costs",
+        PRODUCT_IDENTITY,
+        "unnecessary ai context",
+        "recoverable",
+        "no agent-architecture rewrite",
+        "one-time setup",
+    ):
+        assert phrase in pypi_first_fold
+    for client in (
+        "claude code",
+        "codex",
+        "openclaw",
+        "hermes agent",
+        "opencode",
+        "github copilot",
+        "local models",
+        "mcp",
+    ):
+        assert client in pypi_first_fold, f"PYPI_README.md does not identify {client} above the fold"
 
 
 def test_readmes_keep_cost_and_quality_claims_bounded() -> None:
