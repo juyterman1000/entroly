@@ -35,7 +35,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "mcp>=1.6.0,<2",
+    "mcp>=1.28.1,<2",
 ]
 
 [project.urls]
