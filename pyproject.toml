@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "entroly"
 version = "1.0.66"
-description = "Drop-in Context Assurance for AI agents: reduce avoidable token usage with evidence selection, receipts, exact recovery, and verification."
+description = "Drop-in Context Assurance for AI agents: reduce avoidable token usage and AI cost with evidence selection, receipts, exact recovery, and verification."
 readme = "PYPI_README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
