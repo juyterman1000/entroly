@@ -32,7 +32,7 @@ jobs:
           # job never ran — and it fails outright once that branch is deleted.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
