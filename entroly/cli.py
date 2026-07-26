@@ -3230,6 +3230,14 @@ def cmd_doctor(args):
 
     checks_passed = 0
     checks_total = 0
+    # Counted separately so the summary can never report a red failure as a
+    # pass. A diagnostic that always prints "N/N passed" cannot be trusted or
+    # used as a gate. Only states in which entroly cannot work count as
+    # failures (non-zero exit); advisories that need attention but leave the
+    # tool usable are warnings, so `entroly doctor` stays usable as a CI gate
+    # without going red on a healthy install.
+    checks_failed = 0
+    checks_warned = 0
 
     # 1. Check Python version
     checks_total += 1
@@ -3239,6 +3247,7 @@ def cmd_doctor(args):
         checks_passed += 1
     else:
         print(f"  {C.RED}x{C.RESET} Python {py_ver} (need >=3.10)")
+        checks_failed += 1
 
     # 2. Check Rust engine
     checks_total += 1
@@ -3278,6 +3287,15 @@ def cmd_doctor(args):
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
               f"fix, not a different Python.){C.RESET}")
+        # Not a failure: the message above states the pure-Python fallback
+        # remains available, so entroly still works, and this is the normal state
+        # in a source checkout between a Rust edit and `maturin develop
+        # --release`. But it must still be COUNTED — incrementing nothing left
+        # passed+failed+warned < total, so the summary read "7/8 checks passed"
+        # with no failure and no warning, and the degraded install passed every
+        # gate. That is the same false-green this split-counter scheme exists to
+        # prevent.
+        checks_warned += 1
 
     # 3. Check config validity
     checks_total += 1
@@ -3296,6 +3314,7 @@ def cmd_doctor(args):
                 checks_passed += 1  # warning, not failure
         except Exception as e:
             print(f"  {C.RED}x{C.RESET} Config error: {e}")
+            checks_failed += 1
     else:
         print(f"  {C.GREEN}+{C.RESET} Config: using defaults (no tuning_config.json)")
         checks_passed += 1
@@ -3343,13 +3362,23 @@ def cmd_doctor(args):
             drift = sum(abs(weights.get(k, v) - v) for k, v in defaults.items())
             if drift < 0.1:
                 print(f"  {C.GREEN}+{C.RESET} Weights near defaults (drift={drift:.3f})")
+                checks_passed += 1
             elif drift < 0.3:
                 print(f"  {C.YELLOW}!{C.RESET} Weights drifted (drift={drift:.3f})")
+                checks_passed += 1  # warning, still usable
             else:
-                print(f"  {C.RED}x{C.RESET} Weights heavily drifted ({drift:.3f}) -- consider autotune --rollback")
-            checks_passed += 1
-        except Exception:
-            checks_passed += 1
+                # Advisory, not a broken install: heavy drift is produced by the
+                # supported `entroly autotune` doing its job, and the message
+                # itself only suggests a rollback. It must not be counted as a
+                # pass (it needs attention), but it must not fail the command
+                # either, or every autotuned machine fails `entroly doctor`.
+                print(f"  {C.YELLOW}!{C.RESET} Weights heavily drifted ({drift:.3f}) -- consider autotune --rollback")
+                checks_warned += 1
+        except Exception as e:
+            # Never pass silently: an unreadable weights file is a real problem
+            # and previously produced no output at all.
+            print(f"  {C.RED}x{C.RESET} Weight drift unreadable: {e}")
+            checks_failed += 1
     else:
         print(f"  {C.GREEN}+{C.RESET} Weights: defaults (no drift)")
         checks_passed += 1
@@ -3380,7 +3409,12 @@ def cmd_doctor(args):
         print(f"  {C.YELLOW}!{C.RESET} Hallucination verifiers not available ({e})")
         checks_passed += 1  # optional, not a failure
 
-    print(f"\n  {C.BOLD}{checks_passed}/{checks_total} checks passed{C.RESET}")
+    summary = f"\n  {C.BOLD}{checks_passed}/{checks_total} checks passed"
+    if checks_failed:
+        summary += f", {C.RED}{checks_failed} failed{C.RESET}{C.BOLD}"
+    if checks_warned:
+        summary += f", {C.YELLOW}{checks_warned} warning(s){C.RESET}"
+    print(summary + C.RESET)
 
     # ── Privacy Audit Mode ──────────────────────────────────────
     if getattr(args, "privacy", False):
@@ -3528,11 +3562,16 @@ def cmd_doctor(args):
             print(f"  {C.GREEN}No Entroly-owned phone-home path detected.{C.RESET}")
             print(f"  {C.GRAY}Configured cloud LLM providers still receive optimized prompt content sent through the proxy.{C.RESET}")
             print()
-            return 0
+            # A clean privacy audit must not mask a failed diagnostic check.
+            return 1 if checks_failed else 0
         print(f"\n  {C.YELLOW}{C.BOLD}PRIVACY: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
         print(f"  {C.YELLOW}Review the warnings above.{C.RESET}")
         print()
         return 1
+
+    # Signal failure to the dispatcher so `entroly doctor` can gate automation
+    # instead of always exiting 0.
+    return 1 if checks_failed else 0
 
 
 
