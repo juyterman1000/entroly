@@ -1582,7 +1582,6 @@ _WRAP_AGENTS = {
         "env_key": "COPILOT_PROVIDER_BASE_URL",
         "env_val": "http://localhost:{port}/v1",
         "extra_env": {"COPILOT_PROVIDER_TYPE": "openai"},
-        "api_key_env": "COPILOT_PROVIDER_API_KEY",
         "subscription_alt": "entroly attach create --client copilot --project . --ttl 4h --install",
     },
     "gemini": {

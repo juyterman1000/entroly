@@ -27,7 +27,7 @@ def test_copilot_attachment_uses_current_cli_contract(tmp_path):
 def test_copilot_wrapper_uses_byok_provider_variables():
     spec = _WRAP_AGENTS["copilot"]
     assert spec["cmd"] == ["copilot"]
-    assert spec["api_key_env"] == "COPILOT_PROVIDER_API_KEY"
+    assert "api_key_env" not in spec  # local providers may be unauthenticated
     assert spec["subscription_alt"].startswith("entroly attach create --client copilot")
     assert _resolved_wrap_env(spec, 9377) == {
         "COPILOT_PROVIDER_BASE_URL": "http://localhost:9377/v1",
