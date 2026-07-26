@@ -358,7 +358,10 @@ pub fn expand_query(query: &str) -> HashSet<String> {
     }
     terms
         .into_iter()
-        .filter(|t| !stopwords().contains(t.as_str()) && (t.chars().count() > 2 || is_cjk_token(t)))
+        .filter(|t| {
+            !stopwords().contains(t.as_str())
+                && (t.chars().count() > 2 || is_cjk_token(t))
+        })
         .collect()
 }
 
@@ -911,12 +914,11 @@ pub fn select(
         .iter()
         .map(|&(i, sc)| {
             let source = &file_sources[i];
-            let (sum, count) = feedback_by_source.get(source).copied().unwrap_or((1.0, 1));
-            (
-                sc * sum / count.max(1) as f64,
-                source.clone(),
-                file_texts[i].clone(),
-            )
+            let (sum, count) = feedback_by_source
+                .get(source)
+                .copied()
+                .unwrap_or((1.0, 1));
+            (sc * sum / count.max(1) as f64, source.clone(), file_texts[i].clone())
         })
         .collect();
     file_scores.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -1234,9 +1236,7 @@ mod tests {
         assert!(toks.contains(&"修复".to_string()), "got {toks:?}");
         assert!(toks.contains(&"模块".to_string()), "got {toks:?}");
         // ASCII inside a CJK run breaks the run: no bigram spans the boundary.
-        assert!(!toks
-            .iter()
-            .any(|t| t.contains('a') && t.chars().any(is_cjk)));
+        assert!(!toks.iter().any(|t| t.contains('a') && t.chars().any(is_cjk)));
     }
 
     #[test]
