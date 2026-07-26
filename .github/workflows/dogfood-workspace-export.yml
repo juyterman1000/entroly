@@ -1,0 +1,40 @@
+name: Dogfood Workspace Export
+
+on:
+  push:
+    branches:
+      - chore/dogfood-workspace-export-temp
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@v6
+
+      - name: Record exact source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > DOGFOOD_SOURCE_SHA.txt
+          printf '%s\n' 'fix/session-rescue-trust-recovery-final-v3' > DOGFOOD_SOURCE_BRANCH.txt
+
+      - name: Build source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude=.git \
+            --exclude=.github/workflows/dogfood-workspace-export.yml \
+            -czf entroly-dogfood-workspace.tar.gz .
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: entroly-dogfood-workspace
+          path: entroly-dogfood-workspace.tar.gz
+          if-no-files-found: error
+          retention-days: 1
