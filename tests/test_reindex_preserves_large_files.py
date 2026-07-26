@@ -24,9 +24,21 @@ from entroly.auto_index import MAX_FILE_BYTES, auto_index
 
 
 def _fragment_sources(engine) -> list[str]:
-    return [
-        str(f.get("source") or "") for f in engine._rust.export_fragments()
-    ]
+    """Fragment sources from either engine.
+
+    Chunking an oversized file is Python-side behaviour, so this contract has
+    to hold on the engine-less install too. Reading `engine._rust` directly
+    made all three cases fail with AttributeError on the pure-Python fallback,
+    which is exactly the configuration the guarantee matters most in.
+    """
+    rust = getattr(engine, "_rust", None)
+    if rust is not None and hasattr(rust, "export_fragments"):
+        return [str(f.get("source") or "") for f in rust.export_fragments()]
+    sources: list[str] = []
+    for frag in getattr(engine, "_fragments", {}).values():
+        source = frag.get("source") if isinstance(frag, dict) else getattr(frag, "source", None)
+        sources.append(str(source or ""))
+    return sources
 
 
 @pytest.fixture()
