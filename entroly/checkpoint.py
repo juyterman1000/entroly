@@ -654,25 +654,74 @@ class CheckpointManager:
         self._enforce_global_cap()
         self._reap_abandoned_peers()
 
+    @staticmethod
+    def plan_global_cap_deletions(
+        entries: list[tuple[float, Path]],
+        *,
+        own_prefix: str,
+        own_host: str,
+        owner_of,
+        is_alive,
+    ) -> list[Path]:
+        """Pure policy: which checkpoints to drop, least valuable first.
+
+        Deliberately I/O-free and side-effect-free so the policy can be tested
+        exhaustively without simulating filesystem races. The previous design
+        interleaved liveness probes, a `protected` set carrying three different
+        meanings, and TWO deletion loops that each maintained their own counter.
+        Those counters diverged, and the resulting overcount deleted a live
+        peer's only recovery frontier — four consecutive review rounds found a
+        new defect in that shape. Ordering the candidates once, here, removes
+        the whole class.
+
+        Priority, least valuable first:
+          1. peer checkpoints superseded by a newer one from the same peer
+          2. frontiers of peers proven dead, except the single newest such
+             frontier (kept as one restart/crash recovery point)
+          3. frontiers of peers that are alive or unprovable, oldest first
+
+        Never returned: this instance's own checkpoints, and any file whose
+        owner cannot be identified — deleting on a guess is the one thing this
+        module does not do.
+        """
+        ordered = sorted(entries, key=lambda item: item[0], reverse=True)
+        superseded: list[Path] = []
+        dead_frontiers: list[Path] = []
+        live_frontiers: list[Path] = []
+        seen_peers: set[str] = set()
+
+        for _mtime, checkpoint in ordered:
+            if checkpoint.name.startswith(own_prefix):
+                continue                      # never ours
+            owner = owner_of(checkpoint.name)
+            if owner is None:
+                continue                      # unknown ownership: never a guess
+            owner_id, host_hash, pid = owner
+            if owner_id in seen_peers:
+                superseded.append(checkpoint)  # a newer one from this peer exists
+                continue
+            seen_peers.add(owner_id)
+            if host_hash != own_host or is_alive(pid):
+                live_frontiers.append(checkpoint)
+            else:
+                dead_frontiers.append(checkpoint)
+
+        # `ordered` is newest-first, so each bucket is too; delete oldest first.
+        plan = list(reversed(superseded))
+        plan += list(reversed(dead_frontiers[1:]))   # keep the newest dead frontier
+        plan += list(reversed(live_frontiers))       # last resort, keeps cap hard
+        return plan
+
     def _enforce_global_cap(self) -> None:
-        """Bound historical checkpoints without destroying active recovery state.
+        """Bound total checkpoints across all instances, newest-first.
 
-        The configured ceiling is strict only for *prunable history*. Recovery
-        points outrank disk-count policy. The pass protects:
+        Per-instance pruning cannot bound disk: `instance_id` embeds the pid, so
+        every restart orphans up to `max_checkpoints` files the next run can
+        never match — the reported 127-file / 264 MB condition.
 
-        * every retained checkpoint owned by this running instance;
-        * the newest checkpoint for each peer that is alive or whose liveness
-          cannot be proved locally (different host or unknown filename shape);
-        * the newest checkpoint across known-dead local peers, preserving one
-          restart/crash frontier while allowing older abandoned runs to collapse.
-
-        If protected frontiers alone exceed the ceiling, a second pass trims
-        them oldest-first so the cap stays HARD: an advisory cap is what let the
-        reported 127-file / 264 MB condition return, because `_pid_is_alive`
-        fail-safes to "alive" for recycled pids and access-denied probes and so
-        protects every historical frontier on a busy host. This instance's own
-        files are never sacrificed, and files whose owner cannot be identified
-        are still never deleted — the cap is soft only for those.
+        Policy lives in `plan_global_cap_deletions`; this only executes it, with
+        a single counter rule: a file stops counting toward the total when it is
+        gone, whether we removed it or a peer did first.
         """
         if self.max_total_checkpoints <= 0:
             return
@@ -686,105 +735,36 @@ class CheckpointManager:
             try:
                 entries.append((checkpoint.stat().st_mtime, checkpoint))
             except OSError:
-                continue
-        if len(entries) <= self.max_total_checkpoints:
-            return
-        entries.sort(key=lambda item: item[0], reverse=True)
-
-        own_prefix = f"ckpt_{self.instance_id}_"
-        own_host = self.instance_id.split("_", 1)[0]
-        protected: set[Path] = {
-            checkpoint
-            for _mtime, checkpoint in entries
-            if checkpoint.name.startswith(own_prefix)
-        }
-        seen_peer_instances: set[str] = set()
-        newest_dead_frontier: Path | None = None
-
-        for _mtime, checkpoint in entries:
-            if checkpoint in protected:
-                continue
-            owner = self._checkpoint_owner(checkpoint.name)
-            if owner is None:
-                # Unknown ownership is not permission to delete a recovery point.
-                protected.add(checkpoint)
-                continue
-            owner_id, host_hash, pid = owner
-            if owner_id in seen_peer_instances:
-                continue
-            seen_peer_instances.add(owner_id)
-
-            if host_hash != own_host or self._pid_is_alive(pid):
-                protected.add(checkpoint)
-            elif newest_dead_frontier is None:
-                # Keep one newest historical frontier for restart/crash recovery.
-                newest_dead_frontier = checkpoint
-
-        if newest_dead_frontier is not None:
-            protected.add(newest_dead_frontier)
-
+                continue          # vanished mid-scan; not ours to report
         remaining = len(entries)
-        for _mtime, checkpoint in reversed(entries):
+        if remaining <= self.max_total_checkpoints:
+            return
+
+        plan = self.plan_global_cap_deletions(
+            entries,
+            own_prefix=f"ckpt_{self.instance_id}_",
+            own_host=self.instance_id.split("_", 1)[0],
+            owner_of=self._checkpoint_owner,
+            is_alive=self._pid_is_alive,
+        )
+
+        for checkpoint in plan:
             if remaining <= self.max_total_checkpoints:
                 break
-            if checkpoint in protected:
-                continue
             try:
                 checkpoint.unlink()
             except FileNotFoundError:
-                # Already gone (a peer pruned it). It still no longer counts
-                # toward the total. Not decrementing here inflates `remaining`,
-                # which spills into the second pass and deletes a live peer's
-                # only recovery frontier to satisfy a cap that was already met.
-                remaining -= 1
+                remaining -= 1    # a peer removed it; it is still gone
                 continue
             except OSError:
-                continue
+                continue          # still present (permissions, lock)
             remaining -= 1
-
-        if remaining > self.max_total_checkpoints:
-            # Second pass: the protected set alone exceeds the ceiling, so the
-            # cap would be purely advisory. That is the original defect — an
-            # observed dev box held 127 checkpoints / 264 MB — and it is
-            # reachable whenever many peer frontiers look alive, which happens
-            # routinely under pid reuse and on Windows where an unprovable pid
-            # fail-safes to "alive".
-            #
-            # Recovery still outranks disk policy where it matters: we never
-            # touch this instance's own files, and we drop the OLDEST peer
-            # frontiers first, so the most recent recovery points — the ones
-            # load_latest/find_relevant actually read — survive.
-            for _mtime, checkpoint in reversed(entries):
-                if remaining <= self.max_total_checkpoints:
-                    break
-                if checkpoint.name.startswith(own_prefix):
-                    continue  # our own state is never sacrificed to the cap
-                if checkpoint not in protected:
-                    continue  # already handled by the first pass
-                if self._checkpoint_owner(checkpoint.name) is None:
-                    # Unknown ownership stays protected: we cannot say whose
-                    # recovery point this is, and deleting on a guess is the one
-                    # thing this module never does. The cap stays soft in that
-                    # (pathological) case and says so.
-                    continue
-                try:
-                    checkpoint.unlink()
-                except FileNotFoundError:
-                    # Already gone (a peer pruned it). It still no longer counts
-                    # toward the total, so decrement — otherwise the loop keeps
-                    # deleting live recovery points to reach a count that was
-                    # already satisfied.
-                    remaining -= 1
-                    continue
-                except OSError:
-                    continue
-                remaining -= 1
 
         if remaining > self.max_total_checkpoints:
             logger.warning(
                 "Checkpoint cap is soft: %d file(s) remain above the configured "
-                "cap %d; they could not be attributed to an owner, so deleting "
-                "them would be a guess",
+                "cap %d; they are this instance's own state or could not be "
+                "attributed to an owner, so removing them would be a guess",
                 remaining,
                 self.max_total_checkpoints,
             )

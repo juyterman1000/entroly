@@ -365,3 +365,84 @@ def test_cap_is_hard_when_peer_frontiers_are_merely_unprovable(tmp_path: Path):
     )
 
 
+
+
+# ── Pure deletion policy ──────────────────────────────────────────────────────
+# The executor is now trivial; the decisions live here and need no filesystem,
+# no races, and no live processes to test. Four consecutive review rounds found
+# defects in the previous entangled version precisely because its behaviour was
+# only observable through a race.
+
+def _plan(names, *, own="me_1", alive=()):
+    """names are newest-first; returns the deletion plan as names."""
+    from pathlib import Path as _P
+
+    entries = [(float(len(names) - i), _P(n)) for i, n in enumerate(names)]
+
+    def owner_of(name):
+        parts = name.removeprefix("ckpt_").split("_")
+        if len(parts) < 2 or not parts[1].isdigit():
+            return None
+        return (f"{parts[0]}_{parts[1]}", parts[0], int(parts[1]))
+
+    return [
+        p.name
+        for p in CheckpointManager.plan_global_cap_deletions(
+            entries,
+            own_prefix=f"ckpt_{own}_",
+            own_host=own.split("_")[0],
+            owner_of=owner_of,
+            is_alive=lambda pid: pid in alive,
+        )
+    ]
+
+
+def test_policy_never_plans_our_own_checkpoints():
+    plan = _plan(["ckpt_me_1_a.json.gz", "ckpt_me_1_b.json.gz"])
+    assert plan == [], "this instance's own state must never be sacrificed"
+
+
+def test_policy_never_plans_files_with_unknown_ownership():
+    assert _plan(["ckpt_unknown-owner.json.gz", "ckpt_.json.gz"]) == []
+
+
+def test_policy_drops_superseded_peer_files_before_any_frontier():
+    # peer 200 has three checkpoints; only the newest is its frontier.
+    plan = _plan(["ckpt_me_200_c.json.gz", "ckpt_me_200_b.json.gz",
+                  "ckpt_me_200_a.json.gz"])
+    # oldest superseded first, frontier (…_c) never planned before them
+    assert plan[:2] == ["ckpt_me_200_a.json.gz", "ckpt_me_200_b.json.gz"]
+    assert "ckpt_me_200_c.json.gz" not in plan[:2]
+
+
+def test_policy_keeps_exactly_one_dead_frontier_for_crash_recovery():
+    plan = _plan(["ckpt_me_300_x.json.gz", "ckpt_me_301_x.json.gz",
+                  "ckpt_me_302_x.json.gz"], alive=())
+    # three dead peers -> the newest frontier survives, the other two are planned
+    assert "ckpt_me_300_x.json.gz" not in plan
+    assert set(plan) == {"ckpt_me_301_x.json.gz", "ckpt_me_302_x.json.gz"}
+
+
+def test_policy_sacrifices_live_frontiers_last_and_oldest_first():
+    # THE regression that made the cap advisory: when every peer looks alive,
+    # the plan must still be non-empty or the cap can never be enforced.
+    plan = _plan(["ckpt_me_400_x.json.gz", "ckpt_me_401_x.json.gz",
+                  "ckpt_me_402_x.json.gz"], alive=(400, 401, 402))
+    assert plan == ["ckpt_me_402_x.json.gz", "ckpt_me_401_x.json.gz",
+                    "ckpt_me_400_x.json.gz"], (
+        "live frontiers must be trimmable oldest-first, or the cap goes soft"
+    )
+
+
+def test_policy_orders_tiers_least_valuable_first():
+    plan = _plan(
+        ["ckpt_me_1_own.json.gz",        # ours — never
+         "ckpt_me_500_new.json.gz",      # live frontier — last resort
+         "ckpt_me_500_old.json.gz",      # superseded — first
+         "ckpt_me_600_dead.json.gz"],    # dead frontier (newest dead) — kept
+        alive=(500,),
+    )
+    assert plan[0] == "ckpt_me_500_old.json.gz"      # superseded goes first
+    assert plan[-1] == "ckpt_me_500_new.json.gz"     # live frontier goes last
+    assert "ckpt_me_1_own.json.gz" not in plan
+    assert "ckpt_me_600_dead.json.gz" not in plan    # sole dead frontier kept
