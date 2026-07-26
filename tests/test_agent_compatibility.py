@@ -51,7 +51,6 @@ def test_public_matrix_keeps_subscription_and_validation_boundaries():
     assert "MCP-only integrations" in guide
 
 
-
 def test_wrap_splits_wrapper_options_from_client_arguments():
     wrapper_args, client_args, explicit = _split_wrap_agent_args(
         [
