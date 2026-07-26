@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - fix/session-rescue-cache-stability
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
+
+concurrency:
+  group: apply-session-rescue-trust-fixes
+  cancel-in-progress: true
 
 jobs:
   apply-and-verify:
@@ -220,9 +227,7 @@ def test_full_span_recovery_preserves_exact_line_endings(
           exact_anchor = "\n\ndef test_recovery_store_byte_limit_fails_before_commit"
           if "test_full_span_recovery_preserves_exact_line_endings" not in store_tests:
               if store_tests.count(exact_anchor) != 1:
-                  raise SystemExit(
-                      "retrieval-store test anchor changed"
-                  )
+                  raise SystemExit("retrieval-store test anchor changed")
               store_tests = store_tests.replace(
                   exact_anchor, exact_test + exact_anchor, 1
               )
@@ -242,6 +247,7 @@ def test_full_span_recovery_preserves_exact_line_endings(
           ruff check entroly/session_rescue.py entroly/compression_retrieval_store.py tests/test_session_rescue.py tests/test_compression_retrieval_store.py
 
       - name: Commit verified fixes
+        if: github.event_name == 'push'
         shell: bash
         run: |
           if git diff --quiet; then
