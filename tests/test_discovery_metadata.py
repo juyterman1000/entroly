@@ -50,6 +50,7 @@ def test_readme_first_folds_explain_their_supported_product_profiles() -> None:
         "reduce unnecessary context without losing control of critical evidence.",
         "content-addressed evidence",
         "recoverable compression",
+        "context os",
         "local-first",
     ):
         assert phrase in readme_first_fold
