@@ -8,9 +8,11 @@ A compressor that drops the answer is not saving tokens, it is losing the task.
 So savings are only credited on tasks where the gold file survived selection;
 recall and cost are reported separately and never averaged into one headline.
 
-Ground truth is a query -> answer-file mapping over this repository. Each pair is
-one a maintainer can verify by reading the named file, so the gold set is
-auditable rather than asserted.
+Ground truth maps each query to the SET of files that legitimately answer it.
+A set, not one path: this repository carries parallel Rust and Python
+implementations, so scoring against a single arbitrary file measures the
+benchmark's assumption rather than the retriever. Every alternative is one a
+maintainer can verify by reading it, so the gold set stays auditable.
 
     python benchmarks/evidence_retention.py [--budget 2000] [--json out.json]
 """
@@ -21,24 +23,24 @@ import json
 import os
 import time
 
-# (query, file that actually answers it). Verifiable by reading the file.
-GOLD: list[tuple[str, str]] = [
+# (query, acceptable answer files) — see the module docstring on why this is a set.
+GOLD: list[tuple[str, tuple[str, ...]]] = [
     ("where is the global checkpoint cap enforced",
-     "entroly/checkpoint.py"),
+     ("entroly/checkpoint.py",)),
     ("how does git file discovery avoid hanging the watcher",
-     "entroly/auto_index.py"),
+     ("entroly/auto_index.py",)),
     ("where does the proxy inject compressed context into requests",
-     "entroly/proxy.py"),
+     ("entroly/proxy.py", "entroly-core/src/proxy.rs")),
     ("what does entroly doctor check and how does it report failures",
-     "entroly/cli.py"),
+     ("entroly/cli.py",)),
     ("how is a byte range verified against a source snapshot",
-     "entroly/source_span.py"),
+     ("entroly/source_span.py",)),
     ("where are query conditioned fragments selected under a token budget",
-     "entroly/qccr.py"),
+     ("entroly/qccr.py", "entroly-qccr/src/lib.rs")),
     ("how are vault beliefs listed and read",
-     "entroly/vault.py"),
+     ("entroly/vault.py",)),
     ("where is the air gap outbound guard installed",
-     "entroly/air_gap.py"),
+     ("entroly/air_gap.py",)),
 ]
 
 
@@ -75,11 +77,11 @@ def main() -> int:
         latency = time.perf_counter() - start
         selection = result.get("selected_fragments") or result.get("selected") or []
         sources = _sources(selection)
-        retained = gold in sources
+        retained = any(g in sources for g in gold)
         used = int(result.get("tokens_used") or result.get("total_tokens") or 0)
         rows.append({
             "query": query,
-            "gold": gold,
+            "gold": list(gold),
             "retained": retained,
             "tokens_used": used,
             "selected": len(selection),
@@ -87,7 +89,7 @@ def main() -> int:
             "status": result.get("status", "ok"),
         })
         print(f"  {'HIT ' if retained else 'MISS'}  {used:>6} tok  "
-              f"{latency:5.2f}s  {gold:<34} {query[:44]}", flush=True)
+              f"{latency:5.2f}s  {gold[0]:<34} {query[:44]}", flush=True)
 
     hits = [r for r in rows if r["retained"]]
     recall = len(hits) / len(rows)

@@ -132,6 +132,22 @@ SOURCE_FILE_SOFT_MAX_BYTES = _resolve_source_file_soft_max_bytes()
 # Hard ceiling for massive files (500 KB) — never even attempt to read
 ABSOLUTE_MAX_BYTES = 500 * 1024
 
+# Target size for a chunk of an oversized source file. This is a RETRIEVAL
+# parameter, not a storage one, and must not be confused with the ingest cap.
+#
+# BM25 divides term frequency by (1 - b + b * dl / avgdl). Measured on this
+# repository, avgdl is ~2,700 tokens; chunking at the 50 KB ingest cap produced
+# ~12,600-token chunks, so dl/avgdl ~= 4.6 and the normalizer ~= 3.7 — every
+# term in a large file was penalized nearly 4x purely for living in a big file.
+# The same chunks then consumed 6x a typical 2,000-token budget, so only ~7
+# files fit and anything ranked 8th or later was unreachable at any budget.
+#
+# Sizing a chunk near avgdl makes the normalizer ~= 1 (scoring becomes
+# length-neutral) and lets many more candidates fit a budget. 8 KB ~= 2,000
+# tokens, which is the same principle the sub-file provenance experiment
+# measured: finer granularity retrieves the relevant part instead of the file.
+CHUNK_TARGET_BYTES = 8 * 1024
+
 # Binary/media file extensions — skip without error
 BINARY_EXTENSIONS = frozenset({
     # Images
@@ -1425,7 +1441,9 @@ def _auto_index(
             if size <= ABSOLUTE_MAX_BYTES and _is_source_file(rel_path):
                 raw = _read_oversized_source(project_dir, rel_path)
                 if raw:
-                    chunks = chunk_oversized_source(raw, cap)
+                    chunks = chunk_oversized_source(
+                        raw, min(CHUNK_TARGET_BYTES, cap)
+                    )
             if not chunks:
                 skipped_size += 1
                 skipped_size_paths.append((rel_path, size, cap))
