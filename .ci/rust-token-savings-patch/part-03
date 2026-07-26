@@ -1,0 +1,220 @@
++    ) -> bool {
++        let query_terms: HashSet<String> = bm25::tokenize_code(query).into_iter().collect();
++        if query_terms.is_empty() {
++            return false;
++        }
++        let Some(entries) = cached_value
++            .get("selected_ids")
++            .and_then(serde_json::Value::as_array)
++        else {
++            return false;
++        };
++
++        entries.iter().any(|entry| {
++            let Some(fragment_id) = entry.get("id").and_then(serde_json::Value::as_str) else {
++                return false;
++            };
++            let Some(fragment) = self.fragments.get(fragment_id) else {
++                return false;
++            };
++            bm25::tokenize_code(&fragment.content)
++                .into_iter()
++                .chain(bm25::tokenize_code(&fragment.source))
++                .any(|term| query_terms.contains(&term))
++        })
++    }
++
+     /// Reconstruct the `selected` PyList from cached fragment IDs + live fragment data.
+     ///
+     /// On cache hit, the stored JSON contains `selected_ids: [{id, variant}, ...]`.
+diff --git a/entroly-core/tests/test_integration.py b/entroly-core/tests/test_integration.py
+index 79c8055..45f7b16 100644
+--- a/entroly-core/tests/test_integration.py
++++ b/entroly-core/tests/test_integration.py
+@@ -393,6 +393,50 @@ def test_optimize_returns_ordered():
+     assert len(sources) == 3
+ test("Optimize returns ordered fragments", test_optimize_returns_ordered)
+ 
++def test_optimize_no_match_fails_closed_without_crediting_savings():
++    e = sc.EntrolyEngine(exploration_rate=0.0)
++    e.ingest(
++        "def authenticate_user(token): return token is not None",
++        "auth.py",
++        80,
++        False,
++    )
++    e.ingest(
++        "def execute_query(sql): return sql",
++        "database.py",
++        60,
++        False,
++    )
++    before = e.stats()["savings"]["total_tokens_saved"]
++
++    result = e.optimize(100, "quantum chromodynamics lattice gauge calibration")
++
++    assert result["method"] == "no_match_fail_closed"
++    assert result["retrieval_status"] == "no_match"
++    assert result["relevance_evidence_found"] is False
++    assert result["selected"] == []
++    assert result["tokens_withheld"] == 140
++    assert result["tokens_saved"] == 0
++    assert result["verified_useful_tokens_saved"] == 0
++    assert result["savings_eligible"] is False
++    assert (
++        result["savings_status"]
++        == "not_credited_no_relevance_evidence"
++    )
++    assert e.stats()["savings"]["total_tokens_saved"] == before
++
++test(
++    "Optimize no-match fails closed and claims zero savings",
++    test_optimize_no_match_fails_closed_without_crediting_savings,
++)
++
++def test_recall_bm25_no_match_returns_no_results():
++    e = sc.EntrolyEngine()
++    e.ingest("def authenticate_user(token): return token", "auth.py", 40, False)
++    assert e.recall_bm25("marine mammal acoustic telemetry", 5) == []
++
++test("BM25 no-match returns no results", test_recall_bm25_no_match_returns_no_results)
++
+ 
+ print("\n═══ 10. FEEDBACK LOOP ═══")
+ 
+diff --git a/entroly/context_receipts/models.py b/entroly/context_receipts/models.py
+index 996d492..5e1525a 100644
+--- a/entroly/context_receipts/models.py
++++ b/entroly/context_receipts/models.py
+@@ -305,17 +305,32 @@ class OmittedContextItem:
+ class CompressionRatio:
+     source_tokens: int
+     selected_tokens: int
++    tokens_withheld: int
+     tokens_saved: int
++    savings_eligible: bool
++    savings_status: str
++    savings_baseline: str
+     selected_to_source_ratio: float
+     source_to_selected_ratio: float
+     reduction_pct: float
++    withheld_pct: float
+ 
+     @classmethod
+     def from_dict(cls, data: Mapping[str, Any]) -> "CompressionRatio":
+         return cls(
+             source_tokens=_int_or_default(data.get("source_tokens")),
+             selected_tokens=_int_or_default(data.get("selected_tokens")),
++            tokens_withheld=_int_or_default(
++                data.get("tokens_withheld", data.get("tokens_saved"))
++            ),
+             tokens_saved=_int_or_default(data.get("tokens_saved")),
++            savings_eligible=_bool_or_default(data.get("savings_eligible", True)),
++            savings_status=_str_or_default(
++                data.get("savings_status"), "legacy_mechanical_reduction"
++            ),
++            savings_baseline=_str_or_default(
++                data.get("savings_baseline"), "all_ingested_context"
++            ),
+             selected_to_source_ratio=_float_or_default(
+                 data.get("selected_to_source_ratio")
+             ),
+@@ -323,6 +338,9 @@ class CompressionRatio:
+                 data.get("source_to_selected_ratio"), 1.0
+             ),
+             reduction_pct=_float_or_default(data.get("reduction_pct")),
++            withheld_pct=_float_or_default(
++                data.get("withheld_pct", data.get("reduction_pct"))
++            ),
+         )
+ 
+ 
+diff --git a/entroly/context_receipts/receipts.py b/entroly/context_receipts/receipts.py
+index 0933df1..53e1595 100644
+--- a/entroly/context_receipts/receipts.py
++++ b/entroly/context_receipts/receipts.py
+@@ -30,20 +30,44 @@ def _int_or_default(value: object, default: int = 0) -> int:
+         return default
+ 
+ 
+-def _compression_ratio(source_tokens: int, selected_tokens: int) -> CompressionRatio:
++def _compression_ratio(
++    source_tokens: int,
++    selected_tokens: int,
++    *,
++    savings_eligible: bool,
++    savings_status: str,
++) -> CompressionRatio:
+     source = max(0, _int_or_default(source_tokens))
+     selected = max(0, _int_or_default(selected_tokens))
+     if source == 0:
+-        return CompressionRatio(0, selected, 0, 1.0, 1.0, 0.0)
++        return CompressionRatio(
++            0,
++            selected,
++            0,
++            0,
++            False,
++            "not_credited_no_source_context",
++            "all_ingested_context",
++            1.0,
++            1.0,
++            0.0,
++            0.0,
++        )
+     selected_ratio = selected / source
+-    source_ratio = source / max(1, selected)
++    tokens_withheld = max(0, source - selected)
++    withheld_pct = round((1.0 - selected_ratio) * 100.0, 3)
+     return CompressionRatio(
+         source_tokens=source,
+         selected_tokens=selected,
+-        tokens_saved=max(0, source - selected),
++        tokens_withheld=tokens_withheld,
++        tokens_saved=tokens_withheld if savings_eligible else 0,
++        savings_eligible=bool(savings_eligible),
++        savings_status=str(savings_status),
++        savings_baseline="all_ingested_context",
+         selected_to_source_ratio=round(selected_ratio, 6),
+-        source_to_selected_ratio=round(source_ratio, 6),
+-        reduction_pct=round((1.0 - selected_ratio) * 100.0, 3),
++        source_to_selected_ratio=round(source / selected, 6) if selected else 0.0,
++        reduction_pct=withheld_pct if savings_eligible else 0.0,
++        withheld_pct=withheld_pct,
+     )
+ 
+ 
+@@ -237,7 +261,21 @@ def build_receipt(
+     )
+     source_tokens = sum(chunk.token_count for chunk in index.chunks)
+     selected_tokens = sum(item.token_count for item in selection.selected)
+-    ratio = _compression_ratio(source_tokens, selected_tokens)
++    relevance_evidence_found = any(rank.final_score > 0 for rank in ranked)
++    savings_eligible = relevance_evidence_found and bool(selection.selected)
++    savings_status = (
++        "not_credited_no_relevance_evidence"
++        if not relevance_evidence_found
++        else "not_credited_no_context_selected"
++        if not selection.selected
++        else "mechanical_reduction_unverified"
++    )
++    ratio = _compression_ratio(
++        source_tokens,
++        selected_tokens,
++        savings_eligible=savings_eligible,
++        savings_status=savings_status,
++    )
+     source_fingerprints = {
+         "documents": {doc.source_path: doc.fingerprint for doc in index.documents},
+         "chunks": {chunk.chunk_id: chunk.fingerprint for chunk in index.chunks},
+@@ -316,7 +354,11 @@ def markdown_report(receipt: ContextReceipt) -> str:
+         f"- Budget: {receipt.token_budget}",
+         f"- Source tokens: {ratio.source_tokens}",
+         f"- Selected tokens: {ratio.selected_tokens}",
+-        f"- Reduction: {ratio.reduction_pct:.1f}%",
++        f"- Tokens withheld: {ratio.tokens_withheld}",
++        f"- Credited token savings: {ratio.tokens_saved}",
++        f"- Savings status: {ratio.savings_status}",
++        f"- Credited reduction: {ratio.reduction_pct:.1f}%",
++        f"- Physical withholding: {ratio.withheld_pct:.1f}%",
+         f"- Source-to-selected ratio: {ratio.source_to_selected_ratio:.2f}:1",
