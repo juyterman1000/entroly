@@ -1561,11 +1561,29 @@ _WRAP_AGENTS = {
         "env_val": "http://localhost:{port}/v1",
         "api_key_env": "OPENAI_API_KEY",
     },
-    "copilot": {
-        "kind": "cli", "name": "GitHub Copilot CLI",
-        "cmd": ["github-copilot-cli"],
-        "env_key": "OPENAI_BASE_URL",
+    "goose": {
+        "kind": "cli", "name": "Goose",
+        "cmd": ["goose"],
+        "env_key": "OPENAI_HOST",
+        "env_val": "http://localhost:{port}",
+        "extra_env": {"OPENAI_BASE_PATH": "v1/chat/completions"},
+        "api_key_env": "OPENAI_API_KEY",
+    },
+    "openhands": {
+        "kind": "cli", "name": "OpenHands CLI",
+        "cmd": ["openhands", "--override-with-envs"],
+        "env_key": "LLM_BASE_URL",
         "env_val": "http://localhost:{port}/v1",
+        "api_key_env": "LLM_API_KEY",
+    },
+    "copilot": {
+        "kind": "cli", "name": "GitHub Copilot CLI (BYOK custom provider)",
+        "cmd": ["copilot"],
+        "env_key": "COPILOT_PROVIDER_BASE_URL",
+        "env_val": "http://localhost:{port}/v1",
+        "extra_env": {"COPILOT_PROVIDER_TYPE": "openai"},
+        "api_key_env": "COPILOT_PROVIDER_API_KEY",
+        "subscription_alt": "entroly attach create --client copilot --project . --ttl 4h --install",
     },
     "gemini": {
         "kind": "cli", "name": "Gemini CLI",
@@ -1655,6 +1673,35 @@ _WRAP_AGENTS = {
     # We don't auto-write because schemas drift across versions or live in
     # OS-specific paths we shouldn't blindly mutate.
     # ══════════════════════════════════════════════════════════════════
+    "grok": {
+        "kind": "print", "name": "Grok CLI",
+        "config_label": "~/.grok/config.toml",
+        "key_path": "[model.entroly] custom model",
+        "url": "http://localhost:{port}/v1",
+        "snippet_toml": "[model.entroly]\nmodel = \"grok-4.5\"\nbase_url = \"http://localhost:{port}/v1\"\nname = \"Grok via Entroly\"\nenv_key = \"XAI_API_KEY\"\napi_backend = \"chat_completions\"",
+        "post_hint": "Start Entroly with ENTROLY_OPENAI_BASE set to the intended xAI/OpenAI-compatible upstream. Default signed-in Grok inference is not intercepted by this custom-model route.",
+    },
+    "vibe": {
+        "kind": "print", "name": "Mistral Vibe",
+        "config_label": "./.vibe/config.toml or ~/.vibe/config.toml",
+        "key_path": "[[providers]] and [[models]]",
+        "url": "http://localhost:{port}/v1",
+        "snippet_toml": "active_model = \"entroly-model\"\n\n[[providers]]\nname = \"entroly\"\napi_base = \"http://localhost:{port}/v1\"\napi_key_env_var = \"OPENAI_API_KEY\"\napi_style = \"openai\"\nbackend = \"generic\"\n\n[[models]]\nname = \"gpt-4o\"\nprovider = \"entroly\"\nalias = \"entroly-model\"",
+    },
+    "omp": {
+        "kind": "print", "name": "Oh My Pi",
+        "config_label": "~/.omp/agent/models.yml",
+        "key_path": "providers.entroly",
+        "url": "http://localhost:{port}/v1",
+        "snippet_yaml": "providers:\n  entroly:\n    baseUrl: http://localhost:{port}/v1\n    api: openai-completions\n    apiKey: OPENAI_API_KEY\n    models:\n      - id: gpt-4o\n        name: GPT-4o via Entroly\n        contextWindow: 128000\n        maxTokens: 16384",
+        "post_hint": "Choose the model/provider that matches the upstream configured behind Entroly. Do not assume an existing OAuth credential is valid for a custom proxy.",
+    },
+    "zcode": {
+        "kind": "print", "name": "ZCode",
+        "config_label": "ZCode provider settings",
+        "key_path": "Custom OpenAI-compatible Base URL",
+        "url": "http://localhost:{port}/v1",
+    },
     "cline": {
         "kind": "print", "name": "Cline (VS Code extension)",
         "config_label": "VS Code Settings → Extensions → Cline",
@@ -1893,6 +1940,17 @@ def _wrap_via_print(spec: dict, port: int) -> None:
         f"\n  {C.GRAY}If your installed {spec['name']} supports this custom endpoint, "
         f"requests sent through that endpoint should route through Entroly.{C.RESET}\n"
     )
+    post_hint = spec.get("post_hint")
+    if post_hint:
+        print(f"  {C.YELLOW}Boundary:{C.RESET} {post_hint.format(port=port)}\n")
+
+
+def _resolved_wrap_env(spec: dict, port: int) -> dict[str, str]:
+    """Resolve the complete explicit environment contract for a CLI wrapper."""
+    values = {spec["env_key"]: spec["env_val"].format(port=port)}
+    for key, value in spec.get("extra_env", {}).items():
+        values[str(key)] = str(value).format(port=port)
+    return values
 
 
 def _start_proxy_if_needed(port: int) -> bool:
@@ -2072,7 +2130,21 @@ def _codex_preflight(port: int) -> list[str]:
     return out
 
 
-_PREFLIGHT = {"codex": _codex_preflight}
+def _copilot_preflight(port: int) -> list[str]:
+    """Explain the BYOK boundary without claiming subscription interception."""
+    del port
+    if os.environ.get("COPILOT_MODEL"):
+        return []
+    return [
+        "Copilot custom-provider mode needs COPILOT_MODEL to identify the model "
+        "sent to the configured BYOK provider. Set it before launching, for "
+        "example COPILOT_MODEL=gpt-4o. For a signed-in Copilot subscription, "
+        "use the scoped MCP attachment instead; Entroly does not claim to "
+        "intercept GitHub-hosted subscription inference."
+    ]
+
+
+_PREFLIGHT = {"codex": _codex_preflight, "copilot": _copilot_preflight}
 
 
 def _proxy_request_count(port: int) -> int | None:
@@ -2240,17 +2312,21 @@ def cmd_wrap(args):
         return 1
 
     if dry_run:
+        resolved_env = _resolved_wrap_env(spec, port)
+        env_text = ", ".join(f"{key}={value}" for key, value in resolved_env.items())
         launch = " ".join(spec["cmd"] + (args.agent_args or []))
         print(f"  {C.GRAY}[dry-run] would start the proxy on :{port}, set "
-              f"{spec['env_key']}={spec['env_val'].format(port=port)}, and launch "
+              f"{env_text}, and launch "
               f"`{launch}`. No changes made.{C.RESET}\n")
         return 0
     if not _start_proxy_if_needed(port):
         return 1
 
     env = os.environ.copy()
-    env[spec["env_key"]] = spec["env_val"].format(port=port)
-    print(f"  {C.GRAY}Set {spec['env_key']}={spec['env_val'].format(port=port)}{C.RESET}")
+    resolved_env = _resolved_wrap_env(spec, port)
+    env.update(resolved_env)
+    for key, value in resolved_env.items():
+        print(f"  {C.GRAY}Set {key}={value}{C.RESET}")
     print(
         f"  {C.YELLOW}Use only if {spec['name']} supports custom endpoints and your account/provider terms permit proxying.{C.RESET}"
     )

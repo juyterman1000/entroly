@@ -1,1 +1,0 @@
-error: corrupt patch at .github/agent-compatibility.patch:13

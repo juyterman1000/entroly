@@ -749,20 +749,39 @@ Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
 messages, zero model calls. Token counts are estimates, not billed usage, and
 this result does not establish downstream model accuracy.</sub>
 
-`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
+`entroly wrap <agent>` chooses the safest available integration: a session-scoped proxy launch, an MCP registration, or guided custom-endpoint setup when a third-party schema should not be mutated automatically.
 
-**Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
+### Agent compatibility
+
+**Status describes integration depth—not a blanket quality or savings guarantee.** Provider-observed savings require requests to traverse an Entroly proxy route. MCP integrations add context, recovery, receipt, and verification tools but do not automatically intercept every model request.
+
+| Agent or platform | Entroly path | Current status | Important boundary |
+|---|---|---|---|
+| **Claude Code** | Scoped MCP attachment; API-key proxy | **Native** | Claude Pro/Max subscription sessions use MCP; public-API proxying requires `ANTHROPIC_API_KEY`. |
+| **Codex CLI** | Scoped MCP attachment; API-key proxy | **Native** | ChatGPT-account mode can bypass `OPENAI_BASE_URL`. |
+| **GitHub Copilot CLI** | MCP for subscription sessions; BYOK custom-provider proxy | **Supported with mode boundary** | Entroly does not claim interception of GitHub-hosted subscription inference. |
+| **OpenClaw** | ContextEngine plugin and scoped MCP attachment | **Native** | OpenClaw retains provider authentication; Entroly controls context assembly and receipts. |
+| **Cursor** | Automatic project MCP config; optional custom endpoint | **Automatic MCP** | Proxy accounting exists only when the model route points through Entroly. |
+| **Aider / OpenCode** | Session-scoped OpenAI-compatible proxy | **One command** | Requires a provider route that accepts a custom endpoint. |
+| **Cline / Continue** | Printed endpoint or provider configuration | **Guided setup** | Entroly avoids silently mutating versioned extension schemas. |
+| **Grok CLI** | Custom model pointed at Entroly | **Guided BYOK** | Default signed-in inference is not claimed as intercepted. |
+| **Goose / OpenHands** | Documented custom endpoint | **Validation pending** | Added to the registry only with explicit auth boundaries and watchdog verification. |
+| **Mistral Vibe / Oh My Pi / ZCode** | Generated custom-provider configuration | **Guided setup** | The user chooses the upstream model and credential contract. |
+| **Kimi CLI** | Native MCP registration | **MCP-compatible** | OAuth inference passthrough is not claimed until independently tested. |
+| **Cortex Code** | SDK/library boundary only | **Not validated as a wrap target** | No official tested endpoint contract is currently advertised by Entroly. |
+
+[See the evidence-bounded compatibility guide](docs/agent-compatibility.md), including Copilot subscription vs BYOK behavior and the exact meaning of each status.
 
 <details>
-<summary><b>Full agent list (38 targets)</b></summary>
+<summary><b>Code-backed setup registry</b></summary>
 
-| Type | Agents |
+| Integration class | Current targets |
 |---|---|
-| **CLI (env-wrap + exec)** | Claude Code, Codex CLI, Aider, Gemini CLI, Qwen Code, OpenCode, Charm CRUSH, Hermes, Pi, Ollama |
-| **MCP IDEs (auto-merge `mcp.json`)** | Cursor, Windsurf, VS Code, Claude Desktop, Claude Code (MCP), Zed |
-| **Copy-paste endpoint** | Cline, Roo Code, Continue, Cody, Amp, Kiro, Qoder, Trae, Antigravity, Amazon Q, Verdent, JetBrains AI, Helix, Tabby, Twinny, Sublime, Emacs, Neovim, Fitten, Tabnine, Supermaven |
+| **CLI proxy launch** | Claude Code, Codex CLI, Aider, GitHub Copilot CLI BYOK, Gemini CLI, Qwen Code, OpenCode, Charm CRUSH, Hermes, Pi, Ollama, Goose, OpenHands |
+| **Automatic MCP config** | Cursor, Windsurf, VS Code MCP clients, Claude Desktop, Claude Code MCP mode, Zed |
+| **Guided endpoint setup** | Grok CLI, Mistral Vibe, Oh My Pi, ZCode, Cline, Roo Code, Continue, Cody, Amp, Kiro, Qoder, Trae, Antigravity, Amazon Q, Verdent, JetBrains AI, Helix, Tabby, Twinny, Sublime, Emacs, Neovim, Fitten Code, Tabnine, Supermaven |
 
-Any tool that supports a custom `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` works via the proxy. Run `entroly wrap` (no agent) for the full grouped list. Use wrappers only with tools whose terms permit local proxies / custom endpoints.
+Any OpenAI-compatible client can use the proxy only when it supports a custom base URL, the upstream is configured correctly, and its authentication terms permit local routing. Entroly's post-session watchdog reports when a wrapped CLI sends the proxy zero requests.
 </details>
 
 **As a library** (LangChain, LangGraph nodes, LlamaIndex, your own code):
