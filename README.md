@@ -767,7 +767,6 @@ this result does not establish downstream model accuracy.</sub>
 | **Grok CLI** | Custom model pointed at Entroly | **Guided BYOK** | Default signed-in inference is not claimed as intercepted. |
 | **Goose / OpenHands** | Documented custom endpoint | **Validation pending** | Added to the registry only with explicit auth boundaries and watchdog verification. |
 | **Mistral Vibe / Oh My Pi / ZCode** | Generated custom-provider configuration | **Guided setup** | The user chooses the upstream model and credential contract. |
-| **Kimi CLI** | Scoped MCP attachment | **Native MCP** | Kimi keeps its model authentication; Entroly adds scoped context tools. OAuth inference passthrough is not claimed. |
 | **Cortex Code** | SDK/library boundary only | **Not validated as a wrap target** | No official tested endpoint contract is currently advertised by Entroly. |
 
 [See the evidence-bounded compatibility guide](docs/agent-compatibility.md), including Copilot subscription vs BYOK behavior and the exact meaning of each status.

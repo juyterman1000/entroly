@@ -29,7 +29,6 @@ Provider-bound token and cost measurements exist only when the request actually 
 | OpenHands | Local CLI `LLM_BASE_URL` route | Compatible; end-to-end validation pending | A remote/cloud sandbox cannot reach a laptop-local proxy. |
 | Mistral Vibe | Generic OpenAI-style provider in `config.toml` | Guided setup | Use a project or user provider entry with the Entroly endpoint. |
 | Oh My Pi | Custom provider in `~/.omp/agent/models.yml` | Guided setup | Stored OAuth credentials are not assumed to be valid for an arbitrary proxy. |
-| Kimi CLI | Scoped MCP attachment | Native MCP | Kimi keeps its model authentication; Entroly adds scoped context tools. OAuth inference passthrough is not claimed. |
 | ZCode | Custom OpenAI/Anthropic-compatible base URL | Guided setup | Confirm the chosen provider and authentication mode permit a custom URL. |
 | Cortex Code | SDK/library boundary only | Not validated as a wrap target | No official, tested endpoint contract is currently documented by Entroly. |
 

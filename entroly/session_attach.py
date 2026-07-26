@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 
-ATTACHMENT_CLIENTS = ("claude", "codex", "copilot", "kimi", "openclaw")
+ATTACHMENT_CLIENTS = ("claude", "codex", "copilot", "openclaw")
 _GRANT_ID_RE = re.compile(r"^att_[0-9a-f]{16}$")
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
 
@@ -452,8 +452,6 @@ def attachment_install_commands(
         return (("codex", "mcp", "add", name, "--env", source_env, "--", *server),)
     if grant.client == "copilot":
         return (("copilot", "mcp", "add", name, "--env", source_env, "--", *server),)
-    if grant.client == "kimi":
-        return (("kimi", "mcp", "add", "--transport", "stdio", "--env", source_env, name, "--", *server),)
     if grant.client == "openclaw":
         add = ["openclaw", "mcp", "add", name, "--command", "entroly"]
         for argument in server[1:]:
@@ -471,8 +469,6 @@ def attachment_remove_commands(grant: AttachmentGrant) -> tuple[tuple[str, ...],
         return (("codex", "mcp", "remove", name),)
     if grant.client == "copilot":
         return (("copilot", "mcp", "remove", name),)
-    if grant.client == "kimi":
-        return (("kimi", "mcp", "remove", name),)
     if grant.client == "openclaw":
         return (
             ("openclaw", "mcp", "unset", name),

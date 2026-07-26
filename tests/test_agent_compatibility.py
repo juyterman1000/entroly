@@ -52,23 +52,6 @@ def test_public_matrix_keeps_subscription_and_validation_boundaries():
 
 
 
-def test_kimi_attachment_uses_official_stdio_mcp_shape(tmp_path):
-    grant = SimpleNamespace(
-        grant_id="att_fedcba9876543210",
-        client="kimi",
-        project_root=str(tmp_path),
-    )
-    install = attachment_install_commands(grant, tmp_path, tmp_path / "token")
-    command = install[0]
-    assert command[:5] == ("kimi", "mcp", "add", "--transport", "stdio")
-    assert "--env" in command and "--" in command
-    assert attachment_remove_commands(grant) == (
-        ("kimi", "mcp", "remove", "entroly-att_fedcba9876543210"),
-    )
-    assert "kimi" in ATTACHMENT_CLIENTS
-
-
-
 def test_wrap_splits_wrapper_options_from_client_arguments():
     wrapper_args, client_args, explicit = _split_wrap_agent_args(
         [
