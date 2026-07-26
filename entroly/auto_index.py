@@ -609,6 +609,62 @@ def _canonical_rel_path(rel_path: str) -> str:
     return normalized.lstrip("/")
 
 
+
+
+def _is_source_file(rel_path: str) -> bool:
+    """Source code worth chunking, as opposed to bulk we are happy to skip."""
+    _, ext = os.path.splitext(rel_path)
+    if ext.lower() not in SOURCE_CODE_EXTENSIONS:
+        return False
+    lowered = "/" + rel_path.replace("\\", "/").lower()
+    return not any(marker in lowered for marker in LOW_VALUE_LARGE_PATH_MARKERS)
+
+
+def _read_oversized_source(project_dir: str, rel_path: str) -> str:
+    """Read a file that exceeded the per-file cap, bounded by the hard ceiling."""
+    abs_path = _resolve_project_file(project_dir, rel_path)
+    if abs_path is None:
+        return ""
+    try:
+        with open(abs_path, "rb") as handle:
+            head = handle.read(ABSOLUTE_MAX_BYTES)
+        if bytes([0]) in head[:8192]:
+            return ""            # binary; never chunk
+        return head.decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def chunk_oversized_source(content: str, max_bytes: int) -> list[str]:
+    """Split a too-large source file into ingestible chunks at line boundaries.
+
+    Dropping the file instead makes its contents permanently unretrievable: no
+    token budget can recover something that was never indexed. Measured on this
+    repository, every gold file above the cap missed at every budget (2k/8k/32k)
+    while every file below it was retrieved — the largest modules, which is
+    where answers usually live, were simply invisible.
+
+    Chunks never split a line, so each one stays independently readable, and a
+    single line longer than the budget is emitted whole rather than truncated:
+    losing evidence is the failure this exists to prevent.
+    """
+    if max_bytes <= 0 or not content:
+        return [content] if content else []
+    chunks: list[str] = []
+    current: list[str] = []
+    current_bytes = 0
+    for line in content.splitlines(keepends=True):
+        line_bytes = len(line.encode("utf-8", "surrogatepass"))
+        if current and current_bytes + line_bytes > max_bytes:
+            chunks.append("".join(current))
+            current, current_bytes = [], 0
+        current.append(line)
+        current_bytes += line_bytes
+    if current:
+        chunks.append("".join(current))
+    return chunks
+
+
 def _read_index_file(project_dir: str, rel_path: str) -> tuple[str | None, int, str | None]:
     """Read one index candidate and explain every non-content outcome.
 
@@ -1337,6 +1393,7 @@ def _auto_index(
     # WHICH file got dropped, not just "1 too large". Cap at 5 to keep
     # the log line readable on chatty repos.
     skipped_size_paths: list[tuple[str, int, int]] = []
+    chunked_large = 0
 
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
@@ -1357,9 +1414,30 @@ def _auto_index(
             continue
         content, size, reason = entry
         if content is None and reason and reason.startswith("too_large:"):
-            skipped_size += 1
             cap = int(reason.split(":", 1)[1])
-            skipped_size_paths.append((rel_path, size, cap))
+            # Chunk instead of drop. Skipping made the file permanently
+            # unretrievable — no token budget can recover something that was
+            # never indexed — and measurement showed every gold file above the
+            # cap missed at every budget while every file below it was found.
+            # Source stays chunked; genuinely low-value bulk (lockfiles,
+            # generated blobs, anything past the hard ceiling) is still skipped.
+            chunks: list[str] = []
+            if size <= ABSOLUTE_MAX_BYTES and _is_source_file(rel_path):
+                raw = _read_oversized_source(project_dir, rel_path)
+                if raw:
+                    chunks = chunk_oversized_source(raw, cap)
+            if not chunks:
+                skipped_size += 1
+                skipped_size_paths.append((rel_path, size, cap))
+                continue
+            weight = _source_type_token_weight(rel_path)
+            for part, text in enumerate(chunks):
+                batch.append((
+                    text,
+                    f"file:{rel_path}" if part == 0 else f"file:{rel_path}#{part}",
+                    int(_estimate_tokens(text) * weight),
+                ))
+            chunked_large += 1
             continue
         if content is None:
             if reason not in {None, "empty"}:
