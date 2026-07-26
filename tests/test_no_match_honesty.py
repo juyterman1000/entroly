@@ -101,3 +101,49 @@ def test_source_path_counts_as_evidence():
     assert _selection_matches_query(
         "checkpoint", [{"source": "entroly/checkpoint.py", "content": ""}]
     ) is True
+
+
+# ── Degenerate-ranking detection (variance, not magnitude) ───────────────────
+# A ranker that found evidence separates candidates; one that found none cannot.
+# Measured: real query -> 0.8534/0.7220/0.7095/0.6971 (spread 0.156);
+# no-match -> 0.0800 x4 (spread 0.000). Thresholding the score never worked
+# because 0.08 and 0.62 are both "positive"; only one of them is a ranking.
+
+def test_flat_scores_are_detected_as_no_ranking():
+    from entroly.server import _score_distribution_is_degenerate
+
+    flat = [{"relevance": 0.08} for _ in range(4)]
+    assert _score_distribution_is_degenerate(flat) is True
+
+
+def test_separated_scores_are_a_real_ranking():
+    from entroly.server import _score_distribution_is_degenerate
+
+    real = [{"relevance": v} for v in (0.8534, 0.7220, 0.7095, 0.6971)]
+    assert _score_distribution_is_degenerate(real) is False
+
+
+def test_high_but_flat_scores_are_still_no_ranking():
+    from entroly.server import _score_distribution_is_degenerate
+
+    # Magnitude is not evidence: uniformly high is as uninformative as
+    # uniformly low.
+    assert _score_distribution_is_degenerate(
+        [{"relevance": 0.95} for _ in range(5)]
+    ) is True
+
+
+def test_single_candidate_is_not_judged_by_variance():
+    from entroly.server import _score_distribution_is_degenerate
+
+    # One result can be neither flat nor spread; the lexical check decides.
+    assert _score_distribution_is_degenerate([{"relevance": 0.08}]) is False
+
+
+def test_pinned_scores_do_not_create_false_spread():
+    from entroly.server import _score_distribution_is_degenerate
+
+    salted = [{"relevance": 0.9, "is_pinned": True}] + [
+        {"relevance": 0.08} for _ in range(3)
+    ]
+    assert _score_distribution_is_degenerate(salted) is True

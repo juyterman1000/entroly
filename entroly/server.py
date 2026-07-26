@@ -505,6 +505,42 @@ def _query_terms(query: str) -> set[str]:
     return {t.lower() for t in _EVIDENCE_WORD.findall(query or "")} - stop
 
 
+def _score_distribution_is_degenerate(selected: list) -> bool:
+    """True when the ranker produced no discrimination between candidates.
+
+    A ranker that found real evidence separates candidates; one that found none
+    cannot. Measured on this repository (955 fragments):
+
+        real query  -> 0.8534, 0.7220, 0.7095, 0.6971   (spread 0.156)
+        no-match    -> 0.0800, 0.0800, 0.0800, 0.0800   (spread 0.000)
+
+    So the discriminator is variance, not magnitude — which is why thresholding
+    the score itself never worked: 0.08 and 0.62 are both "positive", but only
+    one of them is a ranking. A flat distribution means every candidate is
+    equally (un)related, i.e. the ordering carries no information.
+
+    Requires >= 2 non-pinned candidates; a single result cannot be flat or
+    spread, so it is judged by the lexical check instead.
+    """
+    scores = []
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        for key in ("relevance", "relevance_score", "score"):
+            if key in frag:
+                try:
+                    scores.append(float(frag[key] or 0.0))
+                except (TypeError, ValueError):
+                    pass
+                break
+    if len(scores) < 2:
+        return False
+    spread = max(scores) - min(scores)
+    # Exact-equality would be too brittle for float arithmetic; this tolerance
+    # is far below the separation any real query produces.
+    return spread < 1e-9
+
+
 def _selection_matches_query(query: str, selected: list) -> bool:
     """Does the returned context actually contain any query term?
 
@@ -3141,8 +3177,13 @@ def create_mcp_server(
         # saving, and unrelated context is worse than none.
         if query:
             _sel = result.get("selected_fragments") or result.get("selected") or []
-            if _sel and not (
-                _evidence_backed(_sel) and _selection_matches_query(query, _sel)
+            _degenerate = _score_distribution_is_degenerate(_sel)
+            if _sel and (
+                _degenerate
+                or not (
+                    _evidence_backed(_sel)
+                    and _selection_matches_query(query, _sel)
+                )
             ):
                 _pinned = [
                     f for f in _sel if isinstance(f, dict) and f.get("is_pinned")
@@ -3159,10 +3200,12 @@ def create_mcp_server(
                 result["status"] = "no_match"
                 result["no_match"] = {
                     "reason": (
-                        "no indexed fragment carried positive relevance for this "
-                        "query; returning pinned evidence only rather than "
-                        "unrelated files"
+                        "the ranker produced no discrimination for this query "
+                        "(flat score distribution) or the returned text shared "
+                        "no term with it; returning pinned evidence only rather "
+                        "than unrelated files"
                     ),
+                    "degenerate_ranking": _degenerate,
                     "query": query,
                     "candidates_considered": result.get("total_fragments", 0),
                     "pinned_retained": len(_pinned),
