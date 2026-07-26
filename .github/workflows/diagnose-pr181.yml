@@ -41,7 +41,7 @@ jobs:
       - name: Validate focused trust contracts
         run: |
           pytest tests/test_session_rescue.py tests/test_compression_retrieval_store.py tests/test_proxy_session_rescue.py tests/test_cache_stable_live_zone.py -q --tb=short --timeout=60
-          ruff check entroly/session_rescue.py entroly/compression_retrieval_store.py tests/test_session_rescue.py tests/test_compression_retrieval_store.py benchmarks/recovery_resilience.py
+          ruff check entroly/session_rescue.py entroly/compression_retrieval_store.py tests/test_session_rescue.py tests/test_compression_retrieval_store.py tests/test_recovery_resilience.py benchmarks/recovery_resilience.py
           git diff --check
 
       - name: Re-run frozen v5 recovery evidence
@@ -49,10 +49,12 @@ jobs:
         shell: bash
         run: |
           set +e
-          {
+          (
+            set -euo pipefail
             python -m venv .headroom-venv
             .headroom-venv/bin/python -m pip install --upgrade pip
             .headroom-venv/bin/pip install "headroom-ai==0.31.0"
+            .headroom-venv/bin/python -c 'import importlib.metadata, sys; print(sys.executable); print(importlib.metadata.version("headroom-ai"))'
             python -m benchmarks.recovery_resilience run \
               --protocol benchmarks/recovery_resilience_protocol_v5.json \
               --phase holdout \
@@ -63,8 +65,8 @@ jobs:
               benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
             pytest tests/test_recovery_resilience.py -q --tb=short
             python scripts/verify_public_trust.py
-          } > >(tee v5-evidence.log) 2>&1
-          status=$?
+          ) > >(tee v5-evidence.log) 2>&1
+          status=${PIPESTATUS[0]}
           printf '%s\n' "$status" > v5-evidence-exit-code.txt
           exit "$status"
 
@@ -95,4 +97,4 @@ jobs:
           git add -f benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
           git diff --cached --check
           git commit -m "fix(session-rescue): preserve exact cache-stable recovery"
-          git push origin HEAD:refs/heads/fix/session-rescue-trust-recovery-final-v2
+          git push origin HEAD:refs/heads/fix/session-rescue-trust-recovery-final-v3
