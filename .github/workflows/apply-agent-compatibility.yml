@@ -22,7 +22,19 @@ jobs:
           python-version: '3.12'
       - name: Apply product patch
         run: |
-          git apply --check .github/agent-compatibility.patch
+          set +e
+          git apply --check --verbose .github/agent-compatibility.patch > /tmp/agent-compatibility-apply.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/agent-compatibility-apply.log agent-compatibility-apply-error.txt
+            git config user.name juyterman1000
+            git config user.email 208309368+juyterman1000@users.noreply.github.com
+            git add agent-compatibility-apply-error.txt
+            git commit -m "chore: capture agent compatibility patch rejection"
+            git push origin HEAD:${{ github.head_ref }}
+            exit "$status"
+          fi
           git apply .github/agent-compatibility.patch
       - name: Validate focused contracts
         run: |
@@ -31,8 +43,9 @@ jobs:
           python -m pytest -q tests/test_session_attach.py tests/test_cli_audit.py
       - name: Commit product-only result
         run: |
-          rm .github/agent-compatibility.patch
-          rm .github/workflows/apply-agent-compatibility.yml
+          rm -f .github/agent-compatibility.patch
+          rm -f .github/workflows/apply-agent-compatibility.yml
+          rm -f agent-compatibility-apply-error.txt
           git config user.name juyterman1000
           git config user.email 208309368+juyterman1000@users.noreply.github.com
           git add README.md docs/agent-compatibility.md entroly/cli.py entroly/session_attach.py tests
