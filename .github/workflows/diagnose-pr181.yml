@@ -92,6 +92,7 @@ jobs:
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add -A
+          git add -f benchmarks/results/recovery_resilience_holdout_revalidation_v5.json
           git diff --cached --check
           git commit -m "fix(session-rescue): preserve exact cache-stable recovery"
-          git push origin HEAD:refs/heads/fix/session-rescue-trust-recovery-final
+          git push origin HEAD:refs/heads/fix/session-rescue-trust-recovery-final-v2
