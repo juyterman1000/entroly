@@ -15,13 +15,16 @@ jobs:
   export-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout candidate source
+      - name: Checkout exact validated candidate
         uses: actions/checkout@v6
+        with:
+          ref: 4ed5658470fa8872346fd8c52caf4047001f9ada
 
       - name: Record exact source identity
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "4ed5658470fa8872346fd8c52caf4047001f9ada"
           git rev-parse HEAD > DOGFOOD_SOURCE_SHA.txt
           printf '%s\n' 'fix/session-rescue-trust-recovery-final-v3' > DOGFOOD_SOURCE_BRANCH.txt
 
@@ -29,15 +32,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar \
-            --exclude=.git \
-            --exclude=.github/workflows/dogfood-workspace-export.yml \
-            -czf entroly-dogfood-workspace.tar.gz .
+          archive="$RUNNER_TEMP/entroly-dogfood-workspace.tar.gz"
+          tar --exclude=.git -czf "$archive" .
+          test -s "$archive"
 
       - name: Upload source archive
         uses: actions/upload-artifact@v4
         with:
           name: entroly-dogfood-workspace
-          path: entroly-dogfood-workspace.tar.gz
+          path: ${{ runner.temp }}/entroly-dogfood-workspace.tar.gz
           if-no-files-found: error
           retention-days: 1
