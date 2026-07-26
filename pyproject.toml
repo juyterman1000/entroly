@@ -47,7 +47,7 @@ Issues = "https://github.com/juyterman1000/entroly/issues"
 
 [project.optional-dependencies]
 proxy = [
-    "httpx>=0.27",
+    "httpx>=0.28.1",
     "starlette>=0.37",
     "uvicorn>=0.30",
 ]
@@ -60,7 +60,7 @@ receipt-proof = [
 full = [
     "cryptography>=42",
     "entroly-core>=1.0.66,<2",
-    "httpx>=0.27",
+    "httpx>=0.28.1",
     "starlette>=0.37",
     "uvicorn>=0.30",
 ]
