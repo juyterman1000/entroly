@@ -36,7 +36,12 @@ def test_committed_query_shift_artifacts_verify(filename: str) -> None:
     path = ROOT / "benchmarks" / "results" / filename
     report = json.loads(path.read_text(encoding="utf-8"))
 
-    verify_report(report)
+    verify_report(report)  # raises ValueError on any inconsistency
+
+    # Non-vacuity guard: this test's only signal is that verify_report did not
+    # raise. A trial-less artifact would satisfy that trivially, and so would a
+    # verify_report that stopped raising — assert there was real material.
+    assert report.get("trials"), f"{filename} has no trials — verification was vacuous"
 
 
 def test_query_shift_verifier_rejects_tampered_trial() -> None:

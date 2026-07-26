@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 import tempfile
 import time
@@ -181,21 +182,127 @@ def _resolve_project_file(project_dir: str, rel_path: str) -> str | None:
     return candidate
 
 
+def _git_env() -> dict[str, str]:
+    """Environment that keeps `git` strictly non-interactive.
+
+    A git that stops to ask for credentials, opens a pager, or blocks on the
+    index lock never closes its pipes, which is what makes the discovery call
+    hang indefinitely.
+    """
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"     # never prompt for credentials
+    env["GIT_OPTIONAL_LOCKS"] = "0"      # don't block on / take index.lock
+    env["GIT_PAGER"] = "cat"
+    env["GIT_ASKPASS"] = ""
+    env["SSH_ASKPASS"] = ""
+    env.pop("GIT_EDITOR", None)
+    return env
+
+
+def _terminate_process_tree(
+    proc: subprocess.Popen[bytes], *, timeout: float = 1.0
+) -> None:
+    """Best-effort termination of a process and descendants, then reap it.
+
+    The command is started in an isolated POSIX session or Windows process group.
+    On POSIX, killing the process group also closes inherited descriptors held by
+    grandchildren. On Windows, ``taskkill /T`` is the supported tree primitive;
+    direct ``kill`` remains the fail-safe fallback.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=max(0.1, timeout),
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=max(0.1, timeout))
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        # The caller must still return. There are no pipe-reader threads or pipe
+        # handles to leak because stdout is a temporary file, not PIPE.
+        pass
+
+
+def _run_git(args: list[str], project_dir: str, timeout: float = 10.0) -> str | None:
+    """Run a git command with a hard wall-clock bound and no pipe-reader leak.
+
+    ``Popen(..., stdout=PIPE).communicate(timeout=...)`` is unsafe on Windows:
+    ``communicate`` owns background reader threads, and a descendant that keeps
+    stdout inherited can leave those threads and handles alive after the direct
+    child is killed. Capture into an anonymous temporary file instead. Waiting
+    for the process is then independent of EOF, and every Python-owned resource
+    closes deterministically on every path.
+    """
+    proc: subprocess.Popen[bytes] | None = None
+    timeout = max(0.01, float(timeout))
+    try:
+        with tempfile.TemporaryFile(mode="w+b") as capture:
+            proc = subprocess.Popen(
+                args,
+                cwd=project_dir,
+                stdin=subprocess.DEVNULL,
+                stdout=capture,
+                stderr=subprocess.DEVNULL,
+                env=_git_env(),
+                start_new_session=os.name != "nt",
+                creationflags=(
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if os.name == "nt"
+                    else 0
+                ),
+            )
+            try:
+                returncode = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "git %s timed out after %ss in %s; terminating its process "
+                    "tree and falling back to a filesystem walk",
+                    args[1] if len(args) > 1 else "",
+                    timeout,
+                    project_dir,
+                )
+                _terminate_process_tree(proc)
+                return None
+
+            if returncode != 0:
+                return None
+            capture.flush()
+            capture.seek(0)
+            return capture.read().decode("utf-8", errors="replace")
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    finally:
+        if proc is not None and proc.poll() is None:
+            _terminate_process_tree(proc)
+
+
 def _git_ls_files(project_dir: str) -> list[str]:
     """Get all git-tracked files, respecting .gitignore."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return [f.strip() for f in result.stdout.splitlines() if f.strip()]
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-    return []
+    stdout = _run_git(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        project_dir,
+    )
+    if stdout is None:
+        return []
+    return [f.strip() for f in stdout.splitlines() if f.strip()]
 
 
 def _walk_fallback(project_dir: str) -> list[str]:

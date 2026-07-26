@@ -1859,6 +1859,43 @@ class EntrolyEngine:
             }
         return result
 
+    @staticmethod
+    def _honest_savings_block(savings: Any) -> dict[str, Any]:
+        """Strip the fabricated dollar figure from the native `savings` block.
+
+        The Rust core emits `estimated_cost_saved_usd` derived from
+        `total_tokens_saved`, which is accumulated per call as
+        (every candidate fragment) - (selected fragments). That counterfactual
+        assumes the whole index would otherwise have been sent, so it grows
+        without bound and routinely exceeds the corpus itself — an observed
+        session reported 6.07M tokens "saved" against 2.58M tokens tracked, and
+        a single 3,000-token request claimed 2.5M tokens saved.
+
+        `optimize_context` already documents that MCP results "never fund
+        evolution or support a dollar-savings claim"; the dashboard already
+        strips this field for the same reason. This makes the MCP stats surface
+        agree with both instead of publishing a number the code itself
+        disclaims. Token telemetry is kept, renamed to say what it measures.
+        """
+        if not isinstance(savings, dict):
+            return {} if savings is None else savings
+        out = dict(savings)
+        out.pop("estimated_cost_saved_usd", None)
+        if "total_tokens_saved" in out:
+            # Coerce: the raw value passed through verbatim, so a None or
+            # non-numeric counter reached consumers as-is and any arithmetic on
+            # it raised TypeError. A counter is always an int here.
+            raw = out.pop("total_tokens_saved")
+            try:
+                out["dedup_tokens_avoided"] = int(raw or 0)
+            except (TypeError, ValueError):
+                out["dedup_tokens_avoided"] = 0
+        out["baseline"] = (
+            "dedup/selection telemetry only; counts candidates not selected. "
+            "Not a provider bill delta and not a dollar-savings claim."
+        )
+        return out
+
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive session statistics."""
         if self._use_rust:
@@ -1868,6 +1905,9 @@ class EntrolyEngine:
             rust_stats["prefetch"] = self._prefetch.stats()
             rust_stats["checkpoint"] = self._checkpoint_mgr.stats()
             rust_stats["build"] = self._build_stamp()
+            rust_stats["savings"] = self._honest_savings_block(
+                rust_stats.get("savings")
+            )
             return rust_stats
         stats = self._stats_python()
         stats["build"] = self._build_stamp()
@@ -2607,19 +2647,45 @@ def create_mcp_server(
         """Return bounded aggregate counters without source content or paths."""
         raw = engine.get_stats()
         session = raw.get("session", {}) if isinstance(raw, dict) else {}
-        runtime = raw.get("engine", raw) if isinstance(raw, dict) else {}
+        # Two shapes reach here: the pure-Python path emits an `engine` block,
+        # the native path emits `savings` with `total_`-prefixed names. Reading
+        # only `engine` made every counter report 0 on native installs, which is
+        # every real deployment.
+        runtime = raw.get("engine") if isinstance(raw, dict) else None
+        native = raw.get("savings") if isinstance(raw, dict) else None
+        runtime = runtime if isinstance(runtime, dict) else {}
+        native = native if isinstance(native, dict) else {}
+
+        def _counter(*names: str) -> int:
+            for source in (runtime, native):
+                for name in names:
+                    if name in source:
+                        try:
+                            return int(source[name] or 0)
+                        except (TypeError, ValueError):
+                            return 0
+            return 0
+
         payload = {
             "session": {
                 "current_turn": int(session.get("current_turn", 0) or 0),
                 "total_fragments": int(session.get("total_fragments", 0) or 0),
                 "total_tokens_tracked": int(session.get("total_tokens_tracked", 0) or 0),
-                "pinned_fragments": int(session.get("pinned_fragments", 0) or 0),
+                # Native emits `pinned`; only the Python path spells it
+                # `pinned_fragments`. Reading one name hard-zeroed this on every
+                # native install — the same defect as the engine counters above.
+                "pinned_fragments": int(
+                    session.get("pinned_fragments", session.get("pinned", 0)) or 0
+                ),
             },
             "engine": {
-                "fragments_ingested": int(runtime.get("fragments_ingested", 0) or 0),
-                "duplicates_caught": int(runtime.get("duplicates_caught", 0) or 0),
-                "optimize_calls": int(runtime.get("optimize_calls", 0) or 0),
-                "dedup_tokens_avoided": int(runtime.get("dedup_tokens_avoided", 0) or 0),
+                "fragments_ingested": _counter(
+                    "fragments_ingested", "total_fragments_ingested"),
+                "duplicates_caught": _counter(
+                    "duplicates_caught", "total_duplicates_caught"),
+                "optimize_calls": _counter("optimize_calls", "total_optimizations"),
+                "dedup_tokens_avoided": _counter(
+                    "dedup_tokens_avoided", "total_tokens_saved"),
             },
         }
         encoded = json.dumps(payload, indent=2, sort_keys=True)
@@ -3186,13 +3252,22 @@ def create_mcp_server(
         # Surface lifetime + session cost savings so the agent/user can
         # see the value Entroly delivers. Pure read from in-memory state.
         try:
-            from .value_tracker import estimate_cost
             _this_tokens = result.get("tokens_saved", 0)
-            _this_model = result.get("model", "")
             result["savings"] = {
                 "this_call": {
                     "tokens_saved": _this_tokens,
-                    "cost_saved_usd": round(estimate_cost(_this_tokens, _this_model), 6),
+                    # No per-call dollar figure. `tokens_saved` here is
+                    # (every candidate fragment) - (selected fragments), i.e. it
+                    # assumes the whole index would otherwise have been sent.
+                    # Pricing that produced a real-looking number from a
+                    # counterfactual nobody would run — the same figure
+                    # _honest_savings_block strips from get_stats, and the same
+                    # claim already removed from the PR comment. This path
+                    # cannot prove the result reached a paid provider.
+                    "baseline": (
+                        "candidates not selected; local telemetry only, "
+                        "not a provider bill delta"
+                    ),
                 },
                 "session": _value_tracker.get_session(),
                 "lifetime": {
