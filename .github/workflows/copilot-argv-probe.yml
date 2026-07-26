@@ -1,0 +1,120 @@
+name: Copilot Argv Probe
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  argv:
+    if: github.head_ref == 'feat/agent-compatibility-matrix'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install Entroly and pinned Copilot CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          npm install --global '@github/copilot@1.0.74'
+      - name: Probe direct and wrapped argv
+        shell: bash
+        run: |
+          set -u
+          mkdir -p copilot-argv-evidence/project copilot-argv-evidence/bin copilot-argv-evidence/home
+          cat > copilot-argv-evidence/project/pyproject.toml <<'EOF'
+          [project]
+          name = "copilot-argv-probe"
+          version = "0.0.0"
+          EOF
+          REAL_COPILOT="$(command -v copilot)"
+          export REAL_COPILOT
+          export COPILOT_HOME="$PWD/copilot-argv-evidence/home"
+          export COPILOT_PROVIDER_BASE_URL="http://127.0.0.1:9/v1"
+          export COPILOT_PROVIDER_TYPE="openai"
+          export COPILOT_MODEL="entroly-e2e-model"
+          export ENTROLY_DISABLE_UPDATE_CHECK=1
+
+          run_case() {
+            name="$1"
+            shift
+            set +e
+            timeout 15 "$REAL_COPILOT" "$@" >"copilot-argv-evidence/${name}.out" 2>"copilot-argv-evidence/${name}.err"
+            code=$?
+            set -e
+            printf '%s\n' "$code" >"copilot-argv-evidence/${name}.code"
+          }
+
+          run_case direct_short -p "Hello world"
+          run_case direct_long --prompt "Hello world"
+          run_case direct_equals "--prompt=Hello world"
+          run_case direct_silent_combined -sp "Hello world"
+          run_case direct_options_first --no-color --no-auto-update -p "Hello world"
+
+          cat > copilot-argv-evidence/bin/copilot <<'PY'
+          #!/usr/bin/env python3
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          Path(os.environ["COPILOT_ARGV_LOG"]).write_text(
+              json.dumps(sys.argv, indent=2), encoding="utf-8"
+          )
+          os.execv(
+              os.environ["REAL_COPILOT"],
+              [os.environ["REAL_COPILOT"], *sys.argv[1:]],
+          )
+          PY
+          chmod +x copilot-argv-evidence/bin/copilot
+          export COPILOT_ARGV_LOG="$PWD/copilot-argv-evidence/wrapped-argv.json"
+          export PATH="$PWD/copilot-argv-evidence/bin:$PATH"
+          cd copilot-argv-evidence/project
+          set +e
+          timeout 25 entroly wrap copilot --port 45991 -- \
+            -s \
+            --no-color \
+            --no-auto-update \
+            "--prompt=Hello world" \
+            >../wrapped.out 2>../wrapped.err
+          code=$?
+          set -e
+          printf '%s\n' "$code" >../wrapped.code
+          cd ../..
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('copilot-argv-evidence')
+          result = {}
+          for code_file in sorted(root.glob('*.code')):
+              name = code_file.stem
+              result[name] = {
+                  'code': int(code_file.read_text().strip()),
+                  'stdout': (root / f'{name}.out').read_text(errors='replace'),
+                  'stderr': (root / f'{name}.err').read_text(errors='replace'),
+              }
+          argv = root / 'wrapped-argv.json'
+          result['wrapped_argv'] = json.loads(argv.read_text()) if argv.exists() else None
+          (root / 'summary.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          print(json.dumps(result, indent=2))
+          PY
+      - name: Upload argv evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: copilot-argv-probe
+          path: copilot-argv-evidence/
+          if-no-files-found: error
+          retention-days: 14
