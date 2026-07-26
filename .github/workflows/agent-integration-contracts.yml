@@ -62,7 +62,7 @@ jobs:
           --junitxml=agent-integration-${{ matrix.python-version }}.xml
       - name: Upload machine-readable result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agent-integration-${{ matrix.python-version }}
           path: agent-integration-${{ matrix.python-version }}.xml
