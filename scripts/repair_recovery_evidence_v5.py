@@ -15,6 +15,7 @@ v5_path = ROOT / "benchmarks/recovery_resilience_protocol_v5.json"
 protocol = json.loads(v4_path.read_text(encoding="utf-8"))
 protocol["schema_version"] = "entroly.recovery-resilience-protocol.v5"
 protocol["frozen_at"] = "2026-07-25T00:00:00Z"
+protocol["comparison"]["entroly"] = "1.0.66 source"
 protocol["supersedes"] = {
     "protocol": "benchmarks/recovery_resilience_protocol_v4.json",
     "artifact": "benchmarks/results/recovery_resilience_holdout_revalidation_v4.json",
