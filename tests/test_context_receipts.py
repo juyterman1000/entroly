@@ -26,9 +26,9 @@ from entroly.context_receipts import (
     select_from_index,
 )
 from entroly.context_receipts.ingest import read_documents_from_path
-from entroly.context_receipts.models import RankedChunk
+from entroly.context_receipts.models import ContextIndex, RankedChunk
 from entroly.context_receipts.selection import select_context
-from entroly.context_receipts.receipts import attach_novelty_frontier
+from entroly.context_receipts.receipts import attach_novelty_frontier, build_receipt
 from entroly.context_receipts.novelty import novelty_frontier_assessment
 from entroly.context_receipts.retrieval import rank_chunks
 
@@ -1549,3 +1549,58 @@ def test_build_receipt_and_selection_tolerate_malformed_direct_inputs():
 
     assert receipt.query == ""
     assert [item.chunk_id for item in selection.selected] == [index.chunks[0].chunk_id]
+
+
+
+def test_no_match_receipt_fails_closed_and_does_not_claim_savings():
+    index = ingest_documents(
+        [
+            ("auth.md", "Authentication uses signed session cookies."),
+            ("db.md", "Database queries use bound parameters."),
+        ],
+        chunk_tokens=80,
+        overlap_tokens=16,
+    )
+    receipt = build_receipt(
+        ContextIndex.from_dict(index),
+        query="quantum chromodynamics lattice gauge calibration",
+        token_budget=80,
+    )
+
+    assert receipt.selected_context == []
+    assert receipt.compression_ratio.tokens_saved == 0
+    assert receipt.compression_ratio.tokens_withheld == receipt.compression_ratio.source_tokens
+    assert receipt.compression_ratio.savings_eligible is False
+    assert (
+        receipt.compression_ratio.savings_status
+        == "not_credited_no_relevance_evidence"
+    )
+    assert receipt.compression_ratio.reduction_pct == 0.0
+    assert any("selection failed closed" in warning for warning in receipt.warnings)
+
+
+def test_matched_receipt_labels_savings_as_mechanical_and_unverified():
+    index = ingest_documents(
+        [
+            ("auth.md", "Authentication uses signed session cookies."),
+            ("db.md", "Database queries use bound parameters."),
+        ],
+        chunk_tokens=80,
+        overlap_tokens=16,
+    )
+    receipt = build_receipt(
+        ContextIndex.from_dict(index),
+        query="authentication session cookies",
+        token_budget=10,
+    )
+
+    assert receipt.selected_context
+    assert receipt.compression_ratio.savings_eligible is True
+    assert (
+        receipt.compression_ratio.savings_status
+        == "mechanical_reduction_unverified"
+    )
+    assert (
+        receipt.compression_ratio.tokens_saved
+        == receipt.compression_ratio.tokens_withheld
+    )
