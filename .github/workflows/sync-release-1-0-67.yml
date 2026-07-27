@@ -1,0 +1,52 @@
+name: Sync Release 1.0.67
+
+on:
+  push:
+    branches:
+      - release/sync-1.0.67
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: release/sync-1.0.67
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Synchronize approved release surfaces
+        run: python scripts/sync_release_version.py 1.0.67
+      - name: Verify synchronizer is idempotent
+        run: |
+          output="$(python scripts/sync_release_version.py 1.0.67)"
+          echo "$output"
+          test "$output" = "Release surfaces already synchronized at 1.0.67"
+      - name: Install focused validation dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Validate release contracts
+        run: |
+          python -m pytest -q \
+            tests/test_release_version_sync.py \
+            tests/test_release_surface.py \
+            tests/test_mcp_registry_manifest.py
+          python -m compileall -q entroly scripts
+          git diff --check
+      - name: Verify scope and commit product changes
+        run: |
+          rm -f .github/workflows/sync-release-1-0-67.yml
+          git status --short
+          test -f docs/releases/v1.0.67.md
+          ! git grep -n '1.0.67' -- benchmarks/results docs/investigations || true
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git add -A
+          git commit -m 'chore(release): synchronize version 1.0.67'
+          git push origin HEAD:release/sync-1.0.67
