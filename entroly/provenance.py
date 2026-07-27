@@ -100,7 +100,7 @@ def _compact_fragment_for_wire(raw: Any) -> Any:
 
 
 def compact_optimize_result_for_wire(optimize_result: dict[str, Any]) -> None:
-    """Compact an optimize result in-place immediately before MCP serialization.
+    """Compact an optimize result in-place at the MCP serialization boundary.
 
     ``selected`` and ``selected_fragments`` are compatibility aliases inside
     the engine. Sending both over MCP serializes the same fragment bodies and
@@ -111,6 +111,10 @@ def compact_optimize_result_for_wire(optimize_result: dict[str, Any]) -> None:
 
     Set ``ENTROLY_MCP_FULL_DIAGNOSTICS=1`` to retain rich per-fragment fields.
     The duplicate alias is still removed because it has no diagnostic value.
+
+    This function intentionally mutates its argument. Call it only immediately
+    before MCP serialization, after all in-process consumers have finished with
+    the rich engine result.
     """
     if not isinstance(optimize_result, dict):
         return
@@ -151,6 +155,7 @@ def compact_optimize_result_for_wire(optimize_result: dict[str, Any]) -> None:
 @dataclass
 class FragmentProvenance:
     """Provenance record for a single selected context fragment."""
+
     fragment_id: str
     source: str               # file path or URL — the external origin
     confidence: float         # composite relevance score [0, 1]
@@ -179,6 +184,7 @@ class ContextProvenance:
     2. Average confidence of selection
     3. Whether any fragments have quality issues (secrets, TODOs)
     """
+
     turn: int
     query: str
     refined_query: str | None
@@ -221,18 +227,14 @@ class ContextProvenance:
             return "medium"
         return "low"
 
-    def to_dict(self, *, include_fragments: bool | None = None) -> dict[str, Any]:
-        """Serialize bounded provenance by default.
+    def to_dict(self, *, include_fragments: bool = True) -> dict[str, Any]:
+        """Serialize provenance without changing the historical SDK default.
 
-        The selected fragment list already carries ids, sources, tokens, and
-        content. Repeating a second record for every fragment and a full source
-        set can add tens of thousands of characters without adding evidence.
-        Aggregate provenance remains on the default wire path; full records are
-        opt-in for diagnostics.
+        The Python API has always returned ``source_set`` and per-fragment
+        provenance from ``to_dict()``. Keep that behavior by default. MCP callers
+        that need a bounded envelope must opt into the aggregate-only form via
+        ``to_wire_dict()`` or ``include_fragments=False``.
         """
-        if include_fragments is None:
-            include_fragments = _full_diagnostics_enabled()
-
         payload: dict[str, Any] = {
             "turn": self.turn,
             "query": self.query,
@@ -272,6 +274,10 @@ class ContextProvenance:
 
         return payload
 
+    def to_wire_dict(self) -> dict[str, Any]:
+        """Serialize bounded MCP provenance, with opt-in full diagnostics."""
+        return self.to_dict(include_fragments=_full_diagnostics_enabled())
+
 
 def build_provenance(
     optimize_result: dict[str, Any],
@@ -283,6 +289,9 @@ def build_provenance(
 ) -> ContextProvenance:
     """
     Build a ContextProvenance from the raw optimize_context result dict.
+
+    This builder is intentionally non-mutating. Wire compaction belongs at the
+    MCP serialization boundary, not in this generic Python API.
 
     Args:
         optimize_result:  The dict returned by EntrolyEngine.optimize_context()
@@ -328,7 +337,7 @@ def build_provenance(
             quality_issues=issues,
         ))
 
-    provenance = ContextProvenance(
+    return ContextProvenance(
         turn=turn,
         query=query,
         refined_query=refined_query if refined_query != query else None,
@@ -336,9 +345,3 @@ def build_provenance(
         token_budget=token_budget,
         tokens_used=int(tokens_used),
     )
-
-    # Wire-facing callers have already consumed the rich engine result for
-    # learning, CCR capture, causal snapshots, and outcome attribution. Compact
-    # only now, immediately before the response is serialized or rendered.
-    compact_optimize_result_for_wire(optimize_result)
-    return provenance

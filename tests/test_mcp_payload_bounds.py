@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import copy
 import json
 
-from entroly.provenance import build_provenance
+from entroly.provenance import (
+    build_provenance,
+    compact_optimize_result_for_wire,
+)
 
 
 def _fragment(index: int, *, content_size: int = 80) -> dict:
@@ -36,16 +40,44 @@ def _result(count: int = 40, *, content_size: int = 80) -> dict:
     }
 
 
-def _wire(result: dict) -> dict:
-    provenance = build_provenance(
+def _provenance(result: dict):
+    return build_provenance(
         result,
         query="find root wiring bug",
         refined_query=None,
         turn=4,
         token_budget=8000,
     )
-    result["provenance"] = provenance.to_dict()
+
+
+def _wire(result: dict) -> dict:
+    provenance = _provenance(result)
+    result["provenance"] = provenance.to_wire_dict()
+    compact_optimize_result_for_wire(result)
     return result
+
+
+def test_build_provenance_does_not_mutate_engine_result() -> None:
+    result = _result(count=2)
+    before = copy.deepcopy(result)
+
+    provenance = _provenance(result)
+
+    assert provenance.fragments
+    assert result == before
+    assert result["selected"] is result["selected_fragments"]
+
+
+def test_default_provenance_dict_retains_full_sdk_contract(monkeypatch) -> None:
+    monkeypatch.delenv("ENTROLY_MCP_FULL_DIAGNOSTICS", raising=False)
+    result = _result(count=2)
+
+    payload = _provenance(result).to_dict()
+
+    assert len(payload["fragments"]) == 2
+    assert len(payload["source_set"]) == 2
+    assert "details_omitted" not in payload
+    assert "selected" in result
 
 
 def test_default_wire_result_removes_alias_and_internal_fragment_fields(monkeypatch) -> None:
