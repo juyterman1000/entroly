@@ -25,7 +25,7 @@ jobs:
         run: python .github/fix_homebrew_release_test.py
       - name: Validate formula and release contracts
         run: |
-          python -m pip install pytest
+          python -m pip install --no-deps -e . pytest
           pytest tests/test_release_surface.py::test_homebrew_formula_targets_release_sdist tests/test_release_version_sync.py -q
           git diff --check
       - name: Commit product-only repair
