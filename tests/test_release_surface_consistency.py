@@ -102,8 +102,13 @@ def test_install_instructions_do_not_pin_an_older_version() -> None:
     offenders: list[str] = []
     for path in ROOT.rglob("*.md"):
         rel = path.relative_to(ROOT).as_posix()
+        # `.entroly/` is the engine's own runtime state -- vault beliefs and
+        # ledger objects it wrote while indexing this repository. It quotes
+        # source text, so it trips this check without being a surface anyone
+        # installs from.
         if any(part in rel for part in ("node_modules", "docs/releases/",
-                                        "docs/research", "benchmarks/results")):
+                                        "docs/research", "benchmarks/results",
+                                        ".entroly/", ".git/")):
             continue
         for pinned in pattern.findall(path.read_text(encoding="utf-8", errors="ignore")):
             if tuple(map(int, pinned.split("."))) < tuple(map(int, MASTER.split("."))):

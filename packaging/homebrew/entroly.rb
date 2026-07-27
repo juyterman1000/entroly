@@ -7,7 +7,8 @@
 #   brew install entroly
 #
 # Bumping versions:
-#   1. Bump `version` to match the PyPI release.
+#   1. Point at the latest verified PyPI sdist; source metadata may be newer
+#      while a coordinated release is still publishing.
 #   2. Update `url` to the matching sdist on PyPI.
 #   3. Update `sha256` to the new tarball's sha256.
 #      Get it via: shasum -a 256 entroly-<version>.tar.gz
@@ -21,8 +22,8 @@ class Entroly < Formula
 
   desc "Open-source Context OS for AI agents"
   homepage "https://github.com/juyterman1000/entroly"
-  url "https://files.pythonhosted.org/packages/source/e/entroly/entroly-1.0.64.tar.gz"
-  sha256 "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
+  url "https://files.pythonhosted.org/packages/35/91/ddefbe85790ad52158047195a86815bce01cd0ee250c2014d308bff9c625/entroly-1.0.67.tar.gz"
+  sha256 "f2ef33e1fb4d70fa524ae590745916c75832ee0e415c1eb52c8634fd10f81130"
   license "Apache-2.0"
   head "https://github.com/juyterman1000/entroly.git", branch: "main"
 
