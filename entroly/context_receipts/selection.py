@@ -74,7 +74,7 @@ def select_context(
     for rank in ranked:
         if rank.chunk_id not in chunks:
             continue
-        if rank.final_score <= 0 and selected_ids:
+        if rank.final_score <= 0:
             continue
         chunk = chunks[rank.chunk_id]
         redundant = any(_jaccard(token_sets[rank.chunk_id], token_sets[sid]) >= 0.82 for sid in selected_ids)
@@ -156,7 +156,11 @@ def select_context(
             break
 
     if not selected_items:
-        warnings.append("No chunks fit inside the token budget.")
+        if any(rank.final_score > 0 for rank in ranked):
+            warnings.append("No chunks fit inside the token budget.")
+            warnings.append("Relevant chunks were found, but none fit inside the token budget.")
+        else:
+            warnings.append("No relevant chunks matched the query; selection failed closed.")
     unresolved = [d for d in dependency_links if not d.resolved]
     if unresolved:
         warnings.append(f"{len(unresolved)} dependency reference(s) could not be resolved to an ingested chunk.")

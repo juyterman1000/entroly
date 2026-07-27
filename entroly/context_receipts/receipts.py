@@ -30,20 +30,44 @@ def _int_or_default(value: object, default: int = 0) -> int:
         return default
 
 
-def _compression_ratio(source_tokens: int, selected_tokens: int) -> CompressionRatio:
+def _compression_ratio(
+    source_tokens: int,
+    selected_tokens: int,
+    *,
+    savings_eligible: bool,
+    savings_status: str,
+) -> CompressionRatio:
     source = max(0, _int_or_default(source_tokens))
     selected = max(0, _int_or_default(selected_tokens))
     if source == 0:
-        return CompressionRatio(0, selected, 0, 1.0, 1.0, 0.0)
+        return CompressionRatio(
+            0,
+            selected,
+            0,
+            0,
+            False,
+            "not_credited_no_source_context",
+            "all_ingested_context",
+            1.0,
+            1.0,
+            0.0,
+            0.0,
+        )
     selected_ratio = selected / source
-    source_ratio = source / max(1, selected)
+    tokens_withheld = max(0, source - selected)
+    withheld_pct = round((1.0 - selected_ratio) * 100.0, 3)
     return CompressionRatio(
         source_tokens=source,
         selected_tokens=selected,
-        tokens_saved=max(0, source - selected),
+        tokens_withheld=tokens_withheld,
+        tokens_saved=tokens_withheld if savings_eligible else 0,
+        savings_eligible=bool(savings_eligible),
+        savings_status=str(savings_status),
+        savings_baseline="all_ingested_context",
         selected_to_source_ratio=round(selected_ratio, 6),
-        source_to_selected_ratio=round(source_ratio, 6),
-        reduction_pct=round((1.0 - selected_ratio) * 100.0, 3),
+        source_to_selected_ratio=round(source / selected, 6) if selected else 0.0,
+        reduction_pct=withheld_pct if savings_eligible else 0.0,
+        withheld_pct=withheld_pct,
     )
 
 
@@ -237,7 +261,21 @@ def build_receipt(
     )
     source_tokens = sum(chunk.token_count for chunk in index.chunks)
     selected_tokens = sum(item.token_count for item in selection.selected)
-    ratio = _compression_ratio(source_tokens, selected_tokens)
+    relevance_evidence_found = any(rank.final_score > 0 for rank in ranked)
+    savings_eligible = relevance_evidence_found and bool(selection.selected)
+    savings_status = (
+        "not_credited_no_relevance_evidence"
+        if not relevance_evidence_found
+        else "not_credited_no_context_selected"
+        if not selection.selected
+        else "mechanical_reduction_unverified"
+    )
+    ratio = _compression_ratio(
+        source_tokens,
+        selected_tokens,
+        savings_eligible=savings_eligible,
+        savings_status=savings_status,
+    )
     source_fingerprints = {
         "documents": {doc.source_path: doc.fingerprint for doc in index.documents},
         "chunks": {chunk.chunk_id: chunk.fingerprint for chunk in index.chunks},
@@ -316,7 +354,11 @@ def markdown_report(receipt: ContextReceipt) -> str:
         f"- Budget: {receipt.token_budget}",
         f"- Source tokens: {ratio.source_tokens}",
         f"- Selected tokens: {ratio.selected_tokens}",
-        f"- Reduction: {ratio.reduction_pct:.1f}%",
+        f"- Tokens withheld: {ratio.tokens_withheld}",
+        f"- Credited token savings: {ratio.tokens_saved}",
+        f"- Savings status: {ratio.savings_status}",
+        f"- Credited reduction: {ratio.reduction_pct:.1f}%",
+        f"- Physical withholding: {ratio.withheld_pct:.1f}%",
         f"- Source-to-selected ratio: {ratio.source_to_selected_ratio:.2f}:1",
         "",
         "## Coverage And Risk Controls",
