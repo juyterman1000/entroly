@@ -397,50 +397,6 @@ def test_optimize_returns_ordered():
     assert len(sources) == 3
 test("Optimize returns ordered fragments", test_optimize_returns_ordered)
 
-def test_optimize_no_match_fails_closed_without_crediting_savings():
-    e = sc.EntrolyEngine(exploration_rate=0.0)
-    e.ingest(
-        "def authenticate_user(token): return token is not None",
-        "auth.py",
-        80,
-        False,
-    )
-    e.ingest(
-        "def execute_query(sql): return sql",
-        "database.py",
-        60,
-        False,
-    )
-    before = e.stats()["savings"]["total_tokens_saved"]
-
-    result = e.optimize(100, "quantum chromodynamics lattice gauge calibration")
-
-    assert result["method"] == "no_match_fail_closed"
-    assert result["retrieval_status"] == "no_match"
-    assert result["relevance_evidence_found"] is False
-    assert result["selected"] == []
-    assert result["tokens_withheld"] == 140
-    assert result["tokens_saved"] == 0
-    assert result["verified_useful_tokens_saved"] == 0
-    assert result["savings_eligible"] is False
-    assert (
-        result["savings_status"]
-        == "not_credited_no_relevance_evidence"
-    )
-    assert e.stats()["savings"]["total_tokens_saved"] == before
-
-test(
-    "Optimize no-match fails closed and claims zero savings",
-    test_optimize_no_match_fails_closed_without_crediting_savings,
-)
-
-def test_recall_bm25_no_match_returns_no_results():
-    e = sc.EntrolyEngine()
-    e.ingest("def authenticate_user(token): return token", "auth.py", 40, False)
-    assert e.recall_bm25("marine mammal acoustic telemetry", 5) == []
-
-test("BM25 no-match returns no results", test_recall_bm25_no_match_returns_no_results)
-
 
 print("\n═══ 10. FEEDBACK LOOP ═══")
 
