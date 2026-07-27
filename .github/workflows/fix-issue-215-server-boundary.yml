@@ -1,25 +1,25 @@
 name: Apply issue 215 server boundary
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/issue-215-provenance-boundary
-    paths:
-      - .github/workflows/fix-issue-215-server-boundary.yml
+      - main
 
 permissions:
   contents: write
 
 jobs:
   patch-and-test:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/issue-215-provenance-boundary
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Move compaction to MCP serialization boundary
+        id: patch
         shell: bash
         run: |
           python - <<'PY'
@@ -27,6 +27,10 @@ jobs:
 
           path = Path("entroly/server.py")
           source = path.read_text(encoding="utf-8")
+
+          if "compact_optimize_result_for_wire(result)" in source:
+              print("server boundary already applied")
+              raise SystemExit(0)
 
           old_import = "from .provenance import build_provenance"
           new_import = (
@@ -72,8 +76,12 @@ jobs:
 
       - name: Commit server repair
         run: |
+          if git diff --quiet -- entroly/server.py; then
+            echo "No server change needed"
+            exit 0
+          fi
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add entroly/server.py
           git commit -m "fix(mcp): apply compaction at serialization boundary"
-          git push origin HEAD:fix/issue-215-provenance-boundary
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
