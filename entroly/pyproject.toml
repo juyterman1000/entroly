@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.66"
+version = "1.0.67"
 
 description = "Drop-in Context Assurance for AI agents: reduce avoidable token usage with evidence selection, receipts, exact recovery, and verification."
 readme = "README.md"
@@ -46,14 +46,14 @@ proxy = [
     "uvicorn>=0.30",
 ]
 native = [
-    "entroly-core>=1.0.66,<2",
+    "entroly-core>=1.0.67,<2",
 ]
 receipt-proof = [
     "cryptography>=42",
 ]
 full = [
     "cryptography>=42",
-    "entroly-core>=1.0.66,<2",
+    "entroly-core>=1.0.67,<2",
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",

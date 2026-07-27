@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.66"
+RELEASE_VERSION = "1.0.67"
 HOMEBREW_FORMULA_VERSION = "1.0.64"
 HOMEBREW_FORMULA_SHA256 = "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
@@ -71,7 +71,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_66() -> None:
+def test_public_package_versions_are_1_0_67() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -370,7 +370,7 @@ def test_commit_identity_guard_accepts_only_path_scoped_dependabot(
 
     git("init", "-b", "main")
     (repository / "pyproject.toml").write_text(
-        '[project]\nname = "entroly"\nversion = "1.0.66"\n',
+        '[project]\nname = "entroly"\nversion = "1.0.67"\n',
         encoding="utf-8",
     )
     git("add", "pyproject.toml")
@@ -378,7 +378,7 @@ def test_commit_identity_guard_accepts_only_path_scoped_dependabot(
     base = git("rev-parse", "HEAD")
 
     (repository / "pyproject.toml").write_text(
-        '[project]\nname = "entroly"\nversion = "1.0.66"\n'
+        '[project]\nname = "entroly"\nversion = "1.0.67"\n'
         '[project.optional-dependencies]\nbenchmark = ["tiktoken>=0.9,<0.14"]\n',
         encoding="utf-8",
     )
