@@ -36,9 +36,47 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Determine whether public verification is required
+        id: release-context
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          public_url="https://clawhub.ai/juyterman1000/plugins/entroly-openclaw"
+          echo "target_url=$public_url" >> "$GITHUB_OUTPUT"
+
+          # A manual dispatch is an explicit request to diagnose the currently
+          # committed plugin version, so always perform strict verification.
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "verify=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          expected_version="$(
+            python -c 'import json; print(json.load(open("integrations/openclaw/package.json", encoding="utf-8"))["version"])'
+          )"
+          release_tag="entroly-v${expected_version}"
+          git fetch --force --tags origin
+          tag_sha="$(git rev-parse "${release_tag}^{commit}" 2>/dev/null || true)"
+
+          if [[ -n "$tag_sha" && "$tag_sha" == "$SOURCE_SHA" ]]; then
+            echo "verify=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Ordinary pushes may stage the next version before publication. They
+          # must not fail the required ClawHub status merely because the public
+          # registry correctly remains on the previous released version.
+          echo "verify=false" >> "$GITHUB_OUTPUT"
+          echo "state=success" >> "$GITHUB_OUTPUT"
+          echo "description=ClawHub check not required: ${release_tag} does not target this commit" >> "$GITHUB_OUTPUT"
+
       - name: Verify exact public package, search result, and artifact
+        if: steps.release-context.outputs.verify == 'true'
         id: verify
         shell: bash
         run: |
@@ -151,9 +189,9 @@ jobs:
         if: always()
         uses: actions/github-script@v9
         env:
-          CLAWHUB_STATE: ${{ steps.verify.outputs.state }}
-          CLAWHUB_DESCRIPTION: ${{ steps.verify.outputs.description }}
-          CLAWHUB_TARGET_URL: ${{ steps.verify.outputs.target_url }}
+          CLAWHUB_STATE: ${{ steps.verify.outputs.state || steps.release-context.outputs.state }}
+          CLAWHUB_DESCRIPTION: ${{ steps.verify.outputs.description || steps.release-context.outputs.description }}
+          CLAWHUB_TARGET_URL: ${{ steps.verify.outputs.target_url || steps.release-context.outputs.target_url }}
         with:
           script: |
             const state = process.env.CLAWHUB_STATE || 'failure';
@@ -173,7 +211,7 @@ jobs:
             }
 
       - name: Upload verification evidence
-        if: always()
+        if: always() && steps.release-context.outputs.verify == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: clawhub-public-verification
