@@ -1,0 +1,79 @@
+name: Apply issue 215 server boundary
+
+on:
+  push:
+    branches:
+      - fix/issue-215-provenance-boundary
+    paths:
+      - .github/workflows/fix-issue-215-server-boundary.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/issue-215-provenance-boundary
+          fetch-depth: 0
+
+      - name: Move compaction to MCP serialization boundary
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("entroly/server.py")
+          source = path.read_text(encoding="utf-8")
+
+          old_import = "from .provenance import build_provenance"
+          new_import = (
+              "from .provenance import build_provenance, "
+              "compact_optimize_result_for_wire"
+          )
+          if old_import not in source:
+              raise SystemExit("provenance import anchor not found")
+          source = source.replace(old_import, new_import, 1)
+
+          old_provenance = '        result["provenance"] = provenance.to_dict()\n'
+          new_provenance = '        result["provenance"] = provenance.to_wire_dict()\n'
+          if old_provenance not in source:
+              raise SystemExit("provenance serialization anchor not found")
+          source = source.replace(old_provenance, new_provenance, 1)
+
+          old_return = '''        if _guidance is not None:
+              result["guidance"] = _guidance
+
+          return json.dumps(result, indent=2)
+          '''
+          new_return = '''        if _guidance is not None:
+              result["guidance"] = _guidance
+
+          # MCP-only serialization boundary. Keep the rich engine result intact
+          # through provenance, learning, nudges, savings, and hardening; compact
+          # only when every in-process consumer has finished.
+          compact_optimize_result_for_wire(result)
+
+          return json.dumps(result, indent=2)
+          '''
+          if old_return not in source:
+              raise SystemExit("MCP return anchor not found")
+          source = source.replace(old_return, new_return, 1)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Run focused regression suite
+        run: |
+          python -m py_compile entroly/provenance.py entroly/server.py
+          python -m pytest -q tests/test_mcp_payload_bounds.py
+
+      - name: Commit server repair
+        run: |
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add entroly/server.py
+          git commit -m "fix(mcp): apply compaction at serialization boundary"
+          git push origin HEAD:fix/issue-215-provenance-boundary
