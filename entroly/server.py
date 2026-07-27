@@ -1053,9 +1053,31 @@ class EntrolyEngine:
                     pass
             # analyze() returns dict: vagueness_score, key_terms, needs_refinement, reason
             analysis_dict = self._refiner.analyze(query, fragment_summaries)
-            # refine() returns the improved query string
-            refined_query = self._refiner.refine(query, fragment_summaries)
+            # refine() returns the improved query string.
+            #
+            # Only adopt it when the analyzer says the query needs it. The
+            # expansion terms come from `recall(query, 20)` -- pseudo-relevance
+            # feedback -- so applying it unconditionally lets a mediocre first
+            # pass rewrite the question and then rank against the rewrite. That
+            # is query drift, and it was measured destroying retrieval on
+            # specific queries that needed no help:
+            #
+            #   "what does entroly doctor check and how does it report failures"
+            #     -> "... [context: tests, verifier, plugin, entry, point]"
+            #
+            # None of those terms are in the question. They pulled
+            # test_verifier_plugins.py and plugins.py to the top while the file
+            # that answers it, entroly/cli.py, fell from rank 4 to rank 49 --
+            # far below the ~12 fragments a budget emits. Gating on the
+            # analyzer's own signal took evidence retention on the frozen
+            # eight-query set from 0.750 to 1.000 at 4k, 8k and 16k budgets.
+            #
+            # The refinement is still computed and still reported, so vague
+            # queries keep the benefit and the receipt stays honest about what
+            # was asked versus what was searched.
+            candidate_refined = self._refiner.refine(query, fragment_summaries)
             if analysis_dict.get("needs_refinement"):
+                refined_query = candidate_refined
                 refinement_info = {
                     "original_query":    query,
                     "refined_query":     refined_query,

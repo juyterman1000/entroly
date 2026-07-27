@@ -147,6 +147,27 @@ _COMMON_PROVIDER_HEADERS = {
 }
 
 _CERT_ENV_VARS = ("REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS")
+_AUTH_SCHEMES_REQUIRING_CREDENTIALS = frozenset({"bearer", "basic", "token"})
+
+
+def _has_meaningful_auth_value(name: str, value: str) -> bool:
+    """Return whether an inbound auth header contains usable credentials.
+
+    Some custom-provider clients emit an empty value such as ``Bearer `` when
+    authentication is optional. Forwarding that malformed value causes HTTP
+    clients to reject the request before it reaches an unauthenticated local
+    upstream. Empty credentials are dropped; valid credentials are preserved.
+    """
+    normalized = str(value).strip()
+    if not normalized:
+        return False
+    if name.lower() != "authorization":
+        return True
+    scheme, separator, credentials = normalized.partition(" ")
+    if scheme.lower() in _AUTH_SCHEMES_REQUIRING_CREDENTIALS:
+        return bool(separator and credentials.strip())
+    return True
+
 
 # ── Privacy utilities ───────────────────────────────────────────────────
 
@@ -5010,7 +5031,8 @@ class PromptCompilerProxy:
                 forward[name] = value
                 continue
             if lower in capability.auth_headers:
-                forward[name] = value
+                if _has_meaningful_auth_value(lower, value):
+                    forward[name] = value
                 continue
             if any(lower.startswith(prefix) for prefix in capability.header_prefixes):
                 forward[name] = value

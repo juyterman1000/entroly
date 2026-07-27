@@ -51,17 +51,49 @@
     "test": "node test_wasm_e2e.js"
   },
   "keywords": [
-    "entroly", "ai-agents", "ai-coding-agents", "context-assurance", "context-engineering",
-    "context-compression", "context-management", "context-receipts", "context-control-plane",
-    "context-optimization", "ai-cost-optimization", "llm-cost-optimization", "reduce-ai-costs",
-    "token-reduction", "token-optimization", "content-addressed-recovery", "mcp", "mcp-server",
-    "model-context-protocol", "claude-code", "codex", "openclaw", "hermes-agent", "opencode",
-    "local-models", "wasm", "webassembly", "information-theory", "knapsack", "entropy", "autotune"
+    "entroly",
+    "ai-agents",
+    "ai-coding-agents",
+    "context-assurance",
+    "context-engineering",
+    "context-compression",
+    "context-management",
+    "context-receipts",
+    "context-control-plane",
+    "context-optimization",
+    "ai-cost-optimization",
+    "llm-cost-optimization",
+    "reduce-ai-costs",
+    "token-reduction",
+    "token-optimization",
+    "content-addressed-recovery",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude-code",
+    "codex",
+    "openclaw",
+    "hermes-agent",
+    "opencode",
+    "local-models",
+    "wasm",
+    "webassembly",
+    "information-theory",
+    "knapsack",
+    "entropy",
+    "autotune"
   ],
-  "repository": { "type": "git", "url": "https://github.com/juyterman1000/entroly" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juyterman1000/entroly.git"
+  },
   "homepage": "https://juyterman1000.github.io/entroly/docs/index.html",
-  "bugs": { "url": "https://github.com/juyterman1000/entroly/issues" },
+  "bugs": {
+    "url": "https://github.com/juyterman1000/entroly/issues"
+  },
   "author": "entroly",
   "license": "Apache-2.0",
-  "engines": { "node": ">=16.0.0" }
+  "engines": {
+    "node": ">=16.0.0"
+  }
 }
