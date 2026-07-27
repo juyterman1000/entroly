@@ -2,14 +2,13 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — The Open-Source Context OS for AI Agents</h1>
+<h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
 
-<p align="center"><b>Keep your agent. Give it a Context OS.</b><br>
-The observability, governance, and decision layer for AI context.<br>
-Entroly brings together what agents read, remember, trust, recover, spend, and learn—without replacing the model or agent runtime you already use.</p>
+<p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
+Entroly uses budgeted context selection, content-addressed evidence, exact recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
 
 <p align="center">
-  <sub>Integrates with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, MCP clients, and custom provider applications. Choose the supported setup path for your client.</sub>
+  <sub>Works through supported proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.</sub>
 </p>
 
 <p align="center">
@@ -33,7 +32,7 @@ Entroly brings together what agents read, remember, trust, recover, spend, and l
 
 <!-- Community signals are not product or benchmark verification. -->
 <p align="center">
-  <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly repository and GitHub stars"></a>
+  <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
   <a href="https://juyterman1000.github.io/entroly/docs/discord.html"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white" alt="Entroly Discord community"></a>
 </p>
 
@@ -46,6 +45,7 @@ Entroly brings together what agents read, remember, trust, recover, spend, and l
 <p align="center">
   <a href="#get-started"><b>Get started</b></a> ·
   <a href="#see-value-in-your-first-session"><b>See value</b></a> ·
+  <a href="docs/ai-cost-optimization.html"><b>AI cost guide</b></a> ·
   <a href="#proof-in-30-seconds"><b>Proof videos</b></a> ·
   <a href="#proof"><b>Proof</b></a> ·
   <a href="#works-with-your-stack"><b>Integrations</b></a> ·
@@ -664,9 +664,10 @@ its evidence retention from 9.0% to 90.5%. Active plus recovered context was
 [held-out retrieval artifact](benchmarks/results/neural_evidence_frontier.json) ·
 [query-shift artifact](benchmarks/results/neural_query_shift.json).
 
-<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets, not
-downstream answer-quality, latency, production-savings, or general neural
-superiority claims. PRISM-R remains opt-in research code.</sub>
+<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets. They
+do not measure generated answers and are not downstream answer-quality, latency,
+production-savings, or general neural superiority claims. PRISM-R is an opt-in research prototype,
+is not the default compressor, and remains opt-in research code.</sub>
 
 The tables below link each reported number to its committed result. Treat them
 as evidence for those specific datasets, budgets, models, and commits—not as a
@@ -749,20 +750,38 @@ Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
 messages, zero model calls. Token counts are estimates, not billed usage, and
 this result does not establish downstream model accuracy.</sub>
 
-`entroly wrap <agent>` picks the best integration for each tool — proxy env-wrap for CLIs, auto-merged `mcp.json` for MCP-aware IDEs, or a best-effort endpoint/config hint.
+`entroly wrap <agent>` chooses the safest available integration: a session-scoped proxy launch, an MCP registration, or guided custom-endpoint setup when a third-party schema should not be mutated automatically.
 
-**Wrap in one command:** `claude` · `cursor` · `codex` · `aider` · `gemini` · `windsurf` · `vscode` · `zed` · `cline` · `continue` and **28 more**.
+### Agent compatibility
+
+**Status describes integration depth—not a blanket quality or savings guarantee.** Provider-observed savings require requests to traverse an Entroly proxy route. MCP integrations add context, recovery, receipt, and verification tools but do not automatically intercept every model request.
+
+| Agent or platform | Entroly path | Current status | Important boundary |
+|---|---|---|---|
+| **Claude Code** | Scoped MCP attachment; API-key proxy | **Native** | Claude Pro/Max subscription sessions use MCP; public-API proxying requires `ANTHROPIC_API_KEY`. |
+| **Codex CLI** | Scoped MCP attachment; API-key proxy | **Native** | ChatGPT-account mode can bypass `OPENAI_BASE_URL`. |
+| **GitHub Copilot CLI** | MCP for subscription sessions; BYOK custom-provider proxy | **Supported with mode boundary** | Entroly does not claim interception of GitHub-hosted subscription inference. |
+| **OpenClaw** | ContextEngine plugin and scoped MCP attachment | **Native** | OpenClaw retains provider authentication; Entroly controls context assembly and receipts. |
+| **Cursor** | Automatic project MCP config; optional custom endpoint | **Automatic MCP** | Proxy accounting exists only when the model route points through Entroly. |
+| **Aider / OpenCode** | Session-scoped OpenAI-compatible proxy | **One command** | Requires a provider route that accepts a custom endpoint. |
+| **Cline / Continue** | Printed endpoint or provider configuration | **Guided setup** | Entroly avoids silently mutating versioned extension schemas. |
+| **Grok CLI** | Custom model pointed at Entroly | **Guided BYOK** | Default signed-in inference is not claimed as intercepted. |
+| **Goose / OpenHands** | Documented custom endpoint | **Validation pending** | Added to the registry only with explicit auth boundaries and watchdog verification. |
+| **Mistral Vibe / Oh My Pi / ZCode** | Generated custom-provider configuration | **Guided setup** | The user chooses the upstream model and credential contract. |
+| **Cortex Code** | SDK/library boundary only | **Not validated as a wrap target** | No official tested endpoint contract is currently advertised by Entroly. |
+
+[See the evidence-bounded compatibility guide](docs/agent-compatibility.md), including Copilot subscription vs BYOK behavior and the exact meaning of each status.
 
 <details>
-<summary><b>Full agent list (38 targets)</b></summary>
+<summary><b>Code-backed setup registry</b></summary>
 
-| Type | Agents |
+| Integration class | Current targets |
 |---|---|
-| **CLI (env-wrap + exec)** | Claude Code, Codex CLI, Aider, Gemini CLI, Qwen Code, OpenCode, Charm CRUSH, Hermes, Pi, Ollama |
-| **MCP IDEs (auto-merge `mcp.json`)** | Cursor, Windsurf, VS Code, Claude Desktop, Claude Code (MCP), Zed |
-| **Copy-paste endpoint** | Cline, Roo Code, Continue, Cody, Amp, Kiro, Qoder, Trae, Antigravity, Amazon Q, Verdent, JetBrains AI, Helix, Tabby, Twinny, Sublime, Emacs, Neovim, Fitten, Tabnine, Supermaven |
+| **CLI proxy launch** | Claude Code, Codex CLI, Aider, GitHub Copilot CLI BYOK, Gemini CLI, Qwen Code, OpenCode, Charm CRUSH, Hermes, Pi, Ollama, Goose, OpenHands |
+| **Automatic MCP config** | Cursor, Windsurf, VS Code MCP clients, Claude Desktop, Claude Code MCP mode, Zed |
+| **Guided endpoint setup** | Grok CLI, Mistral Vibe, Oh My Pi, ZCode, Cline, Roo Code, Continue, Cody, Amp, Kiro, Qoder, Trae, Antigravity, Amazon Q, Verdent, JetBrains AI, Helix, Tabby, Twinny, Sublime, Emacs, Neovim, Fitten Code, Tabnine, Supermaven |
 
-Any tool that supports a custom `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` works via the proxy. Run `entroly wrap` (no agent) for the full grouped list. Use wrappers only with tools whose terms permit local proxies / custom endpoints.
+Any OpenAI-compatible client can use the proxy only when it supports a custom base URL, the upstream is configured correctly, and its authentication terms permit local routing. Entroly's post-session watchdog reports when a wrapped CLI sends the proxy zero requests.
 </details>
 
 **As a library** (LangChain, LangGraph nodes, LlamaIndex, your own code):
@@ -1008,8 +1027,6 @@ audit. Use the live page for current external status and the
 [LobeHub score audit](docs/lobehub-score-audit.md) for the dated baseline. Until
 the listing matches the published package and passes external validation,
 install from PyPI or npm using the instructions above.
-
-<a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="Current external Entroly status on LobeHub"></a>
 
 <p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>

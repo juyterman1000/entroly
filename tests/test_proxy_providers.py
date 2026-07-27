@@ -107,6 +107,36 @@ class TestProviderForwardingPolicy:
         assert "host" not in out
         assert "content-length" not in out
 
+    @pytest.mark.parametrize(
+        "authorization",
+        ["", "   ", "Bearer", "Bearer ", "bearer\t", "Basic"],
+    )
+    def test_empty_authorization_credentials_are_not_forwarded(self, authorization):
+        proxy = PromptCompilerProxy(object(), ProxyConfig())
+
+        out = proxy._build_headers(
+            {"authorization": authorization, "x-api-key": ""},
+            "openai",
+        )
+
+        assert "authorization" not in out
+        assert "x-api-key" not in out
+        assert out["Content-Type"] == "application/json"
+
+    def test_valid_authorization_credentials_are_preserved(self):
+        proxy = PromptCompilerProxy(object(), ProxyConfig())
+
+        out = proxy._build_headers(
+            {
+                "authorization": "Bearer local-provider-token",
+                "x-api-key": "provider-key",
+            },
+            "openai",
+        )
+
+        assert out["authorization"] == "Bearer local-provider-token"
+        assert out["x-api-key"] == "provider-key"
+
     def test_openai_compatible_prefix_models_use_registry_context_window(self):
         assert context_window_for_model("deepseek-reasoner") == 128_000
 

@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "Entroly Context Engine",
-  "description": "Provider-independent context engineering for every OpenClaw model route, with protected blocks, recovery delegation, and local audit receipts.",
+  "description": "Context Assurance and context engineering for every OpenClaw model route, using your own provider authentication, with protected blocks and recovery delegation.",
   "icon": "https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly_wordmark.svg",
   "configSchema": {
     "type": "object",
