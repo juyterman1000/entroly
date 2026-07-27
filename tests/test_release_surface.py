@@ -245,7 +245,16 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
         "Verify exact ClawHub version is public"
     )
     assert "Verify exact ClawHub version is public" in clawhub_publisher
-    assert "for attempt in range(1, 61)" in clawhub_publisher
+    # The public-index check must stay bounded and fail-closed, but the bound
+    # is not a magic number: 60x15s (15 min) expired while ClawHub was still
+    # serving the previous version after a successful 1.0.67 publish, so the
+    # release went red on an artifact that was live. Assert the contract --
+    # a finite retry loop with backoff and an operator override -- rather than
+    # one literal, so tuning the window does not require editing this test.
+    assert "for attempt in range(1, attempts + 1)" in clawhub_publisher
+    assert "CLAWHUB_VERIFY_ATTEMPTS" in clawhub_publisher
+    assert "time.sleep(" in clawhub_publisher
+    assert "raise SystemExit(last_error)" in clawhub_publisher
     assert "package moderation-status entroly-openclaw --json" in clawhub_publisher
     assert "moderation-status entroly-openclaw --json > \"$raw_status\"" in clawhub_publisher
     assert 'release.get("moderationReason")' not in clawhub_publisher
