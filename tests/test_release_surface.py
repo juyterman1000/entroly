@@ -12,13 +12,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.67"
-HOMEBREW_FORMULA_VERSION = "1.0.66"
+HOMEBREW_FORMULA_VERSION = "1.0.67"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/31/fe/"
-    "3338271b75ccb26b13ddb597488c54636e61678474e48bb1f177842bf5e3/"
-    "entroly-1.0.66.tar.gz"
+    "https://files.pythonhosted.org/packages/35/91/"
+    "ddefbe85790ad52158047195a86815bce01cd0ee250c2014d308bff9c625/"
+    "entroly-1.0.67.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "26eb4bf302f7c1caf1846a30e9da3f9eb5d7e5d12f5ea4f245875431ade37e46"
+HOMEBREW_FORMULA_SHA256 = "f2ef33e1fb4d70fa524ae590745916c75832ee0e415c1eb52c8634fd10f81130"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
