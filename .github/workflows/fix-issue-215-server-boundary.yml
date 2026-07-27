@@ -32,6 +32,7 @@ jobs:
       - name: Run focused regression suite
         run: |
           python -m py_compile entroly/provenance.py entroly/server.py
+          python -m pip install --disable-pip-version-check -q pytest
           python -m pytest -q tests/test_mcp_payload_bounds.py
 
       - name: Commit server repair
