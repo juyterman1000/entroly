@@ -60,7 +60,7 @@ from .multimodal import ingest_diagram as _mm_diagram
 from .multimodal import ingest_diff as _mm_diff
 from .multimodal import ingest_voice as _mm_voice
 from .prefetch import PrefetchEngine
-from .provenance import build_provenance
+from .provenance import build_provenance, compact_optimize_result_for_wire
 from .proxy_transform import calibrated_token_count as _calibrated_token_count
 from .query_refiner import QueryRefiner
 from .repo_map import build_repo_map, render_repo_map_markdown
@@ -3429,7 +3429,7 @@ def create_mcp_server(
             token_budget=_effective_token_budget,
             quality_scan_fn=engine._guard.scan if engine._guard.available else None,
         )
-        result["provenance"] = provenance.to_dict()
+        result["provenance"] = provenance.to_wire_dict()
 
         # ── P1: Memory nudge surface ──────────────────────────────────
         # Proactive persistence hints: tell the agent when fragments are
@@ -3498,6 +3498,11 @@ def create_mcp_server(
         )
         if _guidance is not None:
             result["guidance"] = _guidance
+
+        # MCP-only serialization boundary. Keep the rich engine result intact
+        # through provenance, learning, nudges, savings, and hardening; compact
+        # only when every in-process consumer has finished.
+        compact_optimize_result_for_wire(result)
 
         return json.dumps(result, indent=2)
 
