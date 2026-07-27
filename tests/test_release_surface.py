@@ -12,8 +12,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.67"
-HOMEBREW_FORMULA_VERSION = "1.0.64"
-HOMEBREW_FORMULA_SHA256 = "c259fe1e25311679f54ef356f14047f3f6c1e1a6943e82c27bc00966fcea1a3f"
+HOMEBREW_FORMULA_VERSION = "1.0.66"
+HOMEBREW_FORMULA_URL = (
+    "https://files.pythonhosted.org/packages/31/fe/"
+    "3338271b75ccb26b13ddb597488c54636e61678474e48bb1f177842bf5e3/"
+    "entroly-1.0.66.tar.gz"
+)
+HOMEBREW_FORMULA_SHA256 = "26eb4bf302f7c1caf1846a30e9da3f9eb5d7e5d12f5ea4f245875431ade37e46"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -185,9 +190,9 @@ def test_no_stale_package_advertising_versions() -> None:
 def test_homebrew_formula_targets_release_sdist() -> None:
     text = (ROOT / "packaging/homebrew/entroly.rb").read_text(encoding="utf-8")
 
-    assert f"entroly-{HOMEBREW_FORMULA_VERSION}.tar.gz" in text
-    assert "packages/source/e/entroly/" in text
-    assert HOMEBREW_FORMULA_SHA256 in text
+    assert f'url "{HOMEBREW_FORMULA_URL}"' in text
+    assert f"entroly-{HOMEBREW_FORMULA_VERSION}.tar.gz" in HOMEBREW_FORMULA_URL
+    assert f'sha256 "{HOMEBREW_FORMULA_SHA256}"' in text
 
 
 def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> None:
