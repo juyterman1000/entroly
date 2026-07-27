@@ -17,8 +17,135 @@ but is purpose-built for the context selection use case.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any
+
+
+_FULL_DIAGNOSTICS_ENV = "ENTROLY_MCP_FULL_DIAGNOSTICS"
+
+# Agent-useful wire fields. The engine can keep a much richer in-process
+# fragment object, but serializing all scoring features for hundreds of
+# fragments makes MCP metadata larger than the selected context itself.
+_WIRE_FRAGMENT_KEYS = (
+    "id",
+    "fragment_id",
+    "source",
+    "content",
+    "text",
+    "token_count",
+    "tokens",
+    "relevance",
+    "relevance_score",
+    "composite_score",
+    "resolution",
+    "retrieval_handle",
+    "content_sha256",
+    "original_tokens",
+    "compressed_tokens",
+    "is_pinned",
+    "start_line",
+    "end_line",
+    "lines",
+    "language",
+    "kind",
+    "role",
+    "quality_issues",
+)
+
+
+def _full_diagnostics_enabled() -> bool:
+    return os.environ.get(_FULL_DIAGNOSTICS_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _compact_fragment_for_wire(raw: Any) -> Any:
+    """Return one canonical, agent-useful fragment representation."""
+    if not isinstance(raw, dict):
+        return raw
+
+    compact: dict[str, Any] = {
+        key: raw[key]
+        for key in _WIRE_FRAGMENT_KEYS
+        if key in raw and raw[key] is not None
+    }
+
+    if "id" not in compact and compact.get("fragment_id"):
+        compact["id"] = compact["fragment_id"]
+
+    # Emit one body field, one score, and one token-count field instead of
+    # preserving aliases from the Rust and Python engine paths.
+    if "content" not in compact and "text" in compact:
+        compact["content"] = compact["text"]
+    compact.pop("text", None)
+
+    if "relevance" not in compact:
+        for key in ("relevance_score", "composite_score"):
+            score = compact.get(key)
+            if isinstance(score, (int, float)):
+                compact["relevance"] = score
+                break
+    compact.pop("relevance_score", None)
+    compact.pop("composite_score", None)
+
+    if "token_count" not in compact and "tokens" in compact:
+        compact["token_count"] = compact["tokens"]
+    compact.pop("tokens", None)
+
+    return compact
+
+
+def compact_optimize_result_for_wire(optimize_result: dict[str, Any]) -> None:
+    """Compact an optimize result in-place immediately before MCP serialization.
+
+    ``selected`` and ``selected_fragments`` are compatibility aliases inside
+    the engine. Sending both over MCP serializes the same fragment bodies and
+    metadata twice. The public wire response keeps ``selected_fragments`` as
+    the canonical key and removes the alias. Compact mode also strips internal
+    scoring vectors while preserving content, source locations, token counts,
+    and CCR exact-recovery handles.
+
+    Set ``ENTROLY_MCP_FULL_DIAGNOSTICS=1`` to retain rich per-fragment fields.
+    The duplicate alias is still removed because it has no diagnostic value.
+    """
+    if not isinstance(optimize_result, dict):
+        return
+
+    selected = optimize_result.get("selected_fragments")
+    if not isinstance(selected, list):
+        fallback = optimize_result.get("selected")
+        selected = fallback if isinstance(fallback, list) else []
+
+    optimize_result.pop("selected", None)
+    if _full_diagnostics_enabled():
+        optimize_result["selected_fragments"] = list(selected)
+        mode = "diagnostics"
+    else:
+        optimize_result["selected_fragments"] = [
+            _compact_fragment_for_wire(fragment) for fragment in selected
+        ]
+        mode = "compact"
+
+    response = optimize_result.get("response")
+    if not isinstance(response, dict):
+        response = {}
+        optimize_result["response"] = response
+    response.update(
+        {
+            "mode": mode,
+            "canonical_selection_key": "selected_fragments",
+            "omitted_duplicate_alias": "selected",
+        }
+    )
+    if mode == "compact":
+        response["diagnostics_hint"] = (
+            f"Set {_FULL_DIAGNOSTICS_ENV}=1 for full fragment scoring fields "
+            "and per-fragment provenance."
+        )
 
 
 @dataclass
@@ -94,8 +221,19 @@ class ContextProvenance:
             return "medium"
         return "low"
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, *, include_fragments: bool | None = None) -> dict[str, Any]:
+        """Serialize bounded provenance by default.
+
+        The selected fragment list already carries ids, sources, tokens, and
+        content. Repeating a second record for every fragment and a full source
+        set can add tens of thousands of characters without adding evidence.
+        Aggregate provenance remains on the default wire path; full records are
+        opt-in for diagnostics.
+        """
+        if include_fragments is None:
+            include_fragments = _full_diagnostics_enabled()
+
+        payload: dict[str, Any] = {
             "turn": self.turn,
             "query": self.query,
             "refined_query": self.refined_query,
@@ -106,9 +244,12 @@ class ContextProvenance:
             "verified_fraction": round(self.verified_fraction, 3),
             "avg_confidence": round(self.avg_confidence, 3),
             "hallucination_risk": self.hallucination_risk,
-            "source_set": sorted(self.source_set),
             "quality_flagged": self.quality_flagged_sources,
-            "fragments": [
+        }
+
+        if include_fragments:
+            payload["source_set"] = sorted(self.source_set)
+            payload["fragments"] = [
                 {
                     "id": f.fragment_id,
                     "source": f.source,
@@ -120,8 +261,16 @@ class ContextProvenance:
                     **({"quality_issues": f.quality_issues} if f.quality_issues else {}),
                 }
                 for f in self.fragments
-            ],
-        }
+            ]
+        else:
+            payload["details_omitted"] = {
+                "fragment_records": len(self.fragments),
+                "source_set_entries": len(self.source_set),
+                "reason": "duplicated by selected_fragments",
+                "diagnostics_env": _FULL_DIAGNOSTICS_ENV,
+            }
+
+        return payload
 
 
 def build_provenance(
@@ -143,17 +292,22 @@ def build_provenance(
         token_budget:     The budget passed to optimize
         quality_scan_fn:  Optional callable(content, source) -> List[str]
     """
-    selected = optimize_result.get("selected", [])
+    selected = optimize_result.get("selected_fragments")
+    if not isinstance(selected, list):
+        fallback = optimize_result.get("selected")
+        selected = fallback if isinstance(fallback, list) else []
     tokens_used = optimize_result.get("tokens_used", 0)
 
     frag_provenances = []
     for frag in selected:
-        fid        = frag.get("id", frag.get("fragment_id", ""))
-        source     = frag.get("source", "")
+        if not isinstance(frag, dict):
+            continue
+        fid = frag.get("id", frag.get("fragment_id", ""))
+        source = frag.get("source", "")
         confidence = frag.get("composite_score", frag.get("relevance", 0.0))
-        tokens     = frag.get("token_count", frag.get("tokens", 0))
-        is_pinned  = frag.get("is_pinned", False)
-        content    = frag.get("content", "")
+        tokens = frag.get("token_count", frag.get("tokens", 0))
+        is_pinned = frag.get("is_pinned", False)
+        content = frag.get("content", "")
 
         # A fragment is "verified" if it has a non-empty source that looks
         # like a real file path (not "internal_knowledge" or blank)
@@ -174,7 +328,7 @@ def build_provenance(
             quality_issues=issues,
         ))
 
-    return ContextProvenance(
+    provenance = ContextProvenance(
         turn=turn,
         query=query,
         refined_query=refined_query if refined_query != query else None,
@@ -182,3 +336,9 @@ def build_provenance(
         token_budget=token_budget,
         tokens_used=int(tokens_used),
     )
+
+    # Wire-facing callers have already consumed the rich engine result for
+    # learning, CCR capture, causal snapshots, and outcome attribution. Compact
+    # only now, immediately before the response is serialized or rendered.
+    compact_optimize_result_for_wire(optimize_result)
+    return provenance
