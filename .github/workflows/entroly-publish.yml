@@ -641,6 +641,20 @@ jobs:
           headers = {"User-Agent": "entroly-clawhub-publisher/1.0"}
           last_error = "ClawHub did not expose the accepted release"
 
+          # ClawHub's public index lags acceptance. 1.0.67 published cleanly at
+          # 03:11 and this check's old 60x15s window (15 minutes) expired at
+          # 03:27 with the index still reporting 1.0.66; the version was public
+          # shortly afterwards. A verifier that reliably fails on a successful
+          # publish is worse than none, because it teaches everyone to ignore a
+          # red release.
+          #
+          # Still fail-closed -- the release SHOULD go red if the artifact never
+          # becomes public -- but the window now reflects observed propagation,
+          # with backoff so waiting longer does not mean proportionally more
+          # requests: 15s for the first two minutes, then 60s, ~35 minutes total.
+          # Raise CLAWHUB_VERIFY_ATTEMPTS when re-running by hand.
+          attempts = int(os.environ.get("CLAWHUB_VERIFY_ATTEMPTS") or 40)
+
           def read_json(url: str) -> dict:
               request = urllib.request.Request(url, headers=headers)
               with urllib.request.urlopen(request, timeout=30) as response:
@@ -648,7 +662,7 @@ jobs:
                       raise RuntimeError(f"HTTP {response.status} for {url}")
                   return json.load(response)
 
-          for attempt in range(1, 61):
+          for attempt in range(1, attempts + 1):
               try:
                   detail = read_json(f"{base}/{urllib.parse.quote(name, safe='')}")
                   package = detail.get("package") or {}
@@ -682,9 +696,9 @@ jobs:
                   raise SystemExit(0)
               except (urllib.error.HTTPError, urllib.error.URLError, ValueError, RuntimeError) as exc:
                   last_error = str(exc)
-                  print(f"Attempt {attempt}/60: {last_error}")
-                  if attempt < 60:
-                      time.sleep(15)
+                  print(f"Attempt {attempt}/{attempts}: {last_error}", flush=True)
+                  if attempt < attempts:
+                      time.sleep(15 if attempt <= 8 else 60)
           raise SystemExit(last_error)
           PY
 
