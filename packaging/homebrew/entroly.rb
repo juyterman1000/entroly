@@ -7,7 +7,8 @@
 #   brew install entroly
 #
 # Bumping versions:
-#   1. Bump `version` to match the PyPI release.
+#   1. Point at the latest verified PyPI sdist; source metadata may be newer
+#      while a coordinated release is still publishing.
 #   2. Update `url` to the matching sdist on PyPI.
 #   3. Update `sha256` to the new tarball's sha256.
 #      Get it via: shasum -a 256 entroly-<version>.tar.gz
