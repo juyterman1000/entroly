@@ -12,6 +12,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -22,15 +23,35 @@ import pytest
 from entroly import __version__
 
 
+def _installed_entroly_executable() -> str:
+    """Return the real installed console script without requiring activation.
+
+    ``python -m venv .venv`` followed by ``.venv/bin/pytest`` is a valid way to
+    run an isolated environment, but it does not add ``.venv/bin`` to the shell
+    ``PATH``.  The console script is still installed beside the active Python
+    interpreter, so use that exact script as the bounded fallback.  This keeps
+    the dogfood test black-box and still fails when the user-facing entry point
+    was not installed.
+    """
+
+    executable = shutil.which("entroly")
+    if executable:
+        return executable
+
+    script_name = "entroly.exe" if os.name == "nt" else "entroly"
+    candidate = Path(sys.executable).with_name(script_name)
+    assert candidate.is_file(), (
+        "The documented `entroly` console entry point is not installed. "
+        f"PATH lookup failed and no script exists beside {sys.executable!r}."
+    )
+    return str(candidate)
+
+
 class MCPProcess:
     """Small JSON-RPC harness with bounded reads and useful crash diagnostics."""
 
     def __init__(self, cwd: Path, env: dict[str, str] | None = None) -> None:
-        executable = shutil.which("entroly")
-        assert executable, (
-            "The documented `entroly` console entry point is not installed. "
-            "Black-box dogfood tests must exercise the user-facing command."
-        )
+        executable = _installed_entroly_executable()
 
         child_env = {
             **os.environ,
@@ -176,8 +197,7 @@ def _tool_payload(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_console_version_matches_imported_package() -> None:
-    executable = shutil.which("entroly")
-    assert executable
+    executable = _installed_entroly_executable()
     completed = subprocess.run(
         [executable, "--version"],
         text=True,
