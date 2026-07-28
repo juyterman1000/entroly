@@ -225,13 +225,12 @@ def test_installed_entrypoint_survives_protocol_and_client_errors(tmp_path: Path
         mcp.assert_protocol_clean()
 
 
-def test_unicode_nul_and_rtl_round_trip_exactly(tmp_path: Path) -> None:
+def test_safe_unicode_nul_and_rtl_scripts_round_trip_exactly(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     original = (
-        "BOM:\ufeff | Arabic: مرحبا | Hebrew: שלום | Hindi: नमस्ते | "
-        "emoji: 🧪🔐 | combining: e\u0301 | bidi: \u202eabc\u202c | "
-        "nul:\u0000:end\nsecond line\n"
+        "Arabic: مرحبا | Hebrew: שלום | Hindi: नमस्ते | "
+        "emoji: 🧪🔐 | combining: e\u0301 | nul:\u0000:end\nsecond line\n"
     )
     source = "file:unicode-rtl-🧪.txt"
 
@@ -245,8 +244,8 @@ def test_unicode_nul_and_rtl_round_trip_exactly(tmp_path: Path) -> None:
                 "arguments": {"content": original, "source": source},
             },
         )
-        stored = mcp.wait_for(10)
-        assert "result" in stored, stored
+        stored = _tool_payload(mcp.wait_for(10))
+        assert stored.get("stored") is True, stored
 
         mcp.send(
             11,
@@ -259,6 +258,40 @@ def test_unicode_nul_and_rtl_round_trip_exactly(tmp_path: Path) -> None:
         payload = _tool_payload(mcp.wait_for(11))
         assert payload["original_content"] == original
         assert payload["retrieval_handle"].startswith("ccr:")
+        mcp.assert_protocol_clean()
+
+
+def test_dangerous_unicode_controls_are_rejected_before_storage(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    source = "file:hostile-unicode.txt"
+    hostile = "BOM:\ufeff bidi-override:\u202eabc\u202c"
+
+    with MCPProcess(tmp_path, {"ENTROLY_DIR": str(runtime)}) as mcp:
+        mcp.initialize()
+        mcp.send(
+            12,
+            "tools/call",
+            {
+                "name": "remember_fragment",
+                "arguments": {"content": hostile, "source": source},
+            },
+        )
+        rejected = _tool_payload(mcp.wait_for(12))
+        assert rejected.get("status") == "rejected", rejected
+        assert rejected.get("stored") is False, rejected
+        assert rejected.get("threats"), rejected
+
+        mcp.send(
+            13,
+            "tools/call",
+            {
+                "name": "entroly_retrieve",
+                "arguments": {"source_or_handle": source},
+            },
+        )
+        missing = _tool_payload(mcp.wait_for(13))
+        assert "error" in missing, missing
         mcp.assert_protocol_clean()
 
 

@@ -418,7 +418,10 @@ def _deduplicate_fragments(
     for frag in fragments:
         content = frag.get("preview", frag.get("content", ""))
         # Hash first 256 chars — enough to identify duplicates, fast
-        h = hashlib.md5(content[:256].encode("utf-8", errors="replace")).hexdigest()
+        h = hashlib.md5(
+            content[:256].encode("utf-8", errors="replace"),
+            usedforsecurity=False,
+        ).hexdigest()
         if h not in seen:
             seen.add(h)
             unique.append(frag)

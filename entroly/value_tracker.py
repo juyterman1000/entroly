@@ -238,12 +238,36 @@ class ValueTracker:
 
     @staticmethod
     def _default_dir() -> Path:
-        """The shared telemetry directory. Honors ENTROLY_DIR so the
-        Python and Node (npm) runtimes write to the SAME place — without
-        this they diverge (~/.entroly vs cwd/.entroly) and no cross-mode
-        dashboard ever sees data."""
-        env = os.environ.get("ENTROLY_DIR")
-        return Path(env) if env else (Path.home() / ".entroly")
+        """Return a writable shared telemetry directory.
+
+        Honors ``ENTROLY_DIR`` so Python and Node write to the same place, but
+        never lets an unusable HOME or managed-runtime filesystem crash the MCP
+        server before it can answer ``initialize``.  The fixed-name probe used
+        by older launch paths could also race across processes, so use a unique
+        temporary file for the writeability check.
+        """
+        explicit = os.environ.get("ENTROLY_DIR")
+        candidates = [Path(explicit).expanduser()] if explicit else [
+            Path.home() / ".entroly",
+            Path(tempfile.gettempdir()) / "entroly",
+        ]
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    dir=candidate,
+                    prefix=".write_probe-",
+                    delete=True,
+                ):
+                    pass
+                return candidate
+            except OSError:
+                continue
+
+        # Keep the final path deterministic.  ``__init__`` will still fail
+        # loudly if even the OS temporary directory is unusable; silently
+        # discarding telemetry would be worse than an actionable error there.
+        return Path(tempfile.gettempdir()) / "entroly"
 
     def __init__(self, data_dir: Path | None = None):
         self._dir = data_dir or self._default_dir()
