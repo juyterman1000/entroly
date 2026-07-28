@@ -28,7 +28,6 @@ from .events import (
 from .report import generate_report, format_report_text
 from .outcome_bridge import OutcomeBridge
 from .compiler import PlanCompiler, Plan, PlanNode, NodeKind, detect_substeps
-from . import executors as _legacy_executors
 from .executors import (
     SymPyExecutor,
     PythonExecutor,
@@ -36,14 +35,6 @@ from .executors import (
     RetrievalExecutor,
 )
 from .safe_executors import ExecutorRegistry, TestRunnerExecutor
-
-# Compatibility contract: historical callers import these classes from
-# ``entroly.ravs.executors``. Route that module's public names to the hardened
-# implementations before controller/shadow modules import them, so there is one
-# production registry rather than a safe public path and an unsafe internal one.
-_legacy_executors.ExecutorRegistry = ExecutorRegistry
-_legacy_executors.TestRunnerExecutor = TestRunnerExecutor
-
 from .verifiers import (
     VerifierRegistry, ExactVerifier, StructuralVerifier, CitationVerifier,
 )
