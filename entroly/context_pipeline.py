@@ -1,9 +1,13 @@
-"""Authoritative, deadline-bounded context transformation pipeline.
+"""Authoritative, auditable context transformation pipeline.
 
-This module converges Entroly's existing tool-output compressors, Evidence-Locked
-Compression (ELC), security redaction, exact-result reuse, recovery stores, and
-receipts behind one deterministic contract. It does not replace the existing
-algorithms; it coordinates them and records what happened.
+This module converges Entroly's existing typed tool-output compression,
+Evidence-Locked Compression (ELC), outbound redaction, exact-result reuse,
+recovery storage, and receipts behind one deterministic contract.
+
+The pipeline deliberately coordinates existing algorithms instead of adding a
+parallel compressor. Deadlines are cooperative: the pipeline checks them at
+stage boundaries and degrades deterministically, but it does not claim to
+preempt arbitrary Python code that is already executing.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .evidence_locked_compression import compress_evidence_locked, estimate_tokens
 from .provider_policy import GatewayRedactionPolicy
@@ -26,6 +30,15 @@ _ALREADY_TRANSFORMED_MARKERS = (
     "[entroly-recovery:",
     "[aged-pruned]",
 )
+_SENSITIVE_METADATA_TERMS = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "credential",
+    "password",
+    "secret",
+    "token",
+)
 
 
 def _sha256(text: str) -> str:
@@ -33,7 +46,31 @@ def _sha256(text: str) -> str:
 
 
 def _stable_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True, default=str)
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _safe_receipt_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
+    """Return bounded scalar metadata without credential-shaped fields."""
+    safe: dict[str, object] = {}
+    for raw_key, value in metadata.items():
+        key = str(raw_key)
+        lowered = key.lower()
+        if any(term in lowered for term in _SENSITIVE_METADATA_TERMS):
+            continue
+        if value is None or isinstance(value, (bool, int, float, str)):
+            safe[key] = value
+    return safe
+
+
+def _authorization_scope_hash(metadata: Mapping[str, object]) -> str:
+    value = metadata.get("authorization_scope")
+    return _sha256(str(value)) if value not in (None, "") else ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,13 +87,25 @@ class ContentEnvelope:
     cwd: str = ""
     metadata: dict[str, object] = field(default_factory=dict)
 
+    @property
+    def has_scoped_execution_identity(self) -> bool:
+        """Whether exact reuse is safely scoped to an execution boundary."""
+        scope_present = bool(self.workspace or _authorization_scope_hash(self.metadata))
+        operation_present = bool(self.command or self.tool_name)
+        return scope_present and operation_present
+
     def exact_identity(self, safe_content_sha256: str) -> str:
         payload = {
             "workspace": self.workspace,
             "cwd": self.cwd,
-            "command": self.command,
+            "command_sha256": _sha256(self.command) if self.command else "",
             "tool_name": self.tool_name,
             "source": self.source,
+            "authorization_scope_sha256": _authorization_scope_hash(self.metadata),
+            "environment_fingerprint": str(
+                self.metadata.get("environment_fingerprint", "")
+            ),
+            "source_version": str(self.metadata.get("source_version", "")),
             "safe_content_sha256": safe_content_sha256,
             "pipeline_version": _PIPELINE_VERSION,
         }
@@ -84,6 +133,10 @@ class TransformPolicy:
         if not 0.0 <= self.min_savings < 1.0:
             raise ValueError("min_savings must be in [0, 1)")
 
+    @property
+    def fingerprint(self) -> str:
+        return _sha256(_stable_json(asdict(self)))
+
 
 @dataclass(frozen=True, slots=True)
 class TransformStage:
@@ -100,6 +153,7 @@ class ContextReceiptV1:
 
     receipt_id: str
     version: str
+    policy_sha256: str
     source: str
     content_type: str
     algorithm: str
@@ -139,7 +193,6 @@ class _ExactEntry:
     receipt_id: str
     recovery_receipt_id: str
     recovery_span_id: str
-    safe_input_sha256: str
     original_tokens: int
 
 
@@ -196,21 +249,29 @@ class ContextTransformPipeline:
         stages: list[TransformStage] = []
         raw = envelope.content
         input_hash = _sha256(raw)
-        safe = raw
-        redaction_counts: dict[str, int] = {}
-        redacted = False
 
         safe, redacted, redaction_counts = self._redact(
-            safe,
+            raw,
             policy=policy,
             stages=stages,
             started=started,
         )
         safe_hash = _sha256(safe)
-        original_tokens = estimate_tokens(safe)
         exact_key = envelope.exact_identity(safe_hash)
+        exact_reuse_enabled = (
+            policy.allow_exact_reference
+            and envelope.has_scoped_execution_identity
+            and self._retrieval_store is not None
+        )
 
         if self._deadline_exceeded(started, policy):
+            stages.append(
+                TransformStage(
+                    name="deadline",
+                    elapsed_ms=self._elapsed_ms(started),
+                    outcome="expired_after_redaction",
+                )
+            )
             return self._finish(
                 envelope=envelope,
                 policy=policy,
@@ -228,7 +289,7 @@ class ContextTransformPipeline:
                 exact_reference_of=None,
             )
 
-        exact = self._exact_cache.get(exact_key) if policy.allow_exact_reference else None
+        exact = self._exact_cache.get(exact_key) if exact_reuse_enabled else None
         if exact is not None:
             output = (
                 f"[entroly-ref:{exact.recovery_receipt_id}:{exact.recovery_span_id}]\n"
@@ -257,7 +318,7 @@ class ContextTransformPipeline:
                 safe_hash=safe_hash,
                 redacted=redacted,
                 redaction_counts=redaction_counts,
-                recovery=None,
+                recovery=(exact.recovery_receipt_id, (exact.recovery_span_id,)),
                 exact_reference_of=exact.receipt_id,
             )
 
@@ -271,6 +332,7 @@ class ContextTransformPipeline:
             )
             output = safe
             algorithm = "identity"
+            already_transformed = True
         else:
             output, algorithm = self._compress(
                 safe,
@@ -279,7 +341,10 @@ class ContextTransformPipeline:
                 started=started,
                 stages=stages,
             )
+            already_transformed = False
 
+        should_seed_exact_reuse = exact_reuse_enabled and not already_transformed
+        should_persist_changed_output = output != safe and not already_transformed
         recovery = self._persist_recovery(
             original=safe,
             transformed=output,
@@ -288,6 +353,7 @@ class ContextTransformPipeline:
             algorithm=algorithm,
             stages=stages,
             started=started,
+            enabled=should_seed_exact_reuse or should_persist_changed_output,
         )
 
         result = self._finish(
@@ -307,7 +373,7 @@ class ContextTransformPipeline:
             exact_reference_of=None,
         )
 
-        if recovery is not None and policy.allow_exact_reference:
+        if recovery is not None and should_seed_exact_reuse:
             recovery_receipt_id, span_ids = recovery
             if span_ids:
                 self._exact_cache.put(
@@ -316,8 +382,7 @@ class ContextTransformPipeline:
                         receipt_id=result.receipt.receipt_id,
                         recovery_receipt_id=recovery_receipt_id,
                         recovery_span_id=span_ids[0],
-                        safe_input_sha256=safe_hash,
-                        original_tokens=original_tokens,
+                        original_tokens=estimate_tokens(safe),
                     ),
                 )
         return result
@@ -351,12 +416,13 @@ class ContextTransformPipeline:
             )
             return content, "identity"
 
+        candidate = content
         if policy.prefer_typed_formatter and not self._deadline_exceeded(started, policy):
             try:
                 from .proxy_transform import compress_tool_output
 
-                typed, codec, savings = compress_tool_output(content)
-                changed = typed != content and savings >= policy.min_savings
+                typed, codec, savings = compress_tool_output(candidate)
+                changed = typed != candidate and savings >= policy.min_savings
                 stages.append(
                     TransformStage(
                         name="typed_formatter",
@@ -369,7 +435,7 @@ class ContextTransformPipeline:
                 if changed and estimate_tokens(typed) <= policy.token_budget:
                     return typed, f"typed:{codec}"
                 if changed:
-                    content = typed
+                    candidate = typed
             except Exception as error:
                 stages.append(
                     TransformStage(
@@ -381,11 +447,18 @@ class ContextTransformPipeline:
                 )
 
         if self._deadline_exceeded(started, policy):
-            return self._bounded_fallback(content, policy.token_budget), "deadline_fallback"
+            stages.append(
+                TransformStage(
+                    name="deadline",
+                    elapsed_ms=self._elapsed_ms(started),
+                    outcome="expired_after_typed_formatter",
+                )
+            )
+            return self._bounded_fallback(candidate, policy.token_budget), "deadline_fallback"
 
         try:
             elc = compress_evidence_locked(
-                content,
+                candidate,
                 query=envelope.query,
                 budget_tokens=policy.token_budget,
                 content_type=envelope.content_type,
@@ -416,8 +489,8 @@ class ContextTransformPipeline:
             )
 
         if policy.fail_open:
-            return content, "identity"
-        return self._bounded_fallback(content, policy.token_budget), "bounded_fallback"
+            return candidate, "identity"
+        return self._bounded_fallback(candidate, policy.token_budget), "bounded_fallback"
 
     def _redact(
         self,
@@ -459,14 +532,33 @@ class ContextTransformPipeline:
         algorithm: str,
         stages: list[TransformStage],
         started: float,
+        enabled: bool,
     ) -> tuple[str, tuple[str, ...]] | None:
         store = self._retrieval_store
+        if not enabled:
+            stages.append(
+                TransformStage(
+                    name="recovery_store",
+                    elapsed_ms=self._elapsed_ms(started),
+                    outcome="not_required",
+                )
+            )
+            return None
         if store is None:
             stages.append(
                 TransformStage(
                     name="recovery_store",
                     elapsed_ms=self._elapsed_ms(started),
                     outcome="unconfigured",
+                )
+            )
+            return None
+        if self._deadline_exceeded(started, policy):
+            stages.append(
+                TransformStage(
+                    name="recovery_store",
+                    elapsed_ms=self._elapsed_ms(started),
+                    outcome="skipped_deadline",
                 )
             )
             return None
@@ -493,7 +585,11 @@ class ContextTransformPipeline:
                 metadata={
                     "source": envelope.source,
                     "tool_name": envelope.tool_name,
-                    "command": envelope.command,
+                    "command_sha256": _sha256(envelope.command) if envelope.command else "",
+                    "workspace_sha256": _sha256(envelope.workspace) if envelope.workspace else "",
+                    "authorization_scope_sha256": _authorization_scope_hash(
+                        envelope.metadata
+                    ),
                     "pipeline_version": _PIPELINE_VERSION,
                 },
             )
@@ -504,7 +600,10 @@ class ContextTransformPipeline:
                     elapsed_ms=self._elapsed_ms(started),
                     outcome="stored",
                     changed=True,
-                    details={"receipt_id": stored.receipt_id, "span_count": len(span_ids)},
+                    details={
+                        "receipt_id": stored.receipt_id,
+                        "span_count": len(span_ids),
+                    },
                 )
             )
             return stored.receipt_id, span_ids
@@ -549,14 +648,19 @@ class ContextTransformPipeline:
             "algorithm": algorithm,
             "safe_input_sha256": safe_hash,
             "output_sha256": _sha256(output),
-            "policy": asdict(policy),
+            "policy_sha256": policy.fingerprint,
             "recovery_receipt_id": recovery_receipt_id,
             "exact_reference_of": exact_reference_of,
         }
         receipt_id = _sha256(_stable_json(receipt_payload))[:24]
+        metadata = _safe_receipt_metadata(envelope.metadata)
+        authorization_scope_hash = _authorization_scope_hash(envelope.metadata)
+        if authorization_scope_hash:
+            metadata["authorization_scope_sha256"] = authorization_scope_hash
         receipt = ContextReceiptV1(
             receipt_id=receipt_id,
             version=_PIPELINE_VERSION,
+            policy_sha256=policy.fingerprint,
             source=envelope.source,
             content_type=envelope.content_type or "auto",
             algorithm=algorithm,
@@ -576,7 +680,7 @@ class ContextTransformPipeline:
             recovery_span_ids=tuple(recovery_span_ids),
             exact_reference_of=exact_reference_of,
             stages=tuple(stages),
-            metadata=dict(envelope.metadata),
+            metadata=metadata,
         )
         return TransformResult(content=output, changed=output != raw, receipt=receipt)
 
@@ -591,7 +695,7 @@ class ContextTransformPipeline:
         max_chars = max(1, token_budget * 4)
         if len(content) <= max_chars:
             return content
-        marker = "\n...[deadline-bounded; exact source recoverable]"
+        marker = "\n...[deadline-bounded; exact source may require upstream recovery]"
         if max_chars <= len(marker):
             return content[:max_chars]
         return content[: max_chars - len(marker)].rstrip() + marker
