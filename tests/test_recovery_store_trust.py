@@ -51,12 +51,12 @@ def test_identical_content_has_scope_distinct_receipt_ids_and_access(tmp_path: P
     assert alpha_record.receipt_id != beta_record.receipt_id
     assert alpha.get_receipt(beta_record.receipt_id) is None
     assert beta.get_receipt(alpha_record.receipt_id) is None
-    assert alpha.search("exact source") == [alpha.get_span(
-        alpha_record.receipt_id, alpha_record.spans[0].span_id
-    )]
-    assert beta.search("exact source") == [beta.get_span(
-        beta_record.receipt_id, beta_record.spans[0].span_id
-    )]
+    assert alpha.search("exact source") == [
+        alpha.get_span(alpha_record.receipt_id, alpha_record.spans[0].span_id)
+    ]
+    assert beta.search("exact source") == [
+        beta.get_span(beta_record.receipt_id, beta_record.spans[0].span_id)
+    ]
 
 
 def test_scope_survives_restart_and_denies_other_workspace(tmp_path: Path) -> None:
@@ -226,16 +226,28 @@ def test_mcp_store_override_is_disabled_by_default(monkeypatch, tmp_path: Path) 
 
 def test_enabled_override_is_contained_to_operator_root(monkeypatch, tmp_path: Path) -> None:
     root = tmp_path / "allowed"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    configured = root / "store.json"
+    monkeypatch.setenv("ENTROLY_ALLOW_STORE_PATH_OVERRIDE", "1")
+    monkeypatch.setenv("ENTROLY_STORE_OVERRIDE_ROOT", str(root))
+
+    inside = _safe_store_path(str(nested / "inside.json"), str(configured))
+    assert inside == nested / "inside.json"
+
+    with pytest.raises(ValueError, match="escapes"):
+        _safe_store_path(str(tmp_path / "outside.json"), str(configured))
+
+
+def test_enabled_override_rejects_missing_parent(monkeypatch, tmp_path: Path) -> None:
+    root = tmp_path / "allowed"
     root.mkdir()
     configured = root / "store.json"
     monkeypatch.setenv("ENTROLY_ALLOW_STORE_PATH_OVERRIDE", "1")
     monkeypatch.setenv("ENTROLY_STORE_OVERRIDE_ROOT", str(root))
 
-    inside = _safe_store_path(str(root / "nested" / "inside.json"), str(configured))
-    assert inside == root / "nested" / "inside.json"
-
     with pytest.raises(ValueError, match="escapes"):
-        _safe_store_path(str(tmp_path / "outside.json"), str(configured))
+        _safe_store_path(str(root / "missing" / "inside.json"), str(configured))
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks unavailable")
