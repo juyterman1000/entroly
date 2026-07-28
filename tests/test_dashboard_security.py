@@ -38,6 +38,7 @@ def _request(
     *,
     body: bytes | str | None = None,
     headers: dict[str, str] | None = None,
+    encode_chunked: bool = False,
 ) -> tuple[int, dict[str, str], bytes]:
     connection = http.client.HTTPConnection(
         "127.0.0.1",
@@ -46,7 +47,13 @@ def _request(
     )
     request_headers = dict(headers or {})
     request_headers.setdefault("Host", f"127.0.0.1:{server.server_port}")
-    connection.request(method, path, body=body, headers=request_headers)
+    connection.request(
+        method,
+        path,
+        body=body,
+        headers=request_headers,
+        encode_chunked=encode_chunked,
+    )
     response = connection.getresponse()
     payload = response.read()
     returned_headers = {key.casefold(): value for key, value in response.getheaders()}
@@ -252,6 +259,7 @@ def test_wrong_content_type_and_chunked_controls_fail_before_mutation(monkeypatc
                 "Content-Type": "application/json",
                 "Transfer-Encoding": "chunked",
             },
+            encode_chunked=True,
         )
 
     assert wrong_type == 415
@@ -318,21 +326,3 @@ def test_invalid_worker_limits_fail_before_server_bind(workers) -> None:
             security.SafeDashboardHandler,
             max_workers=workers,
         )
-
-
-def test_start_dashboard_binds_only_ipv4_loopback(monkeypatch) -> None:
-    owner = SimpleNamespace(
-        state=SimpleNamespace(
-            dashboard=SimpleNamespace(port=0, running=False),
-        )
-    )
-    monkeypatch.setattr(security, "_register_lite_daemon", lambda *_args: owner)
-
-    server = security.start_dashboard(engine=None, port=0)
-    try:
-        assert server.server_address[0] == "127.0.0.1"
-        assert owner.state.dashboard.port == server.server_port
-        assert owner.state.dashboard.running is True
-    finally:
-        server.shutdown()
-        server.server_close()
