@@ -95,6 +95,34 @@ def test_invalid_daemon_ports_fail_before_initialization(
     assert not called
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("enable_proxy", "false"),
+        ("enable_proxy", 0),
+        ("enable_proxy", None),
+        ("enable_mcp", "true"),
+        ("enable_mcp", 1),
+        ("enable_mcp", []),
+    ],
+)
+def test_service_enable_flags_require_real_booleans(
+    monkeypatch, field: str, value
+) -> None:
+    called = False
+
+    def unexpected_init(*_args, **_kwargs) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(security, "_ORIGINAL_INIT", unexpected_init)
+
+    with pytest.raises(ValueError, match="boolean"):
+        security.EntrolyDaemon(**{field: value})
+
+    assert not called
+
+
 def test_enabled_services_cannot_share_a_port() -> None:
     with pytest.raises(ValueError, match="distinct ports"):
         security.EntrolyDaemon(proxy_port=9378, dashboard_port=9378)
