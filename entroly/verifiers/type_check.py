@@ -14,18 +14,15 @@ Pyright catches it. We invoke pyright on the generated snippet in a
 sandbox tempdir and parse `--outputjson` for diagnostics that map to
 verifier-style judgments.
 
-Design constraints
-------------------
-- Fail OPEN if pyright is not installed (don't break the user's flow)
-- Fail OPEN on timeout (>5s = abandon)
-- Filter to errors *originating in our snippet*, not in dep types
-- Convert to (symbol_name, kind, line, message) tuples that compose with
-  the rest of the verifier results
+Trust constraints
+-----------------
+- Never represent an unavailable or failed verifier as a clean pass.
+- Filter to errors *originating in our snippet*, not in dependency types.
+- Preserve a compatibility helper for callers that only consume diagnostics.
+- Bound diagnostic detail so failed tooling cannot flood receipts or logs.
 
-For projects with a venv, we pyright in --pythonversion 3.13 (current
-process) and --venvpath if available, so the type checks see installed
-packages. For ad-hoc snippets, we run with --outputjson + no project
-mode (just file-scoped).
+For ad-hoc snippets, we run with `--outputjson` and no project mode so the
+check remains file-scoped.
 """
 
 from __future__ import annotations
@@ -35,38 +32,235 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger("entroly.verifiers.type_check")
 
+TYPE_CHECK_STATUSES = frozenset(
+    {
+        "passed",
+        "issues_found",
+        "unavailable",
+        "timed_out",
+        "execution_failed",
+        "malformed_output",
+    }
+)
+
 
 @dataclass
 class TypeError_:
-    """A type-compat diagnostic mapped from pyright output."""
+    """A type-compat diagnostic mapped from Pyright output."""
+
     line: int
     column: int
-    severity: str   # "error", "warning", "information"
+    severity: str  # "error", "warning", "information"
     message: str
-    rule: str       # e.g. "reportGeneralTypeIssues"
-    # Best-effort symbol name extracted from the message
+    rule: str  # e.g. "reportGeneralTypeIssues"
     likely_symbol: str | None = None
 
 
+@dataclass
+class TypeCheckResult:
+    """Auditable outcome of one Pyright invocation.
+
+    An empty diagnostics list is meaningful only when ``status == "passed"``.
+    Every degraded state remains distinguishable from a successful clean run.
+    """
+
+    status: str
+    diagnostics: list[TypeError_] = field(default_factory=list)
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if self.status not in TYPE_CHECK_STATUSES:
+            raise ValueError(f"unknown type-check status: {self.status!r}")
+        self.detail = self.detail[:500]
+
+    @property
+    def completed(self) -> bool:
+        return self.status in {"passed", "issues_found"}
+
+    @property
+    def trusted_clean(self) -> bool:
+        return self.status == "passed"
+
+
+def _bounded_detail(value: object) -> str:
+    return str(value or "").strip()[-500:]
+
+
 def pyright_available() -> bool:
-    """Is pyright installed and runnable? Returns False on any error."""
-    if shutil.which("pyright") is None:
+    """Return whether Pyright is installed and its version probe succeeds."""
+    executable = shutil.which("pyright")
+    if executable is None:
         return False
     try:
         proc = subprocess.run(
-            ["pyright", "--version"],
-            capture_output=True, text=True, timeout=3,
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
         )
         return proc.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def check_snippet_result(
+    source: str,
+    extra_paths: list[str] | None = None,
+    python_version: str = "3.11",
+    timeout_s: float = 8.0,
+) -> TypeCheckResult:
+    """Run Pyright and return a structured, fail-auditable result."""
+    executable = shutil.which("pyright")
+    if executable is None:
+        return TypeCheckResult(
+            status="unavailable",
+            detail="pyright executable was not found",
+        )
+
+    try:
+        version_probe = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=min(3.0, max(timeout_s, 0.01)),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return TypeCheckResult(
+            status="timed_out",
+            detail="pyright version probe timed out",
+        )
+    except OSError as exc:
+        return TypeCheckResult(
+            status="execution_failed",
+            detail=f"pyright version probe failed: {_bounded_detail(exc)}",
+        )
+
+    if version_probe.returncode != 0:
+        detail = _bounded_detail(version_probe.stderr or version_probe.stdout)
+        return TypeCheckResult(
+            status="execution_failed",
+            detail=f"pyright version probe exited {version_probe.returncode}: {detail}",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="entroly_typecheck_") as td:
+        snippet_path = Path(td) / "_snippet.py"
+        try:
+            snippet_path.write_text(source, encoding="utf-8")
+        except OSError as exc:
+            return TypeCheckResult(
+                status="execution_failed",
+                detail=f"could not stage snippet: {_bounded_detail(exc)}",
+            )
+
+        cmd = [
+            executable,
+            "--outputjson",
+            "--pythonversion",
+            python_version,
+            str(snippet_path),
+        ]
+        if extra_paths:
+            cmd.extend(["--extrapaths", os.pathsep.join(extra_paths)])
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            logger.debug("pyright timed out after %ss", timeout_s)
+            return TypeCheckResult(
+                status="timed_out",
+                detail=f"pyright timed out after {timeout_s}s",
+            )
+        except OSError as exc:
+            logger.debug("pyright execution failed: %s", exc)
+            return TypeCheckResult(
+                status="execution_failed",
+                detail=f"pyright execution failed: {_bounded_detail(exc)}",
+            )
+
+        if not proc.stdout:
+            detail = _bounded_detail(proc.stderr)
+            return TypeCheckResult(
+                status="malformed_output",
+                detail=f"pyright produced no JSON output: {detail}",
+            )
+
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            logger.debug("pyright stdout parse failed: %s", exc)
+            return TypeCheckResult(
+                status="malformed_output",
+                detail=f"pyright returned invalid JSON: {_bounded_detail(exc)}",
+            )
+
+        if not isinstance(data, dict):
+            return TypeCheckResult(
+                status="malformed_output",
+                detail="pyright JSON root was not an object",
+            )
+        diagnostics = data.get("generalDiagnostics")
+        if not isinstance(diagnostics, list) or not all(
+            isinstance(item, dict) for item in diagnostics
+        ):
+            return TypeCheckResult(
+                status="malformed_output",
+                detail="pyright generalDiagnostics was not a list of objects",
+            )
+
+        errors: list[TypeError_] = []
+        try:
+            for diagnostic in diagnostics:
+                d_file = str(diagnostic.get("file", ""))
+                if Path(d_file).name != "_snippet.py":
+                    continue
+                severity = str(diagnostic.get("severity", "information"))
+                if severity not in ("error", "warning"):
+                    continue
+                start = diagnostic.get("range", {}).get("start", {})
+                if not isinstance(start, dict):
+                    raise TypeError("diagnostic range.start was not an object")
+                message = str(diagnostic.get("message", ""))
+                errors.append(
+                    TypeError_(
+                        line=int(start.get("line", 0)) + 1,
+                        column=int(start.get("character", 0)) + 1,
+                        severity=severity,
+                        message=message,
+                        rule=str(diagnostic.get("rule", "")),
+                        likely_symbol=_extract_symbol_from_message(message),
+                    )
+                )
+        except (TypeError, ValueError) as exc:
+            return TypeCheckResult(
+                status="malformed_output",
+                detail=f"pyright diagnostic schema was invalid: {_bounded_detail(exc)}",
+            )
+
+        if errors:
+            return TypeCheckResult(status="issues_found", diagnostics=errors)
+
+        if proc.returncode != 0:
+            detail = _bounded_detail(proc.stderr or proc.stdout)
+            return TypeCheckResult(
+                status="execution_failed",
+                detail=f"pyright exited {proc.returncode} without snippet diagnostics: {detail}",
+            )
+
+        return TypeCheckResult(status="passed")
 
 
 def check_snippet(
@@ -75,82 +269,27 @@ def check_snippet(
     python_version: str = "3.11",
     timeout_s: float = 8.0,
 ) -> list[TypeError_]:
-    """Run pyright on a code snippet and return parsed errors.
+    """Compatibility wrapper returning diagnostics only.
 
-    Fails open: any error returns [] rather than raising.
+    New trust-sensitive callers must use :func:`check_snippet_result` so a
+    degraded verifier cannot be mistaken for a clean pass.
     """
-    if not pyright_available():
-        return []
-
-    with tempfile.TemporaryDirectory(prefix="entroly_typecheck_") as td:
-        td_path = Path(td)
-        snippet_path = td_path / "_snippet.py"
-        snippet_path.write_text(source, encoding="utf-8")
-
-        cmd = [
-            "pyright",
-            "--outputjson",
-            "--pythonversion", python_version,
-            str(snippet_path),
-        ]
-        if extra_paths:
-            cmd.extend(["--extrapaths", os.pathsep.join(extra_paths)])
-
-        try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=timeout_s, check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as e:
-            logger.debug("pyright failed (%s) — failing open", e)
-            return []
-
-        # Pyright returns non-zero when there are errors — that's expected.
-        # We care about stdout content.
-        try:
-            data = json.loads(proc.stdout) if proc.stdout else {}
-        except json.JSONDecodeError as e:
-            logger.debug("pyright stdout parse failed (%s)", e)
-            return []
-
-        diagnostics = data.get("generalDiagnostics", [])
-        errors: list[TypeError_] = []
-        for d in diagnostics:
-            # Only keep our snippet's diagnostics; ignore deps
-            d_file = d.get("file", "")
-            if "_snippet.py" not in d_file:
-                continue
-            sev = d.get("severity", "information")
-            if sev not in ("error", "warning"):
-                continue
-            rng = d.get("range", {}).get("start", {})
-            msg = d.get("message", "")
-            errors.append(TypeError_(
-                line=int(rng.get("line", 0)) + 1,
-                column=int(rng.get("character", 0)) + 1,
-                severity=sev,
-                message=msg,
-                rule=d.get("rule", ""),
-                likely_symbol=_extract_symbol_from_message(msg),
-            ))
-        return errors
+    return check_snippet_result(
+        source,
+        extra_paths=extra_paths,
+        python_version=python_version,
+        timeout_s=timeout_s,
+    ).diagnostics
 
 
-# Pyright error messages have surprisingly stable shapes; this is a
-# best-effort extraction of the offending symbol name from common
-# templates. Used only for explainability.
 _SYMBOL_RE = None
 
 
 def _extract_symbol_from_message(msg: str) -> str | None:
     import re
+
     global _SYMBOL_RE
     if _SYMBOL_RE is None:
-        # Common pyright messages:
-        #   "No overloads for "get" match the provided arguments"
-        #   "Argument missing for parameter "..."
-        #   "Cannot access member "fooBar" for type "Module""
-        #   "X is not a known member of "..."
         _SYMBOL_RE = re.compile(r'"([a-zA-Z_][a-zA-Z0-9_]*)"')
-    m = _SYMBOL_RE.search(msg)
-    return m.group(1) if m else None
+    match = _SYMBOL_RE.search(msg)
+    return match.group(1) if match else None
