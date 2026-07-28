@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.juyterman1000%2Fentroly.svg)](https://mcptoplist.com/server/io.github.juyterman1000%2Fentroly)
+
 <p align="center">
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
