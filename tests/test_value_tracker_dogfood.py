@@ -153,6 +153,32 @@ def test_hostile_numeric_inputs_cannot_decrease_or_poison_public_metrics(
     json.dumps(confidence, allow_nan=False)
 
 
+def test_activity_feed_rejects_negative_savings_and_nonfinite_metadata(
+    tmp_path: Path,
+) -> None:
+    tracker = ValueTracker(tmp_path)
+    tracker.record_event(
+        "routing",
+        "hostile telemetry",
+        source="test",
+        tokens_saved=-50,
+        cost_saved_usd=float("nan"),
+        confidence=float("inf"),
+        finite_negative_delta=-12.5,
+    )
+
+    restored = ValueTracker(tmp_path)
+    activity = restored.get_activity(1)
+    assert len(activity) == 1
+    row = activity[0]
+
+    assert int(row.get("tokens_saved", 0)) >= 0
+    assert float(row.get("cost_saved_usd", 0.0)) >= 0.0
+    assert math.isfinite(float(row.get("confidence", 0.0)))
+    assert row["finite_negative_delta"] == -12.5
+    json.dumps(row, allow_nan=False)
+
+
 def test_corrupt_tracker_state_fails_safe_without_claiming_old_value(
     tmp_path: Path,
 ) -> None:
