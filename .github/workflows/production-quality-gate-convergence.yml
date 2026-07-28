@@ -92,17 +92,22 @@ jobs:
           if stale:
               raise SystemExit(f'production quality gate still contains stale contracts: {stale}')
           PY
-          python -m pip install --disable-pip-version-check pytest
-          python -m pytest \
+
+          python -m venv .probe-venv
+          .probe-venv/bin/python -m pip install --upgrade pip
+          .probe-venv/bin/pip install --timeout 120 --retries 5 -e . pytest pytest-timeout
+          export PATH="$PWD/.probe-venv/bin:$PATH"
+          .probe-venv/bin/python -m pytest \
             tests/test_release_surface.py \
             tests/test_release_surface_consistency.py \
             tests/test_deep_dogfood_runtime.py::test_console_version_matches_imported_package \
-            -q
+            -q --tb=short --timeout=60
 
       - name: Commit verified production-gate repair and remove this workflow
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf .probe-venv
           rm -f .github/workflows/production-quality-gate-convergence.yml
           git add -A
           git diff --cached --check
