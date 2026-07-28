@@ -47,10 +47,28 @@ jobs:
         env:
           ENTROLY_DISABLE_UPDATE_CHECK: "1"
         run: |
+          set +e
+          log="$RUNNER_TEMP/dogfood-py${{ matrix.python-version }}.log"
           pytest -q -vv --tb=short --timeout=90 \
             tests/test_deep_dogfood_runtime.py \
             tests/test_mcp_protocol.py \
-            tests/test_memory_launcher.py
+            tests/test_memory_launcher.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          echo "$status" > "$RUNNER_TEMP/dogfood-py${{ matrix.python-version }}.status"
+          exit 0
+
+      - name: Upload adversarial test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dogfood-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/dogfood-py${{ matrix.python-version }}.log
+            ${{ runner.temp }}/dogfood-py${{ matrix.python-version }}.status
+          if-no-files-found: error
+
+      - name: Enforce adversarial test gate
+        run: test "$(cat "$RUNNER_TEMP/dogfood-py${{ matrix.python-version }}.status")" -eq 0
 
   published-package:
     name: Public PyPI artifact matches repository
@@ -170,7 +188,33 @@ jobs:
           ruff check entroly tests/test_deep_dogfood_runtime.py tests/test_mcp_protocol.py tests/test_memory_launcher.py
 
       - name: High-severity static security scan
-        run: bandit -r entroly -lll -ii
+        run: |
+          set +e
+          bandit -r entroly -lll -ii 2>&1 | tee "$RUNNER_TEMP/bandit.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/bandit.status"
+          exit 0
 
       - name: Dependency vulnerability audit
-        run: pip-audit --strict
+        if: always()
+        run: |
+          set +e
+          pip-audit --strict 2>&1 | tee "$RUNNER_TEMP/pip-audit.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/pip-audit.status"
+          exit 0
+
+      - name: Upload security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dogfood-security
+          path: |
+            ${{ runner.temp }}/bandit.log
+            ${{ runner.temp }}/bandit.status
+            ${{ runner.temp }}/pip-audit.log
+            ${{ runner.temp }}/pip-audit.status
+          if-no-files-found: error
+
+      - name: Enforce security gates
+        run: |
+          test "$(cat "$RUNNER_TEMP/bandit.status")" -eq 0
+          test "$(cat "$RUNNER_TEMP/pip-audit.status")" -eq 0
