@@ -34,9 +34,11 @@ _SENSITIVE_METADATA_TERMS = (
     "api_key",
     "apikey",
     "authorization",
+    "conversation_id",
     "credential",
     "password",
     "secret",
+    "session",
     "token",
 )
 
@@ -56,7 +58,7 @@ def _stable_json(value: Any) -> str:
 
 
 def _safe_receipt_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
-    """Return bounded scalar metadata without credential-shaped fields."""
+    """Return bounded scalar metadata without credential or session values."""
     safe: dict[str, object] = {}
     for raw_key, value in metadata.items():
         key = str(raw_key)
@@ -71,6 +73,14 @@ def _safe_receipt_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
 def _authorization_scope_hash(metadata: Mapping[str, object]) -> str:
     value = metadata.get("authorization_scope")
     return _sha256(str(value)) if value not in (None, "") else ""
+
+
+def _session_scope_hash(metadata: Mapping[str, object]) -> str:
+    for key in ("session_id", "conversation_id", "context_commit_id"):
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return _sha256(f"{key}\0{value}")
+    return ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,10 +99,11 @@ class ContentEnvelope:
 
     @property
     def has_scoped_execution_identity(self) -> bool:
-        """Whether exact reuse is safely scoped to an execution boundary."""
-        scope_present = bool(self.workspace or _authorization_scope_hash(self.metadata))
-        operation_present = bool(self.command or self.tool_name)
-        return scope_present and operation_present
+        """Whether reference-only reuse is safe for this model session."""
+        tenant_scope = bool(self.workspace or _authorization_scope_hash(self.metadata))
+        session_scope = bool(_session_scope_hash(self.metadata))
+        operation_scope = bool(self.command or self.tool_name)
+        return tenant_scope and session_scope and operation_scope
 
     @property
     def scope_fingerprint(self) -> str:
@@ -104,6 +115,7 @@ class ContentEnvelope:
             "source_sha256": _sha256(self.source) if self.source else "",
             "tool_name": self.tool_name,
             "authorization_scope_sha256": _authorization_scope_hash(self.metadata),
+            "session_scope_sha256": _session_scope_hash(self.metadata),
             "environment_fingerprint": str(
                 self.metadata.get("environment_fingerprint", "")
             ),
@@ -137,7 +149,7 @@ class TransformPolicy:
     deadline_ms: float = 250.0
     min_savings: float = 0.08
     redact_sensitive: bool = False
-    allow_exact_reference: bool = True
+    allow_exact_reference: bool = False
     prefer_typed_formatter: bool = True
     preserve_exact_json: bool = False
     fail_open: bool = True
@@ -293,7 +305,7 @@ class ContextTransformPipeline:
                 TransformStage(
                     name="deadline",
                     elapsed_ms=self._elapsed_ms(started),
-                    outcome="expired_after_redaction",
+                    outcome="expired_after_redaction_fail_open",
                 )
             )
             return self._finish(
@@ -304,7 +316,7 @@ class ContextTransformPipeline:
                 raw=raw,
                 safe=safe,
                 output=safe,
-                algorithm="deadline_fallback",
+                algorithm="deadline_fail_open",
                 input_hash=input_hash,
                 safe_hash=safe_hash,
                 redacted=redacted,
@@ -318,7 +330,7 @@ class ContextTransformPipeline:
             output = (
                 f"[entroly-ref:{exact.recovery_receipt_id}:{exact.recovery_span_id}]\n"
                 f"Exact repeat of receipt {exact.receipt_id}; "
-                f"{exact.original_tokens} original tokens remain recoverable."
+                f"{exact.original_tokens} policy-safe source tokens remain recoverable."
             )
             stages.append(
                 TransformStage(
@@ -420,7 +432,8 @@ class ContextTransformPipeline:
         started: float,
         stages: list[TransformStage],
     ) -> tuple[str, str]:
-        if estimate_tokens(content) <= policy.token_budget:
+        input_tokens = estimate_tokens(content)
+        if input_tokens <= policy.token_budget:
             stages.append(
                 TransformStage(
                     name="budget_gate",
@@ -447,20 +460,28 @@ class ContextTransformPipeline:
                 from .proxy_transform import compress_tool_output
 
                 typed, codec, savings = compress_tool_output(candidate)
-                changed = typed != candidate and savings >= policy.min_savings
+                typed_tokens = estimate_tokens(typed)
+                changed = (
+                    typed != candidate
+                    and savings >= policy.min_savings
+                    and typed_tokens < estimate_tokens(candidate)
+                )
                 stages.append(
                     TransformStage(
                         name="typed_formatter",
                         elapsed_ms=self._elapsed_ms(started),
-                        outcome=codec if changed else "no_gain",
+                        outcome=codec if changed else "no_token_gain",
                         changed=changed,
-                        details={"savings_ratio": round(float(savings), 6)},
+                        details={
+                            "reported_savings_ratio": round(float(savings), 6),
+                            "candidate_tokens": typed_tokens,
+                        },
                     )
                 )
                 if changed:
                     candidate = typed
                     candidate_algorithm = f"typed:{codec}"
-                    if estimate_tokens(typed) <= policy.token_budget:
+                    if typed_tokens <= policy.token_budget:
                         return typed, candidate_algorithm
             except Exception as error:
                 stages.append(
@@ -477,10 +498,16 @@ class ContextTransformPipeline:
                 TransformStage(
                     name="deadline",
                     elapsed_ms=self._elapsed_ms(started),
-                    outcome="expired_after_typed_formatter",
+                    outcome=(
+                        "expired_after_typed_formatter_fail_open"
+                        if policy.fail_open
+                        else "expired_after_typed_formatter_bounded"
+                    ),
                 )
             )
-            return self._bounded_fallback(candidate, policy.token_budget), "deadline_fallback"
+            if policy.fail_open:
+                return content, "deadline_fail_open"
+            return self._bounded_fallback(candidate, policy.token_budget), "deadline_bounded"
 
         try:
             elc = compress_evidence_locked(
@@ -490,20 +517,33 @@ class ContextTransformPipeline:
                 content_type=envelope.content_type,
                 min_savings=policy.min_savings,
             )
+            rendered = elc.with_receipt_header() if elc.changed else candidate
+            rendered_tokens = estimate_tokens(rendered)
+            changed = elc.changed and rendered_tokens < estimate_tokens(candidate)
             stages.append(
                 TransformStage(
                     name="evidence_locked_compression",
                     elapsed_ms=self._elapsed_ms(started),
-                    outcome="compressed" if elc.changed else "no_gain",
-                    changed=elc.changed,
+                    outcome=(
+                        "compressed"
+                        if changed
+                        else "receipt_overhead_erased_gain"
+                        if elc.changed
+                        else "no_gain"
+                    ),
+                    changed=changed,
                     details={
                         "content_type": elc.receipt.content_type,
-                        "savings_ratio": round(elc.receipt.savings_ratio, 6),
+                        "reported_savings_ratio": round(
+                            elc.receipt.savings_ratio,
+                            6,
+                        ),
+                        "rendered_tokens": rendered_tokens,
                     },
                 )
             )
-            if elc.changed:
-                return elc.with_receipt_header(), "elc"
+            if changed:
+                return rendered, "elc"
         except Exception as error:
             stages.append(
                 TransformStage(
@@ -601,7 +641,7 @@ class ContextTransformPipeline:
                         "start_line": 1,
                         "end_line": line_count,
                         "line_count": line_count,
-                        "reason": "context_pipeline_full_recovery",
+                        "reason": "context_pipeline_policy_safe_full_recovery",
                     }
                 ],
             }
@@ -617,6 +657,7 @@ class ContextTransformPipeline:
                     "authorization_scope_sha256": _authorization_scope_hash(
                         envelope.metadata
                     ),
+                    "session_scope_sha256": _session_scope_hash(envelope.metadata),
                     "scope_sha256": envelope.scope_fingerprint,
                     "pipeline_version": _PIPELINE_VERSION,
                 },
@@ -685,8 +726,11 @@ class ContextTransformPipeline:
         receipt_id = _sha256(_stable_json(receipt_payload))[:24]
         metadata = _safe_receipt_metadata(envelope.metadata)
         authorization_scope_hash = _authorization_scope_hash(envelope.metadata)
+        session_scope_hash = _session_scope_hash(envelope.metadata)
         if authorization_scope_hash:
             metadata["authorization_scope_sha256"] = authorization_scope_hash
+        if session_scope_hash:
+            metadata["session_scope_sha256"] = session_scope_hash
         receipt = ContextReceiptV1(
             receipt_id=receipt_id,
             version=_PIPELINE_VERSION,
@@ -704,7 +748,7 @@ class ContextTransformPipeline:
             savings_ratio=0.0 if original_tokens == 0 else saved / original_tokens,
             deadline_ms=policy.deadline_ms,
             elapsed_ms=elapsed,
-            deadline_exceeded=elapsed > policy.deadline_ms,
+            deadline_exceeded=elapsed >= policy.deadline_ms,
             redacted=redacted,
             redaction_counts=dict(redaction_counts),
             recovery_receipt_id=recovery_receipt_id,
