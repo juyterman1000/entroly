@@ -4,10 +4,10 @@ This module converges Entroly's existing typed tool-output compression,
 Evidence-Locked Compression (ELC), outbound redaction, exact-result reuse,
 recovery storage, and receipts behind one deterministic contract.
 
-The pipeline deliberately coordinates existing algorithms instead of adding a
-parallel compressor. Deadlines are cooperative: the pipeline checks them at
-stage boundaries and degrades deterministically, but it does not claim to
-preempt arbitrary Python code that is already executing.
+The pipeline coordinates existing algorithms instead of adding a parallel
+compressor. Deadlines are cooperative: they are checked at stage boundaries
+with deterministic degradation, without pretending Python can safely preempt
+arbitrary code that is already executing.
 """
 
 from __future__ import annotations
@@ -94,19 +94,36 @@ class ContentEnvelope:
         operation_present = bool(self.command or self.tool_name)
         return scope_present and operation_present
 
-    def exact_identity(self, safe_content_sha256: str) -> str:
+    @property
+    def scope_fingerprint(self) -> str:
+        """Non-secret identity used to isolate cache and recovery records."""
         payload = {
-            "workspace": self.workspace,
-            "cwd": self.cwd,
+            "workspace_sha256": _sha256(self.workspace) if self.workspace else "",
+            "cwd_sha256": _sha256(self.cwd) if self.cwd else "",
             "command_sha256": _sha256(self.command) if self.command else "",
+            "source_sha256": _sha256(self.source) if self.source else "",
             "tool_name": self.tool_name,
-            "source": self.source,
             "authorization_scope_sha256": _authorization_scope_hash(self.metadata),
             "environment_fingerprint": str(
                 self.metadata.get("environment_fingerprint", "")
             ),
             "source_version": str(self.metadata.get("source_version", "")),
+            "pipeline_version": _PIPELINE_VERSION,
+        }
+        return _sha256(_stable_json(payload))
+
+    def exact_identity(
+        self,
+        *,
+        input_sha256: str,
+        safe_content_sha256: str,
+        policy_sha256: str,
+    ) -> str:
+        payload = {
+            "scope_sha256": self.scope_fingerprint,
+            "input_sha256": input_sha256,
             "safe_content_sha256": safe_content_sha256,
+            "policy_sha256": policy_sha256,
             "pipeline_version": _PIPELINE_VERSION,
         }
         return _sha256(_stable_json(payload))
@@ -117,7 +134,7 @@ class TransformPolicy:
     """Request-level policy shared by SDK, proxy, MCP, and plugins."""
 
     token_budget: int = 1200
-    deadline_ms: float = 20.0
+    deadline_ms: float = 250.0
     min_savings: float = 0.08
     redact_sensitive: bool = False
     allow_exact_reference: bool = True
@@ -154,6 +171,7 @@ class ContextReceiptV1:
     receipt_id: str
     version: str
     policy_sha256: str
+    scope_sha256: str
     source: str
     content_type: str
     algorithm: str
@@ -257,11 +275,17 @@ class ContextTransformPipeline:
             started=started,
         )
         safe_hash = _sha256(safe)
-        exact_key = envelope.exact_identity(safe_hash)
+        exact_json_preservation = policy.preserve_exact_json and self._is_json(safe)
         exact_reuse_enabled = (
             policy.allow_exact_reference
             and envelope.has_scoped_execution_identity
             and self._retrieval_store is not None
+            and not exact_json_preservation
+        )
+        exact_key = envelope.exact_identity(
+            input_sha256=input_hash,
+            safe_content_sha256=safe_hash,
+            policy_sha256=policy.fingerprint,
         )
 
         if self._deadline_exceeded(started, policy):
@@ -417,6 +441,7 @@ class ContextTransformPipeline:
             return content, "identity"
 
         candidate = content
+        candidate_algorithm = "identity"
         if policy.prefer_typed_formatter and not self._deadline_exceeded(started, policy):
             try:
                 from .proxy_transform import compress_tool_output
@@ -432,10 +457,11 @@ class ContextTransformPipeline:
                         details={"savings_ratio": round(float(savings), 6)},
                     )
                 )
-                if changed and estimate_tokens(typed) <= policy.token_budget:
-                    return typed, f"typed:{codec}"
                 if changed:
                     candidate = typed
+                    candidate_algorithm = f"typed:{codec}"
+                    if estimate_tokens(typed) <= policy.token_budget:
+                        return typed, candidate_algorithm
             except Exception as error:
                 stages.append(
                     TransformStage(
@@ -489,7 +515,7 @@ class ContextTransformPipeline:
             )
 
         if policy.fail_open:
-            return candidate, "identity"
+            return candidate, candidate_algorithm
         return self._bounded_fallback(candidate, policy.token_budget), "bounded_fallback"
 
     def _redact(
@@ -566,6 +592,7 @@ class ContextTransformPipeline:
             line_count = max(1, original.count("\n") + 1)
             receipt = {
                 "version": _PIPELINE_VERSION,
+                "scope_sha256": envelope.scope_fingerprint,
                 "original_tokens": estimate_tokens(original),
                 "compressed_tokens": estimate_tokens(transformed),
                 "algorithm": algorithm,
@@ -590,6 +617,7 @@ class ContextTransformPipeline:
                     "authorization_scope_sha256": _authorization_scope_hash(
                         envelope.metadata
                     ),
+                    "scope_sha256": envelope.scope_fingerprint,
                     "pipeline_version": _PIPELINE_VERSION,
                 },
             )
@@ -644,8 +672,10 @@ class ContextTransformPipeline:
         recovery_span_ids = recovery[1] if recovery is not None else ()
         receipt_payload = {
             "version": _PIPELINE_VERSION,
+            "scope_sha256": envelope.scope_fingerprint,
             "source": envelope.source,
             "algorithm": algorithm,
+            "input_sha256": input_hash,
             "safe_input_sha256": safe_hash,
             "output_sha256": _sha256(output),
             "policy_sha256": policy.fingerprint,
@@ -661,6 +691,7 @@ class ContextTransformPipeline:
             receipt_id=receipt_id,
             version=_PIPELINE_VERSION,
             policy_sha256=policy.fingerprint,
+            scope_sha256=envelope.scope_fingerprint,
             source=envelope.source,
             content_type=envelope.content_type or "auto",
             algorithm=algorithm,
