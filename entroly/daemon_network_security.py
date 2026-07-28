@@ -1,16 +1,17 @@
-"""Fail-closed network and startup boundary for the unified Entroly daemon.
+"""Fail-closed network and lifecycle boundary for the unified Entroly daemon.
 
 The daemon shares one live engine between the provider proxy, dashboard, MCP SSE
 server, watcher, and learning workers. Exposing that engine on a wildcard, LAN,
 or container-network address would let another host reach context-bearing proxy
-routes and the full MCP tool surface. The MCP SSE transport currently has no
-independent authentication contract, so the unified daemon is deliberately
+routes and the full MCP tool surface. The MCP SSE transport therefore remains
 loopback-only.
 
-Startup is also treated as a transaction. The daemon does not claim ``running``
-or open a browser until every enabled listener accepts a connection from the
-expected loopback address. Bind conflicts, dead worker threads, startup timeouts,
-and worker exceptions trigger rollback and remain visible in worker state.
+Startup and shutdown are treated as auditable transactions. The daemon does not
+claim ``running`` until every required listener accepts a connection. It does not
+claim ``stopped`` while a proxy or MCP worker is still alive. FastMCP's SSE app is
+mounted into an Entroly-owned Uvicorn server so shutdown has an explicit handle;
+a graceful stop is followed by a bounded force-exit attempt, then a visible
+``stop_failed`` state if a worker remains stuck.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from . import daemon as _daemon
 logger = logging.getLogger("entroly.daemon.security")
 _HOSTNAME_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 _DEFAULT_START_TIMEOUT_S = 60.0
+_DEFAULT_STOP_TIMEOUT_S = 5.0
 
 
 def normalize_loopback_host(host: object) -> str:
@@ -120,15 +122,39 @@ def _validate_service_ports(
     return proxy, dashboard, mcp
 
 
-def _startup_timeout() -> float:
-    raw = os.environ.get("ENTROLY_DAEMON_START_TIMEOUT", str(_DEFAULT_START_TIMEOUT_S))
+def _bounded_timeout(
+    name: str,
+    default: float,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    raw = os.environ.get(name, str(default))
     try:
         value = float(raw)
     except ValueError:
-        return _DEFAULT_START_TIMEOUT_S
-    if not math.isfinite(value) or not 1.0 <= value <= 300.0:
-        return _DEFAULT_START_TIMEOUT_S
+        return default
+    if not math.isfinite(value) or not minimum <= value <= maximum:
+        return default
     return value
+
+
+def _startup_timeout() -> float:
+    return _bounded_timeout(
+        "ENTROLY_DAEMON_START_TIMEOUT",
+        _DEFAULT_START_TIMEOUT_S,
+        minimum=1.0,
+        maximum=300.0,
+    )
+
+
+def _stop_timeout() -> float:
+    return _bounded_timeout(
+        "ENTROLY_DAEMON_STOP_TIMEOUT",
+        _DEFAULT_STOP_TIMEOUT_S,
+        minimum=0.5,
+        maximum=60.0,
+    )
 
 
 def _socket_family(host: str) -> socket.AddressFamily:
@@ -161,11 +187,10 @@ def _listener_accepts(host: str, port: int) -> bool:
 _ORIGINAL_DAEMON = _daemon.EntrolyDaemon
 _ORIGINAL_INIT = _ORIGINAL_DAEMON.__init__
 _ORIGINAL_START_PROXY = _ORIGINAL_DAEMON._start_proxy_worker
-_ORIGINAL_START_MCP = _ORIGINAL_DAEMON._start_mcp_worker
 
 
 class EntrolyDaemon(_ORIGINAL_DAEMON):
-    """Unified supervisor with validated listeners and atomic startup claims."""
+    """Unified supervisor with validated listeners and truthful lifecycle state."""
 
     def __init__(
         self,
@@ -200,6 +225,8 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             repo_paths=repo_paths,
         )
         self._startup_lock = threading.Lock()
+        self._stop_lock = threading.Lock()
+        self._mcp_server: Any = None
 
     def _validated_worker_host(self) -> str:
         host = normalize_loopback_host(getattr(self, "_host", ""))
@@ -210,9 +237,53 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
         self._validated_worker_host()
         return _ORIGINAL_START_PROXY(self)
 
-    def _start_mcp_worker(self) -> Any:
-        self._validated_worker_host()
-        return _ORIGINAL_START_MCP(self)
+    def _start_mcp_worker(self) -> None:
+        """Run FastMCP's SSE app in an Entroly-owned Uvicorn server thread."""
+        host = self._validated_worker_host()
+        port = int(self.state.mcp.port)
+
+        def _run_mcp() -> None:
+            try:
+                from entroly.server import create_mcp_server
+                import uvicorn
+
+                mcp, _engine = create_mcp_server(engine=self._engine)
+                try:
+                    mcp.settings.host = host
+                    mcp.settings.port = port
+                except Exception:
+                    pass
+                if not hasattr(mcp, "sse_app"):
+                    raise RuntimeError(
+                        "installed MCP SDK does not expose FastMCP.sse_app()"
+                    )
+                app = mcp.sse_app()
+                config = uvicorn.Config(
+                    app,
+                    host=host,
+                    port=port,
+                    log_level="warning",
+                    timeout_graceful_shutdown=_stop_timeout(),
+                )
+                server = uvicorn.Server(config)
+                self._mcp_server = server
+                self.state.mcp.started_at = time.time()
+                self.state.mcp.running = True
+                server.run()
+            except BaseException as exc:
+                self.state.mcp.error = str(exc)[:1000]
+                logger.exception("MCP server failed: %s", exc)
+            finally:
+                self.state.mcp.running = False
+                self._mcp_server = None
+
+        worker = threading.Thread(
+            target=_run_mcp,
+            daemon=True,
+            name="entroly-mcp",
+        )
+        worker.start()
+        self._workers["mcp"] = worker
 
     def _preflight_listeners(self) -> None:
         _assert_bind_available(
@@ -234,7 +305,8 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             )
 
     def _wait_listener(self, service: str, *, host: str, port: int) -> None:
-        deadline = time.monotonic() + _startup_timeout()
+        timeout = _startup_timeout()
+        deadline = time.monotonic() + timeout
         state = getattr(self.state, service)
         while time.monotonic() < deadline:
             error = getattr(state, "error", None)
@@ -250,8 +322,8 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
                 return
             time.sleep(0.05)
         raise TimeoutError(
-            f"{service} did not accept connections on {host}:{port} within "
-            f"{_startup_timeout():.1f}s"
+            f"{service} did not accept connections on {host}:{port} "
+            f"within {timeout:.1f}s"
         )
 
     def _reset_worker_state_for_start(self) -> None:
@@ -260,23 +332,29 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             state.started_at = None
             state.error = None
 
+    def _request_server_exit(self, server: Any) -> None:
+        if server is None:
+            return
+        try:
+            server.should_exit = True
+        except Exception:
+            pass
+
     def _rollback_startup(self) -> None:
         self._shutdown.set()
         self._learning_wake.set()
-        if self._proxy_server is not None:
-            try:
-                self._proxy_server.should_exit = True
-            except Exception:
-                pass
+        self._request_server_exit(self._proxy_server)
+        self._request_server_exit(self._mcp_server)
         if self._dashboard_server is not None:
             try:
                 self._dashboard_server.shutdown()
             except Exception:
                 pass
+        timeout = min(2.0, _stop_timeout())
         for worker in list(self._workers.values()):
             if worker is threading.current_thread():
                 continue
-            worker.join(timeout=2.0)
+            worker.join(timeout=timeout)
         self.state.proxy.running = False
         self.state.dashboard.running = False
         self.state.mcp.running = False
@@ -351,6 +429,62 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             )
         finally:
             self._startup_lock.release()
+
+    def stop(self) -> None:
+        """Stop owned servers and report failure while any worker remains alive."""
+        if not self._stop_lock.acquire(blocking=False):
+            raise RuntimeError("daemon shutdown is already in progress")
+        try:
+            if self.state.status == "stopped":
+                return
+            self.state.status = "stopping"
+            self._shutdown.set()
+            self._learning_wake.set()
+            self._request_server_exit(self._proxy_server)
+            self._request_server_exit(self._mcp_server)
+            if self._dashboard_server is not None:
+                try:
+                    self._dashboard_server.shutdown()
+                except Exception as exc:
+                    self.state.dashboard.error = str(exc)[:1000]
+
+            timeout = _stop_timeout()
+            alive: list[str] = []
+            for name, worker in list(self._workers.items()):
+                if worker is threading.current_thread():
+                    continue
+                worker.join(timeout=timeout)
+                if worker.is_alive():
+                    server = (
+                        self._proxy_server if name == "proxy" else self._mcp_server
+                    )
+                    if server is not None:
+                        try:
+                            server.force_exit = True
+                            server.should_exit = True
+                        except Exception:
+                            pass
+                    worker.join(timeout=min(2.0, timeout))
+                if worker.is_alive():
+                    alive.append(name)
+                    worker_state = getattr(self.state, name, None)
+                    if worker_state is not None:
+                        worker_state.error = "worker did not stop within timeout"
+
+            self.state.proxy.running = False
+            self.state.dashboard.running = False
+            self.state.mcp.running = False
+            if alive:
+                self.state.status = "stop_failed"
+                raise RuntimeError(
+                    "daemon shutdown incomplete; workers still alive: "
+                    + ", ".join(sorted(alive))
+                )
+            self.state.status = "stopped"
+            self.state.started_at = None
+            logger.info("Entroly daemon stopped")
+        finally:
+            self._stop_lock.release()
 
 
 # Keep historical imports aligned. CLI and dashboard code import the class lazily
