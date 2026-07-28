@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -48,6 +49,7 @@ TYPE_CHECK_STATUSES = frozenset(
         "malformed_output",
     }
 )
+_PYTHON_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+$")
 
 
 @dataclass
@@ -56,9 +58,9 @@ class TypeError_:
 
     line: int
     column: int
-    severity: str  # "error", "warning", "information"
+    severity: str
     message: str
-    rule: str  # e.g. "reportGeneralTypeIssues"
+    rule: str
     likely_symbol: str | None = None
 
 
@@ -117,6 +119,27 @@ def check_snippet_result(
     timeout_s: float = 8.0,
 ) -> TypeCheckResult:
     """Run Pyright and return a structured, fail-auditable result."""
+    if not isinstance(source, str):
+        return TypeCheckResult(
+            status="execution_failed",
+            detail="type-check source must be a string",
+        )
+    if timeout_s <= 0:
+        return TypeCheckResult(
+            status="execution_failed",
+            detail="type-check timeout must be positive",
+        )
+    if not _PYTHON_VERSION_RE.fullmatch(python_version):
+        return TypeCheckResult(
+            status="execution_failed",
+            detail="python_version must use major.minor form",
+        )
+    if extra_paths is not None and not all(isinstance(path, str) for path in extra_paths):
+        return TypeCheckResult(
+            status="execution_failed",
+            detail="extra_paths must contain only strings",
+        )
+
     executable = shutil.which("pyright")
     if executable is None:
         return TypeCheckResult(
@@ -129,7 +152,7 @@ def check_snippet_result(
             [executable, "--version"],
             capture_output=True,
             text=True,
-            timeout=min(3.0, max(timeout_s, 0.01)),
+            timeout=min(3.0, timeout_s),
             check=False,
         )
     except subprocess.TimeoutExpired:
@@ -225,12 +248,17 @@ def check_snippet_result(
         try:
             for diagnostic in diagnostics:
                 d_file = str(diagnostic.get("file", ""))
-                if Path(d_file).name != "_snippet.py":
+                # Pyright can emit Windows paths while tests run on POSIX and
+                # vice versa; normalize separators before matching the staged file.
+                if Path(d_file.replace("\\", "/")).name != "_snippet.py":
                     continue
                 severity = str(diagnostic.get("severity", "information"))
                 if severity not in ("error", "warning"):
                     continue
-                start = diagnostic.get("range", {}).get("start", {})
+                range_data = diagnostic.get("range", {})
+                if not isinstance(range_data, dict):
+                    raise TypeError("diagnostic range was not an object")
+                start = range_data.get("start", {})
                 if not isinstance(start, dict):
                     raise TypeError("diagnostic range.start was not an object")
                 message = str(diagnostic.get("message", ""))
@@ -286,8 +314,6 @@ _SYMBOL_RE = None
 
 
 def _extract_symbol_from_message(msg: str) -> str | None:
-    import re
-
     global _SYMBOL_RE
     if _SYMBOL_RE is None:
         _SYMBOL_RE = re.compile(r'"([a-zA-Z_][a-zA-Z0-9_]*)"')
