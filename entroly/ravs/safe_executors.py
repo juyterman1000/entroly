@@ -20,6 +20,7 @@ from typing import Any
 from entroly.path_safety import resolve_file_within
 from entroly.process_safety import run_bounded_process, sanitized_environment
 
+from . import executors as _legacy_executors_module
 from .executors import (
     ASTExecutor,
     ExecutorRegistry as _LegacyExecutorRegistry,
@@ -198,3 +199,10 @@ class ExecutorRegistry(_LegacyExecutorRegistry):
 
     def get(self, executor_type: str) -> Any:
         return super().get(executor_type)
+
+
+# Historical callers import these names from ``entroly.ravs.executors``.
+# Install the hardened aliases while this module loads, before controller and
+# shadow modules bind their local imports.
+_legacy_executors_module.ExecutorRegistry = ExecutorRegistry
+_legacy_executors_module.TestRunnerExecutor = TestRunnerExecutor
