@@ -6,6 +6,10 @@ import json
 import os
 from pathlib import Path
 
+# The package root imports dashboard.py before this always-installed MCP module.
+# Activate the fail-closed localhost dashboard/control boundary only after the
+# embedded dashboard and controls HTML are fully defined.
+from . import dashboard_security as _dashboard_security  # noqa: F401
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .optimization_ledger import OptimizationLedger
 
