@@ -56,6 +56,7 @@ def _scoped_envelope(content: str, *, workspace: str = "repo-a") -> ContentEnvel
         command="pytest -q",
         workspace=workspace,
         cwd=f"/workspace/{workspace}",
+        metadata={"session_id": "session-1"},
     )
 
 
@@ -63,7 +64,7 @@ def test_exact_repeat_becomes_recoverable_reference() -> None:
     store = _Store()
     pipeline = ContextTransformPipeline(retrieval_store=store)
     envelope = _scoped_envelope(_large_test_output())
-    policy = _policy(token_budget=100)
+    policy = _policy(token_budget=100, allow_exact_reference=True)
 
     first = pipeline.transform(envelope, policy)
     second = pipeline.transform(envelope, policy)
@@ -77,11 +78,25 @@ def test_exact_repeat_becomes_recoverable_reference() -> None:
     assert len(second.content) < len(envelope.content)
 
 
+def test_exact_references_are_opt_in() -> None:
+    store = _Store()
+    pipeline = ContextTransformPipeline(retrieval_store=store)
+    envelope = _scoped_envelope(_large_test_output())
+    policy = _policy(token_budget=100)
+
+    first = pipeline.transform(envelope, policy)
+    second = pipeline.transform(envelope, policy)
+
+    assert first.receipt.algorithm != "exact_reference"
+    assert second.receipt.algorithm != "exact_reference"
+    assert second.receipt.exact_reference_of is None
+
+
 def test_unscoped_text_never_enters_exact_reuse_cache() -> None:
     store = _Store()
     pipeline = ContextTransformPipeline(retrieval_store=store)
     envelope = ContentEnvelope(content=_large_test_output(), source="generic")
-    policy = _policy(token_budget=100)
+    policy = _policy(token_budget=100, allow_exact_reference=True)
 
     first = pipeline.transform(envelope, policy)
     second = pipeline.transform(envelope, policy)
@@ -94,7 +109,7 @@ def test_unscoped_text_never_enters_exact_reuse_cache() -> None:
 def test_recovery_ids_are_isolated_by_workspace(tmp_path) -> None:
     store = CompressionRetrievalStore(tmp_path / "recovery.json")
     content = _large_test_output()
-    policy = _policy(token_budget=100)
+    policy = _policy(token_budget=100, allow_exact_reference=True)
 
     first = ContextTransformPipeline(retrieval_store=store).transform(
         _scoped_envelope(content, workspace="repo-a"),
@@ -122,7 +137,10 @@ def test_redaction_precedes_recovery_persistence() -> None:
         tool_name="config_dump",
         command="config dump --verbose",
         workspace="repo-a",
-        metadata={"authorization_scope": "tenant-a"},
+        metadata={
+            "authorization_scope": "tenant-a",
+            "session_id": "session-a",
+        },
     )
 
     result = pipeline.transform(
@@ -139,15 +157,22 @@ def test_redaction_precedes_recovery_persistence() -> None:
     assert call["metadata"]["command_sha256"]
     assert call["metadata"]["workspace_sha256"]
     assert call["metadata"]["authorization_scope_sha256"]
+    assert call["metadata"]["session_scope_sha256"]
     assert call["metadata"]["scope_sha256"] == result.receipt.scope_sha256
     assert "authorization_scope" not in result.receipt.metadata
+    assert "session_id" not in result.receipt.metadata
     assert result.receipt.metadata["authorization_scope_sha256"]
+    assert result.receipt.metadata["session_scope_sha256"]
 
 
 def test_different_raw_secrets_are_not_exact_repeats_after_redaction() -> None:
     store = _Store()
     pipeline = ContextTransformPipeline(retrieval_store=store)
-    policy = _policy(token_budget=100, redact_sensitive=True)
+    policy = _policy(
+        token_budget=100,
+        redact_sensitive=True,
+        allow_exact_reference=True,
+    )
 
     first = pipeline.transform(
         _scoped_envelope(
@@ -180,8 +205,13 @@ def test_exact_json_policy_preserves_parseable_payload_across_repeats() -> None:
         tool_name="json_query",
         command="json query",
         workspace="repo-a",
+        metadata={"session_id": "session-json"},
     )
-    policy = _policy(token_budget=100, preserve_exact_json=True)
+    policy = _policy(
+        token_budget=100,
+        preserve_exact_json=True,
+        allow_exact_reference=True,
+    )
 
     first = pipeline.transform(envelope, policy)
     second = pipeline.transform(envelope, policy)
@@ -209,19 +239,56 @@ def test_existing_entroly_marker_prevents_double_transformation() -> None:
     assert any(stage.name == "idempotency" for stage in result.receipt.stages)
 
 
-def test_cooperative_deadline_degrades_before_compression() -> None:
+def test_cooperative_deadline_fails_open_before_compression() -> None:
     clock = _AdvancingClock(step_seconds=0.01)
     pipeline = ContextTransformPipeline(clock=clock)
+    content = _large_test_output()
 
     result = pipeline.transform(
-        ContentEnvelope(content=_large_test_output(), source="tool:pytest"),
+        ContentEnvelope(content=content, source="tool:pytest"),
         TransformPolicy(token_budget=100, deadline_ms=1.0),
     )
 
-    assert result.receipt.algorithm == "deadline_fallback"
+    assert result.content == content
+    assert result.receipt.algorithm == "deadline_fail_open"
     assert result.receipt.deadline_exceeded is True
     assert any(stage.name == "deadline" for stage in result.receipt.stages)
     assert all(stage.name != "typed_formatter" for stage in result.receipt.stages)
+
+
+def test_receipt_header_cannot_erase_token_gain(monkeypatch) -> None:
+    class _Receipt:
+        content_type = "text"
+        savings_ratio = 0.9
+
+    class _Result:
+        changed = True
+        receipt = _Receipt()
+
+        @staticmethod
+        def with_receipt_header() -> str:
+            return "header-expansion " * 500
+
+    monkeypatch.setattr(
+        "entroly.context_pipeline.compress_evidence_locked",
+        lambda *args, **kwargs: _Result(),
+    )
+    content = "evidence " * 100
+    pipeline = ContextTransformPipeline()
+
+    result = pipeline.transform(
+        ContentEnvelope(content=content, source="tool:generic"),
+        _policy(token_budget=100, prefer_typed_formatter=False),
+    )
+
+    assert result.content == content
+    assert result.receipt.algorithm == "identity"
+    stage = next(
+        stage
+        for stage in result.receipt.stages
+        if stage.name == "evidence_locked_compression"
+    )
+    assert stage.outcome == "receipt_overhead_erased_gain"
 
 
 def test_receipt_is_versioned_and_hashes_transmitted_content() -> None:
