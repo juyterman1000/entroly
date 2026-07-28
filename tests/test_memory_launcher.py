@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from entroly import _docker_launcher
+from entroly import __version__, _docker_launcher
 
 
 class _FakeStdin:
@@ -97,6 +97,22 @@ def test_docker_launcher_keeps_serve_as_the_only_docker_command(monkeypatch) -> 
     assert exc.value.code == 1
 
 
+def test_docker_image_defaults_to_installed_version(monkeypatch) -> None:
+    monkeypatch.delenv("ENTROLY_DOCKER_IMAGE", raising=False)
+
+    assert _docker_launcher._docker_image() == (
+        f"ghcr.io/juyterman1000/entroly:{__version__}"
+    )
+    assert not _docker_launcher._docker_image().endswith(":latest")
+
+
+def test_docker_image_allows_explicit_operator_override(monkeypatch) -> None:
+    override = "registry.example.test/entroly@sha256:" + "a" * 64
+    monkeypatch.setenv("ENTROLY_DOCKER_IMAGE", override)
+
+    assert _docker_launcher._docker_image() == override
+
+
 def test_docker_pull_ttl_falls_back_when_env_is_invalid(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("ENTROLY_PULL_TTL", "not-an-int")
     monkeypatch.setattr(_docker_launcher, "_PULL_CACHE_FILE", tmp_path / ".last_pull_ts")
@@ -116,6 +132,7 @@ def test_docker_timeout_falls_back_when_env_is_invalid(monkeypatch) -> None:
         return Result()
 
     monkeypatch.setenv("ENTROLY_DOCKER_TIMEOUT", "not-an-int")
+    monkeypatch.delenv("ENTROLY_DOCKER_IMAGE", raising=False)
     monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
     monkeypatch.setattr(_docker_launcher.os.path, "exists", lambda _path: False)
     monkeypatch.setattr(_docker_launcher, "_docker_available", lambda: True)
@@ -133,5 +150,6 @@ def test_docker_timeout_falls_back_when_env_is_invalid(monkeypatch) -> None:
     cmd = calls[0]["cmd"]
     assert isinstance(cmd, list)
     assert cmd[:4] == ["docker", "run", "--rm", "-i"]
-    assert "ghcr.io/juyterman1000/entroly:latest" in cmd
+    assert f"ghcr.io/juyterman1000/entroly:{__version__}" in cmd
+    assert "ghcr.io/juyterman1000/entroly:latest" not in cmd
     assert cmd[-1] == "serve"

@@ -304,7 +304,10 @@ def _simhash_64(text: str) -> int:
     # Generate character 3-grams
     for i in range(max(len(text) - 2, 1)):
         shingle = text[i:i + 3]
-        h = int(hashlib.md5(shingle.encode("utf-8", errors="replace")).hexdigest()[:16], 16)
+        h = int(hashlib.md5(
+            shingle.encode("utf-8", errors="replace"),
+            usedforsecurity=False,
+        ).hexdigest()[:16], 16)
 
         for j in range(64):
             if h & (1 << j):

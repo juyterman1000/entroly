@@ -2389,17 +2389,13 @@ def cmd_wrap(args):
             raise FileNotFoundError()
 
         agent_cmd[0] = executable
-        try:
-            subprocess.run(agent_cmd, env=env)
-        except OSError:
-            # Windows: npm/global CLIs are .cmd/.ps1 shims that can raise
-            # [WinError 5] (PermissionError, an OSError) when exec'd via their
-            # resolved path. Retry through the shell so cmd.exe resolves the
-            # shim. Re-raise on non-Windows (handled below).
-            if os.name == "nt":
-                subprocess.run(subprocess.list2cmdline(agent_cmd), env=env, shell=True)
-            else:
-                raise
+        # Never retry through ``shell=True``.  ``agent_args`` are supplied by
+        # the caller, and cmd.exe metacharacters are not made safe by
+        # ``subprocess.list2cmdline``.  If a Windows .cmd/.ps1 shim cannot be
+        # executed directly, the outer OSError handler prints the exact manual
+        # launch instructions instead of trading convenience for command
+        # injection risk.
+        subprocess.run(agent_cmd, env=env, check=False)
     except FileNotFoundError:
         print(f"\n  {C.RED}{spec['name']} not found.{C.RESET}")
         print(f"  {C.GRAY}Install it first, then run: entroly wrap {agent}{C.RESET}\n")
@@ -2407,8 +2403,8 @@ def cmd_wrap(args):
     except KeyboardInterrupt:
         print(f"\n  {C.GRAY}{spec['name']} stopped.{C.RESET}")
     except OSError as e:
-        # Launch failed even via the shell (permissions, bad shim, etc.). The
-        # proxy is already running, so guide the user to finish manually
+        # Direct launch failed (permissions, unsupported Windows shim, etc.).
+        # The proxy is already running, so guide the user to finish manually
         # instead of crashing with a raw [WinError 5].
         print(f"\n  {C.RED}Could not launch {spec['name']}:{C.RESET} {e}")
         print(
