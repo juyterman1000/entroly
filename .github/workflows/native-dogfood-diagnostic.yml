@@ -1,0 +1,58 @@
+name: Native Dogfood Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.ref == 'dogfood/deep-runtime-20260727'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Build the same native environment as CI
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install maturin --timeout 120 --retries 5
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+          cd ..
+          .venv/bin/pip install --timeout 120 --retries 5 -e . \
+            'mcp>=1.6.0' 'httpx>=0.27' 'starlette>=0.37' \
+            'uvicorn>=0.30' psutil pytest pytest-timeout
+
+      - name: Capture the first full-suite failure
+        env:
+          ENTROLY_DISABLE_UPDATE_CHECK: '1'
+          PYTHONUTF8: '1'
+        run: |
+          set +e
+          log="$RUNNER_TEMP/native-first-failure.log"
+          .venv/bin/pytest tests/ -vv --tb=long -x --timeout=60 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          echo "$status" > "$RUNNER_TEMP/native-first-failure.status"
+          exit 0
+
+      - name: Upload exact native failure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-first-failure
+          path: |
+            ${{ runner.temp }}/native-first-failure.log
+            ${{ runner.temp }}/native-first-failure.status
+          if-no-files-found: error
+
+      - name: Enforce native diagnostic
+        run: test "$(cat "$RUNNER_TEMP/native-first-failure.status")" -eq 0
