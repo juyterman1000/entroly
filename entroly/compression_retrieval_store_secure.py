@@ -240,12 +240,12 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
         return total
 
 
-# Keep every historical import path and already-loaded product module aligned
-# with this final facade. This matters because package initialization imports the
-# proxy before the focused MCP surface that activates the secure store.
+# Keep every historical import path, package-root export, and already-loaded
+# product module aligned with this final facade.
 _safe_module.CompressionRetrievalStore = CompressionRetrievalStore
 _legacy_module.CompressionRetrievalStore = CompressionRetrievalStore
 for _module_name in (
+    "entroly",
     "entroly.compression_proxy",
     "entroly.compression_proxy_direct",
     "entroly.compression_dashboard",
