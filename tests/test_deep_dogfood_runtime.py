@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import shutil
 import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,15 @@ def _installed_entroly_executable() -> str:
 
 
 class MCPProcess:
-    """Small JSON-RPC harness with bounded reads and useful crash diagnostics."""
+    """Small JSON-RPC harness with bounded reads and useful crash diagnostics.
+
+    Stdout and stderr are drained continuously. This is important on Windows,
+    where a child can block forever once an unread pipe fills. Responses are
+    indexed by request id rather than removed and requeued, so a burst of
+    out-of-order replies cannot starve the response currently being awaited.
+    """
+
+    _MAX_DIAGNOSTIC_LINES = 200
 
     def __init__(self, cwd: Path, env: dict[str, str] | None = None) -> None:
         executable = _installed_entroly_executable()
@@ -78,10 +86,25 @@ class MCPProcess:
         assert self.proc.stdout is not None
         assert self.proc.stderr is not None
 
-        self._messages: queue.Queue[dict[str, Any]] = queue.Queue()
-        self._stdout_noise: list[str] = []
-        self._reader = threading.Thread(target=self._read_stdout, daemon=True)
-        self._reader.start()
+        self._condition = threading.Condition()
+        self._responses: dict[int, dict[str, Any]] = {}
+        self._notifications: deque[dict[str, Any]] = deque(
+            maxlen=self._MAX_DIAGNOSTIC_LINES
+        )
+        self._stdout_noise: deque[str] = deque(maxlen=self._MAX_DIAGNOSTIC_LINES)
+        self._stderr_tail: deque[str] = deque(maxlen=self._MAX_DIAGNOSTIC_LINES)
+        self._stdout_reader = threading.Thread(
+            target=self._read_stdout,
+            daemon=True,
+            name="entroly-dogfood-stdout",
+        )
+        self._stderr_reader = threading.Thread(
+            target=self._read_stderr,
+            daemon=True,
+            name="entroly-dogfood-stderr",
+        )
+        self._stdout_reader.start()
+        self._stderr_reader.start()
 
     def _read_stdout(self) -> None:
         assert self.proc.stdout is not None
@@ -92,12 +115,33 @@ class MCPProcess:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
-                self._stdout_noise.append(line)
+                with self._condition:
+                    self._stdout_noise.append(line)
+                    self._condition.notify_all()
                 continue
-            if isinstance(message, dict):
-                self._messages.put(message)
-            else:
-                self._stdout_noise.append(line)
+            if not isinstance(message, dict):
+                with self._condition:
+                    self._stdout_noise.append(line)
+                    self._condition.notify_all()
+                continue
+
+            request_id = message.get("id")
+            with self._condition:
+                if isinstance(request_id, int):
+                    self._responses[request_id] = message
+                else:
+                    self._notifications.append(message)
+                self._condition.notify_all()
+
+    def _read_stderr(self) -> None:
+        assert self.proc.stderr is not None
+        for raw in self.proc.stderr:
+            line = raw.rstrip("\r\n")
+            if not line:
+                continue
+            with self._condition:
+                self._stderr_tail.append(line)
+                self._condition.notify_all()
 
     def send(
         self,
@@ -121,22 +165,23 @@ class MCPProcess:
 
     def wait_for(self, request_id: int, timeout: float = 45.0) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
-        deferred: list[dict[str, Any]] = []
-        try:
-            while time.monotonic() < deadline:
-                if self.proc.poll() is not None:
-                    pytest.fail(self._diagnostic(f"server exited while waiting for id={request_id}"))
-                remaining = max(0.01, deadline - time.monotonic())
-                try:
-                    message = self._messages.get(timeout=min(0.25, remaining))
-                except queue.Empty:
-                    continue
-                if message.get("id") == request_id:
-                    return message
-                deferred.append(message)
-        finally:
-            for message in deferred:
-                self._messages.put(message)
+        while True:
+            with self._condition:
+                response = self._responses.pop(request_id, None)
+                if response is not None:
+                    return response
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._condition.wait(timeout=min(0.25, remaining))
+
+            if self.proc.poll() is not None:
+                pytest.fail(
+                    self._diagnostic(
+                        f"server exited while waiting for id={request_id}"
+                    )
+                )
+
         pytest.fail(self._diagnostic(f"timed out waiting for id={request_id}"))
 
     def initialize(self) -> dict[str, Any]:
@@ -155,20 +200,21 @@ class MCPProcess:
         return response
 
     def assert_protocol_clean(self) -> None:
-        assert not self._stdout_noise, (
-            "Non-JSON output polluted MCP stdout: " + repr(self._stdout_noise[:10])
-        )
+        with self._condition:
+            noise = list(self._stdout_noise)
+        assert not noise, "Non-JSON output polluted MCP stdout: " + repr(noise[:10])
 
     def _diagnostic(self, reason: str) -> str:
-        stderr = ""
-        if self.proc.poll() is not None and self.proc.stderr is not None:
-            try:
-                stderr = self.proc.stderr.read()
-            except OSError:
-                pass
+        with self._condition:
+            stdout_noise = list(self._stdout_noise)[-10:]
+            stderr = "\n".join(self._stderr_tail)[-4000:]
+            pending_ids = sorted(self._responses)[:30]
+            notifications = list(self._notifications)[-5:]
         return (
             f"{reason}; returncode={self.proc.poll()}; "
-            f"stdout_noise={self._stdout_noise[:10]!r}; stderr={stderr[-4000:]!r}"
+            f"pending_ids={pending_ids!r}; "
+            f"notifications={notifications!r}; "
+            f"stdout_noise={stdout_noise!r}; stderr={stderr!r}"
         )
 
     def close(self) -> None:
@@ -179,6 +225,14 @@ class MCPProcess:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
                 self.proc.wait(timeout=5)
+        for stream in (self.proc.stdin, self.proc.stdout, self.proc.stderr):
+            try:
+                if stream is not None:
+                    stream.close()
+            except OSError:
+                pass
+        self._stdout_reader.join(timeout=2)
+        self._stderr_reader.join(timeout=2)
 
     def __enter__(self) -> "MCPProcess":
         return self
