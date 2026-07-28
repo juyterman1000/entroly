@@ -2,7 +2,7 @@
 # Entroly Docker Image — Multi-platform (amd64 + arm64)
 #
 # Build:  docker build -f Dockerfile.entroly -t entroly .
-# Run:    docker run --rm -p 9377:9377 entroly
+# Run:    docker run --rm -p 127.0.0.1:9377:9377 entroly --proxy
 #
 # CI publishes to ghcr.io/juyterman1000/entroly:latest
 # ═══════════════════════════════════════════════════════════════════════════
@@ -36,10 +36,12 @@ LABEL io.modelcontextprotocol.server.name="io.github.juyterman1000/entroly"
 
 WORKDIR /app
 
-# Install the Rust wheel and runtime deps
+# Install the Rust wheel and runtime deps. MCP v2 is a breaking SDK generation;
+# keep the production image on the maintained v1 line until Entroly completes a
+# separately tested migration.
 COPY --from=builder /build/wheels/*.whl /tmp/wheels/
 RUN pip install --no-cache-dir /tmp/wheels/*.whl \
-    "mcp>=1.0.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" \
+    "mcp>=1.28.1,<2" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" \
     && rm -rf /tmp/wheels
 
 # Copy entroly Python package (all modules — glob avoids missing new files)
@@ -56,10 +58,12 @@ COPY LICENSE NOTICE /app/
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Proxy mode: expose port 9377
+# Proxy mode: expose port 9377. Operators should publish this port to host
+# loopback unless they explicitly configure Entroly's authenticated remote-proxy
+# contract and a trusted TLS/tunnel boundary.
 EXPOSE 9377
 
-# Health check: ping the proxy
+# Health check: ping the proxy when the container is started in proxy mode.
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:9377/health')" || exit 1
 
