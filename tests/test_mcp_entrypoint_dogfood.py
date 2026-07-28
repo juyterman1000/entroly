@@ -248,7 +248,7 @@ def test_optimize_context_is_bounded_and_not_alias_duplicated(
         installed_mcp,
         5,
         "optimize_context",
-        {"query": "needle root wiring probe", "token_budget": 8000},
+        {"query": "root_wiring_probe needle-root-wiring", "token_budget": 8000},
     )
     assert "result" in optimized, optimized
     text = optimized["result"]["content"][0]["text"]

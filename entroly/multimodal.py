@@ -174,20 +174,26 @@ def _is_base64(s: str) -> bool:
 
 
 def _infer_ui_regions(text: str) -> list[str]:
-    """Infer UI regions from text content heuristics."""
+    """Infer common UI regions from Unicode text without requiring English."""
     regions = []
-    lower = text.lower()
-    if any(w in lower for w in ["login", "sign in", "username", "password", "email"]):
+    normalized = text.casefold()
+    authentication_terms = (
+        "login", "log in", "sign in", "username", "password", "email", "auth",
+        "تسجيل الدخول", "الدخول", "התחברות", "כניסה", "लॉगिन", "साइन इन",
+        "iniciar sesión", "connexion", "anmelden", "登录", "登入", "ログイン",
+        "로그인",
+    )
+    if any(term in normalized for term in authentication_terms):
         regions.append("authentication-form")
-    if any(w in lower for w in ["nav", "menu", "header", "breadcrumb"]):
+    if any(w in normalized for w in ["nav", "menu", "header", "breadcrumb"]):
         regions.append("navigation")
-    if any(w in lower for w in ["button", "submit", "click", "action"]):
+    if any(w in normalized for w in ["button", "submit", "click", "action"]):
         regions.append("interactive-controls")
-    if any(w in lower for w in ["table", "list", "row", "column", "grid"]):
+    if any(w in normalized for w in ["table", "list", "row", "column", "grid"]):
         regions.append("data-table")
-    if any(w in lower for w in ["error", "warning", "alert", "modal", "dialog"]):
+    if any(w in normalized for w in ["error", "warning", "alert", "modal", "dialog"]):
         regions.append("alert-dialog")
-    if any(w in lower for w in ["chart", "graph", "visualization", "axis"]):
+    if any(w in normalized for w in ["chart", "graph", "visualization", "axis"]):
         regions.append("data-visualization")
     return regions or ["general-ui"]
 
@@ -335,16 +341,9 @@ def _parse_mermaid(text: str) -> tuple[list[str], list[tuple[str, str, str]], di
             diagram_kind = "er"
             continue
 
-        # Extract nodes with labels
-        nm = node_label_re.match(stripped)
-        if nm:
-            node_name = nm.group(1)
-            node_label = nm.group(2).strip()
-            if node_name not in nodes:
-                nodes.append(f"{node_name}: {node_label}")
-            continue
-
-        # Extract arrows (flowchart)
+        # Extract arrows before standalone node declarations. A line such as
+        # ``A[Client] --> B[API]`` otherwise matches the broad node-label regex
+        # from the first ``[`` to the final ``]`` and silently loses the edge.
         am = arrow_re.match(stripped)
         if am:
             src = am.group(1).strip().split("[")[0].split("(")[0].strip('"\' ')
@@ -355,6 +354,15 @@ def _parse_mermaid(text: str) -> tuple[list[str], list[tuple[str, str, str]], di
             if dst not in nodes:
                 nodes.append(dst)
             edges.append((src, dst, label.strip()))
+            continue
+
+        # Extract standalone nodes with labels.
+        nm = node_label_re.match(stripped)
+        if nm:
+            node_name = nm.group(1)
+            node_label = nm.group(2).strip()
+            if node_name not in nodes:
+                nodes.append(f"{node_name}: {node_label}")
             continue
 
         # Sequence diagram messages
@@ -659,9 +667,14 @@ def _extract_tech_vocabulary(text: str) -> list[str]:
     api_paths = re.findall(r'/api/[a-z0-9/_-]+', text.lower())
     vocab.extend(api_paths[:10])
 
-    # File extensions mentioned
-    file_refs = re.findall(r'\b[\w]+\.(py|rs|ts|js|go|java|sql|yaml|json|toml)\b', text.lower())
-    vocab.extend([f[0] + "." + f[1] for f in file_refs[:10]])
+    # Complete file references. A capturing group previously returned only
+    # the extension (``py``) and reconstructed it as ``p.y``.
+    file_refs = re.findall(
+        r'\b[\w.-]+\.(?:py|rs|ts|js|go|java|sql|yaml|yml|json|toml)\b',
+        text,
+        re.IGNORECASE,
+    )
+    vocab.extend(file_refs[:10])
 
     return list(dict.fromkeys(vocab))[:40]  # deduplicate, cap at 40
 
@@ -773,14 +786,34 @@ def _parse_unified_diff(diff_text: str) -> list[DiffHunk]:
     current_removed: list[str] = []
     current_ctx: list[str] = []
 
+    def flush() -> None:
+        nonlocal current_path, current_added, current_removed, current_ctx
+        if current_path and current_path not in {"/dev/null", "dev/null"}:
+            hunks.append(
+                DiffHunk(
+                    current_path,
+                    current_added[:],
+                    current_removed[:],
+                    current_ctx[:],
+                )
+            )
+        current_path = ""
+        current_added = []
+        current_removed = []
+        current_ctx = []
+
     for line in diff_text.splitlines():
-        if line.startswith("--- ") or line.startswith("diff --git"):
-            if current_path:
-                hunks.append(DiffHunk(current_path, current_added[:], current_removed[:], current_ctx[:]))
-                current_added, current_removed, current_ctx = [], [], []
+        if line.startswith("diff --git"):
+            flush()
+            continue
+        if line.startswith("--- "):
+            # ``+++`` is the authoritative destination path. Flushing here used
+            # to emit an empty duplicate of the previous file.
             continue
         if line.startswith("+++ "):
-            path = line[4:].strip().lstrip("b/")
+            path = line[4:].strip()
+            if path.startswith(("a/", "b/")):
+                path = path[2:]
             current_path = path
             continue
         if line.startswith("+") and not line.startswith("+++"):
@@ -790,14 +823,18 @@ def _parse_unified_diff(diff_text: str) -> list[DiffHunk]:
         elif line.startswith(" ") and current_path:
             current_ctx.append(line[1:].rstrip())
 
-    if current_path:
-        hunks.append(DiffHunk(current_path, current_added, current_removed, current_ctx))
-
+    flush()
     return hunks
 
 
 def _classify_diff_intent(diff_text: str, commit_msg: str) -> str:
     text = (diff_text + " " + commit_msg).lower()
+    # Security must outrank generic words such as "fix" and "patch".
+    if any(w in text for w in [
+        "security", "vuln", "cve", "xss", "csrf", "ssrf", "injection",
+        "path traversal", "privilege escalation", "secret leak",
+    ]):
+        return "security"
     if any(w in text for w in ["fix", "bug", "error", "broken", "crash", "fail", "patch"]):
         return "bug-fix"
     if any(w in text for w in ["test", "spec", "assert", "mock", "stub"]):
@@ -810,8 +847,6 @@ def _classify_diff_intent(diff_text: str, commit_msg: str) -> str:
         return "docs"
     if any(w in text for w in ["perf", "optim", "speed", "fast", "slow", "latency", "benchmark"]):
         return "performance"
-    if any(w in text for w in ["security", "vuln", "cve", "auth", "xss", "injection"]):
-        return "security"
     return "other"
 
 
