@@ -1,0 +1,27 @@
+name: Dogfood Source Snapshot
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Package exact PR checkout
+        run: |
+          tar -czf "$RUNNER_TEMP/entroly-dogfood-source.tgz" \
+            entroly tests pyproject.toml \
+            .github/workflows/deep-dogfood.yml
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: dogfood-source
+          path: ${{ runner.temp }}/entroly-dogfood-source.tgz
+          if-no-files-found: error
