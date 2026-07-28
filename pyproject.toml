@@ -66,6 +66,7 @@ full = [
 ]
 test = [
     "pytest>=8,<9",
+    "tiktoken>=0.9,<0.14",
 ]
 benchmark = [
     "tiktoken>=0.9,<0.14",
