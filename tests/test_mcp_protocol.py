@@ -104,11 +104,16 @@ def mcp_server():
     )
     time.sleep(2)  # Give it time to start
 
-    # Check it didn't crash
+    # A startup crash is a product failure, never an optional capability.
+    # Skipping here used to let a completely broken MCP server produce a green
+    # test suite, destroying the value of this integration test.
     if proc.poll() is not None:
         stderr = proc.stderr.read()
         shutil.rmtree(scratch, ignore_errors=True)
-        pytest.skip(f"MCP server failed to start: {stderr[:500]}")
+        pytest.fail(
+            "MCP server failed to start; this must fail closed, not skip. "
+            f"stderr={stderr[:2000]!r}"
+        )
 
     yield proc
 
