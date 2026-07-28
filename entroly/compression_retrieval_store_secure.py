@@ -19,6 +19,7 @@ from .compression_retrieval_store import StoredCompression, StoredSpan
 from .compression_retrieval_store_safe import (
     CompressionRetrievalStore as _SafeCompressionRetrievalStore,
     _MAX_QUERY_CHARS,
+    _estimate_tokens,
     derive_recovery_scope,
     sanitize_recovery_metadata,
 )
@@ -57,7 +58,7 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
                     continue
                 self._record_compression(item)
                 for span in item.spans:
-                    token_count = max(0, span.retrieved_tokens)
+                    token_count = _estimate_tokens(span.content)
                     for retrieval_id in span.retrieval_ids:
                         self._record_retrieval(
                             item.receipt_id,
