@@ -9,6 +9,7 @@ all storage, locking, snapshot, and accounting logic in
 from __future__ import annotations
 
 import copy
+import sys
 from typing import Any
 
 from . import compression_retrieval_store as _legacy_module
@@ -94,6 +95,18 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
             retrieval_id=retrieval_id,
         )
 
+    def list_receipts(self) -> list[dict[str, object]]:
+        receipts = super().list_receipts()
+        for receipt in receipts:
+            metadata = receipt.get("metadata")
+            if isinstance(metadata, dict):
+                receipt["metadata"] = {
+                    key: copy.deepcopy(value)
+                    for key, value in metadata.items()
+                    if not str(key).startswith("_")
+                }
+        return receipts
+
     def realized_savings_summary(self) -> dict[str, object]:
         with self._lock:
             self._refresh_if_changed()
@@ -137,9 +150,23 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
         return total
 
 
-# Keep every historical import path aligned with this final facade.
+# Keep every historical import path and already-loaded product module aligned
+# with this final facade. This matters because package initialization imports the
+# proxy before the focused MCP surface that activates the secure store.
 _safe_module.CompressionRetrievalStore = CompressionRetrievalStore
 _legacy_module.CompressionRetrievalStore = CompressionRetrievalStore
+for _module_name in (
+    "entroly.compression_proxy",
+    "entroly.compression_proxy_direct",
+    "entroly.compression_dashboard",
+    "entroly.compression_verification_loop",
+    "entroly.session_rescue",
+    "entroly.neural_evidence_selector",
+    "entroly.proxy",
+):
+    _module = sys.modules.get(_module_name)
+    if _module is not None and hasattr(_module, "CompressionRetrievalStore"):
+        setattr(_module, "CompressionRetrievalStore", CompressionRetrievalStore)
 
 __all__ = [
     "CompressionRetrievalStore",
