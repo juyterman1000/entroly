@@ -27,11 +27,24 @@ def _default_ledger_path() -> Path:
 
 
 def _resolved_nonexistent_path(path: Path) -> Path:
-    """Resolve a possibly-not-yet-created file through its real parent."""
-    if len(str(path)) > _MAX_PATH_CHARS or "\x00" in str(path):
+    """Resolve existing symlinks while allowing bounded descendants to be created."""
+    raw = str(path)
+    if not raw or len(raw) > _MAX_PATH_CHARS or "\x00" in raw:
         raise ValueError("store path is not a safe bounded path")
-    parent = path.parent.resolve(strict=True)
-    return parent / path.name
+    candidate = Path(os.path.abspath(os.fspath(path.expanduser())))
+    ancestor = candidate
+    suffix: list[str] = []
+    while not ancestor.exists():
+        if ancestor == ancestor.parent:
+            raise ValueError("store path has no accessible existing ancestor")
+        if ancestor.name in {"", ".", ".."}:
+            raise ValueError("store path contains an unsafe component")
+        suffix.append(ancestor.name)
+        ancestor = ancestor.parent
+    resolved = ancestor.resolve(strict=True)
+    for component in reversed(suffix):
+        resolved /= component
+    return resolved
 
 
 def _safe_store_path(path_override: str, configured_path: str | None) -> Path:
@@ -51,9 +64,9 @@ def _safe_store_path(path_override: str, configured_path: str | None) -> Path:
     override = Path(path_override).expanduser()
     try:
         resolved = _resolved_nonexistent_path(override)
-        allowed_root = Path(
-            os.environ.get("ENTROLY_STORE_OVERRIDE_ROOT", str(selected.parent))
-        ).expanduser().resolve(strict=True)
+        allowed_root = _resolved_nonexistent_path(
+            Path(os.environ.get("ENTROLY_STORE_OVERRIDE_ROOT", str(selected.parent)))
+        )
         resolved.relative_to(allowed_root)
     except (OSError, RuntimeError, ValueError) as exc:
         raise ValueError("store_path_override escapes the configured recovery root") from exc
