@@ -1,0 +1,176 @@
+name: Deep Dogfood Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-entrypoint:
+    name: Installed entrypoint / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install exactly as a source-package user
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-timeout
+
+      - name: Confirm console script resolves to this checkout
+        run: |
+          command -v entroly
+          entroly --version
+          python - <<'PY'
+          import entroly
+          import shutil
+          print("package:", entroly.__file__)
+          print("version:", entroly.__version__)
+          print("entrypoint:", shutil.which("entroly"))
+          PY
+
+      - name: Run adversarial user-journey tests
+        env:
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+        run: |
+          pytest -q -vv --tb=short --timeout=90 \
+            tests/test_deep_dogfood_runtime.py \
+            tests/test_mcp_protocol.py \
+            tests/test_memory_launcher.py
+
+  published-package:
+    name: Public PyPI artifact matches repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Resolve repository version
+        id: version
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Repository requires public artifact entroly==$version"
+
+      - name: Install exact public artifact in an isolated directory
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/public-entroly"
+          "$RUNNER_TEMP/public-entroly/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/public-entroly/bin/python" -m pip install \
+            --no-cache-dir --index-url https://pypi.org/simple "entroly==$VERSION"
+
+      - name: Black-box the public console entrypoint
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+          ENTROLY_NO_DOCKER: "1"
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          BIN="$RUNNER_TEMP/public-entroly/bin"
+          "$BIN/python" - <<'PY'
+          import entroly
+          import os
+          expected = os.environ["VERSION"]
+          assert entroly.__version__ == expected, (entroly.__version__, expected)
+          print("public package version:", entroly.__version__)
+          PY
+          "$BIN/entroly" --version
+          "$BIN/python" - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+
+          binary = os.path.join(os.environ["RUNNER_TEMP"], "public-entroly", "bin", "entroly")
+          proc = subprocess.Popen(
+              [binary],
+              stdin=subprocess.PIPE,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              encoding="utf-8",
+              env={**os.environ, "ENTROLY_NO_DOCKER": "1", "ENTROLY_DISABLE_UPDATE_CHECK": "1"},
+          )
+          assert proc.stdin and proc.stdout and proc.stderr
+          request = {
+              "jsonrpc": "2.0",
+              "id": 1,
+              "method": "initialize",
+              "params": {
+                  "protocolVersion": "2024-11-05",
+                  "capabilities": {},
+                  "clientInfo": {"name": "published-dogfood", "version": "1"},
+              },
+          }
+          proc.stdin.write(json.dumps(request) + "\n")
+          proc.stdin.flush()
+          deadline = time.monotonic() + 45
+          response = None
+          while time.monotonic() < deadline:
+              if proc.poll() is not None:
+                  raise AssertionError(f"public MCP server exited: {proc.stderr.read()[-4000:]}")
+              line = proc.stdout.readline()
+              if not line:
+                  continue
+              try:
+                  candidate = json.loads(line)
+              except json.JSONDecodeError:
+                  raise AssertionError(f"public MCP stdout pollution: {line!r}")
+              if candidate.get("id") == 1:
+                  response = candidate
+                  break
+          proc.terminate()
+          assert response and "result" in response, response
+          assert "serverInfo" in response["result"], response
+          PY
+
+  security-static:
+    name: High-severity security and dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install scan tools and project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . ruff bandit pip-audit
+
+      - name: Compile and lint
+        run: |
+          python -m compileall -q entroly tests/test_deep_dogfood_runtime.py
+          ruff check entroly tests/test_deep_dogfood_runtime.py tests/test_mcp_protocol.py tests/test_memory_launcher.py
+
+      - name: High-severity static security scan
+        run: bandit -r entroly -lll -ii
+
+      - name: Dependency vulnerability audit
+        run: pip-audit --strict
