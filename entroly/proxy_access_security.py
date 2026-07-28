@@ -14,11 +14,13 @@ Remote mode therefore requires three independent operator decisions:
 
 Every HTTP route, including health and provider-compatible catch-all routes,
 requires ``X-Entroly-Access-Token``. The header is stripped before downstream
-provider-header construction so it can never be forwarded upstream.
+provider-header construction so it can never be forwarded upstream. Only the
+SHA-256 capability digest is retained in Starlette's middleware configuration.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -31,6 +33,7 @@ from .proxy_config import ProxyConfig
 
 _ACCESS_HEADER = b"x-entroly-access-token"
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{32,512}$")
+_TOKEN_BYTES_RE = re.compile(br"^[A-Za-z0-9._~-]{32,512}$")
 _HOSTNAME_RE = re.compile(
     r"^(?=.{1,253}$)"
     r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)"
@@ -53,6 +56,13 @@ def _env_enabled(name: str) -> bool:
 
 def _validated_access_token(raw: object) -> str | None:
     return raw if isinstance(raw, str) and _TOKEN_RE.fullmatch(raw) else None
+
+
+def _access_digest(token: str) -> bytes:
+    validated = _validated_access_token(token)
+    if validated is None:
+        raise ValueError("remote proxy access token is invalid")
+    return hashlib.sha256(validated.encode("ascii")).digest()
 
 
 def _classify_bind_host(host: object) -> tuple[str, bool]:
@@ -134,12 +144,11 @@ async def _unauthorized(send: ASGISend) -> None:
 class RemoteProxyAccessMiddleware:
     """Require one exact access capability and remove it before app dispatch."""
 
-    def __init__(self, app: ASGIApp, token: str) -> None:
-        validated = _validated_access_token(token)
-        if validated is None:
-            raise ValueError("remote proxy access token is invalid")
+    def __init__(self, app: ASGIApp, token_digest: bytes) -> None:
+        if not isinstance(token_digest, bytes) or len(token_digest) != 32:
+            raise ValueError("remote proxy access-token digest is invalid")
         self.app = app
-        self._token = validated.encode("ascii")
+        self._token_digest = bytes(token_digest)
 
     async def __call__(
         self,
@@ -147,9 +156,22 @@ class RemoteProxyAccessMiddleware:
         receive: ASGIReceive,
         send: ASGISend,
     ) -> None:
-        if scope.get("type") != "http":
+        scope_type = scope.get("type")
+        if scope_type == "lifespan":
             await self.app(scope, receive, send)
             return
+        if scope_type == "websocket":
+            await send(
+                {
+                    "type": "websocket.close",
+                    "code": 4401,
+                    "reason": "Entroly remote access capability required",
+                }
+            )
+            return
+        if scope_type != "http":
+            return
+
         raw_headers = scope.get("headers")
         if not isinstance(raw_headers, list):
             await _unauthorized(send)
@@ -170,13 +192,14 @@ class RemoteProxyAccessMiddleware:
                 supplied.append(value)
             else:
                 filtered.append((name, value))
-        if (
-            len(supplied) != 1
-            or len(supplied[0]) > 512
-            or not hmac.compare_digest(supplied[0], self._token)
-        ):
+        if len(supplied) != 1 or not _TOKEN_BYTES_RE.fullmatch(supplied[0]):
             await _unauthorized(send)
             return
+        supplied_digest = hashlib.sha256(supplied[0]).digest()
+        if not hmac.compare_digest(supplied_digest, self._token_digest):
+            await _unauthorized(send)
+            return
+
         protected_scope = dict(scope)
         protected_scope["headers"] = filtered
         await self.app(protected_scope, receive, send)
@@ -204,7 +227,10 @@ def create_proxy_app(
     app.state.remote_bind_host = selected.host
     if remote:
         assert token is not None
-        app.add_middleware(RemoteProxyAccessMiddleware, token=token)
+        app.add_middleware(
+            RemoteProxyAccessMiddleware,
+            token_digest=_access_digest(token),
+        )
     return app
 
 
