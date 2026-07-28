@@ -1,0 +1,176 @@
+name: Docker Quality Gate Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/docker-quality-gate-convergence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-quality-gate-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce-current:
+    name: Reproduce current publish quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run current gate with preserved evidence
+        shell: bash
+        run: |
+          set +e
+          log="$RUNNER_TEMP/current-quality-gate.log"
+          {
+            echo "== Ruff =="
+            python -m pip install ruff==0.12.9
+            ruff check entroly/
+            lint_status=$?
+            echo "lint_status=$lint_status"
+
+            echo "== Native build and install =="
+            python -m venv .venv
+            .venv/bin/pip install maturin --timeout 120 --retries 5
+            cd entroly-core
+            ../.venv/bin/maturin develop --release
+            build_status=$?
+            cd ..
+            echo "build_status=$build_status"
+
+            install_status=99
+            test_status=99
+            if [[ $lint_status -eq 0 && $build_status -eq 0 ]]; then
+              .venv/bin/pip install --timeout 120 --retries 5 -e . \
+                "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" \
+                "uvicorn>=0.30" psutil pytest pytest-timeout
+              install_status=$?
+              echo "install_status=$install_status"
+              if [[ $install_status -eq 0 ]]; then
+                .venv/bin/pytest tests/ -q --tb=short -x --timeout=60
+                test_status=$?
+              fi
+            fi
+            echo "test_status=$test_status"
+            printf '%s\n' "$lint_status $build_status $install_status $test_status" \
+              > "$RUNNER_TEMP/current-quality-gate.status"
+          } 2>&1 | tee "$log"
+          exit 0
+
+      - name: Upload current-gate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-quality-gate-current
+          path: |
+            ${{ runner.temp }}/current-quality-gate.log
+            ${{ runner.temp }}/current-quality-gate.status
+          if-no-files-found: error
+
+  hardened-candidate:
+    name: Hardened release quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PIP_RETRIES: "10"
+      PIP_TIMEOUT: "120"
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+      CARGO_NET_RETRY: "10"
+      CARGO_HTTP_TIMEOUT: "120"
+      ENTROLY_DISABLE_UPDATE_CHECK: "1"
+      ENTROLY_NO_DOCKER: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache native build inputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            entroly-core/target
+          key: ${{ runner.os }}-release-quality-${{ hashFiles('entroly-core/Cargo.lock', 'entroly-core/Cargo.toml', 'entroly-qccr/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-release-quality-
+            ${{ runner.os }}-cargo-
+
+      - name: Run hardened gate with preserved evidence
+        shell: bash
+        run: |
+          set +e
+          log="$RUNNER_TEMP/hardened-quality-gate.log"
+          {
+            echo "== Ruff =="
+            python -m pip install --upgrade pip
+            python -m pip install ruff==0.12.9
+            ruff check entroly/
+            lint_status=$?
+            echo "lint_status=$lint_status"
+
+            echo "== Native build and install =="
+            python -m venv .venv
+            .venv/bin/python -m pip install --upgrade pip
+            .venv/bin/pip install maturin --timeout "$PIP_TIMEOUT" --retries "$PIP_RETRIES"
+            cd entroly-core
+            ../.venv/bin/maturin develop --release
+            build_status=$?
+            cd ..
+            echo "build_status=$build_status"
+
+            install_status=99
+            test_status=99
+            if [[ $lint_status -eq 0 && $build_status -eq 0 ]]; then
+              .venv/bin/pip install --timeout "$PIP_TIMEOUT" --retries "$PIP_RETRIES" -e . \
+                "mcp>=1.28.1,<2" "httpx>=0.28.1" "starlette>=1.3.1" \
+                "uvicorn>=0.51.0" psutil pytest pytest-timeout
+              install_status=$?
+              echo "install_status=$install_status"
+              if [[ $install_status -eq 0 ]]; then
+                .venv/bin/python -c "import entroly, entroly_core; print(entroly.__version__, entroly_core.__file__)"
+                .venv/bin/pytest tests/ -q --tb=short -x --timeout=60
+                test_status=$?
+              fi
+            fi
+            echo "test_status=$test_status"
+            printf '%s\n' "$lint_status $build_status $install_status $test_status" \
+              > "$RUNNER_TEMP/hardened-quality-gate.status"
+          } 2>&1 | tee "$log"
+          exit 0
+
+      - name: Upload hardened-gate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-quality-gate-hardened
+          path: |
+            ${{ runner.temp }}/hardened-quality-gate.log
+            ${{ runner.temp }}/hardened-quality-gate.status
+          if-no-files-found: error
+
+      - name: Enforce hardened gate
+        shell: bash
+        run: |
+          read -r lint_status build_status install_status test_status \
+            < "$RUNNER_TEMP/hardened-quality-gate.status"
+          test "$lint_status" -eq 0
+          test "$build_status" -eq 0
+          test "$install_status" -eq 0
+          test "$test_status" -eq 0
