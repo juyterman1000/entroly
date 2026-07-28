@@ -184,6 +184,7 @@ def test_remote_app_rejects_missing_wrong_duplicate_and_query_tokens(monkeypatch
     assert allowed.json()["status"] == "ok"
     assert app.state.remote_access_required is True
     assert app.state.remote_bind_host == "0.0.0.0"
+    assert token not in repr(app.user_middleware)
 
 
 def test_access_header_is_removed_before_downstream_dispatch() -> None:
@@ -208,7 +209,10 @@ def test_access_header_is_removed_before_downstream_dispatch() -> None:
     async def send(event):
         events.append(event)
 
-    middleware = security.RemoteProxyAccessMiddleware(downstream, token=token)
+    middleware = security.RemoteProxyAccessMiddleware(
+        downstream,
+        token_digest=security._access_digest(token),
+    )
     scope = {
         "type": "http",
         "method": "GET",
@@ -242,7 +246,10 @@ def test_invalid_asgi_header_shape_fails_closed_without_dispatch() -> None:
     async def send(event):
         events.append(event)
 
-    middleware = security.RemoteProxyAccessMiddleware(downstream, token=token)
+    middleware = security.RemoteProxyAccessMiddleware(
+        downstream,
+        token_digest=security._access_digest(token),
+    )
     scope = {
         "type": "http",
         "headers": [("x-entroly-access-token", token.encode("ascii"))],
@@ -252,3 +259,32 @@ def test_invalid_asgi_header_shape_fails_closed_without_dispatch() -> None:
 
     assert not called
     assert events[0]["status"] == 401
+
+
+def test_websocket_scope_fails_closed_and_lifespan_still_reaches_app() -> None:
+    token = "w" * 48
+    calls: list[str] = []
+    events: list[dict] = []
+
+    async def downstream(scope, _receive, send) -> None:
+        calls.append(scope["type"])
+        await send({"type": "lifespan.startup.complete"})
+
+    async def receive():
+        return {"type": "lifespan.startup"}
+
+    async def send(event):
+        events.append(event)
+
+    middleware = security.RemoteProxyAccessMiddleware(
+        downstream,
+        token_digest=security._access_digest(token),
+    )
+
+    asyncio.run(middleware({"type": "websocket"}, receive, send))
+    assert events[-1]["type"] == "websocket.close"
+    assert events[-1]["code"] == 4401
+    assert calls == []
+
+    asyncio.run(middleware({"type": "lifespan"}, receive, send))
+    assert calls == ["lifespan"]
