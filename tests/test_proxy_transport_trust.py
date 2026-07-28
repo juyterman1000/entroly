@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 import entroly.proxy as proxy_module
 from entroly.proxy_config import ProxyConfig
@@ -339,7 +340,7 @@ def test_circuit_breaker_allows_only_one_half_open_probe() -> None:
     thread.join()
 
     assert results == [False]
-    assert breaker.allow_request() is True  # idempotent for the probe owner
+    assert breaker.allow_request() is True
     breaker.record_success()
     assert breaker.state == "closed"
 
