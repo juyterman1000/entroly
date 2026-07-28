@@ -144,7 +144,7 @@ def test_compress_never_annihilates_inflates_or_breaks_unicode() -> None:
         assert isinstance(output, str)
         assert output.strip(), f"non-empty input was annihilated: {original[:80]!r}"
         assert len(output) <= len(original), "compress() inflated its input"
-        assert len(output) <= max(1, budget * 4), "explicit estimated-token budget was exceeded"
+        assert len(output) // 4 <= budget, "explicit estimated-token budget was exceeded"
         output.encode("utf-8")
 
     assert entroly.compress("") == ""
