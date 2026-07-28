@@ -49,6 +49,18 @@ def _validated_port(value: object) -> int:
     return port
 
 
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean flag")
+
+
 def _checkpoint_once(engine: Any):
     lock = threading.Lock()
     completed = False
@@ -74,12 +86,13 @@ def main() -> None:
         import uvicorn
     except ImportError:
         raise RuntimeError(
-            "HTTP proxy dependencies are unavailable. Install entroly[proxy]."
+            "HTTP proxy dependencies are unavailable. Reinstall or upgrade entroly."
         ) from None
 
     config = ProxyConfig.from_env()
     config.host = os.environ.get("ENTROLY_PROXY_HOST", config.host)
     config.port = _validated_port(os.environ.get("ENTROLY_PROXY_PORT", config.port))
+    dashboard_enabled = _env_flag("ENTROLY_PROXY_DASHBOARD", default=False)
 
     engine = EntrolyEngine()
     checkpoint = _checkpoint_once(engine)
@@ -92,13 +105,16 @@ def main() -> None:
     except (AttributeError, OSError, ValueError):
         pass
 
-    _start_background_services(engine)
+    # Build and validate the complete security boundary before indexing, watcher,
+    # or learning threads can create side effects. Remote-bind policy failures are
+    # therefore clean startup failures, not partially initialized services.
     app = create_proxy_app(
         engine,
         config,
-        start_dashboard=bool(config.enable_dashboard),
+        start_dashboard=dashboard_enabled,
         start_autotune=False,
     )
+    _start_background_services(engine)
     logger.info(
         "Starting hardened Entroly proxy on %s:%d",
         config.host,
