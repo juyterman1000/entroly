@@ -16,6 +16,11 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+# This module is itself optional and imported behind an ImportError guard by the
+# package root. Activating transport hardening here keeps base MCP/recovery
+# installs independent of HTTP proxy extras while protecting every live proxy
+# construction path when those extras are present.
+from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from .compression_proxy import compress_proxy_payload_from_env
 
 _INSTALLED = False
