@@ -6,6 +6,10 @@ import json
 import os
 from pathlib import Path
 
+# Package initialization imports the core proxy before this focused MCP module.
+# Activating the boundary layer here patches only transport contracts after the
+# proxy class is fully defined and before normal users construct a proxy instance.
+from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .optimization_ledger import OptimizationLedger
 
@@ -61,13 +65,30 @@ def _safe_store_path(path_override: str, configured_path: str | None) -> Path:
             "store_path_override is disabled; set ENTROLY_ALLOW_STORE_PATH_OVERRIDE=1 "
             "only for a trusted operator-controlled MCP client"
         )
-    override = Path(path_override).expanduser()
+
     try:
-        resolved = _resolved_nonexistent_path(override)
-        allowed_root = _resolved_nonexistent_path(
-            Path(os.environ.get("ENTROLY_STORE_OVERRIDE_ROOT", str(selected.parent)))
-        )
-        resolved.relative_to(allowed_root)
+        allowed_root = Path(
+            os.environ.get("ENTROLY_STORE_OVERRIDE_ROOT", str(selected.parent))
+        ).expanduser().resolve(strict=True)
+        if not allowed_root.is_dir():
+            raise ValueError("override root is not a directory")
+
+        override = Path(path_override).expanduser()
+        raw_override = str(override)
+        if (
+            not raw_override
+            or len(raw_override) > _MAX_PATH_CHARS
+            or "\x00" in raw_override
+            or override.name in {"", ".", ".."}
+        ):
+            raise ValueError("override path is not safe")
+        # Requiring the parent to exist removes the create-time symlink race that
+        # exists when several not-yet-created path components are accepted.
+        resolved_parent = override.parent.resolve(strict=True)
+        if not resolved_parent.is_dir():
+            raise ValueError("override parent is not a directory")
+        resolved_parent.relative_to(allowed_root)
+        resolved = resolved_parent / override.name
     except (OSError, RuntimeError, ValueError) as exc:
         raise ValueError("store_path_override escapes the configured recovery root") from exc
     return resolved
