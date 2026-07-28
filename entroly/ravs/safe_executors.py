@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from entroly.path_safety import resolve_file_within
-from entroly.process_safety import run_bounded_process
+from entroly.process_safety import run_bounded_process, sanitized_environment
 
 from .executors import (
     ASTExecutor,
@@ -32,57 +32,20 @@ from .executors import (
 
 _MAX_REQUEST_CHARS = 16_384
 _MAX_CAPTURE_BYTES = 2 * 1024 * 1024
-_SENSITIVE_ENV_EXACT = frozenset(
-    {
-        "AWS_SESSION_TOKEN",
-        "AWS_SECRET_ACCESS_KEY",
-        "AZURE_CLIENT_SECRET",
-        "DOCKER_AUTH_CONFIG",
-        "GITHUB_TOKEN",
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "NPM_TOKEN",
-        "PYPI_TOKEN",
-    }
-)
-_SECRET_WORDS = frozenset(
-    {"TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "CREDENTIALS", "COOKIE"}
-)
-_KEY_QUALIFIERS = frozenset({"API", "ACCESS", "PRIVATE", "SECRET", "SIGNING"})
-
-
-def _is_sensitive_env_name(name: str) -> bool:
-    upper = name.upper()
-    if upper in _SENSITIVE_ENV_EXACT:
-        return True
-    words = {word for word in re.split(r"[^A-Z0-9]+", upper) if word}
-    if words & _SECRET_WORDS:
-        return True
-    if "KEY" in words and words & _KEY_QUALIFIERS:
-        return True
-    if "AUTH" in words and words & {"TOKEN", "CONFIG", "HEADER", "COOKIE"}:
-        return True
-    return False
 
 
 def _sanitized_test_environment() -> dict[str, str]:
-    """Return a child environment that omits credential-shaped variables.
-
-    Operators may explicitly opt into legacy full inheritance for a trusted
-    workspace with ``ENTROLY_TEST_RUNNER_PASSTHROUGH_SECRETS=1``.
-    """
+    """Return a child environment that omits credentials unless opted in."""
     passthrough_secrets = (
         os.environ.get("ENTROLY_TEST_RUNNER_PASSTHROUGH_SECRETS") == "1"
     )
-    child: dict[str, str] = {}
-    for key, value in os.environ.items():
-        if not isinstance(key, str) or not isinstance(value, str):
-            continue
-        if not passthrough_secrets and _is_sensitive_env_name(key):
-            continue
-        child[key] = value
-    child["PYTHONDONTWRITEBYTECODE"] = "1"
-    child["ENTROLY_TEST_RUNNER_ACTIVE"] = "1"
-    return child
+    return sanitized_environment(
+        allow_secrets=passthrough_secrets,
+        overrides={
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "ENTROLY_TEST_RUNNER_ACTIVE": "1",
+        },
+    )
 
 
 class TestRunnerExecutor(_LegacyTestRunnerExecutor):
