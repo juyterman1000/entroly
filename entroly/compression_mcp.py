@@ -6,10 +6,6 @@ import json
 import os
 from pathlib import Path
 
-# Package initialization imports the core proxy before this focused MCP module.
-# Activating the boundary layer here patches only transport contracts after the
-# proxy class is fully defined and before normal users construct a proxy instance.
-from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .optimization_ledger import OptimizationLedger
 
@@ -82,8 +78,6 @@ def _safe_store_path(path_override: str, configured_path: str | None) -> Path:
             or override.name in {"", ".", ".."}
         ):
             raise ValueError("override path is not safe")
-        # Requiring the parent to exist removes the create-time symlink race that
-        # exists when several not-yet-created path components are accepted.
         resolved_parent = override.parent.resolve(strict=True)
         if not resolved_parent.is_dir():
             raise ValueError("override parent is not a directory")
