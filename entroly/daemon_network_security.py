@@ -1,4 +1,4 @@
-"""Fail-closed network boundary for the unified Entroly daemon.
+"""Fail-closed network and startup boundary for the unified Entroly daemon.
 
 The daemon shares one live engine between the provider proxy, dashboard, MCP SSE
 server, watcher, and learning workers. Exposing that engine on a wildcard, LAN,
@@ -7,21 +7,29 @@ routes and the full MCP tool surface. The MCP SSE transport currently has no
 independent authentication contract, so the unified daemon is deliberately
 loopback-only.
 
-Standalone proxy mode has a separate capability-authenticated remote contract in
-``proxy_access_security``. Remote MCP use should go through the existing scoped
-attach/grant flow or an operator-managed tunnel, not an unauthenticated SSE bind.
+Startup is also treated as a transaction. The daemon does not claim ``running``
+or open a browser until every enabled listener accepts a connection from the
+expected loopback address. Bind conflicts, dead worker threads, startup timeouts,
+and worker exceptions trigger rollback and remain visible in worker state.
 """
 
 from __future__ import annotations
 
 import ipaddress
+import logging
 import math
+import os
 import re
+import socket
+import threading
+import time
 from typing import Any
 
 from . import daemon as _daemon
 
+logger = logging.getLogger("entroly.daemon.security")
 _HOSTNAME_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
+_DEFAULT_START_TIMEOUT_S = 60.0
 
 
 def normalize_loopback_host(host: object) -> str:
@@ -112,6 +120,44 @@ def _validate_service_ports(
     return proxy, dashboard, mcp
 
 
+def _startup_timeout() -> float:
+    raw = os.environ.get("ENTROLY_DAEMON_START_TIMEOUT", str(_DEFAULT_START_TIMEOUT_S))
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_START_TIMEOUT_S
+    if not math.isfinite(value) or not 1.0 <= value <= 300.0:
+        return _DEFAULT_START_TIMEOUT_S
+    return value
+
+
+def _socket_family(host: str) -> socket.AddressFamily:
+    return socket.AF_INET6 if ipaddress.ip_address(host).version == 6 else socket.AF_INET
+
+
+def _assert_bind_available(host: str, port: int, *, service: str) -> None:
+    family = _socket_family(host)
+    probe = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        probe.bind((host, port))
+    except OSError as exc:
+        raise RuntimeError(
+            f"{service} cannot start because {host}:{port} is unavailable"
+        ) from exc
+    finally:
+        probe.close()
+
+
+def _listener_accepts(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
 _ORIGINAL_DAEMON = _daemon.EntrolyDaemon
 _ORIGINAL_INIT = _ORIGINAL_DAEMON.__init__
 _ORIGINAL_START_PROXY = _ORIGINAL_DAEMON._start_proxy_worker
@@ -119,7 +165,7 @@ _ORIGINAL_START_MCP = _ORIGINAL_DAEMON._start_mcp_worker
 
 
 class EntrolyDaemon(_ORIGINAL_DAEMON):
-    """Unified supervisor with a validated loopback-only listener contract."""
+    """Unified supervisor with validated listeners and atomic startup claims."""
 
     def __init__(
         self,
@@ -153,6 +199,7 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             quality=quality,
             repo_paths=repo_paths,
         )
+        self._startup_lock = threading.Lock()
 
     def _validated_worker_host(self) -> str:
         host = normalize_loopback_host(getattr(self, "_host", ""))
@@ -166,6 +213,144 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
     def _start_mcp_worker(self) -> Any:
         self._validated_worker_host()
         return _ORIGINAL_START_MCP(self)
+
+    def _preflight_listeners(self) -> None:
+        _assert_bind_available(
+            "127.0.0.1",
+            int(self.state.dashboard.port),
+            service="dashboard",
+        )
+        if self._enable_proxy:
+            _assert_bind_available(
+                self._validated_worker_host(),
+                int(self.state.proxy.port),
+                service="proxy",
+            )
+        if self._enable_mcp:
+            _assert_bind_available(
+                self._validated_worker_host(),
+                int(self.state.mcp.port),
+                service="mcp",
+            )
+
+    def _wait_listener(self, service: str, *, host: str, port: int) -> None:
+        deadline = time.monotonic() + _startup_timeout()
+        state = getattr(self.state, service)
+        while time.monotonic() < deadline:
+            error = getattr(state, "error", None)
+            if error:
+                raise RuntimeError(f"{service} failed during startup: {error}")
+            if service != "dashboard":
+                worker = self._workers.get(service)
+                if worker is None:
+                    raise RuntimeError(f"{service} worker was not registered")
+                if not worker.is_alive():
+                    raise RuntimeError(f"{service} worker exited before readiness")
+            if getattr(state, "running", False) and _listener_accepts(host, port):
+                return
+            time.sleep(0.05)
+        raise TimeoutError(
+            f"{service} did not accept connections on {host}:{port} within "
+            f"{_startup_timeout():.1f}s"
+        )
+
+    def _reset_worker_state_for_start(self) -> None:
+        for state in (self.state.proxy, self.state.dashboard, self.state.mcp):
+            state.running = False
+            state.started_at = None
+            state.error = None
+
+    def _rollback_startup(self) -> None:
+        self._shutdown.set()
+        self._learning_wake.set()
+        if self._proxy_server is not None:
+            try:
+                self._proxy_server.should_exit = True
+            except Exception:
+                pass
+        if self._dashboard_server is not None:
+            try:
+                self._dashboard_server.shutdown()
+            except Exception:
+                pass
+        for worker in list(self._workers.values()):
+            if worker is threading.current_thread():
+                continue
+            worker.join(timeout=2.0)
+        self.state.proxy.running = False
+        self.state.dashboard.running = False
+        self.state.mcp.running = False
+        self.state.status = "stopped"
+        self.state.started_at = None
+
+    def start(self) -> None:
+        """Start all required services and claim success only after readiness."""
+        if not self._startup_lock.acquire(blocking=False):
+            raise RuntimeError("daemon startup is already in progress")
+        try:
+            if self.state.status != "stopped":
+                raise RuntimeError(
+                    f"daemon cannot start from state {self.state.status!r}"
+                )
+            self._preflight_listeners()
+            self._shutdown.clear()
+            self._learning_wake.clear()
+            self._reset_worker_state_for_start()
+            self.state.status = "starting"
+            self.state.started_at = time.time()
+            logger.info("Entroly daemon starting with readiness gates...")
+
+            try:
+                from entroly.server import EntrolyEngine
+
+                self._engine = EntrolyEngine()
+                self._index_repos()
+
+                self._start_dashboard_worker()
+                self._wait_listener(
+                    "dashboard",
+                    host="127.0.0.1",
+                    port=int(self.state.dashboard.port),
+                )
+
+                if self._enable_proxy:
+                    self._start_proxy_worker()
+                    self._wait_listener(
+                        "proxy",
+                        host=self._validated_worker_host(),
+                        port=int(self.state.proxy.port),
+                    )
+
+                if self._enable_mcp:
+                    self._start_mcp_worker()
+                    self._wait_listener(
+                        "mcp",
+                        host=self._validated_worker_host(),
+                        port=int(self.state.mcp.port),
+                    )
+
+                self._start_watcher()
+                self._start_learning_loop()
+                self.state.status = "running"
+            except BaseException:
+                self._rollback_startup()
+                raise
+
+            try:
+                import webbrowser
+
+                webbrowser.open(f"http://localhost:{self.state.dashboard.port}")
+            except Exception:
+                pass
+            logger.info(
+                "Entroly daemon running — proxy:%s dashboard:%s mcp:%s learning:%s",
+                self.state.proxy.port if self._enable_proxy else "off",
+                self.state.dashboard.port,
+                self.state.mcp.port if self._enable_mcp else "off",
+                "ON" if self.state.learning_enabled else "OFF",
+            )
+        finally:
+            self._startup_lock.release()
 
 
 # Keep historical imports aligned. CLI and dashboard code import the class lazily
