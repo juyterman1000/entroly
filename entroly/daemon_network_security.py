@@ -57,6 +57,12 @@ def normalize_loopback_host(host: object) -> str:
     return address.compressed
 
 
+def _validated_flag(value: object, *, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value
+
+
 def _validated_port(value: object, *, name: str) -> int:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be an integer between 1 and 65535")
@@ -127,12 +133,14 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
         repo_paths: list[str] | None = None,
     ) -> None:
         normalized_host = normalize_loopback_host(host)
+        proxy_enabled = _validated_flag(enable_proxy, name="enable_proxy")
+        mcp_enabled = _validated_flag(enable_mcp, name="enable_mcp")
         proxy, dashboard, mcp = _validate_service_ports(
             proxy_port=proxy_port,
             dashboard_port=dashboard_port,
             mcp_port=mcp_port,
-            enable_proxy=bool(enable_proxy),
-            enable_mcp=bool(enable_mcp),
+            enable_proxy=proxy_enabled,
+            enable_mcp=mcp_enabled,
         )
         _ORIGINAL_INIT(
             self,
@@ -140,8 +148,8 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             dashboard_port=dashboard,
             mcp_port=mcp,
             host=normalized_host,
-            enable_proxy=bool(enable_proxy),
-            enable_mcp=bool(enable_mcp),
+            enable_proxy=proxy_enabled,
+            enable_mcp=mcp_enabled,
             quality=quality,
             repo_paths=repo_paths,
         )
