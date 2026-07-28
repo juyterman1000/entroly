@@ -24,10 +24,10 @@ holds:
     - Calibrator             (per-archetype λ)
     - File watcher           (invalidate on source changes)
 
-Thread safety: each instance has its own RLock. Concurrent verifies are
-safe because verifier state is read-only post-construction; the
-calibrator has its own lock; the manifest invalidation rebuilds atomically
-and swaps via a single field-write.
+Thread safety: each instance has its own RLock. Verification atomically
+captures immutable manifest/index references, then uses a request-local
+SymbolVerifier carrying its own calibration value. Invalidation swaps state
+for future requests without mutating an in-flight request.
 
 Daemon integration: import this module from entroly/daemon.py and pin
 one instance per repo at daemon startup. The MCP server route handler
@@ -61,9 +61,6 @@ from .symbol_resolution import (
 
 logger = logging.getLogger("entroly.verifiers.service")
 
-
-# Re-verification budget — if more time has passed than this, rebuild
-# the manifest before serving (safety net for missed file events).
 DEFAULT_STALENESS_SECONDS = 300
 
 
@@ -89,8 +86,8 @@ class ExtendedResult:
     archetype: str
     lambda_used: float
     judgments: list[ExtendedJudgment]
-    h_strict: float  # 1 - Π(1 - p(θ≠1))^w — flags halu+unreach
-    h_lenient: float  # 1 - Π(1 - p(θ=0))^w — flags halu only
+    h_strict: float
+    h_lenient: float
     n_grounded: int
     n_unreachable: int
     n_hallucinated: int
@@ -100,7 +97,6 @@ class ExtendedResult:
     type_check_detail: str = ""
 
     def _type_check_allows_pass(self) -> bool:
-        """A requested type check must complete cleanly to permit PASS."""
         return self.type_check_status in {"not_requested", "passed"}
 
     def passed_strict(self, threshold: float = 0.5) -> bool:
@@ -111,16 +107,15 @@ class ExtendedResult:
 
     def explain(self, max_items: int = 30) -> str:
         verdict = "PASS" if self.passed_strict() else "REJECTED"
-        lines = []
-        lines.append(
+        lines = [
             f"=== Verifier verdict: {verdict} "
-            f"(archetype={self.archetype}, lambda={self.lambda_used:.2f}) ==="
-        )
-        lines.append(
-            f"H_strict={self.h_strict:.4f}  H_lenient={self.h_lenient:.4f}  "
-            f"grounded={self.n_grounded}  unreachable={self.n_unreachable}  "
-            f"hallucinated={self.n_hallucinated}  manifest={self.manifest_size:,}"
-        )
+            f"(archetype={self.archetype}, lambda={self.lambda_used:.2f}) ===",
+            (
+                f"H_strict={self.h_strict:.4f}  H_lenient={self.h_lenient:.4f}  "
+                f"grounded={self.n_grounded}  unreachable={self.n_unreachable}  "
+                f"hallucinated={self.n_hallucinated}  manifest={self.manifest_size:,}"
+            ),
+        ]
         if self.type_check_status == "passed":
             lines.append("type-check: PASS")
         elif self.type_check_status == "issues_found":
@@ -130,7 +125,6 @@ class ExtendedResult:
             lines.append(f"type-check: DEGRADED ({self.type_check_status}){detail}")
         lines.append("")
 
-        # Sort: hallucinated > unreachable > grounded-with-high-p
         def key(judgment: ExtendedJudgment):
             return (judgment.state, -judgment.base.p_hallucinated)
 
@@ -157,11 +151,8 @@ class ExtendedResult:
         return "\n".join(lines)
 
 
-# ── Service Instance ─────────────────────────────────────────────────
-
-
 class _ServiceInstance:
-    """One repo's verifier state. Long-lived. Thread-safe."""
+    """One repository's verifier state. Long-lived and thread-safe."""
 
     def __init__(
         self,
@@ -174,12 +165,9 @@ class _ServiceInstance:
         self._lock = threading.RLock()
         self._last_validated_at = 0.0
         self._last_file_hash = ""
-
-        # Lazy-built; first verify() call constructs them
         self._verifier: SymbolVerifier | None = None
         self._reverse_index: ReverseIndex | None = None
 
-        # Calibrator persists in .entroly/verifiers_cache/calibration.json
         cal_dir = (
             Path(calibration_dir)
             if calibration_dir
@@ -188,7 +176,10 @@ class _ServiceInstance:
         cal_dir.mkdir(parents=True, exist_ok=True)
         self._calibrator = Calibrator(state_path=cal_dir / "calibration.json")
 
-    # ── Lazy build / staleness check ────────────────────────────
+    def enable_type_check(self) -> None:
+        """Monotonically enable strict type checking for this cached instance."""
+        with self._lock:
+            self._run_type_check = True
 
     def _ensure_ready(self, force_rebuild: bool = False) -> None:
         """Build verifier on first use; rebuild if files changed."""
@@ -220,7 +211,13 @@ class _ServiceInstance:
 
                 self._last_validated_at = now
 
-    # ── Public API ───────────────────────────────────────────────
+    def _snapshot_ready_state(self) -> tuple[SymbolVerifier, ReverseIndex, bool]:
+        """Atomically capture immutable state for one verification request."""
+        with self._lock:
+            self._ensure_ready()
+            if self._verifier is None or self._reverse_index is None:
+                raise RuntimeError("verifier state was not initialized")
+            return self._verifier, self._reverse_index, self._run_type_check
 
     def verify(
         self,
@@ -229,145 +226,124 @@ class _ServiceInstance:
         query: str | None = None,
         run_type_check: bool | None = None,
     ) -> ExtendedResult:
-        """Run the full verification pipeline.
-
-        Args:
-            code: Generated source to verify.
-            archetype: Task archetype. If None, inferred from `query`.
-            query: User query — used to infer archetype if not given.
-            run_type_check: Override the instance default.
-        """
-        self._ensure_ready()
-        assert self._verifier is not None
-        assert self._reverse_index is not None
+        """Run the full verification pipeline."""
+        base_verifier, reverse_index, default_type_check = self._snapshot_ready_state()
 
         if archetype is None:
             archetype = infer_archetype_from_query(query or "")
 
         lambda_ = self._calibrator.get(archetype)
-        verifier = self._verifier
-        old_lambda = verifier.lambda_
-        try:
-            verifier.lambda_ = lambda_
 
-            # Phase 1: symbol-resolution Bayesian pass
-            base_result = verifier.verify(code)
+        # Never mutate the daemon-resident verifier's calibration. Sharing its
+        # immutable manifest/model references is cheap; request-local lambda state
+        # prevents cross-thread archetype contamination.
+        verifier = SymbolVerifier(
+            manifest=base_verifier.manifest,
+            ngram_model=base_verifier.ngram_model,
+            lambda_calibration=lambda_,
+        )
+        base_result = verifier.verify(code)
 
-            # Phase 2: scope/reachability pass — assigns 3-state verdict.
-            manifest = self._verifier.manifest
-            scope = compute_scope(
-                code,
-                self._reverse_index,
-                import_source_valid=lambda module: module in manifest,
-            )
-            extended_judgments: list[ExtendedJudgment] = []
-            for base_judgment in base_result.judgments:
-                if (
-                    base_judgment.ref.name in ALWAYS_GROUND
-                    or DUNDER_RE.match(base_judgment.ref.name)
-                ):
-                    extended_judgments.append(
-                        ExtendedJudgment(base=base_judgment, state=1)
-                    )
-                    continue
-                verdict = judge_reachability(
-                    symbol=base_judgment.ref.name,
-                    manifest_contains=base_judgment.resolved,
-                    scope=scope,
-                    reverse_index=self._reverse_index,
-                )
+        manifest = verifier.manifest
+        scope = compute_scope(
+            code,
+            reverse_index,
+            import_source_valid=lambda module: module in manifest,
+        )
+        extended_judgments: list[ExtendedJudgment] = []
+        for base_judgment in base_result.judgments:
+            if (
+                base_judgment.ref.name in ALWAYS_GROUND
+                or DUNDER_RE.match(base_judgment.ref.name)
+            ):
                 extended_judgments.append(
-                    ExtendedJudgment(
-                        base=base_judgment,
-                        state=verdict.state,
-                        suggested_import=verdict.suggested_import,
-                        scope_source=verdict.scope_source,
-                    )
+                    ExtendedJudgment(base=base_judgment, state=1)
                 )
-
-            # Phase 3 (optional): Pyright type check. Degraded execution is
-            # explicitly recorded and blocks PASS instead of looking like zero errors.
-            type_errors: list[Any] = []
-            type_check_status = "not_requested"
-            type_check_detail = ""
-            should_typecheck = (
-                run_type_check
-                if run_type_check is not None
-                else self._run_type_check
+                continue
+            verdict = judge_reachability(
+                symbol=base_judgment.ref.name,
+                manifest_contains=base_judgment.resolved,
+                scope=scope,
+                reverse_index=reverse_index,
             )
-            if should_typecheck:
-                from .type_check import check_snippet_result
+            extended_judgments.append(
+                ExtendedJudgment(
+                    base=base_judgment,
+                    state=verdict.state,
+                    suggested_import=verdict.suggested_import,
+                    scope_source=verdict.scope_source,
+                )
+            )
 
-                type_result = check_snippet_result(code, timeout_s=5.0)
-                type_errors = type_result.diagnostics
-                type_check_status = type_result.status
-                type_check_detail = type_result.detail
+        type_errors: list[Any] = []
+        type_check_status = "not_requested"
+        type_check_detail = ""
+        should_typecheck = (
+            run_type_check if run_type_check is not None else default_type_check
+        )
+        if should_typecheck:
+            from .type_check import check_snippet_result
 
-                by_line: dict[int, list[str]] = {}
-                for type_error in type_errors:
-                    by_line.setdefault(type_error.line, []).append(type_error.message)
-                for judgment in extended_judgments:
-                    if judgment.base.ref.line in by_line:
-                        judgment.type_errors = by_line[judgment.base.ref.line]
+            type_result = check_snippet_result(code, timeout_s=5.0)
+            type_errors = type_result.diagnostics
+            type_check_status = type_result.status
+            type_check_detail = type_result.detail
 
-            # Phase 4: aggregate scores under the 3-state model
-            log_grounded_strict = 0.0
-            log_grounded_lenient = 0.0
+            by_line: dict[int, list[str]] = {}
+            for type_error in type_errors:
+                by_line.setdefault(type_error.line, []).append(type_error.message)
             for judgment in extended_judgments:
-                weight = judgment.base.ref.weight
-                p_halu_soft = (
-                    judgment.base.p_hallucinated if judgment.state == 1 else 0.0
-                )
-                p_not_grounded = 1.0 if judgment.state != 1 else p_halu_soft
-                p_not_grounded = min(max(p_not_grounded, 0.0), 1.0 - 1e-12)
-                log_grounded_strict += weight * math.log(1.0 - p_not_grounded)
+                if judgment.base.ref.line in by_line:
+                    judgment.type_errors = by_line[judgment.base.ref.line]
 
-                p_hard_halu = 1.0 if judgment.state == 0 else p_halu_soft
-                p_hard_halu = min(max(p_hard_halu, 0.0), 1.0 - 1e-12)
-                log_grounded_lenient += weight * math.log(1.0 - p_hard_halu)
+        log_grounded_strict = 0.0
+        log_grounded_lenient = 0.0
+        for judgment in extended_judgments:
+            weight = judgment.base.ref.weight
+            p_halu_soft = (
+                judgment.base.p_hallucinated if judgment.state == 1 else 0.0
+            )
+            p_not_grounded = 1.0 if judgment.state != 1 else p_halu_soft
+            p_not_grounded = min(max(p_not_grounded, 0.0), 1.0 - 1e-12)
+            log_grounded_strict += weight * math.log(1.0 - p_not_grounded)
 
-            h_strict = (
-                1.0 - math.exp(log_grounded_strict)
-                if extended_judgments
-                else 0.0
-            )
-            h_lenient = (
-                1.0 - math.exp(log_grounded_lenient)
-                if extended_judgments
-                else 0.0
-            )
+            p_hard_halu = 1.0 if judgment.state == 0 else p_halu_soft
+            p_hard_halu = min(max(p_hard_halu, 0.0), 1.0 - 1e-12)
+            log_grounded_lenient += weight * math.log(1.0 - p_hard_halu)
 
-            return ExtendedResult(
-                code=code,
-                archetype=archetype,
-                lambda_used=lambda_,
-                judgments=extended_judgments,
-                h_strict=h_strict,
-                h_lenient=h_lenient,
-                n_grounded=sum(1 for j in extended_judgments if j.state == 1),
-                n_unreachable=sum(1 for j in extended_judgments if j.state == 2),
-                n_hallucinated=sum(1 for j in extended_judgments if j.state == 0),
-                manifest_size=base_result.manifest_size,
-                type_errors=type_errors,
-                type_check_status=type_check_status,
-                type_check_detail=type_check_detail,
-            )
-        finally:
-            verifier.lambda_ = old_lambda
+        h_strict = (
+            1.0 - math.exp(log_grounded_strict) if extended_judgments else 0.0
+        )
+        h_lenient = (
+            1.0 - math.exp(log_grounded_lenient) if extended_judgments else 0.0
+        )
+
+        return ExtendedResult(
+            code=code,
+            archetype=archetype,
+            lambda_used=lambda_,
+            judgments=extended_judgments,
+            h_strict=h_strict,
+            h_lenient=h_lenient,
+            n_grounded=sum(1 for judgment in extended_judgments if judgment.state == 1),
+            n_unreachable=sum(
+                1 for judgment in extended_judgments if judgment.state == 2
+            ),
+            n_hallucinated=sum(
+                1 for judgment in extended_judgments if judgment.state == 0
+            ),
+            manifest_size=base_result.manifest_size,
+            type_errors=type_errors,
+            type_check_status=type_check_status,
+            type_check_detail=type_check_detail,
+        )
 
     def record_outcome(
         self,
         result: ExtendedResult,
         ground_truth: dict[str, int],
     ) -> None:
-        """Feed observed outcomes back to the calibrator.
-
-        Args:
-            result: The ExtendedResult returned by a previous verify().
-            ground_truth: Map symbol_name → 1 if really hallucinated,
-                          0 if actually valid. Symbols not in the map
-                          are skipped (no observation).
-        """
+        """Feed observed outcomes back to the calibrator."""
         for judgment in result.judgments:
             outcome = ground_truth.get(judgment.base.ref.name)
             if outcome is None:
@@ -391,9 +367,6 @@ class _ServiceInstance:
         return self._calibrator.all_stats()
 
 
-# ── Global registry ──────────────────────────────────────────────────
-
-
 class VerifierService:
     """Process-wide registry of per-repo verifier instances."""
 
@@ -415,6 +388,10 @@ class VerifierService:
                     run_type_check=run_type_check,
                 )
                 cls._instances[key] = instance
+            elif run_type_check:
+                # Security/trust settings are monotonic for a process-wide cache:
+                # a strict caller must not inherit an earlier permissive instance.
+                instance.enable_type_check()
             return instance
 
     @classmethod
