@@ -16,6 +16,12 @@ _STALE_ENTITY_HEADERS = frozenset(
     {"content-encoding", "content-length", "transfer-encoding"}
 )
 
+# Capture first-pass implementations before this module replaces their public
+# names. Calling through mutable module attributes after installation would
+# recurse back into these final wrappers.
+_BASE_HTTP_CLIENT_KWARGS = _safe._safe_http_client_kwargs
+_BASE_SAFE_TARGET_URL = _safe._safe_target_url
+
 
 class BoundedAsyncClient(_safe.BoundedAsyncClient):
     """Bound decoded bodies while preserving coherent response headers."""
@@ -123,7 +129,7 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
     preserves the existing CA contract without routing prompts through ambient
     proxy variables.
     """
-    kwargs = _safe._safe_http_client_kwargs()
+    kwargs = _BASE_HTTP_CLIENT_KWARGS()
     ca_bundle = _proxy._resolve_ca_bundle_from_env()
     trust_proxy_env = _safe._env_flag("ENTROLY_TRUST_PROXY_ENV")
     if ca_bundle and not trust_proxy_env:
@@ -144,7 +150,7 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
 def _safe_target_url(base_url: str, path: str, query: str = "") -> str:
     if "#" in query:
         raise ValueError("provider query string must not contain a fragment marker")
-    return _safe._safe_target_url(base_url, path, query)
+    return _BASE_SAFE_TARGET_URL(base_url, path, query)
 
 
 def _safe_build_headers(
