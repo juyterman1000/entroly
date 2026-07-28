@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -148,3 +149,50 @@ def test_invalid_docker_image_override_fails_before_subprocess(
     else:
         with pytest.raises(RuntimeError, match="valid Docker image"):
             launcher._docker_image()
+
+
+def test_env_passthrough_keeps_secret_values_out_of_argv(monkeypatch) -> None:
+    secret = "sk-super-secret-value-🧪"
+    monkeypatch.setenv("ENTROLY_Z_API_KEY", secret)
+    monkeypatch.setenv("ENTROLY_A_MODE", "مرحبا")
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-forward")
+
+    args = launcher._env_passthrough()
+
+    assert args[::2] == ["-e"] * (len(args) // 2)
+    names = args[1::2]
+    assert names == sorted(names)
+    assert "ENTROLY_Z_API_KEY" in names
+    assert "ENTROLY_A_MODE" in names
+    assert "UNRELATED_SECRET" not in names
+    assert secret not in args
+    assert all("=" not in item for item in names)
+
+
+def test_launch_never_places_entrolly_secret_in_docker_command(monkeypatch) -> None:
+    secret = "token-visible-to-ps-if-regressed"
+    captured: list[list[str]] = []
+
+    monkeypatch.setenv("ENTROLY_PROVIDER_TOKEN", secret)
+    monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
+    monkeypatch.setattr(sys, "argv", ["entroly", "serve"])
+    monkeypatch.setattr(launcher, "_docker_available", lambda: True)
+    monkeypatch.setattr(launcher, "_pull_image", lambda: None)
+    monkeypatch.setattr(launcher, "_docker_image", lambda: "example/entroly:1.0")
+    monkeypatch.setattr(launcher.os.path, "exists", lambda _path: False)
+
+    def fake_run(command, **kwargs):
+        captured.append(list(command))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as exc:
+        launcher.launch()
+
+    assert exc.value.code == 0
+    assert len(captured) == 1
+    command = captured[0]
+    assert secret not in command
+    assert "ENTROLY_PROVIDER_TOKEN" in command
+    assert f"ENTROLY_PROVIDER_TOKEN={secret}" not in command
