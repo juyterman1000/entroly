@@ -245,7 +245,7 @@ def test_safe_unicode_nul_and_rtl_scripts_round_trip_exactly(tmp_path: Path) -> 
             },
         )
         stored = _tool_payload(mcp.wait_for(10))
-        assert stored.get("stored") is True, stored
+        assert stored.get("status") == "ingested", stored
 
         mcp.send(
             11,
