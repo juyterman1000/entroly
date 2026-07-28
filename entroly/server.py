@@ -60,7 +60,7 @@ from .multimodal import ingest_diagram as _mm_diagram
 from .multimodal import ingest_diff as _mm_diff
 from .multimodal import ingest_voice as _mm_voice
 from .prefetch import PrefetchEngine
-from .provenance import build_provenance
+from .provenance import build_provenance, compact_optimize_result_for_wire
 from .proxy_transform import calibrated_token_count as _calibrated_token_count
 from .query_refiner import QueryRefiner
 from .repo_map import build_repo_map, render_repo_map_markdown
@@ -124,7 +124,10 @@ def _py_simhash(text: str) -> int:
 
     bit_sums = [0] * 64
     for feat in features:
-        h = int(_hl.md5(feat.encode("utf-8", errors="replace")).hexdigest(), 16)
+        h = int(_hl.md5(
+            feat.encode("utf-8", errors="replace"),
+            usedforsecurity=False,
+        ).hexdigest(), 16)
         for i in range(64):
             if (h >> i) & 1:
                 bit_sums[i] += 1
@@ -1231,6 +1234,20 @@ class EntrolyEngine:
                     result["query_refinement"] = refinement_info
                 if query_analysis:
                     result["query_analysis"] = query_analysis
+
+            # Normalize the public selection contract across QCCR, native,
+            # pure-Python, fast-path, and oversize-excerpt selectors. Several
+            # fallback paths returned real selected fragments while omitting
+            # ``selected_count`` (or leaving it at zero), which made agents and
+            # dashboards report an empty result despite receiving context.
+            selected_payload = result.get(
+                "selected_fragments", result.get("selected", [])
+            )
+            if isinstance(selected_payload, list):
+                result["selected_count"] = len(selected_payload)
+                optimization_stats = result.get("optimization_stats")
+                if isinstance(optimization_stats, dict):
+                    optimization_stats["selected_count"] = len(selected_payload)
 
             # ── engine_s6 edit-target reordering (post-selection) ──
             # The knapsack picks WHICH fragments stay in budget; engine_s6
@@ -3429,7 +3446,7 @@ def create_mcp_server(
             token_budget=_effective_token_budget,
             quality_scan_fn=engine._guard.scan if engine._guard.available else None,
         )
-        result["provenance"] = provenance.to_dict()
+        result["provenance"] = provenance.to_wire_dict()
 
         # ── P1: Memory nudge surface ──────────────────────────────────
         # Proactive persistence hints: tell the agent when fragments are
@@ -3498,6 +3515,11 @@ def create_mcp_server(
         )
         if _guidance is not None:
             result["guidance"] = _guidance
+
+        # MCP-only serialization boundary. Keep the rich engine result intact
+        # through provenance, learning, nudges, savings, and hardening; compact
+        # only when every in-process consumer has finished.
+        compact_optimize_result_for_wire(result)
 
         return json.dumps(result, indent=2)
 

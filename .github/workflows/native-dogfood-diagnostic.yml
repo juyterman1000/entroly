@@ -1,0 +1,84 @@
+name: Native Dogfood Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PIP_RETRIES: 10
+  PIP_TIMEOUT: 120
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.ref == 'dogfood/deep-runtime-20260727'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Create virtualenv
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Install maturin and build entroly-core wheel
+        run: |
+          .venv/bin/pip install maturin --timeout 120 --retries 5
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+
+      - name: Install entroly Python package
+        run: |
+          .venv/bin/pip install --timeout 120 --retries 5 -e . \
+            'mcp>=1.6.0' 'httpx>=0.27' 'starlette>=0.37' \
+            'uvicorn>=0.30' psutil
+          .venv/bin/pip install pytest pytest-timeout --timeout 120 --retries 5
+
+      - name: Verify diagnostic environment matches CI
+        run: |
+          command -v entroly
+          entroly --version
+          .venv/bin/python - <<'PY'
+          import shutil
+          import entroly
+          import entroly_core
+          assert shutil.which("entroly"), "virtualenv console script is not on PATH"
+          print("entroly:", entroly.__version__)
+          print("entroly_core:", entroly_core.__file__)
+          print("entrypoint:", shutil.which("entroly"))
+          PY
+
+      - name: Capture the first full-suite failure
+        env:
+          ENTROLY_DISABLE_UPDATE_CHECK: '1'
+          PYTHONUTF8: '1'
+        run: |
+          set +e
+          log="$RUNNER_TEMP/native-first-failure.log"
+          .venv/bin/pytest tests/ -vv --tb=long -x --timeout=60 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          echo "$status" > "$RUNNER_TEMP/native-first-failure.status"
+          exit 0
+
+      - name: Upload exact native failure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-first-failure
+          path: |
+            ${{ runner.temp }}/native-first-failure.log
+            ${{ runner.temp }}/native-first-failure.status
+          if-no-files-found: error
+
+      - name: Enforce native diagnostic
+        run: test "$(cat "$RUNNER_TEMP/native-first-failure.status")" -eq 0

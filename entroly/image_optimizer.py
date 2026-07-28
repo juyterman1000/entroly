@@ -83,6 +83,14 @@ def estimate_image_tokens_from_dimensions(
     model: str = "",
     detail: ImageDetail = "high",
 ) -> ImageTokenEstimate:
+    if isinstance(width, bool) or not isinstance(width, int):
+        raise TypeError("width must be an integer")
+    if isinstance(height, bool) or not isinstance(height, int):
+        raise TypeError("height must be an integer")
+    if width <= 0 or height <= 0:
+        raise ValueError("image width and height must be positive")
+    if detail not in {"low", "high"}:
+        raise ValueError("detail must be 'low' or 'high'")
     provider = provider if provider in {"openai", "anthropic", "gemini"} else "unknown"
     if provider == "openai":
         tokens, method = _openai_tokens(width, height, model=model, detail=detail)

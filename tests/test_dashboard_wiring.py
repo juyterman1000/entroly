@@ -52,6 +52,23 @@ def test_entroly_dir_is_honored(fresh_dir):
         "tracker must write under ENTROLY_DIR (else py/npm paths split)"
 
 
+def test_tracker_falls_back_when_home_is_not_a_directory(tmp_path, monkeypatch):
+    bad_home = tmp_path / "home-is-a-file"
+    bad_home.write_text("not a directory", encoding="utf-8")
+    fallback_tmp = tmp_path / "tmp"
+    fallback_tmp.mkdir()
+
+    monkeypatch.delenv("ENTROLY_DIR", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: bad_home)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(fallback_tmp))
+
+    import entroly.value_tracker as vt
+    tracker = vt.ValueTracker()
+
+    assert tracker._dir == fallback_tmp / "entroly"
+    assert tracker._dir.is_dir()
+
+
 def test_reader_goes_live_on_external_write(fresh_dir):
     """THE core fix: a second process (the dashboard) must observe a
     writer process's data after reload_if_changed()."""
