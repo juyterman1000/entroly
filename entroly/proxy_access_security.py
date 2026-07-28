@@ -32,14 +32,23 @@ from .proxy_config import ProxyConfig
 _ACCESS_HEADER = b"x-entroly-access-token"
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{32,512}$")
 _HOSTNAME_RE = re.compile(
-    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*\.?$"
+    r"^(?=.{1,253}$)"
+    r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)"
+    r"(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*\.?$"
 )
 
-ASGIApp = Callable[[dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[None]]
+ASGIReceive = Callable[..., Awaitable[Any]]
+ASGISend = Callable[..., Awaitable[Any]]
+ASGIApp = Callable[[dict[str, Any], ASGIReceive, ASGISend], Awaitable[None]]
 
 
 def _env_enabled(name: str) -> bool:
-    return os.environ.get(name, "").strip().casefold() in {"1", "true", "yes", "on"}
+    return os.environ.get(name, "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _validated_access_token(raw: object) -> str | None:
@@ -91,13 +100,14 @@ def _remote_access_contract(config: ProxyConfig) -> tuple[bool, str | None]:
         )
     if not _env_enabled("ENTROLY_REMOTE_PROXY_TRUSTED_TRANSPORT"):
         raise ValueError(
-            "remote proxy binding requires ENTROLY_REMOTE_PROXY_TRUSTED_TRANSPORT=1 "
-            "after configuring TLS, a private tunnel, or an equivalently trusted network"
+            "remote proxy binding requires "
+            "ENTROLY_REMOTE_PROXY_TRUSTED_TRANSPORT=1 after configuring TLS, "
+            "a private tunnel, or an equivalently trusted network"
         )
     return True, token
 
 
-async def _unauthorized(send: Callable[..., Awaitable[Any]]) -> None:
+async def _unauthorized(send: ASGISend) -> None:
     body = json.dumps(
         {
             "error": "entroly_access_denied",
@@ -134,8 +144,8 @@ class RemoteProxyAccessMiddleware:
     async def __call__(
         self,
         scope: dict[str, Any],
-        receive: Callable[..., Awaitable[Any]],
-        send: Callable[..., Awaitable[Any]],
+        receive: ASGIReceive,
+        send: ASGISend,
     ) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
@@ -156,7 +166,7 @@ class RemoteProxyAccessMiddleware:
                 await _unauthorized(send)
                 return
             name, value = bytes(pair[0]), bytes(pair[1])
-            if name.casefold() == _ACCESS_HEADER:
+            if name.lower() == _ACCESS_HEADER:
                 supplied.append(value)
             else:
                 filtered.append((name, value))
