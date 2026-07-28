@@ -3,15 +3,9 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-import pytest
-
 from entroly.verifiers.scope_analyzer import ReverseIndex
 from entroly.verifiers.service import VerifierService, _ServiceInstance
-from entroly.verifiers.symbol_resolution import (
-    CharNGramModel,
-    SymbolManifest,
-    SymbolVerifier,
-)
+from entroly.verifiers.symbol_resolution import SymbolManifest, SymbolVerifier
 
 
 class _FixedSurprisal:
@@ -36,7 +30,9 @@ def test_cached_service_strict_policy_is_monotonic(tmp_path) -> None:
         VerifierService.shutdown_all()
 
 
-def test_concurrent_archetypes_do_not_mutate_shared_lambda(monkeypatch, tmp_path) -> None:
+def test_concurrent_archetypes_do_not_mutate_shared_lambda(
+    monkeypatch, tmp_path
+) -> None:
     instance = _ServiceInstance(str(tmp_path), run_type_check=False)
     base_verifier = SymbolVerifier(
         manifest=SymbolManifest(repo={"foo"}),
@@ -56,7 +52,8 @@ def test_concurrent_archetypes_do_not_mutate_shared_lambda(monkeypatch, tmp_path
 
     def run(archetype: str) -> tuple[str, float, float]:
         result = instance.verify("foo()", archetype=archetype)
-        return archetype, result.lambda_used, result.judgments[0].base.p_hallucinated
+        probability = result.judgments[0].base.p_hallucinated
+        return archetype, result.lambda_used, probability
 
     archetypes = ["strict", "permissive"] * 100
     with ThreadPoolExecutor(max_workers=16) as pool:
@@ -72,7 +69,9 @@ def test_concurrent_archetypes_do_not_mutate_shared_lambda(monkeypatch, tmp_path
             assert probability < 0.01
 
 
-def test_snapshot_survives_invalidation_without_none_state(monkeypatch, tmp_path) -> None:
+def test_snapshot_survives_invalidation_without_none_state(
+    monkeypatch, tmp_path
+) -> None:
     instance = _ServiceInstance(str(tmp_path), run_type_check=False)
     base_verifier = SymbolVerifier(
         manifest=SymbolManifest(repo={"foo"}),
@@ -81,7 +80,11 @@ def test_snapshot_survives_invalidation_without_none_state(monkeypatch, tmp_path
     )
     reverse_index = ReverseIndex()
 
-    monkeypatch.setattr(instance, "_ensure_ready", lambda force_rebuild=False: None)
+    monkeypatch.setattr(
+        instance,
+        "_ensure_ready",
+        lambda force_rebuild=False: None,
+    )
     instance._verifier = base_verifier
     instance._reverse_index = reverse_index
 
