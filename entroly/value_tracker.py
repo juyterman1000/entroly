@@ -299,9 +299,20 @@ class ValueTracker:
         self._session_local_operations: int = 0
         self._session_local_tokens_reduced: int = 0
 
+    @staticmethod
+    def _lock_timeout_seconds() -> float:
+        raw = os.environ.get("ENTROLY_VALUE_LOCK_TIMEOUT", "2.0")
+        try:
+            timeout = float(raw)
+        except (TypeError, ValueError, OverflowError):
+            return 2.0
+        if not math.isfinite(timeout):
+            return 2.0
+        return min(30.0, max(0.01, timeout))
+
     @contextmanager
     def _interprocess_lock(self) -> Iterator[None]:
-        """Serialize value/activity mutations across independent processes."""
+        """Serialize mutations without allowing telemetry to block forever."""
         self._process_lock_path.parent.mkdir(parents=True, exist_ok=True)
         with self._process_lock_path.open("a+b") as handle:
             handle.seek(0, os.SEEK_END)
@@ -309,11 +320,12 @@ class ValueTracker:
                 handle.write(b"\0")
                 handle.flush()
             handle.seek(0)
+            deadline = time.monotonic() + self._lock_timeout_seconds()
+            delay = 0.001
+
             if os.name == "nt":
                 import msvcrt
 
-                deadline = time.monotonic() + 30.0
-                delay = 0.001
                 while True:
                     try:
                         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
@@ -336,7 +348,22 @@ class ValueTracker:
             else:
                 import fcntl
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                while True:
+                    try:
+                        fcntl.flock(
+                            handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB
+                        )
+                        break
+                    except OSError as error:
+                        if error.errno not in {errno.EACCES, errno.EAGAIN}:
+                            raise
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f"timed out acquiring value-tracker lock "
+                                f"{self._process_lock_path}"
+                            ) from error
+                        time.sleep(delay)
+                        delay = min(0.05, delay * 1.5)
                 try:
                     yield
                 finally:
@@ -373,6 +400,22 @@ class ValueTracker:
             return minimum
         number = max(minimum, number)
         return min(number, maximum) if maximum is not None else number
+
+    @classmethod
+    def _activity_value(cls, value: Any) -> Any:
+        """Return a strict-JSON-safe activity value without changing finite signs."""
+        if value is None or isinstance(value, (str, bool, int)):
+            return value
+        if isinstance(value, float):
+            return value if math.isfinite(value) else 0.0
+        if isinstance(value, dict):
+            return {
+                str(key)[:120]: cls._activity_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [cls._activity_value(item) for item in value]
+        return str(value)[:500]
 
     @staticmethod
     def _mtime(p: Path) -> float:
@@ -633,17 +676,25 @@ class ValueTracker:
                 "kind": str(kind),
                 "summary": str(summary)[:240],
             }
+            safe_tokens = self._nonnegative_int(tokens_saved)
+            safe_cost = self._finite_float(cost_saved_usd)
             if source:
-                row["source"] = source
-            if tokens_saved:
-                row["tokens_saved"] = int(tokens_saved)
-            if cost_saved_usd:
-                row["cost_saved_usd"] = round(float(cost_saved_usd), 6)
+                row["source"] = str(source)[:240]
+            if safe_tokens:
+                row["tokens_saved"] = safe_tokens
+            if safe_cost:
+                row["cost_saved_usd"] = round(safe_cost, 6)
             if model:
-                row["model"] = model
-            for k, v in extra.items():
-                if isinstance(v, (str, int, float, bool)):
-                    row[k] = v
+                row["model"] = str(model)[:240]
+            reserved = {
+                "ts", "kind", "summary", "source", "tokens_saved",
+                "cost_saved_usd", "model",
+            }
+            for key, value in extra.items():
+                normalized_key = str(key)[:120]
+                if normalized_key in reserved:
+                    continue
+                row[normalized_key] = self._activity_value(value)
             with self._mutation():
                 self._activity.append(row)
                 self._save_activity()
@@ -820,7 +871,31 @@ class ValueTracker:
         confidence: float = 0.0,
         source: str = "unclassified",
     ) -> None:
-        """Record an optimization without overstating its economic evidence.
+        """Record value without letting optional telemetry block the caller."""
+        try:
+            self._record_with_lock(
+                tokens_saved=tokens_saved,
+                model=model,
+                duplicates=duplicates,
+                optimized=optimized,
+                coverage_pct=coverage_pct,
+                confidence=confidence,
+                source=source,
+            )
+        except TimeoutError as error:
+            logger.warning("Value tracker busy; telemetry event dropped: %s", error)
+
+    def _record_with_lock(
+        self,
+        tokens_saved: int,
+        model: str = "",
+        duplicates: int = 0,
+        optimized: bool = True,
+        coverage_pct: float = 0.0,
+        confidence: float = 0.0,
+        source: str = "unclassified",
+    ) -> None:
+        """Process-safe record implementation.
 
         ``source="proxy"`` records a provider-bound request whose pre/post
         token counts may support modeled API input-cost avoidance. SDK, npm,
