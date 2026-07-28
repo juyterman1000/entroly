@@ -33,6 +33,10 @@ def _large_test_output() -> str:
     return "\n".join(f"test case_{index} ... ok" for index in range(400))
 
 
+def _policy(**kwargs) -> TransformPolicy:
+    return TransformPolicy(deadline_ms=1000.0, **kwargs)
+
+
 def test_exact_repeat_becomes_recoverable_reference() -> None:
     store = _Store()
     pipeline = ContextTransformPipeline(retrieval_store=store)
@@ -44,7 +48,7 @@ def test_exact_repeat_becomes_recoverable_reference() -> None:
         workspace="repo-a",
         cwd="/workspace/repo-a",
     )
-    policy = TransformPolicy(token_budget=100)
+    policy = _policy(token_budget=100)
 
     first = pipeline.transform(envelope, policy)
     second = pipeline.transform(envelope, policy)
@@ -52,32 +56,67 @@ def test_exact_repeat_becomes_recoverable_reference() -> None:
     assert first.receipt.recovery_receipt_id == "recovery-1"
     assert second.receipt.algorithm == "exact_reference"
     assert second.receipt.exact_reference_of == first.receipt.receipt_id
+    assert second.receipt.recovery_receipt_id == "recovery-1"
+    assert second.receipt.recovery_span_ids == ("span-1",)
     assert second.content.startswith("[entroly-ref:recovery-1:span-1]")
     assert len(second.content) < len(envelope.content)
+
+
+def test_unscoped_text_never_enters_exact_reuse_cache() -> None:
+    store = _Store()
+    pipeline = ContextTransformPipeline(retrieval_store=store)
+    envelope = ContentEnvelope(content=_large_test_output(), source="generic")
+    policy = _policy(token_budget=100)
+
+    first = pipeline.transform(envelope, policy)
+    second = pipeline.transform(envelope, policy)
+
+    assert first.receipt.algorithm != "exact_reference"
+    assert second.receipt.algorithm != "exact_reference"
+    assert second.receipt.exact_reference_of is None
 
 
 def test_redaction_precedes_recovery_persistence() -> None:
     store = _Store()
     pipeline = ContextTransformPipeline(retrieval_store=store)
-    content = "api_key=sk-abcdefghijklmnopqrstuvwxyz123456 " + ("payload " * 300)
+    secret = "sk-abcdefghijklmnopqrstuvwxyz123456"
+    content = f"api_key={secret} " + ("payload " * 300)
+    envelope = ContentEnvelope(
+        content=content,
+        source="tool:config",
+        tool_name="config_dump",
+        command="config dump --verbose",
+        workspace="repo-a",
+        metadata={"authorization_scope": "tenant-a"},
+    )
 
     result = pipeline.transform(
-        ContentEnvelope(content=content, source="tool:config"),
-        TransformPolicy(token_budget=100, redact_sensitive=True),
+        envelope,
+        _policy(token_budget=100, redact_sensitive=True),
     )
 
     assert result.receipt.redacted is True
     assert result.receipt.redaction_counts["openai_api_key"] == 1
-    assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in str(store.calls[0]["original_text"])
+    assert store.calls
+    call = store.calls[0]
+    assert secret not in str(call["original_text"])
+    assert "command" not in call["metadata"]
+    assert call["metadata"]["command_sha256"]
+    assert call["metadata"]["workspace_sha256"]
+    assert call["metadata"]["authorization_scope_sha256"]
+    assert "authorization_scope" not in result.receipt.metadata
+    assert result.receipt.metadata["authorization_scope_sha256"]
 
 
 def test_exact_json_policy_preserves_parseable_payload() -> None:
-    content = json.dumps({"rows": [{"id": index, "value": "x" * 40} for index in range(100)]})
+    content = json.dumps(
+        {"rows": [{"id": index, "value": "x" * 40} for index in range(100)]}
+    )
     pipeline = ContextTransformPipeline()
 
     result = pipeline.transform(
         ContentEnvelope(content=content, source="tool:json_query"),
-        TransformPolicy(token_budget=100, preserve_exact_json=True),
+        _policy(token_budget=100, preserve_exact_json=True),
     )
 
     assert result.content == content
@@ -91,7 +130,7 @@ def test_existing_entroly_marker_prevents_double_transformation() -> None:
 
     result = pipeline.transform(
         ContentEnvelope(content=content, source="tool:build"),
-        TransformPolicy(token_budget=100),
+        _policy(token_budget=100),
     )
 
     assert result.content == content
@@ -102,11 +141,12 @@ def test_receipt_is_versioned_and_hashes_transmitted_content() -> None:
     pipeline = ContextTransformPipeline()
     result = pipeline.transform(
         ContentEnvelope(content=_large_test_output(), source="tool:pytest"),
-        TransformPolicy(token_budget=100),
+        _policy(token_budget=100),
     )
 
     receipt = result.receipt.as_dict()
     assert receipt["version"] == "1"
+    assert receipt["policy_sha256"]
     assert receipt["receipt_id"]
     assert receipt["input_sha256"]
     assert receipt["output_sha256"]
