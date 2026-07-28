@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlunsplit
 
 import httpx
 
@@ -15,12 +16,6 @@ _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _STALE_ENTITY_HEADERS = frozenset(
     {"content-encoding", "content-length", "transfer-encoding"}
 )
-
-# Capture first-pass implementations before this module replaces their public
-# names. Calling through mutable module attributes after installation would
-# recurse back into these final wrappers.
-_BASE_HTTP_CLIENT_KWARGS = _safe._safe_http_client_kwargs
-_BASE_SAFE_TARGET_URL = _safe._safe_target_url
 
 
 class BoundedAsyncClient(_safe.BoundedAsyncClient):
@@ -129,10 +124,23 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
     preserves the existing CA contract without routing prompts through ambient
     proxy variables.
     """
-    kwargs = _BASE_HTTP_CLIENT_KWARGS()
     ca_bundle = _proxy._resolve_ca_bundle_from_env()
     trust_proxy_env = _safe._env_flag("ENTROLY_TRUST_PROXY_ENV")
+    kwargs: dict[str, Any] = {
+        "timeout": httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
+        "follow_redirects": False,
+        "trust_env": trust_proxy_env,
+        "limits": httpx.Limits(
+            max_connections=100,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0,
+        ),
+    }
+    if ca_bundle:
+        kwargs["verify"] = ca_bundle
     if ca_bundle and not trust_proxy_env:
+        # Preserve the existing public ``trust_env=True`` CA-discovery contract
+        # while forcing both URL schemes onto transports that ignore proxy env.
         kwargs["trust_env"] = True
         kwargs["mounts"] = {
             "http://": httpx.AsyncHTTPTransport(
@@ -150,7 +158,18 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
 def _safe_target_url(base_url: str, path: str, query: str = "") -> str:
     if "#" in query:
         raise ValueError("provider query string must not contain a fragment marker")
-    return _BASE_SAFE_TARGET_URL(base_url, path, query)
+    scheme, netloc, _port, base_path, base_query = _safe._validate_upstream_base(
+        base_url
+    )
+    request_path = _safe._validate_relative_provider_path(path)
+    if (
+        len(query) > _safe._MAX_QUERY_CHARS
+        or any(ord(character) < 32 for character in query)
+    ):
+        raise ValueError("provider query string is not safe bounded text")
+    combined_path = f"{base_path}{request_path}" if base_path else request_path
+    combined_query = "&".join(part for part in (base_query, query) if part)
+    return urlunsplit((scheme, netloc, combined_path, combined_query, ""))
 
 
 def _safe_build_headers(
