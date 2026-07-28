@@ -65,8 +65,8 @@ def test_provider_and_local_evidence_classes_survive_restart(tmp_path: Path) -> 
 
     assert receipt["provider_path"]["input_tokens_reduced"] == 1300
     assert receipt["provider_path"]["modeled_input_cost_avoided_usd"] == pytest.approx(0.0025)
-    assert receipt["local_only_path"]["tokens_reduced"] == 500
-    assert receipt["local_only_path"]["modeled_cost_avoided_usd"] == 0.0
+    assert receipt["local_operations"]["tokens_reduced"] == 500
+    assert receipt["local_operations"]["dollar_claimed_usd"] == 0.0
 
 
 def test_cross_process_writers_cannot_overwrite_each_others_totals(tmp_path: Path) -> None:
