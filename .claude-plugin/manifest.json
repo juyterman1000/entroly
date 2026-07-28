@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.67",
+  "version": "1.0.68",
   "description": "Open-source Context OS for AI coding agents: context engineering, memory, recovery, verification, receipts, provider controls, and guarded learning.",
   "homepage": "https://github.com/juyterman1000/entroly",
   "repository": "https://github.com/juyterman1000/entroly",
@@ -16,7 +16,9 @@
   },
   "mcp": {
     "command": "entroly",
-    "args": ["serve"],
+    "args": [
+      "serve"
+    ],
     "env": {}
   },
   "capabilities": [
@@ -36,14 +38,71 @@
     "hallucination-suppression"
   ],
   "languages": [
-    "python", "rust", "typescript", "javascript", "go", "java",
-    "c", "cpp", "csharp", "ruby", "php", "swift", "kotlin",
-    "scala", "yaml", "toml", "json", "markdown", "shell"
+    "python",
+    "rust",
+    "typescript",
+    "javascript",
+    "go",
+    "java",
+    "c",
+    "cpp",
+    "csharp",
+    "ruby",
+    "php",
+    "swift",
+    "kotlin",
+    "scala",
+    "yaml",
+    "toml",
+    "json",
+    "markdown",
+    "shell"
   ],
   "agents": {
-    "cli": ["claude", "codex", "aider", "copilot", "gemini", "qwen", "opencode", "crush", "hermes", "pi", "ollama"],
-    "mcp": ["cursor", "windsurf", "vscode", "claude-desktop", "claude-code", "zed"],
-    "config": ["cline", "roo", "continue", "cody", "amp", "kiro", "qoder", "trae", "antigravity", "amazonq", "verdent", "jetbrains", "neovim", "emacs", "sublime", "helix", "tabby", "twinny", "fittencode", "tabnine", "supermaven"]
+    "cli": [
+      "claude",
+      "codex",
+      "aider",
+      "copilot",
+      "gemini",
+      "qwen",
+      "opencode",
+      "crush",
+      "hermes",
+      "pi",
+      "ollama"
+    ],
+    "mcp": [
+      "cursor",
+      "windsurf",
+      "vscode",
+      "claude-desktop",
+      "claude-code",
+      "zed"
+    ],
+    "config": [
+      "cline",
+      "roo",
+      "continue",
+      "cody",
+      "amp",
+      "kiro",
+      "qoder",
+      "trae",
+      "antigravity",
+      "amazonq",
+      "verdent",
+      "jetbrains",
+      "neovim",
+      "emacs",
+      "sublime",
+      "helix",
+      "tabby",
+      "twinny",
+      "fittencode",
+      "tabnine",
+      "supermaven"
+    ]
   },
   "documentation": {
     "readme": "README.md",

@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.2",
   "name": "entroly",
-  "version": "1.0.67",
+  "version": "1.0.68",
   "description": "Open-source Context OS for AI agents: context engineering, memory, recovery, receipts, verification, provider controls, and guarded learning.",
   "author": {
     "name": "juyterman1000",
@@ -13,7 +13,10 @@
     "mcp_config": {
       "command": "uvx",
       "args": [
-        "--from", "entroly", "entroly", "serve"
+        "--from",
+        "entroly",
+        "entroly",
+        "serve"
       ],
       "env": {}
     }
