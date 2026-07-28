@@ -6,8 +6,10 @@ CLI commands run in the installed Python environment. Only ``entroly serve``
 uses the Docker image by default so ordinary commands never trigger a remote
 image pull or require a Docker daemon.
 
-The Docker image is built from Dockerfile.entroly and pushed to:
-  ghcr.io/juyterman1000/entroly:latest
+The Docker image is built from Dockerfile.entroly and pushed to versioned tags
+under ``ghcr.io/juyterman1000/entroly``. The launcher defaults to the tag that
+matches the installed Python package. Operators may explicitly override it with
+``ENTROLY_DOCKER_IMAGE``.
 
 MCP stdio protocol is passed through transparently via stdin/stdout.
 """
@@ -21,7 +23,21 @@ import tempfile
 import time
 from pathlib import Path
 
-DOCKER_IMAGE = "ghcr.io/juyterman1000/entroly:latest"
+from entroly import __version__
+
+DEFAULT_DOCKER_IMAGE = f"ghcr.io/juyterman1000/entroly:{__version__}"
+
+
+def _docker_image() -> str:
+    """Return the explicit image override or the installed-version image.
+
+    A package installed as ``entroly==X`` must not silently execute whatever
+    code happens to be under the mutable ``latest`` tag. Keeping this resolution
+    dynamic also lets tests and operators set an override after module import.
+    """
+    override = os.environ.get("ENTROLY_DOCKER_IMAGE", "").strip()
+    return override or DEFAULT_DOCKER_IMAGE
+
 
 # TTL-based pull caching: skip `docker pull` if last pull was recent.
 def _runtime_dir() -> Path:
@@ -82,14 +98,15 @@ def _should_pull() -> bool:
 
 
 def _pull_image() -> None:
-    """Pull (or update) the entroly Docker image with TTL caching and retry."""
+    """Pull the selected Docker image with TTL caching and retry."""
     if not _should_pull():
         return
 
+    image = _docker_image()
     for attempt in range(2):
         try:
             result = subprocess.run(
-                ["docker", "pull", DOCKER_IMAGE],
+                ["docker", "pull", image],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 check=False,
@@ -186,7 +203,7 @@ def launch() -> None:
         )
         sys.exit(1)
 
-    # Pull latest image (with TTL caching and retry)
+    # Pull the image matching the installed package (with TTL caching + retry)
     _pull_image()
 
     # Detect proxy mode
@@ -208,7 +225,7 @@ def launch() -> None:
 
     # Pass through ENTROLY_* env vars
     cmd += _env_passthrough()
-    cmd.append(DOCKER_IMAGE)
+    cmd.append(_docker_image())
 
     # Pass any remaining CLI args to the server
     server_args = [a for a in sys.argv[1:] if a != "--proxy"]
