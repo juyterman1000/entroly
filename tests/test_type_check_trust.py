@@ -99,18 +99,11 @@ def test_clean_pyright_run_is_the_only_clean_status(monkeypatch) -> None:
     assert result.diagnostics == []
 
 
-def test_pyright_issues_are_preserved_and_reject_verdict(monkeypatch) -> None:
+def _run_issue_case(monkeypatch, diagnostic: dict) -> object:
     monkeypatch.setattr(
         "entroly.verifiers.type_check.shutil.which",
         lambda _name: "/usr/bin/pyright",
     )
-    diagnostic = {
-        "file": "/tmp/entroly_typecheck_123/_snippet.py",
-        "severity": "error",
-        "message": 'Type "str" is not assignable to "int"',
-        "rule": "reportAssignmentType",
-        "range": {"start": {"line": 0, "character": 4}},
-    }
     responses = iter(
         [
             _completed(stdout="pyright 1.1"),
@@ -124,8 +117,19 @@ def test_pyright_issues_are_preserved_and_reject_verdict(monkeypatch) -> None:
         "entroly.verifiers.type_check.subprocess.run",
         lambda *args, **kwargs: next(responses),
     )
+    return check_snippet_result("x: int = 'bad'")
 
-    result = check_snippet_result("x: int = 'bad'")
+
+def test_pyright_issues_are_preserved_and_reject_verdict(monkeypatch) -> None:
+    diagnostic = {
+        "file": "/tmp/entroly_typecheck_123/_snippet.py",
+        "severity": "error",
+        "message": 'Type "str" is not assignable to "int"',
+        "rule": "reportAssignmentType",
+        "range": {"start": {"line": 0, "character": 4}},
+    }
+
+    result = _run_issue_case(monkeypatch, diagnostic)
 
     assert result.status == "issues_found"
     assert result.completed
@@ -133,6 +137,44 @@ def test_pyright_issues_are_preserved_and_reject_verdict(monkeypatch) -> None:
     assert len(result.diagnostics) == 1
     assert result.diagnostics[0].line == 1
     assert result.diagnostics[0].column == 5
+
+
+def test_windows_diagnostic_path_is_not_silently_discarded(monkeypatch) -> None:
+    diagnostic = {
+        "file": r"C:\Users\agent\AppData\Local\Temp\entroly_typecheck\_snippet.py",
+        "severity": "error",
+        "message": 'Type "str" is not assignable to "int"',
+        "rule": "reportAssignmentType",
+        "range": {"start": {"line": 2, "character": 1}},
+    }
+
+    result = _run_issue_case(monkeypatch, diagnostic)
+
+    assert result.status == "issues_found"
+    assert len(result.diagnostics) == 1
+    assert result.diagnostics[0].line == 3
+    assert result.diagnostics[0].column == 2
+
+
+@pytest.mark.parametrize(
+    ("source", "python_version", "timeout_s", "expected_detail"),
+    [
+        (None, "3.11", 1.0, "source must be a string"),
+        ("x = 1", "3.11", 0.0, "timeout must be positive"),
+        ("x = 1", "3.11;--verifytypes", 1.0, "major.minor"),
+    ],
+)
+def test_invalid_type_check_inputs_fail_auditably(
+    source, python_version: str, timeout_s: float, expected_detail: str
+) -> None:
+    result = check_snippet_result(
+        source,
+        python_version=python_version,
+        timeout_s=timeout_s,
+    )
+
+    assert result.status == "execution_failed"
+    assert expected_detail in result.detail
 
 
 def _extended_result(status: str, detail: str = "") -> ExtendedResult:
