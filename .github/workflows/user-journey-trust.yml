@@ -1,0 +1,109 @@
+name: User Journey Trust Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [dogfood/zero-bug-convergence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: user-journey-trust-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_RETRIES: 10
+  PIP_TIMEOUT: 120
+  ENTROLY_DISABLE_UPDATE_CHECK: "1"
+  ENTROLY_NO_DOCKER: "1"
+  PYTHONUTF8: "1"
+
+jobs:
+  journey-diagnostics:
+    name: Journey diagnostics / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install source journey surface
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,proxy]" pytest-timeout psutil
+          python -m pip check
+
+      - name: Exercise onboarding and CLI journeys
+        shell: bash
+        run: |
+          set +e
+          log="$RUNNER_TEMP/user-journeys-${{ matrix.os }}-py${{ matrix.python-version }}.log"
+          python -m pytest -vv --tb=long --timeout=120 \
+            tests/test_daemon_network_security.py \
+            tests/test_dashboard_security.py \
+            tests/test_docker_launcher_trust.py \
+            tests/test_proxy_access_security.py \
+            tests/test_deep_dogfood_runtime.py \
+            tests/test_mcp_protocol.py \
+            tests/test_cli_audit.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          echo "$status" > "$RUNNER_TEMP/user-journeys.status"
+          exit 0
+
+      - name: Upload journey evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: user-journeys-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/user-journeys-${{ matrix.os }}-py${{ matrix.python-version }}.log
+            ${{ runner.temp }}/user-journeys.status
+          if-no-files-found: error
+
+      - name: Enforce journey result
+        shell: bash
+        run: test "$(cat "$RUNNER_TEMP/user-journeys.status")" -eq 0
+
+  wheel-onboarding:
+    name: Fresh wheel onboarding
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build and install wheel in an isolated environment
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          python -m venv "$RUNNER_TEMP/entroly-user"
+          "$RUNNER_TEMP/entroly-user/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/entroly-user/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/entroly-user/bin/python" -m pip check
+          "$RUNNER_TEMP/entroly-user/bin/entroly" --version
+          "$RUNNER_TEMP/entroly-user/bin/entroly" --help
+          "$RUNNER_TEMP/entroly-user/bin/entroly" doctor
