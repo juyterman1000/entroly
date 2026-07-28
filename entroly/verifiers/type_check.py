@@ -19,7 +19,8 @@ Trust constraints
 - Never represent an unavailable or failed verifier as a clean pass.
 - Filter to errors *originating in our snippet*, not in dependency types.
 - Preserve a compatibility helper for callers that only consume diagnostics.
-- Bound diagnostic detail so failed tooling cannot flood receipts or logs.
+- Bound source, process lifetime, descendants, output, and diagnostic detail.
+- Do not expose host credentials to an external verifier by default.
 
 For ad-hoc snippets, we run with `--outputjson` and no project mode so the
 check remains file-scoped.
@@ -29,13 +30,15 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from entroly.process_safety import run_bounded_process, sanitized_environment
 
 logger = logging.getLogger("entroly.verifiers.type_check")
 
@@ -47,9 +50,15 @@ TYPE_CHECK_STATUSES = frozenset(
         "timed_out",
         "execution_failed",
         "malformed_output",
+        "output_too_large",
     }
 )
-_PYTHON_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+$")
+_PYTHON_VERSION_RE = re.compile(r"^[2-9]\.[0-9]{1,2}$")
+_MAX_SOURCE_CHARS = 2_000_000
+_MAX_EXTRA_PATHS = 64
+_MAX_EXTRA_PATH_CHARS = 4096
+_MAX_PYRIGHT_OUTPUT_BYTES = 4 * 1024 * 1024
+_MAX_DIAGNOSTICS = 10_000
 
 
 @dataclass
@@ -94,22 +103,55 @@ def _bounded_detail(value: object) -> str:
     return str(value or "").strip()[-500:]
 
 
+def _typecheck_environment() -> dict[str, str]:
+    allow_secrets = os.environ.get("ENTROLY_TYPECHECK_PASSTHROUGH_SECRETS") == "1"
+    return sanitized_environment(
+        allow_secrets=allow_secrets,
+        overrides={"PYTHONUTF8": "1", "NO_COLOR": "1"},
+    )
+
+
+def _normalized_timeout(timeout_s: object) -> float | None:
+    try:
+        timeout = float(timeout_s)
+    except (TypeError, ValueError):
+        return None
+    return timeout if math.isfinite(timeout) and timeout > 0 else None
+
+
+def _validated_extra_paths(extra_paths: object) -> list[str] | None:
+    if extra_paths is None:
+        return []
+    if not isinstance(extra_paths, (list, tuple)):
+        return None
+    if len(extra_paths) > _MAX_EXTRA_PATHS:
+        return None
+    validated: list[str] = []
+    for path in extra_paths:
+        if (
+            not isinstance(path, str)
+            or not path
+            or len(path) > _MAX_EXTRA_PATH_CHARS
+            or "\x00" in path
+            or any(ord(char) < 32 for char in path)
+        ):
+            return None
+        validated.append(path)
+    return validated
+
+
 def pyright_available() -> bool:
-    """Return whether Pyright is installed and its version probe succeeds."""
+    """Return whether Pyright is installed and its bounded probe succeeds."""
     executable = shutil.which("pyright")
     if executable is None:
         return False
-    try:
-        proc = subprocess.run(
-            [executable, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-        return proc.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+    result = run_bounded_process(
+        [executable, "--version"],
+        timeout=3,
+        env=_typecheck_environment(),
+        max_output_bytes=64 * 1024,
+    )
+    return result.succeeded and not result.stdout_truncated and not result.stderr_truncated
 
 
 def check_snippet_result(
@@ -124,20 +166,31 @@ def check_snippet_result(
             status="execution_failed",
             detail="type-check source must be a string",
         )
-    if timeout_s <= 0:
+    if len(source) > _MAX_SOURCE_CHARS:
         return TypeCheckResult(
-            status="execution_failed",
-            detail="type-check timeout must be positive",
+            status="output_too_large",
+            detail=f"type-check source exceeds {_MAX_SOURCE_CHARS} characters",
         )
-    if not _PYTHON_VERSION_RE.fullmatch(python_version):
+
+    timeout = _normalized_timeout(timeout_s)
+    if timeout is None:
         return TypeCheckResult(
             status="execution_failed",
-            detail="python_version must use major.minor form",
+            detail="type-check timeout must be a finite positive number",
         )
-    if extra_paths is not None and not all(isinstance(path, str) for path in extra_paths):
+    if not isinstance(python_version, str) or not _PYTHON_VERSION_RE.fullmatch(
+        python_version
+    ):
         return TypeCheckResult(
             status="execution_failed",
-            detail="extra_paths must contain only strings",
+            detail="python_version must use a supported major.minor form",
+        )
+
+    validated_paths = _validated_extra_paths(extra_paths)
+    if validated_paths is None:
+        return TypeCheckResult(
+            status="execution_failed",
+            detail="extra_paths must be a bounded list of safe strings",
         )
 
     executable = shutil.which("pyright")
@@ -147,25 +200,28 @@ def check_snippet_result(
             detail="pyright executable was not found",
         )
 
-    try:
-        version_probe = subprocess.run(
-            [executable, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=min(3.0, timeout_s),
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
+    environment = _typecheck_environment()
+    version_probe = run_bounded_process(
+        [executable, "--version"],
+        timeout=min(3.0, timeout),
+        env=environment,
+        max_output_bytes=64 * 1024,
+    )
+    if version_probe.timed_out:
         return TypeCheckResult(
             status="timed_out",
-            detail="pyright version probe timed out",
+            detail="pyright version probe timed out; process tree terminated",
         )
-    except OSError as exc:
+    if version_probe.execution_error:
         return TypeCheckResult(
             status="execution_failed",
-            detail=f"pyright version probe failed: {_bounded_detail(exc)}",
+            detail=f"pyright version probe failed: {_bounded_detail(version_probe.execution_error)}",
         )
-
+    if version_probe.stdout_truncated or version_probe.stderr_truncated:
+        return TypeCheckResult(
+            status="output_too_large",
+            detail="pyright version probe output exceeded the safety limit",
+        )
     if version_probe.returncode != 0:
         detail = _bounded_detail(version_probe.stderr or version_probe.stdout)
         return TypeCheckResult(
@@ -183,46 +239,50 @@ def check_snippet_result(
                 detail=f"could not stage snippet: {_bounded_detail(exc)}",
             )
 
-        cmd = [
+        command = [
             executable,
             "--outputjson",
             "--pythonversion",
             python_version,
             str(snippet_path),
         ]
-        if extra_paths:
-            cmd.extend(["--extrapaths", os.pathsep.join(extra_paths)])
+        if validated_paths:
+            command.extend(["--extrapaths", os.pathsep.join(validated_paths)])
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            logger.debug("pyright timed out after %ss", timeout_s)
+        process = run_bounded_process(
+            command,
+            timeout=timeout,
+            env=environment,
+            max_output_bytes=_MAX_PYRIGHT_OUTPUT_BYTES,
+            preserve_stdout_tail=False,
+            preserve_stderr_tail=True,
+        )
+        if process.timed_out:
+            logger.debug("pyright timed out after %ss", timeout)
             return TypeCheckResult(
                 status="timed_out",
-                detail=f"pyright timed out after {timeout_s}s",
+                detail=f"pyright timed out after {timeout}s; process tree terminated",
             )
-        except OSError as exc:
-            logger.debug("pyright execution failed: %s", exc)
+        if process.execution_error:
+            logger.debug("pyright execution failed: %s", process.execution_error)
             return TypeCheckResult(
                 status="execution_failed",
-                detail=f"pyright execution failed: {_bounded_detail(exc)}",
+                detail=f"pyright execution failed: {_bounded_detail(process.execution_error)}",
             )
-
-        if not proc.stdout:
-            detail = _bounded_detail(proc.stderr)
+        if process.stdout_truncated or process.stderr_truncated:
+            return TypeCheckResult(
+                status="output_too_large",
+                detail="pyright output exceeded the safety limit",
+            )
+        if not process.stdout:
+            detail = _bounded_detail(process.stderr)
             return TypeCheckResult(
                 status="malformed_output",
                 detail=f"pyright produced no JSON output: {detail}",
             )
 
         try:
-            data = json.loads(proc.stdout)
+            data = json.loads(process.stdout)
         except json.JSONDecodeError as exc:
             logger.debug("pyright stdout parse failed: %s", exc)
             return TypeCheckResult(
@@ -236,21 +296,21 @@ def check_snippet_result(
                 detail="pyright JSON root was not an object",
             )
         diagnostics = data.get("generalDiagnostics")
-        if not isinstance(diagnostics, list) or not all(
-            isinstance(item, dict) for item in diagnostics
+        if (
+            not isinstance(diagnostics, list)
+            or len(diagnostics) > _MAX_DIAGNOSTICS
+            or not all(isinstance(item, dict) for item in diagnostics)
         ):
             return TypeCheckResult(
                 status="malformed_output",
-                detail="pyright generalDiagnostics was not a list of objects",
+                detail="pyright generalDiagnostics was not a bounded list of objects",
             )
 
         errors: list[TypeError_] = []
         try:
             for diagnostic in diagnostics:
-                d_file = str(diagnostic.get("file", ""))
-                # Pyright can emit Windows paths while tests run on POSIX and
-                # vice versa; normalize separators before matching the staged file.
-                if Path(d_file.replace("\\", "/")).name != "_snippet.py":
+                diagnostic_file = str(diagnostic.get("file", ""))
+                if Path(diagnostic_file.replace("\\", "/")).name != "_snippet.py":
                     continue
                 severity = str(diagnostic.get("severity", "information"))
                 if severity not in ("error", "warning"):
@@ -261,14 +321,19 @@ def check_snippet_result(
                 start = range_data.get("start", {})
                 if not isinstance(start, dict):
                     raise TypeError("diagnostic range.start was not an object")
-                message = str(diagnostic.get("message", ""))
+                line = int(start.get("line", 0))
+                column = int(start.get("character", 0))
+                if line < 0 or column < 0:
+                    raise ValueError("diagnostic positions must be non-negative")
+                message = str(diagnostic.get("message", ""))[:4000]
+                rule = str(diagnostic.get("rule", ""))[:500]
                 errors.append(
                     TypeError_(
-                        line=int(start.get("line", 0)) + 1,
-                        column=int(start.get("character", 0)) + 1,
+                        line=line + 1,
+                        column=column + 1,
                         severity=severity,
                         message=message,
-                        rule=str(diagnostic.get("rule", "")),
+                        rule=rule,
                         likely_symbol=_extract_symbol_from_message(message),
                     )
                 )
@@ -281,11 +346,11 @@ def check_snippet_result(
         if errors:
             return TypeCheckResult(status="issues_found", diagnostics=errors)
 
-        if proc.returncode != 0:
-            detail = _bounded_detail(proc.stderr or proc.stdout)
+        if process.returncode != 0:
+            detail = _bounded_detail(process.stderr or process.stdout)
             return TypeCheckResult(
                 status="execution_failed",
-                detail=f"pyright exited {proc.returncode} without snippet diagnostics: {detail}",
+                detail=f"pyright exited {process.returncode} without snippet diagnostics: {detail}",
             )
 
         return TypeCheckResult(status="passed")
