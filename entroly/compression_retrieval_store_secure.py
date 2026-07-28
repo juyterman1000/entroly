@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import sys
+from pathlib import Path
 from typing import Any
 
 from . import compression_retrieval_store as _legacy_module
@@ -25,6 +26,45 @@ from .compression_retrieval_store_safe import (
 
 class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
     """Public secure recovery store with scope-derived content addresses."""
+
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        optimization_ledger=None,
+        max_bytes: int | None = None,
+        scope_id: str | None = None,
+        require_scope: bool = True,
+        allow_legacy_unscoped: bool | None = None,
+        max_retrieval_ids: int | None = None,
+    ) -> None:
+        # The legacy constructor replays all loaded records into a supplied
+        # ledger. Delay attachment until scope filtering is available so another
+        # workspace's records never enter this scope's accounting stream.
+        super().__init__(
+            path,
+            optimization_ledger=None,
+            max_bytes=max_bytes,
+            scope_id=scope_id,
+            require_scope=require_scope,
+            allow_legacy_unscoped=allow_legacy_unscoped,
+            max_retrieval_ids=max_retrieval_ids,
+        )
+        self.optimization_ledger = optimization_ledger
+        if optimization_ledger is not None:
+            for item in self._items.values():
+                if not self._scope_allows(item):
+                    continue
+                self._record_compression(item)
+                for span in item.spans:
+                    token_count = max(0, span.retrieved_tokens)
+                    for retrieval_id in span.retrieval_ids:
+                        self._record_retrieval(
+                            item.receipt_id,
+                            span.span_id,
+                            token_count,
+                            retrieval_id=retrieval_id,
+                        )
 
     def _scoped_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(receipt, dict):
