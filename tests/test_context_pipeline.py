@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from entroly.compression_retrieval_store import CompressionRetrievalStore
 from entroly.context_pipeline import (
     ContentEnvelope,
     ContextTransformPipeline,
@@ -29,6 +30,16 @@ class _Store:
         return _Stored("recovery-1")
 
 
+class _AdvancingClock:
+    def __init__(self, step_seconds: float) -> None:
+        self.value = -step_seconds
+        self.step_seconds = step_seconds
+
+    def __call__(self) -> float:
+        self.value += self.step_seconds
+        return self.value
+
+
 def _large_test_output() -> str:
     return "\n".join(f"test case_{index} ... ok" for index in range(400))
 
@@ -37,17 +48,21 @@ def _policy(**kwargs) -> TransformPolicy:
     return TransformPolicy(deadline_ms=1000.0, **kwargs)
 
 
-def test_exact_repeat_becomes_recoverable_reference() -> None:
-    store = _Store()
-    pipeline = ContextTransformPipeline(retrieval_store=store)
-    envelope = ContentEnvelope(
-        content=_large_test_output(),
+def _scoped_envelope(content: str, *, workspace: str = "repo-a") -> ContentEnvelope:
+    return ContentEnvelope(
+        content=content,
         source="pytest",
         tool_name="pytest",
         command="pytest -q",
-        workspace="repo-a",
-        cwd="/workspace/repo-a",
+        workspace=workspace,
+        cwd=f"/workspace/{workspace}",
     )
+
+
+def test_exact_repeat_becomes_recoverable_reference() -> None:
+    store = _Store()
+    pipeline = ContextTransformPipeline(retrieval_store=store)
+    envelope = _scoped_envelope(_large_test_output())
     policy = _policy(token_budget=100)
 
     first = pipeline.transform(envelope, policy)
@@ -74,6 +89,26 @@ def test_unscoped_text_never_enters_exact_reuse_cache() -> None:
     assert first.receipt.algorithm != "exact_reference"
     assert second.receipt.algorithm != "exact_reference"
     assert second.receipt.exact_reference_of is None
+
+
+def test_recovery_ids_are_isolated_by_workspace(tmp_path) -> None:
+    store = CompressionRetrievalStore(tmp_path / "recovery.json")
+    content = _large_test_output()
+    policy = _policy(token_budget=100)
+
+    first = ContextTransformPipeline(retrieval_store=store).transform(
+        _scoped_envelope(content, workspace="repo-a"),
+        policy,
+    )
+    second = ContextTransformPipeline(retrieval_store=store).transform(
+        _scoped_envelope(content, workspace="repo-b"),
+        policy,
+    )
+
+    assert first.receipt.scope_sha256 != second.receipt.scope_sha256
+    assert first.receipt.recovery_receipt_id
+    assert second.receipt.recovery_receipt_id
+    assert first.receipt.recovery_receipt_id != second.receipt.recovery_receipt_id
 
 
 def test_redaction_precedes_recovery_persistence() -> None:
@@ -104,24 +139,61 @@ def test_redaction_precedes_recovery_persistence() -> None:
     assert call["metadata"]["command_sha256"]
     assert call["metadata"]["workspace_sha256"]
     assert call["metadata"]["authorization_scope_sha256"]
+    assert call["metadata"]["scope_sha256"] == result.receipt.scope_sha256
     assert "authorization_scope" not in result.receipt.metadata
     assert result.receipt.metadata["authorization_scope_sha256"]
 
 
-def test_exact_json_policy_preserves_parseable_payload() -> None:
+def test_different_raw_secrets_are_not_exact_repeats_after_redaction() -> None:
+    store = _Store()
+    pipeline = ContextTransformPipeline(retrieval_store=store)
+    policy = _policy(token_budget=100, redact_sensitive=True)
+
+    first = pipeline.transform(
+        _scoped_envelope(
+            "api_key=sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaa " + ("payload " * 300)
+        ),
+        policy,
+    )
+    second = pipeline.transform(
+        _scoped_envelope(
+            "api_key=sk-bbbbbbbbbbbbbbbbbbbbbbbbbbbb " + ("payload " * 300)
+        ),
+        policy,
+    )
+
+    assert first.receipt.safe_input_sha256 == second.receipt.safe_input_sha256
+    assert first.receipt.input_sha256 != second.receipt.input_sha256
+    assert second.receipt.algorithm != "exact_reference"
+    assert second.receipt.exact_reference_of is None
+
+
+def test_exact_json_policy_preserves_parseable_payload_across_repeats() -> None:
     content = json.dumps(
         {"rows": [{"id": index, "value": "x" * 40} for index in range(100)]}
     )
-    pipeline = ContextTransformPipeline()
-
-    result = pipeline.transform(
-        ContentEnvelope(content=content, source="tool:json_query"),
-        _policy(token_budget=100, preserve_exact_json=True),
+    store = _Store()
+    pipeline = ContextTransformPipeline(retrieval_store=store)
+    envelope = ContentEnvelope(
+        content=content,
+        source="tool:json_query",
+        tool_name="json_query",
+        command="json query",
+        workspace="repo-a",
     )
+    policy = _policy(token_budget=100, preserve_exact_json=True)
 
-    assert result.content == content
-    assert result.receipt.algorithm == "identity"
-    assert any(stage.name == "exact_json_policy" for stage in result.receipt.stages)
+    first = pipeline.transform(envelope, policy)
+    second = pipeline.transform(envelope, policy)
+
+    assert first.content == content
+    assert second.content == content
+    assert first.receipt.algorithm == "identity"
+    assert second.receipt.algorithm == "identity"
+    assert first.receipt.exact_reference_of is None
+    assert second.receipt.exact_reference_of is None
+    assert store.calls == []
+    assert any(stage.name == "exact_json_policy" for stage in first.receipt.stages)
 
 
 def test_existing_entroly_marker_prevents_double_transformation() -> None:
@@ -137,6 +209,21 @@ def test_existing_entroly_marker_prevents_double_transformation() -> None:
     assert any(stage.name == "idempotency" for stage in result.receipt.stages)
 
 
+def test_cooperative_deadline_degrades_before_compression() -> None:
+    clock = _AdvancingClock(step_seconds=0.01)
+    pipeline = ContextTransformPipeline(clock=clock)
+
+    result = pipeline.transform(
+        ContentEnvelope(content=_large_test_output(), source="tool:pytest"),
+        TransformPolicy(token_budget=100, deadline_ms=1.0),
+    )
+
+    assert result.receipt.algorithm == "deadline_fallback"
+    assert result.receipt.deadline_exceeded is True
+    assert any(stage.name == "deadline" for stage in result.receipt.stages)
+    assert all(stage.name != "typed_formatter" for stage in result.receipt.stages)
+
+
 def test_receipt_is_versioned_and_hashes_transmitted_content() -> None:
     pipeline = ContextTransformPipeline()
     result = pipeline.transform(
@@ -147,6 +234,7 @@ def test_receipt_is_versioned_and_hashes_transmitted_content() -> None:
     receipt = result.receipt.as_dict()
     assert receipt["version"] == "1"
     assert receipt["policy_sha256"]
+    assert receipt["scope_sha256"]
     assert receipt["receipt_id"]
     assert receipt["input_sha256"]
     assert receipt["output_sha256"]
