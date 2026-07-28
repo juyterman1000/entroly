@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,20 @@ from .compression_retrieval_store_safe import (
     derive_recovery_scope,
     sanitize_recovery_metadata,
 )
+
+
+def _public_item(item: StoredCompression | None) -> StoredCompression | None:
+    if item is None:
+        return None
+    return replace(
+        item,
+        spans=[replace(span, retrieval_ids=list(span.retrieval_ids)) for span in item.spans],
+        metadata={
+            key: copy.deepcopy(value)
+            for key, value in item.metadata.items()
+            if not str(key).startswith("_")
+        },
+    )
 
 
 class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
@@ -67,6 +82,31 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
                             retrieval_id=retrieval_id,
                         )
 
+    def _record_compression(self, item: StoredCompression) -> None:
+        if self.optimization_ledger is None:
+            return
+        from .optimization_ledger import OptimizationEvent, SavingsTier
+
+        session_id = item.metadata.get("session_id") or item.metadata.get(
+            "session_id_sha256", ""
+        )
+        conversation_id = item.metadata.get("conversation_id") or item.metadata.get(
+            "conversation_id_sha256", ""
+        )
+        self.optimization_ledger.record(
+            OptimizationEvent(
+                event_id=f"compression:{item.receipt_id}",
+                feature="evidence_locked_compression",
+                tier=SavingsTier.MEASURED,
+                gross_tokens_saved=max(0, item.gross_tokens_saved),
+                session_id=str(session_id),
+                conversation_id=str(conversation_id),
+                provider=str(item.metadata.get("provider", "")),
+                model=str(item.metadata.get("model", "")),
+                metadata={"receipt_id": item.receipt_id},
+            )
+        )
+
     def _scoped_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(receipt, dict):
             raise ValueError("receipt must be an object")
@@ -85,12 +125,15 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
         receipt: dict[str, Any],
         metadata: dict[str, object] | None = None,
     ) -> StoredCompression:
-        return super().put(
+        stored = super().put(
             original_text=original_text,
             compressed_text=compressed_text,
             receipt=self._scoped_receipt(receipt),
             metadata=metadata,
         )
+        public = _public_item(stored)
+        assert public is not None
+        return public
 
     def put_exact_spans(
         self,
@@ -101,13 +144,19 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
         spans: list[dict[str, Any]],
         metadata: dict[str, object] | None = None,
     ) -> StoredCompression:
-        return super().put_exact_spans(
+        stored = super().put_exact_spans(
             original_text=original_text,
             compressed_text=compressed_text,
             receipt=self._scoped_receipt(receipt),
             spans=spans,
             metadata=metadata,
         )
+        public = _public_item(stored)
+        assert public is not None
+        return public
+
+    def get_receipt(self, receipt_id: str) -> StoredCompression | None:
+        return _public_item(super().get_receipt(receipt_id))
 
     def search_exact_excerpts(
         self,
