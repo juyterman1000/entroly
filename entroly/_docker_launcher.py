@@ -377,11 +377,17 @@ def launch() -> None:
 
 
 def _env_passthrough() -> list[str]:
-    """Forward ENTROLY_* environment variables into the container."""
+    """Forward ENTROLY_* names without exposing their values in process argv.
+
+    Docker's ``-e NAME`` form copies the value from the inherited host
+    environment. Keeping ``NAME=value`` out of the command line prevents API
+    keys and tokens from appearing in process listings, CI diagnostics, or
+    crash reports. Sorting also makes the generated command deterministic.
+    """
     args: list[str] = []
-    for key, value in os.environ.items():
+    for key in sorted(os.environ):
         if key.startswith("ENTROLY_"):
-            args += ["-e", f"{key}={value}"]
+            args += ["-e", key]
     return args
 
 
