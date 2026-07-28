@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -16,6 +17,32 @@ _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _STALE_ENTITY_HEADERS = frozenset(
     {"content-encoding", "content-length", "transfer-encoding"}
 )
+
+
+class _LazyDirectTransport(httpx.AsyncBaseTransport):
+    """Direct HTTP transport that initializes its CA context on first use."""
+
+    def __init__(self, verify: str):
+        self._verify = verify
+        self._transport: httpx.AsyncHTTPTransport | None = None
+        self._lock = asyncio.Lock()
+
+    async def _get_transport(self) -> httpx.AsyncHTTPTransport:
+        if self._transport is None:
+            async with self._lock:
+                if self._transport is None:
+                    # AsyncHTTPTransport never consults HTTP_PROXY/HTTPS_PROXY;
+                    # proxy routing is a client-level trust_env behavior.
+                    self._transport = httpx.AsyncHTTPTransport(verify=self._verify)
+        return self._transport
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        transport = await self._get_transport()
+        return await transport.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        if self._transport is not None:
+            await self._transport.aclose()
 
 
 class BoundedAsyncClient(_safe.BoundedAsyncClient):
@@ -120,9 +147,8 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
 
     HTTPX historically uses ``trust_env=True`` both for CA discovery and proxy
     discovery. When a CA bundle is explicitly configured but proxy inheritance is
-    not opted in, direct mounted transports override all HTTP/HTTPS routes. This
-    preserves the existing CA contract without routing prompts through ambient
-    proxy variables.
+    not opted in, explicit direct mounts override environment proxy routes. The
+    mounts are lazy so validating a config dictionary does not parse the CA file.
     """
     ca_bundle = _proxy._resolve_ca_bundle_from_env()
     trust_proxy_env = _safe._env_flag("ENTROLY_TRUST_PROXY_ENV")
@@ -139,18 +165,10 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
     if ca_bundle:
         kwargs["verify"] = ca_bundle
     if ca_bundle and not trust_proxy_env:
-        # Preserve the existing public ``trust_env=True`` CA-discovery contract
-        # while forcing both URL schemes onto transports that ignore proxy env.
         kwargs["trust_env"] = True
         kwargs["mounts"] = {
-            "http://": httpx.AsyncHTTPTransport(
-                verify=ca_bundle,
-                trust_env=False,
-            ),
-            "https://": httpx.AsyncHTTPTransport(
-                verify=ca_bundle,
-                trust_env=False,
-            ),
+            "http://": _LazyDirectTransport(ca_bundle),
+            "https://": _LazyDirectTransport(ca_bundle),
         }
     return kwargs
 
