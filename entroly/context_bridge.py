@@ -361,7 +361,7 @@ class CognitiveBus:
             priority = (kl + surprise) * (2.0 if is_spike else 1.0) * recency
 
             # Novelty filter (simple hash-based dedup)
-            payload_hash = hashlib.md5(payload.encode()).hexdigest()[:16]
+            payload_hash = hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()[:16]
             if payload_hash in sub._seen_hashes:
                 self._total_suppressed += 1
                 continue

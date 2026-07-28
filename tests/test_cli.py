@@ -213,6 +213,37 @@ def test_wrap_cli_agents_share_proxy_start_diagnostics(tmp_path, monkeypatch, ca
     assert "Aider" in out
 
 
+def test_wrap_never_retries_user_arguments_through_a_shell(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "_check_codebase", lambda: True)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setattr(cli, "_start_proxy_if_needed", lambda port: True)
+    monkeypatch.setattr(cli, "_proxy_request_count", lambda port: 0)
+    monkeypatch.setattr(cli.shutil, "which", lambda _cmd: "C:/tools/aider.cmd")
+    monkeypatch.setattr(cli.os, "name", "nt")
+
+    calls = []
+
+    def fail_direct_launch(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        raise PermissionError("shim cannot be executed directly")
+
+    monkeypatch.setattr(cli.subprocess, "run", fail_direct_launch)
+    args = SimpleNamespace(
+        agent="aider",
+        agent_args=["--", "&", "whoami"],
+        port=9463,
+        dry_run=False,
+        force=False,
+    )
+
+    assert cli.cmd_wrap(args) == 1
+    agent_calls = [call for call in calls if call[0][0] == "C:/tools/aider.cmd"]
+    assert len(agent_calls) == 1
+    assert all(kwargs.get("shell") is not True for _cmd, kwargs in calls)
+    assert "Launch Aider manually" in capsys.readouterr().out
+
+
 def test_update_check_can_be_disabled(monkeypatch):
     monkeypatch.setenv("ENTROLY_DISABLE_UPDATE_CHECK", "1")
 

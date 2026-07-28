@@ -534,7 +534,8 @@ class FederationClient:
             # Use enough of client_id + random suffix to prevent filename collisions
             # when multiple peers contribute at the same second
             random_suffix = hashlib.md5(
-                json.dumps(packet.weights, sort_keys=True).encode()
+                json.dumps(packet.weights, sort_keys=True).encode(),
+                usedforsecurity=False,
             ).hexdigest()[:6]
             filename = (
                 f"contrib_{packet.archetype}_{packet.client_id[:16]}"

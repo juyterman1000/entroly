@@ -205,7 +205,10 @@ def _simhash64(text: str) -> int:
         features = tokens
     bits = [0] * 64
     for feat in features:
-        h = int(_hl.md5(feat.encode("utf-8", errors="replace")).hexdigest(), 16)
+        h = int(_hl.md5(
+            feat.encode("utf-8", errors="replace"),
+            usedforsecurity=False,
+        ).hexdigest(), 16)
         for i in range(64):
             if (h >> i) & 1:
                 bits[i] += 1
