@@ -53,7 +53,7 @@ def test_exact_repeat_becomes_recoverable_reference() -> None:
     assert second.receipt.algorithm == "exact_reference"
     assert second.receipt.exact_reference_of == first.receipt.receipt_id
     assert second.content.startswith("[entroly-ref:recovery-1:span-1]")
-    assert len(second.content) < len(first.content)
+    assert len(second.content) < len(envelope.content)
 
 
 def test_redaction_precedes_recovery_persistence() -> None:
