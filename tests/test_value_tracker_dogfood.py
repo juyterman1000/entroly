@@ -165,6 +165,7 @@ def test_activity_feed_rejects_negative_savings_and_nonfinite_metadata(
         cost_saved_usd=float("nan"),
         confidence=float("inf"),
         finite_negative_delta=-12.5,
+        ts=0,
     )
 
     restored = ValueTracker(tmp_path)
@@ -176,7 +177,53 @@ def test_activity_feed_rejects_negative_savings_and_nonfinite_metadata(
     assert float(row.get("cost_saved_usd", 0.0)) >= 0.0
     assert math.isfinite(float(row.get("confidence", 0.0)))
     assert row["finite_negative_delta"] == -12.5
+    assert float(row["ts"]) > 0.0
     json.dumps(row, allow_nan=False)
+
+
+def test_lock_contention_drops_optional_telemetry_without_blocking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    holder = r"""
+import sys
+import time
+from pathlib import Path
+from entroly.value_tracker import ValueTracker
+
+root = Path(sys.argv[1])
+tracker = ValueTracker(root)
+with tracker._interprocess_lock():
+    (root / "lock-held").write_text("held", encoding="utf-8")
+    time.sleep(3.0)
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-c", holder, str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "ENTROLY_DISABLE_UPDATE_CHECK": "1"},
+    )
+    deadline = time.monotonic() + 15
+    while not (tmp_path / "lock-held").exists():
+        if process.poll() is not None or time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
+    assert (tmp_path / "lock-held").exists()
+
+    monkeypatch.setenv("ENTROLY_VALUE_LOCK_TIMEOUT", "0.15")
+    tracker = ValueTracker(tmp_path)
+    started = time.monotonic()
+    tracker.record(10, source="sdk")
+    elapsed = time.monotonic() - started
+    assert elapsed < 1.0, f"optional telemetry blocked for {elapsed:.3f}s"
+    assert tracker.get_lifetime()["requests_total"] == 0
+
+    stdout, stderr = process.communicate(timeout=10)
+    assert process.returncode == 0, f"stdout={stdout}\nstderr={stderr}"
+    tracker.record(10, source="sdk")
+    assert ValueTracker(tmp_path).get_lifetime()["requests_total"] == 1
 
 
 def test_corrupt_tracker_state_fails_safe_without_claiming_old_value(

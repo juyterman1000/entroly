@@ -1235,6 +1235,20 @@ class EntrolyEngine:
                 if query_analysis:
                     result["query_analysis"] = query_analysis
 
+            # Normalize the public selection contract across QCCR, native,
+            # pure-Python, fast-path, and oversize-excerpt selectors. Several
+            # fallback paths returned real selected fragments while omitting
+            # ``selected_count`` (or leaving it at zero), which made agents and
+            # dashboards report an empty result despite receiving context.
+            selected_payload = result.get(
+                "selected_fragments", result.get("selected", [])
+            )
+            if isinstance(selected_payload, list):
+                result["selected_count"] = len(selected_payload)
+                optimization_stats = result.get("optimization_stats")
+                if isinstance(optimization_stats, dict):
+                    optimization_stats["selected_count"] = len(selected_payload)
+
             # ── engine_s6 edit-target reordering (post-selection) ──
             # The knapsack picks WHICH fragments stay in budget; engine_s6
             # then re-orders those by file-edit-target priority (source >
