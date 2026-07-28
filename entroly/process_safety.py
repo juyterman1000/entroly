@@ -6,8 +6,9 @@ pipe handles open, which creates leaked processes, blocked readers, and false
 confidence that a timed-out command was fully stopped.
 
 This module starts commands in an isolated process group, captures output in
-anonymous temporary files, kills the complete process tree on timeout, and
-returns a structured result without raising for ordinary process failures.
+anonymous temporary files, monitors their growth, kills the complete process tree
+on timeout or output flood, and returns a structured result without raising for
+ordinary process failures.
 """
 
 from __future__ import annotations
@@ -18,11 +19,14 @@ import re
 import signal
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
 _DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+_DEFAULT_MIN_CAPTURE_BYTES = 8 * 1024 * 1024
+_MAX_CAPTURE_BYTES = 256 * 1024 * 1024
 _TRUNCATION_MARKER = b"\n...[output truncated]...\n"
 _SENSITIVE_ENV_EXACT = frozenset(
     {
@@ -54,11 +58,13 @@ class BoundedProcessResult:
     execution_error: str = ""
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    capture_limit_exceeded: bool = False
 
     @property
     def succeeded(self) -> bool:
         return (
             not self.timed_out
+            and not self.capture_limit_exceeded
             and not self.execution_error
             and self.returncode == 0
         )
@@ -135,15 +141,17 @@ def _validate_timeout(timeout: float) -> float:
     return value
 
 
-def _validate_max_output_bytes(value: int) -> int:
+def _validate_positive_bytes(value: int, *, name: str) -> int:
     if isinstance(value, bool):
-        raise ValueError("max_output_bytes must be a positive integer")
+        raise ValueError(f"{name} must be a positive integer")
     try:
         normalized = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError("max_output_bytes must be a positive integer") from exc
-    if normalized <= 0:
-        raise ValueError("max_output_bytes must be a positive integer")
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if normalized <= 0 or normalized > _MAX_CAPTURE_BYTES:
+        raise ValueError(
+            f"{name} must be between 1 and {_MAX_CAPTURE_BYTES} bytes"
+        )
     return normalized
 
 
@@ -212,6 +220,13 @@ def _read_bounded(
     return payload.decode("utf-8", errors="replace"), truncated
 
 
+def _capture_size(handle) -> int:
+    try:
+        return int(os.fstat(handle.fileno()).st_size)
+    except (OSError, ValueError):
+        return 0
+
+
 def run_bounded_process(
     command: Sequence[str],
     *,
@@ -219,18 +234,37 @@ def run_bounded_process(
     cwd: str | os.PathLike[str] | None = None,
     env: Mapping[str, str] | None = None,
     max_output_bytes: int = _DEFAULT_MAX_OUTPUT_BYTES,
+    max_capture_bytes: int | None = None,
     preserve_stdout_tail: bool = False,
     preserve_stderr_tail: bool = True,
 ) -> BoundedProcessResult:
     """Execute a command with bounded output and full process-tree cleanup.
 
-    No shell is involved. Ordinary launch failures and timeouts are represented
-    in the returned result. Invalid API inputs raise ``ValueError`` before a
-    process is started.
+    ``max_output_bytes`` bounds each returned stream. ``max_capture_bytes`` is a
+    hard per-stream temporary-file ceiling; crossing it terminates the process
+    tree. No shell is involved. Ordinary launch failures and timeouts are
+    represented in the returned result. Invalid API inputs raise ``ValueError``
+    before a process is started.
     """
     args = _validate_command(command)
     timeout_value = _validate_timeout(timeout)
-    output_limit = _validate_max_output_bytes(max_output_bytes)
+    output_limit = _validate_positive_bytes(
+        max_output_bytes,
+        name="max_output_bytes",
+    )
+    if max_capture_bytes is None:
+        capture_limit = max(
+            _DEFAULT_MIN_CAPTURE_BYTES,
+            min(_MAX_CAPTURE_BYTES, output_limit * 8),
+        )
+    else:
+        capture_limit = _validate_positive_bytes(
+            max_capture_bytes,
+            name="max_capture_bytes",
+        )
+        if capture_limit < output_limit:
+            raise ValueError("max_capture_bytes must be at least max_output_bytes")
+
     resolved_cwd = None if cwd is None else str(Path(cwd))
     proc: subprocess.Popen[bytes] | None = None
 
@@ -262,16 +296,32 @@ def run_bounded_process(
             )
 
         timed_out = False
-        try:
-            returncode = proc.wait(timeout=timeout_value)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            terminate_process_tree(proc)
-            returncode = proc.returncode
-        finally:
-            if proc.poll() is None:
+        capture_limit_exceeded = False
+        deadline = time.monotonic() + timeout_value
+        while proc.poll() is None:
+            if (
+                _capture_size(stdout_capture) > capture_limit
+                or _capture_size(stderr_capture) > capture_limit
+            ):
+                capture_limit_exceeded = True
                 terminate_process_tree(proc)
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                terminate_process_tree(proc)
+                break
+            time.sleep(min(0.01, remaining))
 
+        if proc.poll() is None:
+            terminate_process_tree(proc)
+        returncode = proc.returncode
+
+        # Catch a process that exited between polls after crossing the ceiling.
+        capture_limit_exceeded = capture_limit_exceeded or (
+            _capture_size(stdout_capture) > capture_limit
+            or _capture_size(stderr_capture) > capture_limit
+        )
         stdout, stdout_truncated = _read_bounded(
             stdout_capture,
             max_bytes=output_limit,
@@ -282,12 +332,20 @@ def run_bounded_process(
             max_bytes=output_limit,
             preserve_tail=preserve_stderr_tail,
         )
+        execution_error = ""
+        if capture_limit_exceeded:
+            execution_error = (
+                f"process output exceeded {capture_limit} bytes; "
+                "process tree terminated"
+            )
         return BoundedProcessResult(
             args=args,
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
             timed_out=timed_out,
+            execution_error=execution_error,
             stdout_truncated=stdout_truncated,
             stderr_truncated=stderr_truncated,
+            capture_limit_exceeded=capture_limit_exceeded,
         )
