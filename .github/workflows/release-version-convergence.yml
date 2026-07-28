@@ -1,0 +1,239 @@
+name: One-time Release Version Convergence
+
+on:
+  push:
+    branches: [fix/docker-quality-gate-convergence]
+    paths:
+      - '.github/workflows/release-version-convergence.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: entroly-release-version-convergence
+  cancel-in-progress: false
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OLD_VERSION: '1.0.67'
+      NEW_VERSION: '1.0.68'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/docker-quality-gate-convergence
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Bump every active release surface and rebuild MCPB
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          root = Path.cwd()
+          old = os.environ['OLD_VERSION']
+          new = os.environ['NEW_VERSION']
+
+          def read(path: str) -> str:
+              return (root / path).read_text(encoding='utf-8')
+
+          def write(path: str, text: str) -> None:
+              (root / path).write_text(text, encoding='utf-8')
+
+          def replace_required(path: str, before: str, after: str) -> None:
+              text = read(path)
+              if before not in text and after not in text:
+                  raise SystemExit(f'{path}: neither expected old nor new value exists: {before!r}')
+              write(path, text.replace(before, after))
+
+          def set_json_version(path: str, *, package_dependency: bool = False) -> None:
+              target = root / path
+              data = json.loads(target.read_text(encoding='utf-8'))
+              data['version'] = new
+              if path == 'server.json':
+                  for package in data.get('packages', []):
+                      package['version'] = new
+              if package_dependency:
+                  dependencies = data.setdefault('dependencies', {})
+                  if 'entroly-wasm' in dependencies:
+                      dependencies['entroly-wasm'] = new
+              target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+          def set_top_level_toml_version(path: str) -> None:
+              text = read(path)
+              updated, count = re.subn(
+                  rf'(?m)^version\s*=\s*["\']{re.escape(old)}["\']',
+                  f'version = "{new}"',
+                  text,
+                  count=1,
+              )
+              if count == 0:
+                  if not re.search(rf'(?m)^version\s*=\s*["\']{re.escape(new)}["\']', text):
+                      raise SystemExit(f'{path}: top-level version is neither {old} nor {new}')
+                  updated = text
+              updated = updated.replace(f'entroly-core>={old},<2', f'entroly-core>={new},<2')
+              write(path, updated)
+
+          def update_lock(path: str, names: set[str]) -> None:
+              target = root / path
+              if not target.exists():
+                  return
+              text = target.read_text(encoding='utf-8')
+              blocks = text.split('[[package]]')
+              changed = False
+              for index in range(1, len(blocks)):
+                  block = blocks[index]
+                  name = re.search(r'(?m)^name = "([^"]+)"', block)
+                  version = re.search(r'(?m)^version = "([^"]+)"', block)
+                  if name and version and name.group(1) in names and version.group(1) == old:
+                      blocks[index] = block[:version.start(1)] + new + block[version.end(1):]
+                      changed = True
+              if changed:
+                  target.write_text('[[package]]'.join(blocks), encoding='utf-8')
+
+          replace_required('entroly/__init__.py', f'__version__ = "{old}"', f'__version__ = "{new}"')
+
+          for path in (
+              'pyproject.toml',
+              'entroly/pyproject.toml',
+              'entroly-core/pyproject.toml',
+              'entroly-core/Cargo.toml',
+              'entroly-qccr/Cargo.toml',
+              'entroly-wasm/Cargo.toml',
+          ):
+              set_top_level_toml_version(path)
+
+          for path in (
+              'entroly/npm/package.json',
+              'entroly-wasm/package.json',
+              'integrations/openclaw/package.json',
+              'server.json',
+              '.claude-plugin/manifest.json',
+              '.mcpb-build/manifest.json',
+          ):
+              set_json_version(path)
+          set_json_version('entroly/npm-alias/package.json', package_dependency=True)
+
+          native_status = read('entroly/native_status.py').replace(old, new)
+          write('entroly/native_status.py', native_status)
+
+          release_test = read('tests/test_release_surface.py')
+          release_test = release_test.replace(
+              f'RELEASE_VERSION = "{old}"', f'RELEASE_VERSION = "{new}"'
+          )
+          release_test = release_test.replace(
+              'test_public_package_versions_are_1_0_67',
+              'test_public_package_versions_are_1_0_68',
+          )
+          write('tests/test_release_surface.py', release_test)
+
+          # Active installation instructions must never steer users to the prior floor.
+          excluded = ('docs/releases/', 'docs/research/', 'benchmarks/results/', '.entroly/')
+          pin_pattern = re.compile(
+              rf'(?P<prefix>entroly(?:-core)?(?:==|>=|~=))["\']?{re.escape(old)}'
+          )
+          for path in root.rglob('*.md'):
+              relative = path.relative_to(root).as_posix()
+              if any(part in relative for part in excluded):
+                  continue
+              text = path.read_text(encoding='utf-8', errors='strict')
+              updated = pin_pattern.sub(lambda match: match.group('prefix') + new, text)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+
+          update_lock('entroly-core/Cargo.lock', {'entroly-core', 'entroly-qccr'})
+          update_lock('entroly-qccr/Cargo.lock', {'entroly-qccr'})
+          update_lock('entroly-wasm/Cargo.lock', {'entroly-wasm'})
+
+          manifest = (root / '.mcpb-build/manifest.json').read_bytes()
+          source = root / 'entroly.mcpb'
+          if not source.exists():
+              raise SystemExit('entroly.mcpb is missing')
+          with zipfile.ZipFile(source, 'r') as archive:
+              names = archive.namelist()
+              if 'manifest.json' not in names:
+                  raise SystemExit('entroly.mcpb does not contain manifest.json')
+              fd, temporary_name = tempfile.mkstemp(prefix='entroly-mcpb-', suffix='.zip')
+              os.close(fd)
+              temporary = Path(temporary_name)
+              try:
+                  with zipfile.ZipFile(temporary, 'w') as rebuilt:
+                      for info in archive.infolist():
+                          payload = manifest if info.filename == 'manifest.json' else archive.read(info.filename)
+                          rebuilt.writestr(info, payload)
+                  temporary.replace(source)
+              finally:
+                  temporary.unlink(missing_ok=True)
+
+          # Fail before commit if canonical versions diverge.
+          expected_json = (
+              'entroly/npm/package.json',
+              'entroly/npm-alias/package.json',
+              'entroly-wasm/package.json',
+              'integrations/openclaw/package.json',
+              'server.json',
+              '.claude-plugin/manifest.json',
+              '.mcpb-build/manifest.json',
+          )
+          for path in expected_json:
+              data = json.loads(read(path))
+              if data.get('version') != new:
+                  raise SystemExit(f'{path}: version is {data.get("version")!r}, expected {new}')
+          with zipfile.ZipFile(source) as bundle:
+              if json.loads(bundle.read('manifest.json')) != json.loads(manifest):
+                  raise SystemExit('entroly.mcpb manifest does not match .mcpb-build/manifest.json')
+          PY
+
+      - name: Validate release surfaces, package metadata, locks, and bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest tests/test_release_surface.py tests/test_release_surface_consistency.py -q
+          cargo metadata --no-deps --format-version 1 --manifest-path entroly-core/Cargo.toml >/dev/null
+          cargo metadata --no-deps --format-version 1 --manifest-path entroly-qccr/Cargo.toml >/dev/null
+          cargo metadata --no-deps --format-version 1 --manifest-path entroly-wasm/Cargo.toml >/dev/null
+          python -m compileall -q entroly
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in (
+              'server.json',
+              '.claude-plugin/manifest.json',
+              '.mcpb-build/manifest.json',
+              'entroly/npm/package.json',
+              'entroly/npm-alias/package.json',
+              'entroly-wasm/package.json',
+              'integrations/openclaw/package.json',
+          ):
+              json.loads(Path(path).read_text(encoding='utf-8'))
+          PY
+
+      - name: Commit the verified convergence and remove this one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/release-version-convergence.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git commit -m 'chore(release): bump Entroly to 1.0.68 everywhere'
+          git push origin HEAD:fix/docker-quality-gate-convergence
