@@ -8,10 +8,10 @@ loopback-only.
 
 Startup and shutdown are treated as auditable transactions. The daemon does not
 claim ``running`` until every required listener accepts a connection. It does not
-claim ``stopped`` while a proxy or MCP worker is still alive. FastMCP's SSE app is
-mounted into an Entroly-owned Uvicorn server so shutdown has an explicit handle;
-a graceful stop is followed by a bounded force-exit attempt, then a visible
-``stop_failed`` state if a worker remains stuck.
+claim ``stopped`` while a proxy, MCP, or dashboard service may still be alive.
+FastMCP's SSE app is mounted into an Entroly-owned Uvicorn server so shutdown has
+an explicit handle; graceful exit is followed by a bounded force-exit attempt,
+then a visible ``stop_failed`` state if anything remains stuck.
 """
 
 from __future__ import annotations
@@ -224,8 +224,10 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             quality=quality,
             repo_paths=repo_paths,
         )
-        self._startup_lock = threading.Lock()
-        self._stop_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
+        # Compatibility aliases for diagnostic tooling that introspects locks.
+        self._startup_lock = self._lifecycle_lock
+        self._stop_lock = self._lifecycle_lock
         self._mcp_server: Any = None
 
     def _validated_worker_host(self) -> str:
@@ -332,39 +334,82 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             state.started_at = None
             state.error = None
 
-    def _request_server_exit(self, server: Any) -> None:
+    @staticmethod
+    def _request_server_exit(server: Any, *, force: bool = False) -> None:
         if server is None:
             return
         try:
             server.should_exit = True
+            if force:
+                server.force_exit = True
         except Exception:
             pass
 
-    def _rollback_startup(self) -> None:
+    def _shutdown_owned_services(self) -> list[str]:
+        """Request shutdown and return service names that may still be alive."""
         self._shutdown.set()
         self._learning_wake.set()
         self._request_server_exit(self._proxy_server)
         self._request_server_exit(self._mcp_server)
+
+        failures: list[str] = []
+        dashboard_closed = True
         if self._dashboard_server is not None:
             try:
                 self._dashboard_server.shutdown()
-            except Exception:
-                pass
-        timeout = min(2.0, _stop_timeout())
-        for worker in list(self._workers.values()):
+                close = getattr(self._dashboard_server, "server_close", None)
+                if callable(close):
+                    close()
+            except Exception as exc:
+                dashboard_closed = False
+                self.state.dashboard.error = str(exc)[:1000]
+                failures.append("dashboard")
+        self.state.dashboard.running = not dashboard_closed
+
+        timeout = _stop_timeout()
+        for name, worker in list(self._workers.items()):
             if worker is threading.current_thread():
-                continue
-            worker.join(timeout=timeout)
-        self.state.proxy.running = False
-        self.state.dashboard.running = False
-        self.state.mcp.running = False
-        self.state.status = "stopped"
-        self.state.started_at = None
+                alive = worker.is_alive()
+            else:
+                worker.join(timeout=timeout)
+                alive = worker.is_alive()
+                if alive:
+                    server = (
+                        self._proxy_server if name == "proxy" else self._mcp_server
+                    )
+                    self._request_server_exit(server, force=True)
+                    worker.join(timeout=min(2.0, timeout))
+                    alive = worker.is_alive()
+            worker_state = getattr(self.state, name, None)
+            if worker_state is not None:
+                worker_state.running = alive
+            if alive:
+                failures.append(name)
+                if worker_state is not None:
+                    worker_state.error = "worker did not stop within timeout"
+            else:
+                self._workers.pop(name, None)
+
+        return sorted(set(failures))
+
+    def _rollback_startup(self) -> list[str]:
+        failures = self._shutdown_owned_services()
+        if failures:
+            self.state.status = "stop_failed"
+            logger.error(
+                "Startup rollback incomplete; services may still be alive: %s",
+                ", ".join(failures),
+            )
+        else:
+            self.state.status = "stopped"
+            self.state.started_at = None
+            self._engine = None
+        return failures
 
     def start(self) -> None:
         """Start all required services and claim success only after readiness."""
-        if not self._startup_lock.acquire(blocking=False):
-            raise RuntimeError("daemon startup is already in progress")
+        if not self._lifecycle_lock.acquire(blocking=False):
+            raise RuntimeError("another daemon lifecycle operation is in progress")
         try:
             if self.state.status != "stopped":
                 raise RuntimeError(
@@ -417,7 +462,7 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
             try:
                 import webbrowser
 
-                webbrowser.open(f"http://localhost:{self.state.dashboard.port}")
+                webbrowser.open(f"http://127.0.0.1:{self.state.dashboard.port}")
             except Exception:
                 pass
             logger.info(
@@ -428,63 +473,30 @@ class EntrolyDaemon(_ORIGINAL_DAEMON):
                 "ON" if self.state.learning_enabled else "OFF",
             )
         finally:
-            self._startup_lock.release()
+            self._lifecycle_lock.release()
 
     def stop(self) -> None:
-        """Stop owned servers and report failure while any worker remains alive."""
-        if not self._stop_lock.acquire(blocking=False):
-            raise RuntimeError("daemon shutdown is already in progress")
+        """Stop owned services and report failure while anything remains alive."""
+        if not self._lifecycle_lock.acquire(blocking=False):
+            raise RuntimeError("another daemon lifecycle operation is in progress")
         try:
             if self.state.status == "stopped":
                 return
             self.state.status = "stopping"
-            self._shutdown.set()
-            self._learning_wake.set()
-            self._request_server_exit(self._proxy_server)
-            self._request_server_exit(self._mcp_server)
-            if self._dashboard_server is not None:
-                try:
-                    self._dashboard_server.shutdown()
-                except Exception as exc:
-                    self.state.dashboard.error = str(exc)[:1000]
-
-            timeout = _stop_timeout()
-            alive: list[str] = []
-            for name, worker in list(self._workers.items()):
-                if worker is threading.current_thread():
-                    continue
-                worker.join(timeout=timeout)
-                if worker.is_alive():
-                    server = (
-                        self._proxy_server if name == "proxy" else self._mcp_server
-                    )
-                    if server is not None:
-                        try:
-                            server.force_exit = True
-                            server.should_exit = True
-                        except Exception:
-                            pass
-                    worker.join(timeout=min(2.0, timeout))
-                if worker.is_alive():
-                    alive.append(name)
-                    worker_state = getattr(self.state, name, None)
-                    if worker_state is not None:
-                        worker_state.error = "worker did not stop within timeout"
-
-            self.state.proxy.running = False
-            self.state.dashboard.running = False
-            self.state.mcp.running = False
-            if alive:
+            failures = self._shutdown_owned_services()
+            if failures:
                 self.state.status = "stop_failed"
                 raise RuntimeError(
-                    "daemon shutdown incomplete; workers still alive: "
-                    + ", ".join(sorted(alive))
+                    "daemon shutdown incomplete; services still alive: "
+                    + ", ".join(failures)
                 )
             self.state.status = "stopped"
             self.state.started_at = None
+            self._engine = None
+            self._proxy_runtime = None
             logger.info("Entroly daemon stopped")
         finally:
-            self._stop_lock.release()
+            self._lifecycle_lock.release()
 
 
 # Keep historical imports aligned. CLI and dashboard code import the class lazily
