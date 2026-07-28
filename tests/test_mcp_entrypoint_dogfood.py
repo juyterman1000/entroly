@@ -1,8 +1,8 @@
 """Independent dogfood tests for the installed ``entroly`` MCP entrypoint.
 
-These tests intentionally avoid importing ``entroly.server`` directly.  Users
+These tests intentionally avoid importing ``entroly.server`` directly. Users
 register the console command, so the console command is the contract we need to
-exercise.  Startup failures are failures, never skips, and stdout must remain
+exercise. Startup failures are failures, never skips, and stdout must remain
 JSON-RPC clean.
 """
 
@@ -123,6 +123,15 @@ def _call_tool(
     return _read_response(proc, request_id)
 
 
+def _tool_payload(response: dict) -> dict:
+    assert "result" in response, response
+    result = response["result"]
+    assert result.get("isError") is not True, result
+    content = result.get("content") or []
+    assert content and content[0].get("type") == "text", result
+    return json.loads(content[0]["text"])
+
+
 @pytest.fixture(scope="module")
 def installed_mcp() -> subprocess.Popen[str]:
     executable = shutil.which("entroly")
@@ -241,22 +250,68 @@ def test_documented_entrypoint_exactly_recovers_large_unicode_payload(
     assert payload["retrieval_handle"].startswith("ccr:")
 
 
-def test_optimize_context_is_bounded_and_not_alias_duplicated(
+def test_optimize_context_payload_is_bounded_and_internally_consistent(
     installed_mcp: subprocess.Popen[str],
 ) -> None:
+    """Serialization safety must hold even when a backend returns no match."""
     optimized = _call_tool(
         installed_mcp,
         5,
         "optimize_context",
         {"query": "root_wiring_probe needle-root-wiring", "token_budget": 8000},
     )
-    assert "result" in optimized, optimized
-    text = optimized["result"]["content"][0]["text"]
-    assert len(text.encode("utf-8")) < 1_000_000
-    payload = json.loads(text)
+    payload = _tool_payload(optimized)
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    assert len(encoded) < 1_000_000
     assert not ("selected" in payload and "selected_fragments" in payload)
     assert "provenance" in payload
-    assert payload.get("selected_count", 0) > 0
+
+    selected = payload.get("selected_fragments") or payload.get("selected") or []
+    assert payload.get("selected_count") == len(selected)
+    stats = payload.get("optimization_stats") or {}
+    assert stats.get("selected_count") == len(selected)
+    assert int(payload.get("total_fragments", 0)) >= 1
+
+
+def test_explicitly_pinned_evidence_is_selected_on_every_backend(
+    installed_mcp: subprocess.Popen[str],
+) -> None:
+    """Retrieval success gets its own non-vacuous cross-backend contract."""
+    source = "dogfood:pinned-native-selection.py"
+    content = (
+        "def pinned_native_selection_anchor():\n"
+        "    return 'cross-backend-pinned-evidence-7f93'\n"
+    )
+    stored = _tool_payload(
+        _call_tool(
+            installed_mcp,
+            8,
+            "remember_fragment",
+            {
+                "content": content,
+                "source": source,
+                "is_pinned": True,
+            },
+        )
+    )
+    assert stored.get("status") == "ingested", stored
+
+    payload = _tool_payload(
+        _call_tool(
+            installed_mcp,
+            9,
+            "optimize_context",
+            {
+                "query": "pinned_native_selection_anchor cross-backend-pinned-evidence-7f93",
+                "token_budget": 1024,
+            },
+        )
+    )
+    selected = payload.get("selected_fragments") or payload.get("selected") or []
+    assert payload.get("selected_count") == len(selected)
+    assert len(selected) > 0
+    assert any(fragment.get("source") == source for fragment in selected), selected
+    assert any("cross-backend-pinned-evidence-7f93" in fragment.get("content", "") for fragment in selected)
 
 
 def test_unknown_tool_fails_without_killing_server(
