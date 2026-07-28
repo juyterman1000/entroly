@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -23,6 +24,22 @@ from typing import Mapping, Sequence
 
 _DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 _TRUNCATION_MARKER = b"\n...[output truncated]...\n"
+_SENSITIVE_ENV_EXACT = frozenset(
+    {
+        "AWS_SESSION_TOKEN",
+        "AWS_SECRET_ACCESS_KEY",
+        "AZURE_CLIENT_SECRET",
+        "DOCKER_AUTH_CONFIG",
+        "GITHUB_TOKEN",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "NPM_TOKEN",
+        "PYPI_TOKEN",
+    }
+)
+_SECRET_WORDS = frozenset(
+    {"TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "CREDENTIALS", "COOKIE"}
+)
+_KEY_QUALIFIERS = frozenset({"API", "ACCESS", "PRIVATE", "SECRET", "SIGNING"})
 
 
 @dataclass(frozen=True)
@@ -45,6 +62,54 @@ class BoundedProcessResult:
             and not self.execution_error
             and self.returncode == 0
         )
+
+
+def is_sensitive_environment_name(name: str) -> bool:
+    """Return whether an environment name is credential-shaped.
+
+    Tokenized matching avoids false positives such as ``GIT_AUTHOR_NAME`` and
+    ``TOKENIZERS_PARALLELISM`` while still catching common provider credentials.
+    """
+    if not isinstance(name, str):
+        return False
+    upper = name.upper()
+    if upper in _SENSITIVE_ENV_EXACT:
+        return True
+    words = {word for word in re.split(r"[^A-Z0-9]+", upper) if word}
+    if words & _SECRET_WORDS:
+        return True
+    if "KEY" in words and words & _KEY_QUALIFIERS:
+        return True
+    if "AUTH" in words and words & {"TOKEN", "CONFIG", "HEADER", "COOKIE"}:
+        return True
+    return False
+
+
+def sanitized_environment(
+    base: Mapping[str, str] | None = None,
+    *,
+    allow_secrets: bool = False,
+    overrides: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Copy an environment while removing credential-shaped values by default."""
+    source = os.environ if base is None else base
+    child: dict[str, str] = {}
+    for key, value in source.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        if not allow_secrets and is_sensitive_environment_name(key):
+            continue
+        child[key] = value
+    if overrides:
+        for key, value in overrides.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError("environment overrides must contain only strings")
+            if not key or "\x00" in key or "=" in key:
+                raise ValueError("environment override names are invalid")
+            if "\x00" in value:
+                raise ValueError("environment override values must not contain NUL bytes")
+            child[key] = value
+    return child
 
 
 def _validate_command(command: Sequence[str]) -> tuple[str, ...]:
@@ -86,7 +151,13 @@ def terminate_process_tree(
     proc: subprocess.Popen[bytes], *, timeout: float = 1.0
 ) -> None:
     """Best-effort terminate a process and all descendants, then reap it."""
-    wait_timeout = max(0.1, float(timeout))
+    try:
+        wait_timeout = max(0.1, float(timeout))
+    except (TypeError, ValueError):
+        wait_timeout = 1.0
+    if not math.isfinite(wait_timeout):
+        wait_timeout = 1.0
+
     if os.name == "nt":
         try:
             subprocess.run(
@@ -181,7 +252,7 @@ def run_bounded_process(
                     else 0
                 ),
             )
-        except (FileNotFoundError, OSError, ValueError) as exc:
+        except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
             return BoundedProcessResult(
                 args=args,
                 returncode=None,
