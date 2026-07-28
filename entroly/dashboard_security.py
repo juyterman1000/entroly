@@ -1,23 +1,18 @@
 """Security boundary for Entroly's localhost dashboard and control API.
 
-The dashboard renders data derived from repository paths, prompts, model output,
-security findings, selection reasons, and exception messages. Those values are
-not trusted merely because the listener is on loopback: a malicious repository
-or poisoned telemetry record can become stored HTML/JavaScript in the browser,
-and any script executing in the dashboard origin can invoke daemon controls.
+The dashboard displays repository paths, prompts, model output, security
+findings, selection reasons, telemetry, and exception messages. Loopback is not
+a trust boundary: a malicious repository can persist HTML into those values and
+a browser can send requests to localhost from an unrelated website.
 
-This module installs four fail-closed controls without changing the public
-``start_dashboard`` API:
+This module is installed after :mod:`entroly.dashboard` loads and preserves the
+public ``start_dashboard`` API while enforcing:
 
-* every known attacker-controlled ``innerHTML`` sink is escaped;
-* state-changing routes require a per-process capability token;
-* Host, Origin, client address, content type, and request target are validated;
-* the HTTP server has bounded workers, bounded backlog, and socket timeouts.
-
-It is imported during normal package initialization after ``dashboard.py`` and
-``controls_html.py`` are available. If the embedded UI changes so an expected
-rewrite no longer matches, dashboard startup is disabled rather than silently
-serving a partially hardened control plane.
+* display-safe, bounded JSON for routes rendered through ``innerHTML``;
+* a per-process capability token for every state-changing control request;
+* loopback client, exact Host, Origin, Fetch-Metadata, method, and body checks;
+* socket timeouts, a bounded accept queue, and a capped request-worker pool;
+* fail-closed startup when the embedded controls page cannot be hardened.
 """
 
 from __future__ import annotations
@@ -25,17 +20,16 @@ from __future__ import annotations
 import hmac
 import html
 import ipaddress
+import json
 import logging
 import math
 import os
 import secrets
-import socket
 import sys
 import threading
 import time
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -48,7 +42,24 @@ _DEFAULT_MAX_WORKERS = 24
 _DEFAULT_SOCKET_TIMEOUT_S = 5.0
 _MAX_REQUEST_TARGET_CHARS = 8192
 _MAX_TOKEN_CHARS = 512
+_MAX_DISPLAY_DEPTH = 12
+_MAX_DISPLAY_ITEMS = 1000
+_MAX_DISPLAY_STRING_CHARS = 8192
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_DISPLAY_SAFE_PATHS = frozenset(
+    {
+        "/api/metrics",
+        "/api/trends",
+        "/api/confidence",
+        "/api/control/status",
+        "/api/control/repos",
+        "/api/control/learning",
+        "/api/control/privacy",
+        "/api/control/federation",
+        "/api/control/context/last",
+        "/api/control/logs",
+    }
+)
 _INSTALLED = False
 _HARDENING_ERRORS: tuple[str, ...] = ()
 
@@ -79,7 +90,7 @@ CONTROL_TOKEN = _load_control_token()
 
 
 def control_token() -> str:
-    """Return the active token for trusted in-process automation and tests."""
+    """Return the active token for trusted in-process clients and tests."""
     return CONTROL_TOKEN
 
 
@@ -113,197 +124,202 @@ def _env_float(name: str, default: float, minimum: float, maximum: float) -> flo
     return value
 
 
-def _replace_counted(
-    text: str,
-    old: str,
-    new: str,
-    *,
-    label: str,
-    expected: int = 1,
-) -> tuple[str, str | None]:
-    count = text.count(old)
-    if count != expected:
-        return text, f"{label}: expected {expected} occurrence(s), found {count}"
-    return text.replace(old, new), None
+def _bounded_display_string(value: str) -> str:
+    if len(value) <= _MAX_DISPLAY_STRING_CHARS:
+        return html.escape(value, quote=True)
+    return html.escape(value[:_MAX_DISPLAY_STRING_CHARS], quote=True) + "…[truncated]"
 
 
-def _apply_replacements(
-    text: str,
-    replacements: list[tuple[str, str, str, int]],
-) -> tuple[str, list[str]]:
-    errors: list[str] = []
-    for label, old, new, expected in replacements:
-        text, error = _replace_counted(
-            text,
-            old,
-            new,
-            label=label,
-            expected=expected,
-        )
-        if error:
-            errors.append(error)
-    return text, errors
+def _display_safe(value: Any, *, depth: int = 0, seen: set[int] | None = None) -> Any:
+    """Copy JSON-like data into bounded HTML-safe display values.
+
+    Numbers and booleans retain their JSON types. Strings become HTML text, not
+    markup. Cycles, pathological nesting, and giant collections are represented
+    explicitly instead of exhausting the dashboard process.
+    """
+    if depth > _MAX_DISPLAY_DEPTH:
+        return "[depth-limit]"
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    if isinstance(value, float):
+        return round(value, 6) if math.isfinite(value) else 0.0
+    if isinstance(value, str):
+        return _bounded_display_string(value)
+
+    tracked = isinstance(value, (dict, list, tuple, set))
+    active = seen if seen is not None else set()
+    identity = id(value)
+    if tracked:
+        if identity in active:
+            return "[cycle]"
+        active.add(identity)
+    try:
+        if isinstance(value, dict):
+            output: dict[str, Any] = {}
+            for index, (key, child) in enumerate(value.items()):
+                if index >= _MAX_DISPLAY_ITEMS:
+                    output["_truncated"] = True
+                    break
+                output[str(key)] = _display_safe(
+                    child,
+                    depth=depth + 1,
+                    seen=active,
+                )
+            return output
+        if isinstance(value, (list, tuple, set)):
+            items = list(value)
+            output = [
+                _display_safe(child, depth=depth + 1, seen=active)
+                for child in items[:_MAX_DISPLAY_ITEMS]
+            ]
+            if len(items) > _MAX_DISPLAY_ITEMS:
+                output.append("[items-truncated]")
+            return output
+        return _bounded_display_string(str(value))
+    finally:
+        if tracked:
+            active.discard(identity)
 
 
-def _harden_dashboard_html(source: str) -> tuple[str, list[str]]:
-    replacements = [
-        (
-            "dashboard-js-argument-encoder",
-            """function escHtml(s){
-  return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));
-}""",
-            """function escHtml(s){
-  return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));
-}
-function jsArg(s){return escHtml(JSON.stringify(String(s==null?'':s)));}""",
-            1,
-        ),
-        (
-            "health-recommendation",
-            "${h.top_recommendation?'<div class=\"health-rec\">💡 '+h.top_recommendation+'</div>':''}`;",
-            "${h.top_recommendation?'<div class=\"health-rec\">💡 '+escHtml(h.top_recommendation)+'</div>':''}`;",
-            1,
-        ),
-        (
-            "security-finding",
-            """panels+=findings.slice(0,4).map(f=>`<div class="finding"><span class="finding-sev ${(f.severity||'').toLowerCase()==='critical'?'crit':'high'}">${(f.severity||'?')[0]}</span><div><div class="finding-file">${f.file||f.source||'unknown'}${f.line?':'+f.line:''}</div><div class="finding-desc">${f.message||f.category||''}</div></div></div>`).join('');""",
-            """panels+=findings.slice(0,4).map(f=>`<div class="finding"><span class="finding-sev ${(f.severity||'').toLowerCase()==='critical'?'crit':'high'}">${escHtml((f.severity||'?')[0])}</span><div><div class="finding-file">${escHtml(f.file||f.source||'unknown')}${f.line?':'+escHtml(f.line):''}</div><div class="finding-desc">${escHtml(f.message||f.category||'')}</div></div></div>`).join('');""",
-            1,
-        ),
-        (
-            "security-category",
-            """panels+=Object.entries(cats).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:var(--dim);">${k}</span><span class="tag t-rose">${v}</span></div>`).join('');""",
-            """panels+=Object.entries(cats).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:var(--dim);">${escHtml(k)}</span><span class="tag t-rose">${escHtml(v)}</span></div>`).join('');""",
-            1,
-        ),
-        (
-            "knapsack-source",
-            "${(f.source||f.id||'').split(/[\\\\/]/).pop()}",
-            "${escHtml((f.source||f.id||'').split(/[\\\\/]/).pop())}",
-            2,
-        ),
-        (
-            "knapsack-included-reason",
-            "${(f.reason||'').slice(0,30)}",
-            "${escHtml((f.reason||'').slice(0,30))}",
-            1,
-        ),
-        (
-            "knapsack-excluded-reason",
-            "${(f.reason||'below threshold').slice(0,30)}",
-            "${escHtml((f.reason||'below threshold').slice(0,30))}",
-            1,
-        ),
-        (
-            "request-model",
-            "${r.model||'—'}",
-            "${escHtml(r.model||'—')}",
-            1,
-        ),
-        (
-            "request-query",
-            "${r.query||'—'}",
-            "${escHtml(r.query||'—')}",
-            1,
-        ),
-        (
-            "dashboard-error-banner",
-            """const list=items.slice(0,5).map(x=>`<div style="margin-top:6px;opacity:.85"><code style="background:rgba(239,68,68,.12);padding:1px 6px;border-radius:4px">${x.section||'?'}</code> ${x.type||'Error'}: ${(x.message||'').substring(0,200)}</div>`).join('');""",
-            """const list=items.slice(0,5).map(x=>`<div style="margin-top:6px;opacity:.85"><code style="background:rgba(239,68,68,.12);padding:1px 6px;border-radius:4px">${escHtml(x.section||'?')}</code> ${escHtml(x.type||'Error')}: ${escHtml((x.message||'').substring(0,200))}</div>`).join('');""",
-            1,
-        ),
-        (
-            "health-grade",
-            "<div class=\"grade\" style=\"color:${gc}\">${g}</div>",
-            "<div class=\"grade\" style=\"color:${gc}\">${escHtml(g)}</div>",
-            1,
-        ),
-        (
-            "cogops-engine",
-            "<div class=\"cache-kpi-val hv-violet\">${c.engine||'—'}</div>",
-            "<div class=\"cache-kpi-val hv-violet\">${escHtml(c.engine||'—')}</div>",
-            1,
-        ),
-        (
-            "pricing-as-of",
-            "'Rates as of '+((d.pricing||{}).as_of||'—')+' · '",
-            "'Rates as of '+escHtml((d.pricing||{}).as_of||'—')+' · '",
-            1,
-        ),
-        (
-            "trend-status",
-            "+'</span>'+status+'</span></div>'+",
-            "+'</span>'+escHtml(status)+'</span></div>'+",
-            1,
-        ),
-    ]
-    return _apply_replacements(source, replacements)
+def _inject_once(source: str, marker: str, payload: str, *, label: str) -> tuple[str, str | None]:
+    count = source.count(marker)
+    if count != 1:
+        return source, f"{label}: expected one {marker!r}, found {count}"
+    return source.replace(marker, payload + marker), None
+
+
+_SAFE_CONTROLS_SCRIPT = """
+<script>
+(() => {
+  'use strict';
+  const CONTROL_TOKEN = __ENTROLY_CONTROL_TOKEN__;
+  const escHtml = value => String(value == null ? '' : value).replace(
+    /[&<>"']/g,
+    character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])
+  );
+  const decodeHtml = value => {
+    const node = document.createElement('textarea');
+    node.innerHTML = String(value == null ? '' : value);
+    return node.value;
+  };
+  const jsArg = value => escHtml(JSON.stringify(String(value == null ? '' : value)));
+
+  window.ctrlPost = async function(url, body = {}, message = 'Done') {
+    try {
+      controlError('');
+      const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Entroly-Control-Token': CONTROL_TOKEN,
+        },
+        body: JSON.stringify(body),
+      });
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = {ok: false, error: 'Invalid server response'};
+      }
+      if (response.ok && payload.ok) {
+        toast(message);
+        return payload;
+      }
+      const detail = payload.error || ('HTTP ' + response.status + ' from control API');
+      controlError(detail);
+      toast(detail, false);
+      return payload;
+    } catch (error) {
+      const detail = 'Connection error: ' + (error.message || String(error));
+      controlError(detail);
+      toast(detail, false);
+      return {ok: false, error: detail};
+    } finally {
+      refresh();
+    }
+  };
+
+  window.renderRepos = function(repos) {
+    if (!repos || !repos.length) {
+      return '<div style="color:var(--dim);font-size:13px;">No repos configured</div>';
+    }
+    return repos.map(repo => {
+      const path = decodeHtml(repo.path || '');
+      const sync = repo.last_sync
+        ? ' &middot; synced ' + new Date(repo.last_sync * 1000).toLocaleTimeString()
+        : '';
+      return `<div class="repo-item"><span class="repo-icon">${repo.watching ? '&#128994;' : '&#128308;'}</span>
+<div class="repo-info"><div class="repo-path">${escHtml(path)}</div>
+<div class="repo-meta">${Number(repo.indexed_files || 0)} files &middot; ${Number(repo.total_tokens || 0).toLocaleString()} tokens${sync}</div></div>
+<button class="btn" onclick="ctrlPost('/api/control/repos/reindex',{path:${jsArg(path)}})" style="flex-shrink:0;">Re-index</button></div>`;
+    }).join('');
+  };
+
+  window.renderContext = function(context) {
+    if (!context || (!context.included && !context.excluded)) {
+      return '<div style="color:var(--dim);font-size:13px;">No context data yet</div>';
+    }
+    const included = context.included || [];
+    const excluded = context.excluded || [];
+    let output = '<div style="font-size:12px;color:var(--dim);margin-bottom:8px;">' +
+      included.length + ' included &middot; ' + excluded.length + ' excluded</div>';
+    included.slice(0, 8).forEach(fragment => {
+      const source = decodeHtml(fragment.source || fragment.id || '').split(/[\\/]/).pop();
+      const score = Number(((fragment.scores || {}).composite) || 0);
+      output += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);">
+<span style="color:var(--emerald);">&#10003; ${escHtml(source)}</span><span style="color:var(--dim);font-family:'JetBrains Mono',monospace;">${(score * 100).toFixed(1)}%</span></div>`;
+    });
+    return output;
+  };
+
+  window.refreshLogs = async function() {
+    const viewer = document.getElementById('logViewer');
+    try {
+      const response = await fetch('/api/control/logs', {credentials: 'same-origin'});
+      const payload = await response.json();
+      viewer.replaceChildren();
+      const lines = Array.isArray(payload.lines) ? payload.lines : [];
+      if (!lines.length) {
+        const empty = document.createElement('span');
+        empty.className = 'log-line';
+        empty.textContent = 'No log entries yet';
+        viewer.appendChild(empty);
+        return;
+      }
+      for (const encodedLine of lines) {
+        const line = decodeHtml(encodedLine);
+        const row = document.createElement('div');
+        row.className = 'log-line';
+        const text = document.createElement('span');
+        text.className = line.includes('ERROR')
+          ? 'lvl-ERROR'
+          : line.includes('WARNING')
+            ? 'lvl-WARNING'
+            : line.includes('INFO')
+              ? 'lvl-INFO'
+              : '';
+        text.textContent = line;
+        row.appendChild(text);
+        viewer.appendChild(row);
+      }
+    } catch (_error) {
+      viewer.textContent = 'Logs unavailable';
+    }
+  };
+})();
+</script>
+""".replace("__ENTROLY_CONTROL_TOKEN__", json.dumps(CONTROL_TOKEN))
 
 
 def _harden_controls_html(source: str) -> tuple[str, list[str]]:
-    token_meta = (
-        '<meta name="entroly-control-token" content="'
-        + html.escape(CONTROL_TOKEN, quote=True)
-        + '">\n'
+    hardened, error = _inject_once(
+        source,
+        "</body>",
+        _SAFE_CONTROLS_SCRIPT,
+        label="controls-security-script",
     )
-    replacements = [
-        (
-            "control-token-meta",
-            "</head>",
-            token_meta + "</head>",
-            1,
-        ),
-        (
-            "control-js-safety-helpers",
-            """<script>
-function toast(msg,ok=true){""",
-            """<script>
-const ENTROLY_CONTROL_TOKEN=document.querySelector('meta[name="entroly-control-token"]').content;
-function escHtml(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}
-function jsArg(s){return escHtml(JSON.stringify(String(s==null?'':s)));}
-function toast(msg,ok=true){""",
-            1,
-        ),
-        (
-            "control-token-header",
-            "headers:{'Content-Type':'application/json'}",
-            "headers:{'Content-Type':'application/json','X-Entroly-Control-Token':ENTROLY_CONTROL_TOKEN}",
-            1,
-        ),
-        (
-            "control-repository-rendering",
-            """function renderRepos(repos){if(!repos||!repos.length)return'<div style="color:var(--dim);font-size:13px;">No repos configured</div>';
-return repos.map(r=>`<div class="repo-item"><span class="repo-icon">${r.watching?'&#128994;':'&#128308;'}</span>
-<div class="repo-info"><div class="repo-path">${r.path}</div>
-<div class="repo-meta">${r.indexed_files||0} files &middot; ${(r.total_tokens||0).toLocaleString()} tokens${r.last_sync?' &middot; synced '+new Date(r.last_sync*1000).toLocaleTimeString():''}</div></div>
-<button class="btn" onclick="ctrlPost('/api/control/repos/reindex',{path:'${r.path.replace(/\\/g,'\\\\')}'})" style="flex-shrink:0;">Re-index</button></div>`).join('');}""",
-            """function renderRepos(repos){if(!repos||!repos.length)return'<div style="color:var(--dim);font-size:13px;">No repos configured</div>';
-return repos.map(r=>{const path=String(r.path||'');return `<div class="repo-item"><span class="repo-icon">${r.watching?'&#128994;':'&#128308;'}</span>
-<div class="repo-info"><div class="repo-path">${escHtml(path)}</div>
-<div class="repo-meta">${r.indexed_files||0} files &middot; ${(r.total_tokens||0).toLocaleString()} tokens${r.last_sync?' &middot; synced '+new Date(r.last_sync*1000).toLocaleTimeString():''}</div></div>
-<button class="btn" onclick="ctrlPost('/api/control/repos/reindex',{path:${jsArg(path)}})" style="flex-shrink:0;">Re-index</button></div>`;}).join('');}""",
-            1,
-        ),
-        (
-            "control-context-source",
-            "<span style=\"color:var(--emerald);\">&#10003; ${src}</span>",
-            "<span style=\"color:var(--emerald);\">&#10003; ${escHtml(src)}</span>",
-            1,
-        ),
-        (
-            "control-log-escaping",
-            "l.replace(/</g,'&lt;')",
-            "escHtml(l)",
-            1,
-        ),
-        (
-            "control-daemon-status",
-            "'Status: <b>'+s.status+'</b><br>Uptime: '",
-            "'Status: <b>'+escHtml(s.status)+'</b><br>Uptime: '",
-            1,
-        ),
-    ]
-    return _apply_replacements(source, replacements)
+    return hardened, [error] if error else []
 
 
 def _request_client_is_loopback(handler: Any) -> bool:
@@ -316,7 +332,7 @@ def _request_client_is_loopback(handler: Any) -> bool:
 
 def _request_host_is_dashboard(handler: Any) -> bool:
     raw_host = handler.headers.get("Host", "")
-    if not raw_host or len(raw_host) > 512 or any(ord(c) < 33 for c in raw_host):
+    if not raw_host or len(raw_host) > 512 or any(ord(character) < 33 for character in raw_host):
         return False
     try:
         parsed = urlsplit("//" + raw_host)
@@ -324,18 +340,19 @@ def _request_host_is_dashboard(handler: Any) -> bool:
         port = parsed.port
     except ValueError:
         return False
-    if parsed.username is not None or parsed.password is not None:
-        return False
-    if hostname not in _ALLOWED_HOSTS:
-        return False
-    return port == int(handler.server.server_port)
+    return (
+        parsed.username is None
+        and parsed.password is None
+        and hostname in _ALLOWED_HOSTS
+        and port == int(handler.server.server_port)
+    )
 
 
 def _request_origin_is_dashboard(handler: Any) -> bool:
     origin = handler.headers.get("Origin")
     if not origin:
         return True
-    if len(origin) > 1024 or any(ord(c) < 33 for c in origin):
+    if len(origin) > 1024 or any(ord(character) < 33 for character in origin):
         return False
     try:
         parsed = urlsplit(origin)
@@ -356,16 +373,16 @@ def _request_origin_is_dashboard(handler: Any) -> bool:
 
 def _request_fetch_site_is_safe(handler: Any) -> bool:
     value = handler.headers.get("Sec-Fetch-Site")
-    if not value:
-        return True
-    return value.casefold() in {"same-origin", "same-site", "none"}
+    return not value or value.casefold() in {"same-origin", "same-site", "none"}
 
 
 def _request_token_is_valid(handler: Any) -> bool:
     supplied = handler.headers.get("X-Entroly-Control-Token", "")
-    if not isinstance(supplied, str) or len(supplied) > _MAX_TOKEN_CHARS:
-        return False
-    return hmac.compare_digest(supplied, CONTROL_TOKEN)
+    return (
+        isinstance(supplied, str)
+        and len(supplied) <= _MAX_TOKEN_CHARS
+        and hmac.compare_digest(supplied, CONTROL_TOKEN)
+    )
 
 
 _ORIGINAL_HANDLER = _dashboard.DashboardHandler
@@ -381,13 +398,14 @@ class SafeDashboardHandler(_ORIGINAL_HANDLER):
 
     def setup(self) -> None:
         super().setup()
-        timeout = _env_float(
-            "ENTROLY_DASHBOARD_SOCKET_TIMEOUT",
-            _DEFAULT_SOCKET_TIMEOUT_S,
-            1.0,
-            30.0,
+        self.connection.settimeout(
+            _env_float(
+                "ENTROLY_DASHBOARD_SOCKET_TIMEOUT",
+                _DEFAULT_SOCKET_TIMEOUT_S,
+                1.0,
+                30.0,
+            )
         )
-        self.connection.settimeout(timeout)
 
     def _send_security_headers(self) -> None:
         _ORIGINAL_SECURITY_HEADERS(self)
@@ -407,6 +425,19 @@ class SafeDashboardHandler(_ORIGINAL_HANDLER):
 
     def _reject(self, status: int, error: str) -> None:
         self._send_json(status, {"ok": False, "error": error}, cors=False)
+
+    def _send_json(self, status: int, payload: dict, *, cors: bool = True) -> None:
+        path = urlsplit(self.path).path
+        body = _display_safe(payload) if path in _DISPLAY_SAFE_PATHS else payload
+        origin = self.headers.get("Origin")
+        cors_origin = origin if cors and origin and _request_origin_is_dashboard(self) else None
+        self._respond(
+            status,
+            "application/json; charset=utf-8",
+            json.dumps(body, ensure_ascii=False, default=str).encode("utf-8"),
+            no_cache=True,
+            cors_origin=cors_origin,
+        )
 
     def do_GET(self) -> None:
         if len(self.path) > _MAX_REQUEST_TARGET_CHARS:
@@ -430,7 +461,7 @@ class SafeDashboardHandler(_ORIGINAL_HANDLER):
         if self.headers.get("Transfer-Encoding"):
             self._reject(400, "chunked control requests are unsupported")
             return
-        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().casefold()
         if content_type != "application/json":
             self._reject(415, "control requests require application/json")
             return
@@ -469,12 +500,22 @@ class BoundedThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         *,
         max_workers: int | None = None,
     ) -> None:
-        workers = max_workers or _env_int(
-            "ENTROLY_DASHBOARD_MAX_CONNECTIONS",
-            _DEFAULT_MAX_WORKERS,
-            4,
-            128,
-        )
+        if max_workers is None:
+            workers = _env_int(
+                "ENTROLY_DASHBOARD_MAX_CONNECTIONS",
+                _DEFAULT_MAX_WORKERS,
+                4,
+                128,
+            )
+        else:
+            if isinstance(max_workers, bool):
+                raise ValueError("max_workers must be an integer between 1 and 128")
+            try:
+                workers = int(max_workers)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("max_workers must be an integer between 1 and 128") from exc
+            if not 1 <= workers <= 128:
+                raise ValueError("max_workers must be an integer between 1 and 128")
         self.max_workers = workers
         self._worker_slots = threading.BoundedSemaphore(workers)
         super().__init__(server_address, request_handler_class)
@@ -492,6 +533,7 @@ class BoundedThreadingHTTPServer(ThreadingMixIn, HTTPServer):
             + body
         )
         try:
+            request.settimeout(1.0)
             request.sendall(response)
         except OSError:
             pass
@@ -623,20 +665,14 @@ def install_dashboard_security() -> bool:
     if _INSTALLED:
         return not _HARDENING_ERRORS
 
-    dashboard_html, dashboard_errors = _harden_dashboard_html(
-        _dashboard.DASHBOARD_HTML
-    )
-    controls_html, controls_errors = _harden_controls_html(
-        _controls.CONTROLS_HTML
-    )
-    _HARDENING_ERRORS = tuple(dashboard_errors + controls_errors)
+    controls_html, controls_errors = _harden_controls_html(_controls.CONTROLS_HTML)
+    _HARDENING_ERRORS = tuple(controls_errors)
     if _HARDENING_ERRORS:
         logger.critical(
             "Dashboard hardening disabled startup because UI contracts drifted: %s",
             "; ".join(_HARDENING_ERRORS),
         )
     else:
-        _dashboard.DASHBOARD_HTML = dashboard_html
         _controls.CONTROLS_HTML = controls_html
 
     _dashboard.DashboardHandler = SafeDashboardHandler
