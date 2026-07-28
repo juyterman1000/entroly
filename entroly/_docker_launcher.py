@@ -16,30 +16,50 @@ MCP stdio protocol is passed through transparently via stdin/stdout.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from entroly import __version__
 
 DEFAULT_DOCKER_IMAGE = f"ghcr.io/juyterman1000/entroly:{__version__}"
+_DOCKER_IMAGE_RE = re.compile(
+    r"^(?:[a-zA-Z0-9.-]+(?::[0-9]+)?/)?"
+    r"[a-zA-Z0-9._/-]+"
+    r"(?::[a-zA-Z0-9._-]+|@sha256:[a-fA-F0-9]{64})?$"
+)
 
 
 def _docker_image() -> str:
-    """Return the explicit image override or the installed-version image.
+    """Return a validated explicit image override or the installed-version image.
 
     A package installed as ``entroly==X`` must not silently execute whatever
-    code happens to be under the mutable ``latest`` tag. Keeping this resolution
-    dynamic also lets tests and operators set an override after module import.
+    code happens to be under the mutable ``latest`` tag. Reject values that can
+    be interpreted as Docker CLI options or contain whitespace/control bytes.
     """
     override = os.environ.get("ENTROLY_DOCKER_IMAGE", "").strip()
-    return override or DEFAULT_DOCKER_IMAGE
+    image = override or DEFAULT_DOCKER_IMAGE
+    if (
+        not image
+        or image.startswith("-")
+        or any(char.isspace() or ord(char) < 32 for char in image)
+        or not _DOCKER_IMAGE_RE.fullmatch(image)
+    ):
+        raise RuntimeError(
+            "ENTROLY_DOCKER_IMAGE is not a valid Docker image reference: "
+            f"{image!r}"
+        )
+    return image
 
 
-# TTL-based pull caching: skip `docker pull` if last pull was recent.
+# TTL-based pull caching: skip `docker pull` only when this exact image was
+# pulled recently and remains present locally.
 def _runtime_dir() -> Path:
     explicit = os.environ.get("ENTROLY_DIR")
     candidates = [Path(explicit).expanduser()] if explicit else [
@@ -49,16 +69,19 @@ def _runtime_dir() -> Path:
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / ".write_probe"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink(missing_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=candidate,
+                prefix=".write_probe-",
+                delete=True,
+            ):
+                pass
             return candidate
         except OSError:
             continue
     return Path(tempfile.gettempdir()) / "entroly"
 
 
-_PULL_CACHE_FILE = _runtime_dir() / ".last_pull_ts"
+_PULL_CACHE_FILE = _runtime_dir() / ".last_pull.json"
 _DEFAULT_PULL_TTL = 3600  # 1 hour
 
 
@@ -76,33 +99,111 @@ def _docker_available() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
+            timeout=15,
         )
         return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
         return False
 
 
-def _should_pull() -> bool:
-    """Check if enough time has elapsed since the last successful pull."""
+def _stderr_text(result: Any) -> str:
+    value = getattr(result, "stderr", "")
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
+
+
+def _image_exists_locally(image: str) -> bool:
+    """Return whether Docker has the exact selected reference locally."""
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", image],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
+def _read_pull_cache() -> dict[str, Any] | None:
+    """Read the image-scoped pull cache; legacy/corrupt state is a cache miss."""
+    try:
+        payload = json.loads(_PULL_CACHE_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    image = payload.get("image")
+    timestamp = payload.get("timestamp")
+    if not isinstance(image, str) or not isinstance(timestamp, (int, float)):
+        return None
+    return {"image": image, "timestamp": float(timestamp)}
+
+
+def _write_pull_cache(image: str) -> None:
+    """Atomically record a successful pull for one exact image reference."""
+    try:
+        _PULL_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd, raw_path = tempfile.mkstemp(
+            dir=_PULL_CACHE_FILE.parent,
+            prefix=f".{_PULL_CACHE_FILE.name}.",
+            suffix=".tmp",
+        )
+        tmp_path = Path(raw_path)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {"image": image, "timestamp": time.time()},
+                    handle,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, _PULL_CACHE_FILE)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except OSError:
+        # Cache persistence is an optimization. Pull success itself remains the
+        # trust boundary, so a read-only HOME must not make serving impossible.
+        return
+
+
+def _should_pull(image: str | None = None) -> bool:
+    """Return whether the exact selected image needs a fresh pull."""
+    selected = image or _docker_image()
     ttl = _env_int("ENTROLY_PULL_TTL", _DEFAULT_PULL_TTL)
     if ttl <= 0:
         return True  # TTL=0 means always pull
-    try:
-        if _PULL_CACHE_FILE.exists():
-            last_pull = float(_PULL_CACHE_FILE.read_text().strip())
-            if time.time() - last_pull < ttl:
-                return False
-    except (ValueError, OSError):
-        pass
-    return True
+    cached = _read_pull_cache()
+    if cached is None or cached["image"] != selected:
+        return True
+    age = time.time() - cached["timestamp"]
+    if age < 0 or age >= ttl:
+        return True
+    # Cache files can outlive Docker cleanup. Verify the exact image still exists.
+    return not _image_exists_locally(selected)
 
 
 def _pull_image() -> None:
-    """Pull the selected Docker image with TTL caching and retry."""
-    if not _should_pull():
+    """Pull the selected image, or prove the exact local image exists.
+
+    A pull failure is not silently deferred to ``docker run``. After bounded
+    retries, offline execution is allowed only when Docker can inspect the exact
+    selected reference locally; otherwise an actionable RuntimeError is raised.
+    """
+    image = _docker_image()
+    if not _should_pull(image):
         return
 
-    image = _docker_image()
+    errors: list[str] = []
     for attempt in range(2):
         try:
             result = subprocess.run(
@@ -113,21 +214,42 @@ def _pull_image() -> None:
                 timeout=60,
             )
             if result.returncode == 0:
-                try:
-                    _PULL_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-                    _PULL_CACHE_FILE.write_text(str(time.time()))
-                except OSError:
-                    pass
+                _write_pull_cache(image)
                 return
+            detail = _stderr_text(result).strip()
+            errors.append(
+                f"attempt {attempt + 1}: exit {result.returncode}"
+                + (f" ({detail[-500:]})" if detail else "")
+            )
         except subprocess.TimeoutExpired:
-            pass
+            errors.append(f"attempt {attempt + 1}: timed out after 60 seconds")
+        except (FileNotFoundError, OSError) as exc:
+            errors.append(f"attempt {attempt + 1}: {exc}")
+            break
         if attempt < 1:
             time.sleep(3)
+
+    if _image_exists_locally(image):
+        # The exact version is present, so an offline user can continue without
+        # silently crossing into another tag. Do not refresh the pull timestamp:
+        # the next launch should retry the registry rather than masking outage.
+        print(
+            f"[entroly] Could not refresh {image}; using the exact local image.",
+            file=sys.stderr,
+        )
+        return
+
+    detail = "; ".join(errors) or "unknown Docker pull failure"
+    raise RuntimeError(
+        f"Unable to pull Docker image {image!r}, and that exact image is not "
+        f"available locally. {detail}"
+    )
 
 
 def _run_native() -> None:
     """Fall back to running local Python server (when inside Docker)."""
     from entroly.server import main  # noqa: PLC0415
+
     try:
         main()
     except RuntimeError as exc:
@@ -157,6 +279,7 @@ def launch() -> None:
     if len(sys.argv) <= 1:
         if sys.stdin.isatty():
             from entroly.cli import main as cli_main
+
             cli_main()
             return
         _run_native()
@@ -166,6 +289,7 @@ def launch() -> None:
     _help_flags = {"--help", "-h", "--version", "-V"}
     if len(sys.argv) > 1 and sys.argv[1] in _help_flags:
         from entroly.cli import main as cli_main
+
         cli_main()
         return
 
@@ -178,6 +302,7 @@ def launch() -> None:
     # from accidentally becoming Docker invocations.
     if sys.argv[1] != "serve":
         from entroly.cli import main as cli_main
+
         cli_main()
         return
 
@@ -204,7 +329,11 @@ def launch() -> None:
         sys.exit(1)
 
     # Pull the image matching the installed package (with TTL caching + retry)
-    _pull_image()
+    try:
+        _pull_image()
+    except RuntimeError as exc:
+        print(f"[entroly] {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Detect proxy mode
     proxy_mode = "--proxy" in sys.argv or os.environ.get("ENTROLY_PROXY") == "1"
