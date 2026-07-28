@@ -1,10 +1,17 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Entroly Docker Image — Multi-platform (amd64 + arm64)
 #
-# Build:  docker build -f Dockerfile.entroly -t entroly .
-# Run:    docker run --rm -p 127.0.0.1:9377:9377 entroly --proxy
+# Build: docker build -f Dockerfile.entroly -t entroly .
+# Default stdio MCP:
+#   docker run --rm -i entroly
+# Linux loopback proxy:
+#   docker run --rm --network=host \
+#     -e ENTROLY_PROXY_HOST=127.0.0.1 entroly --proxy
 #
-# CI publishes to ghcr.io/juyterman1000/entroly:latest
+# Bridge-network proxy deployment is an advanced remote-bind mode. It must set
+# ENTROLY_ALLOW_REMOTE_PROXY=1, ENTROLY_PROXY_ACCESS_TOKEN, and
+# ENTROLY_REMOTE_PROXY_TRUSTED_TRANSPORT=1, then publish only to host loopback.
+# Normal pip-installed users should run `entroly proxy` or `entroly serve --proxy`.
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Stage 1: Build Rust extension
@@ -41,7 +48,7 @@ WORKDIR /app
 # separately tested migration.
 COPY --from=builder /build/wheels/*.whl /tmp/wheels/
 RUN pip install --no-cache-dir /tmp/wheels/*.whl \
-    "mcp>=1.28.1,<2" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" \
+    "mcp>=1.28.1,<2" "httpx>=0.28.1" "starlette>=1.3.1" "uvicorn>=0.51.0" \
     && rm -rf /tmp/wheels
 
 # Copy entroly Python package (all modules — glob avoids missing new files)
@@ -54,18 +61,15 @@ COPY pyproject.toml /app/
 COPY README.md /app/
 COPY LICENSE NOTICE /app/
 
-# Make the entroly package importable
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Proxy mode: expose port 9377. Operators should publish this port to host
-# loopback unless they explicitly configure Entroly's authenticated remote-proxy
-# contract and a trusted TLS/tunnel boundary.
 EXPOSE 9377
 
-# Health check: ping the proxy when the container is started in proxy mode.
+# Stdio MCP has no HTTP endpoint; proxy mode does. The probe inspects the actual
+# PID 1 mode and checks the appropriate contract rather than marking default MCP
+# containers unhealthy for not running an unrelated proxy.
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:9377/health')" || exit 1
+    CMD ["python", "-m", "entroly.container_health"]
 
-# Default: run MCP server (use --proxy for proxy mode)
-ENTRYPOINT ["python", "-m", "entroly.server"]
+ENTRYPOINT ["python", "-m", "entroly.container_entry"]
