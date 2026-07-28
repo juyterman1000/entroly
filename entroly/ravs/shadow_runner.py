@@ -20,7 +20,8 @@ import time
 from typing import Any
 
 from .compiler import NodeKind, Plan, PlanCompiler, PlanNode
-from .executors import ExecutorRegistry, ExecutorResult
+from .executors import ExecutorResult
+from .safe_executors import ExecutorRegistry
 from .verifiers import VerifierRegistry
 
 logger = logging.getLogger("entroly.ravs.shadow_runner")
