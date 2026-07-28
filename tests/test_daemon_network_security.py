@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
+import uvicorn
 
 import entroly.daemon as daemon_module
 import entroly.daemon_network_security as security
@@ -181,6 +183,27 @@ def test_startup_timeout_environment_is_finite_and_bounded(
     monkeypatch.setenv("ENTROLY_DAEMON_START_TIMEOUT", raw)
 
     assert security._startup_timeout() == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("0.5", 0.5),
+        ("4", 4.0),
+        ("60", 60.0),
+        ("0", security._DEFAULT_STOP_TIMEOUT_S),
+        ("61", security._DEFAULT_STOP_TIMEOUT_S),
+        ("nan", security._DEFAULT_STOP_TIMEOUT_S),
+        ("inf", security._DEFAULT_STOP_TIMEOUT_S),
+        ("bad", security._DEFAULT_STOP_TIMEOUT_S),
+    ],
+)
+def test_stop_timeout_environment_is_finite_and_bounded(
+    monkeypatch, raw: str, expected: float
+) -> None:
+    monkeypatch.setenv("ENTROLY_DAEMON_STOP_TIMEOUT", raw)
+
+    assert security._stop_timeout() == expected
 
 
 def test_occupied_dashboard_port_fails_before_engine_creation(
@@ -379,7 +402,7 @@ def test_success_state_and_browser_open_only_after_all_readiness_gates(
     daemon.start()
 
     assert daemon.state.status == "running"
-    assert browser_calls == [f"http://localhost:{daemon.state.dashboard.port}"]
+    assert browser_calls == [f"http://127.0.0.1:{daemon.state.dashboard.port}"]
     assert events == [
         "preflight",
         "index",
@@ -394,7 +417,7 @@ def test_success_state_and_browser_open_only_after_all_readiness_gates(
     ]
 
 
-def test_start_is_single_entry_and_rejects_invalid_state(monkeypatch) -> None:
+def test_start_and_stop_share_one_lifecycle_lock(monkeypatch) -> None:
     daemon = security.EntrolyDaemon(enable_proxy=False, enable_mcp=False)
     daemon.state.status = "running"
     monkeypatch.setattr(
@@ -407,9 +430,230 @@ def test_start_is_single_entry_and_rejects_invalid_state(monkeypatch) -> None:
         daemon.start()
 
     locked = security.EntrolyDaemon(enable_proxy=False, enable_mcp=False)
-    assert locked._startup_lock.acquire(blocking=False)
+    assert locked._lifecycle_lock.acquire(blocking=False)
     try:
-        with pytest.raises(RuntimeError, match="already in progress"):
+        with pytest.raises(RuntimeError, match="lifecycle operation"):
             locked.start()
+        locked.state.status = "running"
+        with pytest.raises(RuntimeError, match="lifecycle operation"):
+            locked.stop()
     finally:
-        locked._startup_lock.release()
+        locked._lifecycle_lock.release()
+
+
+class _ExitServer:
+    def __init__(self) -> None:
+        self.should_exit = False
+        self.force_exit = False
+
+
+class _DashboardServer:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.shutdown_called = False
+        self.close_called = False
+        self.fail = fail
+
+    def shutdown(self) -> None:
+        self.shutdown_called = True
+        if self.fail:
+            raise RuntimeError("dashboard refused shutdown")
+
+    def server_close(self) -> None:
+        self.close_called = True
+
+
+class _StuckWorker:
+    def __init__(self) -> None:
+        self.join_calls: list[float | None] = []
+
+    def join(self, timeout: float | None = None) -> None:
+        self.join_calls.append(timeout)
+
+    def is_alive(self) -> bool:
+        return True
+
+
+def _cooperative_worker(server: _ExitServer) -> None:
+    while not server.should_exit:
+        time.sleep(0.005)
+
+
+def test_stop_closes_owned_servers_and_clears_truthful_state(monkeypatch) -> None:
+    daemon = security.EntrolyDaemon(enable_proxy=True, enable_mcp=True)
+    daemon.state.status = "running"
+    daemon.state.started_at = time.time()
+    daemon.state.proxy.running = True
+    daemon.state.dashboard.running = True
+    daemon.state.mcp.running = True
+    daemon._engine = object()
+    dashboard_server = _DashboardServer()
+    proxy_server = _ExitServer()
+    mcp_server = _ExitServer()
+    daemon._dashboard_server = dashboard_server
+    daemon._proxy_server = proxy_server
+    daemon._mcp_server = mcp_server
+    daemon._workers["proxy"] = threading.Thread(
+        target=_cooperative_worker,
+        args=(proxy_server,),
+        name="cooperative-proxy",
+    )
+    daemon._workers["mcp"] = threading.Thread(
+        target=_cooperative_worker,
+        args=(mcp_server,),
+        name="cooperative-mcp",
+    )
+    for worker in daemon._workers.values():
+        worker.start()
+    monkeypatch.setattr(security, "_stop_timeout", lambda: 0.5)
+
+    daemon.stop()
+
+    assert proxy_server.should_exit
+    assert mcp_server.should_exit
+    assert dashboard_server.shutdown_called
+    assert dashboard_server.close_called
+    assert daemon._workers == {}
+    assert daemon.state.status == "stopped"
+    assert daemon.state.started_at is None
+    assert daemon._engine is None
+    assert not daemon.state.proxy.running
+    assert not daemon.state.dashboard.running
+    assert not daemon.state.mcp.running
+
+
+def test_stuck_worker_forces_exit_and_preserves_running_failure_state(
+    monkeypatch,
+) -> None:
+    daemon = security.EntrolyDaemon(enable_proxy=False, enable_mcp=True)
+    daemon.state.status = "running"
+    daemon.state.mcp.running = True
+    stuck = _StuckWorker()
+    server = _ExitServer()
+    daemon._workers["mcp"] = stuck
+    daemon._mcp_server = server
+    monkeypatch.setattr(security, "_stop_timeout", lambda: 0.5)
+
+    with pytest.raises(RuntimeError, match="mcp"):
+        daemon.stop()
+
+    assert server.should_exit
+    assert server.force_exit
+    assert len(stuck.join_calls) == 2
+    assert daemon.state.status == "stop_failed"
+    assert daemon.state.mcp.running
+    assert daemon.state.mcp.error == "worker did not stop within timeout"
+
+
+def test_dashboard_close_failure_is_not_reported_as_stopped() -> None:
+    daemon = security.EntrolyDaemon(enable_proxy=False, enable_mcp=False)
+    daemon.state.status = "running"
+    daemon.state.dashboard.running = True
+    daemon._dashboard_server = _DashboardServer(fail=True)
+
+    with pytest.raises(RuntimeError, match="dashboard"):
+        daemon.stop()
+
+    assert daemon.state.status == "stop_failed"
+    assert daemon.state.dashboard.running
+    assert "refused shutdown" in str(daemon.state.dashboard.error)
+
+
+def test_startup_rollback_keeps_stop_failed_when_worker_is_stuck(
+    monkeypatch,
+) -> None:
+    daemon = security.EntrolyDaemon(enable_proxy=True, enable_mcp=False)
+    daemon.state.status = "starting"
+    daemon.state.started_at = time.time()
+    daemon.state.proxy.running = True
+    daemon._workers["proxy"] = _StuckWorker()
+    daemon._proxy_server = _ExitServer()
+    monkeypatch.setattr(security, "_stop_timeout", lambda: 0.5)
+
+    failures = daemon._rollback_startup()
+
+    assert failures == ["proxy"]
+    assert daemon.state.status == "stop_failed"
+    assert daemon.state.started_at is not None
+    assert daemon.state.proxy.running
+
+
+def test_mcp_worker_uses_owned_sse_app_and_uvicorn_shutdown(
+    monkeypatch,
+) -> None:
+    daemon = security.EntrolyDaemon(enable_proxy=False, enable_mcp=True)
+    daemon._engine = object()
+    daemon.state.status = "running"
+    started = threading.Event()
+    observed: dict[str, object] = {}
+
+    class FakeMCP:
+        def __init__(self) -> None:
+            self.settings = SimpleNamespace(host=None, port=None)
+            self.app = object()
+
+        def sse_app(self):
+            observed["sse_app_called"] = True
+            return self.app
+
+    fake_mcp = FakeMCP()
+
+    class FakeUvicornServer(_ExitServer):
+        def __init__(self, config) -> None:
+            super().__init__()
+            self.config = config
+            observed["server"] = self
+
+        def run(self) -> None:
+            started.set()
+            while not self.should_exit:
+                time.sleep(0.005)
+
+    monkeypatch.setattr(
+        server_module,
+        "create_mcp_server",
+        lambda engine: (fake_mcp, engine),
+    )
+    monkeypatch.setattr(
+        uvicorn,
+        "Config",
+        lambda app, **kwargs: SimpleNamespace(app=app, kwargs=kwargs),
+    )
+    monkeypatch.setattr(uvicorn, "Server", FakeUvicornServer)
+    monkeypatch.setattr(security, "_stop_timeout", lambda: 0.5)
+
+    daemon._start_mcp_worker()
+    assert started.wait(timeout=2)
+    assert daemon.state.mcp.running
+    assert daemon._mcp_server is observed["server"]
+    assert observed["sse_app_called"] is True
+    assert fake_mcp.settings.host == "127.0.0.1"
+    assert fake_mcp.settings.port == daemon.state.mcp.port
+    config = observed["server"].config
+    assert config.app is fake_mcp.app
+    assert config.kwargs["host"] == "127.0.0.1"
+    assert config.kwargs["port"] == daemon.state.mcp.port
+
+    daemon.stop()
+
+    assert daemon.state.status == "stopped"
+    assert daemon._workers == {}
+    assert daemon._mcp_server is None
+
+
+def test_missing_sse_app_fails_worker_auditably(monkeypatch) -> None:
+    daemon = security.EntrolyDaemon(enable_proxy=False, enable_mcp=True)
+    daemon._engine = object()
+    fake_mcp = SimpleNamespace(settings=SimpleNamespace(host=None, port=None))
+    monkeypatch.setattr(
+        server_module,
+        "create_mcp_server",
+        lambda engine: (fake_mcp, engine),
+    )
+
+    daemon._start_mcp_worker()
+    worker = daemon._workers["mcp"]
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert not daemon.state.mcp.running
+    assert "sse_app" in str(daemon.state.mcp.error)
