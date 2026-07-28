@@ -1,0 +1,62 @@
+name: Apply Dogfood Fixes
+
+on:
+  push:
+    branches:
+      - dogfood/deep-runtime-20260727
+    paths:
+      - .dogfood/fixes.patch
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: dogfood/deep-runtime-20260727
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Apply exact reviewed patch
+        run: |
+          set -euo pipefail
+          git apply --check .dogfood/fixes.patch
+          git apply .dogfood/fixes.patch
+          rm .dogfood/fixes.patch
+          git diff --check
+          python -m compileall -q entroly tests/test_deep_dogfood_runtime.py
+
+      - name: Install focused validation surface
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-timeout
+
+      - name: Validate reproduced defects and adjacent contracts
+        run: |
+          pytest -q --tb=short --timeout=90 \
+            tests/test_cli.py \
+            tests/test_dashboard_wiring.py \
+            tests/test_ccr.py \
+            tests/test_security_hardening.py \
+            tests/test_context_bridge.py \
+            tests/test_federation.py \
+            tests/test_reward_crystallizer.py \
+            tests/test_ravs_v2.py
+
+      - name: Commit tested fixes
+        run: |
+          set -euo pipefail
+          git config user.name juyterman1000
+          git config user.email 208309368+juyterman1000@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(dogfood): harden runtime state and process execution'
+          git push origin HEAD:dogfood/deep-runtime-20260727
