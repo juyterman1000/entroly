@@ -14,19 +14,23 @@ Data persists to ~/.entroly/value_tracker.json and survives proxy restarts.
 The dashboard reads this for trend charts; the /confidence endpoint reads
 it for IDE status bar widgets.
 
-Thread-safe: all writes go through a lock + atomic file write.
+Process-safe: all read/modify/write operations use an interprocess lock and
+atomic file replacement.
 """
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
+import math
 import os
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 logger = logging.getLogger("entroly.value_tracker")
 
@@ -274,7 +278,8 @@ class ValueTracker:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._path = self._dir / self._FILE_NAME
         self._activity_path = self._dir / self._ACTIVITY_NAME
-        self._lock = threading.Lock()
+        self._process_lock_path = self._dir / f"{self._FILE_NAME}.lock"
+        self._lock = threading.RLock()
         self._data = self._load()
         self._activity: list[dict[str, Any]] = self._load_activity()
         # mtime fingerprints so reader processes (the dashboard) can go
@@ -293,6 +298,81 @@ class ValueTracker:
         self._session_provider_cost_avoided: float = 0.0
         self._session_local_operations: int = 0
         self._session_local_tokens_reduced: int = 0
+
+    @contextmanager
+    def _interprocess_lock(self) -> Iterator[None]:
+        """Serialize value/activity mutations across independent processes."""
+        self._process_lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._process_lock_path.open("a+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                deadline = time.monotonic() + 30.0
+                delay = 0.001
+                while True:
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError as error:
+                        if error.errno not in {errno.EACCES, errno.EAGAIN}:
+                            raise
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f"timed out acquiring value-tracker lock "
+                                f"{self._process_lock_path}"
+                            ) from error
+                        time.sleep(delay)
+                        delay = min(0.05, delay * 1.5)
+                try:
+                    yield
+                finally:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _mutation(self) -> Iterator[None]:
+        """Reload current disk state under both thread and process locks."""
+        with self._lock:
+            with self._interprocess_lock():
+                self._data = self._load()
+                self._activity = self._load_activity()
+                yield
+
+    @staticmethod
+    def _nonnegative_int(value: Any) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
+    @staticmethod
+    def _finite_float(
+        value: Any,
+        *,
+        minimum: float = 0.0,
+        maximum: float | None = None,
+    ) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return minimum
+        if not math.isfinite(number):
+            return minimum
+        number = max(minimum, number)
+        return min(number, maximum) if maximum is not None else number
 
     @staticmethod
     def _mtime(p: Path) -> float:
@@ -564,7 +644,7 @@ class ValueTracker:
             for k, v in extra.items():
                 if isinstance(v, (str, int, float, bool)):
                     row[k] = v
-            with self._lock:
+            with self._mutation():
                 self._activity.append(row)
                 self._save_activity()
         except Exception as e:  # noqa: BLE001
@@ -576,16 +656,19 @@ class ValueTracker:
         """WITNESS suppressed `n` unsupported claims before they reached
         the user. Fail-open."""
         try:
-            with self._lock:
+            count = self._nonnegative_int(n)
+            if count == 0:
+                return
+            with self._mutation():
                 self._data["lifetime"]["hallucinations_blocked"] = (
                     self._data["lifetime"].get("hallucinations_blocked", 0)
-                    + int(n)
+                    + count
                 )
                 self._save()
             self.record_event(
                 "hallucination",
-                detail or f"Blocked {n} unsupported claim(s)",
-                source=source, blocked=int(n),
+                detail or f"Blocked {count} unsupported claim(s)",
+                source=source, blocked=count,
             )
         except Exception as e:  # noqa: BLE001
             logger.debug("record_hallucination_blocked failed: %s", e)
@@ -597,17 +680,19 @@ class ValueTracker:
         """RAVS routed to a cheaper capable model; record the $ avoided.
         Fail-open."""
         try:
-            with self._lock:
+            amount = self._finite_float(cost_saved_usd)
+            if amount == 0.0:
+                return
+            with self._mutation():
                 lt = self._data["lifetime"]
                 lt["routing_saved_usd"] = round(
-                    lt.get("routing_saved_usd", 0.0)
-                    + float(cost_saved_usd), 6)
+                    lt.get("routing_saved_usd", 0.0) + amount, 6)
                 lt["routing_decisions"] = lt.get("routing_decisions", 0) + 1
                 self._save()
             self.record_event(
                 "routing",
                 detail or f"Routed to {chosen_model or 'cheaper model'}",
-                source=source, cost_saved_usd=float(cost_saved_usd),
+                source=source, cost_saved_usd=amount,
                 model=chosen_model,
             )
         except Exception as e:  # noqa: BLE001
@@ -622,7 +707,7 @@ class ValueTracker:
         try:
             if n_fragments <= 0:
                 return
-            with self._lock:
+            with self._mutation():
                 lt = self._data["lifetime"]
                 lt["beliefs_conditioned_fragments"] = (
                     lt.get("beliefs_conditioned_fragments", 0) + int(n_fragments)
@@ -742,7 +827,10 @@ class ValueTracker:
         MCP, and local operations record token reduction only because the
         tracker cannot prove their output was sent to a paid provider.
         """
-        tokens_saved = max(0, int(tokens_saved))
+        tokens_saved = self._nonnegative_int(tokens_saved)
+        duplicates = self._nonnegative_int(duplicates)
+        confidence = self._finite_float(confidence, maximum=1.0)
+        coverage_pct = self._finite_float(coverage_pct, maximum=100.0)
         channel = self._channel(source)
         estimated_cost = estimate_cost(tokens_saved, model)
         provider_priced = channel != "provider" or _has_priced_model(model)
@@ -752,7 +840,7 @@ class ValueTracker:
         week = _week_key(now)
         month = _month_key(now)
 
-        with self._lock:
+        with self._mutation():
             lt = self._data["lifetime"]
             lt["tokens_saved"] += tokens_saved
             lt["requests_total"] += 1
@@ -1088,24 +1176,30 @@ class ValueTracker:
         Returns:
             {"status": "recorded" | "rejected", "remaining_usd": float}
         """
-        with self._lock:
+        amount = self._finite_float(cost_usd)
+        if amount == 0.0:
+            return {
+                "status": "rejected",
+                "remaining_usd": self.get_evolution_budget()["available_usd"],
+            }
+        with self._mutation():
             lt = self._data.get("lifetime", {})
             lifetime_saved = lt.get("provider_cost_avoided_usd", 0.0)
             current_spent = lt.get("evolution_spent_usd", 0.0)
             total_earned = lifetime_saved * EVOLUTION_TAX_RATE
             available = total_earned - current_spent
 
-            if cost_usd > available + 0.001:  # 0.1 cent tolerance
+            if amount > available + 0.001:  # 0.1 cent tolerance
                 logger.warning(
                     "Evolution spend rejected: $%.4f requested, $%.4f available",
-                    cost_usd, available,
+                    amount, available,
                 )
                 return {
                     "status": "rejected",
                     "remaining_usd": round(max(0.0, available), 6),
                 }
 
-            lt["evolution_spent_usd"] = round(current_spent + cost_usd, 6)
+            lt["evolution_spent_usd"] = round(current_spent + amount, 6)
             lt["evolution_attempts"] = lt.get("evolution_attempts", 0) + 1
             if success:
                 lt["evolution_successes"] = lt.get("evolution_successes", 0) + 1
@@ -1115,7 +1209,7 @@ class ValueTracker:
             remaining = max(0.0, total_earned - lt["evolution_spent_usd"])
             logger.info(
                 "Evolution spend recorded: $%.4f (remaining: $%.4f, success=%s)",
-                cost_usd, remaining, success,
+                amount, remaining, success,
             )
             return {
                 "status": "recorded",
