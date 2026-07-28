@@ -64,6 +64,7 @@ jobs:
             tests/test_daemon_network_security.py \
             tests/test_dashboard_security.py \
             tests/test_docker_launcher_trust.py \
+            tests/test_container_user_journeys.py \
             tests/test_proxy_access_security.py \
             tests/test_deep_dogfood_runtime.py \
             tests/test_mcp_protocol.py \
@@ -104,6 +105,7 @@ jobs:
           "$RUNNER_TEMP/entroly-user/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/entroly-user/bin/python" -m pip install dist/*.whl
           "$RUNNER_TEMP/entroly-user/bin/python" -m pip check
+          "$RUNNER_TEMP/entroly-user/bin/python" -c "import httpx, starlette, uvicorn; import entroly.container_proxy, entroly.docker_launcher_safe"
           "$RUNNER_TEMP/entroly-user/bin/entroly" --version
           "$RUNNER_TEMP/entroly-user/bin/entroly" --help
           "$RUNNER_TEMP/entroly-user/bin/entroly" doctor
