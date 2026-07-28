@@ -114,6 +114,33 @@ class BoundedAsyncClient(_safe.BoundedAsyncClient):
         )
 
 
+def _safe_http_client_kwargs() -> dict[str, Any]:
+    """Return safe HTTPX kwargs while preserving explicit CA compatibility.
+
+    HTTPX historically uses ``trust_env=True`` both for CA discovery and proxy
+    discovery. When a CA bundle is explicitly configured but proxy inheritance is
+    not opted in, direct mounted transports override all HTTP/HTTPS routes. This
+    preserves the existing CA contract without routing prompts through ambient
+    proxy variables.
+    """
+    kwargs = _safe._safe_http_client_kwargs()
+    ca_bundle = _proxy._resolve_ca_bundle_from_env()
+    trust_proxy_env = _safe._env_flag("ENTROLY_TRUST_PROXY_ENV")
+    if ca_bundle and not trust_proxy_env:
+        kwargs["trust_env"] = True
+        kwargs["mounts"] = {
+            "http://": httpx.AsyncHTTPTransport(
+                verify=ca_bundle,
+                trust_env=False,
+            ),
+            "https://": httpx.AsyncHTTPTransport(
+                verify=ca_bundle,
+                trust_env=False,
+            ),
+        }
+    return kwargs
+
+
 def _safe_target_url(base_url: str, path: str, query: str = "") -> str:
     if "#" in query:
         raise ValueError("provider query string must not contain a fragment marker")
@@ -152,8 +179,15 @@ def _safe_build_headers(
 # Replace the first-pass class/functions. The startup and resolver wrappers in
 # proxy_transport_safe resolve these module globals at call time.
 _safe.BoundedAsyncClient = BoundedAsyncClient
+_safe._safe_http_client_kwargs = _safe_http_client_kwargs
 _safe._safe_target_url = _safe_target_url
 _safe._safe_build_headers = _safe_build_headers
+_proxy._http_client_kwargs = _safe_http_client_kwargs
 _proxy.PromptCompilerProxy._build_headers = _safe_build_headers
 
-__all__ = ["BoundedAsyncClient", "_safe_build_headers", "_safe_target_url"]
+__all__ = [
+    "BoundedAsyncClient",
+    "_safe_build_headers",
+    "_safe_http_client_kwargs",
+    "_safe_target_url",
+]
