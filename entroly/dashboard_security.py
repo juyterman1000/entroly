@@ -24,6 +24,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import sys
 import threading
@@ -46,6 +47,7 @@ _MAX_DISPLAY_DEPTH = 12
 _MAX_DISPLAY_ITEMS = 1000
 _MAX_DISPLAY_STRING_CHARS = 8192
 _ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_CONTROL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{32,512}$")
 _DISPLAY_SAFE_PATHS = frozenset(
     {
         "/api/metrics",
@@ -65,11 +67,7 @@ _HARDENING_ERRORS: tuple[str, ...] = ()
 
 
 def _validated_control_token(raw: object) -> str | None:
-    if not isinstance(raw, str):
-        return None
-    if not 32 <= len(raw) <= _MAX_TOKEN_CHARS:
-        return None
-    if any(ord(character) < 33 or ord(character) == 127 for character in raw):
+    if not isinstance(raw, str) or not _CONTROL_TOKEN_RE.fullmatch(raw):
         return None
     return raw
 
@@ -81,7 +79,7 @@ def _load_control_token() -> str:
         if validated is not None:
             return validated
         logger.warning(
-            "Ignoring invalid ENTROLY_CONTROL_TOKEN; expected 32-512 visible characters"
+            "Ignoring invalid ENTROLY_CONTROL_TOKEN; use 32-512 URL-safe characters"
         )
     return secrets.token_urlsafe(32)
 
@@ -133,9 +131,9 @@ def _bounded_display_string(value: str) -> str:
 def _display_safe(value: Any, *, depth: int = 0, seen: set[int] | None = None) -> Any:
     """Copy JSON-like data into bounded HTML-safe display values.
 
-    Numbers and booleans retain their JSON types. Strings become HTML text, not
-    markup. Cycles, pathological nesting, and giant collections are represented
-    explicitly instead of exhausting the dashboard process.
+    Numbers and booleans retain their JSON types. Strings and object keys become
+    HTML text, never markup. Cycles, pathological nesting, and giant collections
+    are represented explicitly instead of exhausting the dashboard process.
     """
     if depth > _MAX_DISPLAY_DEPTH:
         return "[depth-limit]"
@@ -160,7 +158,8 @@ def _display_safe(value: Any, *, depth: int = 0, seen: set[int] | None = None) -
                 if index >= _MAX_DISPLAY_ITEMS:
                     output["_truncated"] = True
                     break
-                output[str(key)] = _display_safe(
+                safe_key = _bounded_display_string(str(key))
+                output[safe_key] = _display_safe(
                     child,
                     depth=depth + 1,
                     seen=active,
