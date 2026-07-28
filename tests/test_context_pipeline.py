@@ -145,7 +145,11 @@ def test_redaction_precedes_recovery_persistence() -> None:
 
     result = pipeline.transform(
         envelope,
-        _policy(token_budget=100, redact_sensitive=True),
+        _policy(
+            token_budget=100,
+            redact_sensitive=True,
+            allow_exact_reference=True,
+        ),
     )
 
     assert result.receipt.redacted is True
