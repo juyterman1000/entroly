@@ -1,16 +1,17 @@
 name: Apply Deep Dogfood Fixes
 
 on:
-  push:
-    branches:
-      - dogfood/deep-runtime-20260727
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.head.ref == 'dogfood/deep-runtime-20260727' &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
