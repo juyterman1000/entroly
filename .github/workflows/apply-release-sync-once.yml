@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - '.github/workflows/apply-release-sync-once.yml'
+      - '.release-sync-trigger'
 
 permissions:
   contents: write
