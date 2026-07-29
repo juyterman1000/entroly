@@ -206,8 +206,8 @@ jobs:
       - name: Enforce ${{ matrix.family }} gate
         run: test "$(cat "$RUNNER_TEMP/${{ matrix.family }}.status")" -eq 0
 
-  published-package:
-    name: Public PyPI artifact black-box
+  release-artifact:
+    name: Release artifact black-box
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -218,154 +218,64 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Resolve repository version
-        id: version
-        run: |
-          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Repository requires public artifact entroly==$version"
-
-      - name: Install exact public artifact in an isolated environment
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+      - name: Resolve candidate version and publication state
+        id: artifact
         run: |
           set -euo pipefail
-          python -m venv "$RUNNER_TEMP/public-entroly"
-          "$RUNNER_TEMP/public-entroly/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/public-entroly/bin/python" -m pip install \
-            --no-cache-dir --index-url https://pypi.org/simple "entroly==$VERSION"
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          public="$(python - "$version" <<'PY'
+          import sys
+          import urllib.error
+          import urllib.request
 
-      - name: Exercise public SDK and MCP without blocking reads
+          url = f"https://pypi.org/pypi/entroly/{sys.argv[1]}/json"
+          try:
+              with urllib.request.urlopen(url, timeout=20) as response:
+                  print("true" if response.status == 200 else "false")
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  print("false")
+              else:
+                  raise
+          PY
+          )"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "public=$public" >> "$GITHUB_OUTPUT"
+          echo "candidate version=$version public_on_pypi=$public"
+
+      - name: Build or install the exact release artifact
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.artifact.outputs.version }}
+          PUBLIC: ${{ steps.artifact.outputs.public }}
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/artifact-entroly"
+          BIN="$RUNNER_TEMP/artifact-entroly/bin"
+          "$BIN/python" -m pip install --upgrade pip
+          if [[ "$PUBLIC" == "true" ]]; then
+            "$BIN/python" -m pip install \
+              --no-cache-dir --index-url https://pypi.org/simple "entroly==$VERSION"
+          else
+            python -m pip install --upgrade build
+            python -m build --wheel --outdir "$RUNNER_TEMP/dist"
+            mapfile -t wheels < <(find "$RUNNER_TEMP/dist" -maxdepth 1 -name 'entroly-*.whl' -print)
+            test "${#wheels[@]}" -eq 1
+            "$BIN/python" -m pip install --no-cache-dir "${wheels[0]}"
+          fi
+
+      - name: Exercise artifact SDK and MCP without blocking reads
+        env:
+          VERSION: ${{ steps.artifact.outputs.version }}
           ENTROLY_DISABLE_UPDATE_CHECK: "1"
           ENTROLY_NO_DOCKER: "1"
           PYTHONUTF8: "1"
         working-directory: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          BIN="$RUNNER_TEMP/public-entroly/bin"
+          BIN="$RUNNER_TEMP/artifact-entroly/bin"
           "$BIN/entroly" --version
-          "$BIN/python" - <<'PY'
-          import json
-          import os
-          import queue
-          import subprocess
-          import threading
-          import time
-          from collections import deque
-
-          import entroly
-
-          expected = os.environ["VERSION"]
-          assert entroly.__version__ == expected, (entroly.__version__, expected)
-          for name in (
-              "compress", "compress_messages", "optimize", "verify",
-              "create_context_receipt", "render_context_receipt",
-          ):
-              assert callable(getattr(entroly, name, None)), name
-          sample = "Unicode evidence مرحبا 🧪\n" * 200
-          compressed = entroly.compress(sample, budget=100)
-          assert compressed.strip()
-          assert len(compressed) <= 400
-
-          binary = os.path.join(
-              os.environ["RUNNER_TEMP"], "public-entroly", "bin", "entroly"
-          )
-          proc = subprocess.Popen(
-              [binary],
-              stdin=subprocess.PIPE,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-              text=True,
-              encoding="utf-8",
-              errors="replace",
-              env={
-                  **os.environ,
-                  "ENTROLY_NO_DOCKER": "1",
-                  "ENTROLY_DISABLE_UPDATE_CHECK": "1",
-              },
-          )
-          assert proc.stdin and proc.stdout and proc.stderr
-          stdout_lines: queue.Queue[str | None] = queue.Queue()
-          stderr_tail: deque[str] = deque(maxlen=200)
-
-          def read_stdout() -> None:
-              try:
-                  for line in proc.stdout:
-                      stdout_lines.put(line)
-              finally:
-                  stdout_lines.put(None)
-
-          def read_stderr() -> None:
-              for line in proc.stderr:
-                  stderr_tail.append(line)
-
-          threading.Thread(target=read_stdout, daemon=True).start()
-          threading.Thread(target=read_stderr, daemon=True).start()
-
-          def call(request_id: int, method: str, params: dict) -> dict:
-              request = {
-                  "jsonrpc": "2.0",
-                  "id": request_id,
-                  "method": method,
-                  "params": params,
-              }
-              proc.stdin.write(json.dumps(request) + "\n")
-              proc.stdin.flush()
-              deadline = time.monotonic() + 45
-              while True:
-                  remaining = deadline - time.monotonic()
-                  if remaining <= 0:
-                      raise AssertionError(
-                          f"public MCP timed out; stderr={''.join(stderr_tail)[-4000:]}"
-                      )
-                  if proc.poll() is not None:
-                      raise AssertionError(
-                          f"public MCP exited {proc.returncode}; "
-                          f"stderr={''.join(stderr_tail)[-4000:]}"
-                      )
-                  try:
-                      line = stdout_lines.get(timeout=min(0.5, remaining))
-                  except queue.Empty:
-                      continue
-                  if line is None:
-                      raise AssertionError(
-                          f"public MCP stdout closed; stderr={''.join(stderr_tail)[-4000:]}"
-                      )
-                  try:
-                      candidate = json.loads(line)
-                  except json.JSONDecodeError as exc:
-                      raise AssertionError(f"public MCP stdout pollution: {line!r}") from exc
-                  if candidate.get("id") == request_id:
-                      return candidate
-
-          try:
-              initialized = call(
-                  1,
-                  "initialize",
-                  {
-                      "protocolVersion": "2024-11-05",
-                      "capabilities": {},
-                      "clientInfo": {"name": "published-dogfood", "version": "1"},
-                  },
-              )
-              assert "result" in initialized, initialized
-              assert "serverInfo" in initialized["result"], initialized
-              tools = call(2, "tools/list", {})
-              assert "result" in tools, tools
-              names = {tool["name"] for tool in tools["result"].get("tools", [])}
-              assert "optimize_context" in names
-              assert "entroly_retrieve" in names
-              assert "create_context_receipt" in names
-          finally:
-              proc.terminate()
-              try:
-                  proc.wait(timeout=5)
-              except subprocess.TimeoutExpired:
-                  proc.kill()
-                  proc.wait(timeout=5)
-          PY
+          "$BIN/python" "$GITHUB_WORKSPACE/scripts/public_artifact_dogfood.py" \
+            --bin-dir "$BIN" --expected-version "$VERSION"
 
   node-wasm-openclaw:
     name: Node, WASM, and OpenClaw packages
@@ -431,7 +341,7 @@ jobs:
       - name: Compile and lint all dogfood changes
         run: |
           python -m compileall -q entroly tests scripts
-          ruff check entroly tests/test_*dogfood.py tests/test_mcp_protocol.py tests/test_memory_launcher.py
+          ruff check entroly tests/test_*dogfood.py tests/test_mcp_protocol.py tests/test_memory_launcher.py scripts/public_artifact_dogfood.py
 
       - name: High-severity static security scan
         run: |
@@ -444,7 +354,7 @@ jobs:
         if: always()
         run: |
           set +e
-          pip-audit --strict 2>&1 | tee "$RUNNER_TEMP/pip-audit.log"
+          pip-audit --strict --skip-editable 2>&1 | tee "$RUNNER_TEMP/pip-audit.log"
           echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/pip-audit.status"
           exit 0
 
