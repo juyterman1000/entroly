@@ -350,11 +350,26 @@ jobs:
           echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/bandit.status"
           exit 0
 
+      - name: Build pinned dependency audit manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m pip list --format=freeze --exclude entroly \
+            | LC_ALL=C sort > "$RUNNER_TEMP/pip-audit-requirements.txt"
+          test -s "$RUNNER_TEMP/pip-audit-requirements.txt"
+          if grep -Eiq '^entroly([=<>!~ ]|$)' "$RUNNER_TEMP/pip-audit-requirements.txt"; then
+            echo "local editable project leaked into dependency audit manifest" >&2
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/pip-audit-requirements.txt"
+
       - name: Dependency vulnerability audit
         if: always()
         run: |
           set +e
-          pip-audit --strict --skip-editable 2>&1 | tee "$RUNNER_TEMP/pip-audit.log"
+          pip-audit --strict \
+            --requirement "$RUNNER_TEMP/pip-audit-requirements.txt" \
+            2>&1 | tee "$RUNNER_TEMP/pip-audit.log"
           echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/pip-audit.status"
           exit 0
 
@@ -366,6 +381,7 @@ jobs:
           path: |
             ${{ runner.temp }}/bandit.log
             ${{ runner.temp }}/bandit.status
+            ${{ runner.temp }}/pip-audit-requirements.txt
             ${{ runner.temp }}/pip-audit.log
             ${{ runner.temp }}/pip-audit.status
           if-no-files-found: error
