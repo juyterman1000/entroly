@@ -28,7 +28,9 @@ def _read_project_scripts(path: str) -> dict[str, str]:
 def test_root_pyproject_exposes_memory_entrypoints() -> None:
     scripts = _read_project_scripts("pyproject.toml")
 
-    assert scripts["entroly"] == "entroly._docker_launcher:launch"
+    # The public command must enter through the trust-hardened launcher. Guard
+    # against accidentally restoring the legacy Docker-first entrypoint.
+    assert scripts["entroly"] == "entroly.docker_launcher_safe:launch"
     assert scripts["entroly-memory"] == "entroly.memory_cli:main"
 
 
