@@ -74,7 +74,9 @@ def test_retrieval_debits_measured_compression_savings(tmp_path) -> None:
     )
 
 
-def test_old_retrieval_store_schema_loads_with_zero_retrievals(tmp_path) -> None:
+def test_old_retrieval_store_schema_loads_with_zero_retrievals_when_opted_in(
+    tmp_path,
+) -> None:
     path = tmp_path / "compression.json"
     path.write_text(
         '{"items":[{"receipt_id":"r","original_hash":"h",'
@@ -84,6 +86,13 @@ def test_old_retrieval_store_schema_loads_with_zero_retrievals(tmp_path) -> None
         '"created_ns":1}]}]}',
         encoding="utf-8",
     )
-    store = CompressionRetrievalStore(path)
-    assert store.list_receipts()[0]["net_tokens_saved"] == 15
-    assert store.get_span("r", "s").retrieval_count == 0
+
+    strict = CompressionRetrievalStore(path)
+    assert strict.list_receipts() == []
+    assert strict.get_span("r", "s") is None
+
+    migrated = CompressionRetrievalStore(path, allow_legacy_unscoped=True)
+    assert migrated.list_receipts()[0]["net_tokens_saved"] == 15
+    span = migrated.get_span("r", "s")
+    assert span is not None
+    assert span.retrieval_count == 0
