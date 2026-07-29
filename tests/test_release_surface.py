@@ -592,3 +592,17 @@ def test_clawhub_reconciliation_is_tag_bound_and_non_destructive_by_default() ->
         "name: clawhub-release-reconciliation-${{ inputs.version }}", 1
     )[1]
     assert 'release.get("moderationReason")' not in text
+
+
+def test_release_sync_accepts_cli_fallback_version() -> None:
+    from scripts.sync_release_version import PYTHON_VERSION_PATTERNS, _replace_versions
+
+    source = '    __version__ = "1.0.67"\\n'
+    updated = _replace_versions(
+        source,
+        PYTHON_VERSION_PATTERNS["entroly/cli.py"],
+        "1.0.68",
+        surface="entroly/cli.py",
+    )
+
+    assert updated == '    __version__ = "1.0.68"\\n'
