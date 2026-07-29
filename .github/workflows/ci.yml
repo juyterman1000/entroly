@@ -228,7 +228,7 @@ jobs:
           # maturin develop already installed entroly-core into the venv.
           # Install only the remaining runtime deps (mcp, httpx, starlette)
           # without re-resolving entroly-core from PyPI (0.3.0 isn't there yet).
-          .venv/bin/pip install --timeout 120 --retries 5 -e . "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil
+          .venv/bin/pip install --timeout 120 --retries 5 -e . "mcp>=1.28.1,<2" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil
 
       - name: Verify imports
         run: |
@@ -284,7 +284,7 @@ jobs:
           # Do NOT drop --no-deps.
           pip install --no-deps --timeout 120 --retries 5 -e .
           pip install --timeout 120 --retries 5 \
-            "mcp>=1.6.0" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil \
+            "mcp>=1.28.1,<2" "httpx>=0.27" "starlette>=0.37" "uvicorn>=0.30" psutil \
             pytest pytest-timeout
 
       - name: Assert the Rust engine is genuinely absent
