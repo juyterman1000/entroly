@@ -168,10 +168,8 @@ def test_restart_with_different_query_keeps_rescued_prefix_byte_identical(
     monkeypatch.setattr(
         rescue_module, "compress_evidence_locked", query_sensitive_compressor
     )
-    first_dir = tmp_path / "first"
-    second_dir = tmp_path / "second"
-    first_dir.mkdir()
-    second_dir.mkdir()
+    store_dir = tmp_path / "restart-store"
+    store_dir.mkdir()
     policy = {
         "soft_watermark": 0.20,
         "hard_watermark": 0.30,
@@ -180,8 +178,7 @@ def test_restart_with_different_query_keeps_rescued_prefix_byte_identical(
         "loop_min_watermark": 0.05,
         "tail_messages": 2,
     }
-    first, _ = _controller(first_dir, **policy)
-    restarted, _ = _controller(second_dir, **policy)
+    first, _ = _controller(store_dir, **policy)
     messages = [
         {"role": "system", "content": "stable policy"},
         {"role": "tool", "content": "old tool output " * 500},
@@ -192,6 +189,7 @@ def test_restart_with_different_query_keeps_rescued_prefix_byte_identical(
     before_restart = first.rescue(
         "conv", messages, context_window=4_000, query="payment failure"
     )
+    restarted, _ = _controller(store_dir, **policy)
     after_restart = restarted.rescue(
         "conv", messages, context_window=4_000, query="unrelated auth question"
     )
