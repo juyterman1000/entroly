@@ -1,3 +1,4 @@
 Repair stale active 1.0.68 release surfaces through the permanent typed synchronizer.
 Retry after matching the CLI fallback assignment robustly.
 Retry after deterministic CLI fallback parsing.
+Retry after fixing CLI fallback match offsets.
