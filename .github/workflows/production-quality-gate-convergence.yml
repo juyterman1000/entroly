@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: entroly-production-quality-gate-convergence
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   converge:
