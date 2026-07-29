@@ -45,49 +45,21 @@ def _request(
         server.server_port,
         timeout=3,
     )
-    try:
-        request_headers = dict(headers or {})
-        request_headers.setdefault("Host", f"127.0.0.1:{server.server_port}")
-        connection.request(
-            method,
-            path,
-            body=body,
-            headers=request_headers,
-            encode_chunked=encode_chunked,
-        )
-        response = connection.getresponse()
-        payload = response.read()
-        returned_headers = {key.casefold(): value for key, value in response.getheaders()}
-        return response.status, returned_headers, payload
-    finally:
-        connection.close()
-
-
-def _rejected_chunked_request(server, *, headers: dict[str, str]) -> int | None:
-    """Return the HTTP status, or None when the server closes fail-closed.
-
-    The dashboard rejects Transfer-Encoding before dispatching a control route.
-    Some TCP stacks deliver the 400 response; macOS can reset the connection
-    because the handler intentionally closes without consuming the chunked body.
-    Both outcomes are fail-closed. The caller must still prove that no mutation
-    handler ran.
-    """
-    try:
-        status, _returned_headers, _payload = _request(
-            server,
-            "POST",
-            "/api/control/bypass",
-            body=b"{}",
-            headers={
-                **headers,
-                "Content-Type": "application/json",
-                "Transfer-Encoding": "chunked",
-            },
-            encode_chunked=True,
-        )
-        return status
-    except (ConnectionResetError, http.client.RemoteDisconnected):
-        return None
+    request_headers = dict(headers or {})
+    request_headers.setdefault("Host", f"127.0.0.1:{server.server_port}")
+    connection.request(
+        method,
+        path,
+        body=body,
+        headers=request_headers,
+        encode_chunked=encode_chunked,
+    )
+    response = connection.getresponse()
+    payload = response.read()
+    returned_headers = {key.casefold(): value for key, value in response.getheaders()}
+    status = response.status
+    connection.close()
+    return status, returned_headers, payload
 
 
 def test_security_boundary_is_active_and_contract_matched() -> None:
@@ -176,6 +148,7 @@ def test_metrics_route_never_returns_active_markup(monkeypatch) -> None:
     assert status == 200
     assert "<img" not in text
     assert "&lt;img" in text
+    assert headers["content-length"] == str(len(body))
     assert headers["cache-control"].startswith("no-store")
     assert headers["cross-origin-resource-policy"] == "same-origin"
     assert headers["x-frame-options"] == "DENY"
@@ -183,7 +156,7 @@ def test_metrics_route_never_returns_active_markup(monkeypatch) -> None:
 
 def test_host_header_rebinding_is_rejected() -> None:
     with _server() as server:
-        status, _headers, body = _request(
+        status, headers, body = _request(
             server,
             "GET",
             "/health",
@@ -192,11 +165,12 @@ def test_host_header_rebinding_is_rejected() -> None:
 
     assert status == 403
     assert b"untrusted dashboard request context" in body
+    assert headers["content-length"] == str(len(body))
 
 
 def test_cross_origin_browser_request_is_rejected() -> None:
     with _server() as server:
-        status, _headers, body = _request(
+        status, headers, body = _request(
             server,
             "GET",
             "/api/metrics",
@@ -208,6 +182,7 @@ def test_cross_origin_browser_request_is_rejected() -> None:
 
     assert status == 403
     assert b"untrusted dashboard request context" in body
+    assert headers["content-length"] == str(len(body))
 
 
 def test_missing_control_capability_cannot_mutate_state(monkeypatch) -> None:
@@ -219,7 +194,7 @@ def test_missing_control_capability_cannot_mutate_state(monkeypatch) -> None:
 
     monkeypatch.setattr(security, "_ORIGINAL_DO_POST", unexpected_post)
     with _server() as server:
-        status, _headers, body = _request(
+        status, headers, body = _request(
             server,
             "POST",
             "/api/control/stop",
@@ -230,6 +205,7 @@ def test_missing_control_capability_cannot_mutate_state(monkeypatch) -> None:
     assert status == 403
     assert not called
     assert b"invalid control capability" in body
+    assert headers["content-length"] == str(len(body))
 
 
 def test_valid_same_origin_capability_reaches_control_handler(monkeypatch) -> None:
@@ -242,7 +218,7 @@ def test_valid_same_origin_capability_reaches_control_handler(monkeypatch) -> No
 
     monkeypatch.setattr(security, "_ORIGINAL_DO_POST", accepted_post)
     with _server() as server:
-        status, _headers, body = _request(
+        status, headers, body = _request(
             server,
             "POST",
             "/api/control/quality",
@@ -258,6 +234,7 @@ def test_valid_same_origin_capability_reaches_control_handler(monkeypatch) -> No
     assert status == 200
     assert called
     assert json.loads(body) == {"ok": True, "result": "accepted"}
+    assert headers["content-length"] == str(len(body))
 
 
 def test_wrong_content_type_and_chunked_controls_fail_before_mutation(monkeypatch) -> None:
@@ -270,23 +247,37 @@ def test_wrong_content_type_and_chunked_controls_fail_before_mutation(monkeypatc
     monkeypatch.setattr(security, "_ORIGINAL_DO_POST", unexpected_post)
     common = {"X-Entroly-Control-Token": security.control_token()}
     with _server() as server:
-        wrong_type, _headers, _body = _request(
+        wrong_type, wrong_headers, wrong_body = _request(
             server,
             "POST",
             "/api/control/bypass",
             body=b"enabled=true",
             headers={**common, "Content-Type": "application/x-www-form-urlencoded"},
         )
-        chunked = _rejected_chunked_request(server, headers=common)
+        chunked, chunked_headers, chunked_body = _request(
+            server,
+            "POST",
+            "/api/control/bypass",
+            body=b"{}",
+            headers={
+                **common,
+                "Content-Type": "application/json",
+                "Transfer-Encoding": "chunked",
+            },
+            encode_chunked=True,
+        )
 
     assert wrong_type == 415
-    assert chunked in {400, None}
+    assert wrong_headers["content-length"] == str(len(wrong_body))
+    assert chunked == 400
+    assert chunked_headers["content-length"] == str(len(chunked_body))
+    assert b"chunked control requests are unsupported" in chunked_body
     assert not called
 
 
 def test_oversized_request_target_is_rejected_before_route_dispatch() -> None:
     with _server() as server:
-        status, _headers, body = _request(
+        status, headers, body = _request(
             server,
             "GET",
             "/" + "a" * 9000,
@@ -294,6 +285,7 @@ def test_oversized_request_target_is_rejected_before_route_dispatch() -> None:
 
     assert status == 414
     assert b"request target too long" in body
+    assert headers["content-length"] == str(len(body))
 
 
 class _FakeSocket:
