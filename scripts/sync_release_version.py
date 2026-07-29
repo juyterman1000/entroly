@@ -148,7 +148,7 @@ def _replace_cli_fallback_version(text: str, target: str, surface: str) -> str:
     """Replace exactly one CLI fallback version without relying on line regex anchors."""
 
     lines = text.splitlines(keepends=True)
-    matches: list[tuple[int, re.Match[str]]] = []
+    matches: list[tuple[int, re.Match[str], int]] = []
     for index, line in enumerate(lines):
         if "__version__" not in line or "=" not in line:
             continue
@@ -157,16 +157,18 @@ def _replace_cli_fallback_version(text: str, target: str, surface: str) -> str:
             continue
         match = re.search(rf"(?P<version>{SEMVER_TEXT})", right)
         if match:
-            matches.append((index, match))
+            matches.append((index, match, len(left) + 1))
 
     if len(matches) != 1:
         raise RuntimeError(
             f"{surface}: expected exactly one CLI fallback version, found {len(matches)}"
         )
 
-    index, match = matches[0]
+    index, match, offset = matches[0]
     line = lines[index]
     start, end = match.span("version")
+    start += offset
+    end += offset
     lines[index] = line[:start] + target + line[end:]
     return "".join(lines)
 
