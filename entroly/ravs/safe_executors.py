@@ -86,7 +86,7 @@ class TestRunnerExecutor(_LegacyTestRunnerExecutor):
         resolved = resolve_file_within(workspace, raw_target)
         if resolved is None:
             raise ValueError("test target does not exist inside the selected workspace")
-        return str(resolved.relative_to(workspace))
+        return resolved.relative_to(workspace).as_posix()
 
     def execute(self, input_text: str) -> ExecutorResult:
         started = time.perf_counter()
