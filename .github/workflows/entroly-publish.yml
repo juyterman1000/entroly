@@ -168,6 +168,7 @@ jobs:
       - name: Build entroly-core + install package
         run: |
           python -m venv .venv
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
           .venv/bin/pip install maturin --timeout 120 --retries 5
           cd entroly-core && ../.venv/bin/maturin develop --release && cd ..
           .venv/bin/pip install --timeout 120 --retries 5 -e . \
