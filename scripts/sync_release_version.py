@@ -264,7 +264,7 @@ def _replace_native_dependency_minimums(
 ) -> str:
     return _replace_versions(
         text,
-        rf'entroly-core>=(?P<version>{SEMVER_TEXT}),<2',
+        rf'entroly-core>=(?P<version>{SEMVER_TEXT})(?:,<2)?',
         target,
         surface=surface,
         minimum=1,
