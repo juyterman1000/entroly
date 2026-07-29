@@ -289,7 +289,8 @@ def _transform_surface(surface: str, text: str, target: str) -> str:
         return _replace_cargo_lock_versions(text, target, surface)
 
     if surface == "entroly/cli.py":
-        updated = _replace_cli_fallback_version(text, target, surface)\n        return _replace_native_dependency_minimums(updated, target, surface)
+        updated = _replace_cli_fallback_version(text, target, surface)
+        return _replace_native_dependency_minimums(updated, target, surface)
 
     if surface in PYTHON_VERSION_PATTERNS:
         updated = _replace_versions(
