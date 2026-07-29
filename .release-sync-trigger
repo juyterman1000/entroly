@@ -4,3 +4,4 @@ Retry after deterministic CLI fallback parsing.
 Retry after fixing CLI fallback match offsets.
 Retry after synchronizing the CLI native dependency floor.
 Retry after restoring valid CLI transform syntax.
+Retry after accepting unbounded CLI native pins.
