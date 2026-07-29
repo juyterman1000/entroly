@@ -1,4 +1,5 @@
 name: Apply Typed Release Sync Once
+run-name: Apply typed 1.0.68 release synchronization
 
 on:
   push:
@@ -10,7 +11,7 @@ permissions:
 
 concurrency:
   group: apply-release-sync-once
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
