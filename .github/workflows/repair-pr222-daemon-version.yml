@@ -1,6 +1,6 @@
 name: Repair PR 222 daemon version
 
-# Second push intentionally triggers this already-present one-shot repair workflow.
+# Trigger commit for the scoped pull_request_target repair hook on main.
 on:
   push:
     branches:
