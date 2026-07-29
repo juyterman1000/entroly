@@ -144,6 +144,33 @@ def _replace_versions(
     return expression.sub(replacement, text)
 
 
+def _replace_cli_fallback_version(text: str, target: str, surface: str) -> str:
+    """Replace exactly one CLI fallback version without relying on line regex anchors."""
+
+    lines = text.splitlines(keepends=True)
+    matches: list[tuple[int, re.Match[str]]] = []
+    for index, line in enumerate(lines):
+        if "__version__" not in line or "=" not in line:
+            continue
+        left, right = line.split("=", 1)
+        if "__version__" not in left:
+            continue
+        match = re.search(rf"(?P<version>{SEMVER_TEXT})", right)
+        if match:
+            matches.append((index, match))
+
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"{surface}: expected exactly one CLI fallback version, found {len(matches)}"
+        )
+
+    index, match = matches[0]
+    line = lines[index]
+    start, end = match.span("version")
+    lines[index] = line[:start] + target + line[end:]
+    return "".join(lines)
+
+
 def _replace_toml_project_version(text: str, target: str, surface: str) -> str:
     return _replace_versions(
         text,
@@ -258,6 +285,10 @@ def _transform_surface(surface: str, text: str, target: str) -> str:
 
     if surface in CARGO_LOCK_PACKAGES:
         return _replace_cargo_lock_versions(text, target, surface)
+
+    if surface == "entroly/cli.py":
+        updated = _replace_cli_fallback_version(text, target, surface)
+        return _replace_native_dependency_minimums(updated, target, surface)
 
     if surface in PYTHON_VERSION_PATTERNS:
         updated = _replace_versions(
