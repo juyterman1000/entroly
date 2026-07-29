@@ -45,21 +45,49 @@ def _request(
         server.server_port,
         timeout=3,
     )
-    request_headers = dict(headers or {})
-    request_headers.setdefault("Host", f"127.0.0.1:{server.server_port}")
-    connection.request(
-        method,
-        path,
-        body=body,
-        headers=request_headers,
-        encode_chunked=encode_chunked,
-    )
-    response = connection.getresponse()
-    payload = response.read()
-    returned_headers = {key.casefold(): value for key, value in response.getheaders()}
-    status = response.status
-    connection.close()
-    return status, returned_headers, payload
+    try:
+        request_headers = dict(headers or {})
+        request_headers.setdefault("Host", f"127.0.0.1:{server.server_port}")
+        connection.request(
+            method,
+            path,
+            body=body,
+            headers=request_headers,
+            encode_chunked=encode_chunked,
+        )
+        response = connection.getresponse()
+        payload = response.read()
+        returned_headers = {key.casefold(): value for key, value in response.getheaders()}
+        return response.status, returned_headers, payload
+    finally:
+        connection.close()
+
+
+def _rejected_chunked_request(server, *, headers: dict[str, str]) -> int | None:
+    """Return the HTTP status, or None when the server closes fail-closed.
+
+    The dashboard rejects Transfer-Encoding before dispatching a control route.
+    Some TCP stacks deliver the 400 response; macOS can reset the connection
+    because the handler intentionally closes without consuming the chunked body.
+    Both outcomes are fail-closed. The caller must still prove that no mutation
+    handler ran.
+    """
+    try:
+        status, _returned_headers, _payload = _request(
+            server,
+            "POST",
+            "/api/control/bypass",
+            body=b"{}",
+            headers={
+                **headers,
+                "Content-Type": "application/json",
+                "Transfer-Encoding": "chunked",
+            },
+            encode_chunked=True,
+        )
+        return status
+    except (ConnectionResetError, http.client.RemoteDisconnected):
+        return None
 
 
 def test_security_boundary_is_active_and_contract_matched() -> None:
@@ -249,21 +277,10 @@ def test_wrong_content_type_and_chunked_controls_fail_before_mutation(monkeypatc
             body=b"enabled=true",
             headers={**common, "Content-Type": "application/x-www-form-urlencoded"},
         )
-        chunked, _headers, _body = _request(
-            server,
-            "POST",
-            "/api/control/bypass",
-            body=b"{}",
-            headers={
-                **common,
-                "Content-Type": "application/json",
-                "Transfer-Encoding": "chunked",
-            },
-            encode_chunked=True,
-        )
+        chunked = _rejected_chunked_request(server, headers=common)
 
     assert wrong_type == 415
-    assert chunked == 400
+    assert chunked in {400, None}
     assert not called
 
 
