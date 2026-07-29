@@ -1,28 +1,30 @@
 name: Apply Typed Release Sync Once
-run-name: Apply typed 1.0.68 release synchronization
+run-name: Apply typed 1.0.68 release synchronization on main
 
 on:
   push:
     branches:
-      - 'fix/docker-quality-gate-convergence'
+      - main
+    paths:
+      - '.github/workflows/apply-release-sync-once.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-release-sync-once
-  cancel-in-progress: true
+  group: apply-release-sync-once-main
+  cancel-in-progress: false
 
 jobs:
   apply:
     if: github.repository == 'juyterman1000/entroly'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Checkout exact branch head
+      - name: Checkout exact main head
         uses: actions/checkout@v6
         with:
-          ref: fix/docker-quality-gate-convergence
+          ref: main
           fetch-depth: 0
 
       - name: Set up Python
@@ -92,4 +94,4 @@ jobs:
           git config user.email '208309368+juyterman1000@users.noreply.github.com'
           git add -A
           git commit -m 'fix(release): converge all 1.0.68 runtime surfaces'
-          git push origin HEAD:fix/docker-quality-gate-convergence
+          git push origin HEAD:main
