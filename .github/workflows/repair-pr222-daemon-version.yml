@@ -1,5 +1,6 @@
 name: Repair PR 222 daemon version
 
+# Second push intentionally triggers this already-present one-shot repair workflow.
 on:
   push:
     branches:
