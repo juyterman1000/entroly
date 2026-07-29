@@ -11,6 +11,7 @@ from pathlib import Path
 # dashboard gains capability-protected writes and bounded request handling.
 from . import daemon_network_security as _daemon_network_security  # noqa: F401
 from . import dashboard_security as _dashboard_security  # noqa: F401
+from . import dashboard_response_integrity as _dashboard_response_integrity  # noqa: F401
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .optimization_ledger import OptimizationLedger
 
