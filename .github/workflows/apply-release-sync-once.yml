@@ -1,6 +1,8 @@
 name: Apply Typed Release Sync Once
 run-name: Apply typed 1.0.68 release synchronization on main
 
+# This second workflow-only push is intentional: the parent commit now contains
+# the main-branch trigger, so GitHub can select and execute this one-shot job.
 on:
   push:
     branches:
