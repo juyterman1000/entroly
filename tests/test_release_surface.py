@@ -595,7 +595,11 @@ def test_clawhub_reconciliation_is_tag_bound_and_non_destructive_by_default() ->
 
 
 def test_release_sync_accepts_cli_fallback_version() -> None:
-    from scripts.sync_release_version import PYTHON_VERSION_PATTERNS, _replace_versions
+    from scripts.sync_release_version import (
+        PYTHON_VERSION_PATTERNS,
+        _replace_cli_fallback_version,
+        _replace_versions,
+    )
 
     source = '    __version__ = "1.0.67"\\n'
     updated = _replace_versions(
@@ -606,3 +610,4 @@ def test_release_sync_accepts_cli_fallback_version() -> None:
     )
 
     assert updated == '    __version__ = "1.0.68"\\n'
+    assert _replace_cli_fallback_version(source, "1.0.68", "entroly/cli.py") == updated
