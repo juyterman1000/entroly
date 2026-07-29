@@ -87,7 +87,7 @@ CARGO_LOCK_PACKAGES: dict[str, tuple[str, ...]] = {
 
 PYTHON_VERSION_PATTERNS: dict[str, str] = {
     "entroly/__init__.py": rf'^__version__\s*=\s*"(?P<version>{SEMVER_TEXT})"',
-    "entroly/cli.py": rf'__version__\s*=\s*"(?P<version>{SEMVER_TEXT})"',
+    "entroly/cli.py": rf'__version__[^\r\n]*?(?P<version>{SEMVER_TEXT})',
     "entroly/daemon.py": rf'^\s*version:\s*str\s*=\s*"(?P<version>{SEMVER_TEXT})"',
     "entroly/native_status.py": (
         rf'^MIN_ENTROLY_CORE_VERSION\s*=\s*"(?P<version>{SEMVER_TEXT})"'
