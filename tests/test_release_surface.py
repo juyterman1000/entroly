@@ -215,6 +215,7 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     clawhub_publisher = text.split("  publish-clawhub-openclaw:", 1)[1].split(
         "  publish-binaries:", 1
     )[0]
+    assert "timeout-minutes: 45" in clawhub_publisher
     assert "id-token: write" in clawhub_publisher
     assert "package trusted-publisher set entroly-openclaw" in clawhub_publisher
     assert '--workflow-filename "entroly-publish.yml"' in clawhub_publisher

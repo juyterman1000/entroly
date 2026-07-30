@@ -529,7 +529,9 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Public indexing has exceeded 25 minutes after a successful publish.
+    # Keep this above the verifier's ~35-minute bounded backoff window.
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
