@@ -55,6 +55,7 @@ RELEASE_SURFACES: tuple[str, ...] = (
     "entroly/pyproject.toml",
     "entroly/server.py",
     "integrations/openclaw/package.json",
+    "integrations/openclaw/README.md",
     "packaging/homebrew/README.md",
     "pyproject.toml",
     "server.json",
@@ -239,6 +240,52 @@ def _replace_server_json_versions(text: str, target: str, surface: str) -> str:
     return updated
 
 
+def _replace_npm_alias_versions(text: str, target: str, surface: str) -> str:
+    updated = _replace_json_top_level_version(text, target, surface)
+    updated = _replace_versions(
+        updated,
+        rf'"entroly-wasm"\s*:\s*"(?P<version>{SEMVER_TEXT})"',
+        target,
+        surface=surface,
+        minimum=1,
+        maximum=1,
+    )
+    parsed = json.loads(updated)
+    dependency = (parsed.get("dependencies") or {}).get("entroly-wasm")
+    if dependency != target:
+        raise RuntimeError(
+            f"{surface}: entroly-wasm dependency did not converge to {target}"
+        )
+    return updated
+
+
+def _replace_release_test_versions(text: str, target: str, surface: str) -> str:
+    updated = _replace_versions(
+        text,
+        PYTHON_VERSION_PATTERNS[surface],
+        target,
+        surface=surface,
+        minimum=1,
+        maximum=1,
+    )
+    function_name = (
+        "def test_public_package_versions_are_"
+        + target.replace(".", "_")
+        + "()"
+    )
+    updated, count = re.subn(
+        r"def test_public_package_versions_are_[0-9]+_[0-9]+_[0-9]+\(\)",
+        function_name,
+        updated,
+        count=1,
+    )
+    if count != 1:
+        raise RuntimeError(
+            f"{surface}: expected exactly one public package version test"
+        )
+    return updated
+
+
 def _replace_cargo_lock_versions(text: str, target: str, surface: str) -> str:
     updated = text
     for package in CARGO_LOCK_PACKAGES[surface]:
@@ -279,11 +326,17 @@ def _transform_surface(surface: str, text: str, target: str) -> str:
             updated = _replace_native_dependency_minimums(updated, target, surface)
         return updated
 
+    if surface == "entroly/npm-alias/package.json":
+        return _replace_npm_alias_versions(text, target, surface)
+
     if surface in JSON_TOP_LEVEL_VERSION_SURFACES:
         return _replace_json_top_level_version(text, target, surface)
 
     if surface == "server.json":
         return _replace_server_json_versions(text, target, surface)
+
+    if surface == "tests/test_release_surface.py":
+        return _replace_release_test_versions(text, target, surface)
 
     if surface in CARGO_LOCK_PACKAGES:
         return _replace_cargo_lock_versions(text, target, surface)
@@ -339,6 +392,16 @@ def _transform_surface(surface: str, text: str, target: str) -> str:
             surface=surface,
             minimum=1,
             maximum=1,
+        )
+
+    if surface == "integrations/openclaw/README.md":
+        return _replace_versions(
+            text,
+            rf'pip install "entroly>=(?P<version>{SEMVER_TEXT})"',
+            target,
+            surface=surface,
+            minimum=2,
+            maximum=2,
         )
 
     raise RuntimeError(f"{surface}: no typed release-surface transform is defined")

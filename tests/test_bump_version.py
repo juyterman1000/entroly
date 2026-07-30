@@ -146,3 +146,22 @@ def test_homebrew_readme_targets_update_heading_and_command():
     assert "Current release example version: `1.0.40`" in text
     assert "VER=1.0.40" in text
     assert "entroly-1.0.40.tar.gz" in text
+
+
+def test_openclaw_readme_targets_update_install_floor_only():
+    text = (
+        'pip install "entroly>=1.0.39"\n'
+        'pip install "entroly>=1.0.39"\n'
+        "The Entroly 1.0.38 bridge v2 protocol remains supported.\n"
+    )
+    targets = [
+        (pattern, template)
+        for path, pattern, template in bump_version.TARGETS
+        if path == "integrations/openclaw/README.md"
+    ]
+
+    for pattern, template in targets:
+        text = re.sub(pattern, template.format(v="1.0.40"), text)
+
+    assert text.count('pip install "entroly>=1.0.40"') == 2
+    assert "Entroly 1.0.38 bridge v2 protocol" in text

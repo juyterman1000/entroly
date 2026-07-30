@@ -3,7 +3,6 @@ import os
 import sys
 import tempfile
 import shutil
-os.environ["ENTROLY_FEDERATION"] = "1"
 
 from entroly.federation import (
     FederationClient, FEDERATED_WEIGHT_KEYS,

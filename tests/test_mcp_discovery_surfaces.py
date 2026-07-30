@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -29,9 +31,22 @@ def _send(proc, method: str, params: dict | None = None, request_id: int | None 
 
 
 def _read(proc, timeout: float = 30.0) -> dict | None:
-    result: list[dict | None] = [None]
+    responses = getattr(proc, "_entroly_responses", None)
+    if responses is None:
+        raise RuntimeError("MCP response pump was not initialized")
+    try:
+        return responses.get(timeout=timeout)
+    except queue.Empty:
+        return None
 
-    def reader() -> None:
+
+def _start_output_pumps(proc) -> deque[str]:
+    """Drain both child pipes continuously to prevent Windows pipe deadlocks."""
+    responses: queue.Queue[dict] = queue.Queue()
+    stderr_tail: deque[str] = deque(maxlen=200)
+    proc._entroly_responses = responses
+
+    def read_stdout() -> None:
         while True:
             line = proc.stdout.readline()
             if not line:
@@ -41,13 +56,15 @@ def _read(proc, timeout: float = 30.0) -> dict | None:
             except ValueError:
                 continue
             if isinstance(message, dict) and ("result" in message or "error" in message):
-                result[0] = message
-                return
+                responses.put(message)
 
-    thread = threading.Thread(target=reader, daemon=True)
-    thread.start()
-    thread.join(timeout=timeout)
-    return result[0]
+    def drain_stderr() -> None:
+        for line in proc.stderr:
+            stderr_tail.append(line.rstrip())
+
+    threading.Thread(target=read_stdout, daemon=True).start()
+    threading.Thread(target=drain_stderr, daemon=True).start()
+    return stderr_tail
 
 
 @pytest.fixture(scope="module")
@@ -65,15 +82,18 @@ def initialized_server():
         cwd=scratch,
         env={
             **os.environ,
+            # Protocol discovery must remain local and deterministic even when
+            # the parent test process opts into federation.
+            "ENTROLY_FEDERATION": "0",
             "ENTROLY_NO_DOCKER": "1",
             "PYTHONPATH": python_path,
         },
     )
+    stderr_tail = _start_output_pumps(proc)
     time.sleep(2)
     if proc.poll() is not None:
-        stderr = proc.stderr.read()
         shutil.rmtree(scratch, ignore_errors=True)
-        pytest.fail(f"MCP server failed to start: {stderr[:1000]}")
+        pytest.fail(f"MCP server failed to start: {chr(10).join(stderr_tail)[-1000:]}")
 
     _send(
         proc,

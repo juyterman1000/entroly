@@ -117,6 +117,38 @@ def test_synchronizer_rebuilds_mcp_bundle_from_updated_manifest(tmp_path: Path) 
     assert bundled["version"] == "1.0.52"
 
 
+def test_synchronizer_updates_npm_alias_dependency_with_package_version(
+    tmp_path: Path,
+) -> None:
+    module = _load_sync_module()
+    module.RELEASE_SURFACES = ("entroly/npm-alias/package.json",)
+
+    manifest = tmp_path / "entroly" / "npm-alias" / "package.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "name": "entroly",
+                "version": "1.0.51",
+                "dependencies": {"entroly-wasm": "1.0.51"},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    changed = module.synchronize(tmp_path, "1.0.52")
+
+    assert set(changed) == {
+        "docs/releases/v1.0.52.md",
+        "entroly/npm-alias/package.json",
+    }
+    updated = json.loads(manifest.read_text(encoding="utf-8"))
+    assert updated["version"] == "1.0.52"
+    assert updated["dependencies"]["entroly-wasm"] == "1.0.52"
+
+
 def test_synchronizer_repairs_partial_bump_without_moving_homebrew_pin(
     tmp_path: Path,
 ) -> None:
@@ -156,7 +188,9 @@ def test_synchronizer_repairs_partial_bump_without_moving_homebrew_pin(
     release_test.write_text(
         'RELEASE_VERSION = "1.0.51"\n'
         'HOMEBREW_FORMULA_VERSION = "1.0.50"\n'
-        'HOMEBREW_FORMULA_URL = "entroly-1.0.50.tar.gz"\n',
+        'HOMEBREW_FORMULA_URL = "entroly-1.0.50.tar.gz"\n'
+        'def test_public_package_versions_are_1_0_51():\n'
+        '    pass\n',
         encoding="utf-8",
     )
 
@@ -179,6 +213,7 @@ def test_synchronizer_repairs_partial_bump_without_moving_homebrew_pin(
     assert '_version = "1.0.52"' in server
     release_text = release_test.read_text(encoding="utf-8")
     assert 'RELEASE_VERSION = "1.0.52"' in release_text
+    assert "def test_public_package_versions_are_1_0_52()" in release_text
     assert 'HOMEBREW_FORMULA_VERSION = "1.0.50"' in release_text
     assert "entroly-1.0.50.tar.gz" in release_text
 
@@ -210,6 +245,32 @@ def test_synchronizer_only_updates_entroly_cargo_lock_packages(tmp_path: Path) -
     assert 'name = "third-party"\nversion = "1.0.51"' in updated
     assert 'name = "entroly-qccr"\nversion = "1.0.52"' in updated
     assert 'name = "entroly-wasm"\nversion = "1.0.52"' in updated
+
+
+def test_synchronizer_updates_openclaw_install_floor_without_rewriting_protocol_history(
+    tmp_path: Path,
+) -> None:
+    module = _load_sync_module()
+    module.RELEASE_SURFACES = ("integrations/openclaw/README.md",)
+
+    readme = tmp_path / "integrations" / "openclaw" / "README.md"
+    readme.parent.mkdir(parents=True)
+    readme.write_text(
+        'pip install "entroly>=1.0.51"\n'
+        'pip install "entroly>=1.0.51"\n'
+        "The Entroly 1.0.49 bridge v2 protocol remains the compatibility floor.\n",
+        encoding="utf-8",
+    )
+
+    changed = module.synchronize(tmp_path, "1.0.52")
+
+    assert set(changed) == {
+        "docs/releases/v1.0.52.md",
+        "integrations/openclaw/README.md",
+    }
+    updated = readme.read_text(encoding="utf-8")
+    assert updated.count('pip install "entroly>=1.0.52"') == 2
+    assert "Entroly 1.0.49 bridge v2 protocol" in updated
 
 
 def test_synchronizer_preflights_all_surfaces_before_writing(tmp_path: Path) -> None:

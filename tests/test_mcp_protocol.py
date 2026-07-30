@@ -11,12 +11,14 @@ Uses non-blocking I/O with threading to prevent CI hangs.
 
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+from collections import deque
 import pytest
 
 
@@ -51,31 +53,46 @@ def _read_response(proc, timeout=30):
     import graph plus Rust-engine load can take well over 10s there, even
     though it responds in ~3s on a warm machine.
     """
-    result = [None]
+    responses = getattr(proc, "_entroly_responses", None)
+    if responses is None:
+        raise RuntimeError("MCP response pump was not initialized")
+    try:
+        return responses.get(timeout=timeout)
+    except queue.Empty:
+        return None
 
-    def _reader():
+
+def _start_output_pumps(proc):
+    """Drain stdout and stderr continuously so the server cannot block on a pipe."""
+    responses = queue.Queue()
+    stderr_tail = deque(maxlen=200)
+    proc._entroly_responses = responses
+
+    def _read_stdout():
         try:
-            while True:
-                line = proc.stdout.readline()
-                if not line:
-                    return  # EOF — server exited
+            for line in proc.stdout:
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     msg = json.loads(line)
                 except ValueError:
-                    continue  # non-JSON line (banner/log) — keep reading
+                    continue
                 if isinstance(msg, dict) and ("result" in msg or "error" in msg):
-                    result[0] = msg
-                    return
-        except Exception:
-            pass  # Any read error → return None
+                    responses.put(msg)
+        except (OSError, ValueError):
+            return
 
-    t = threading.Thread(target=_reader, daemon=True)
-    t.start()
-    t.join(timeout=timeout)
-    return result[0]
+    def _drain_stderr():
+        try:
+            for line in proc.stderr:
+                stderr_tail.append(line.rstrip())
+        except (OSError, ValueError):
+            return
+
+    threading.Thread(target=_read_stdout, daemon=True).start()
+    threading.Thread(target=_drain_stderr, daemon=True).start()
+    return stderr_tail
 
 
 @pytest.fixture(scope="module")
@@ -99,20 +116,24 @@ def mcp_server():
         cwd=scratch,
         env={
             **os.environ,
+            # This fixture verifies the local stdio protocol. Inheriting an
+            # opt-in federation setting can add unrelated startup work and
+            # make requests depend on external state.
+            "ENTROLY_FEDERATION": "0",
             "ENTROLY_NO_DOCKER": "1",
         },
     )
+    stderr_tail = _start_output_pumps(proc)
     time.sleep(2)  # Give it time to start
 
     # A startup crash is a product failure, never an optional capability.
     # Skipping here used to let a completely broken MCP server produce a green
     # test suite, destroying the value of this integration test.
     if proc.poll() is not None:
-        stderr = proc.stderr.read()
         shutil.rmtree(scratch, ignore_errors=True)
         pytest.fail(
             "MCP server failed to start; this must fail closed, not skip. "
-            f"stderr={stderr[:2000]!r}"
+            f"stderr={chr(10).join(stderr_tail)[-2000:]!r}"
         )
 
     yield proc
