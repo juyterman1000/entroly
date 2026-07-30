@@ -12,13 +12,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.68"
-HOMEBREW_FORMULA_VERSION = "1.0.67"
+HOMEBREW_FORMULA_VERSION = "1.0.68"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/35/91/"
-    "ddefbe85790ad52158047195a86815bce01cd0ee250c2014d308bff9c625/"
-    "entroly-1.0.67.tar.gz"
+    "https://files.pythonhosted.org/packages/85/ca/7a5bcc67a8df8a8a7eda0fbf86"
+    "4ed416fe2776dd88ad9dc7bc3f5d1bb393/entroly-1.0.68.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "f2ef33e1fb4d70fa524ae590745916c75832ee0e415c1eb52c8634fd10f81130"
+HOMEBREW_FORMULA_SHA256 = "387d4553df9f1384e13f772c2fb4fe50e28feb0d6bb6b10ad6438d6b46459ac0"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -272,6 +271,10 @@ def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
     assert "group: sync-homebrew-main" in text
     assert "if target_tuple < current_tuple:" in text
     assert "refusing to downgrade Homebrew" in text
+    assert 'f\'  url "{sdist_url}"\'' in text
+    assert "test_text, test_url_count = re.subn(" in text
+    assert "test_url_count != 1" in text
+    assert "sdist_url[start:start + 72]" in text
     assert "pull-requests: write" in text
     assert 'BRANCH="agent/homebrew-${VERSION}"' in text
     assert "gh pr create --base main" in text

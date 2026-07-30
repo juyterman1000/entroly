@@ -169,9 +169,10 @@ jobs:
           if digest != metadata_digest:
               raise SystemExit('downloaded sdist checksum does not match PyPI metadata')
 
+          sdist_url = sdist['url']
           formula, url_count = re.subn(
-              r'entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz',
-              f'entroly-{version}.tar.gz',
+              r'(?m)^\s*url "[^"]+/entroly-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz"$',
+              f'  url "{sdist_url}"',
               formula,
               count=1,
           )
@@ -191,13 +192,32 @@ jobs:
               test_text,
               count=1,
           )
+          url_chunks = [
+              sdist_url[start:start + 72]
+              for start in range(0, len(sdist_url), 72)
+          ]
+          test_url_literal = (
+              'HOMEBREW_FORMULA_URL = (\n'
+              + ''.join(f'    {json.dumps(chunk)}\n' for chunk in url_chunks)
+              + ')'
+          )
+          test_text, test_url_count = re.subn(
+              r'HOMEBREW_FORMULA_URL = \(\n(?:\s+"[^"]*"\n)+\)',
+              test_url_literal,
+              test_text,
+              count=1,
+          )
           test_text, test_digest_count = re.subn(
               r'HOMEBREW_FORMULA_SHA256 = "[0-9a-f]{64}"',
               f'HOMEBREW_FORMULA_SHA256 = "{digest}"',
               test_text,
               count=1,
           )
-          if version_count != 1 or test_digest_count != 1:
+          if (
+              version_count != 1
+              or test_url_count != 1
+              or test_digest_count != 1
+          ):
               raise SystemExit('could not update Homebrew release assertions')
           test_path.write_text(test_text, encoding='utf-8')
 
