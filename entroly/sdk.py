@@ -1293,6 +1293,7 @@ def create_context_receipt(
     overlap_tokens: int = 32,
     prefer_rust: bool = True,
     recoverable: bool = False,
+    store_dir: str | None = None,
 ) -> dict[str, Any]:
     """Create an auditable Context Receipt from in-memory documents.
 
@@ -1301,9 +1302,9 @@ def create_context_receipt(
     keys. The result records selected context, omitted context, dependency
     links, fingerprints, warnings, and deterministic risk controls.
 
-    When ``recoverable`` is True, a project-local recovery bundle is also
-    persisted so any omitted chunk can later be recovered — byte-exact and
-    fingerprint-verified — via :func:`recover_receipt_omission`.
+    When ``recoverable`` is True, a recovery bundle is persisted under
+    ``store_dir`` (or the project-local default) so any omitted chunk can later
+    be recovered with an exact-byte digest via :func:`recover_receipt_omission`.
     """
     from .context_receipts import run_receipt_pipeline, run_recoverable_pipeline
 
@@ -1315,6 +1316,7 @@ def create_context_receipt(
             token_budget=budget,
             chunk_tokens=chunk_tokens,
             overlap_tokens=overlap_tokens,
+            store_dir=store_dir,
             prefer_rust=prefer_rust,
         )["receipt"]
     return run_receipt_pipeline(

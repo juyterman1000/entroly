@@ -23,8 +23,14 @@ from entroly.context_receipts.ingest import ingest_documents
 BASELINE_REF = "1ecf1e093348068539f9e1463826209c966ed535"
 
 
-def assert_fragments_are_exact(path: str, text: str) -> int:
-    """Assert every chunk is byte-addressable in `text`; return the chunk count."""
+def count_exact_fragments(path: str, text: str) -> int:
+    """Check every chunk is byte-addressable in `text`; return the chunk count.
+
+    Callers assert on the returned count as well. A helper that raises is
+    invisible to `tests/test_no_assertionless_tests.py`, which scans for a
+    literal assertion in the test body — and a test whose only check hides
+    behind a helper call reads like a test that cannot fail.
+    """
     raw = text.encode("utf-8")
     index = ingest_documents([(path, text)])
     assert index.chunks, f"{path} produced no chunks"
@@ -51,7 +57,7 @@ def test_indented_python_comments_are_not_treated_as_headings():
         "    shared = claim & evidence\n"
         "    return weight * len(shared)\n"
     )
-    assert_fragments_are_exact("scoring.py", source)
+    assert count_exact_fragments("scoring.py", source) > 0
 
 
 @pytest.mark.parametrize(
@@ -72,15 +78,15 @@ def test_indented_python_comments_are_not_treated_as_headings():
     ],
 )
 def test_structures_that_previously_corrupted_fragments(name, source):
-    assert_fragments_are_exact(name, source)
+    assert count_exact_fragments(name, source) > 0
 
 
 def test_crlf_and_lf_of_the_same_file_are_both_exact():
     """Newline form must not affect the invariant; only the bytes differ."""
     lf = "def f():\n    # comment one\n    # comment two\n    return 1\n"
     crlf = lf.replace("\n", "\r\n")
-    assert_fragments_are_exact("lf.py", lf)
-    assert_fragments_are_exact("crlf.py", crlf)
+    assert count_exact_fragments("lf.py", lf) > 0
+    assert count_exact_fragments("crlf.py", crlf) > 0
 
 
 def test_empty_and_whitespace_only_documents_are_safe():
@@ -93,7 +99,7 @@ def test_empty_and_whitespace_only_documents_are_safe():
 def test_a_large_block_split_across_chunks_stays_exact():
     """Exercises _split_large_block, whose offsets were relative to stripped text."""
     source = "def f():\n" + "".join(f"    value_{i} = {i}\n" for i in range(400))
-    assert_fragments_are_exact("large.py", source)
+    assert count_exact_fragments("large.py", source) > 1, "expected the block to split"
 
 
 def test_duplicate_identical_blocks_keep_distinct_correct_ranges():
@@ -126,4 +132,4 @@ def test_real_repository_files_are_exact(path):
         ["git", "cat-file", "blob", f"{BASELINE_REF}:{path}"],
         capture_output=True, check=True,
     ).stdout
-    assert_fragments_are_exact(path, raw.decode("utf-8"))
+    assert count_exact_fragments(path, raw.decode("utf-8")) > 0

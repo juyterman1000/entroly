@@ -533,6 +533,7 @@ def ingest_documents(
                 token_count=estimate_tokens(text),
                 byte_count=len(text.encode("utf-8")),
                 chunk_ids=[c.chunk_id for c in doc_chunks],
+                source_sha256=byte_digest(text),
             )
         )
         chunks.extend(doc_chunks)

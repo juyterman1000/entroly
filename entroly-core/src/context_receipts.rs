@@ -24,6 +24,8 @@ pub struct DocumentRecord {
     pub token_count: usize,
     pub byte_count: usize,
     pub chunk_ids: Vec<String>,
+    #[serde(default)]
+    pub source_sha256: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,6 +44,10 @@ pub struct DocumentChunk {
     pub token_count: usize,
     pub fingerprint: String,
     pub text: String,
+    #[serde(default)]
+    pub fragment_sha256: String,
+    #[serde(default)]
+    pub source_sha256: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -93,6 +99,10 @@ pub struct SelectedContextItem {
     pub dependencies_missing: Vec<String>,
     pub fingerprint: String,
     pub text: String,
+    #[serde(default)]
+    pub fragment_sha256: String,
+    #[serde(default)]
+    pub source_sha256: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -107,6 +117,14 @@ pub struct OmittedContextItem {
     pub omission_reason: String,
     pub fingerprint: String,
     pub text_preview: String,
+    #[serde(default)]
+    pub byte_start: usize,
+    #[serde(default)]
+    pub byte_end: usize,
+    #[serde(default)]
+    pub fragment_sha256: String,
+    #[serde(default)]
+    pub source_sha256: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -181,6 +199,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn text_fingerprint(text: &str) -> String {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
     format!("sha256:{}", sha256_hex(normalized.as_bytes()))
+}
+
+fn byte_digest(bytes: &[u8]) -> String {
+    format!("sha256:{}", sha256_hex(bytes))
 }
 
 fn stable_hash<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
@@ -357,14 +379,7 @@ fn paragraph_blocks(text: &str, detect_headings: bool) -> Vec<Block> {
         }
         offset += line.len();
     }
-    flush(
-        &mut blocks,
-        text,
-        &mut current,
-        &mut start,
-        heading,
-        page,
-    );
+    flush(&mut blocks, text, &mut current, &mut start, heading, page);
     blocks
 }
 
@@ -487,18 +502,11 @@ fn chunk_document(
         end = block.end;
         tokens += btokens;
     }
-    flush(
-        &mut raw,
-        text,
-        &mut pending,
-        &mut start,
-        end,
-        heading,
-        page,
-    );
+    flush(&mut raw, text, &mut pending, &mut start, end, heading, page);
 
     let mut out = Vec::new();
     let title = title_for_path(source_path);
+    let source_sha256 = byte_digest(text.as_bytes());
     let mut running = 0usize;
     for (idx, block) in raw.into_iter().enumerate() {
         let count = estimate_tokens(&block.text);
@@ -525,6 +533,8 @@ fn chunk_document(
             token_end: running + count,
             token_count: count,
             fingerprint: chunk_fp,
+            fragment_sha256: byte_digest(block.text.as_bytes()),
+            source_sha256: source_sha256.clone(),
             text: block.text,
         });
         running += count;
@@ -559,6 +569,7 @@ pub fn ingest_documents(
             token_count: estimate_tokens(&text),
             byte_count: text.len(),
             chunk_ids: doc_chunks.iter().map(|c| c.chunk_id.clone()).collect(),
+            source_sha256: byte_digest(text.as_bytes()),
         });
         chunks.extend(doc_chunks);
     }
@@ -976,6 +987,8 @@ fn select_context(
                 .collect(),
             fingerprint: chunk.fingerprint.clone(),
             text: chunk.text.clone(),
+            fragment_sha256: chunk.fragment_sha256.clone(),
+            source_sha256: chunk.source_sha256.clone(),
         });
     }
 
@@ -1022,6 +1035,10 @@ fn select_context(
             omission_reason: reason,
             fingerprint: chunk.fingerprint.clone(),
             text_preview: preview(&chunk.text),
+            byte_start: chunk.byte_start,
+            byte_end: chunk.byte_end,
+            fragment_sha256: chunk.fragment_sha256.clone(),
+            source_sha256: chunk.source_sha256.clone(),
         });
         if omitted.len() >= 20 {
             break;
@@ -1208,12 +1225,20 @@ pub fn build_receipt(
         doc_fps.insert(doc.source_path.clone(), doc.fingerprint.clone());
     }
     let mut chunk_fps = BTreeMap::new();
+    let mut source_byte_fps = BTreeMap::new();
+    let mut fragment_byte_fps = BTreeMap::new();
     for chunk in &index.chunks {
         chunk_fps.insert(chunk.chunk_id.clone(), chunk.fingerprint.clone());
+        fragment_byte_fps.insert(chunk.chunk_id.clone(), chunk.fragment_sha256.clone());
+    }
+    for doc in &index.documents {
+        source_byte_fps.insert(doc.source_path.clone(), doc.source_sha256.clone());
     }
     let source_fingerprints = serde_json::json!({
         "documents": doc_fps,
         "chunks": chunk_fps,
+        "source_bytes": source_byte_fps,
+        "fragment_bytes": fragment_byte_fps,
     });
     let ranking_reasons: BTreeMap<String, Vec<String>> = ranked
         .iter()
@@ -1548,6 +1573,29 @@ mod tests {
         let b = ingest_documents(docs(), 80, 16);
         assert_eq!(a.documents[0].fingerprint, b.documents[0].fingerprint);
         assert_eq!(a.chunks[0].chunk_id, b.chunks[0].chunk_id);
+    }
+
+    #[test]
+    fn public_receipt_carries_exact_source_span_digests() {
+        let source = "def café():\r\n    # target evidence\r\n    return \"☕\"\r\n";
+        let index = ingest_documents(vec![("unicode.py".to_string(), source.to_string())], 40, 8);
+        let chunk = &index.chunks[0];
+        assert_eq!(chunk.source_sha256, byte_digest(source.as_bytes()));
+        assert_eq!(
+            chunk.fragment_sha256,
+            byte_digest(&source.as_bytes()[chunk.byte_start..chunk.byte_end])
+        );
+
+        let receipt = build_receipt(&index, "target evidence", 40).expect("receipt");
+        let selected = &receipt.selected_context[0];
+        assert_eq!(selected.byte_start, chunk.byte_start);
+        assert_eq!(selected.byte_end, chunk.byte_end);
+        assert_eq!(selected.fragment_sha256, chunk.fragment_sha256);
+        assert_eq!(selected.source_sha256, chunk.source_sha256);
+        assert_eq!(
+            receipt.source_fingerprints["source_bytes"]["unicode.py"],
+            chunk.source_sha256
+        );
     }
 
     #[test]

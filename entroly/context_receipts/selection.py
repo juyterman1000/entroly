@@ -117,6 +117,8 @@ def select_context(
                 ],
                 fingerprint=chunk.fingerprint,
                 text=chunk.text,
+                fragment_sha256=chunk.fragment_sha256,
+                source_sha256=chunk.source_sha256,
             )
         )
 
@@ -150,6 +152,10 @@ def select_context(
                 omission_reason=reason,
                 fingerprint=chunk.fingerprint,
                 text_preview=_preview(chunk.text),
+                byte_start=chunk.byte_start,
+                byte_end=chunk.byte_end,
+                fragment_sha256=chunk.fragment_sha256,
+                source_sha256=chunk.source_sha256,
             )
         )
         if len(omitted) >= max_omitted:

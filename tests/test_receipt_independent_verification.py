@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from entroly import context_receipts as public_receipts
 from entroly.context_receipts.ingest import ingest_documents, read_documents_from_path
 
 
@@ -31,12 +32,39 @@ def independently_verify(source_bytes: bytes, chunk: dict[str, object]) -> bool:
 
 
 def _as_dict(chunk) -> dict[str, object]:
+    if isinstance(chunk, dict):
+        return {
+            "byte_start": chunk["byte_start"],
+            "byte_end": chunk["byte_end"],
+            "fragment_sha256": chunk["fragment_sha256"],
+            "source_sha256": chunk["source_sha256"],
+        }
     return {
         "byte_start": chunk.byte_start,
         "byte_end": chunk.byte_end,
         "fragment_sha256": chunk.fragment_sha256,
         "source_sha256": chunk.source_sha256,
     }
+
+
+def _native_available() -> bool:
+    try:
+        import entroly_core  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+BACKENDS = [
+    pytest.param(False, id="python"),
+    pytest.param(
+        True,
+        id="rust",
+        marks=pytest.mark.skipif(
+            not _native_available(), reason="native entroly_core not installed"
+        ),
+    ),
+]
 
 
 CASES = [
@@ -124,3 +152,36 @@ def test_path_based_ingestion_preserves_crlf(tmp_path):
     index = ingest_documents([(Path(target).as_posix(), text)])
     for chunk in index.chunks:
         assert independently_verify(raw, _as_dict(chunk))
+
+
+@pytest.mark.parametrize("prefer_rust", BACKENDS)
+def test_public_receipt_exposes_independently_verifiable_selected_and_omitted_fragments(
+    prefer_rust,
+):
+    """The public artifact, not only its private index, carries the proof."""
+    text = "\n\n".join(
+        f"def evidence_symbol_{i}():\n    # target evidence {i}\n    return {i}"
+        for i in range(80)
+    )
+    raw = text.encode("utf-8")
+    index = public_receipts.ingest_documents(
+        [("evidence.py", text)],
+        chunk_tokens=40,
+        overlap_tokens=8,
+        prefer_rust=prefer_rust,
+    )
+    receipt = public_receipts.select_from_index(
+        index,
+        query="target evidence",
+        token_budget=40,
+        prefer_rust=prefer_rust,
+    )
+
+    assert receipt["selected_context"]
+    assert receipt["omitted_context"]
+    public_items = receipt["selected_context"] + receipt["omitted_context"]
+    assert all(independently_verify(raw, _as_dict(item)) for item in public_items)
+    assert receipt["source_fingerprints"]["source_bytes"]["evidence.py"] == (
+        "sha256:" + hashlib.sha256(raw).hexdigest()
+    )
+    assert receipt["source_fingerprints"]["fragment_bytes"]

@@ -40,6 +40,7 @@ def test_recover_is_lossless_and_verified_from_index():
     for r in recovered:
         assert r["verified"] is True, r
         assert r["status"] == "recovered"
+        assert r["verification_level"] == "exact_utf8_bytes"
         assert r["text"] == original[r["chunk_id"]]  # byte-exact
 
 
@@ -78,6 +79,33 @@ def test_corruption_is_detected(tmp_path):
     assert len(recovered) == 1
     assert recovered[0]["verified"] is False
     assert recovered[0]["status"] == "recovered_unverified"
+    assert recovered[0]["verification_level"] == "none"
+
+
+def test_receipt_exact_digest_tampering_is_detected():
+    index, receipt = _index_and_receipt()
+    target = receipt["omitted_context"][0]
+    target["fragment_sha256"] = "sha256:" + "0" * 64
+
+    recovered = cr.recover_omitted(receipt, target["chunk_id"], index=index)
+
+    assert recovered[0]["verified"] is False
+    assert recovered[0]["verification_level"] == "none"
+    assert "receipt's exact-byte digest" in recovered[0]["note"]
+
+
+def test_legacy_receipts_are_compatible_but_not_labeled_byte_exact():
+    index, receipt = _index_and_receipt()
+    target = receipt["omitted_context"][0]
+    target.pop("fragment_sha256", None)
+    target.pop("source_sha256", None)
+    target.pop("byte_start", None)
+    target.pop("byte_end", None)
+
+    recovered = cr.recover_omitted(receipt, target["chunk_id"], index=index)
+
+    assert recovered[0]["verified"] is True
+    assert recovered[0]["verification_level"] == "legacy_normalized_text"
 
 
 def test_unavailable_without_recovery_data(tmp_path):

@@ -279,6 +279,12 @@ def build_receipt(
     source_fingerprints = {
         "documents": {doc.source_path: doc.fingerprint for doc in index.documents},
         "chunks": {chunk.chunk_id: chunk.fingerprint for chunk in index.chunks},
+        "source_bytes": {
+            doc.source_path: doc.source_sha256 for doc in index.documents
+        },
+        "fragment_bytes": {
+            chunk.chunk_id: chunk.fragment_sha256 for chunk in index.chunks
+        },
     }
     ranking_reasons = {rank.chunk_id: rank.reasons for rank in ranked}
     warning_candidates = list(selection.warnings)

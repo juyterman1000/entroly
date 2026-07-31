@@ -110,6 +110,7 @@ class DocumentRecord:
     token_count: int
     byte_count: int
     chunk_ids: list[str]
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | object) -> "DocumentRecord":
@@ -122,6 +123,7 @@ class DocumentRecord:
             token_count=_int_or_default(payload.get("token_count")),
             byte_count=_int_or_default(payload.get("byte_count")),
             chunk_ids=_list_of_str(payload.get("chunk_ids", [])),
+            source_sha256=_str_or_default(payload.get("source_sha256")),
         )
 
 
@@ -263,6 +265,8 @@ class SelectedContextItem:
     dependencies_missing: list[str]
     fingerprint: str
     text: str
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SelectedContextItem":
@@ -286,6 +290,8 @@ class SelectedContextItem:
             dependencies_missing=_list_of_str(data.get("dependencies_missing", [])),
             fingerprint=_str_or_default(data.get("fingerprint")),
             text=_str_or_default(data.get("text")),
+            fragment_sha256=_str_or_default(data.get("fragment_sha256")),
+            source_sha256=_str_or_default(data.get("source_sha256")),
         )
 
 
@@ -301,6 +307,10 @@ class OmittedContextItem:
     omission_reason: str
     fingerprint: str
     text_preview: str
+    byte_start: int = 0
+    byte_end: int = 0
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "OmittedContextItem":
@@ -319,6 +329,10 @@ class OmittedContextItem:
             omission_reason=_str_or_default(data.get("omission_reason")),
             fingerprint=_str_or_default(data.get("fingerprint")),
             text_preview=_str_or_default(data.get("text_preview")),
+            byte_start=_int_or_default(data.get("byte_start")),
+            byte_end=_int_or_default(data.get("byte_end")),
+            fragment_sha256=_str_or_default(data.get("fragment_sha256")),
+            source_sha256=_str_or_default(data.get("source_sha256")),
         )
 
 
