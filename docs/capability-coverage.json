@@ -43,7 +43,8 @@
         "tests/test_context_receipts.py::test_receipt_schema_defined_terms_dependencies_and_compression_ratio",
         "tests/test_context_receipts.py::test_no_match_receipt_fails_closed_and_does_not_claim_savings",
         "tests/test_context_receipts.py::test_selector_adds_transitive_dependency_closure_atomically",
-        "tests/test_dependency_closure_integrity_benchmark.py::test_small_matrix_proves_atomic_closure_and_detects_legacy_defect"
+        "tests/test_dependency_closure_integrity_benchmark.py::test_small_matrix_proves_atomic_closure_and_detects_legacy_defect",
+        "tests/test_closed_set_selection_frontier_benchmark.py::test_committed_report_is_self_verifying_and_checksum_bound"
       ],
       "docs": [
         "docs/context-control-plane.md",
@@ -55,7 +56,7 @@
         "entroly.context_receipts.run_receipt_pipeline",
         "entroly.context_receipts.select_from_index"
       ],
-      "limitations": "Atomic closure prevents partial resolved-dependency bundles, but selection quality still depends on the query, detected graph, and corpus; mechanical reduction is not labeled as answer quality."
+      "limitations": "Bounded exact selection optimizes only the declared internal retrieval score. Selection quality still depends on the query, detected graph, and corpus; mechanical reduction and synthetic optimality are not labeled as answer quality."
     },
     {
       "id": "recoverable_compression_handles",

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 
 import pytest
 
-from benchmarks.closed_set_selection_frontier import run_matrix, verify_report
+from benchmarks.closed_set_selection_frontier import (
+    DEFAULT_OUTPUT,
+    run_matrix,
+    verify_report,
+)
 
 
 def test_small_matrix_proves_optimality_and_detects_rank_order_gap():
@@ -30,3 +36,27 @@ def test_report_verifier_rejects_a_claimed_regression():
 
     with pytest.raises(ValueError, match="regressed against rank order"):
         verify_report(tampered)
+
+
+def test_committed_report_is_self_verifying_and_checksum_bound():
+    raw = DEFAULT_OUTPUT.read_bytes()
+    report = json.loads(raw)
+
+    verify_report(report)
+
+    sidecar = DEFAULT_OUTPUT.with_suffix(DEFAULT_OUTPUT.suffix + ".sha256")
+    assert (
+        sidecar.read_text(encoding="ascii").strip() == hashlib.sha256(raw).hexdigest()
+    )
+    assert report["matrix"]["cases"] == 47862
+    assert report["rank_order_atomic_control"]["suboptimal_cases"] == 378
+    assert (
+        report["certified_closed_set_selector"][
+            "strict_improvements_vs_rank_order"
+        ]
+        == 378
+    )
+    assert report["certified_closed_set_selector"]["regressions_vs_rank_order"] == 0
+    assert report["certified_closed_set_selector"]["optimal_cases"] == 47862
+    assert report["certified_closed_set_selector"]["aggregate_regret"] == 0.0
+    assert report["certified_closed_set_selector"]["invalid_certificates"] == 0

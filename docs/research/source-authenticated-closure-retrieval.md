@@ -137,6 +137,16 @@ optimum, partial dependency closure, budget violation, or invalid certificate
 hash. The benchmark remains synthetic and cannot support an answer-quality or
 competitor claim.
 
+In the committed 47,862-case matrix, rank-order packing was suboptimal in 378
+cases with aggregate internal-score regret 537. The certified selector improved
+all 378 of those cases, regressed in zero, matched the independent exact oracle
+in 47,862 of 47,862 cases, and emitted zero invalid certificates, partial
+closures, or budget violations. The maximum internal-score improvement was 4.
+See the
+[machine-readable frontier result](../../benchmarks/results/closed_set_selection_frontier.json)
+and its adjacent SHA-256 sidecar. These numbers establish only the declared
+synthetic internal objective.
+
 ## Prior-art boundary
 
 The individual ingredients are not presented as first-of-their-kind:

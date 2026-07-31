@@ -478,7 +478,21 @@ entroly audit .entroly/session_chain.json
 entroly explain --why-omitted chk_example --receipt .entroly/receipts/cr_example.json
 ```
 
-The receipt JSON includes selected chunks, omitted relevant chunks, ranking reasons, dependency links, source fingerprints, token ratio, warnings, and a reproducibility hash. The Markdown report is designed for human review before a compressed context is trusted.
+The receipt JSON includes selected chunks, omitted relevant chunks, ranking
+reasons, dependency links, source fingerprints, token ratio, warnings, and a
+reproducibility hash. It also includes a selection certificate: bounded
+frontiers record exact optimality for Entroly's internal retrieval-score
+objective; larger frontiers record a conservative regret ceiling and a ranked
+recovery frontier instead of pretending to be optimal. The Markdown report is
+designed for human review before a compressed context is trusted.
+
+An independent exhaustive oracle found pure rank-order packing suboptimal in
+378 of 47,862 declared small-graph/budget cases. The certified selector improved
+all 378, regressed in zero, and matched the oracle in all 47,862—with zero
+partial dependency closures, budget violations, or invalid certificates.
+[Inspect the machine-readable result.](benchmarks/results/closed_set_selection_frontier.json)
+This is a synthetic internal-objective result, not an answer-quality or
+competitor claim.
 
 Implementation notes:
 

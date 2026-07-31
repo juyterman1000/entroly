@@ -1,0 +1,56 @@
+{
+  "certified_closed_set_selector": {
+    "aggregate_regret": 0.0,
+    "budget_violations": 0,
+    "certificate_integrity_pass": true,
+    "declared_objective_optimality_pass": true,
+    "dependency_closure_pass": true,
+    "exact_certificates": 47862,
+    "hard_budget_pass": true,
+    "invalid_certificates": 0,
+    "maximum_score_improvement": 4.0,
+    "no_regression_pass": true,
+    "optimal_cases": 47862,
+    "partial_dependency_closures": 0,
+    "regressions_vs_rank_order": 0,
+    "strict_improvements_vs_rank_order": 378
+  },
+  "claim_scope": "exhaustive small-graph optimality for Entroly's declared internal retrieval-score objective only; not answer quality, recall, cost, latency, or competitor superiority",
+  "harness": {
+    "path": "benchmarks/closed_set_selection_frontier.py",
+    "sha256": "7038336e7b244fcf9e5305c0bedd1a88c381d2497ba6f78dee4864efef69b874"
+  },
+  "implementation_commit": "2ccd1d010bc42bfa5ac1db1a5edc72b0ee37b236",
+  "limitations": [
+    "The graphs are synthetic and contain at most the declared maximum node count.",
+    "All retrieval scores are positive integers in deterministic rank order.",
+    "All dependency edges are resolved and trusted.",
+    "The exact oracle optimizes Entroly's internal score, not downstream answer quality.",
+    "The rank-order control is Entroly's prior local policy, not another product.",
+    "No LLM, LoCoMo, MuSiQue, HotpotQA, latency, cache, billing, or competitor result is measured."
+  ],
+  "matrix": {
+    "budget_range": "1..sum(token_costs), inclusive",
+    "cases": 47862,
+    "graph_families": [
+      "chain",
+      "star",
+      "diamond",
+      "cycle"
+    ],
+    "node_count_max": 6,
+    "node_count_min": 2,
+    "token_costs": [
+      1,
+      2,
+      3
+    ],
+    "unique_graphs": 17
+  },
+  "rank_order_atomic_control": {
+    "aggregate_regret": 537.0,
+    "suboptimal_cases": 378
+  },
+  "reproduce": "python -m benchmarks.closed_set_selection_frontier --max-nodes 6 --output benchmarks/results/closed_set_selection_frontier.json",
+  "schema_version": "entroly.closed-set-selection-frontier.v1"
+}
