@@ -653,7 +653,24 @@ def resolve(
         # SKIP keeps irrelevant blocks omitted. Highest-relevance block first,
         # re-scanning from the top after each upgrade so the most relevant
         # block reaches FULL before less relevant ones gain detail.
-        _upgrade = {Resolution.LOW: Resolution.MEDIUM, Resolution.MEDIUM: Resolution.FULL}
+        # SKIP belongs in the ladder. Without it a block scored below the skip
+        # threshold is unreachable no matter how much budget is free, so a file
+        # whose blocks mostly score low can never spend what the caller asked
+        # for. Measured: smart_read("entroly/provenance.py", budget=800) used 23
+        # tokens -- 3% -- with 7 of 8 blocks skipped and the block the query
+        # named left at a bare signature.
+        #
+        # This does not weaken SKIP as the default for irrelevant content: the
+        # initial classification is unchanged, and upgrades only happen while
+        # `total_tokens < budget`, strictly highest-relevance first, re-scanning
+        # after each step. So the block that best matches the query still climbs
+        # to FULL before anything less relevant gains a single line, and a read
+        # that is already at budget behaves exactly as before.
+        _upgrade = {
+            Resolution.SKIP: Resolution.LOW,
+            Resolution.LOW: Resolution.MEDIUM,
+            Resolution.MEDIUM: Resolution.FULL,
+        }
         by_rel_desc = sorted(range(len(resolved)), key=lambda i: -resolved[i].relevance)
         improved = True
         while improved and total_tokens < budget:
