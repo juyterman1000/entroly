@@ -1,7 +1,7 @@
 # Source-authenticated dependency-closure retrieval
 
 **Status:** implemented safety contract; answer-quality research is
-preregistered, not claimed  
+preregistered, not claimed
 **Public claim:** none until a same-protocol task benchmark passes
 
 ## Why the PRISM paper changes the research question
@@ -93,6 +93,15 @@ full graph cost. It checks:
 
 This is a safety-invariant proof on synthetic graphs. It does **not** measure
 answer quality, retrieval recall, latency, provider cost, or another product.
+
+The committed 6-node matrix contains 47,862 cases across 17 unique chain,
+star, diamond, and cycle graphs, token costs `{1, 2, 3}`, and every positive
+budget through the full graph cost. The former partial-add control produced a
+partial closure in 41,954 cases; the production atomic selector produced zero
+partial closures and zero hard-budget violations. See the
+[machine-readable result](../../benchmarks/results/dependency_closure_integrity.json)
+and its adjacent SHA-256 sidecar. These numbers establish only the declared
+integrity invariant.
 
 ## Prior-art boundary
 
