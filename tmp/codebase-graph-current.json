@@ -1,0 +1,1245 @@
+{
+ "package": "entroly",
+ "modules": 215,
+ "edges": 524,
+ "lines": 113382,
+ "entry_points": [
+  "entroly",
+  "entroly.__main__",
+  "entroly.compression_mcp",
+  "entroly.docker_launcher_safe",
+  "entroly.memory_cli",
+  "entroly.sdk"
+ ],
+ "reachable": 180,
+ "unreachable": [
+  "entroly._rust_launcher",
+  "entroly.adversarial_calibration",
+  "entroly.auditable_receipts",
+  "entroly.benchmark_harness",
+  "entroly.container_entry",
+  "entroly.container_health",
+  "entroly.context_bridge",
+  "entroly.context_check",
+  "entroly.context_pipeline",
+  "entroly.integrate_entroly_mcp",
+  "entroly.integrations.agentskills",
+  "entroly.integrations.discord_gateway",
+  "entroly.integrations.event_delivery",
+  "entroly.integrations.exact_recovery",
+  "entroly.integrations.hermes",
+  "entroly.integrations.hermes_context_engine",
+  "entroly.integrations.hermes_context_engine.engine",
+  "entroly.integrations.hermes_context_engine.modern",
+  "entroly.integrations.langchain",
+  "entroly.integrations.slack_gateway",
+  "entroly.integrations.telegram_gateway",
+  "entroly.models.__main__",
+  "entroly.neural_evidence_selector",
+  "entroly.openclaw_bridge",
+  "entroly.promotion_gate",
+  "entroly.ravs.collectors",
+  "entroly.ravs.collectors.escalation",
+  "entroly.ravs.collectors.retry",
+  "entroly.receipt_disclosure",
+  "entroly.receipt_merkle",
+  "entroly.receipt_witness",
+  "entroly.rnr",
+  "entroly.self_improving",
+  "entroly.source_span",
+  "entroly.witness_atomic"
+ ],
+ "unreachable_lines": 11449,
+ "cycles": [
+  [
+   "entroly",
+   "entroly.auto_index",
+   "entroly.cache_aligner",
+   "entroly.causal_attribution",
+   "entroly.compression_mcp",
+   "entroly.compression_proxy_live",
+   "entroly.daemon",
+   "entroly.daemon_network_security",
+   "entroly.dashboard",
+   "entroly.dashboard_response_integrity",
+   "entroly.dashboard_security",
+   "entroly.proxy",
+   "entroly.proxy_access_security",
+   "entroly.proxy_control_plane_safe",
+   "entroly.proxy_transport_final",
+   "entroly.proxy_transport_safe",
+   "entroly.sdk",
+   "entroly.server"
+  ],
+  [
+   "entroly.vault",
+   "entroly.vault_time"
+  ],
+  [
+   "entroly.atomic_decomposition",
+   "entroly.esg"
+  ],
+  [
+   "entroly.context_fixed_point",
+   "entroly.verified_efficiency"
+  ]
+ ],
+ "native_boundary": {
+  "entroly.adaptive_pruner": [
+   "entroly_core"
+  ],
+  "entroly.archetype_optimizer": [
+   "entroly_core"
+  ],
+  "entroly.autotune": [
+   "entroly_core"
+  ],
+  "entroly.belief_compiler": [
+   "entroly_core"
+  ],
+  "entroly.checkpoint": [
+   "entroly_core"
+  ],
+  "entroly.cli": [
+   "entroly_core"
+  ],
+  "entroly.dashboard": [
+   "entroly_core"
+  ],
+  "entroly.memory_fabric": [
+   "entroly_core"
+  ],
+  "entroly.native_elc": [
+   "entroly_core"
+  ],
+  "entroly.privacy": [
+   "entroly_core"
+  ],
+  "entroly.proxy": [
+   "entroly_core"
+  ],
+  "entroly.query_refiner": [
+   "entroly_core"
+  ],
+  "entroly.ravs.collectors.retry": [
+   "entroly_core"
+  ],
+  "entroly.sdk": [
+   "entroly_core"
+  ],
+  "entroly.server": [
+   "entroly_core"
+  ],
+  "entroly.witness": [
+   "entroly_core"
+  ]
+ },
+ "hubs": [
+  [
+   "entroly.path_safety",
+   0.03280771693051286
+  ],
+  [
+   "entroly.context_receipts.models",
+   0.032141633107134124
+  ],
+  [
+   "entroly.esg",
+   0.018791395972148444
+  ],
+  [
+   "entroly.server",
+   0.017617974466955406
+  ],
+  [
+   "entroly.vault",
+   0.01608886525902524
+  ],
+  [
+   "entroly.models.registry",
+   0.016002116771202966
+  ],
+  [
+   "entroly.compression_retrieval_store",
+   0.015866978848616157
+  ],
+  [
+   "entroly.ravs.events",
+   0.013831005655088371
+  ],
+  [
+   "entroly.ccr",
+   0.013749212810978477
+  ],
+  [
+   "entroly.privacy",
+   0.013740175956587566
+  ],
+  [
+   "entroly.proxy_config",
+   0.013390841020865456
+  ],
+  [
+   "entroly.config",
+   0.011815216506527849
+  ],
+  [
+   "entroly.value_tracker",
+   0.011591776814074382
+  ],
+  [
+   "entroly.proxy_transform",
+   0.011371527044630925
+  ],
+  [
+   "entroly.context_firewall",
+   0.010811276663592299
+  ],
+  [
+   "entroly.optimization_ledger",
+   0.010656040218284478
+  ],
+  [
+   "entroly.proxy",
+   0.010445626710617715
+  ],
+  [
+   "entroly.atomic_decomposition",
+   0.010319790085793722
+  ],
+  [
+   "entroly.slot_extraction",
+   0.010319790085793722
+  ],
+  [
+   "entroly.vault_time",
+   0.0101695204905425
+  ]
+ ],
+ "most_imported": [
+  [
+   "entroly.context_receipts.models",
+   17
+  ],
+  [
+   "entroly.path_safety",
+   14
+  ],
+  [
+   "entroly.vault",
+   14
+  ],
+  [
+   "entroly.server",
+   12
+  ],
+  [
+   "entroly.value_tracker",
+   11
+  ],
+  [
+   "entroly.compression_retrieval_store",
+   10
+  ],
+  [
+   "entroly.proxy_transform",
+   9
+  ],
+  [
+   "entroly.esg",
+   8
+  ],
+  [
+   "entroly.witness",
+   8
+  ],
+  [
+   "entroly.proxy_config",
+   8
+  ],
+  [
+   "entroly.config",
+   7
+  ],
+  [
+   "entroly.proxy",
+   7
+  ],
+  [
+   "entroly.context_firewall",
+   6
+  ],
+  [
+   "entroly.eicv_suppressor",
+   6
+  ],
+  [
+   "entroly.sdk",
+   6
+  ],
+  [
+   "entroly.context_receipts.ingest",
+   6
+  ],
+  [
+   "entroly.ccr",
+   6
+  ],
+  [
+   "entroly.ravs.events",
+   6
+  ],
+  [
+   "entroly.evidence_locked_compression",
+   5
+  ],
+  [
+   "entroly.optimization_ledger",
+   5
+  ]
+ ],
+ "widest_fanout": [
+  [
+   "entroly.server",
+   57
+  ],
+  [
+   "entroly",
+   44
+  ],
+  [
+   "entroly.proxy",
+   34
+  ],
+  [
+   "entroly.cli",
+   31
+  ],
+  [
+   "entroly.sdk",
+   19
+  ],
+  [
+   "entroly.ravs",
+   15
+  ],
+  [
+   "entroly.verifiers",
+   11
+  ],
+  [
+   "entroly.verified_efficiency",
+   8
+  ],
+  [
+   "entroly.container_proxy",
+   7
+  ],
+  [
+   "entroly.daemon",
+   7
+  ],
+  [
+   "entroly.flow_orchestrator",
+   7
+  ],
+  [
+   "entroly.openclaw_bridge",
+   7
+  ],
+  [
+   "entroly.compression_proxy_live",
+   6
+  ],
+  [
+   "entroly.context_receipts",
+   6
+  ],
+  [
+   "entroly.change_listener",
+   5
+  ]
+ ],
+ "adjacency": {
+  "entroly": [
+   "entroly.air_gap",
+   "entroly.behavioral_waste",
+   "entroly.cache_aligner",
+   "entroly.cache_retention",
+   "entroly.cache_routing",
+   "entroly.checkpoint_relevance",
+   "entroly.compression_dashboard",
+   "entroly.compression_mcp",
+   "entroly.compression_proxy",
+   "entroly.compression_proxy_direct",
+   "entroly.compression_proxy_live",
+   "entroly.compression_retrieval_store",
+   "entroly.compression_verification_loop",
+   "entroly.context_commit",
+   "entroly.context_firewall",
+   "entroly.context_fixed_point",
+   "entroly.control_plane",
+   "entroly.cost_cortex",
+   "entroly.eicv",
+   "entroly.eicv_suppressor",
+   "entroly.esg",
+   "entroly.evidence_locked_compression",
+   "entroly.file_localizer",
+   "entroly.gateway_control_plane",
+   "entroly.harness_budget",
+   "entroly.image_optimizer",
+   "entroly.integrations.ebbiforge",
+   "entroly.memory",
+   "entroly.native_elc",
+   "entroly.optimization_ledger",
+   "entroly.proof_guided_runtime",
+   "entroly.provider_policy",
+   "entroly.sdk",
+   "entroly.semantic_resolution",
+   "entroly.session_intelligence",
+   "entroly.shell_codec",
+   "entroly.stable_prefix",
+   "entroly.usage_ledger",
+   "entroly.verified_efficiency",
+   "entroly.verified_handoff",
+   "entroly.verifiers",
+   "entroly.verifiers.local_nli",
+   "entroly.verifiers.stave",
+   "entroly.witness"
+  ],
+  "entroly.__main__": [
+   "entroly._docker_launcher"
+  ],
+  "entroly._docker_launcher": [
+   "entroly",
+   "entroly.cli",
+   "entroly.memory_cli",
+   "entroly.server"
+  ],
+  "entroly._rust_launcher": [
+   "entroly.cli"
+  ],
+  "entroly.adaptive_budget": [],
+  "entroly.adaptive_pruner": [],
+  "entroly.adversarial_calibration": [
+   "entroly.esg",
+   "entroly.metrics"
+  ],
+  "entroly.air_gap": [],
+  "entroly.archetype_optimizer": [
+   "entroly.path_safety"
+  ],
+  "entroly.atomic_decomposition": [
+   "entroly.esg"
+  ],
+  "entroly.auditable_receipts": [
+   "entroly.context_receipts",
+   "entroly.receipt_attestation",
+   "entroly.receipt_disclosure",
+   "entroly.receipt_merkle"
+  ],
+  "entroly.auto_index": [
+   "entroly.server"
+  ],
+  "entroly.autotune": [
+   "entroly.config",
+   "entroly.ravs.world_model"
+  ],
+  "entroly.behavioral_waste": [],
+  "entroly.belief_compiler": [
+   "entroly.path_safety",
+   "entroly.vault"
+  ],
+  "entroly.benchmark_harness": [],
+  "entroly.cache_aligner": [
+   "entroly.compression_proxy_live"
+  ],
+  "entroly.cache_retention": [],
+  "entroly.cache_routing": [
+   "entroly.cache_retention"
+  ],
+  "entroly.causal_attribution": [
+   "entroly.auto_index"
+  ],
+  "entroly.ccr": [],
+  "entroly.change_listener": [
+   "entroly.belief_compiler",
+   "entroly.change_pipeline",
+   "entroly.path_safety",
+   "entroly.vault",
+   "entroly.verification_engine"
+  ],
+  "entroly.change_pipeline": [
+   "entroly.vault",
+   "entroly.verification_engine"
+  ],
+  "entroly.checkpoint": [
+   "entroly.checkpoint_relevance"
+  ],
+  "entroly.checkpoint_relevance": [
+   "entroly.hardening"
+  ],
+  "entroly.cli": [
+   "entroly",
+   "entroly.auto_index",
+   "entroly.belief_compiler",
+   "entroly.change_listener",
+   "entroly.change_pipeline",
+   "entroly.config",
+   "entroly.context_commit",
+   "entroly.context_receipts",
+   "entroly.context_receipts.ingest",
+   "entroly.context_receipts.store",
+   "entroly.daemon",
+   "entroly.dashboard",
+   "entroly.dopt_selector",
+   "entroly.native_status",
+   "entroly.proof_guided_runtime",
+   "entroly.proxy",
+   "entroly.proxy_config",
+   "entroly.qccr",
+   "entroly.ravs.capture",
+   "entroly.ravs.hooks",
+   "entroly.ravs.report",
+   "entroly.server",
+   "entroly.session_attach",
+   "entroly.session_intelligence",
+   "entroly.value_tracker",
+   "entroly.vault",
+   "entroly.verification_engine",
+   "entroly.verifiers",
+   "entroly.verifiers.cli",
+   "entroly.verify_claims",
+   "entroly.witness"
+  ],
+  "entroly.compression_dashboard": [
+   "entroly.compression_retrieval_store"
+  ],
+  "entroly.compression_mcp": [
+   "entroly.compression_retrieval_store_secure",
+   "entroly.daemon_network_security",
+   "entroly.dashboard_response_integrity",
+   "entroly.dashboard_security",
+   "entroly.optimization_ledger"
+  ],
+  "entroly.compression_proxy": [
+   "entroly.compression_retrieval_store",
+   "entroly.evidence_locked_compression"
+  ],
+  "entroly.compression_proxy_direct": [
+   "entroly.compression_proxy",
+   "entroly.compression_retrieval_store",
+   "entroly.proxy_transform"
+  ],
+  "entroly.compression_proxy_live": [
+   "entroly.compression_proxy",
+   "entroly.proxy_access_security",
+   "entroly.proxy_control_plane_safe",
+   "entroly.proxy_transform",
+   "entroly.proxy_transport_final",
+   "entroly.proxy_transport_safe"
+  ],
+  "entroly.compression_retrieval_store": [
+   "entroly.ccr",
+   "entroly.optimization_ledger"
+  ],
+  "entroly.compression_retrieval_store_safe": [
+   "entroly.compression_retrieval_store"
+  ],
+  "entroly.compression_retrieval_store_secure": [
+   "entroly.compression_retrieval_store",
+   "entroly.compression_retrieval_store_safe",
+   "entroly.optimization_ledger"
+  ],
+  "entroly.compression_verification_loop": [
+   "entroly.compression_retrieval_store"
+  ],
+  "entroly.config": [],
+  "entroly.conformal_cascade": [
+   "entroly.escalation"
+  ],
+  "entroly.container_entry": [
+   "entroly.container_proxy",
+   "entroly.server"
+  ],
+  "entroly.container_health": [
+   "entroly"
+  ],
+  "entroly.container_proxy": [
+   "entroly.proxy",
+   "entroly.proxy_access_security",
+   "entroly.proxy_config",
+   "entroly.proxy_control_plane_safe",
+   "entroly.proxy_transport_final",
+   "entroly.proxy_transport_safe",
+   "entroly.server"
+  ],
+  "entroly.context_bridge": [
+   "entroly.config",
+   "entroly.long_term_memory",
+   "entroly.provenance",
+   "entroly.server"
+  ],
+  "entroly.context_check": [
+   "entroly.context_commit",
+   "entroly.context_receipts.ingest",
+   "entroly.context_receipts.models"
+  ],
+  "entroly.context_commit": [
+   "entroly.context_receipts",
+   "entroly.context_receipts.models",
+   "entroly.context_receipts.recover"
+  ],
+  "entroly.context_firewall": [],
+  "entroly.context_fixed_point": [
+   "entroly.context_receipts.models",
+   "entroly.verified_efficiency"
+  ],
+  "entroly.context_pipeline": [
+   "entroly.evidence_locked_compression",
+   "entroly.provider_policy",
+   "entroly.proxy_transform"
+  ],
+  "entroly.context_receipts": [
+   "entroly.context_receipts.ingest",
+   "entroly.context_receipts.models",
+   "entroly.context_receipts.novelty",
+   "entroly.context_receipts.receipts",
+   "entroly.context_receipts.recover",
+   "entroly.context_receipts.store"
+  ],
+  "entroly.context_receipts.dependencies": [
+   "entroly.context_receipts.models"
+  ],
+  "entroly.context_receipts.ingest": [
+   "entroly.context_receipts.models"
+  ],
+  "entroly.context_receipts.models": [],
+  "entroly.context_receipts.novelty": [],
+  "entroly.context_receipts.receipts": [
+   "entroly.context_receipts.dependencies",
+   "entroly.context_receipts.models",
+   "entroly.context_receipts.novelty",
+   "entroly.context_receipts.retrieval",
+   "entroly.context_receipts.selection"
+  ],
+  "entroly.context_receipts.recover": [
+   "entroly.context_receipts.models",
+   "entroly.context_receipts.store"
+  ],
+  "entroly.context_receipts.retrieval": [
+   "entroly.context_receipts.models"
+  ],
+  "entroly.context_receipts.selection": [
+   "entroly.context_receipts.models",
+   "entroly.context_receipts.retrieval"
+  ],
+  "entroly.context_receipts.store": [],
+  "entroly.context_scaffold": [],
+  "entroly.context_sessions": [
+   "entroly.context_receipts.models",
+   "entroly.models",
+   "entroly.session_intelligence"
+  ],
+  "entroly.control_plane": [
+   "entroly.image_optimizer",
+   "entroly.model_decision_receipt"
+  ],
+  "entroly.controls_html": [],
+  "entroly.cost_cortex": [
+   "entroly.value_tracker"
+  ],
+  "entroly.counterfactual": [
+   "entroly.esg"
+  ],
+  "entroly.coupling": [
+   "entroly.value_tracker"
+  ],
+  "entroly.daemon": [
+   "entroly.auto_index",
+   "entroly.autotune",
+   "entroly.dashboard",
+   "entroly.privacy",
+   "entroly.proxy",
+   "entroly.proxy_config",
+   "entroly.server"
+  ],
+  "entroly.daemon_network_security": [
+   "entroly.daemon",
+   "entroly.server"
+  ],
+  "entroly.dashboard": [
+   "entroly.context_sessions",
+   "entroly.controls_html",
+   "entroly.daemon",
+   "entroly.privacy",
+   "entroly.value_tracker"
+  ],
+  "entroly.dashboard_response_integrity": [
+   "entroly.dashboard_security"
+  ],
+  "entroly.dashboard_security": [
+   "entroly.controls_html",
+   "entroly.daemon",
+   "entroly.dashboard"
+  ],
+  "entroly.docker_launcher_safe": [
+   "entroly._docker_launcher",
+   "entroly.container_proxy"
+  ],
+  "entroly.dopt_selector": [],
+  "entroly.e_value": [],
+  "entroly.eicv": [
+   "entroly.e_value",
+   "entroly.esg",
+   "entroly.semantic_entropy"
+  ],
+  "entroly.eicv_suppressor": [
+   "entroly.eicv",
+   "entroly.witness"
+  ],
+  "entroly.epistemic_router": [],
+  "entroly.escalation": [],
+  "entroly.esg": [
+   "entroly.atomic_decomposition",
+   "entroly.slot_extraction"
+  ],
+  "entroly.evidence_locked_compression": [],
+  "entroly.evolution_daemon": [
+   "entroly.archetype_optimizer",
+   "entroly.autotune",
+   "entroly.federation",
+   "entroly.ravs.world_model",
+   "entroly.skill_engine"
+  ],
+  "entroly.evolution_logger": [],
+  "entroly.fast_path": [],
+  "entroly.federation": [],
+  "entroly.file_localizer": [
+   "entroly.localization"
+  ],
+  "entroly.flow_orchestrator": [
+   "entroly.belief_compiler",
+   "entroly.change_pipeline",
+   "entroly.epistemic_router",
+   "entroly.evolution_logger",
+   "entroly.vault",
+   "entroly.verification_engine",
+   "entroly.verifiers.provenance_tracer"
+  ],
+  "entroly.gateway_control_plane": [
+   "entroly.cache_routing",
+   "entroly.provider_policy",
+   "entroly.stable_prefix",
+   "entroly.usage_ledger"
+  ],
+  "entroly.hardening": [
+   "entroly.context_firewall"
+  ],
+  "entroly.harness_budget": [],
+  "entroly.image_optimizer": [],
+  "entroly.integrate_entroly_mcp": [
+   "entroly.server"
+  ],
+  "entroly.integrations": [
+   "entroly.integrations.ebbiforge"
+  ],
+  "entroly.integrations.agentskills": [],
+  "entroly.integrations.discord_gateway": [
+   "entroly.evolution_daemon",
+   "entroly.evolution_logger",
+   "entroly.integrations.event_delivery",
+   "entroly.value_tracker",
+   "entroly.vault"
+  ],
+  "entroly.integrations.ebbiforge": [
+   "entroly.session_intelligence"
+  ],
+  "entroly.integrations.event_delivery": [],
+  "entroly.integrations.exact_recovery": [
+   "entroly.ccr"
+  ],
+  "entroly.integrations.hermes": [
+   "entroly.sdk"
+  ],
+  "entroly.integrations.hermes_context_engine": [
+   "entroly.integrations.hermes_context_engine.engine",
+   "entroly.integrations.hermes_context_engine.modern"
+  ],
+  "entroly.integrations.hermes_context_engine.engine": [
+   "entroly.sdk",
+   "entroly.value_tracker"
+  ],
+  "entroly.integrations.hermes_context_engine.modern": [
+   "entroly.ccr",
+   "entroly.integrations.exact_recovery",
+   "entroly.integrations.hermes"
+  ],
+  "entroly.integrations.langchain": [
+   "entroly.sdk"
+  ],
+  "entroly.integrations.slack_gateway": [
+   "entroly.evolution_daemon",
+   "entroly.evolution_logger",
+   "entroly.integrations.event_delivery",
+   "entroly.value_tracker",
+   "entroly.vault"
+  ],
+  "entroly.integrations.telegram_gateway": [
+   "entroly.evolution_daemon",
+   "entroly.evolution_logger",
+   "entroly.integrations.event_delivery",
+   "entroly.value_tracker",
+   "entroly.vault"
+  ],
+  "entroly.localization": [],
+  "entroly.long_term_memory": [],
+  "entroly.memory": [],
+  "entroly.memory_cli": [
+   "entroly.memory"
+  ],
+  "entroly.memory_fabric": [
+   "entroly.long_term_memory",
+   "entroly.memory",
+   "entroly.memory_kernels"
+  ],
+  "entroly.memory_kernels": [
+   "entroly.memory"
+  ],
+  "entroly.metrics": [],
+  "entroly.model_decision_receipt": [
+   "entroly.models.registry"
+  ],
+  "entroly.models": [
+   "entroly.models.registry"
+  ],
+  "entroly.models.__main__": [
+   "entroly.models.registry"
+  ],
+  "entroly.models.registry": [],
+  "entroly.multimodal": [],
+  "entroly.native_elc": [
+   "entroly.evidence_locked_compression"
+  ],
+  "entroly.native_status": [],
+  "entroly.neural_evidence_selector": [
+   "entroly.compression_retrieval_store"
+  ],
+  "entroly.online_learner": [],
+  "entroly.openclaw_bridge": [
+   "entroly.context_firewall",
+   "entroly.context_receipts.retrieval",
+   "entroly.eicv_suppressor",
+   "entroly.models.registry",
+   "entroly.proxy_transform",
+   "entroly.sdk",
+   "entroly.verified_efficiency"
+  ],
+  "entroly.optimization_ledger": [],
+  "entroly.path_safety": [],
+  "entroly.plugins": [],
+  "entroly.prefetch": [],
+  "entroly.privacy": [],
+  "entroly.process_safety": [],
+  "entroly.profiles": [],
+  "entroly.promotion_gate": [],
+  "entroly.proof_guided_runtime": [
+   "entroly.context_fixed_point",
+   "entroly.context_receipts.models",
+   "entroly.verified_efficiency"
+  ],
+  "entroly.provenance": [],
+  "entroly.provider_adapters": [
+   "entroly.provider_policy"
+  ],
+  "entroly.provider_policy": [],
+  "entroly.proxy": [
+   "entroly.adaptive_budget",
+   "entroly.behavioral_waste",
+   "entroly.cache_aligner",
+   "entroly.cache_routing",
+   "entroly.ccr",
+   "entroly.compression_proxy",
+   "entroly.compression_retrieval_store",
+   "entroly.conformal_cascade",
+   "entroly.context_receipts.ingest",
+   "entroly.context_scaffold",
+   "entroly.control_plane",
+   "entroly.cost_cortex",
+   "entroly.coupling",
+   "entroly.dashboard",
+   "entroly.eicv_suppressor",
+   "entroly.escalation",
+   "entroly.hardening",
+   "entroly.optimization_ledger",
+   "entroly.proof_guided_runtime",
+   "entroly.provider_adapters",
+   "entroly.provider_policy",
+   "entroly.proxy_config",
+   "entroly.proxy_transform",
+   "entroly.ravs.capture",
+   "entroly.ravs.ece",
+   "entroly.ravs.router",
+   "entroly.ravs.spectral",
+   "entroly.session_rescue",
+   "entroly.stable_prefix",
+   "entroly.usage_ledger",
+   "entroly.value_tracker",
+   "entroly.vault",
+   "entroly.witness",
+   "entroly.witness_training"
+  ],
+  "entroly.proxy_access_security": [
+   "entroly.proxy",
+   "entroly.proxy_config"
+  ],
+  "entroly.proxy_config": [
+   "entroly.config",
+   "entroly.models.registry"
+  ],
+  "entroly.proxy_control_plane_safe": [
+   "entroly.proxy",
+   "entroly.proxy_transform",
+   "entroly.proxy_transport_safe"
+  ],
+  "entroly.proxy_transform": [
+   "entroly.proxy_config",
+   "entroly.shell_codec"
+  ],
+  "entroly.proxy_transport_final": [
+   "entroly.proxy",
+   "entroly.proxy_transport_safe"
+  ],
+  "entroly.proxy_transport_safe": [
+   "entroly.proxy",
+   "entroly.proxy_config"
+  ],
+  "entroly.qccr": [
+   "entroly.config",
+   "entroly.file_localizer",
+   "entroly.native_status"
+  ],
+  "entroly.query_refiner": [],
+  "entroly.ravs": [
+   "entroly.ravs.compiler",
+   "entroly.ravs.controller",
+   "entroly.ravs.ece",
+   "entroly.ravs.epr",
+   "entroly.ravs.events",
+   "entroly.ravs.executors",
+   "entroly.ravs.outcome_bridge",
+   "entroly.ravs.report",
+   "entroly.ravs.router",
+   "entroly.ravs.safe_executors",
+   "entroly.ravs.shadow",
+   "entroly.ravs.shadow_runner",
+   "entroly.ravs.spectral",
+   "entroly.ravs.verifiers",
+   "entroly.ravs.world_model"
+  ],
+  "entroly.ravs.capture": [
+   "entroly.ravs.hook_classifier"
+  ],
+  "entroly.ravs.collectors": [
+   "entroly.ravs.collectors.escalation",
+   "entroly.ravs.collectors.retry"
+  ],
+  "entroly.ravs.collectors.escalation": [
+   "entroly.ravs.collectors.retry",
+   "entroly.ravs.events"
+  ],
+  "entroly.ravs.collectors.retry": [
+   "entroly.ravs.events"
+  ],
+  "entroly.ravs.compiler": [],
+  "entroly.ravs.controller": [
+   "entroly.ravs.compiler",
+   "entroly.ravs.executors",
+   "entroly.ravs.verifiers"
+  ],
+  "entroly.ravs.ece": [],
+  "entroly.ravs.epr": [
+   "entroly.ravs.ece"
+  ],
+  "entroly.ravs.events": [],
+  "entroly.ravs.executors": [],
+  "entroly.ravs.hook_classifier": [],
+  "entroly.ravs.hooks": [],
+  "entroly.ravs.outcome_bridge": [],
+  "entroly.ravs.report": [
+   "entroly.ravs.events",
+   "entroly.ravs.shadow"
+  ],
+  "entroly.ravs.router": [
+   "entroly.proxy_transform"
+  ],
+  "entroly.ravs.safe_executors": [
+   "entroly.path_safety",
+   "entroly.process_safety",
+   "entroly.ravs.executors"
+  ],
+  "entroly.ravs.shadow": [],
+  "entroly.ravs.shadow_runner": [
+   "entroly.ravs.compiler",
+   "entroly.ravs.executors",
+   "entroly.ravs.safe_executors",
+   "entroly.ravs.verifiers"
+  ],
+  "entroly.ravs.spectral": [],
+  "entroly.ravs.verifiers": [],
+  "entroly.ravs.world_model": [
+   "entroly.ravs.events"
+  ],
+  "entroly.receipt_attestation": [
+   "entroly.context_receipts.models"
+  ],
+  "entroly.receipt_disclosure": [
+   "entroly.context_receipts.models",
+   "entroly.receipt_merkle"
+  ],
+  "entroly.receipt_merkle": [
+   "entroly.context_receipts.models",
+   "entroly.receipt_attestation"
+  ],
+  "entroly.receipt_witness": [
+   "entroly.context_receipts.models",
+   "entroly.receipt_attestation",
+   "entroly.receipt_merkle"
+  ],
+  "entroly.repo_map": [
+   "entroly.path_safety"
+  ],
+  "entroly.reward_crystallizer": [],
+  "entroly.rnr": [
+   "entroly.esg",
+   "entroly.metrics"
+  ],
+  "entroly.sdk": [
+   "entroly.cache_aligner",
+   "entroly.context_receipts",
+   "entroly.context_receipts.ingest",
+   "entroly.context_receipts.retrieval",
+   "entroly.context_receipts.selection",
+   "entroly.eicv",
+   "entroly.eicv_suppressor",
+   "entroly.hardening",
+   "entroly.profiles",
+   "entroly.proxy_config",
+   "entroly.proxy_transform",
+   "entroly.ravs.ece",
+   "entroly.ravs.epr",
+   "entroly.ravs.spectral",
+   "entroly.server",
+   "entroly.universal_compress",
+   "entroly.value_tracker",
+   "entroly.verifiers.provenance_tracer",
+   "entroly.witness"
+  ],
+  "entroly.self_improving": [
+   "entroly.online_learner"
+  ],
+  "entroly.semantic_entropy": [
+   "entroly.counterfactual",
+   "entroly.esg",
+   "entroly.metrics",
+   "entroly.witness_features"
+  ],
+  "entroly.semantic_resolution": [],
+  "entroly.server": [
+   "entroly",
+   "entroly.adaptive_pruner",
+   "entroly.auto_index",
+   "entroly.autotune",
+   "entroly.belief_compiler",
+   "entroly.cache_aligner",
+   "entroly.causal_attribution",
+   "entroly.ccr",
+   "entroly.change_listener",
+   "entroly.change_pipeline",
+   "entroly.checkpoint",
+   "entroly.config",
+   "entroly.context_firewall",
+   "entroly.context_receipts.ingest",
+   "entroly.coupling",
+   "entroly.eicv",
+   "entroly.eicv_suppressor",
+   "entroly.epistemic_router",
+   "entroly.evolution_daemon",
+   "entroly.evolution_logger",
+   "entroly.fast_path",
+   "entroly.file_localizer",
+   "entroly.flow_orchestrator",
+   "entroly.hardening",
+   "entroly.long_term_memory",
+   "entroly.memory_fabric",
+   "entroly.multimodal",
+   "entroly.online_learner",
+   "entroly.path_safety",
+   "entroly.plugins",
+   "entroly.prefetch",
+   "entroly.proof_guided_runtime",
+   "entroly.provenance",
+   "entroly.proxy_transform",
+   "entroly.qccr",
+   "entroly.query_refiner",
+   "entroly.ravs.ece",
+   "entroly.ravs.epr",
+   "entroly.ravs.events",
+   "entroly.ravs.outcome_bridge",
+   "entroly.ravs.router",
+   "entroly.ravs.shadow_runner",
+   "entroly.ravs.spectral",
+   "entroly.repo_map",
+   "entroly.reward_crystallizer",
+   "entroly.sdk",
+   "entroly.semantic_resolution",
+   "entroly.skill_engine",
+   "entroly.task_dream",
+   "entroly.value_tracker",
+   "entroly.vault",
+   "entroly.vault_hygiene",
+   "entroly.vault_time",
+   "entroly.verification_engine",
+   "entroly.verifiers.provenance_tracer",
+   "entroly.verifiers.repair_loop",
+   "entroly.witness"
+  ],
+  "entroly.session_attach": [
+   "entroly.server"
+  ],
+  "entroly.session_intelligence": [],
+  "entroly.session_rescue": [
+   "entroly.compression_retrieval_store",
+   "entroly.evidence_locked_compression"
+  ],
+  "entroly.shell_codec": [],
+  "entroly.skill_engine": [
+   "entroly.path_safety",
+   "entroly.reward_crystallizer",
+   "entroly.vault"
+  ],
+  "entroly.slot_extraction": [],
+  "entroly.source_span": [],
+  "entroly.stable_prefix": [],
+  "entroly.task_dream": [
+   "entroly.context_firewall",
+   "entroly.memory_fabric"
+  ],
+  "entroly.universal_compress": [],
+  "entroly.usage_ledger": [],
+  "entroly.value_tracker": [
+   "entroly.privacy"
+  ],
+  "entroly.vault": [
+   "entroly.path_safety",
+   "entroly.vault_time"
+  ],
+  "entroly.vault_hygiene": [
+   "entroly.esg",
+   "entroly.vault",
+   "entroly.vault_time"
+  ],
+  "entroly.vault_time": [
+   "entroly.path_safety",
+   "entroly.vault"
+  ],
+  "entroly.verification_engine": [
+   "entroly.path_safety",
+   "entroly.vault"
+  ],
+  "entroly.verified_efficiency": [
+   "entroly.context_commit",
+   "entroly.context_firewall",
+   "entroly.context_fixed_point",
+   "entroly.context_receipts",
+   "entroly.context_receipts.models",
+   "entroly.eicv_suppressor",
+   "entroly.ravs.world_model",
+   "entroly.receipt_attestation"
+  ],
+  "entroly.verified_handoff": [
+   "entroly.witness"
+  ],
+  "entroly.verifiers": [
+   "entroly.verifiers.calibrator",
+   "entroly.verifiers.commit_alignment",
+   "entroly.verifiers.lang_js",
+   "entroly.verifiers.ngram_model",
+   "entroly.verifiers.provenance_tracer",
+   "entroly.verifiers.reasoning_chain",
+   "entroly.verifiers.repair_loop",
+   "entroly.verifiers.scope_analyzer",
+   "entroly.verifiers.semantic_entropy",
+   "entroly.verifiers.service",
+   "entroly.verifiers.symbol_resolution"
+  ],
+  "entroly.verifiers.cache": [
+   "entroly.path_safety",
+   "entroly.verifiers.ngram_model",
+   "entroly.verifiers.symbol_resolution"
+  ],
+  "entroly.verifiers.calibrator": [
+   "entroly.ravs.router"
+  ],
+  "entroly.verifiers.cli": [
+   "entroly.verifiers.cache",
+   "entroly.verifiers.symbol_resolution"
+  ],
+  "entroly.verifiers.commit_alignment": [],
+  "entroly.verifiers.lang_js": [
+   "entroly.path_safety"
+  ],
+  "entroly.verifiers.local_nli": [],
+  "entroly.verifiers.ngram_model": [],
+  "entroly.verifiers.provenance_tracer": [],
+  "entroly.verifiers.reasoning_chain": [],
+  "entroly.verifiers.repair_loop": [
+   "entroly.verifiers.provenance_tracer",
+   "entroly.verifiers.symbol_resolution"
+  ],
+  "entroly.verifiers.scope_analyzer": [
+   "entroly.path_safety"
+  ],
+  "entroly.verifiers.semantic_entropy": [],
+  "entroly.verifiers.service": [
+   "entroly.verifiers.cache",
+   "entroly.verifiers.calibrator",
+   "entroly.verifiers.scope_analyzer",
+   "entroly.verifiers.symbol_resolution",
+   "entroly.verifiers.type_check"
+  ],
+  "entroly.verifiers.stave": [],
+  "entroly.verifiers.symbol_resolution": [
+   "entroly.path_safety",
+   "entroly.verifiers.ngram_model"
+  ],
+  "entroly.verifiers.type_check": [
+   "entroly.process_safety"
+  ],
+  "entroly.verify_claims": [
+   "entroly",
+   "entroly.auto_index",
+   "entroly.ccr",
+   "entroly.config",
+   "entroly.server"
+  ],
+  "entroly.witness": [
+   "entroly.verifiers.local_nli",
+   "entroly.verifiers.stave",
+   "entroly.witness_calibration",
+   "entroly.witness_features",
+   "entroly.witness_risk_model"
+  ],
+  "entroly.witness_atomic": [],
+  "entroly.witness_calibration": [],
+  "entroly.witness_features": [],
+  "entroly.witness_risk_model": [
+   "entroly.witness_features"
+  ],
+  "entroly.witness_training": [
+   "entroly.witness",
+   "entroly.witness_features",
+   "entroly.witness_risk_model"
+  ]
+ }
+}

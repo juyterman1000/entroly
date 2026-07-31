@@ -1,0 +1,24 @@
+{
+  "_comment": "Shipped baseline scoring config applied by the engine on startup across pip / MCP / npm. Runtime self-improvement (PRISM online + task-profile feedback journal) adapts from here per session. Maintainers regenerate these values with `entroly autotune` and commit them so the improvement reaches all installed users on the next release. (Distinct from the gitignored, locally-mutated bench/tuning_config.json.)",
+  "weights": {
+    "recency": 0.30,
+    "frequency": 0.25,
+    "semantic_sim": 0.25,
+    "entropy": 0.20
+  },
+  "decay": {
+    "half_life_turns": 15,
+    "min_relevance_threshold": 0.05
+  },
+  "knapsack": {
+    "exploration_rate": 0.10
+  },
+  "dedup": {
+    "hamming_threshold": 3
+  },
+  "ios": {
+    "skeleton_info_factor": 0.70,
+    "reference_info_factor": 0.15,
+    "diversity_floor": 0.10
+  }
+}
