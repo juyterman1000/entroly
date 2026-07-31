@@ -7,6 +7,8 @@ benchmark's own result artifacts — may move a published number.
 from __future__ import annotations
 
 import hashlib
+import re
+from pathlib import Path
 
 from benchmarks import receipt_fragment_fidelity as fidelity
 
@@ -15,6 +17,22 @@ def test_baseline_ref_is_a_pinned_full_sha():
     """A branch name or short sha could silently repoint the corpus."""
     assert len(fidelity.BASELINE_REF) == 40
     assert all(c in "0123456789abcdef" for c in fidelity.BASELINE_REF)
+
+
+def test_full_suite_ci_jobs_fetch_the_pinned_baseline():
+    """Jobs running this test suite must not use checkout's shallow default."""
+    workflow = (
+        Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+    for job in ("integration", "python-fallback"):
+        match = re.search(
+            rf"(?ms)^  {re.escape(job)}:\n.*?(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            workflow,
+        )
+        assert match, f"missing {job} CI job"
+        assert "fetch-depth: 0" in match.group(), (
+            f"{job} cannot resolve pinned evidence baseline {fidelity.BASELINE_REF}"
+        )
 
 
 def test_corpus_is_read_from_the_baseline_not_the_working_tree():
