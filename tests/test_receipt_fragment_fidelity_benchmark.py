@@ -35,6 +35,25 @@ def test_full_suite_ci_jobs_fetch_the_pinned_baseline():
         )
 
 
+def test_release_quality_gate_fetches_the_pinned_baseline():
+    """The release gate runs the same history-dependent full test suite."""
+    workflow = (
+        Path(__file__).resolve().parent.parent
+        / ".github"
+        / "workflows"
+        / "entroly-publish.yml"
+    ).read_text(encoding="utf-8")
+    match = re.search(
+        r"(?ms)^  quality-gate:\n.*?(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        workflow,
+    )
+    assert match, "missing release quality-gate job"
+    assert "fetch-depth: 0" in match.group(), (
+        "release quality gate cannot resolve pinned evidence baseline "
+        f"{fidelity.BASELINE_REF}"
+    )
+
+
 def test_corpus_is_read_from_the_baseline_not_the_working_tree():
     """The benchmark's own artifacts postdate the baseline, so they cannot appear."""
     included, _ = fidelity.build_corpus()
