@@ -148,11 +148,17 @@ def _risk_summary(
     omitted_relevant: int,
     dependencies: list,
     warnings: list[str],
+    selection_certificate: dict[str, Any],
 ) -> dict:
     total_chunks = len(index.chunks)
     unresolved = sum(1 for dep in dependencies if not dep.resolved)
     missing_dependency_warnings = sum(
         1 for warning in warnings if "Dependency not included" in warning
+    )
+    dependency_bundle_omissions = sum(
+        1
+        for warning in warnings
+        if "Dependency bundle omitted atomically due to budget" in warning
     )
     token_coverage = selected_tokens / max(
         1, sum(chunk.token_count for chunk in index.chunks)
@@ -188,10 +194,22 @@ def _risk_summary(
         "omitted_relevant_chunks": omitted_relevant,
         "unresolved_dependency_count": unresolved,
         "missing_dependency_warning_count": missing_dependency_warnings,
+        "dependency_bundle_omission_count": dependency_bundle_omissions,
+        "selection_certificate": selection_certificate,
         "controls": {
+            "selection_contract": "atomic_transitive_dependency_closure",
+            "selection_optimizer": selection_certificate.get(
+                "optimizer", "unknown"
+            ),
+            "selection_optimality": selection_certificate.get(
+                "optimality", "unknown"
+            ),
             "dependency_closure": "complete"
             if unresolved == 0 and missing_dependency_warnings == 0
             else "partial",
+            "dependency_bundle_fit": "omitted_due_to_budget"
+            if dependency_bundle_omissions
+            else "complete",
             "omitted_evidence_pressure": "high"
             if omission_pressure > 0.4
             else "medium"
@@ -279,6 +297,10 @@ def build_receipt(
     source_fingerprints = {
         "documents": {doc.source_path: doc.fingerprint for doc in index.documents},
         "chunks": {chunk.chunk_id: chunk.fingerprint for chunk in index.chunks},
+        "source_bytes": {doc.source_path: doc.source_sha256 for doc in index.documents},
+        "fragment_bytes": {
+            chunk.chunk_id: chunk.fragment_sha256 for chunk in index.chunks
+        },
     }
     ranking_reasons = {rank.chunk_id: rank.reasons for rank in ranked}
     warning_candidates = list(selection.warnings)
@@ -295,6 +317,7 @@ def build_receipt(
         omitted_relevant=len(high_omitted),
         dependencies=dependencies,
         warnings=warnings,
+        selection_certificate=selection.certificate,
     )
     omitted_text_by_chunk_id = {chunk.chunk_id: chunk.text for chunk in index.chunks}
     novelty = novelty_summary(
@@ -342,6 +365,11 @@ def markdown_report(receipt: ContextReceipt) -> str:
     ratio = receipt.compression_ratio
     risk_summary = _mapping(receipt.risk_summary)
     controls = _mapping(risk_summary.get("controls"))
+    selection_certificate = _mapping(risk_summary.get("selection_certificate"))
+    selection_objective = _mapping(selection_certificate.get("objective"))
+    recovery_frontier = selection_certificate.get("recovery_frontier")
+    recovery_items = recovery_frontier if isinstance(recovery_frontier, list) else []
+    best_omitted = _mapping(recovery_items[0]) if recovery_items else {}
     novelty = _mapping(risk_summary.get("novelty_summary"))
     novelty_assessment = _mapping(risk_summary.get("novelty_frontier_assessment"))
     lines = [
@@ -366,6 +394,13 @@ def markdown_report(receipt: ContextReceipt) -> str:
         f"- Coverage score: {_float_metric(risk_summary.get('coverage_score')):.3f}",
         f"- Review level: {risk_summary.get('review_level', 'unknown')}",
         f"- Dependency closure: {controls.get('dependency_closure', 'unknown')}",
+        f"- Selection contract: {controls.get('selection_contract', 'unknown')}",
+        f"- Selection optimizer: {controls.get('selection_optimizer', 'unknown')}",
+        f"- Selection optimality: {controls.get('selection_optimality', 'unknown')}",
+        f"- Internal relevance score: {_float_metric(selection_objective.get('selected_score')):.6f}",
+        f"- Certified relevance regret bound: {_float_metric(selection_objective.get('certified_regret_upper_bound')):.6f}",
+        f"- Best omitted recovery bundle: {best_omitted.get('root_chunk_id', 'none')}",
+        f"- Dependency bundles omitted: {_int_or_default(risk_summary.get('dependency_bundle_omission_count'))}",
         f"- Omitted evidence pressure: {controls.get('omitted_evidence_pressure', 'unknown')}",
         f"- Novelty frontier pressure: {controls.get('novelty_frontier', 'unknown')}",
         f"- Novelty frontier action: {novelty_assessment.get('action', 'unknown')}",

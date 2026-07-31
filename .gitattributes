@@ -28,3 +28,8 @@ bench/*.sh linguist-vendored
 # Packaging metadata for downstream channels.
 Dockerfile* linguist-vendored
 packaging/homebrew/** linguist-vendored
+
+# Public evidence checksums attest to canonical LF bytes on every platform.
+benchmarks/results/receipt_fragment_fidelity_*.json text eol=lf
+benchmarks/results/receipt_public_integrity.json text eol=lf
+benchmarks/results/*.json.sha256 text eol=lf

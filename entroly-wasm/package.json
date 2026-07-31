@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "1.0.69",
+  "version": "1.0.70",
   "description": "WebAssembly Context Assurance for AI agents: reduce avoidable token usage with local evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "types": "index.d.ts",

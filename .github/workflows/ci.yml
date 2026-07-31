@@ -202,6 +202,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Receipt-fidelity tests compare against a pinned historical corpus.
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -267,6 +270,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Receipt-fidelity tests compare against a pinned historical corpus.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7

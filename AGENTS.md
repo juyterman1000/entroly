@@ -56,7 +56,8 @@ python tests/functional_test.py
 Rust/native changes:
 
 ```bash
-maturin develop --release
+# maturin must run from entroly-core/ — Cargo.toml is not at the repo root.
+cd entroly-core && maturin develop --release
 cd entroly-core && cargo test --lib
 cd entroly-core && cargo clippy --all-targets -- -D warnings
 ```

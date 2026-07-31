@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -37,15 +39,55 @@ def _write_request(
     proc.stdin.flush()
 
 
+def _start_transport_pumps(proc: subprocess.Popen[str]) -> None:
+    """Continuously drain both pipes for the lifetime of the MCP process.
+
+    A fresh ``readline`` thread per request is unsafe: after a timeout the old
+    thread remains alive and can steal a later response. Leaving stderr unread
+    is also unsafe because a sufficiently chatty startup can fill the OS pipe
+    and block the server before it writes its JSON-RPC response.
+    """
+    assert proc.stdout is not None
+    assert proc.stderr is not None
+    received: queue.Queue[tuple[str, object]] = queue.Queue()
+    stderr_lines: deque[str] = deque(maxlen=400)
+    setattr(proc, "_entroly_received", received)
+    setattr(proc, "_entroly_stderr_lines", stderr_lines)
+
+    def stdout_reader() -> None:
+        try:
+            for line in proc.stdout:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    received.put(("contamination", stripped))
+                    continue
+                if not isinstance(payload, dict):
+                    received.put(("contamination", stripped))
+                    continue
+                received.put(("json", payload))
+        except BaseException as exc:  # pragma: no cover - diagnostic path
+            received.put(("reader_error", repr(exc)))
+        finally:
+            received.put(("eof", None))
+
+    def stderr_reader() -> None:
+        try:
+            for line in proc.stderr:
+                stderr_lines.append(line)
+        except (OSError, ValueError):  # pragma: no cover - shutdown race
+            return
+
+    threading.Thread(target=stdout_reader, daemon=True).start()
+    threading.Thread(target=stderr_reader, daemon=True).start()
+
+
 def _stderr_tail(proc: subprocess.Popen[str], limit: int = 4000) -> str:
-    if proc.stderr is None:
-        return ""
-    if proc.poll() is None:
-        return ""
-    try:
-        return proc.stderr.read()[-limit:]
-    except OSError:
-        return ""
+    lines = getattr(proc, "_entroly_stderr_lines", ())
+    return "".join(lines)[-limit:]
 
 
 def _read_response(
@@ -56,56 +98,36 @@ def _read_response(
 ) -> dict:
     """Read one matching JSON-RPC response and reject stdout contamination."""
 
-    assert proc.stdout is not None
-    received: queue.Queue[tuple[str, object]] = queue.Queue()
-
-    def reader() -> None:
+    received = getattr(proc, "_entroly_received", None)
+    assert isinstance(received, queue.Queue), "transport pumps were not started"
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            pytest.fail(
+                "timed out waiting for MCP response "
+                f"id={request_id}; returncode={proc.poll()}; "
+                f"stderr={_stderr_tail(proc)!r}"
+            )
         try:
-            while True:
-                line = proc.stdout.readline()
-                if not line:
-                    received.put(("eof", None))
-                    return
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    payload = json.loads(stripped)
-                except json.JSONDecodeError:
-                    received.put(("contamination", stripped))
-                    return
-                if not isinstance(payload, dict):
-                    received.put(("contamination", stripped))
-                    return
-                if payload.get("id") == request_id:
-                    received.put(("response", payload))
-                    return
-                # Notifications and log messages are allowed only when they are
-                # valid JSON-RPC objects. Continue until our response arrives.
-        except BaseException as exc:  # pragma: no cover - diagnostic path
-            received.put(("reader_error", repr(exc)))
+            kind, value = received.get(timeout=remaining)
+        except queue.Empty:
+            continue
 
-    thread = threading.Thread(target=reader, daemon=True)
-    thread.start()
-    try:
-        kind, value = received.get(timeout=timeout)
-    except queue.Empty:
-        pytest.fail(
-            "timed out waiting for MCP response "
-            f"id={request_id}; returncode={proc.poll()}; stderr={_stderr_tail(proc)!r}"
-        )
-
-    if kind == "response":
-        assert isinstance(value, dict)
-        return value
-    if kind == "contamination":
-        pytest.fail(f"non-JSON output leaked onto MCP stdout: {value!r}")
-    if kind == "eof":
-        pytest.fail(
-            "MCP entrypoint closed stdout before responding; "
-            f"returncode={proc.poll()}; stderr={_stderr_tail(proc)!r}"
-        )
-    pytest.fail(f"MCP response reader failed: {value!r}")
+        if kind == "json":
+            assert isinstance(value, dict)
+            if value.get("id") == request_id:
+                return value
+            # Notifications and valid log messages can appear between replies.
+            continue
+        if kind == "contamination":
+            pytest.fail(f"non-JSON output leaked onto MCP stdout: {value!r}")
+        if kind == "eof":
+            pytest.fail(
+                "MCP entrypoint closed stdout before responding; "
+                f"returncode={proc.poll()}; stderr={_stderr_tail(proc)!r}"
+            )
+        pytest.fail(f"MCP response reader failed: {value!r}")
 
 
 def _call_tool(
@@ -176,6 +198,7 @@ def installed_mcp() -> subprocess.Popen[str]:
             cwd=repo,
             env=env,
         )
+        _start_transport_pumps(proc)
 
         _write_request(
             proc,

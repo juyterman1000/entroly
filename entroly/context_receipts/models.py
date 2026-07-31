@@ -91,6 +91,16 @@ def text_fingerprint(text: str) -> str:
     return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def byte_digest(text: str) -> str:
+    """SHA-256 of the exact UTF-8 bytes, with no normalization at all.
+
+    Distinct from :func:`text_fingerprint`, which folds CRLF to LF before
+    hashing and is therefore unable to attest that recovered bytes match the
+    file on disk. Recovery claims must use this.
+    """
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 @dataclass
 class DocumentRecord:
     document_id: str
@@ -100,6 +110,7 @@ class DocumentRecord:
     token_count: int
     byte_count: int
     chunk_ids: list[str]
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | object) -> "DocumentRecord":
@@ -112,6 +123,7 @@ class DocumentRecord:
             token_count=_int_or_default(payload.get("token_count")),
             byte_count=_int_or_default(payload.get("byte_count")),
             chunk_ids=_list_of_str(payload.get("chunk_ids", [])),
+            source_sha256=_str_or_default(payload.get("source_sha256")),
         )
 
 
@@ -131,6 +143,15 @@ class DocumentChunk:
     token_count: int
     fingerprint: str
     text: str
+    # Independently verifiable digests. `fingerprint` above is a composite over
+    # (document fingerprint, offsets, text) with newlines normalized, so a
+    # receipt holder cannot recompute it and it cannot attest to exact bytes.
+    # These can be recomputed by anyone holding the receipt and the source:
+    #     sha256(source_bytes)                      == source_sha256
+    #     sha256(source_bytes[byte_start:byte_end]) == fragment_sha256
+    # No normalization is applied, so CRLF and trailing newlines are preserved.
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | object) -> "DocumentChunk":
@@ -154,6 +175,8 @@ class DocumentChunk:
             token_count=_int_or_default(payload.get("token_count")),
             fingerprint=_str_or_default(payload.get("fingerprint")),
             text=_str_or_default(payload.get("text")),
+            fragment_sha256=_str_or_default(payload.get("fragment_sha256")),
+            source_sha256=_str_or_default(payload.get("source_sha256")),
         )
 
 
@@ -242,6 +265,8 @@ class SelectedContextItem:
     dependencies_missing: list[str]
     fingerprint: str
     text: str
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SelectedContextItem":
@@ -265,6 +290,8 @@ class SelectedContextItem:
             dependencies_missing=_list_of_str(data.get("dependencies_missing", [])),
             fingerprint=_str_or_default(data.get("fingerprint")),
             text=_str_or_default(data.get("text")),
+            fragment_sha256=_str_or_default(data.get("fragment_sha256")),
+            source_sha256=_str_or_default(data.get("source_sha256")),
         )
 
 
@@ -280,6 +307,10 @@ class OmittedContextItem:
     omission_reason: str
     fingerprint: str
     text_preview: str
+    byte_start: int = 0
+    byte_end: int = 0
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "OmittedContextItem":
@@ -298,6 +329,10 @@ class OmittedContextItem:
             omission_reason=_str_or_default(data.get("omission_reason")),
             fingerprint=_str_or_default(data.get("fingerprint")),
             text_preview=_str_or_default(data.get("text_preview")),
+            byte_start=_int_or_default(data.get("byte_start")),
+            byte_end=_int_or_default(data.get("byte_end")),
+            fragment_sha256=_str_or_default(data.get("fragment_sha256")),
+            source_sha256=_str_or_default(data.get("source_sha256")),
         )
 
 

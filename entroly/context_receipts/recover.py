@@ -1,22 +1,10 @@
-"""Recoverable Context Receipts — lossless, verifiable recovery of omitted context.
+"""Lossless recovery of omitted Context Receipt fragments.
 
-A Context Receipt already *explains* what was omitted and *why*. This module makes
-it **recoverable**: given a receipt, return the full original text of any omitted
-chunk — and prove it is byte-exact, not a re-derivation that may have drifted.
-
-How it stays honest:
-  • At receipt time we capture a project-local **recovery bundle** next to the
-    receipt (``.entroly/receipts/<id>.recovery.json``) holding each chunk's full
-    text plus a plain ``content_sha`` (``text_fingerprint`` of the text) and the
-    chunk's recorded composite ``fingerprint``. Nothing leaves the machine.
-  • On recover we verify two independent things: (a) the bundle's recorded
-    ``fingerprint`` matches the fingerprint the *receipt* recorded for that chunk
-    (this is the chunk the receipt omitted — not a look-alike), and (b)
-    ``text_fingerprint(text) == content_sha`` (the stored text was not corrupted).
-    Both pass ⇒ ``verified``: the returned text is provably exactly what was dropped.
-
-This is strictly stronger than recover-only compression: receipts explain the
-omission *and* hand back the exact content, with a cryptographic guarantee.
+New receipts carry a SHA-256 digest of the exact UTF-8 fragment bytes. Recovery
+checks the stored text against that receipt-owned digest and reports
+``exact_utf8_bytes`` only when it matches. Older receipts remain readable through
+their normalized-text fingerprint, but are explicitly labeled
+``legacy_normalized_text`` because that scheme cannot distinguish CRLF from LF.
 """
 
 from __future__ import annotations
@@ -27,9 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from . import store as _store
-from .models import ContextReceipt, text_fingerprint
+from .models import ContextReceipt, byte_digest, text_fingerprint
 
-RECOVERY_SCHEMA = "context-receipt.recovery.v1"
+RECOVERY_SCHEMA = "context-receipt.recovery.v2"
 RECOVERY_SUFFIX = ".recovery.json"
 
 
@@ -73,7 +61,7 @@ def _chunk_entries(value: object) -> dict[str, dict[str, Any]]:
 
 @dataclass
 class RecoveredChunk:
-    """One recovered omitted chunk. ``verified`` is the cryptographic guarantee."""
+    """One recovered omitted chunk and the assurance level actually checked."""
 
     chunk_id: str
     source_path: str
@@ -85,6 +73,11 @@ class RecoveredChunk:
     verified: bool            # text is provably the exact omitted content
     status: str               # "recovered" | "recovered_unverified" | "unavailable"
     note: str | None = None
+    verification_level: str = "none"
+    byte_start: int = 0
+    byte_end: int = 0
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,6 +98,13 @@ def build_recovery_bundle(index: dict[str, Any]) -> dict[str, Any]:
         chunks[chunk_id] = {
             "text": text,
             "fingerprint": _str_or_default(c.get("fingerprint")),
+            "fragment_sha256": (
+                _str_or_default(c.get("fragment_sha256")) or byte_digest(text)
+            ),
+            "source_sha256": _str_or_default(c.get("source_sha256")),
+            "byte_start": max(0, _int_or_default(c.get("byte_start"))),
+            "byte_end": max(0, _int_or_default(c.get("byte_end"))),
+            # Retained for readers that understand only recovery schema v1.
             "content_sha": text_fingerprint(text),
             "source_path": _str_or_default(c.get("source_path")),
             "section_heading": _optional_str(c.get("section_heading")),
@@ -179,6 +179,10 @@ def recover_omitted(
     for item in omitted:
         cid = _str_or_default(item.get("chunk_id"))
         recorded_fp = _str_or_default(item.get("fingerprint"))
+        recorded_fragment_sha = _str_or_default(item.get("fragment_sha256"))
+        recorded_source_sha = _str_or_default(item.get("source_sha256"))
+        recorded_start = max(0, _int_or_default(item.get("byte_start")))
+        recorded_end = max(0, _int_or_default(item.get("byte_end")))
         common = dict(
             chunk_id=cid,
             source_path=_str_or_default(item.get("source_path")),
@@ -186,6 +190,10 @@ def recover_omitted(
             token_count=max(0, _int_or_default(item.get("token_count"))),
             omission_reason=_str_or_default(item.get("omission_reason")),
             fingerprint=recorded_fp,
+            byte_start=recorded_start,
+            byte_end=recorded_end,
+            fragment_sha256=recorded_fragment_sha,
+            source_sha256=recorded_source_sha,
         )
         entry = source.get(cid)
         if entry is None:
@@ -197,19 +205,61 @@ def recover_omitted(
             continue
 
         text = _str_or_default(entry.get("text"))
-        # (a) is this the chunk the receipt omitted?  (b) is the stored text intact?
-        chunk_matches = (
-            not recorded_fp
-        ) or _str_or_default(entry.get("fingerprint")) == recorded_fp
-        text_intact = text_fingerprint(text) == _str_or_default(
-            entry.get("content_sha")
-        )
-        verified = bool(chunk_matches and text_intact)
+        actual_fragment_sha = byte_digest(text)
+        if recorded_fragment_sha:
+            entry_fragment_sha = _str_or_default(entry.get("fragment_sha256"))
+            entry_source_sha = _str_or_default(entry.get("source_sha256"))
+            range_matches = (
+                recorded_start == max(0, _int_or_default(entry.get("byte_start")))
+                and recorded_end == max(0, _int_or_default(entry.get("byte_end")))
+            )
+            source_matches = (
+                not recorded_source_sha
+                or not entry_source_sha
+                or recorded_source_sha == entry_source_sha
+            )
+            bundle_matches = (
+                not entry_fragment_sha or actual_fragment_sha == entry_fragment_sha
+            )
+            receipt_matches = actual_fragment_sha == recorded_fragment_sha
+            verified = bool(
+                receipt_matches and bundle_matches and range_matches and source_matches
+            )
+            verification_level = "exact_utf8_bytes" if verified else "none"
+            if not receipt_matches:
+                note = "Recovered text failed the receipt's exact-byte digest."
+            elif not bundle_matches:
+                note = "Recovered text failed the recovery bundle's exact-byte digest."
+            elif not range_matches:
+                note = "Recovery bundle byte range does not match the receipt."
+            elif not source_matches:
+                note = "Recovery bundle source digest does not match the receipt."
+            else:
+                note = None
+        else:
+            # Backward compatibility for v1 receipts. This validates normalized
+            # text, not exact bytes, so callers can distinguish the weaker proof.
+            chunk_matches = (
+                not recorded_fp
+            ) or _str_or_default(entry.get("fingerprint")) == recorded_fp
+            text_intact = text_fingerprint(text) == _str_or_default(
+                entry.get("content_sha")
+            )
+            verified = bool(chunk_matches and text_intact)
+            verification_level = "legacy_normalized_text" if verified else "none"
+            note = (
+                None
+                if verified
+                else (
+                    "Chunk fingerprint does not match the receipt."
+                    if not chunk_matches
+                    else "Stored text failed its legacy normalized-text hash."
+                )
+            )
         results.append(RecoveredChunk(
             **common, text=text, verified=verified,
             status="recovered" if verified else "recovered_unverified",
-            note=None if verified else
-                 ("Chunk fingerprint does not match the receipt." if not chunk_matches
-                  else "Stored text failed its integrity hash."),
+            note=note,
+            verification_level=verification_level,
         ))
     return [r.to_dict() for r in results]

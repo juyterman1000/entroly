@@ -1,0 +1,270 @@
+{
+  "schema_version": "entroly.capability-coverage.v1",
+  "scope": "Major user-visible capability families in the Entroly release",
+  "status_definitions": {
+    "production": "Shipped through a public entry point with focused regression coverage.",
+    "beta": "Shipped but intentionally bounded or opt-in; limitations must be visible.",
+    "research": "Measured or prototyped but not presented as a production capability."
+  },
+  "capabilities": [
+    {
+      "id": "source_authenticated_context_receipts",
+      "status": "production",
+      "implementation": [
+        "entroly/context_receipts/ingest.py",
+        "entroly/context_receipts/selection.py",
+        "entroly/context_receipts/recover.py",
+        "entroly-core/src/context_receipts.rs"
+      ],
+      "tests": [
+        "tests/test_receipt_independent_verification.py::test_public_receipt_exposes_independently_verifiable_selected_and_omitted_fragments",
+        "tests/test_recoverable_receipts.py::test_receipt_exact_digest_tampering_is_detected"
+      ],
+      "docs": [
+        "docs/investigations/P0-receipt-chunk-fidelity.md",
+        "docs/receipt-proof-layer.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "mcp", "rust"],
+      "public_entrypoints": [
+        "entroly.sdk.create_context_receipt",
+        "entroly.sdk.recover_receipt_omission"
+      ],
+      "limitations": "Exact recovery requires retention of the corresponding local recovery bundle."
+    },
+    {
+      "id": "budgeted_evidence_selection",
+      "status": "production",
+      "implementation": [
+        "entroly/context_receipts/retrieval.py",
+        "entroly/context_receipts/dependencies.py",
+        "entroly/context_receipts/selection.py"
+      ],
+      "tests": [
+        "tests/test_context_receipts.py::test_receipt_schema_defined_terms_dependencies_and_compression_ratio",
+        "tests/test_context_receipts.py::test_no_match_receipt_fails_closed_and_does_not_claim_savings",
+        "tests/test_context_receipts.py::test_selector_adds_transitive_dependency_closure_atomically",
+        "tests/test_dependency_closure_integrity_benchmark.py::test_small_matrix_proves_atomic_closure_and_detects_legacy_defect",
+        "tests/test_closed_set_selection_frontier_benchmark.py::test_committed_report_is_self_verifying_and_checksum_bound"
+      ],
+      "docs": [
+        "docs/context-control-plane.md",
+        "docs/rfcs/001-submodular-context-selection.md",
+        "docs/research/source-authenticated-closure-retrieval.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "mcp", "rust", "node-wasm"],
+      "public_entrypoints": [
+        "entroly.context_receipts.run_receipt_pipeline",
+        "entroly.context_receipts.select_from_index"
+      ],
+      "limitations": "Bounded exact selection optimizes only the declared internal retrieval score. Selection quality still depends on the query, detected graph, and corpus; mechanical reduction and synthetic optimality are not labeled as answer quality."
+    },
+    {
+      "id": "recoverable_compression_handles",
+      "status": "production",
+      "implementation": [
+        "entroly/ccr.py",
+        "entroly/compression_retrieval_store.py",
+        "entroly/compression_retrieval_store_safe.py"
+      ],
+      "tests": [
+        "tests/test_ccr.py::test_content_addressed_handles_preserve_historical_versions",
+        "tests/test_compression_retrieval_store.py::test_full_span_recovery_preserves_exact_line_endings"
+      ],
+      "docs": [
+        "docs/receipt-proof-layer.md",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp", "proxy"],
+      "public_entrypoints": [
+        "entroly.sdk.compress",
+        "entroly.server.entroly_retrieve"
+      ],
+      "limitations": "Deleting the local content-addressed store removes Entroly's recovery path."
+    },
+    {
+      "id": "runaway_session_rescue",
+      "status": "production",
+      "implementation": [
+        "entroly/session_rescue.py",
+        "entroly/proxy.py"
+      ],
+      "tests": [
+        "tests/test_session_rescue.py::test_hard_pressure_overrides_cache_and_persists_recovery",
+        "tests/test_session_rescue.py::test_uncompressible_over_limit_request_is_blocked_with_clear_state"
+      ],
+      "docs": [
+        "README.md",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["proxy"],
+      "public_entrypoints": ["entroly proxy"],
+      "limitations": "The guard operates on traffic routed through the Entroly proxy and fails closed on unsafe overflow."
+    },
+    {
+      "id": "cache_stable_live_zone",
+      "status": "production",
+      "implementation": [
+        "entroly/cache_aligner.py",
+        "entroly/cache_retention.py",
+        "entroly/cache_routing.py"
+      ],
+      "tests": [
+        "tests/test_cache_stable_live_zone.py::test_openai_live_zone_leaves_system_and_raw_turn_prefix_untouched",
+        "tests/test_cache_routing.py::test_warm_cache_prevents_a_short_horizon_switch"
+      ],
+      "docs": [
+        "docs/cache-aware-control-plane.md",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["proxy", "python-sdk"],
+      "public_entrypoints": ["entroly proxy"],
+      "limitations": "Provider cache accounting is modeled unless the provider exposes authoritative usage metadata."
+    },
+    {
+      "id": "memory_os",
+      "status": "production",
+      "implementation": [
+        "entroly/memory.py",
+        "entroly/memory_fabric.py"
+      ],
+      "tests": [
+        "tests/test_memory_os.py::test_memory_os_recalls_relevant_memory_under_budget",
+        "tests/test_memory_os.py::test_memory_os_blocks_secrets_by_default"
+      ],
+      "docs": [
+        "docs/memory-ecosystem.md",
+        "docs/memory-fabric.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "mcp"],
+      "public_entrypoints": ["entroly memory", "entroly.server.remember_fragment"],
+      "limitations": "Durable memory is local state and must be backed up or exported by the operator."
+    },
+    {
+      "id": "witness_evidence_verification",
+      "status": "production",
+      "implementation": [
+        "entroly/witness.py",
+        "entroly/receipt_witness.py"
+      ],
+      "tests": [
+        "tests/test_witness.py::test_strict_policy_suppresses_unsupported_claim",
+        "tests/test_witness.py::test_proxy_witness_gateway_rewrites_openai_response"
+      ],
+      "docs": [
+        "docs/prevent-ai-hallucinations.html",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "proxy", "mcp"],
+      "public_entrypoints": ["entroly.sdk.verify", "entroly witness"],
+      "limitations": "Verification is evidence-bounded and cannot establish facts absent from the supplied evidence."
+    },
+    {
+      "id": "security_and_local_access_controls",
+      "status": "production",
+      "implementation": [
+        "entroly/proxy_access_security.py",
+        "entroly/daemon_network_security.py",
+        "entroly/dashboard_security.py"
+      ],
+      "tests": [
+        "tests/test_proxy_access_security.py::test_remote_app_rejects_missing_wrong_duplicate_and_query_tokens",
+        "tests/test_daemon_network_security.py::test_remote_or_malformed_daemon_hosts_fail_before_initialization"
+      ],
+      "docs": [
+        "SECURITY.md",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["cli", "mcp", "proxy"],
+      "public_entrypoints": ["entroly attach", "entroly daemon"],
+      "limitations": "Users remain responsible for host security, provider credentials, and access to local Entroly state."
+    },
+    {
+      "id": "model_capability_registry",
+      "status": "production",
+      "implementation": [
+        "entroly/models/registry.py",
+        "entroly/models/registry.json"
+      ],
+      "tests": [
+        "tests/test_model_registry.py::test_unknown_model_fails_visibly_with_conservative_fallback",
+        "tests/test_model_registry.py::test_openrouter_discovery_requires_an_explicit_api_key"
+      ],
+      "docs": [
+        "docs/architecture/model-intelligence.md",
+        "docs/model-decision-receipts.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "proxy", "openclaw"],
+      "public_entrypoints": ["entroly.models.registry.effective_registry"],
+      "limitations": "Unverified or unknown model metadata is labeled and receives conservative defaults."
+    },
+    {
+      "id": "openclaw_context_engine",
+      "status": "production",
+      "implementation": [
+        "entroly/openclaw_bridge.py",
+        "integrations/openclaw/engine.js",
+        "integrations/openclaw/bridge-client.js"
+      ],
+      "tests": [
+        "tests/test_openclaw_bridge.py::test_context_budget_discovery_uses_verified_metadata_and_reserves_output",
+        "tests/test_openclaw_bridge.py::test_prompt_injection_match_cannot_receive_verbatim_pin"
+      ],
+      "docs": [
+        "docs/openclaw-context-engine.html",
+        "integrations/openclaw/README.md"
+      ],
+      "package_surfaces": ["openclaw", "python-sdk"],
+      "public_entrypoints": ["entroly-openclaw", "entroly.openclaw_bridge.serve_jsonl"],
+      "limitations": "OpenClaw remains responsible for provider authentication, routing, and conversation ownership."
+    },
+    {
+      "id": "reliable_event_delivery",
+      "status": "beta",
+      "implementation": [
+        "entroly/integrations/event_delivery.py",
+        "entroly/integrations/discord_gateway.py",
+        "entroly/integrations/telegram_gateway.py"
+      ],
+      "tests": [
+        "tests/test_event_delivery.py::test_failed_delivery_survives_restart_and_replays_once_due",
+        "tests/test_event_delivery.py::test_queue_never_persists_destination_or_common_credentials"
+      ],
+      "docs": [
+        "docs/reliable-event-delivery.md",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["python-sdk"],
+      "public_entrypoints": ["entroly.integrations.event_delivery.EventDeliveryQueue"],
+      "limitations": "Gateway credentials and destination-specific rate limits remain operator-managed."
+    },
+    {
+      "id": "verified_task_dreaming",
+      "status": "beta",
+      "implementation": [
+        "entroly/task_dream.py",
+        "entroly/autotune.py"
+      ],
+      "tests": [
+        "tests/test_task_dream.py::test_task_dream_builds_receipted_skill_without_mutating_agents",
+        "tests/test_task_dream.py::test_unverified_outcome_cannot_become_durable_memory"
+      ],
+      "docs": [
+        "docs/verified-dreaming.md",
+        "docs/limitations.md"
+      ],
+      "package_surfaces": ["mcp", "python-sdk"],
+      "public_entrypoints": ["entroly.task_dream.build_task_dream"],
+      "limitations": "Generated overlays are bounded, untrusted by default, and cannot promote without verified outcomes."
+    },
+    {
+      "id": "neural_evidence_selector",
+      "status": "research",
+      "implementation": ["entroly/neural_evidence_selector.py"],
+      "tests": ["tests/test_neural_evidence_selector.py::test_lexical_neural_agreement_uses_neural_selector"],
+      "docs": ["docs/benchmarks/neural-evidence-frontier.md"],
+      "package_surfaces": [],
+      "public_entrypoints": [],
+      "limitations": "The measured module is not reachable from a shipped entry point and must not support a production headline."
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "atomic_dependency_closure": {
+    "budget_violations": 0,
+    "bundle_omission_cases": 43551,
+    "closure_integrity_pass": true,
+    "hard_budget_pass": true,
+    "partial_closure_cases": 0,
+    "partial_closure_fragments": 0
+  },
+  "claim_scope": "exhaustive small-graph dependency-closure integrity only; not answer quality, retrieval recall, model cost, or competitor superiority",
+  "harness": {
+    "path": "benchmarks/dependency_closure_integrity.py",
+    "sha256": "26d6e627ff6e2847488ffa2c2c7519941b986400beccad86717ff18c6d79d66a"
+  },
+  "implementation_commit": "3b9a9a00e283878893d0be0b7931690a581cb61d",
+  "legacy_partial_add_control": {
+    "budget_violations": 0,
+    "partial_closure_cases": 41954,
+    "partial_closure_fragments": 102498
+  },
+  "limitations": [
+    "The graphs are synthetic and small.",
+    "All edges are resolved and trusted; unresolved references are tested separately.",
+    "The benchmark measures a safety invariant, not downstream answer quality.",
+    "The legacy control is a local reproduction of Entroly's former selector, not another product.",
+    "No LLM, LoCoMo, MuSiQue, HotpotQA, agent trajectory, latency, cache, or billing result is measured."
+  ],
+  "matrix": {
+    "budget_range": "1..sum(token_costs), inclusive",
+    "cases": 47862,
+    "graph_families": [
+      "chain",
+      "star",
+      "diamond",
+      "cycle"
+    ],
+    "node_count_max": 6,
+    "node_count_min": 2,
+    "token_costs": [
+      1,
+      2,
+      3
+    ],
+    "unique_graphs": 17
+  },
+  "reproduce": "python -m benchmarks.dependency_closure_integrity --max-nodes 6 --output benchmarks/results/dependency_closure_integrity.json",
+  "schema_version": "entroly.dependency-closure-integrity.v1"
+}
