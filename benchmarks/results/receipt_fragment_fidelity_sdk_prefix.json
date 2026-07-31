@@ -1,0 +1,107 @@
+{
+ "baseline_ref": "1ecf1e093348068539f9e1463826209c966ed535",
+ "environment": {
+  "entroly_version": "1.0.69",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.10.0"
+ },
+ "fragments": [
+  {
+   "chunk_id": "chk_f468cc1109c3",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_dc106cb47d2e",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_c3ffd396e304",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_a47d9aa3e64f",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_71db3f6aae5e",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_c8f203059c18",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_b0b68179510c",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_2cb8838741e1",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_3c9de12cd6c3",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_5b1f6b5d96de",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_e7cfed8d5b1a",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_29a745aa88d9",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  },
+  {
+   "chunk_id": "chk_d9c921dccf6b",
+   "fingerprint_matches_original_span": false,
+   "fingerprint_matches_recovered": false,
+   "verbatim_in_source": false
+  }
+ ],
+ "inputs": {
+  "budget": 900,
+  "file_sha256": {
+   "entroly/esg.py": "bc142090ceb461cb30a792f6506ddea298969b912a941aea6b2759ae8c0206be",
+   "entroly/evidence_locked_compression.py": "2af9fe1c76b954674130d69a248a3c48507c83103c73b2a70bb2c617740265df"
+  },
+  "files": [
+   "entroly/esg.py",
+   "entroly/evidence_locked_compression.py"
+  ],
+  "query": "how is evidence coverage enforced fail-closed"
+ },
+ "schema_version": "receipt-sdk-probe.v2",
+ "totals": {
+  "fingerprint_matches_original_span": 0,
+  "fingerprint_matches_recovered": 0,
+  "recovered_fragments": 13,
+  "verbatim_in_source": 0
+ }
+}
