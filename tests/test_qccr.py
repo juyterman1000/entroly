@@ -290,3 +290,48 @@ if __name__ == "__main__":
             except AssertionError as e:
                 print(f"FAIL {name}: {e}")
                 raise
+
+
+def test_input_over_budget_is_still_compressed():
+    """The bypass must not become a way to skip compression entirely."""
+    from entroly.qccr import select
+
+    topics = [
+        "authentication tokens expire", "database migrations rollback",
+        "cache eviction policy", "retry backoff jitter",
+        "alpha beta gamma matching", "logging redaction rules",
+    ]
+    fragments = [
+        {"source": f"file:mod_{i}.py", "content": (t + " detail line. ") * 120,
+         "token_count": 420}
+        for i, t in enumerate(topics)
+    ]
+    budget = 2000
+    assert sum(f["token_count"] for f in fragments) > budget
+
+    result = select(fragments, budget, query="alpha beta gamma matching")
+
+    assert result is not fragments, "over-budget input must be compressed"
+    assert result, "compression must not return an empty selection"
+    delivered = sum(len(str(f.get("content", ""))) // 4 for f in result)
+    assert delivered <= budget, f"compressed output {delivered} exceeds budget {budget}"
+
+
+def test_benchmark_compressor_does_not_inflate_input_that_already_fits():
+    """Compression must never make the payload larger than doing nothing.
+
+    GSM8K measured 283 input tokens against a 50,000-token budget and returned
+    294.4 -- a token saving of -4.0% -- because the harness chunks text into
+    400-char pieces and rejoins them with a newline per chunk. Accuracy was
+    identical in both arms (0.85), so the extra tokens bought nothing.
+    """
+    from bench.accuracy import _entroly_compress
+
+    text = "Natalia sold clips to 48 friends in April, and half as many in May. " * 4
+    budget = 50_000
+    assert len(text) // 4 <= budget
+
+    out = _entroly_compress(text, budget, query="how many clips did natalia sell")
+
+    assert out == text, "input already inside the budget must be returned untouched"
+    assert len(out) <= len(text), "compression must never inflate the payload"

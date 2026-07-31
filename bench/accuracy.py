@@ -380,8 +380,30 @@ def _get_llmlingua():
 
 
 def _entroly_compress(text: str, budget_tokens: int, query: str) -> str:
-    """Fragment-level QCCR selection."""
+    """Fragment-level QCCR selection.
+
+    Returns the input untouched when it already fits the budget. Compression
+    has a floor cost here -- the text is split into 400-char chunks and
+    rejoined with a newline per chunk -- so applying it to something already
+    inside the budget makes the result *larger* than doing nothing.
+
+    Measured on GSM8K: 283 input tokens against a 50,000-token budget, 0.6% of
+    it, came back as 294.4 tokens. A token saving of -4.0%, with identical
+    accuracy in both arms (0.85), so those extra tokens bought nothing. Every
+    benchmark that gains has input over budget (needle 10,808 vs 2,000;
+    longbench 12,652 vs 2,000; bfcl 2,850 vs 500); the only one that lost was
+    the only one already under it.
+
+    The guard lives here rather than in `entroly.qccr.select`, because select's
+    contract is to return relevance-ordered synthetic fragments and callers
+    depend on that ordering even when nothing needs dropping. Deciding not to
+    compress at all is the caller's judgement, not the selector's.
+    """
     from entroly.qccr import select as qccr_select
+
+    if len(text) // 4 <= budget_tokens:
+        return text
+
     chunk_size = 400
     chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
     fragments = [
