@@ -259,6 +259,20 @@ fn is_heading(line: &str) -> bool {
         || Regex::new(r"^\d+(\.\d+)*\s+\S+").unwrap().is_match(trimmed)
 }
 
+/// Headings are a *document* concept. `is_heading` treats any line starting with
+/// '#' as a heading, which matches an ordinary Python, Ruby, shell, YAML or TOML
+/// comment as well as a shebang, so applying it to source code forced a chunk
+/// boundary at every comment line. Source files get no heading detection.
+///
+/// Mirrors `HEADING_AWARE_EXTENSIONS` in entroly/context_receipts/ingest.py; the
+/// two backends must agree on chunk boundaries, so the lists must match.
+fn heading_aware_path(source_path: &str) -> bool {
+    let lower = source_path.to_ascii_lowercase();
+    [".txt", ".md", ".markdown", ".rst"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+}
+
 fn parse_page(line: &str) -> Option<usize> {
     Regex::new(r"(?i)\bpage\s+(\d+)\b")
         .unwrap()
@@ -267,7 +281,7 @@ fn parse_page(line: &str) -> Option<usize> {
         .and_then(|m| m.as_str().parse::<usize>().ok())
 }
 
-fn paragraph_blocks(text: &str) -> Vec<Block> {
+fn paragraph_blocks(text: &str, detect_headings: bool) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut current = String::new();
     let mut start: Option<usize> = None;
@@ -275,21 +289,29 @@ fn paragraph_blocks(text: &str) -> Vec<Block> {
     let mut page: Option<usize> = None;
     let mut offset = 0usize;
 
+    // Trim by *offset* against the original text, never by rebuilding the
+    // string. A block must stay addressable as text[start..end] so a byte range
+    // can recover it exactly; `current.trim().to_string()` discarded the first
+    // line's indentation while `start` still pointed before it, which both
+    // altered the text and skewed every offset derived from it.
     fn flush(
         blocks: &mut Vec<Block>,
+        text: &str,
         current: &mut String,
         start: &mut Option<usize>,
-        end: usize,
         heading: Option<String>,
         page: Option<usize>,
     ) {
         if let Some(s) = *start {
-            let raw = current.trim();
-            if !raw.is_empty() {
+            let lead = current.len() - current.trim_start().len();
+            let trail = current.len() - current.trim_end().len();
+            let block_start = s + lead;
+            let block_end = s + current.len() - trail;
+            if block_end > block_start {
                 blocks.push(Block {
-                    text: raw.to_string(),
-                    start: s,
-                    end,
+                    text: text[block_start..block_end].to_string(),
+                    start: block_start,
+                    end: block_end,
                     heading,
                     page,
                 });
@@ -307,12 +329,12 @@ fn paragraph_blocks(text: &str) -> Vec<Block> {
         if line.contains('\u{000C}') {
             page = Some(page.unwrap_or(0) + line.matches('\u{000C}').count());
         }
-        if !trimmed.is_empty() && is_heading(trimmed) {
+        if detect_headings && !trimmed.is_empty() && is_heading(trimmed) {
             flush(
                 &mut blocks,
+                text,
                 &mut current,
                 &mut start,
-                offset,
                 heading.clone(),
                 page,
             );
@@ -321,9 +343,9 @@ fn paragraph_blocks(text: &str) -> Vec<Block> {
         if trimmed.is_empty() {
             flush(
                 &mut blocks,
+                text,
                 &mut current,
                 &mut start,
-                offset,
                 heading.clone(),
                 page,
             );
@@ -337,9 +359,9 @@ fn paragraph_blocks(text: &str) -> Vec<Block> {
     }
     flush(
         &mut blocks,
+        text,
         &mut current,
         &mut start,
-        text.len(),
         heading,
         page,
     );
@@ -347,6 +369,8 @@ fn paragraph_blocks(text: &str) -> Vec<Block> {
 }
 
 fn split_large_block(block: &Block, chunk_tokens: usize, overlap_tokens: usize) -> Vec<Block> {
+    // `replace('-', " ")` is length-preserving for ASCII '-', so offsets into
+    // `replaced` are valid offsets into `block.text`.
     let replaced = block.text.replace('-', " ");
     let token_matches: Vec<_> = token_re().find_iter(&replaced).collect();
     if token_matches.is_empty() {
@@ -359,6 +383,12 @@ fn split_large_block(block: &Block, chunk_tokens: usize, overlap_tokens: usize) 
         let token_end = (token_start + chunk_tokens).min(token_matches.len());
         let local_start = token_matches[token_start].start();
         let local_end = token_matches[token_end - 1].end();
+        // Token boundaries come from a regex over the same string, so they are
+        // already char boundaries; slice defensively anyway so a future change
+        // degrades instead of panicking across the PyO3 boundary.
+        if !block.text.is_char_boundary(local_start) || !block.text.is_char_boundary(local_end) {
+            break;
+        }
         out.push(Block {
             text: block.text[local_start..local_end].to_string(),
             start: block.start + local_start,
@@ -383,7 +413,7 @@ fn chunk_document(
     overlap_tokens: usize,
 ) -> Vec<DocumentChunk> {
     let mut raw = Vec::<Block>::new();
-    let mut pending = String::new();
+    let mut pending = 0usize;
     let mut start: Option<usize> = None;
     let mut end = 0usize;
     let mut heading: Option<String> = None;
@@ -392,76 +422,79 @@ fn chunk_document(
 
     fn flush(
         raw: &mut Vec<Block>,
-        pending: &mut String,
+        source_text: &str,
+        pending: &mut usize,
         start: &mut Option<usize>,
         end: usize,
         heading: Option<String>,
         page: Option<usize>,
-        tokens: &mut usize,
     ) {
-        if let Some(s) = *start {
-            let text = pending.trim();
-            if !text.is_empty() {
-                raw.push(Block {
-                    text: text.to_string(),
-                    start: s,
-                    end,
-                    heading,
-                    page,
-                });
+        // Splice the original span rather than rejoining the blocks. Pushing a
+        // blank line between blocks inserted bytes where the source had none,
+        // putting text in the chunk that existed nowhere in the file and so
+        // could never be recovered.
+        if *pending > 0 {
+            if let Some(s) = *start {
+                if end > s {
+                    raw.push(Block {
+                        text: source_text[s..end].to_string(),
+                        start: s,
+                        end,
+                        heading,
+                        page,
+                    });
+                }
             }
         }
-        pending.clear();
+        *pending = 0;
         *start = None;
-        *tokens = 0;
     }
 
-    for block in paragraph_blocks(text) {
+    for block in paragraph_blocks(text, heading_aware_path(source_path)) {
         let btokens = estimate_tokens(&block.text);
         if btokens > chunk_tokens {
             flush(
                 &mut raw,
+                text,
                 &mut pending,
                 &mut start,
                 end,
                 heading.clone(),
                 page,
-                &mut tokens,
             );
+            tokens = 0;
             raw.extend(split_large_block(&block, chunk_tokens, overlap_tokens));
             continue;
         }
-        if !pending.is_empty() && tokens + btokens > chunk_tokens {
+        if pending > 0 && tokens + btokens > chunk_tokens {
             flush(
                 &mut raw,
+                text,
                 &mut pending,
                 &mut start,
                 end,
                 heading.clone(),
                 page,
-                &mut tokens,
             );
+            tokens = 0;
         }
         if start.is_none() {
             start = Some(block.start);
             heading = block.heading.clone();
             page = block.page;
         }
-        if !pending.is_empty() {
-            pending.push_str("\n\n");
-        }
-        pending.push_str(&block.text);
+        pending += 1;
         end = block.end;
         tokens += btokens;
     }
     flush(
         &mut raw,
+        text,
         &mut pending,
         &mut start,
         end,
         heading,
         page,
-        &mut tokens,
     );
 
     let mut out = Vec::new();

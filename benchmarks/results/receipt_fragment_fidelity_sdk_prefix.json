@@ -7,82 +7,82 @@
  },
  "fragments": [
   {
-   "chunk_id": "chk_f468cc1109c3",
+   "chunk_id": "chk_661c98d3525e",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_dc106cb47d2e",
+   "chunk_id": "chk_37945c9dc675",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_c3ffd396e304",
+   "chunk_id": "chk_184d1992d4bf",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_a47d9aa3e64f",
+   "chunk_id": "chk_259204062ae0",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_71db3f6aae5e",
+   "chunk_id": "chk_9ad76d823fcd",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_c8f203059c18",
+   "chunk_id": "chk_0d7c614795ec",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_b0b68179510c",
+   "chunk_id": "chk_d12c7a8efde4",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_2cb8838741e1",
+   "chunk_id": "chk_527bc96033b2",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_3c9de12cd6c3",
+   "chunk_id": "chk_b74f6cc85324",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_5b1f6b5d96de",
+   "chunk_id": "chk_ae353725ad6a",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_e7cfed8d5b1a",
+   "chunk_id": "chk_9bf3065e4476",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_29a745aa88d9",
+   "chunk_id": "chk_749415f18715",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   },
   {
-   "chunk_id": "chk_d9c921dccf6b",
+   "chunk_id": "chk_dcfbb41bd180",
    "fingerprint_matches_original_span": false,
    "fingerprint_matches_recovered": false,
-   "verbatim_in_source": false
+   "verbatim_in_source": true
   }
  ],
  "inputs": {
@@ -102,6 +102,6 @@
   "fingerprint_matches_original_span": 0,
   "fingerprint_matches_recovered": 0,
   "recovered_fragments": 13,
-  "verbatim_in_source": 0
+  "verbatim_in_source": 13
  }
 }

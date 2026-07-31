@@ -56,8 +56,10 @@ Before approving a PR, answer:
 # Install Python package with all extras (includes Rust engine)
 pip install -e ".[full]"
 
-# Compile Rust core -> Python bindings (required after Rust changes)
-maturin develop --release
+# Compile Rust core -> Python bindings (required after Rust changes).
+# Must run from entroly-core/: Cargo.toml lives there, not at the repo root,
+# and maturin fails with "Can't find Cargo.toml" if invoked from the root.
+cd entroly-core && maturin develop --release
 
 # Rust only
 cd entroly-core && cargo build --release
