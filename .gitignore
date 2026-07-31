@@ -112,3 +112,8 @@ halueval_paper.html
 /mcp-publisher.exe
 /mcp-publisher_*.tar.gz
 /mcp-publisher.tar.gz
+
+# Local scratch: clean-install venvs and throwaway artifacts
+tmp/
+/package.json
+/package-lock.json
