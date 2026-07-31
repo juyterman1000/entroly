@@ -160,6 +160,29 @@ def compact_optimize_result_for_wire(optimize_result: dict[str, Any]) -> None:
             "omitted_duplicate_alias": "selected",
         }
     )
+    # `provenance.fragments` mirrors the selection, so leaving it untouched
+    # re-serializes every body a third time. Dogfooding an 8,000-token request
+    # returned a 378,545-char payload that overflowed the MCP result cap: the
+    # agent got an error instead of context, while the selection itself was
+    # correct at 7,004 tokens. Removing the `selected` alias alone still left
+    # ~410,000 chars because provenance kept 395 full fragments.
+    #
+    # This is also what the diagnostics hint below already promises the env
+    # flag restores -- "per-fragment provenance" -- so compact mode was
+    # documented to strip it and did not.
+    #
+    # The same compactor is reused, which keeps the trust-critical fields:
+    # content, source, token counts, hashes, receipt IDs and exact-recovery
+    # handles all survive. Only internal scoring vectors are dropped.
+    if mode == "compact":
+        provenance = optimize_result.get("provenance")
+        if isinstance(provenance, dict):
+            fragments = provenance.get("fragments")
+            if isinstance(fragments, list):
+                provenance["fragments"] = [
+                    _compact_fragment_for_wire(fragment) for fragment in fragments
+                ]
+
     if mode == "compact":
         response["diagnostics_hint"] = (
             f"Set {_FULL_DIAGNOSTICS_ENV}=1 for full fragment scoring fields "

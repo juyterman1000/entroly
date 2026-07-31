@@ -90,3 +90,49 @@ def test_mcp_wire_compaction_canonicalizes_coordinate_aliases(monkeypatch) -> No
     assert "byte_start" not in fragment
     assert "commit" not in fragment
     assert "receipt_id" not in fragment
+
+
+def test_wire_compaction_also_compacts_per_fragment_provenance():
+    """`provenance.fragments` mirrors the selection and must not be sent raw.
+
+    Dogfooding an 8,000-token `optimize_context` request returned a
+    378,545-char payload that overflowed the MCP result cap, so the agent got
+    an error instead of context -- while the selection itself was correct at
+    7,004 tokens. Dropping the duplicate `selected` alias alone still left
+    ~410,000 chars, because provenance kept 395 full fragments.
+
+    Compact mode was already documented to strip per-fragment provenance (the
+    diagnostics hint offers to restore it) and did not.
+    """
+    from entroly.provenance import compact_optimize_result_for_wire
+
+    fragment = {
+        "id": "f1",
+        "source": "file:a.py",
+        "content": "x" * 400,
+        "token_count": 100,
+        "relevance": 0.8,
+        "content_sha256": "deadbeef",
+        "retrieval_handle": "h1",
+        "entropy_score": 0.5,
+        "variant": "full",
+    }
+    selection = [dict(fragment) for _ in range(50)]
+    result = {
+        "selected_fragments": selection,
+        "selected": selection,
+        "provenance": {"fragments": [dict(fragment) for _ in range(50)], "query": "q"},
+    }
+
+    compact_optimize_result_for_wire(result)
+
+    assert "selected" not in result, "duplicate alias must not reach the wire"
+    provenance_fragments = result["provenance"]["fragments"]
+    assert provenance_fragments, "provenance fragments must survive"
+    compacted = provenance_fragments[0]
+    assert "entropy_score" not in compacted, "internal scoring vectors must be stripped"
+    for trust_field in ("source", "content", "token_count", "content_sha256",
+                        "retrieval_handle"):
+        assert trust_field in compacted, (
+            f"{trust_field} is trust-critical and must survive compaction"
+        )
