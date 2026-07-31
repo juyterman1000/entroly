@@ -1,0 +1,177 @@
+{
+ "baseline_ref": "1ecf1e093348068539f9e1463826209c966ed535",
+ "benchmark_module": "benchmarks/receipt_fragment_fidelity.py",
+ "claim_scope": "Exact recovery and independent source-span verification through the public Python SDK on two pinned source files.",
+ "environment": {
+  "entroly_version": "1.0.69",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.10.0"
+ },
+ "fragments": [
+  {
+   "byte_end": 2643,
+   "byte_start": 0,
+   "chunk_id": "chk_661c98d3525e",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/evidence_locked_compression.py"
+  },
+  {
+   "byte_end": 13875,
+   "byte_start": 11325,
+   "chunk_id": "chk_37945c9dc675",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 11319,
+   "byte_start": 8104,
+   "chunk_id": "chk_184d1992d4bf",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 17392,
+   "byte_start": 13881,
+   "chunk_id": "chk_259204062ae0",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 25142,
+   "byte_start": 21334,
+   "chunk_id": "chk_9ad76d823fcd",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 5775,
+   "byte_start": 2558,
+   "chunk_id": "chk_0d7c614795ec",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 5537,
+   "byte_start": 2649,
+   "chunk_id": "chk_d12c7a8efde4",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/evidence_locked_compression.py"
+  },
+  {
+   "byte_end": 21324,
+   "byte_start": 17398,
+   "chunk_id": "chk_527bc96033b2",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 14401,
+   "byte_start": 11451,
+   "chunk_id": "chk_b74f6cc85324",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/evidence_locked_compression.py"
+  },
+  {
+   "byte_end": 20892,
+   "byte_start": 17463,
+   "chunk_id": "chk_ae353725ad6a",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/evidence_locked_compression.py"
+  },
+  {
+   "byte_end": 9159,
+   "byte_start": 5543,
+   "chunk_id": "chk_9bf3065e4476",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/evidence_locked_compression.py"
+  },
+  {
+   "byte_end": 8101,
+   "byte_start": 5777,
+   "chunk_id": "chk_749415f18715",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/esg.py"
+  },
+  {
+   "byte_end": 11445,
+   "byte_start": 9162,
+   "chunk_id": "chk_dcfbb41bd180",
+   "fragment_digest_valid": true,
+   "recovered_bytes_match_source_span": true,
+   "recovery_verified_exact": true,
+   "source_digest_valid": true,
+   "source_path": "entroly/evidence_locked_compression.py"
+  }
+ ],
+ "harness_sha256": "b1c192e9d7d0dbcb242362865e486e3adcfaac5c3d1f5ba9fe77b4f1767b8826",
+ "headline_eligible": true,
+ "implementation": {
+  "commit": "a116a475a7d56f97e31fe1f4b8ccc99fdb254fa4"
+ },
+ "inputs": {
+  "budget": 900,
+  "file_sha256": {
+   "entroly/esg.py": "bc142090ceb461cb30a792f6506ddea298969b912a941aea6b2759ae8c0206be",
+   "entroly/evidence_locked_compression.py": "2af9fe1c76b954674130d69a248a3c48507c83103c73b2a70bb2c617740265df"
+  },
+  "files": [
+   "entroly/esg.py",
+   "entroly/evidence_locked_compression.py"
+  ],
+  "query": "how is evidence coverage enforced fail-closed"
+ },
+ "limitations": [
+  "This is a fixed two-file SDK probe, not a generated-answer benchmark.",
+  "It tests the default installed backend; backend parity is tested separately."
+ ],
+ "measurement_type": "deterministic_fixed_probe",
+ "reproduction_command": "python -m benchmarks.receipt_fragment_fidelity sdk-verify benchmarks/results/receipt_public_integrity.json",
+ "sample_size": {
+  "files": 2,
+  "recovered_fragments": 13
+ },
+ "schema_version": "receipt-sdk-probe.v3",
+ "totals": {
+  "fragment_digest_valid": 13,
+  "recovered_bytes_match_source_span": 13,
+  "recovered_fragments": 13,
+  "recovery_verified_exact": 13,
+  "source_digest_valid": 13
+ }
+}

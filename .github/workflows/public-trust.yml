@@ -8,6 +8,13 @@ on:
       - server.json
       - benchmarks/results/context_commit_conformance.json
       - benchmarks/results/halueval_qa_faithful.json
+      - benchmarks/results/receipt_fragment_fidelity_default.json
+      - benchmarks/results/receipt_fragment_fidelity_default.json.sha256
+      - benchmarks/results/receipt_fragment_fidelity_python.json
+      - benchmarks/results/receipt_fragment_fidelity_python.json.sha256
+      - benchmarks/results/receipt_public_integrity.json
+      - benchmarks/results/receipt_public_integrity.json.sha256
+      - docs/capability-coverage.json
       - docs/ai-cost-optimization.html
       - docs/agent-integrations.html
       - docs/openclaw-context-engine.html
@@ -23,7 +30,11 @@ on:
       - scripts/verify_context_assurance_public.py
       - scripts/verify_public_trust.py
       - scripts/verify_readme.py
+      - scripts/verify_readme_claims.py
+      - scripts/verify_capability_coverage.py
       - tests/test_public_trust.py
+      - tests/test_verify_readme_claims.py
+      - tests/test_capability_coverage.py
       - .github/workflows/public-trust.yml
   schedule:
     - cron: "23 9 * * 1"
@@ -52,9 +63,17 @@ jobs:
         run: |
           set -o pipefail
           python scripts/verify_readme.py 2>&1 | tee verify-readme.log
+      - name: Verify prominent evidence and capability coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/verify_readme_claims.py 2>&1 | tee readme-claims.log
+          python scripts/verify_capability_coverage.py 2>&1 | tee capability-coverage.log
       - name: Run public trust regressions
         run: >-
           python -m pytest -q tests/test_public_trust.py
+          tests/test_verify_readme_claims.py
+          tests/test_capability_coverage.py
           --junitxml=public-trust-tests.xml
       - name: Upload public trust diagnostics
         if: always()
@@ -64,6 +83,8 @@ jobs:
           path: |
             public-trust.log
             verify-readme.log
+            readme-claims.log
+            capability-coverage.log
             public-trust-tests.xml
           if-no-files-found: warn
 

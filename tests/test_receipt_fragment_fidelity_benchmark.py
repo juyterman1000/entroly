@@ -67,8 +67,34 @@ def test_measure_file_counts_are_internally_consistent():
     assert counts["fragments"] >= 1
     assert 0 <= counts["verbatim"] <= counts["fragments"]
     assert 0 <= counts["byte_span_exact"] <= counts["fragments"]
+    assert counts["source_digest_valid"] == counts["fragments"]
+    assert counts["fragment_digest_valid"] == counts["fragments"]
+
+
+def test_public_sdk_probe_uses_the_exact_receipt_contract():
+    report = fidelity.sdk_probe()
+    totals = report["totals"]
+    recovered = totals["recovered_fragments"]
+
+    assert recovered > 0
+    assert report["headline_eligible"] is True
+    assert totals["source_digest_valid"] == recovered
+    assert totals["fragment_digest_valid"] == recovered
+    assert totals["recovered_bytes_match_source_span"] == recovered
+    assert totals["recovery_verified_exact"] == recovered
 
 
 def test_rate_handles_zero_denominator():
     assert fidelity._rate(0, 0) == 0.0
     assert fidelity._rate(5, 10) == 0.5
+
+
+def test_public_artifact_writer_emits_a_matching_checksum(tmp_path):
+    target = tmp_path / "result.json"
+    fidelity.write_artifact(target, {"schema_version": "test.v1", "value": 1})
+
+    assert fidelity.artifact_checksum_matches(target)
+    target.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+    assert fidelity.artifact_checksum_matches(target)
+    target.write_text('{"tampered":true}\n', encoding="utf-8")
+    assert not fidelity.artifact_checksum_matches(target)

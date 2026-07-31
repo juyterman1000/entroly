@@ -60,6 +60,7 @@ import json
 import platform
 import subprocess
 import sys
+import tempfile
 import threading
 from collections import defaultdict
 from pathlib import Path
@@ -67,7 +68,7 @@ from pathlib import Path
 from entroly.context_receipts import ingest_documents as ingest_via_default
 from entroly.context_receipts.ingest import ingest_documents as ingest_via_python
 
-SCHEMA_VERSION = "receipt-fragment-fidelity.v3"
+SCHEMA_VERSION = "receipt-fragment-fidelity.v4"
 
 # `entroly.context_receipts.ingest_documents` dispatches to the Rust core when it
 # is available (prefer_rust defaults to True), so importing the pure-Python
@@ -211,7 +212,13 @@ def _chunks_for(rel: str, text: str, backend: str) -> list[dict[str, object]]:
     if backend == "python":
         index = ingest_via_python([(rel, text)])
         return [
-            {"text": c.text, "byte_start": c.byte_start, "byte_end": c.byte_end}
+            {
+                "text": c.text,
+                "byte_start": c.byte_start,
+                "byte_end": c.byte_end,
+                "fragment_sha256": c.fragment_sha256,
+                "source_sha256": c.source_sha256,
+            }
             for c in index.chunks
         ]
 
@@ -221,36 +228,65 @@ def _chunks_for(rel: str, text: str, backend: str) -> list[dict[str, object]]:
     for c in chunks:
         if isinstance(c, dict):
             normalised.append(
-                {"text": c["text"], "byte_start": c["byte_start"], "byte_end": c["byte_end"]}
+                {
+                    "text": c["text"],
+                    "byte_start": c["byte_start"],
+                    "byte_end": c["byte_end"],
+                    "fragment_sha256": c["fragment_sha256"],
+                    "source_sha256": c["source_sha256"],
+                }
             )
         else:
             normalised.append(
-                {"text": c.text, "byte_start": c.byte_start, "byte_end": c.byte_end}
+                {
+                    "text": c.text,
+                    "byte_start": c.byte_start,
+                    "byte_end": c.byte_end,
+                    "fragment_sha256": c.fragment_sha256,
+                    "source_sha256": c.source_sha256,
+                }
             )
     return normalised
 
 
 def measure_file(rel: str, raw: bytes, text: str, backend: str = "default") -> dict[str, int]:
     """Count fragments, verbatim hits and byte-exact hits for one file."""
-    fragments = verbatim = byte_exact = 0
+    fragments = verbatim = byte_exact = source_digest_valid = fragment_digest_valid = 0
     try:
         chunks = _chunks_for(rel, text, backend)
     except BaseException:  # noqa: BLE001 - a native panic must not abort the corpus
         # A backend that crashes on real input is a fidelity failure, not an
         # excluded file. Recorded as a file that produced no usable fragments.
-        return {"fragments": 0, "verbatim": 0, "byte_span_exact": 0, "backend_error": 1}
+        return {
+            "fragments": 0,
+            "verbatim": 0,
+            "byte_span_exact": 0,
+            "source_digest_valid": 0,
+            "fragment_digest_valid": 0,
+            "backend_error": 1,
+        }
 
+    expected_source_digest = "sha256:" + hashlib.sha256(raw).hexdigest()
     for chunk in chunks:
         fragments += 1
         if chunk["text"] in text:
             verbatim += 1
-        if raw[chunk["byte_start"]:chunk["byte_end"]] == chunk["text"].encode("utf-8"):
+        fragment_bytes = raw[chunk["byte_start"]:chunk["byte_end"]]
+        if fragment_bytes == chunk["text"].encode("utf-8"):
             byte_exact += 1
+        if chunk["source_sha256"] == expected_source_digest:
+            source_digest_valid += 1
+        if chunk["fragment_sha256"] == (
+            "sha256:" + hashlib.sha256(fragment_bytes).hexdigest()
+        ):
+            fragment_digest_valid += 1
 
     return {
         "fragments": fragments,
         "verbatim": verbatim,
         "byte_span_exact": byte_exact,
+        "source_digest_valid": source_digest_valid,
+        "fragment_digest_valid": fragment_digest_valid,
         "backend_error": 0,
     }
 
@@ -259,12 +295,29 @@ def _rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 6) if denominator else 0.0
 
 
+def artifact_checksum_matches(path: Path) -> bool:
+    checksum_path = path.with_suffix(path.suffix + ".sha256")
+    if not checksum_path.is_file():
+        return False
+    expected = checksum_path.read_text(encoding="ascii").split()[0]
+    canonical = path.read_bytes().replace(b"\r\n", b"\n")
+    return expected == hashlib.sha256(canonical).hexdigest()
+
+
 def run_measurement(ref: str = BASELINE_REF, backend: str = "default") -> dict[str, object]:
     included, excluded = build_corpus(ref)
     blobs = read_baseline_blobs(ref, [str(r["path"]) for r in included])
 
+    metric_keys = (
+        "fragments",
+        "verbatim",
+        "byte_span_exact",
+        "source_digest_valid",
+        "fragment_digest_valid",
+        "backend_error",
+    )
     per_language: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"files": 0, "fragments": 0, "verbatim": 0, "byte_span_exact": 0, "backend_error": 0}
+        lambda: {"files": 0, **dict.fromkeys(metric_keys, 0)}
     )
     per_file: list[dict[str, object]] = []
 
@@ -275,13 +328,13 @@ def run_measurement(ref: str = BASELINE_REF, backend: str = "default") -> dict[s
 
         bucket = per_language[str(record["language"])]
         bucket["files"] += 1
-        for key in ("fragments", "verbatim", "byte_span_exact", "backend_error"):
+        for key in metric_keys:
             bucket[key] += counts[key]
         per_file.append({**record, **counts})
 
-    totals = {"files": len(included), "fragments": 0, "verbatim": 0, "byte_span_exact": 0, "backend_error": 0}
+    totals = {"files": len(included), **dict.fromkeys(metric_keys, 0)}
     for bucket in per_language.values():
-        for key in ("fragments", "verbatim", "byte_span_exact", "backend_error"):
+        for key in metric_keys:
             totals[key] += bucket[key]
 
     languages = {
@@ -289,14 +342,53 @@ def run_measurement(ref: str = BASELINE_REF, backend: str = "default") -> dict[s
             **counts,
             "verbatim_rate": _rate(counts["verbatim"], counts["fragments"]),
             "byte_span_exact_rate": _rate(counts["byte_span_exact"], counts["fragments"]),
+            "source_digest_valid_rate": _rate(
+                counts["source_digest_valid"], counts["fragments"]
+            ),
+            "fragment_digest_valid_rate": _rate(
+                counts["fragment_digest_valid"], counts["fragments"]
+            ),
         }
         for name, counts in sorted(per_language.items())
     }
 
+    headline_eligible = bool(
+        backend == "default"
+        and totals["fragments"] > 0
+        and totals["backend_error"] == 0
+        and totals["byte_span_exact"] == totals["fragments"]
+        and totals["source_digest_valid"] == totals["fragments"]
+        and totals["fragment_digest_valid"] == totals["fragments"]
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "baseline_ref": ref,
         "backend": backend,
+        "headline_eligible": headline_eligible,
+        "measurement_type": "deterministic_exhaustive",
+        "claim_scope": (
+            "Exact UTF-8 source-span addressing and independently recomputable "
+            "SHA-256 metadata for every fragment produced from the pinned corpus."
+        ),
+        "sample_size": {
+            "files": totals["files"],
+            "fragments": totals["fragments"],
+        },
+        "reproduction_command": (
+            "python -m benchmarks.receipt_fragment_fidelity verify "
+            f"benchmarks/results/receipt_fragment_fidelity_{backend}.json"
+        ),
+        "benchmark_module": "benchmarks/receipt_fragment_fidelity.py",
+        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "implementation": {
+            "commit": _git("rev-parse", "HEAD"),
+            "backend": backend,
+        },
+        "limitations": [
+            "This measures fragment fidelity and digest recomputability, not retrieval recall.",
+            "It does not measure generated-answer correctness, latency, or provider cost.",
+            "The corpus is one pinned revision of the Entroly repository.",
+        ],
         "environment": {
             # The corpus comes from the pinned ref, so the checkout state cannot
             # affect the result; recorded only to describe where it was run.
@@ -316,6 +408,12 @@ def run_measurement(ref: str = BASELINE_REF, backend: str = "default") -> dict[s
             **totals,
             "verbatim_rate": _rate(totals["verbatim"], totals["fragments"]),
             "byte_span_exact_rate": _rate(totals["byte_span_exact"], totals["fragments"]),
+            "source_digest_valid_rate": _rate(
+                totals["source_digest_valid"], totals["fragments"]
+            ),
+            "fragment_digest_valid_rate": _rate(
+                totals["fragment_digest_valid"], totals["fragments"]
+            ),
         },
         "languages": languages,
         "excluded": excluded,
@@ -340,7 +438,14 @@ def verify(artifact_path: Path) -> int:
     ref = stored.get("baseline_ref", "")
     backend = stored.get("backend", "default")
     failures: list[str] = []
-    recomputed = {"files": 0, "fragments": 0, "verbatim": 0, "byte_span_exact": 0}
+    metric_keys = (
+        "fragments",
+        "verbatim",
+        "byte_span_exact",
+        "source_digest_valid",
+        "fragment_digest_valid",
+    )
+    recomputed = {"files": 0, **dict.fromkeys(metric_keys, 0)}
 
     paths = [str(f["path"]) for f in stored["files"]]
     blobs = read_baseline_blobs(ref, paths)
@@ -357,12 +462,12 @@ def verify(artifact_path: Path) -> int:
 
         counts = measure_file(rel, raw, raw.decode("utf-8"), backend)
         recomputed["files"] += 1
-        for key in ("fragments", "verbatim", "byte_span_exact"):
+        for key in metric_keys:
             recomputed[key] += counts[key]
             if counts[key] != record[key]:
                 failures.append(f"{rel}: {key} recomputed {counts[key]} != stored {record[key]}")
 
-    for key in ("files", "fragments", "verbatim", "byte_span_exact"):
+    for key in ("files", *metric_keys):
         if recomputed[key] != stored["totals"][key]:
             failures.append(
                 f"totals.{key}: recomputed {recomputed[key]} != stored {stored['totals'][key]}"
@@ -385,6 +490,14 @@ def verify(artifact_path: Path) -> int:
         f"  byte-exact: {totals['byte_span_exact']}/{totals['fragments']} "
         f"({totals['byte_span_exact_rate']:.1%})"
     )
+    print(
+        f"  source sha: {totals['source_digest_valid']}/{totals['fragments']} "
+        f"({totals['source_digest_valid_rate']:.1%})"
+    )
+    print(
+        f"  span sha  : {totals['fragment_digest_valid']}/{totals['fragments']} "
+        f"({totals['fragment_digest_valid_rate']:.1%})"
+    )
     return 0
 
 
@@ -401,51 +514,89 @@ PROBE_BUDGET = 900
 def sdk_probe(ref: str = BASELINE_REF) -> dict[str, object]:
     """Exercise recovery through the public SDK exactly as a user would.
 
-    Checks three independent properties per recovered fragment:
-      * the returned text exists verbatim in the original file
-      * the receipt fingerprint equals sha256 of the returned text
-      * the receipt fingerprint equals sha256 of the original byte span
-
-    A receipt is only auditable if a third party can recompute at least one of
-    the last two from public data.
+    A reference verifier uses only ``hashlib``, source bytes, and public receipt
+    fields. It never imports Entroly's hashing helpers.
     """
     from entroly import sdk
 
     blobs = read_baseline_blobs(ref, PROBE_FILES)
     sources = {rel: blobs[rel].decode("utf-8") for rel in PROBE_FILES}
 
-    receipt = sdk.create_context_receipt(
-        list(sources.items()), query=PROBE_QUERY, budget=PROBE_BUDGET, recoverable=True
-    )
+    with tempfile.TemporaryDirectory(prefix="entroly-receipt-probe-") as store:
+        receipt = sdk.create_context_receipt(
+            list(sources.items()),
+            query=PROBE_QUERY,
+            budget=PROBE_BUDGET,
+            recoverable=True,
+            store_dir=store,
+        )
 
-    results = []
-    for entry in receipt["omitted_context"]:
-        chunk_id = entry["chunk_id"]
-        fingerprint = entry["fingerprint"]
-        for recovered in sdk.recover_receipt_omission(receipt, chunk_id):
-            if recovered["chunk_id"] != chunk_id:
-                continue
-            text = recovered["text"]
-            source = sources.get(recovered["source_path"], "")
-            digest = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+        results = []
+        for entry in receipt["omitted_context"]:
+            chunk_id = entry["chunk_id"]
+            for recovered in sdk.recover_receipt_omission(
+                receipt, chunk_id, store_dir=store
+            ):
+                if recovered["chunk_id"] != chunk_id:
+                    continue
+                text = recovered["text"]
+                source_bytes = blobs[recovered["source_path"]]
+                start = int(entry["byte_start"])
+                end = int(entry["byte_end"])
+                span = source_bytes[start:end]
+                expected_source = "sha256:" + hashlib.sha256(source_bytes).hexdigest()
+                expected_fragment = "sha256:" + hashlib.sha256(span).hexdigest()
 
-            offset = source.find(text[:60])
-            span = source[offset: offset + len(text)] if offset >= 0 else ""
-            span_digest = (
-                "sha256:" + hashlib.sha256(span.encode("utf-8")).hexdigest() if span else ""
-            )
-
-            results.append({
-                "chunk_id": chunk_id,
-                "verbatim_in_source": text in source,
-                "fingerprint_matches_recovered": digest == fingerprint,
-                "fingerprint_matches_original_span": span_digest == fingerprint,
-            })
+                results.append({
+                    "chunk_id": chunk_id,
+                    "source_path": recovered["source_path"],
+                    "byte_start": start,
+                    "byte_end": end,
+                    "source_digest_valid": entry["source_sha256"] == expected_source,
+                    "fragment_digest_valid": (
+                        entry["fragment_sha256"] == expected_fragment
+                    ),
+                    "recovered_bytes_match_source_span": (
+                        text.encode("utf-8") == span
+                    ),
+                    "recovery_verified_exact": (
+                        recovered["verified"] is True
+                        and recovered["verification_level"] == "exact_utf8_bytes"
+                    ),
+                })
 
     total = len(results)
+    all_exact = bool(
+        total
+        and all(
+            row["source_digest_valid"]
+            and row["fragment_digest_valid"]
+            and row["recovered_bytes_match_source_span"]
+            and row["recovery_verified_exact"]
+            for row in results
+        )
+    )
     return {
-        "schema_version": "receipt-sdk-probe.v2",
+        "schema_version": "receipt-sdk-probe.v3",
         "baseline_ref": ref,
+        "headline_eligible": all_exact,
+        "measurement_type": "deterministic_fixed_probe",
+        "claim_scope": (
+            "Exact recovery and independent source-span verification through "
+            "the public Python SDK on two pinned source files."
+        ),
+        "sample_size": {"files": len(PROBE_FILES), "recovered_fragments": total},
+        "reproduction_command": (
+            "python -m benchmarks.receipt_fragment_fidelity sdk-verify "
+            "benchmarks/results/receipt_public_integrity.json"
+        ),
+        "benchmark_module": "benchmarks/receipt_fragment_fidelity.py",
+        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "implementation": {"commit": _git("rev-parse", "HEAD")},
+        "limitations": [
+            "This is a fixed two-file SDK probe, not a generated-answer benchmark.",
+            "It tests the default installed backend; backend parity is tested separately.",
+        ],
         "environment": {
             "entroly_version": __import__("entroly").__version__,
             "python": platform.python_version(),
@@ -461,16 +612,70 @@ def sdk_probe(ref: str = BASELINE_REF) -> dict[str, object]:
         },
         "totals": {
             "recovered_fragments": total,
-            "verbatim_in_source": sum(r["verbatim_in_source"] for r in results),
-            "fingerprint_matches_recovered": sum(
-                r["fingerprint_matches_recovered"] for r in results
+            "source_digest_valid": sum(r["source_digest_valid"] for r in results),
+            "fragment_digest_valid": sum(
+                r["fragment_digest_valid"] for r in results
             ),
-            "fingerprint_matches_original_span": sum(
-                r["fingerprint_matches_original_span"] for r in results
+            "recovered_bytes_match_source_span": sum(
+                r["recovered_bytes_match_source_span"] for r in results
+            ),
+            "recovery_verified_exact": sum(
+                r["recovery_verified_exact"] for r in results
             ),
         },
         "fragments": results,
     }
+
+
+def verify_sdk_probe(artifact_path: Path) -> int:
+    """Re-run a public SDK probe and compare every proof-bearing field."""
+    if not artifact_checksum_matches(artifact_path):
+        print(f"FAIL: missing or mismatched checksum for {artifact_path}")
+        return 1
+    stored = json.loads(artifact_path.read_text(encoding="utf-8"))
+    if stored.get("schema_version") != "receipt-sdk-probe.v3":
+        print(
+            "FAIL: schema "
+            f"{stored.get('schema_version')} != receipt-sdk-probe.v3"
+        )
+        return 1
+
+    current = sdk_probe(str(stored.get("baseline_ref", "")))
+    checked_fields = (
+        "baseline_ref",
+        "headline_eligible",
+        "claim_scope",
+        "sample_size",
+        "inputs",
+        "totals",
+        "fragments",
+    )
+    failures = [
+        field for field in checked_fields if current.get(field) != stored.get(field)
+    ]
+    if failures:
+        print("SDK VERIFY FAILED: changed fields " + ", ".join(failures))
+        return 1
+    print("SDK VERIFY OK")
+    print(f"  files     : {stored['sample_size']['files']}")
+    print(f"  recovered : {stored['totals']['recovered_fragments']}")
+    print(
+        "  exact     : "
+        f"{stored['totals']['recovery_verified_exact']}/"
+        f"{stored['totals']['recovered_fragments']}"
+    )
+    return 0
+
+
+def write_artifact(path: Path, payload: dict[str, object]) -> None:
+    """Write canonical JSON plus a sidecar checksum for public evidence."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = (json.dumps(payload, indent=1, sort_keys=True) + "\n").encode("utf-8")
+    path.write_bytes(encoded)
+    digest = hashlib.sha256(encoded).hexdigest()
+    path.with_suffix(path.suffix + ".sha256").write_text(
+        f"{digest}  {path.name}\n", encoding="ascii"
+    )
 
 
 # ── reporting ────────────────────────────────────────────────────────────────
@@ -505,6 +710,11 @@ def render(report: dict[str, object]) -> str:
         f"{totals['verbatim']:9d} {totals['verbatim_rate']:8.1%} "
         f"{totals['byte_span_exact']:10d} {totals['byte_span_exact_rate']:8.1%}"
     )
+    lines.append(
+        "exact digest coverage: "
+        f"source {totals['source_digest_valid']}/{totals['fragments']}; "
+        f"fragment {totals['fragment_digest_valid']}/{totals['fragments']}"
+    )
     lines.append("")
     lines.append(f"excluded files: {len(report['excluded'])}")  # type: ignore[arg-type]
     return "\n".join(lines)
@@ -524,28 +734,34 @@ def main() -> int:
     )
     probe_cmd.add_argument("--out", type=Path, required=True)
     probe_cmd.add_argument("--ref", default=BASELINE_REF)
+    verify_probe_cmd = sub.add_parser(
+        "sdk-verify", help="re-run and verify a committed public SDK artifact"
+    )
+    verify_probe_cmd.add_argument("artifact", type=Path)
     args = parser.parse_args()
 
     if args.command == "verify":
         return verify(args.artifact)
 
+    if args.command == "sdk-verify":
+        return verify_sdk_probe(args.artifact)
+
     if args.command == "sdk-probe":
         probe = sdk_probe(args.ref)
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(probe, indent=1, sort_keys=True), encoding="utf-8")
+        write_artifact(args.out, probe)
         totals = probe["totals"]  # type: ignore[index]
         n = totals["recovered_fragments"]
         print(f"public SDK recovery probe @ baseline {str(probe['baseline_ref'])[:12]}")
         print(f"  recovered fragments                : {n}")
-        print(f"  verbatim in source                 : {totals['verbatim_in_source']}/{n}")
-        print(f"  fingerprint == sha256(recovered)   : {totals['fingerprint_matches_recovered']}/{n}")
-        print(f"  fingerprint == sha256(original)    : {totals['fingerprint_matches_original_span']}/{n}")
+        print(f"  source digest valid                : {totals['source_digest_valid']}/{n}")
+        print(f"  fragment digest valid              : {totals['fragment_digest_valid']}/{n}")
+        print(f"  recovered bytes == source span     : {totals['recovered_bytes_match_source_span']}/{n}")
+        print(f"  exact recovery verified            : {totals['recovery_verified_exact']}/{n}")
         print(f"\nwrote {args.out}")
         return 0
 
     report = run_measurement(args.ref, args.backend)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, indent=1, sort_keys=True), encoding="utf-8")
+    write_artifact(args.out, report)
     print(render(report))
     print(f"\nwrote {args.out}")
     return 0

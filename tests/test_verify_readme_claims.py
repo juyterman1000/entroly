@@ -5,8 +5,11 @@ on evidence that is honestly labelled — a gate that cries wolf gets disabled.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -80,6 +83,44 @@ def test_benchmark_module_for_returns_none_when_absent(tmp_path):
     assert gate.benchmark_module_for(tmp_path / "no_such_benchmark.json") is None
 
 
+def test_evidence_metadata_requires_pinned_reproducible_checks(tmp_path):
+    artifact = tmp_path / "benchmarks" / "results" / "demo.json"
+    benchmark = tmp_path / "benchmarks" / "demo.py"
+    artifact.parent.mkdir(parents=True)
+    benchmark.write_text("# deterministic benchmark\n", encoding="utf-8")
+    payload = {
+        "headline_eligible": True,
+        "claim_scope": "One deterministic fixture.",
+        "sample_size": {"cases": 1},
+        "reproduction_command": (
+            "python -m benchmarks.demo verify benchmarks/results/demo.json"
+        ),
+        "implementation": {"commit": "a" * 40},
+        "limitations": ["One fixture only."],
+        "benchmark_module": "benchmarks/demo.py",
+        "harness_sha256": hashlib.sha256(benchmark.read_bytes()).hexdigest(),
+    }
+    encoded = (json.dumps(payload) + "\n").encode()
+    artifact.write_bytes(encoded)
+    artifact.with_suffix(".json.sha256").write_text(
+        hashlib.sha256(encoded).hexdigest() + "  demo.json\n",
+        encoding="ascii",
+    )
+
+    original_root = gate.REPO_ROOT
+    gate.REPO_ROOT = tmp_path
+    try:
+        assert gate.evidence_metadata_failures(
+            "benchmarks/results/demo.json", artifact, payload
+        ) == []
+        artifact.write_text('{"tampered": true}\n', encoding="utf-8")
+        assert "missing or mismatched .sha256 sidecar" in gate.evidence_metadata_failures(
+            "benchmarks/results/demo.json", artifact, payload
+        )
+    finally:
+        gate.REPO_ROOT = original_root
+
+
 # ── the real repository ──────────────────────────────────────────────────────
 
 
@@ -110,12 +151,14 @@ def test_headline_ineligible_artifact_is_still_flagged_when_unlabelled(tmp_path)
         gate.REPO_ROOT = original_root
 
 
-def test_gate_fails_on_the_current_readme_for_a_documented_reason():
-    """The neural-evidence headline is unreachable from shipped entry points.
+def test_gate_passes_on_the_current_readme():
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        cwd=SCRIPT.parent.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-    Documented in docs/investigations/P0-readme-headline-claim-audit.md. When
-    that is remediated this test should be updated to assert the gate passes.
-    """
-    assert gate.main.__doc__ is None or True  # main() is argparse-driven
-    unreachable = gate.unreachable_modules()
-    assert "entroly.neural_evidence_selector" in unreachable
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "README claim gate OK" in completed.stdout

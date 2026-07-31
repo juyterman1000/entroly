@@ -1,10 +1,41 @@
 # P0 — Context Receipt fragments are not byte-faithful to their source
 
-**Status:** open — diagnosis only, no product code changed by this commit
+**Status:** fixed and independently remeasured in `a02819d`; the original
+baseline diagnosis is retained below
 **Class:** product defect, compounded by a test defect
 **Baseline measured:** `1ecf1e093348068539f9e1463826209c966ed535` (entroly 1.0.69, pinned)
 **Environment:** CPython 3.10.0, Windows-10-10.0.26200-SP0 — recorded for provenance only; the corpus is read from the pinned ref, so the result does not depend on the checkout or platform
 **Surfaces affected:** SDK, MCP server, proxy, CLI, context-commits, receipt attestation/merkle/witness/disclosure
+
+## Remediation and release gate
+
+The repair stopped rebuilding chunks from stripped/rejoined text and now
+addresses exact UTF-8 source spans. Public selected and omitted receipt rows
+carry `source_sha256`, `byte_start`, `byte_end`, and `fragment_sha256`. Recovery
+schema v2 checks the receipt-owned exact-byte digest and labels old normalized
+fingerprints as `legacy_normalized_text`; it no longer gives them the stronger
+exact-byte description.
+
+The fixed implementation was measured on the same pinned corpus:
+
+| Shipped path | Files | Fragments | Verbatim | Byte range | Source SHA | Fragment SHA |
+|---|---:|---:|---:|---:|---:|---:|
+| Default installed/native | 1,104 | 5,117 | 5,117 | 5,117 | 5,117 | 5,117 |
+| Pure-Python fallback | 1,104 | 11,986 | 11,986 | 11,986 | 11,986 | 11,986 |
+
+The different fragment counts reflect backend chunk granularity, not exclusions;
+both use the same 1,104-file manifest. A separate public-SDK probe recovered
+13/13 omitted fragments from two pinned files, and every returned byte string
+matched both its recorded source span and receipt-owned digest.
+
+- [Default-path artifact](../../benchmarks/results/receipt_fragment_fidelity_default.json)
+- [Pure-Python artifact](../../benchmarks/results/receipt_fragment_fidelity_python.json)
+- [Public SDK recovery artifact](../../benchmarks/results/receipt_public_integrity.json)
+
+Each cited artifact records its claim scope, denominator, pinned input ref,
+implementation commit, benchmark-harness SHA-256, limitations, exclusions, and
+a checked `.sha256` sidecar. `scripts/verify_readme_claims.py` prevents a
+prominent README citation when that metadata or checksum is absent.
 
 > **The corpus is pinned to a git ref, and why that matters.** An earlier
 > version of this benchmark measured the *working tree*, taking "every tracked

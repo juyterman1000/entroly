@@ -24,8 +24,8 @@ Entroly uses budgeted context selection, content-addressed evidence, exact recov
 
 <!-- Reproducible evidence: every badge links to the exact committed artifact. -->
 <p align="center">
-  <a href="benchmarks/results/context_commit_conformance.json"><img src="https://img.shields.io/badge/Context_Commits-128%2F128_replayed_+_768%2F768_tamper_detected-0A7B83" alt="Context Commit conformance evidence"></a>
-  <a href="benchmarks/results/halueval_qa_faithful.json"><img src="https://img.shields.io/badge/WITNESS-HaluEval--QA_0.7976_AUROC-blueviolet" alt="WITNESS HaluEval-QA evidence"></a>
+  <a href="benchmarks/results/receipt_fragment_fidelity_default.json"><img src="https://img.shields.io/badge/Source_spans-5%2C117%2F5%2C117_verified-0A7B83" alt="5,117 of 5,117 native source fragments independently verified"></a>
+  <a href="benchmarks/results/receipt_public_integrity.json"><img src="https://img.shields.io/badge/SDK_recovery-13%2F13_exact-blueviolet" alt="13 of 13 public SDK recovery probes exactly matched their source spans"></a>
   <a href="docs/product-surface.md"><img src="https://img.shields.io/badge/Runtimes-Python_%7C_optional_Rust_%7C_WASM-orange?logo=rust" alt="Python, optional Rust, and WASM runtimes"></a>
   <a href="#proof"><img src="https://img.shields.io/badge/Token_savings-measure_your_workload-brightgreen" alt="Measure token savings on your workload"></a>
 </p>
@@ -90,34 +90,34 @@ pricing source and date.
 
 ---
 
-## One measured job of the Context OS
+## One thing you can verify without trusting Entroly
 
-<p align="center">
-  <a href="docs/benchmarks/neural-evidence-frontier.md"><img src="docs/assets/neural_evidence_frontier.svg" width="900" alt="Entroly selected 1.02 of 16 candidate passages on average while keeping the answer-bearing passage in 298 of 300 held-out retrieval questions"></a>
-</p>
+Context reduction is dangerous when a tool silently changes source text. An
+Entroly Context Receipt records the exact source-file SHA-256, UTF-8 byte range,
+and fragment SHA-256 for both selected and omitted source fragments. A receipt
+holder can recompute those values with `hashlib`; verification does not call
+Entroly's hash implementation.
 
-Entroly is much more than a compressor: it also ships memory, recovery,
-verification, provider controls, security, receipts, and guarded outcome
-learning. This frozen benchmark isolates one job in that system: choosing the
-answer-bearing evidence before a model request.
+On a pinned, unsampled corpus of **1,104 files in 13 languages**, the installed
+native path produced **5,117 / 5,117** fragments whose text, source range,
+source digest, and fragment digest all verified. The pure-Python fallback
+independently passed **11,986 / 11,986** fragments. Through the public SDK,
+**13 / 13** omitted fragments recovered from two pinned source files matched
+their recorded source bytes and exact receipt-owned digest.
 
-In this frozen retrieval test, Entroly selected **1.02 of 16 passages** on
-average while keeping the answer-bearing passage in **298 of 300** held-out
-questions. This demonstrates one Context OS primitive: selecting a small
-evidence set without blindly discarding the passage needed to answer.
-
-Under the hood, traditional BM25 found the passage in **297 of 300** questions
-and a local transformer found it in **293 of 300**. They disagreed six times;
-the guard kept both candidates only on those cases. The point difference was not
-statistically conclusive (`p=0.21875`), and this experiment measures retrieval,
-not generated answers, token savings, or production cost.
+These are deterministic source-integrity checks, not generated-answer accuracy,
+retrieval recall, latency, or provider savings. The full artifacts contain the
+denominators, per-file hashes, exclusions, implementation commit, harness hash,
+limitations, and checksum sidecars.
 
 ```bash
-python -m benchmarks.neural_evidence_frontier verify benchmarks/results/neural_evidence_frontier.json
+python -m benchmarks.receipt_fragment_fidelity verify benchmarks/results/receipt_fragment_fidelity_default.json
+python -m benchmarks.receipt_fragment_fidelity sdk-verify benchmarks/results/receipt_public_integrity.json
 ```
 
-[Audit every trial in under a minute](docs/benchmarks/neural-evidence-frontier.md)
-· [inspect the raw artifact](benchmarks/results/neural_evidence_frontier.json)
+[Inspect the exhaustive artifact](benchmarks/results/receipt_fragment_fidelity_default.json)
+· [inspect the public-SDK probe](benchmarks/results/receipt_public_integrity.json)
+· [see the capability-to-proof map](docs/capability-coverage.json)
 · [submit a counterexample](https://github.com/juyterman1000/entroly/issues/new?template=evidence_report.yml)
 
 ---
@@ -139,7 +139,7 @@ Entroly is a local Context OS for AI agents. It unifies the full lifecycle of th
 
 Most compression tools shrink whatever text the agent already chose. Entroly starts one step earlier: it chooses the highest-value evidence first, compresses only after selection, keeps originals recoverable, then verifies the answer against the evidence.
 
-- **Receipts** - every selection run can explain selected chunks, omitted nearby evidence, dependency links, fingerprints, token ratio, and residual risks.
+- **Receipts** - every selection run can explain selected chunks, omitted nearby evidence, dependency links, exact source-span digests, token ratio, and residual risks.
 - **Select** - ranks your repo or document set, then sends the answer-relevant context under a token budget.
 - **Verify** - WITNESS can check an answer against supplied evidence locally, without an additional model call. See the scoped benchmark under [Proof](#proof).
 - **Route** - sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
@@ -660,14 +660,16 @@ different future question was revealed, exact receipt-backed rehydration raised
 its evidence retention from 9.0% to 90.5%. Active plus recovered context was
 50.6% of the original.
 
+[Retrieval protocol and limits](docs/benchmarks/neural-evidence-frontier.md) ·
 [Research design and prior art](docs/research/prism-r-neural-compression.md) ·
 [held-out retrieval artifact](benchmarks/results/neural_evidence_frontier.json) ·
 [query-shift artifact](benchmarks/results/neural_query_shift.json).
 
 <sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets. They
 do not measure generated answers and are not downstream answer-quality, latency,
-production-savings, or general neural superiority claims. PRISM-R is an opt-in research prototype,
-is not the default compressor, and remains opt-in research code.</sub>
+production-savings, or general neural superiority claims. PRISM-R is an opt-in
+research prototype, is not reachable from a shipped entry point, is not the
+default compressor, and remains opt-in research code.</sub>
 
 The tables below link each reported number to its committed result. Treat them
 as evidence for those specific datasets, budgets, models, and commits—not as a

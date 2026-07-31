@@ -30,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import re
@@ -73,8 +74,14 @@ def unreachable_modules() -> set[str]:
     return set(graph.analyse(REPO_ROOT / "entroly")["unreachable"])
 
 
-def benchmark_module_for(artifact: Path) -> Path | None:
+def benchmark_module_for(
+    artifact: Path, payload: dict[str, object] | None = None
+) -> Path | None:
     """Map results/<name>.json back to benchmarks/<name>.py."""
+    declared = (payload or {}).get("benchmark_module")
+    if isinstance(declared, str) and declared:
+        candidate = REPO_ROOT / declared
+        return candidate if candidate.is_file() else None
     candidate = REPO_ROOT / "benchmarks" / f"{artifact.stem}.py"
     return candidate if candidate.exists() else None
 
@@ -106,6 +113,67 @@ def has_nearby_label(readme_lines: list[str], line_number: int) -> bool:
     return any(marker in window for marker in EXPERIMENTAL_MARKERS)
 
 
+def checksum_matches(artifact: Path) -> bool:
+    checksum_path = artifact.with_suffix(artifact.suffix + ".sha256")
+    if not checksum_path.is_file():
+        return False
+    fields = checksum_path.read_text(encoding="ascii", errors="replace").split()
+    if not fields or not re.fullmatch(r"[0-9a-f]{64}", fields[0]):
+        return False
+    canonical = artifact.read_bytes().replace(b"\r\n", b"\n")
+    return fields[0] == hashlib.sha256(canonical).hexdigest()
+
+
+def evidence_metadata_failures(
+    relative: str, artifact: Path, payload: dict[str, object]
+) -> list[str]:
+    """Validate the minimum provenance needed for a prominent public result."""
+    failures: list[str] = []
+    if not isinstance(payload.get("headline_eligible"), bool):
+        failures.append("missing boolean headline_eligible")
+    if not isinstance(payload.get("claim_scope"), str) or not payload["claim_scope"].strip():
+        failures.append("missing claim_scope")
+
+    sample_size = payload.get("sample_size")
+    if not isinstance(sample_size, dict) or not any(
+        isinstance(value, int) and not isinstance(value, bool) and value > 0
+        for value in sample_size.values()
+    ):
+        failures.append("missing positive sample_size denominator")
+
+    command = payload.get("reproduction_command")
+    if not isinstance(command, str) or relative not in command:
+        failures.append("reproduction_command does not name the cited artifact")
+
+    implementation = payload.get("implementation")
+    commit = implementation.get("commit") if isinstance(implementation, dict) else None
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        failures.append("implementation.commit is not a pinned 40-character SHA")
+
+    limitations = payload.get("limitations")
+    if not isinstance(limitations, list) or not limitations or not all(
+        isinstance(item, str) and item.strip() for item in limitations
+    ):
+        failures.append("missing non-empty limitations")
+
+    benchmark_module = payload.get("benchmark_module")
+    if not isinstance(benchmark_module, str) or not (
+        REPO_ROOT / benchmark_module
+    ).is_file():
+        failures.append("benchmark_module is missing or does not exist")
+    else:
+        expected_harness = payload.get("harness_sha256")
+        actual_harness = hashlib.sha256(
+            (REPO_ROOT / benchmark_module).read_bytes()
+        ).hexdigest()
+        if expected_harness != actual_harness:
+            failures.append("harness_sha256 does not match benchmark_module")
+
+    if not checksum_matches(artifact):
+        failures.append("missing or mismatched .sha256 sidecar")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--readme", type=Path, default=REPO_ROOT / "README.md")
@@ -128,10 +196,23 @@ def main() -> int:
             continue
 
         try:
-            payload = json.loads(artifact.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+            payload = json.loads(
+                artifact.read_text(encoding="utf-8"),
+                parse_constant=lambda value: (_ for _ in ()).throw(
+                    ValueError(f"non-finite JSON constant {value}")
+                ),
+            )
+        except (json.JSONDecodeError, ValueError) as exc:
             failures.append(f"{relative} is not valid JSON: {exc}")
             continue
+        if not isinstance(payload, dict):
+            failures.append(f"{relative} must contain a JSON object")
+            continue
+
+        for problem in evidence_metadata_failures(relative, artifact, payload):
+            failures.append(
+                f"{args.readme.name}:{line_number} cites {relative}: {problem}."
+            )
 
         # Gate 1 — the artifact's own statistical verdict.
         if payload.get("headline_eligible") is False and not has_nearby_label(
@@ -145,7 +226,7 @@ def main() -> int:
             )
 
         # Gate 2 — does the cited benchmark describe shipped code?
-        benchmark = benchmark_module_for(artifact)
+        benchmark = benchmark_module_for(artifact, payload)
         if benchmark is None:
             continue
         stranded = sorted(modules_measured_by(benchmark) & unreachable)
