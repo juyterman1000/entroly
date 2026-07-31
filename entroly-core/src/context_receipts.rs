@@ -14,6 +14,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 const SCHEMA_VERSION: &str = "context-receipt.v1";
+const EXACT_CLOSED_SET_ROOT_LIMIT: usize = 14;
+const SCORE_EPSILON: f64 = 1e-9;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DocumentRecord {
@@ -187,6 +189,23 @@ struct Block {
     end: usize,
     heading: Option<String>,
     page: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct SelectionPlan {
+    selected_ids: Vec<String>,
+    selected_root_ids: Vec<String>,
+    token_count: usize,
+    objective_score: f64,
+    optimizer: &'static str,
+    exact: bool,
+}
+
+struct SelectionTables<'maps, 'chunks> {
+    chunks: &'maps HashMap<String, &'chunks DocumentChunk>,
+    token_sets: &'maps HashMap<String, HashSet<String>>,
+    closure_cache: &'maps HashMap<String, (Vec<String>, Vec<String>)>,
+    positive_scores: &'maps HashMap<String, f64>,
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -918,6 +937,327 @@ fn dependency_closure(
     (ordered, warnings)
 }
 
+fn selection_plan_is_better(candidate: &SelectionPlan, incumbent: &SelectionPlan) -> bool {
+    if candidate.objective_score > incumbent.objective_score + SCORE_EPSILON {
+        return true;
+    }
+    if incumbent.objective_score > candidate.objective_score + SCORE_EPSILON {
+        return false;
+    }
+    if candidate.token_count != incumbent.token_count {
+        return candidate.token_count < incumbent.token_count;
+    }
+    candidate.selected_root_ids < incumbent.selected_root_ids
+}
+
+fn materialize_selection_plan(
+    root_ids: &HashSet<String>,
+    positive_roots: &[&RankedChunk],
+    tables: &SelectionTables<'_, '_>,
+    token_budget: usize,
+    optimizer: &'static str,
+    exact: bool,
+) -> Option<SelectionPlan> {
+    let chunks = tables.chunks;
+    let token_sets = tables.token_sets;
+    let closure_cache = tables.closure_cache;
+    let positive_scores = tables.positive_scores;
+    let mut selected_ids = Vec::<String>::new();
+    let mut selected_set = HashSet::<String>::new();
+    let mut selected_root_ids = Vec::<String>::new();
+    let mut selected_tokens = 0usize;
+
+    for rank in positive_roots {
+        if !root_ids.contains(&rank.chunk_id) {
+            continue;
+        }
+        if !selected_set.contains(&rank.chunk_id)
+            && is_redundant(&rank.chunk_id, &selected_ids, token_sets)
+        {
+            return None;
+        }
+        let bundle_ids = &closure_cache
+            .get(&rank.chunk_id)
+            .expect("positive root closure is cached")
+            .0;
+        let new_ids = bundle_ids
+            .iter()
+            .filter(|chunk_id| !selected_set.contains(*chunk_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let new_tokens = new_ids
+            .iter()
+            .map(|chunk_id| {
+                chunks
+                    .get(chunk_id)
+                    .expect("dependency closure only contains known chunks")
+                    .token_count
+            })
+            .sum::<usize>();
+        if selected_tokens.saturating_add(new_tokens) > token_budget {
+            return None;
+        }
+        selected_root_ids.push(rank.chunk_id.clone());
+        for chunk_id in new_ids {
+            selected_tokens += chunks
+                .get(&chunk_id)
+                .expect("dependency closure only contains known chunks")
+                .token_count;
+            selected_set.insert(chunk_id.clone());
+            selected_ids.push(chunk_id);
+        }
+    }
+
+    let objective_score = round6(
+        selected_ids
+            .iter()
+            .map(|chunk_id| positive_scores.get(chunk_id).copied().unwrap_or(0.0))
+            .sum(),
+    );
+    Some(SelectionPlan {
+        selected_ids,
+        selected_root_ids,
+        token_count: selected_tokens,
+        objective_score,
+        optimizer,
+        exact,
+    })
+}
+
+fn rank_order_selection_plan(
+    positive_roots: &[&RankedChunk],
+    chunks: &HashMap<String, &DocumentChunk>,
+    token_sets: &HashMap<String, HashSet<String>>,
+    closure_cache: &HashMap<String, (Vec<String>, Vec<String>)>,
+    positive_scores: &HashMap<String, f64>,
+    token_budget: usize,
+) -> SelectionPlan {
+    let mut selected_ids = Vec::<String>::new();
+    let mut selected_set = HashSet::<String>::new();
+    let mut selected_roots = HashSet::<String>::new();
+    let mut selected_tokens = 0usize;
+    for rank in positive_roots {
+        if selected_set.contains(&rank.chunk_id) {
+            selected_roots.insert(rank.chunk_id.clone());
+            continue;
+        }
+        if is_redundant(&rank.chunk_id, &selected_ids, token_sets) {
+            continue;
+        }
+        let bundle_ids = &closure_cache
+            .get(&rank.chunk_id)
+            .expect("positive root closure is cached")
+            .0;
+        let new_ids = bundle_ids
+            .iter()
+            .filter(|chunk_id| !selected_set.contains(*chunk_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let new_tokens = new_ids
+            .iter()
+            .map(|chunk_id| {
+                chunks
+                    .get(chunk_id)
+                    .expect("dependency closure only contains known chunks")
+                    .token_count
+            })
+            .sum::<usize>();
+        if selected_tokens.saturating_add(new_tokens) > token_budget {
+            continue;
+        }
+        selected_roots.insert(rank.chunk_id.clone());
+        for chunk_id in new_ids {
+            selected_tokens += chunks
+                .get(&chunk_id)
+                .expect("dependency closure only contains known chunks")
+                .token_count;
+            selected_set.insert(chunk_id.clone());
+            selected_ids.push(chunk_id);
+        }
+    }
+    let tables = SelectionTables {
+        chunks,
+        token_sets,
+        closure_cache,
+        positive_scores,
+    };
+    materialize_selection_plan(
+        &selected_roots,
+        positive_roots,
+        &tables,
+        token_budget,
+        "rank_order_atomic_greedy",
+        false,
+    )
+    .expect("rank-order greedy plan must remain feasible")
+}
+
+fn marginal_density_selection_plan(
+    positive_roots: &[&RankedChunk],
+    chunks: &HashMap<String, &DocumentChunk>,
+    token_sets: &HashMap<String, HashSet<String>>,
+    closure_cache: &HashMap<String, (Vec<String>, Vec<String>)>,
+    positive_scores: &HashMap<String, f64>,
+    token_budget: usize,
+) -> SelectionPlan {
+    let mut selected_ids = Vec::<String>::new();
+    let mut selected_set = HashSet::<String>::new();
+    let mut selected_roots = HashSet::<String>::new();
+    let mut selected_tokens = 0usize;
+    let mut remaining = (0..positive_roots.len()).collect::<Vec<_>>();
+
+    while !remaining.is_empty() {
+        let mut best: Option<(usize, usize, f64, f64, String)> = None;
+        for (remaining_position, root_position) in remaining.iter().copied().enumerate() {
+            let rank = positive_roots[root_position];
+            if !selected_set.contains(&rank.chunk_id)
+                && is_redundant(&rank.chunk_id, &selected_ids, token_sets)
+            {
+                continue;
+            }
+            let bundle_ids = &closure_cache
+                .get(&rank.chunk_id)
+                .expect("positive root closure is cached")
+                .0;
+            let new_ids = bundle_ids
+                .iter()
+                .filter(|chunk_id| !selected_set.contains(*chunk_id))
+                .collect::<Vec<_>>();
+            let new_tokens = new_ids
+                .iter()
+                .map(|chunk_id| {
+                    chunks
+                        .get(*chunk_id)
+                        .expect("dependency closure only contains known chunks")
+                        .token_count
+                })
+                .sum::<usize>();
+            if selected_tokens.saturating_add(new_tokens) > token_budget {
+                continue;
+            }
+            let marginal_score = new_ids
+                .iter()
+                .map(|chunk_id| positive_scores.get(*chunk_id).copied().unwrap_or(0.0))
+                .sum::<f64>();
+            let density = if new_tokens > 0 {
+                marginal_score / new_tokens as f64
+            } else if marginal_score > 0.0 {
+                f64::INFINITY
+            } else {
+                0.0
+            };
+            let candidate = (
+                remaining_position,
+                root_position,
+                density,
+                marginal_score,
+                rank.chunk_id.clone(),
+            );
+            let replace = best.as_ref().is_none_or(|incumbent| {
+                density > incumbent.2 + SCORE_EPSILON
+                    || ((density - incumbent.2).abs() <= SCORE_EPSILON
+                        && (marginal_score > incumbent.3 + SCORE_EPSILON
+                            || ((marginal_score - incumbent.3).abs() <= SCORE_EPSILON
+                                && (root_position < incumbent.1
+                                    || (root_position == incumbent.1
+                                        && rank.chunk_id < incumbent.4)))))
+            });
+            if replace {
+                best = Some(candidate);
+            }
+        }
+
+        let Some((remaining_position, root_position, _, _, _)) = best else {
+            break;
+        };
+        remaining.remove(remaining_position);
+        let rank = positive_roots[root_position];
+        if selected_set.contains(&rank.chunk_id) {
+            selected_roots.insert(rank.chunk_id.clone());
+            continue;
+        }
+        let bundle_ids = &closure_cache
+            .get(&rank.chunk_id)
+            .expect("positive root closure is cached")
+            .0;
+        let new_ids = bundle_ids
+            .iter()
+            .filter(|chunk_id| !selected_set.contains(*chunk_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        selected_roots.insert(rank.chunk_id.clone());
+        for chunk_id in new_ids {
+            selected_tokens += chunks
+                .get(&chunk_id)
+                .expect("dependency closure only contains known chunks")
+                .token_count;
+            selected_set.insert(chunk_id.clone());
+            selected_ids.push(chunk_id);
+        }
+    }
+
+    let tables = SelectionTables {
+        chunks,
+        token_sets,
+        closure_cache,
+        positive_scores,
+    };
+    materialize_selection_plan(
+        &selected_roots,
+        positive_roots,
+        &tables,
+        token_budget,
+        "marginal_density_atomic_greedy",
+        false,
+    )
+    .expect("marginal-density greedy plan must remain feasible")
+}
+
+fn fractional_relaxed_upper_bound(
+    chunks: &HashMap<String, &DocumentChunk>,
+    positive_roots: &[&RankedChunk],
+    token_budget: usize,
+) -> f64 {
+    let mut total = 0.0;
+    let mut candidates = Vec::<(f64, f64, String, usize)>::new();
+    for rank in positive_roots {
+        let Some(chunk) = chunks.get(&rank.chunk_id) else {
+            continue;
+        };
+        let score = round6(rank.final_score.max(0.0));
+        if score <= 0.0 {
+            continue;
+        }
+        if chunk.token_count == 0 {
+            total += score;
+        } else {
+            candidates.push((
+                score / chunk.token_count as f64,
+                score,
+                rank.chunk_id.clone(),
+                chunk.token_count,
+            ));
+        }
+    }
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .total_cmp(&left.0)
+            .then_with(|| right.1.total_cmp(&left.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    let mut remaining = token_budget;
+    for (_, score, _, cost) in candidates {
+        if remaining == 0 {
+            break;
+        }
+        let used = remaining.min(cost);
+        total += score * used as f64 / cost as f64;
+        remaining -= used;
+    }
+    round6(total)
+}
+
 fn select_context(
     index: &ContextIndex,
     ranked: &[RankedChunk],
@@ -927,6 +1267,7 @@ fn select_context(
     Vec<SelectedContextItem>,
     Vec<OmittedContextItem>,
     Vec<String>,
+    Value,
 ) {
     let chunks: HashMap<String, &DocumentChunk> = index
         .chunks
@@ -947,57 +1288,134 @@ fn select_context(
         .iter()
         .map(|c| (c.chunk_id.clone(), tokenize(&c.text).into_iter().collect()))
         .collect();
+    let positive_roots = ranked
+        .iter()
+        .filter(|rank| rank.final_score > 0.0 && chunks.contains_key(&rank.chunk_id))
+        .collect::<Vec<_>>();
+    let positive_scores = positive_roots
+        .iter()
+        .map(|rank| (rank.chunk_id.clone(), round6(rank.final_score.max(0.0))))
+        .collect::<HashMap<_, _>>();
+    let closure_cache = index
+        .chunks
+        .iter()
+        .map(|chunk| {
+            (
+                chunk.chunk_id.clone(),
+                dependency_closure(&chunk.chunk_id, &chunks, &deps_by_source),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let rank_plan = rank_order_selection_plan(
+        &positive_roots,
+        &chunks,
+        &token_sets,
+        &closure_cache,
+        &positive_scores,
+        token_budget,
+    );
+    let selection_tables = SelectionTables {
+        chunks: &chunks,
+        token_sets: &token_sets,
+        closure_cache: &closure_cache,
+        positive_scores: &positive_scores,
+    };
+    let plan = if positive_roots.len() <= EXACT_CLOSED_SET_ROOT_LIMIT {
+        let mut best = SelectionPlan {
+            selected_ids: Vec::new(),
+            selected_root_ids: Vec::new(),
+            token_count: 0,
+            objective_score: 0.0,
+            optimizer: "exact_dependency_closed_enumeration",
+            exact: true,
+        };
+        let limit = 1usize << positive_roots.len();
+        for mask in 1..limit {
+            let root_ids = positive_roots
+                .iter()
+                .enumerate()
+                .filter(|(position, _)| mask & (1usize << position) != 0)
+                .map(|(_, rank)| rank.chunk_id.clone())
+                .collect::<HashSet<_>>();
+            if let Some(candidate) = materialize_selection_plan(
+                &root_ids,
+                &positive_roots,
+                &selection_tables,
+                token_budget,
+                "exact_dependency_closed_enumeration",
+                true,
+            ) {
+                if selection_plan_is_better(&candidate, &best) {
+                    best = candidate;
+                }
+            }
+        }
+        best
+    } else {
+        let density_plan = marginal_density_selection_plan(
+            &positive_roots,
+            &chunks,
+            &token_sets,
+            &closure_cache,
+            &positive_scores,
+            token_budget,
+        );
+        let selected = if selection_plan_is_better(&density_plan, &rank_plan) {
+            density_plan
+        } else {
+            rank_plan.clone()
+        };
+        SelectionPlan {
+            selected_ids: selected.selected_ids,
+            selected_root_ids: selected.selected_root_ids,
+            token_count: selected.token_count,
+            objective_score: selected.objective_score,
+            optimizer: "best_of_rank_and_marginal_density",
+            exact: false,
+        }
+    };
 
-    let mut selected_ids = Vec::<String>::new();
-    let mut selected_set = HashSet::<String>::new();
-    let mut selected_tokens = 0usize;
+    let selected_ids = plan.selected_ids.clone();
+    let selected_set = selected_ids.iter().cloned().collect::<HashSet<_>>();
+    let selected_tokens = plan.token_count;
     let mut warnings = Vec::<String>::new();
-
-    for rank in ranked {
-        if rank.final_score <= 0.0 {
+    for root_id in &plan.selected_root_ids {
+        warnings.extend(
+            closure_cache
+                .get(root_id)
+                .expect("selected root closure is cached")
+                .1
+                .clone(),
+        );
+    }
+    for rank in &positive_roots {
+        if selected_set.contains(&rank.chunk_id) {
             continue;
         }
-        if !chunks.contains_key(&rank.chunk_id) {
-            continue;
-        }
-        if is_redundant(&rank.chunk_id, &selected_ids, &token_sets) {
-            continue;
-        }
-
-        let (bundle_ids, bundle_warnings) =
-            dependency_closure(&rank.chunk_id, &chunks, &deps_by_source);
-        let new_bundle_ids = bundle_ids
+        let bundle_ids = &closure_cache
+            .get(&rank.chunk_id)
+            .expect("positive root closure is cached")
+            .0;
+        let missing_tokens = bundle_ids
             .iter()
             .filter(|chunk_id| !selected_set.contains(*chunk_id))
-            .cloned()
-            .collect::<Vec<_>>();
-        let bundle_tokens = new_bundle_ids
-            .iter()
-            .filter_map(|chunk_id| chunks.get(chunk_id))
-            .map(|chunk| chunk.token_count)
+            .map(|chunk_id| {
+                chunks
+                    .get(chunk_id)
+                    .expect("dependency closure only contains known chunks")
+                    .token_count
+            })
             .sum::<usize>();
-        let remaining_tokens = token_budget.saturating_sub(selected_tokens);
-        if bundle_tokens > remaining_tokens {
-            let dependency_count = bundle_ids.len().saturating_sub(1);
-            if dependency_count > 0 {
-                warnings.push(format!(
-                    "Dependency bundle omitted atomically due to budget: {} requires {} token(s) \
-                     including {} resolved dependency chunk(s), {} remain.",
-                    rank.chunk_id, bundle_tokens, dependency_count, remaining_tokens
-                ));
-            }
-            continue;
+        if bundle_ids.len() > 1 && selected_tokens.saturating_add(missing_tokens) > token_budget {
+            warnings.push(format!(
+                "Dependency bundle omitted atomically due to budget: {} requires {} token(s) \
+                 including {} resolved dependency chunk(s), {} remain.",
+                rank.chunk_id,
+                missing_tokens,
+                bundle_ids.len().saturating_sub(1),
+                token_budget.saturating_sub(selected_tokens)
+            ));
         }
-
-        for chunk_id in new_bundle_ids {
-            let chunk = chunks
-                .get(&chunk_id)
-                .expect("dependency closure only contains known chunks");
-            selected_set.insert(chunk_id.clone());
-            selected_ids.push(chunk_id);
-            selected_tokens += chunk.token_count;
-        }
-        warnings.extend(bundle_warnings);
     }
 
     let mut selected = Vec::new();
@@ -1126,9 +1544,165 @@ fn select_context(
             unresolved
         ));
     }
+
+    let remaining_budget = token_budget.saturating_sub(selected_tokens);
+    let mut recovery_frontier = Vec::<(bool, f64, f64, usize, String, Value)>::new();
+    for rank in &positive_roots {
+        if selected_set.contains(&rank.chunk_id) {
+            continue;
+        }
+        let bundle_ids = &closure_cache
+            .get(&rank.chunk_id)
+            .expect("positive root closure is cached")
+            .0;
+        let missing_ids = bundle_ids
+            .iter()
+            .filter(|chunk_id| !selected_set.contains(*chunk_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let missing_tokens = missing_ids
+            .iter()
+            .map(|chunk_id| {
+                chunks
+                    .get(chunk_id)
+                    .expect("dependency closure only contains known chunks")
+                    .token_count
+            })
+            .sum::<usize>();
+        let marginal_score = round6(
+            missing_ids
+                .iter()
+                .map(|chunk_id| positive_scores.get(chunk_id).copied().unwrap_or(0.0))
+                .sum(),
+        );
+        let density = if missing_tokens > 0 {
+            marginal_score / missing_tokens as f64
+        } else if marginal_score > 0.0 {
+            f64::INFINITY
+        } else {
+            0.0
+        };
+        let digest_bound = bundle_ids.iter().all(|chunk_id| {
+            let chunk = chunks
+                .get(chunk_id)
+                .expect("dependency closure only contains known chunks");
+            !chunk.fragment_sha256.is_empty() && !chunk.source_sha256.is_empty()
+        });
+        let bundle_payload = serde_json::json!({
+            "chunk_ids": bundle_ids,
+            "missing_chunk_ids": &missing_ids,
+            "root_chunk_id": rank.chunk_id,
+        });
+        let bundle_sha256 =
+            stable_hash(&bundle_payload).expect("selection bundle payload is serializable");
+        let value = serde_json::json!({
+            "root_chunk_id": rank.chunk_id,
+            "chunk_ids": bundle_ids,
+            "missing_chunk_ids": missing_ids,
+            "missing_tokens": missing_tokens,
+            "marginal_score": marginal_score,
+            "marginal_density": if density.is_infinite() {
+                Value::String("infinite".to_string())
+            } else {
+                serde_json::json!(round6(density))
+            },
+            "fits_remaining_budget": missing_tokens <= remaining_budget,
+            "source_spans_digest_bound": digest_bound,
+            "bundle_sha256": bundle_sha256,
+        });
+        recovery_frontier.push((
+            density.is_infinite(),
+            density,
+            marginal_score,
+            missing_tokens,
+            rank.chunk_id.clone(),
+            value,
+        ));
+    }
+    recovery_frontier.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.total_cmp(&left.1))
+            .then_with(|| right.2.total_cmp(&left.2))
+            .then_with(|| left.3.cmp(&right.3))
+            .then_with(|| left.4.cmp(&right.4))
+    });
+    let recovery_values = recovery_frontier
+        .into_iter()
+        .take(8)
+        .map(|item| item.5)
+        .collect::<Vec<_>>();
+
+    let closure_satisfied = selected_ids.iter().all(|chunk_id| {
+        closure_cache
+            .get(chunk_id)
+            .expect("selected chunk closure is cached")
+            .0
+            .iter()
+            .all(|dependency_id| selected_set.contains(dependency_id))
+    });
+    let selected_spans_digest_bound = selected_ids.iter().all(|chunk_id| {
+        let chunk = chunks
+            .get(chunk_id)
+            .expect("selected chunk exists in the index");
+        !chunk.fragment_sha256.is_empty() && !chunk.source_sha256.is_empty()
+    });
+    let relaxed_upper_bound =
+        fractional_relaxed_upper_bound(&chunks, &positive_roots, token_budget);
+    let certified_upper_bound = if plan.exact {
+        plan.objective_score
+    } else {
+        relaxed_upper_bound
+    };
+    let mut certificate = serde_json::json!({
+        "schema": "entroly.selection-certificate.v1",
+        "optimizer": plan.optimizer,
+        "optimality": if plan.exact {
+            "exact_for_internal_relevance_objective"
+        } else {
+            "heuristic_with_relaxed_upper_bound"
+        },
+        "objective": {
+            "name": "sum_positive_final_score",
+            "scope": "retrieval score only; not answer quality",
+            "constraints": [
+                "hard_token_budget",
+                "transitive_resolved_dependency_closure",
+                "redundant_root_exclusion",
+            ],
+            "positive_candidate_roots": positive_roots.len(),
+            "exact_root_limit": EXACT_CLOSED_SET_ROOT_LIMIT,
+            "selected_score": plan.objective_score,
+            "rank_order_control_score": rank_plan.objective_score,
+            "no_regression_vs_rank_order": plan.objective_score + SCORE_EPSILON >= rank_plan.objective_score,
+            "certified_upper_bound_score": certified_upper_bound,
+            "relaxed_fractional_upper_bound_score": relaxed_upper_bound,
+            "certified_regret_upper_bound": round6(
+                (certified_upper_bound - plan.objective_score).max(0.0)
+            ),
+        },
+        "feasibility": {
+            "hard_budget_satisfied": selected_tokens <= token_budget,
+            "resolved_dependency_closure_satisfied": closure_satisfied,
+            "selected_tokens": selected_tokens,
+            "token_budget": token_budget,
+            "selected_source_spans_digest_bound": !selected_ids.is_empty() && selected_spans_digest_bound,
+        },
+        "recovery_frontier": recovery_values,
+    });
+    let certificate_hash =
+        stable_hash(&certificate).expect("selection certificate is serializable");
+    certificate
+        .as_object_mut()
+        .expect("selection certificate is an object")
+        .insert(
+            "certificate_sha256".to_string(),
+            Value::String(certificate_hash),
+        );
     warnings.sort();
     warnings.dedup();
-    (selected, omitted, warnings)
+    (selected, omitted, warnings, certificate)
 }
 
 fn compression_ratio(
@@ -1185,6 +1759,7 @@ fn risk_summary(
     omitted_relevant: usize,
     deps: &[DependencyLink],
     warnings: &[String],
+    selection_certificate: &Value,
 ) -> Value {
     let total_chunks = index.chunks.len();
     let source_tokens = index
@@ -1229,8 +1804,11 @@ fn risk_summary(
         "unresolved_dependency_count": unresolved,
         "missing_dependency_warning_count": missing_dependency_warnings,
         "dependency_bundle_omission_count": dependency_bundle_omissions,
+        "selection_certificate": selection_certificate,
         "controls": {
             "selection_contract": "atomic_transitive_dependency_closure",
+            "selection_optimizer": selection_certificate["optimizer"],
+            "selection_optimality": selection_certificate["optimality"],
             "dependency_closure": if unresolved == 0 && missing_dependency_warnings == 0 { "complete" } else { "partial" },
             "dependency_bundle_fit": if dependency_bundle_omissions > 0 { "omitted_due_to_budget" } else { "complete" },
             "omitted_evidence_pressure": if omission_pressure > 0.4 { "high" } else if omission_pressure > 0.15 { "medium" } else { "low" },
@@ -1255,7 +1833,8 @@ pub fn build_receipt(
 ) -> Result<ContextReceipt, serde_json::Error> {
     let ranked = rank_chunks(index, query);
     let deps = detect_dependencies(index);
-    let (selected, omitted, mut warnings) = select_context(index, &ranked, &deps, token_budget);
+    let (selected, omitted, mut warnings, selection_certificate) =
+        select_context(index, &ranked, &deps, token_budget);
     let source_tokens = index.chunks.iter().map(|c| c.token_count).sum::<usize>();
     let selected_tokens = selected.iter().map(|c| c.token_count).sum::<usize>();
     let relevant_omitted = omitted.iter().filter(|o| o.score > 0.0).count();
@@ -1321,6 +1900,7 @@ pub fn build_receipt(
         relevant_omitted,
         &deps,
         &warnings,
+        &selection_certificate,
     );
     let hash_payload = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
@@ -1402,6 +1982,39 @@ pub fn markdown_report(receipt: &ContextReceipt) -> String {
             receipt.risk_summary["controls"]["selection_contract"]
                 .as_str()
                 .unwrap_or("unknown")
+        ),
+        format!(
+            "- Selection optimizer: {}",
+            receipt.risk_summary["controls"]["selection_optimizer"]
+                .as_str()
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "- Selection optimality: {}",
+            receipt.risk_summary["controls"]["selection_optimality"]
+                .as_str()
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "- Internal relevance score: {:.6}",
+            receipt.risk_summary["selection_certificate"]["objective"]["selected_score"]
+                .as_f64()
+                .unwrap_or(0.0)
+        ),
+        format!(
+            "- Certified relevance regret bound: {:.6}",
+            receipt.risk_summary["selection_certificate"]["objective"]
+                ["certified_regret_upper_bound"]
+                .as_f64()
+                .unwrap_or(0.0)
+        ),
+        format!(
+            "- Best omitted recovery bundle: {}",
+            receipt.risk_summary["selection_certificate"]["recovery_frontier"]
+                .as_array()
+                .and_then(|items| items.first())
+                .and_then(|item| item["root_chunk_id"].as_str())
+                .unwrap_or("none")
         ),
         format!(
             "- Dependency bundles omitted: {}",
@@ -1817,7 +2430,8 @@ mod tests {
             selection_dependency("middle", "leaf"),
         ];
 
-        let (selected, omitted, warnings) = select_context(&index, &ranked, &dependencies, 10);
+        let (selected, omitted, warnings, certificate) =
+            select_context(&index, &ranked, &dependencies, 10);
 
         assert_eq!(
             selected
@@ -1848,5 +2462,75 @@ mod tests {
                 .all(|dependency| selected_ids.contains(dependency)));
             assert!(item.dependencies_missing.is_empty());
         }
+        assert_eq!(
+            certificate["optimality"],
+            "exact_for_internal_relevance_objective"
+        );
+        assert_eq!(
+            certificate["feasibility"]["resolved_dependency_closure_satisfied"],
+            true
+        );
+    }
+
+    #[test]
+    fn bounded_exact_selection_beats_rank_order_with_a_zero_regret_certificate() {
+        let index = ContextIndex {
+            schema_version: SCHEMA_VERSION.to_string(),
+            documents: Vec::new(),
+            chunks: vec![
+                selection_chunk("expensive", 6),
+                selection_chunk("banana", 5),
+                selection_chunk("carrot", 5),
+            ],
+            chunk_token_limit: 20,
+            chunk_overlap: 0,
+            source_fingerprints: BTreeMap::new(),
+        };
+        let ranked = vec![
+            RankedChunk {
+                chunk_id: "expensive".to_string(),
+                lexical_score: 9.0,
+                semantic_score: 0.0,
+                rerank_score: 0.0,
+                final_score: 9.0,
+                reasons: vec!["highest rank".to_string()],
+            },
+            RankedChunk {
+                chunk_id: "banana".to_string(),
+                lexical_score: 8.0,
+                semantic_score: 0.0,
+                rerank_score: 0.0,
+                final_score: 8.0,
+                reasons: vec!["compact".to_string()],
+            },
+            RankedChunk {
+                chunk_id: "carrot".to_string(),
+                lexical_score: 8.0,
+                semantic_score: 0.0,
+                rerank_score: 0.0,
+                final_score: 8.0,
+                reasons: vec!["compact".to_string()],
+            },
+        ];
+
+        let (selected, _, _, certificate) = select_context(&index, &ranked, &[], 10);
+
+        assert_eq!(
+            selected
+                .iter()
+                .map(|item| item.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["banana", "carrot"]
+        );
+        assert_eq!(
+            certificate["optimizer"],
+            "exact_dependency_closed_enumeration"
+        );
+        assert_eq!(certificate["objective"]["selected_score"], 16.0);
+        assert_eq!(certificate["objective"]["rank_order_control_score"], 9.0);
+        assert_eq!(
+            certificate["objective"]["certified_regret_upper_bound"],
+            0.0
+        );
     }
 }

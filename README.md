@@ -654,10 +654,10 @@ superiority.</sub>
 generic MiniLM encoder did **not** beat BM25 as a primary paragraph scorer
 (97.7% versus 99.0% held-out evidence recall; paired exact McNemar
 `p=0.21875`), so Entroly rejects that neural-primary claim. A disagreement
-guard kept the answer-bearing passage in 298 of 300 cases while selecting 1.02
-of 16 passages on average. This experiment measures retrieval of the paragraph
-containing a known answer; it does not measure generated-answer quality. In a
-separate
+guard kept the answer-bearing passage in 298 of 300 cases while selecting an
+average of 1.02 of 16 passages. This experiment measures retrieval of the
+paragraph containing a known answer; it does not measure generated-answer
+quality. In a separate
 200-pair query-shift pilot at a nominal 25% active budget, PRISM-R retained
 87.0% of current-query evidence versus lexical selection's 60.5%; when a
 different future question was revealed, exact receipt-backed rehydration raised

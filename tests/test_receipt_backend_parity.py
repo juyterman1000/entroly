@@ -17,6 +17,7 @@ import subprocess
 import pytest
 
 from entroly.context_receipts import ingest_documents as ingest_dispatch
+from entroly.context_receipts import select_from_index
 from entroly.context_receipts.ingest import ingest_documents as ingest_python
 
 BASELINE_REF = "1ecf1e093348068539f9e1463826209c966ed535"
@@ -164,3 +165,32 @@ def test_real_files_agree_on_boundaries_across_backends(path):
     python_ranges = [(c["byte_start"], c["byte_end"]) for c in _python_chunks(path, text)]
     default_ranges = [(c["byte_start"], c["byte_end"]) for c in _dispatch_chunks(path, text)]
     assert python_ranges == default_ranges, f"{path}: backends disagree on boundaries"
+
+
+@requires_native
+def test_selection_certificate_is_identical_across_backends():
+    documents = [
+        ("alpha.md", "alpha evidence\n"),
+        ("banana.md", "banana evidence\n"),
+        ("carrot.md", "carrot evidence\n"),
+    ]
+    index = ingest_dispatch(documents, chunk_tokens=20, prefer_rust=False)
+
+    python_receipt = select_from_index(
+        index, query="evidence", token_budget=10, prefer_rust=False
+    )
+    rust_receipt = select_from_index(
+        index, query="evidence", token_budget=10, prefer_rust=True
+    )
+
+    python_certificate = python_receipt["risk_summary"]["selection_certificate"]
+    rust_certificate = rust_receipt["risk_summary"]["selection_certificate"]
+    assert python_certificate == rust_certificate
+    assert python_certificate["optimizer"] == "exact_dependency_closed_enumeration"
+    assert (
+        python_certificate["optimality"]
+        == "exact_for_internal_relevance_objective"
+    )
+    assert (
+        python_certificate["objective"]["certified_regret_upper_bound"] == 0.0
+    )

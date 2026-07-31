@@ -76,6 +76,32 @@ The Context Receipt selector now:
   complete;
 - applies the same contract in the Python and Rust backends.
 
+Atomic closure is necessary but not sufficient: taking bundles in pure rank
+order can waste a hard budget. Entroly therefore solves the dependency-closed
+selection problem exactly when there are at most 14 positive candidate roots.
+It enumerates every admissible root set, materializes each transitive closure,
+and chooses the highest sum of positive internal retrieval scores, breaking
+ties by fewer tokens and then deterministically.
+
+Larger frontiers use a deterministic best-of policy: rank-order atomic packing
+and dynamic marginal-score-per-token packing are both evaluated, and the
+higher-scoring feasible plan wins. The fallback cannot score below the old
+rank-order policy on the declared objective. It also reports an optimistic
+fractional-knapsack upper bound, yielding a conservative regret ceiling rather
+than a false optimality claim.
+
+Every receipt carries `entroly.selection-certificate.v1`, which binds:
+
+- the optimizer and exact-versus-heuristic status;
+- the internal score, rank-order control score, and certified regret bound;
+- hard-budget and resolved-dependency-closure checks;
+- whether selected source spans carry recomputable source and fragment digests;
+- a ranked recovery frontier for omitted bundles, including missing tokens,
+  marginal score, stable bundle hash, and whether the bundle now fits.
+
+The certificate optimizes a retrieval score only. It is not a proof that the
+model used the evidence correctly or produced a correct answer.
+
 The Rust receipt preview was also changed from byte slicing to Unicode-safe
 character truncation, preventing a non-ASCII preview from panicking.
 
@@ -103,6 +129,14 @@ partial closures and zero hard-budget violations. See the
 and its adjacent SHA-256 sidecar. These numbers establish only the declared
 integrity invariant.
 
+`benchmarks/closed_set_selection_frontier.py` adds an independent brute-force
+oracle for the declared internal objective. It compares the production selector
+with Entroly's former rank-order atomic policy across the same graph, token-cost,
+and budget matrix. Its verifier rejects any rank-order regression, missed exact
+optimum, partial dependency closure, budget violation, or invalid certificate
+hash. The benchmark remains synthetic and cannot support an answer-quality or
+competitor claim.
+
 ## Prior-art boundary
 
 The individual ingredients are not presented as first-of-their-kind:
@@ -117,6 +151,9 @@ The individual ingredients are not presented as first-of-their-kind:
   prompt-caching behavior on agentic workloads.
 - [Cache-Aware Prompt Compression](https://arxiv.org/abs/2607.15516) studies
   the cost crossover between caching and query-aware compression.
+- Precedence-constrained knapsack and maximum-weight closed-set optimization
+  are established combinatorial problems. Entroly does not claim to have
+  invented the underlying exact search problem.
 
 The research question is therefore not “did Entroly invent graphs, recovery,
 or caching?” It is:

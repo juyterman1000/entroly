@@ -31,6 +31,7 @@ from entroly.context_receipts.models import (
     DependencyLink,
     DocumentChunk,
     RankedChunk,
+    stable_hash,
 )
 from entroly.context_receipts.selection import select_context
 from entroly.context_receipts.receipts import attach_novelty_frontier, build_receipt
@@ -166,6 +167,91 @@ def test_selector_omits_whole_candidate_when_dependency_closure_does_not_fit():
     for item in selection.selected:
         assert set(item.dependencies_included) <= selected_ids
         assert item.dependencies_missing == []
+
+
+def test_bounded_exact_selector_beats_rank_order_and_certifies_optimality():
+    chunks = [
+        _selection_chunk("expensive", 6),
+        _selection_chunk("banana", 5),
+        _selection_chunk("carrot", 5),
+    ]
+    index = ContextIndex(
+        schema_version="context-receipt.v1",
+        documents=[],
+        chunks=chunks,
+        chunk_token_limit=20,
+        chunk_overlap=0,
+        source_fingerprints={},
+    )
+    ranked = [
+        RankedChunk("expensive", 9.0, 0.0, 0.0, 9.0, ["highest rank"]),
+        RankedChunk("banana", 8.0, 0.0, 0.0, 8.0, ["compact"]),
+        RankedChunk("carrot", 8.0, 0.0, 0.0, 8.0, ["compact"]),
+    ]
+
+    selection = select_context(index, ranked, [], token_budget=10)
+
+    assert [item.chunk_id for item in selection.selected] == [
+        "banana",
+        "carrot",
+    ]
+    certificate = selection.certificate
+    assert certificate["optimizer"] == "exact_dependency_closed_enumeration"
+    assert certificate["optimality"] == "exact_for_internal_relevance_objective"
+    assert certificate["objective"]["selected_score"] == 16.0
+    assert certificate["objective"]["rank_order_control_score"] == 9.0
+    assert certificate["objective"]["certified_regret_upper_bound"] == 0.0
+    assert certificate["objective"]["no_regression_vs_rank_order"] is True
+    assert certificate["feasibility"]["hard_budget_satisfied"] is True
+    assert (
+        certificate["feasibility"]["resolved_dependency_closure_satisfied"] is True
+    )
+    certificate_payload = {
+        key: value for key, value in certificate.items() if key != "certificate_sha256"
+    }
+    assert certificate["certificate_sha256"] == stable_hash(certificate_payload)
+
+
+def test_large_frontier_uses_best_of_safe_heuristics_without_rank_regression():
+    chunks = [
+        _selection_chunk("expensive", 6),
+        _selection_chunk("banana", 5),
+        _selection_chunk("carrot", 5),
+        *[_selection_chunk(f"oversize-{i:02d}", 100) for i in range(12)],
+    ]
+    index = ContextIndex(
+        schema_version="context-receipt.v1",
+        documents=[],
+        chunks=chunks,
+        chunk_token_limit=120,
+        chunk_overlap=0,
+        source_fingerprints={},
+    )
+    ranked = [
+        RankedChunk("expensive", 9.0, 0.0, 0.0, 9.0, ["highest rank"]),
+        RankedChunk("banana", 8.0, 0.0, 0.0, 8.0, ["compact"]),
+        RankedChunk("carrot", 8.0, 0.0, 0.0, 8.0, ["compact"]),
+        *[
+            RankedChunk(
+                f"oversize-{i:02d}", 0.1, 0.0, 0.0, 0.1, ["oversize"]
+            )
+            for i in range(12)
+        ],
+    ]
+
+    selection = select_context(index, ranked, [], token_budget=10)
+
+    assert [item.chunk_id for item in selection.selected] == [
+        "banana",
+        "carrot",
+    ]
+    certificate = selection.certificate
+    assert certificate["optimizer"] == "best_of_rank_and_marginal_density"
+    assert certificate["optimality"] == "heuristic_with_relaxed_upper_bound"
+    assert certificate["objective"]["selected_score"] == 16.0
+    assert certificate["objective"]["rank_order_control_score"] == 9.0
+    assert certificate["objective"]["no_regression_vs_rank_order"] is True
+    assert certificate["objective"]["certified_regret_upper_bound"] >= 0.0
 
 
 def test_ingest_preserves_cross_document_metadata_and_fingerprints():

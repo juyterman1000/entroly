@@ -17,6 +17,9 @@ on:
       - benchmarks/results/dependency_closure_integrity.json
       - benchmarks/results/dependency_closure_integrity.json.sha256
       - benchmarks/dependency_closure_integrity.py
+      - benchmarks/results/closed_set_selection_frontier.json
+      - benchmarks/results/closed_set_selection_frontier.json.sha256
+      - benchmarks/closed_set_selection_frontier.py
       - docs/capability-coverage.json
       - docs/research/source-authenticated-closure-retrieval.md
       - docs/ai-cost-optimization.html
@@ -79,6 +82,7 @@ jobs:
           tests/test_verify_readme_claims.py
           tests/test_capability_coverage.py
           tests/test_dependency_closure_integrity_benchmark.py
+          tests/test_closed_set_selection_frontier_benchmark.py
           --junitxml=public-trust-tests.xml
       - name: Upload public trust diagnostics
         if: always()

@@ -125,6 +125,11 @@ visible in the artifact instead of hidden in marketing copy.
   outside the files Entroly saw.
 - Omitted-context warnings are conservative signals, not exhaustive proof of all
   missing evidence.
+- `selection_certificate` proves feasibility and, for bounded frontiers,
+  optimality only for Entroly's declared internal retrieval-score objective.
+  It does not prove evidence recall, answer correctness, or model utilization.
+  Larger frontiers carry a conservative relaxed regret bound rather than an
+  exact-optimality claim.
 - `risk_summary.coverage_score` and `review_level` are local heuristics derived
   from chunk coverage, token coverage, unresolved dependencies, and omitted
   relevant chunks. They are triage signals, not correctness probabilities.

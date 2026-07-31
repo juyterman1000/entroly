@@ -246,9 +246,10 @@ is load-bearing — prefer a function-local import over a new module-level one.
 ## Key Constraints
 
 - Rust changes require `maturin develop --release` before Python tests will pick them up.
-- Receipt fragments are **not** currently byte-faithful to source files; see
-  `docs/investigations/P0-receipt-chunk-fidelity.md` before relying on, testing,
-  or making claims about exact recovery.
+- Receipt fragments carry exact UTF-8 byte offsets plus recomputable source and
+  fragment SHA-256 digests. Preserve the cross-backend byte-fidelity contract
+  and run the receipt fidelity/selection regressions before documenting exact
+  recovery.
 - RAVS is fail-closed — always routes to Opus when uncertain; never sacrifice correctness for cost.
 - Vault beliefs are machine-auditable: every write must include `claim_id`, `entity`, `confidence`, and `sources`.
 - Token-negative learning contract: evolution daemon cannot spend more on skill synthesis than the projected savings budget.
