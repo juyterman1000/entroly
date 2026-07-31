@@ -95,6 +95,17 @@ LANGUAGES: dict[str, str] = {
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def portable_text_sha256(path: Path) -> str:
+    """Hash text identically in LF and CRLF working trees.
+
+    Git stores this Python harness with LF endings, but a Windows checkout may
+    materialize CRLF. Evidence metadata must attest to the harness content,
+    not the checkout policy of the machine that generated the artifact.
+    """
+    canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 # ── reading the pinned baseline ──────────────────────────────────────────────
 
 
@@ -379,7 +390,7 @@ def run_measurement(ref: str = BASELINE_REF, backend: str = "default") -> dict[s
             f"benchmarks/results/receipt_fragment_fidelity_{backend}.json"
         ),
         "benchmark_module": "benchmarks/receipt_fragment_fidelity.py",
-        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "harness_sha256": portable_text_sha256(Path(__file__)),
         "implementation": {
             "commit": _git("rev-parse", "HEAD"),
             "backend": backend,
@@ -591,7 +602,7 @@ def sdk_probe(ref: str = BASELINE_REF) -> dict[str, object]:
             "benchmarks/results/receipt_public_integrity.json"
         ),
         "benchmark_module": "benchmarks/receipt_fragment_fidelity.py",
-        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "harness_sha256": portable_text_sha256(Path(__file__)),
         "implementation": {"commit": _git("rev-parse", "HEAD")},
         "limitations": [
             "This is a fixed two-file SDK probe, not a generated-answer benchmark.",

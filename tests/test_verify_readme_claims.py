@@ -83,6 +83,14 @@ def test_benchmark_module_for_returns_none_when_absent(tmp_path):
     assert gate.benchmark_module_for(tmp_path / "no_such_benchmark.json") is None
 
 
+def test_portable_text_sha256_is_independent_of_checkout_newlines(tmp_path):
+    lf = tmp_path / "lf.py"
+    crlf = tmp_path / "crlf.py"
+    lf.write_bytes(b"first\nsecond\n")
+    crlf.write_bytes(b"first\r\nsecond\r\n")
+    assert gate.portable_text_sha256(lf) == gate.portable_text_sha256(crlf)
+
+
 def test_evidence_metadata_requires_pinned_reproducible_checks(tmp_path):
     artifact = tmp_path / "benchmarks" / "results" / "demo.json"
     benchmark = tmp_path / "benchmarks" / "demo.py"
@@ -98,7 +106,7 @@ def test_evidence_metadata_requires_pinned_reproducible_checks(tmp_path):
         "implementation": {"commit": "a" * 40},
         "limitations": ["One fixture only."],
         "benchmark_module": "benchmarks/demo.py",
-        "harness_sha256": hashlib.sha256(benchmark.read_bytes()).hexdigest(),
+        "harness_sha256": gate.portable_text_sha256(benchmark),
     }
     encoded = (json.dumps(payload) + "\n").encode()
     artifact.write_bytes(encoded)

@@ -86,6 +86,12 @@ def benchmark_module_for(
     return candidate if candidate.exists() else None
 
 
+def portable_text_sha256(path: Path) -> str:
+    """Hash a text harness independently of checkout newline policy."""
+    canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def modules_measured_by(benchmark: Path) -> set[str]:
     """Entroly modules a benchmark imports directly."""
     source = benchmark.read_text(encoding="utf-8", errors="replace")
@@ -163,9 +169,7 @@ def evidence_metadata_failures(
         failures.append("benchmark_module is missing or does not exist")
     else:
         expected_harness = payload.get("harness_sha256")
-        actual_harness = hashlib.sha256(
-            (REPO_ROOT / benchmark_module).read_bytes()
-        ).hexdigest()
+        actual_harness = portable_text_sha256(REPO_ROOT / benchmark_module)
         if expected_harness != actual_harness:
             failures.append("harness_sha256 does not match benchmark_module")
 
