@@ -417,6 +417,11 @@ def _entropy_relevance(block: CodeBlock) -> float:
     return min(entropy / 6.5, 1.0)
 
 
+def _split_camel(name: str) -> str:
+    """Insert separators at camelCase and PascalCase boundaries."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+
+
 def score_relevance(block: CodeBlock, query: str) -> float:
     """Compute composite relevance score for a block.
 
@@ -438,8 +443,35 @@ def score_relevance(block: CodeBlock, query: str) -> float:
     name_bonus = 0.0
     if block.name.lower() in q_lower:
         name_bonus = 1.0
-    elif any(w in block.name.lower() for w in q_lower.split()):
-        name_bonus = 0.5
+    else:
+        # Identifier-aware match. Requiring the whole underscored symbol as a
+        # literal substring means a query can name a function in prose and
+        # still miss it: "chunk oversized source files into parts" never
+        # contains "chunk_oversized_source", so the block that answers the
+        # question scored 0.5 while unrelated blocks reached FULL. Measured on
+        # entroly/auto_index.py, that is exactly what happened.
+        #
+        # Splitting the symbol the way the retrieval tokenizer already splits
+        # identifiers lets the two meet: {chunk, oversized, source} is fully
+        # contained in the query's words, so this is a complete name match, not
+        # a partial one. Scored by the fraction matched so a symbol sharing one
+        # common word does not get the same credit as one fully named.
+        name_parts = {
+            part
+            for part in re.split(r"[^a-z0-9]+", _split_camel(block.name).lower())
+            if len(part) > 2
+        }
+        q_words = {w.strip(".,()[]{}:;\"'") for w in q_lower.split()}
+        if name_parts:
+            matched = len(name_parts & q_words) / len(name_parts)
+            if matched >= 1.0:
+                name_bonus = 1.0
+            elif matched > 0.0:
+                name_bonus = max(0.5, matched)
+        if name_bonus == 0.0 and any(
+            w in block.name.lower() for w in q_lower.split()
+        ):
+            name_bonus = 0.5
 
     # Entropy density
     entropy = _entropy_relevance(block)

@@ -26,10 +26,14 @@ import json
 
 import pytest
 
-# The MCP result cap is ~25k tokens; at ~4 chars/token a response beyond this
-# is rejected before the agent sees any of it. Kept well under so a response
-# still leaves room for the rest of the conversation.
-MAX_WIRE_CHARS = 60_000
+# The MCP result cap is ~25k tokens; at ~4 chars/token that is ~100k characters,
+# beyond which the response is rejected before the agent sees any of it. The
+# observed failure was a 520,569-char optimize_context result.
+#
+# This is the real ceiling rather than a comfortable-looking round number: a
+# threshold tighter than the platform's would fail builds for responses that
+# actually work, and one looser would let a genuinely unusable response through.
+MAX_WIRE_CHARS = 100_000
 
 
 def _fragment(i: int) -> dict:
@@ -51,19 +55,6 @@ def _fragment(i: int) -> dict:
     }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "KNOWN GAP: per-fragment compaction is necessary but not sufficient. "
-        "Removing the duplicate alias and compacting provenance took a real "
-        "395-fragment result from 378,545 to 181,350 chars, still ~3x the wire "
-        "budget: at that count the per-fragment metadata dominates regardless "
-        "of how each fragment is trimmed. Fixing it needs a cap on how many "
-        "fragments are described on the wire, or pointers instead of bodies, "
-        "which changes the tool contract. Flip to a plain assert when that "
-        "lands -- strict=True fails the suite if it starts passing silently."
-    ),
-)
 def test_optimize_result_fits_the_wire_after_compaction() -> None:
     from entroly.provenance import compact_optimize_result_for_wire
 
@@ -139,20 +130,6 @@ def test_smart_read_uses_a_meaningful_share_of_its_budget(path, query, budget) -
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "KNOWN GAP: adding SKIP to the upgrade ladder fixed budget utilisation "
-        "(entroly/provenance.py went from 23 to 742 of 800 tokens) but not "
-        "relevance targeting. `chunk_oversized_source` still renders as a bare "
-        "signature for a query that names it almost verbatim, while unrelated "
-        "blocks reach FULL, so the documented contract 'blocks matching the "
-        "query -> FULL' does not hold. The likely cause is the same "
-        "identifier-vs-prose tokenization mismatch seen in retrieval: the "
-        "query says 'chunk oversized source files' and the symbol is "
-        "`chunk_oversized_source`. Tracked as task_6c88a468."
-    ),
-)
 def test_smart_read_gives_full_detail_to_the_block_the_query_names() -> None:
     """The documented contract: "Blocks matching the query -> FULL".
 

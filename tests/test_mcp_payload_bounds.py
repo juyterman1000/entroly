@@ -114,9 +114,26 @@ def test_dogfood_shape_shrinks_metadata_dominated_response(monkeypatch) -> None:
     after = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 
     assert before > after * 3
-    assert after < 200_000
+    # Measured, not assumed: `analyze_codebase_health` was rejected by the MCP
+    # result cap at 71,805 characters, so a 200,000-char response cannot reach
+    # an agent and "shrunk to under 200k" is not a passing state. The bound is
+    # tightened to something observed to work.
+    assert after < 90_000
     assert payload["tokens_used"] <= payload["token_budget"]
-    assert len(payload["selected_fragments"]) == 395
+    # Keeping all 395 fragments and fitting the wire are incompatible at this
+    # shape: 395 fragments drawn from 395 distinct sources with ~56 chars of
+    # content each spend more on per-fragment metadata than on content. The
+    # selection is truncated in priority order and the omission is reported,
+    # which is strictly better than the whole response being rejected.
+    returned = len(payload["selected_fragments"])
+    truncation = payload.get("selection_truncated")
+    if truncation:
+        assert returned + truncation["omitted"] == 395, (
+            "every fragment must be either returned or accounted for as omitted"
+        )
+        assert truncation["omitted_sources"], "omitted sources must be named"
+    else:
+        assert returned == 395
 
 
 def test_provenance_prefers_canonical_selected_fragments(monkeypatch) -> None:
