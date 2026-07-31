@@ -2580,6 +2580,7 @@ def _apply_recall_path_prior(
     )
 
 
+_WIRE_COMPACT_JSON_THRESHOLD = 20_000
 _HEALTH_WIRE_LIST_CAP = 10
 _HEALTH_WIRE_LISTS = (
     "clone_pairs",
@@ -3568,7 +3569,14 @@ def create_mcp_server(
         # only when every in-process consumer has finished.
         compact_optimize_result_for_wire(result)
 
-        return json.dumps(result, indent=2)
+        # Pretty-printing costs 17% of the payload in indentation that no agent
+        # reads. On a real 395-fragment result that is ~26,000 characters spent
+        # on whitespace. Compact separators for anything large; keep the
+        # readable form for small results a human might inspect by hand.
+        wire = json.dumps(result, indent=2)
+        if len(wire) > _WIRE_COMPACT_JSON_THRESHOLD:
+            wire = json.dumps(result, separators=(",", ":"))
+        return wire
 
     @mcp.tool()
     def entroly_retrieve(

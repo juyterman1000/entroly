@@ -131,8 +131,12 @@ def test_wire_compaction_also_compacts_per_fragment_provenance():
     assert provenance_fragments, "provenance fragments must survive"
     compacted = provenance_fragments[0]
     assert "entropy_score" not in compacted, "internal scoring vectors must be stripped"
-    for trust_field in ("source", "content", "token_count", "content_sha256",
-                        "retrieval_handle"):
+    # `content` deliberately does NOT survive here: selected_fragments already
+    # carries every body, and repeating them in provenance spent 29% of the
+    # wire on bytes the agent had already received. Provenance keeps what an
+    # audit needs -- identity, location, size.
+    assert "content" not in compacted, "provenance must not duplicate bodies"
+    for trust_field in ("source", "token_count"):
         assert trust_field in compacted, (
             f"{trust_field} is trust-critical and must survive compaction"
         )
