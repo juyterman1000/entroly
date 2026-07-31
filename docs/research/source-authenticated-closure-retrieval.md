@@ -165,6 +165,11 @@ The individual ingredients are not presented as first-of-their-kind:
   are established combinatorial problems. Entroly does not claim to have
   invented the underlying exact search problem.
 
+The broader [agent-memory literature map](agent-memory-literature-map-2026-07.md)
+also tracks graph memory, provenance-first systems, retrieval-risk benchmarks,
+workflow memory, and learned world models. It is a dated primary-source map, not
+a claim to have exhaustively read every publication.
+
 The research question is therefore not “did Entroly invent graphs, recovery,
 or caching?” It is:
 

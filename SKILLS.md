@@ -207,23 +207,24 @@ Claim discipline:
 
 **When:** bumping any version.
 
-15 surfaces must agree. `entroly/__init__.py` is the master. The pipeline is
-tag-driven by design — do not redesign it.
+The typed synchronizer governs 25 explicit release surfaces. `entroly/__init__.py`
+is the runtime master, and every governed Python, Rust, npm, MCP, OpenClaw, WASM,
+plugin, and release-test surface must converge before tagging.
 
 ```bash
-python scripts/bump_version.py <new-version>
-git grep -n "1\.0\.<old>" -- '*.toml' '*.json' '*.py' '*.md' | grep -v CHANGELOG
+python scripts/sync_release_version.py <new-version>
+python -m pytest -q tests/test_release_version_sync.py tests/test_release_surface.py
 ```
 
-Surfaces: `pyproject.toml`, `entroly/pyproject.toml`,
-`entroly-core/pyproject.toml`, `entroly-core/Cargo.toml`,
-`entroly-qccr/Cargo.toml`, `entroly-wasm/Cargo.toml`,
-`entroly-wasm/package.json`, `entroly/npm/package.json`,
-`entroly/npm-alias/package.json`, `entroly/__init__.py`,
-`entroly/native_status.py`, Homebrew formula URL + SHA-256, README/docs pins.
+The authoritative allowlist and typed transform for every surface live in
+`scripts/sync_release_version.py`; do not replace it with repository-wide text
+substitution. Historical release notes and workflow definitions are
+intentionally excluded.
 
 Homebrew is **post-publish**: verify the PyPI sdist URL and SHA-256 from the
-PyPI JSON API before touching the formula.
+PyPI JSON API before touching the formula. The synchronizer updates the
+Homebrew runbook but deliberately leaves the live formula pinned until that
+artifact exists.
 
 ---
 
