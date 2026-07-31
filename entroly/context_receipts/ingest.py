@@ -113,6 +113,22 @@ HEADING_RE = re.compile(
 )
 PAGE_RE = re.compile(r"\bpage\s+(\d+)\b", re.IGNORECASE)
 
+# Headings are a *document* concept. Applying HEADING_RE to source code is not a
+# near-miss: its first alternation is `#{1,6}\s+.+`, which matches an ordinary
+# Python, Ruby, shell, YAML or TOML comment, so every comment line was treated as
+# a section heading and forced a chunk boundary. Source files have no headings,
+# so no pattern is applied to them at all.
+HEADING_AWARE_EXTENSIONS = DOCUMENT_EXTENSIONS
+
+
+def _heading_pattern(source_path: str) -> re.Pattern[str] | None:
+    """Return the heading matcher for this document type, or None for source code."""
+    return (
+        HEADING_RE
+        if Path(source_path).suffix.lower() in HEADING_AWARE_EXTENSIONS
+        else None
+    )
+
 
 def _int_or_default(value: object, default: int) -> int:
     if isinstance(value, bool):
@@ -249,7 +265,9 @@ def read_documents_from_path(path: str | Path) -> list[tuple[str, str]]:
     return documents
 
 
-def _paragraph_blocks(text: str) -> list[dict[str, object]]:
+def _paragraph_blocks(
+    text: str, heading_pattern: re.Pattern[str] | None = HEADING_RE
+) -> list[dict[str, object]]:
     blocks: list[dict[str, object]] = []
     current: list[str] = []
     start: int | None = None
@@ -263,13 +281,22 @@ def _paragraph_blocks(text: str) -> list[dict[str, object]]:
             current = []
             start = None
             return
-        raw = "".join(current).strip()
-        if raw:
+        joined = "".join(current)
+        # Trim by *offset*, never by rebuilding the string: the block must stay
+        # addressable as text[block_start:block_end] so a byte range can recover
+        # it exactly. `.strip()` here used to discard the leading indentation of
+        # the first line while `start` still pointed before it, which both
+        # altered the text and skewed every offset derived from it.
+        lead = len(joined) - len(joined.lstrip())
+        trail = len(joined) - len(joined.rstrip())
+        block_start = start + lead
+        block_end = start + len(joined) - trail
+        if block_end > block_start:
             blocks.append(
                 {
-                    "text": raw,
-                    "start": start,
-                    "end": end,
+                    "text": text[block_start:block_end],
+                    "start": block_start,
+                    "end": block_end,
                     "heading": heading,
                     "page": page,
                 }
@@ -288,7 +315,7 @@ def _paragraph_blocks(text: str) -> list[dict[str, object]]:
         if "\f" in line:
             page = 1 if page is None else page + line.count("\f")
 
-        if stripped and HEADING_RE.match(stripped):
+        if stripped and heading_pattern is not None and heading_pattern.match(stripped):
             flush(line_start)
             heading = _clean_heading(stripped)
 
@@ -314,8 +341,8 @@ def _split_large_block(
     chunk_tokens: int,
     overlap_tokens: int,
 ) -> list[dict[str, object]]:
-    text = str(block["text"])
-    tokens = _token_spans(text)
+    block_text = str(block["text"])
+    tokens = _token_spans(block_text)
     if not tokens:
         return []
     chunks: list[dict[str, object]] = []
@@ -323,13 +350,17 @@ def _split_large_block(
     block_start = int(block["start"])
     for token_start in range(0, len(tokens), step):
         token_end = min(len(tokens), token_start + chunk_tokens)
-        start = tokens[token_start].start()
-        end = tokens[token_end - 1].end()
+        # Token offsets are relative to the block, and the block is now exactly
+        # source_text[block_start:block_end], so adding block_start yields a true
+        # source offset. Slice the source with it so the text and the range agree
+        # by construction rather than by coincidence.
+        start = block_start + tokens[token_start].start()
+        end = block_start + tokens[token_end - 1].end()
         chunks.append(
             {
-                "text": text[start:end],
-                "start": block_start + start,
-                "end": block_start + end,
+                "text": source_text[start:end],
+                "start": start,
+                "end": end,
                 "heading": block.get("heading"),
                 "page": block.get("page"),
             }
@@ -348,9 +379,9 @@ def _chunk_document(
     chunk_tokens: int,
     overlap_tokens: int,
 ) -> list[DocumentChunk]:
-    blocks = _paragraph_blocks(text)
+    blocks = _paragraph_blocks(text, _heading_pattern(source_path))
     chunks_raw: list[dict[str, object]] = []
-    pending: list[str] = []
+    pending = 0
     start: int | None = None
     end = 0
     heading: str | None = None
@@ -360,20 +391,24 @@ def _chunk_document(
     def flush() -> None:
         nonlocal pending, start, end, heading, page, token_count
         if not pending or start is None:
-            pending = []
+            pending = 0
             start = None
             token_count = 0
             return
         chunks_raw.append(
             {
-                "text": "\n\n".join(pending).strip(),
+                # Splice the original span rather than rejoining the blocks.
+                # `"\n\n".join(...)` inserted a blank line between blocks that
+                # were adjacent in the source, so the chunk contained bytes that
+                # existed nowhere in the file and could never be recovered.
+                "text": text[start:end],
                 "start": start,
                 "end": end,
                 "heading": heading,
                 "page": page,
             }
         )
-        pending = []
+        pending = 0
         start = None
         token_count = 0
 
@@ -398,7 +433,7 @@ def _chunk_document(
                 block.get("heading") if isinstance(block.get("heading"), str) else None
             )
             page = block.get("page") if isinstance(block.get("page"), int) else None
-        pending.append(str(block["text"]))
+        pending += 1
         end = int(block["end"])
         token_count += btokens
     flush()
