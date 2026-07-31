@@ -136,3 +136,51 @@ def test_wire_compaction_also_compacts_per_fragment_provenance():
         assert trust_field in compacted, (
             f"{trust_field} is trust-critical and must survive compaction"
         )
+
+
+def test_health_report_finding_lists_are_capped_for_the_wire():
+    """A health report is a diagnosis, not a data dump.
+
+    Dogfooding this repository, `analyze_codebase_health` returned 71,805
+    characters -- 83 clone pairs, 50 dead symbols, 40 god files, 23
+    architecture violations -- and overflowed the MCP result cap, so the agent
+    received an error instead of a health grade. The actionable part (grade,
+    score, summary, top_recommendation) is about 570 characters.
+
+    Full counts survive alongside the truncated lists so nothing is silently
+    hidden, and `entroly health` on the CLI still prints everything.
+    """
+    import json as _json
+
+    from entroly.server import _compact_health_report_for_wire
+
+    raw = _json.dumps({
+        "health_grade": "C",
+        "code_health_score": 79.2,
+        "summary": "s",
+        "top_recommendation": "r",
+        "clone_pairs": [{"source_a": f"a{i}.py", "source_b": f"b{i}.py"} for i in range(83)],
+        "dead_symbols": [{"symbol": f"s{i}"} for i in range(50)],
+    })
+
+    report = _json.loads(_compact_health_report_for_wire(raw))
+
+    assert report["health_grade"] == "C"
+    assert report["code_health_score"] == 79.2
+    assert report["summary"] and report["top_recommendation"]
+    assert len(report["clone_pairs"]) == 10
+    assert len(report["dead_symbols"]) == 10
+    assert report["truncated"]["total_counts"] == {"clone_pairs": 83, "dead_symbols": 50}, (
+        "the real totals must remain visible, not be silently dropped"
+    )
+
+
+def test_health_report_passthrough_when_nothing_to_truncate():
+    import json as _json
+
+    from entroly.server import _compact_health_report_for_wire
+
+    raw = _json.dumps({"health_grade": "A", "clone_pairs": [{"x": 1}]})
+    report = _json.loads(_compact_health_report_for_wire(raw))
+    assert "truncated" not in report, "must not claim truncation it did not perform"
+    assert len(report["clone_pairs"]) == 1

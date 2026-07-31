@@ -2580,6 +2580,53 @@ def _apply_recall_path_prior(
     )
 
 
+_HEALTH_WIRE_LIST_CAP = 10
+_HEALTH_WIRE_LISTS = (
+    "clone_pairs",
+    "dead_symbols",
+    "god_files",
+    "arch_violations",
+    "naming_issues",
+)
+
+
+def _compact_health_report_for_wire(raw: str) -> str:
+    """Cap the finding lists in a health report at the MCP boundary.
+
+    The report is a diagnosis, not a data dump: grade, score, summary and
+    top_recommendation are ~570 characters, while the five finding lists are
+    unbounded. Dogfooding this repository produced 71,805 characters -- 83
+    clone pairs, 50 dead symbols, 40 god files, 23 architecture violations --
+    which overflowed the MCP result cap, so the agent received an error
+    instead of a health grade.
+
+    Full counts are preserved alongside the truncated lists so nothing is
+    silently hidden: an agent can still see there are 83 clone pairs and ask
+    for the rest. `entroly health` on the CLI is unaffected and still prints
+    everything.
+    """
+    try:
+        report = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isinstance(report, dict):
+        return raw
+
+    truncated: dict[str, int] = {}
+    for key in _HEALTH_WIRE_LISTS:
+        items = report.get(key)
+        if isinstance(items, list) and len(items) > _HEALTH_WIRE_LIST_CAP:
+            truncated[key] = len(items)
+            report[key] = items[:_HEALTH_WIRE_LIST_CAP]
+    if truncated:
+        report["truncated"] = {
+            "reason": "MCP wire size; full lists available via `entroly health`",
+            "cap": _HEALTH_WIRE_LIST_CAP,
+            "total_counts": truncated,
+        }
+    return json.dumps(report, indent=2)
+
+
 def _empty_context_guidance(
     ingested_count: int, source_root: str
 ) -> dict[str, Any] | None:
@@ -4528,7 +4575,7 @@ def create_mcp_server(
             - summary (human-readable) and top_recommendation (most impactful action)
         """
         if engine._use_rust:
-            return engine._rust.analyze_health()
+            return _compact_health_report_for_wire(engine._rust.analyze_health())
         # Python fallback: basic clone detection only
         frags = list(engine._fragments.values())
         from .dedup import simhash as _simhash
