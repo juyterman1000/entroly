@@ -205,7 +205,7 @@ python scripts/codebase_graph.py --json g.json
 python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
 ```
 
-Measured on `entroly` at 1.0.69: **215 modules, 524 import edges, 112,737 lines.**
+Measured on `entroly` at 1.0.70: **215 modules, 524 import edges, 113,382 lines.**
 
 ### Entry points are narrower than they look
 

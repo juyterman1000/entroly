@@ -1,6 +1,6 @@
 {
   "name": "entroly-openclaw",
-  "version": "1.0.69",
+  "version": "1.0.70",
   "description": "Provider-independent, auditable context engineering for every OpenClaw model route",
   "type": "module",
   "license": "Apache-2.0",
