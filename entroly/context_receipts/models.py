@@ -91,6 +91,16 @@ def text_fingerprint(text: str) -> str:
     return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def byte_digest(text: str) -> str:
+    """SHA-256 of the exact UTF-8 bytes, with no normalization at all.
+
+    Distinct from :func:`text_fingerprint`, which folds CRLF to LF before
+    hashing and is therefore unable to attest that recovered bytes match the
+    file on disk. Recovery claims must use this.
+    """
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 @dataclass
 class DocumentRecord:
     document_id: str
@@ -131,6 +141,15 @@ class DocumentChunk:
     token_count: int
     fingerprint: str
     text: str
+    # Independently verifiable digests. `fingerprint` above is a composite over
+    # (document fingerprint, offsets, text) with newlines normalized, so a
+    # receipt holder cannot recompute it and it cannot attest to exact bytes.
+    # These can be recomputed by anyone holding the receipt and the source:
+    #     sha256(source_bytes)                      == source_sha256
+    #     sha256(source_bytes[byte_start:byte_end]) == fragment_sha256
+    # No normalization is applied, so CRLF and trailing newlines are preserved.
+    fragment_sha256: str = ""
+    source_sha256: str = ""
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | object) -> "DocumentChunk":
@@ -154,6 +173,8 @@ class DocumentChunk:
             token_count=_int_or_default(payload.get("token_count")),
             fingerprint=_str_or_default(payload.get("fingerprint")),
             text=_str_or_default(payload.get("text")),
+            fragment_sha256=_str_or_default(payload.get("fragment_sha256")),
+            source_sha256=_str_or_default(payload.get("source_sha256")),
         )
 
 

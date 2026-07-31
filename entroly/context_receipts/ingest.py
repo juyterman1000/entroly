@@ -12,6 +12,7 @@ from .models import (
     ContextIndex,
     DocumentChunk,
     DocumentRecord,
+    byte_digest,
     stable_hash,
     text_fingerprint,
 )
@@ -256,12 +257,15 @@ def read_documents_from_path(path: str | Path) -> list[tuple[str, str]]:
     documents: list[tuple[str, str]] = []
     for p in paths:
         source_path = p.as_posix()
+        # Read bytes and decode explicitly. Path.read_text() applies universal
+        # newline translation, so on a CRLF checkout the indexed text differed
+        # from the file before chunking even began and no byte range could
+        # recover the original. Recovery is a byte contract; do not normalize.
+        raw = p.read_bytes()
         try:
-            documents.append((source_path, p.read_text(encoding="utf-8")))
+            documents.append((source_path, raw.decode("utf-8")))
         except UnicodeDecodeError:
-            documents.append(
-                (source_path, p.read_text(encoding="utf-8", errors="replace"))
-            )
+            documents.append((source_path, raw.decode("utf-8", errors="replace")))
     return documents
 
 
@@ -376,6 +380,7 @@ def _chunk_document(
     *,
     document_id: str,
     document_fingerprint: str,
+    source_digest: str,
     chunk_tokens: int,
     overlap_tokens: int,
 ) -> list[DocumentChunk]:
@@ -480,6 +485,8 @@ def _chunk_document(
                 token_count=count,
                 fingerprint=fp,
                 text=chunk_text,
+                fragment_sha256=byte_digest(chunk_text),
+                source_sha256=source_digest,
             )
         )
         running_tokens += count
@@ -512,6 +519,7 @@ def ingest_documents(
             text,
             document_id=doc_id,
             document_fingerprint=doc_fp,
+            source_digest=byte_digest(text),
             chunk_tokens=chunk_token_count,
             overlap_tokens=overlap_token_count,
         )
