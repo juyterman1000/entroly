@@ -192,9 +192,61 @@ Monitors failed queries -> clusters by entity -> synthesizes skill SOPs (`skill_
 
 Federation (`federation.py`) shares anonymized learned patterns across all instances via GitHub — no servers, no cloud cost.
 
+## Codebase Graph
+
+Treat the package as a directed import graph before reading files. Rebuild it
+whenever you need to orient:
+
+```bash
+python scripts/codebase_graph.py              # hubs, cycles, reachability
+python scripts/codebase_graph.py --json g.json
+python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
+```
+
+Measured on `entroly` at 1.0.69: **215 modules, 524 import edges, 112,737 lines.**
+
+### Entry points are narrower than they look
+
+`[project.scripts]` declares three console entries, and none of them is
+`entroly/cli.py`:
+
+| Console command | Module |
+|---|---|
+| `entroly` | `entroly.docker_launcher_safe:launch` |
+| `entroly-memory` | `entroly.memory_cli:main` |
+| `entroly-compression-mcp` | `entroly.compression_mcp:main` |
+
+Plus `python -m entroly` (`entroly.__main__`) and `import entroly` / `entroly.sdk`.
+**Reachability must be computed from these**, not from `cli.py`. 180 of 215
+modules are reachable; the other 35 (~11.4k lines) are imported only by tests and
+benchmarks. Before promoting anything in that set to a README claim, give it a
+real product path — a test that imports a module directly does not prove a user
+can reach it.
+
+### Architectural hubs (PageRank over imports)
+
+`path_safety`, `context_receipts.models`, `esg`, `vault`, `models.registry`,
+`compression_retrieval_store`, `ravs.events`, `ccr`. These are the
+highest-blast-radius files in the repo. `server.py`, `proxy.py` and `cli.py` have
+the widest fan-*out* (56/34/31 imports) but are near-leaves — little imports them.
+
+### Native boundary
+
+16 modules import `entroly_core` (PyO3). Each must keep a pure-Python fallback;
+`--json` lists them under `native_boundary`.
+
+### Known import cycles
+
+4 cycles; the largest spans 18 modules around `entroly/__init__` ↔ `auto_index`
+↔ `cache_aligner` ↔ `compression_retrieval_store_*`. Import order in that cluster
+is load-bearing — prefer a function-local import over a new module-level one.
+
 ## Key Constraints
 
 - Rust changes require `maturin develop --release` before Python tests will pick them up.
+- Receipt fragments are **not** currently byte-faithful to source files; see
+  `docs/investigations/P0-receipt-chunk-fidelity.md` before relying on, testing,
+  or making claims about exact recovery.
 - RAVS is fail-closed — always routes to Opus when uncertain; never sacrifice correctness for cost.
 - Vault beliefs are machine-auditable: every write must include `claim_id`, `entity`, `confidence`, and `sources`.
 - Token-negative learning contract: evolution daemon cannot spend more on skill synthesis than the projected savings budget.
