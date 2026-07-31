@@ -26,7 +26,12 @@ from entroly.context_receipts import (
     select_from_index,
 )
 from entroly.context_receipts.ingest import read_documents_from_path
-from entroly.context_receipts.models import ContextIndex, RankedChunk
+from entroly.context_receipts.models import (
+    ContextIndex,
+    DependencyLink,
+    DocumentChunk,
+    RankedChunk,
+)
 from entroly.context_receipts.selection import select_context
 from entroly.context_receipts.receipts import attach_novelty_frontier, build_receipt
 from entroly.context_receipts.novelty import novelty_frontier_assessment
@@ -54,6 +59,113 @@ def _contract_docs() -> list[tuple[str, str]]:
             "The reporting covenant applies after a Change of Control notice is delivered.\n",
         ),
     ]
+
+
+def _selection_chunk(chunk_id: str, token_count: int) -> DocumentChunk:
+    text = f"{chunk_id} evidence"
+    return DocumentChunk(
+        chunk_id=chunk_id,
+        document_id=f"doc-{chunk_id}",
+        source_path=f"{chunk_id}.md",
+        title=chunk_id,
+        section_heading=None,
+        page_number=None,
+        chunk_index=0,
+        byte_start=0,
+        byte_end=len(text),
+        token_start=0,
+        token_end=token_count,
+        token_count=token_count,
+        fingerprint=f"fp-{chunk_id}",
+        text=text,
+    )
+
+
+def _selection_dependency(source: str, target: str) -> DependencyLink:
+    return DependencyLink(
+        source_chunk_id=source,
+        target_chunk_id=target,
+        relation_type="requires",
+        evidence=f"{source} requires {target}",
+        source_document_id=f"doc-{source}",
+        target_document_id=f"doc-{target}",
+        resolved=True,
+    )
+
+
+def test_selector_adds_transitive_dependency_closure_atomically():
+    chunks = [
+        _selection_chunk("root", 6),
+        _selection_chunk("middle", 5),
+        _selection_chunk("leaf", 4),
+    ]
+    index = ContextIndex(
+        schema_version="context-receipt.v1",
+        documents=[],
+        chunks=chunks,
+        chunk_token_limit=20,
+        chunk_overlap=0,
+        source_fingerprints={},
+    )
+    ranked = [
+        RankedChunk("root", 3.0, 0.0, 0.0, 3.0, ["root"]),
+        RankedChunk("middle", 2.0, 0.0, 0.0, 2.0, ["middle"]),
+        RankedChunk("leaf", 1.0, 0.0, 0.0, 1.0, ["leaf"]),
+    ]
+    dependencies = [
+        _selection_dependency("root", "middle"),
+        _selection_dependency("middle", "leaf"),
+    ]
+
+    selection = select_context(index, ranked, dependencies, token_budget=15)
+
+    assert [item.chunk_id for item in selection.selected] == [
+        "root",
+        "middle",
+        "leaf",
+    ]
+    assert sum(item.token_count for item in selection.selected) == 15
+    assert selection.selected[0].dependencies_included == ["middle"]
+    assert selection.selected[1].dependencies_included == ["leaf"]
+
+
+def test_selector_omits_whole_candidate_when_dependency_closure_does_not_fit():
+    chunks = [
+        _selection_chunk("root", 6),
+        _selection_chunk("middle", 5),
+        _selection_chunk("leaf", 4),
+    ]
+    index = ContextIndex(
+        schema_version="context-receipt.v1",
+        documents=[],
+        chunks=chunks,
+        chunk_token_limit=20,
+        chunk_overlap=0,
+        source_fingerprints={},
+    )
+    ranked = [
+        RankedChunk("root", 3.0, 0.0, 0.0, 3.0, ["root"]),
+        RankedChunk("middle", 2.0, 0.0, 0.0, 2.0, ["middle"]),
+        RankedChunk("leaf", 1.0, 0.0, 0.0, 1.0, ["leaf"]),
+    ]
+    dependencies = [
+        _selection_dependency("root", "middle"),
+        _selection_dependency("middle", "leaf"),
+    ]
+
+    selection = select_context(index, ranked, dependencies, token_budget=10)
+
+    assert [item.chunk_id for item in selection.selected] == ["middle", "leaf"]
+    root = next(item for item in selection.omitted if item.chunk_id == "root")
+    assert root.omission_reason == "dependency_bundle_exceeds_budget"
+    assert any(
+        "Dependency bundle omitted atomically due to budget: root" in warning
+        for warning in selection.warnings
+    )
+    selected_ids = {item.chunk_id for item in selection.selected}
+    for item in selection.selected:
+        assert set(item.dependencies_included) <= selected_ids
+        assert item.dependencies_missing == []
 
 
 def test_ingest_preserves_cross_document_metadata_and_fingerprints():
@@ -347,7 +459,7 @@ def test_reproducibility_hash_is_stable_for_same_inputs():
     assert first["reproducibility_hash"] == second["reproducibility_hash"]
 
 
-def test_dependency_warning_when_budget_excludes_required_reference():
+def test_dependency_bundle_is_omitted_when_required_reference_does_not_fit():
     index = ingest_documents(_contract_docs(), chunk_tokens=55, prefer_rust=False)
     receipt = select_from_index(
         index,
@@ -356,12 +468,16 @@ def test_dependency_warning_when_budget_excludes_required_reference():
         prefer_rust=False,
     )
 
-    assert receipt["selected_context"]
+    assert not receipt["selected_context"]
     assert any(
-        "Dependency not included due to budget" in warning
+        "Dependency bundle omitted atomically due to budget" in warning
         or "dependency reference" in warning
         for warning in receipt["warnings"]
-    ) or any(item["dependencies_missing"] for item in receipt["selected_context"])
+    )
+    assert any(
+        item["omission_reason"] == "dependency_bundle_exceeds_budget"
+        for item in receipt["omitted_context"]
+    )
 
 
 def test_omitted_nearby_context_and_explain():
@@ -383,8 +499,7 @@ def test_omitted_nearby_context_and_explain():
 
     assert receipt["omitted_context"]
     assert any(
-        item["omission_reason"] == "nearby_relevant_context_omitted_due_to_budget"
-        for item in receipt["omitted_context"]
+        "Nearby relevant chunk omitted" in warning for warning in receipt["warnings"]
     )
     chunk_id = receipt["omitted_context"][0]["chunk_id"]
     explanation = explain_omitted(receipt, chunk_id, prefer_rust=False)
@@ -583,8 +698,12 @@ def test_read_documents_from_path_filters_supported_files(tmp_path: Path):
     (tmp_path / "a.md").write_text("# A\n\nalpha", encoding="utf-8")
     (tmp_path / "app.py").write_text("def answer():\n    return 42\n", encoding="utf-8")
     (tmp_path / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
-    (tmp_path / "Dockerfile.prod").write_text("FROM python:3.12-slim\n", encoding="utf-8")
-    (tmp_path / "Containerfile.dev").write_text("FROM fedora:latest\n", encoding="utf-8")
+    (tmp_path / "Dockerfile.prod").write_text(
+        "FROM python:3.12-slim\n", encoding="utf-8"
+    )
+    (tmp_path / "Containerfile.dev").write_text(
+        "FROM fedora:latest\n", encoding="utf-8"
+    )
     (tmp_path / "Justfile").write_text("test:\n    pytest\n", encoding="utf-8")
     (tmp_path / "b.bin").write_bytes(b"\x00\x01")
 
@@ -1497,7 +1616,9 @@ def test_public_ingest_normalizes_mapping_path_and_bytes_documents(monkeypatch):
                 }
             )
 
-    monkeypatch.setattr(context_receipts_module, "_rust_core", lambda *_: FakeRustCore())
+    monkeypatch.setattr(
+        context_receipts_module, "_rust_core", lambda *_: FakeRustCore()
+    )
     index = ingest_documents(
         [
             {"path": Path("docs/policy.md"), "content": "Access evidence."},
@@ -1538,9 +1659,7 @@ def test_build_receipt_and_selection_tolerate_malformed_direct_inputs():
     receipt = context_receipts_module._py_build_receipt(
         index, query=None, token_budget=50
     )
-    bogus_rank = RankedChunk(
-        "missing", 1.0, 0.0, 0.0, 1.0, ["legacy rank row"]
-    )
+    bogus_rank = RankedChunk("missing", 1.0, 0.0, 0.0, 1.0, ["legacy rank row"])
     valid_rank = RankedChunk(
         index.chunks[0].chunk_id, 1.0, 0.0, 0.0, 1.0, ["valid rank row"]
     )
@@ -1549,7 +1668,6 @@ def test_build_receipt_and_selection_tolerate_malformed_direct_inputs():
 
     assert receipt.query == ""
     assert [item.chunk_id for item in selection.selected] == [index.chunks[0].chunk_id]
-
 
 
 def test_no_match_receipt_fails_closed_and_does_not_claim_savings():
@@ -1569,11 +1687,13 @@ def test_no_match_receipt_fails_closed_and_does_not_claim_savings():
 
     assert receipt.selected_context == []
     assert receipt.compression_ratio.tokens_saved == 0
-    assert receipt.compression_ratio.tokens_withheld == receipt.compression_ratio.source_tokens
+    assert (
+        receipt.compression_ratio.tokens_withheld
+        == receipt.compression_ratio.source_tokens
+    )
     assert receipt.compression_ratio.savings_eligible is False
     assert (
-        receipt.compression_ratio.savings_status
-        == "not_credited_no_relevance_evidence"
+        receipt.compression_ratio.savings_status == "not_credited_no_relevance_evidence"
     )
     assert receipt.compression_ratio.reduction_pct == 0.0
     assert any("selection failed closed" in warning for warning in receipt.warnings)
@@ -1596,10 +1716,7 @@ def test_matched_receipt_labels_savings_as_mechanical_and_unverified():
 
     assert receipt.selected_context
     assert receipt.compression_ratio.savings_eligible is True
-    assert (
-        receipt.compression_ratio.savings_status
-        == "mechanical_reduction_unverified"
-    )
+    assert receipt.compression_ratio.savings_status == "mechanical_reduction_unverified"
     assert (
         receipt.compression_ratio.tokens_saved
         == receipt.compression_ratio.tokens_withheld

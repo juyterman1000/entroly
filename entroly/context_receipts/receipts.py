@@ -154,6 +154,11 @@ def _risk_summary(
     missing_dependency_warnings = sum(
         1 for warning in warnings if "Dependency not included" in warning
     )
+    dependency_bundle_omissions = sum(
+        1
+        for warning in warnings
+        if "Dependency bundle omitted atomically due to budget" in warning
+    )
     token_coverage = selected_tokens / max(
         1, sum(chunk.token_count for chunk in index.chunks)
     )
@@ -188,10 +193,15 @@ def _risk_summary(
         "omitted_relevant_chunks": omitted_relevant,
         "unresolved_dependency_count": unresolved,
         "missing_dependency_warning_count": missing_dependency_warnings,
+        "dependency_bundle_omission_count": dependency_bundle_omissions,
         "controls": {
+            "selection_contract": "atomic_transitive_dependency_closure",
             "dependency_closure": "complete"
             if unresolved == 0 and missing_dependency_warnings == 0
             else "partial",
+            "dependency_bundle_fit": "omitted_due_to_budget"
+            if dependency_bundle_omissions
+            else "complete",
             "omitted_evidence_pressure": "high"
             if omission_pressure > 0.4
             else "medium"
@@ -279,9 +289,7 @@ def build_receipt(
     source_fingerprints = {
         "documents": {doc.source_path: doc.fingerprint for doc in index.documents},
         "chunks": {chunk.chunk_id: chunk.fingerprint for chunk in index.chunks},
-        "source_bytes": {
-            doc.source_path: doc.source_sha256 for doc in index.documents
-        },
+        "source_bytes": {doc.source_path: doc.source_sha256 for doc in index.documents},
         "fragment_bytes": {
             chunk.chunk_id: chunk.fragment_sha256 for chunk in index.chunks
         },
@@ -372,6 +380,8 @@ def markdown_report(receipt: ContextReceipt) -> str:
         f"- Coverage score: {_float_metric(risk_summary.get('coverage_score')):.3f}",
         f"- Review level: {risk_summary.get('review_level', 'unknown')}",
         f"- Dependency closure: {controls.get('dependency_closure', 'unknown')}",
+        f"- Selection contract: {controls.get('selection_contract', 'unknown')}",
+        f"- Dependency bundles omitted: {_int_or_default(risk_summary.get('dependency_bundle_omission_count'))}",
         f"- Omitted evidence pressure: {controls.get('omitted_evidence_pressure', 'unknown')}",
         f"- Novelty frontier pressure: {controls.get('novelty_frontier', 'unknown')}",
         f"- Novelty frontier action: {novelty_assessment.get('action', 'unknown')}",

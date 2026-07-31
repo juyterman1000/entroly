@@ -14,7 +14,11 @@ on:
       - benchmarks/results/receipt_fragment_fidelity_python.json.sha256
       - benchmarks/results/receipt_public_integrity.json
       - benchmarks/results/receipt_public_integrity.json.sha256
+      - benchmarks/results/dependency_closure_integrity.json
+      - benchmarks/results/dependency_closure_integrity.json.sha256
+      - benchmarks/dependency_closure_integrity.py
       - docs/capability-coverage.json
+      - docs/research/source-authenticated-closure-retrieval.md
       - docs/ai-cost-optimization.html
       - docs/agent-integrations.html
       - docs/openclaw-context-engine.html
@@ -74,6 +78,7 @@ jobs:
           python -m pytest -q tests/test_public_trust.py
           tests/test_verify_readme_claims.py
           tests/test_capability_coverage.py
+          tests/test_dependency_closure_integrity_benchmark.py
           --junitxml=public-trust-tests.xml
       - name: Upload public trust diagnostics
         if: always()

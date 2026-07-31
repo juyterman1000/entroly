@@ -41,18 +41,21 @@
       ],
       "tests": [
         "tests/test_context_receipts.py::test_receipt_schema_defined_terms_dependencies_and_compression_ratio",
-        "tests/test_context_receipts.py::test_no_match_receipt_fails_closed_and_does_not_claim_savings"
+        "tests/test_context_receipts.py::test_no_match_receipt_fails_closed_and_does_not_claim_savings",
+        "tests/test_context_receipts.py::test_selector_adds_transitive_dependency_closure_atomically",
+        "tests/test_dependency_closure_integrity_benchmark.py::test_small_matrix_proves_atomic_closure_and_detects_legacy_defect"
       ],
       "docs": [
         "docs/context-control-plane.md",
-        "docs/rfcs/001-submodular-context-selection.md"
+        "docs/rfcs/001-submodular-context-selection.md",
+        "docs/research/source-authenticated-closure-retrieval.md"
       ],
       "package_surfaces": ["python-sdk", "cli", "mcp", "rust", "node-wasm"],
       "public_entrypoints": [
         "entroly.context_receipts.run_receipt_pipeline",
         "entroly.context_receipts.select_from_index"
       ],
-      "limitations": "Selection quality depends on the query and corpus; mechanical reduction is not labeled as answer quality."
+      "limitations": "Atomic closure prevents partial resolved-dependency bundles, but selection quality still depends on the query, detected graph, and corpus; mechanical reduction is not labeled as answer quality."
     },
     {
       "id": "recoverable_compression_handles",

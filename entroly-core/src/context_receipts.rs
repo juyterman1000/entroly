@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 const SCHEMA_VERSION: &str = "context-receipt.v1";
 
@@ -857,11 +857,65 @@ fn is_redundant(
 
 fn preview(text: &str) -> String {
     let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if compact.len() <= 240 {
+    if compact.chars().count() <= 240 {
         compact
     } else {
-        format!("{}...", &compact[..237])
+        format!("{}...", compact.chars().take(237).collect::<String>())
     }
+}
+
+fn dependency_closure(
+    root_chunk_id: &str,
+    chunks: &HashMap<String, &DocumentChunk>,
+    deps_by_source: &HashMap<String, Vec<&DependencyLink>>,
+) -> (Vec<String>, Vec<String>) {
+    let mut ordered = vec![root_chunk_id.to_string()];
+    let mut seen = HashSet::from([root_chunk_id.to_string()]);
+    let mut pending = VecDeque::from([root_chunk_id.to_string()]);
+    let mut warnings = Vec::<String>::new();
+
+    while let Some(source_id) = pending.pop_front() {
+        let mut dependencies = deps_by_source.get(&source_id).cloned().unwrap_or_default();
+        dependencies.sort_by(|left, right| {
+            (
+                left.relation_type.as_str(),
+                left.target_chunk_id.as_deref().unwrap_or(""),
+                left.evidence.as_str(),
+            )
+                .cmp(&(
+                    right.relation_type.as_str(),
+                    right.target_chunk_id.as_deref().unwrap_or(""),
+                    right.evidence.as_str(),
+                ))
+        });
+
+        for dependency in dependencies {
+            if let Some(target_id) = dependency.target_chunk_id.as_deref() {
+                if chunks.contains_key(target_id) {
+                    if seen.insert(target_id.to_string()) {
+                        ordered.push(target_id.to_string());
+                        pending.push_back(target_id.to_string());
+                    }
+                    continue;
+                }
+            }
+
+            warnings.push(dependency.warning.clone().unwrap_or_else(|| {
+                format!(
+                    "Unresolved dependency from {}: {}",
+                    source_id,
+                    dependency
+                        .target_chunk_id
+                        .as_deref()
+                        .unwrap_or(&dependency.evidence)
+                )
+            }));
+        }
+    }
+
+    warnings.sort();
+    warnings.dedup();
+    (ordered, warnings)
 }
 
 fn select_context(
@@ -903,48 +957,47 @@ fn select_context(
         if rank.final_score <= 0.0 {
             continue;
         }
-        let Some(chunk) = chunks.get(&rank.chunk_id) else {
+        if !chunks.contains_key(&rank.chunk_id) {
             continue;
-        };
+        }
         if is_redundant(&rank.chunk_id, &selected_ids, &token_sets) {
             continue;
         }
-        if !try_add(
-            &rank.chunk_id,
-            &chunks,
-            &mut selected_ids,
-            &mut selected_set,
-            &mut selected_tokens,
-            token_budget,
-        ) {
+
+        let (bundle_ids, bundle_warnings) =
+            dependency_closure(&rank.chunk_id, &chunks, &deps_by_source);
+        let new_bundle_ids = bundle_ids
+            .iter()
+            .filter(|chunk_id| !selected_set.contains(*chunk_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let bundle_tokens = new_bundle_ids
+            .iter()
+            .filter_map(|chunk_id| chunks.get(chunk_id))
+            .map(|chunk| chunk.token_count)
+            .sum::<usize>();
+        let remaining_tokens = token_budget.saturating_sub(selected_tokens);
+        if bundle_tokens > remaining_tokens {
+            let dependency_count = bundle_ids.len().saturating_sub(1);
+            if dependency_count > 0 {
+                warnings.push(format!(
+                    "Dependency bundle omitted atomically due to budget: {} requires {} token(s) \
+                     including {} resolved dependency chunk(s), {} remain.",
+                    rank.chunk_id, bundle_tokens, dependency_count, remaining_tokens
+                ));
+            }
             continue;
         }
-        for dep in deps_by_source
-            .get(&rank.chunk_id)
-            .cloned()
-            .unwrap_or_default()
-        {
-            if let Some(target_id) = &dep.target_chunk_id {
-                if !selected_set.contains(target_id)
-                    && !try_add(
-                        target_id,
-                        &chunks,
-                        &mut selected_ids,
-                        &mut selected_set,
-                        &mut selected_tokens,
-                        token_budget,
-                    )
-                {
-                    warnings.push(format!(
-                        "Dependency not included due to budget: {} -> {} ({})",
-                        rank.chunk_id, target_id, dep.relation_type
-                    ));
-                }
-            } else if let Some(warning) = &dep.warning {
-                warnings.push(warning.clone());
-            }
+
+        for chunk_id in new_bundle_ids {
+            let chunk = chunks
+                .get(&chunk_id)
+                .expect("dependency closure only contains known chunks");
+            selected_set.insert(chunk_id.clone());
+            selected_ids.push(chunk_id);
+            selected_tokens += chunk.token_count;
         }
-        let _ = chunk;
+        warnings.extend(bundle_warnings);
     }
 
     let mut selected = Vec::new();
@@ -1018,7 +1071,18 @@ fn select_context(
                 chunk.chunk_id, chunk.source_path
             ));
         }
-        if deps.iter().any(|d| {
+        let (bundle_ids, _) = dependency_closure(&rank.chunk_id, &chunks, &deps_by_source);
+        let missing_bundle_tokens = bundle_ids
+            .iter()
+            .filter(|chunk_id| !selected_set.contains(*chunk_id))
+            .filter_map(|chunk_id| chunks.get(chunk_id))
+            .map(|chunk| chunk.token_count)
+            .sum::<usize>();
+        if bundle_ids.len() > 1
+            && selected_tokens.saturating_add(missing_bundle_tokens) > token_budget
+        {
+            reason = "dependency_bundle_exceeds_budget".to_string();
+        } else if deps.iter().any(|d| {
             d.target_chunk_id.as_deref() == Some(&rank.chunk_id)
                 && selected_set.contains(&d.source_chunk_id)
         }) {
@@ -1065,29 +1129,6 @@ fn select_context(
     warnings.sort();
     warnings.dedup();
     (selected, omitted, warnings)
-}
-
-fn try_add(
-    chunk_id: &str,
-    chunks: &HashMap<String, &DocumentChunk>,
-    selected_ids: &mut Vec<String>,
-    selected_set: &mut HashSet<String>,
-    selected_tokens: &mut usize,
-    budget: usize,
-) -> bool {
-    if selected_set.contains(chunk_id) {
-        return false;
-    }
-    let Some(chunk) = chunks.get(chunk_id) else {
-        return false;
-    };
-    if *selected_tokens + chunk.token_count > budget {
-        return false;
-    }
-    selected_set.insert(chunk_id.to_string());
-    selected_ids.push(chunk_id.to_string());
-    *selected_tokens += chunk.token_count;
-    true
 }
 
 fn compression_ratio(
@@ -1157,6 +1198,10 @@ fn risk_summary(
         .iter()
         .filter(|w| w.contains("Dependency not included"))
         .count();
+    let dependency_bundle_omissions = warnings
+        .iter()
+        .filter(|w| w.contains("Dependency bundle omitted atomically due to budget"))
+        .count();
     let token_coverage = selected_tokens as f64 / source_tokens as f64;
     let chunk_coverage = selected_count as f64 / total_chunks.max(1) as f64;
     let omission_pressure =
@@ -1183,8 +1228,11 @@ fn risk_summary(
         "omitted_relevant_chunks": omitted_relevant,
         "unresolved_dependency_count": unresolved,
         "missing_dependency_warning_count": missing_dependency_warnings,
+        "dependency_bundle_omission_count": dependency_bundle_omissions,
         "controls": {
+            "selection_contract": "atomic_transitive_dependency_closure",
             "dependency_closure": if unresolved == 0 && missing_dependency_warnings == 0 { "complete" } else { "partial" },
+            "dependency_bundle_fit": if dependency_bundle_omissions > 0 { "omitted_due_to_budget" } else { "complete" },
             "omitted_evidence_pressure": if omission_pressure > 0.4 { "high" } else if omission_pressure > 0.15 { "medium" } else { "low" },
             "replayable_fingerprints": true,
             "local_no_llm_judgment": true,
@@ -1348,6 +1396,18 @@ pub fn markdown_report(receipt: &ContextReceipt) -> String {
             receipt.risk_summary["controls"]["dependency_closure"]
                 .as_str()
                 .unwrap_or("unknown")
+        ),
+        format!(
+            "- Selection contract: {}",
+            receipt.risk_summary["controls"]["selection_contract"]
+                .as_str()
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "- Dependency bundles omitted: {}",
+            receipt.risk_summary["dependency_bundle_omission_count"]
+                .as_u64()
+                .unwrap_or_default()
         ),
         format!(
             "- Omitted evidence pressure: {}",
@@ -1567,6 +1627,41 @@ mod tests {
         ]
     }
 
+    fn selection_chunk(chunk_id: &str, token_count: usize) -> DocumentChunk {
+        let text = format!("{chunk_id} evidence");
+        DocumentChunk {
+            chunk_id: chunk_id.to_string(),
+            document_id: format!("doc-{chunk_id}"),
+            source_path: format!("{chunk_id}.md"),
+            title: chunk_id.to_string(),
+            section_heading: None,
+            page_number: None,
+            chunk_index: 0,
+            byte_start: 0,
+            byte_end: text.len(),
+            token_start: 0,
+            token_end: token_count,
+            token_count,
+            fingerprint: format!("fp-{chunk_id}"),
+            text,
+            fragment_sha256: String::new(),
+            source_sha256: String::new(),
+        }
+    }
+
+    fn selection_dependency(source: &str, target: &str) -> DependencyLink {
+        DependencyLink {
+            source_chunk_id: source.to_string(),
+            target_chunk_id: Some(target.to_string()),
+            relation_type: "requires".to_string(),
+            evidence: format!("{source} requires {target}"),
+            source_document_id: format!("doc-{source}"),
+            target_document_id: Some(format!("doc-{target}")),
+            resolved: true,
+            warning: None,
+        }
+    }
+
     #[test]
     fn ingest_is_stable() {
         let a = ingest_documents(docs(), 80, 16);
@@ -1675,5 +1770,83 @@ mod tests {
         assert!(
             receipt.compression_ratio.source_tokens >= receipt.compression_ratio.selected_tokens
         );
+    }
+
+    #[test]
+    fn selection_never_emits_a_partial_resolved_dependency_bundle() {
+        let index = ContextIndex {
+            schema_version: SCHEMA_VERSION.to_string(),
+            documents: Vec::new(),
+            chunks: vec![
+                selection_chunk("root", 6),
+                selection_chunk("middle", 5),
+                selection_chunk("leaf", 4),
+            ],
+            chunk_token_limit: 20,
+            chunk_overlap: 0,
+            source_fingerprints: BTreeMap::new(),
+        };
+        let ranked = vec![
+            RankedChunk {
+                chunk_id: "root".to_string(),
+                lexical_score: 3.0,
+                semantic_score: 0.0,
+                rerank_score: 0.0,
+                final_score: 3.0,
+                reasons: vec!["root".to_string()],
+            },
+            RankedChunk {
+                chunk_id: "middle".to_string(),
+                lexical_score: 2.0,
+                semantic_score: 0.0,
+                rerank_score: 0.0,
+                final_score: 2.0,
+                reasons: vec!["middle".to_string()],
+            },
+            RankedChunk {
+                chunk_id: "leaf".to_string(),
+                lexical_score: 1.0,
+                semantic_score: 0.0,
+                rerank_score: 0.0,
+                final_score: 1.0,
+                reasons: vec!["leaf".to_string()],
+            },
+        ];
+        let dependencies = vec![
+            selection_dependency("root", "middle"),
+            selection_dependency("middle", "leaf"),
+        ];
+
+        let (selected, omitted, warnings) = select_context(&index, &ranked, &dependencies, 10);
+
+        assert_eq!(
+            selected
+                .iter()
+                .map(|item| item.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["middle", "leaf"]
+        );
+        assert_eq!(
+            omitted
+                .iter()
+                .find(|item| item.chunk_id == "root")
+                .expect("root omission")
+                .omission_reason,
+            "dependency_bundle_exceeds_budget"
+        );
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("omitted atomically due to budget: root")));
+        let selected_ids = selected
+            .iter()
+            .map(|item| item.chunk_id.clone())
+            .collect::<HashSet<_>>();
+        for item in &selected {
+            assert!(item
+                .dependencies_included
+                .iter()
+                .all(|dependency| selected_ids.contains(dependency)));
+            assert!(item.dependencies_missing.is_empty());
+        }
     }
 }

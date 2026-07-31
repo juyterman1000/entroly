@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from .models import (
     ContextIndex,
@@ -38,6 +38,58 @@ def _preview(text: str, limit: int = 240) -> str:
     return compact if len(compact) <= limit else compact[: limit - 3] + "..."
 
 
+def _dependency_closure(
+    root_chunk_id: str,
+    chunks: dict[str, DocumentChunk],
+    deps_by_source: dict[str, list[DependencyLink]],
+) -> tuple[list[str], list[str]]:
+    """Return a deterministic, cycle-safe resolved dependency closure.
+
+    Context sent to an agent must not contain a referencing fragment while
+    silently dropping a dependency merely because the remaining budget became
+    too small.  The selector therefore treats each root plus all transitively
+    reachable, resolved dependencies as one atomic bundle.
+
+    Unresolved references cannot be closed locally.  They are returned as
+    warnings so the receipt fails visibly rather than pretending the bundle is
+    complete.
+    """
+
+    ordered = [root_chunk_id]
+    seen = {root_chunk_id}
+    pending = deque([root_chunk_id])
+    warnings: list[str] = []
+
+    while pending:
+        source_id = pending.popleft()
+        dependencies = sorted(
+            deps_by_source.get(source_id, []),
+            key=lambda item: (
+                item.relation_type,
+                item.target_chunk_id or "",
+                item.evidence,
+            ),
+        )
+        for dependency in dependencies:
+            target_id = dependency.target_chunk_id
+            if target_id and target_id in chunks:
+                if target_id not in seen:
+                    seen.add(target_id)
+                    ordered.append(target_id)
+                    pending.append(target_id)
+                continue
+
+            warning = dependency.warning
+            if not warning:
+                warning = (
+                    f"Unresolved dependency from {source_id}: "
+                    f"{target_id or dependency.evidence}"
+                )
+            warnings.append(warning)
+
+    return ordered, list(dict.fromkeys(warnings))
+
+
 def select_context(
     index: ContextIndex,
     ranked: list[RankedChunk],
@@ -51,50 +103,65 @@ def select_context(
     deps_by_source: dict[str, list[DependencyLink]] = defaultdict(list)
     for link in dependency_links:
         deps_by_source[link.source_chunk_id].append(link)
+    closure_cache: dict[str, tuple[list[str], list[str]]] = {}
+
+    def dependency_closure(chunk_id: str) -> tuple[list[str], list[str]]:
+        if chunk_id not in closure_cache:
+            closure_cache[chunk_id] = _dependency_closure(
+                chunk_id, chunks, deps_by_source
+            )
+        return closure_cache[chunk_id]
 
     selected_ids: list[str] = []
     selected_set: set[str] = set()
     selected_tokens = 0
-    token_sets: dict[str, set[str]] = {chunk.chunk_id: set(tokenize(chunk.text)) for chunk in index.chunks}
+    token_sets: dict[str, set[str]] = {
+        chunk.chunk_id: set(tokenize(chunk.text)) for chunk in index.chunks
+    }
     warnings: list[str] = []
-
-    def can_add(chunk: DocumentChunk) -> bool:
-        return selected_tokens + chunk.token_count <= token_budget
-
-    def add(chunk_id: str) -> bool:
-        nonlocal selected_tokens
-        chunk = chunks[chunk_id]
-        if chunk_id in selected_set or not can_add(chunk):
-            return False
-        selected_set.add(chunk_id)
-        selected_ids.append(chunk_id)
-        selected_tokens += chunk.token_count
-        return True
 
     for rank in ranked:
         if rank.chunk_id not in chunks:
             continue
         if rank.final_score <= 0:
             continue
-        chunk = chunks[rank.chunk_id]
-        redundant = any(_jaccard(token_sets[rank.chunk_id], token_sets[sid]) >= 0.82 for sid in selected_ids)
+        redundant = any(
+            _jaccard(token_sets[rank.chunk_id], token_sets[sid]) >= 0.82
+            for sid in selected_ids
+        )
         if redundant:
             continue
-        if not add(rank.chunk_id):
+
+        bundle_ids, bundle_warnings = dependency_closure(rank.chunk_id)
+        new_bundle_ids = [
+            chunk_id for chunk_id in bundle_ids if chunk_id not in selected_set
+        ]
+        bundle_tokens = sum(chunks[chunk_id].token_count for chunk_id in new_bundle_ids)
+        remaining_tokens = max(0, token_budget - selected_tokens)
+        if bundle_tokens > remaining_tokens:
+            dependency_count = max(0, len(bundle_ids) - 1)
+            if dependency_count:
+                warnings.append(
+                    "Dependency bundle omitted atomically due to budget: "
+                    f"{rank.chunk_id} requires "
+                    f"{bundle_tokens} token(s) including {dependency_count} "
+                    f"resolved dependency chunk(s), {remaining_tokens} remain."
+                )
             continue
-        for dep in deps_by_source.get(rank.chunk_id, []):
-            if dep.target_chunk_id and dep.target_chunk_id in chunks and dep.target_chunk_id not in selected_set:
-                if not add(dep.target_chunk_id):
-                    warnings.append(
-                        f"Dependency not included due to budget: {rank.chunk_id} -> {dep.target_chunk_id} ({dep.relation_type})"
-                    )
-            elif not dep.resolved and dep.warning:
-                warnings.append(dep.warning)
+        for chunk_id in new_bundle_ids:
+            chunk = chunks[chunk_id]
+            selected_set.add(chunk_id)
+            selected_ids.append(chunk_id)
+            selected_tokens += chunk.token_count
+        warnings.extend(bundle_warnings)
 
     selected_items: list[SelectedContextItem] = []
     for chunk_id in selected_ids:
         chunk = chunks[chunk_id]
-        rank = ranks.get(chunk_id, RankedChunk(chunk_id, 0.0, 0.0, 0.0, 0.0, ["included as dependency"]))
+        rank = ranks.get(
+            chunk_id,
+            RankedChunk(chunk_id, 0.0, 0.0, 0.0, 0.0, ["included as dependency"]),
+        )
         deps = deps_by_source.get(chunk_id, [])
         selected_items.append(
             SelectedContextItem(
@@ -110,10 +177,14 @@ def select_context(
                 score=rank.final_score,
                 reasons=rank.reasons,
                 dependencies_included=[
-                    d.target_chunk_id for d in deps if d.target_chunk_id and d.target_chunk_id in selected_set
+                    d.target_chunk_id
+                    for d in deps
+                    if d.target_chunk_id and d.target_chunk_id in selected_set
                 ],
                 dependencies_missing=[
-                    d.target_chunk_id or d.evidence for d in deps if not d.target_chunk_id or d.target_chunk_id not in selected_set
+                    d.target_chunk_id or d.evidence
+                    for d in deps
+                    if not d.target_chunk_id or d.target_chunk_id not in selected_set
                 ],
                 fingerprint=chunk.fingerprint,
                 text=chunk.text,
@@ -130,15 +201,35 @@ def select_context(
         reason = "lower ranked than selected context under token budget"
         if selected_tokens + chunk.token_count > token_budget:
             reason = "budget_limit"
-        if any(_jaccard(token_sets[rank.chunk_id], token_sets[sid]) >= 0.82 for sid in selected_ids):
+        if any(
+            _jaccard(token_sets[rank.chunk_id], token_sets[sid]) >= 0.82
+            for sid in selected_ids
+        ):
             reason = "redundant_with_selected_context"
         if any(
-            chunk.document_id == chunks[sid].document_id and abs(chunk.chunk_index - chunks[sid].chunk_index) == 1
+            chunk.document_id == chunks[sid].document_id
+            and abs(chunk.chunk_index - chunks[sid].chunk_index) == 1
             for sid in selected_ids
         ):
             reason = "nearby_relevant_context_omitted_due_to_budget"
-            warnings.append(f"Nearby relevant chunk omitted: {chunk.chunk_id} from {chunk.source_path}")
-        if any(d.target_chunk_id == rank.chunk_id and d.source_chunk_id in selected_set for d in dependency_links):
+            warnings.append(
+                f"Nearby relevant chunk omitted: {chunk.chunk_id} from {chunk.source_path}"
+            )
+        bundle_ids, _ = dependency_closure(rank.chunk_id)
+        missing_bundle_tokens = sum(
+            chunks[chunk_id].token_count
+            for chunk_id in bundle_ids
+            if chunk_id not in selected_set
+        )
+        if (
+            len(bundle_ids) > 1
+            and selected_tokens + missing_bundle_tokens > token_budget
+        ):
+            reason = "dependency_bundle_exceeds_budget"
+        elif any(
+            d.target_chunk_id == rank.chunk_id and d.source_chunk_id in selected_set
+            for d in dependency_links
+        ):
             reason = "dependency_not_included_due_to_budget"
         omitted.append(
             OmittedContextItem(
@@ -164,10 +255,16 @@ def select_context(
     if not selected_items:
         if any(rank.final_score > 0 for rank in ranked):
             warnings.append("No chunks fit inside the token budget.")
-            warnings.append("Relevant chunks were found, but none fit inside the token budget.")
+            warnings.append(
+                "Relevant chunks were found, but none fit inside the token budget."
+            )
         else:
-            warnings.append("No relevant chunks matched the query; selection failed closed.")
+            warnings.append(
+                "No relevant chunks matched the query; selection failed closed."
+            )
     unresolved = [d for d in dependency_links if not d.resolved]
     if unresolved:
-        warnings.append(f"{len(unresolved)} dependency reference(s) could not be resolved to an ingested chunk.")
+        warnings.append(
+            f"{len(unresolved)} dependency reference(s) could not be resolved to an ingested chunk."
+        )
     return SelectionResult(selected_items, omitted, list(dict.fromkeys(warnings)))
