@@ -64,9 +64,16 @@ import threading
 from collections import defaultdict
 from pathlib import Path
 
-from entroly.context_receipts.ingest import ingest_documents
+from entroly.context_receipts import ingest_documents as ingest_via_default
+from entroly.context_receipts.ingest import ingest_documents as ingest_via_python
 
-SCHEMA_VERSION = "receipt-fragment-fidelity.v2"
+SCHEMA_VERSION = "receipt-fragment-fidelity.v3"
+
+# `entroly.context_receipts.ingest_documents` dispatches to the Rust core when it
+# is available (prefer_rust defaults to True), so importing the pure-Python
+# module directly measures the *fallback*, not what a user with a native wheel
+# actually runs. Both are measured; a claim may only cite the default path.
+BACKENDS = ("default", "python")
 MAX_BYTES = 400_000
 
 # entroly 1.0.69 — the shipped state this defect was found in, and the last
@@ -199,47 +206,82 @@ def build_corpus(ref: str = BASELINE_REF) -> tuple[list[dict[str, object]], list
 # ── measurement ──────────────────────────────────────────────────────────────
 
 
-def measure_file(rel: str, raw: bytes, text: str) -> dict[str, int]:
-    index = ingest_documents([(rel, text)])
-    fragments = verbatim = byte_exact = 0
+def _chunks_for(rel: str, text: str, backend: str) -> list[dict[str, object]]:
+    """Return chunk dicts from one backend, normalising the two return shapes."""
+    if backend == "python":
+        index = ingest_via_python([(rel, text)])
+        return [
+            {"text": c.text, "byte_start": c.byte_start, "byte_end": c.byte_end}
+            for c in index.chunks
+        ]
 
-    for chunk in index.chunks:
+    index = ingest_via_default([(rel, text)])
+    chunks = index["chunks"] if isinstance(index, dict) else index.chunks
+    normalised = []
+    for c in chunks:
+        if isinstance(c, dict):
+            normalised.append(
+                {"text": c["text"], "byte_start": c["byte_start"], "byte_end": c["byte_end"]}
+            )
+        else:
+            normalised.append(
+                {"text": c.text, "byte_start": c.byte_start, "byte_end": c.byte_end}
+            )
+    return normalised
+
+
+def measure_file(rel: str, raw: bytes, text: str, backend: str = "default") -> dict[str, int]:
+    """Count fragments, verbatim hits and byte-exact hits for one file."""
+    fragments = verbatim = byte_exact = 0
+    try:
+        chunks = _chunks_for(rel, text, backend)
+    except BaseException:  # noqa: BLE001 - a native panic must not abort the corpus
+        # A backend that crashes on real input is a fidelity failure, not an
+        # excluded file. Recorded as a file that produced no usable fragments.
+        return {"fragments": 0, "verbatim": 0, "byte_span_exact": 0, "backend_error": 1}
+
+    for chunk in chunks:
         fragments += 1
-        if chunk.text in text:
+        if chunk["text"] in text:
             verbatim += 1
-        if raw[chunk.byte_start:chunk.byte_end] == chunk.text.encode("utf-8"):
+        if raw[chunk["byte_start"]:chunk["byte_end"]] == chunk["text"].encode("utf-8"):
             byte_exact += 1
 
-    return {"fragments": fragments, "verbatim": verbatim, "byte_span_exact": byte_exact}
+    return {
+        "fragments": fragments,
+        "verbatim": verbatim,
+        "byte_span_exact": byte_exact,
+        "backend_error": 0,
+    }
 
 
 def _rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 6) if denominator else 0.0
 
 
-def run_measurement(ref: str = BASELINE_REF) -> dict[str, object]:
+def run_measurement(ref: str = BASELINE_REF, backend: str = "default") -> dict[str, object]:
     included, excluded = build_corpus(ref)
     blobs = read_baseline_blobs(ref, [str(r["path"]) for r in included])
 
     per_language: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"files": 0, "fragments": 0, "verbatim": 0, "byte_span_exact": 0}
+        lambda: {"files": 0, "fragments": 0, "verbatim": 0, "byte_span_exact": 0, "backend_error": 0}
     )
     per_file: list[dict[str, object]] = []
 
     for record in included:
         rel = str(record["path"])
         raw = blobs[rel]
-        counts = measure_file(rel, raw, raw.decode("utf-8"))
+        counts = measure_file(rel, raw, raw.decode("utf-8"), backend)
 
         bucket = per_language[str(record["language"])]
         bucket["files"] += 1
-        for key in ("fragments", "verbatim", "byte_span_exact"):
+        for key in ("fragments", "verbatim", "byte_span_exact", "backend_error"):
             bucket[key] += counts[key]
         per_file.append({**record, **counts})
 
-    totals = {"files": len(included), "fragments": 0, "verbatim": 0, "byte_span_exact": 0}
+    totals = {"files": len(included), "fragments": 0, "verbatim": 0, "byte_span_exact": 0, "backend_error": 0}
     for bucket in per_language.values():
-        for key in ("fragments", "verbatim", "byte_span_exact"):
+        for key in ("fragments", "verbatim", "byte_span_exact", "backend_error"):
             totals[key] += bucket[key]
 
     languages = {
@@ -254,6 +296,7 @@ def run_measurement(ref: str = BASELINE_REF) -> dict[str, object]:
     return {
         "schema_version": SCHEMA_VERSION,
         "baseline_ref": ref,
+        "backend": backend,
         "environment": {
             # The corpus comes from the pinned ref, so the checkout state cannot
             # affect the result; recorded only to describe where it was run.
@@ -295,6 +338,7 @@ def verify(artifact_path: Path) -> int:
         return 1
 
     ref = stored.get("baseline_ref", "")
+    backend = stored.get("backend", "default")
     failures: list[str] = []
     recomputed = {"files": 0, "fragments": 0, "verbatim": 0, "byte_span_exact": 0}
 
@@ -311,7 +355,7 @@ def verify(artifact_path: Path) -> int:
             failures.append(f"content changed at {ref[:12]}: {rel}")
             continue
 
-        counts = measure_file(rel, raw, raw.decode("utf-8"))
+        counts = measure_file(rel, raw, raw.decode("utf-8"), backend)
         recomputed["files"] += 1
         for key in ("fragments", "verbatim", "byte_span_exact"):
             recomputed[key] += counts[key]
@@ -333,6 +377,7 @@ def verify(artifact_path: Path) -> int:
     totals = stored["totals"]
     print("VERIFY OK")
     print(f"  baseline  : {ref}")
+    print(f"  backend   : {backend}")
     print(f"  files     : {totals['files']}")
     print(f"  fragments : {totals['fragments']}")
     print(f"  verbatim  : {totals['verbatim']}/{totals['fragments']} ({totals['verbatim_rate']:.1%})")
@@ -436,7 +481,7 @@ def render(report: dict[str, object]) -> str:
     totals = report["totals"]  # type: ignore[index]
     env = report["environment"]  # type: ignore[index]
     lines.append(
-        f"baseline {str(report['baseline_ref'])[:12]}  "
+        f"baseline {str(report['baseline_ref'])[:12]}  backend={report.get('backend', '?')}  "
         f"entroly {env['entroly_version']}  python {env['python']}"
     )
     lines.append("")
@@ -471,6 +516,7 @@ def main() -> int:
     run_cmd = sub.add_parser("run", help="measure the baseline corpus and write the artifact")
     run_cmd.add_argument("--out", type=Path, required=True)
     run_cmd.add_argument("--ref", default=BASELINE_REF)
+    run_cmd.add_argument("--backend", choices=BACKENDS, default="default")
     verify_cmd = sub.add_parser("verify", help="re-check a committed corpus artifact")
     verify_cmd.add_argument("artifact", type=Path)
     probe_cmd = sub.add_parser(
@@ -497,7 +543,7 @@ def main() -> int:
         print(f"\nwrote {args.out}")
         return 0
 
-    report = run_measurement(args.ref)
+    report = run_measurement(args.ref, args.backend)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=1, sort_keys=True), encoding="utf-8")
     print(render(report))
