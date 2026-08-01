@@ -1,0 +1,35 @@
+[package]
+name = "entroly-engine"
+version = "1.0.70"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/juyterman1000/entroly"
+description = "Shared compute engine for Entroly: the single source of truth for ranking, entropy, budgeting, dedup and dependency analysis, consumed by both the PyO3 and WebAssembly bindings"
+
+[lib]
+name = "entroly_engine"
+
+# The `python` feature switches on PyO3 attributes for the types that cross the
+# Python boundary. It is OFF by default so the WebAssembly binding — which must
+# never link PyO3 — gets the same algorithms with no Python coupling.
+#
+# This is the mechanism that keeps the distributions from drifting: there is one
+# copy of every algorithm here, and each binding crate is a thin shell over it.
+[features]
+default = []
+python = ["dep:pyo3"]
+
+[dependencies]
+pyo3 = { version = "0.25", features = ["abi3-py310"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.11"
+entroly-qccr = { path = "../entroly-qccr", default-features = false, features = ["regex-full"] }
+md-5 = "0.11"
+sha2 = "0.10"
+flate2 = "1.0"
+rayon = "1.12"
+rand = "0.10"
+
+[dev-dependencies]
+tempfile = "3.12"

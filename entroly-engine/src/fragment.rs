@@ -7,40 +7,35 @@
 //!   composite = w_recency * recency + w_frequency * frequency
 //!             + w_semantic * semantic + w_entropy * entropy
 
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// A single piece of context (code snippet, file content, tool result, etc.)
-#[pyclass]
+// `get_all, set_all` replaces 20 per-field `#[pyo3(get, set)]`
+// attributes. Inert field attributes are consumed by the `pyclass`
+// macro and therefore cannot be `cfg_attr`-gated, so the accessor
+// policy has to live on the struct. This additionally exposes
+// `eligibility_trace` and `entropy_pre_belief` to Python, which were
+// previously Rust-only — additive, and breaks no existing caller.
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContextFragment {
-    #[pyo3(get, set)]
     pub fragment_id: String,
-    #[pyo3(get, set)]
     pub content: String,
-    #[pyo3(get, set)]
     pub token_count: u32,
-    #[pyo3(get, set)]
     pub source: String,
 
     // Scoring components (all [0.0, 1.0])
-    #[pyo3(get, set)]
     pub recency_score: f64,
-    #[pyo3(get, set)]
     pub frequency_score: f64,
-    #[pyo3(get, set)]
     pub semantic_score: f64,
-    #[pyo3(get, set)]
     pub entropy_score: f64,
 
     // Metadata
-    #[pyo3(get, set)]
     pub turn_created: u32,
-    #[pyo3(get, set)]
     pub turn_last_accessed: u32,
-    #[pyo3(get, set)]
     pub access_count: u32,
-    #[pyo3(get, set)]
     pub is_pinned: bool,
     /// Eviction protection, distinct from `is_pinned`.
     ///
@@ -50,25 +45,20 @@ pub struct ContextFragment {
     /// the two, so a manifest or security file was force-included in every
     /// query regardless of relevance. Absent from older serialized indexes,
     /// hence `serde(default)`; see the migration in `migrate_pin_semantics`.
-    #[pyo3(get, set)]
     #[serde(default)]
     pub is_protected: bool,
-    #[pyo3(get, set)]
     pub simhash: u64,
     /// True iff simhash was computed from actual file content.
     /// False for shadow stubs — they are excluded from all similarity ops.
     /// Explicit flag avoids fragile "simhash==0 means no fingerprint" idiom:
     ///   - Future hash algo changes won't accidentally treat 0 as valid
     ///   - Hydration path can set this to true after content is loaded
-    #[pyo3(get, set)]
     #[serde(default)]
     pub has_simhash: bool,
 
     // Hierarchical fragmentation: optional skeleton variant
-    #[pyo3(get, set)]
     #[serde(default)]
     pub skeleton_content: Option<String>,
-    #[pyo3(get, set)]
     #[serde(default)]
     pub skeleton_token_count: Option<u32>,
 
@@ -77,17 +67,14 @@ pub struct ContextFragment {
     // capture ~50% of a file's information at ~10-15% token cost.
     // Populated by Python during ingest (from vault/beliefs/*.md).
     // Used by IOS as a 4th resolution level between Skeleton and Reference.
-    #[pyo3(get, set)]
     #[serde(default)]
     pub belief_content: Option<String>,
-    #[pyo3(get, set)]
     #[serde(default)]
     pub belief_token_count: Option<u32>,
 
     // Language identifier for calibrated token estimation.
     // Set during batch_ingest from file extension ("python", "rust", etc.).
     // Used by downstream systems for per-language char/token ratios.
-    #[pyo3(get, set)]
     #[serde(default)]
     pub language: String,
 
@@ -106,10 +93,11 @@ pub struct ContextFragment {
     pub entropy_pre_belief: Option<f64>,
 }
 
-#[pymethods]
 impl ContextFragment {
-    #[new]
-    #[pyo3(signature = (fragment_id, content, token_count=0, source="".to_string()))]
+    /// The plain Rust constructor. Kept outside `#[pymethods]` so every
+    /// consumer can build a fragment — WebAssembly included, where PyO3 cannot
+    /// be linked at all. The Python constructor below is a thin wrapper over
+    /// this, so the two can never disagree.
     pub fn new(fragment_id: String, content: String, token_count: u32, source: String) -> Self {
         let tc = if token_count == 0 {
             (content.len() / 4).max(1) as u32
@@ -140,6 +128,20 @@ impl ContextFragment {
             eligibility_trace: 0.0,
             entropy_pre_belief: None,
         }
+    }
+}
+
+/// Python constructor. Delegates straight to `ContextFragment::new` — PyO3's
+/// inert `#[new]` / `#[pyo3(..)]` attributes are consumed by the `pymethods`
+/// macro, so they cannot themselves be `cfg_attr`-gated; the whole block is
+/// gated instead.
+#[cfg(feature = "python")]
+#[pymethods]
+impl ContextFragment {
+    #[new]
+    #[pyo3(signature = (fragment_id, content, token_count=0, source="".to_string()))]
+    fn py_new(fragment_id: String, content: String, token_count: u32, source: String) -> Self {
+        Self::new(fragment_id, content, token_count, source)
     }
 }
 

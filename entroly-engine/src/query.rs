@@ -366,12 +366,13 @@ pub fn refine_heuristic(query: &str, fragment_summaries: &[String]) -> String {
 // PyO3 wrappers
 // ═══════════════════════════════════════════════════════════════════
 
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 /// Analyze a query for vagueness and extract key terms.
 ///
 /// Returns a tuple: (vagueness_score: float, key_terms: list[str], needs_refinement: bool, reason: str)
-#[pyfunction]
+#[cfg_attr(feature = "python", pyfunction)]
 pub fn py_analyze_query(
     query: &str,
     fragment_summaries: Vec<String>,
@@ -388,7 +389,7 @@ pub fn py_analyze_query(
 /// Heuristic query refinement — grounded in fragment vocabulary, no LLM needed.
 ///
 /// Returns the refined query string.
-#[pyfunction]
+#[cfg_attr(feature = "python", pyfunction)]
 pub fn py_refine_heuristic(query: &str, fragment_summaries: Vec<String>) -> String {
     refine_heuristic(query, &fragment_summaries)
 }

@@ -5,11 +5,12 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 /// Rank files; returns `(index, score)` pairs best-first.
-#[pyfunction]
-#[pyo3(signature = (sources, texts, query, overrides=None))]
+#[cfg_attr(feature = "python", pyfunction)]
+#[cfg_attr(feature = "python", pyo3(signature = (sources, texts, query, overrides=None)))]
 pub fn py_qccr_rank_files(
     sources: Vec<String>,
     texts: Vec<String>,
@@ -20,7 +21,7 @@ pub fn py_qccr_rank_files(
 }
 
 /// Expand a query into its retrieval vocabulary (sorted, deterministic).
-#[pyfunction]
+#[cfg_attr(feature = "python", pyfunction)]
 pub fn py_qccr_expand_query(query: String) -> Vec<String> {
     entroly_qccr::expand_query_sorted(&query)
 }
@@ -28,8 +29,8 @@ pub fn py_qccr_expand_query(query: String) -> Vec<String> {
 /// Full QCCR selection (rank + sentence-MMR + emit + trim). `fragments_json`
 /// is a JSON array of `{source, content}`; `preferred_json` is the optional
 /// post-localizer file order (or "[]"); returns a JSON array of fragments.
-#[pyfunction]
-#[pyo3(signature = (fragments_json, token_budget, query, overrides_json="{}".to_string(), preferred_json="[]".to_string()))]
+#[cfg_attr(feature = "python", pyfunction)]
+#[cfg_attr(feature = "python", pyo3(signature = (fragments_json, token_budget, query, overrides_json="{}".to_string(), preferred_json="[]".to_string())))]
 pub fn py_qccr_select(
     fragments_json: String,
     token_budget: i64,

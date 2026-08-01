@@ -10,50 +10,49 @@
 //!
 //! Python only handles the MCP protocol (no AI libraries in Rust).
 //! All computation happens here in Rust.
-mod anomaly;
+pub(crate) use entroly_engine::anomaly;
 pub mod archetype;
-mod bm25;
-mod cache;
-mod causal;
-mod channel;
+pub(crate) use entroly_engine::bm25;
+pub(crate) use entroly_engine::cache;
+pub(crate) use entroly_engine::causal;
+pub(crate) use entroly_engine::channel;
 mod cognitive_bus;
 pub mod cogops;
 /// Pure-Rust text compression entry point for the standalone binary.
 pub mod compress;
 pub mod context_receipts;
-mod conversation_pruner;
-mod dedup;
-mod depgraph;
-pub mod eicv;
-pub mod eicv_suppressor;
-mod entropy;
-mod fragment;
-mod guardrails;
-mod health;
-mod hierarchical;
-mod knapsack;
-mod knapsack_sds;
-mod learning;
-mod lsh;
+pub(crate) use entroly_engine::conversation_pruner;
+pub(crate) use entroly_engine::dedup;
+pub(crate) use entroly_engine::depgraph;
+pub use entroly_engine::eicv;
+pub use entroly_engine::eicv_suppressor;
+pub(crate) use entroly_engine::entropy;
+pub(crate) use entroly_engine::fragment;
+pub(crate) use entroly_engine::guardrails;
+pub(crate) use entroly_engine::health;
+pub(crate) use entroly_engine::hierarchical;
+pub(crate) use entroly_engine::knapsack;
+pub(crate) use entroly_engine::knapsack_sds;
+pub(crate) use entroly_engine::learning;
+pub(crate) use entroly_engine::lsh;
 mod nkbe;
-mod prism;
+pub(crate) use entroly_engine::prism;
 /// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
 pub mod proxy;
-mod qccr;
-mod query;
-pub mod query_persona;
-mod resonance;
-mod rnr;
-mod sast;
-mod semantic_dedup;
+pub(crate) use entroly_engine::qccr;
+pub(crate) use entroly_engine::query;
+pub use entroly_engine::query_persona;
+pub(crate) use entroly_engine::resonance;
+pub(crate) use entroly_engine::sast;
+pub(crate) use entroly_engine::semantic_dedup;
 /// Measurement-only probe for the 64-bit SimHash selection path.
 /// Test-gated: contributes nothing to the shipped library.
 #[cfg(test)]
 mod simhash_probe;
-mod skeleton;
+pub(crate) use entroly_engine::skeleton;
 mod telemetry;
-mod trajectory;
-mod utilization;
+pub(crate) use entroly_engine::trajectory;
+pub(crate) use entroly_engine::utilization;
 mod witness;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:

@@ -407,6 +407,12 @@ pub struct FeedbackTracker {
     total_observations: u64,
 }
 
+impl Default for FeedbackTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FeedbackTracker {
     pub fn new() -> Self {
         FeedbackTracker {

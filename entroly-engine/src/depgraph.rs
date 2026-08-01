@@ -66,6 +66,12 @@ pub struct DepGraph {
     cross_lang_exports: HashMap<String, (String, String)>,
 }
 
+impl Default for DepGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DepGraph {
     pub fn new() -> Self {
         DepGraph {
@@ -1361,6 +1367,10 @@ mod tests {
         let mut graph = DepGraph::new();
 
         // Rust side: #[pyfunction] fn process_data(...)
+        //
+        // This is test *data* — a sample of PyO3 source the detector is meant
+        // to recognise — not code compiled by this crate. It must keep the bare
+        // attribute forms, because `auto_link` matches on those literals.
         let rust_code = r#"
 use pyo3::prelude::*;
 
@@ -1555,6 +1565,7 @@ pub extern "C" fn init_engine(config: *const c_char) -> *mut Engine {
         let mut graph = DepGraph::new();
 
         let rust_code = r#"
+#[cfg(feature = "python")]
 #[pymethods]
 impl Engine {
     fn run(&self, input: &str) -> String {
