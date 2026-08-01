@@ -192,6 +192,22 @@ fn est_angular(d: u32) -> f64 {
 
 // ── corpus ──────────────────────────────────────────────────────────
 
+/// xorshift64*, so the sampling below is reproducible run to run.
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
 fn chunk_source(text: &str, origin: &str) -> Vec<(String, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let is_def_start = |l: &str| {
@@ -582,10 +598,12 @@ fn probe_selection_effect() {
         let h = ctx[*idx].simhash;
         if !chosen.is_empty() {
             // New: 1 - max cos. Old: 1 - max(1 - d/64) == min(d)/64.
+            // Mirrors the shipped `diversity_factor`: union-bounded LCB over
+            // the k comparisons being maximised.
             let new_div = (1.0
                 - chosen
                     .iter()
-                    .map(|&c| crate::dedup::simhash_cosine(c, h))
+                    .map(|&c| crate::dedup::simhash_cosine_lcb(c, h, chosen.len(), 0.05))
                     .fold(0.0f64, f64::max))
             .max(FLOOR);
             let old_div = (chosen
@@ -706,4 +724,168 @@ fn probe_fingerprint_bias() {
     }
     println!("\na balanced fingerprint has popcount 32 (50% zeros). Systematic deficit");
     println!("means tied accumulators are resolving to 0 and inflating similarity.\n");
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 5 — selection-set-size bias (the optimizer's curse, inside the
+// greedy loop).
+//
+// `diversity_factor` computes `max` similarity over the ALREADY-SELECTED set.
+// Taking a max over k noisy estimates is upward-biased even when every
+// estimate is individually unbiased (Smith & Winkler 2006). For estimates with
+// noise sd `sigma`, the max of k of them sits roughly `sigma * sqrt(2 ln k)`
+// above the true max.
+//
+// That has a consequence specific to greedy submodular selection: k is the
+// size of the selected set, so it GROWS DURING THE RUN. The redundancy penalty
+// applied to the 200th candidate is systematically harsher than the one
+// applied to the 5th, for no reason except that more noisy comparisons have
+// been drawn. The engine invents redundancy that is not there, and invents
+// more of it the longer it runs.
+//
+// Critically, this is NOT fixed by widening the fingerprint. More bits shrink
+// `sigma`, but the `sqrt(2 ln k)` factor survives untouched.
+// ════════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_selection_set_size_bias() {
+    let frags = build_corpus();
+    assert!(frags.len() > 400, "corpus too small: {}", frags.len());
+    let n = frags.len();
+
+    // Empirical noise sd of the estimator on near-orthogonal real pairs.
+    let mut rng = Rng(0x5EED_1234_ABCD_0001);
+    let (mut s1, mut s2, mut cnt) = (0.0f64, 0.0f64, 0usize);
+    for _ in 0..20_000 {
+        let (a, b) = (rng.below(n), rng.below(n));
+        if a == b {
+            continue;
+        }
+        if cosine_tf(&frags[a].tf, &frags[b].tf) > 0.05 {
+            continue; // keep only genuinely unrelated pairs
+        }
+        let e = est_angular(hamming_distance(frags[a].fingerprint, frags[b].fingerprint));
+        s1 += e;
+        s2 += e * e;
+        cnt += 1;
+    }
+    let mean = s1 / cnt as f64;
+    let sigma = (s2 / cnt as f64 - mean * mean).sqrt();
+
+    println!("\n=== ARM 5: redundancy invented by set size (optimizer's curse) ===");
+    println!(
+        "estimator on {} genuinely unrelated real pairs: mean {:.3}, sd {:.3}",
+        cnt, mean, sigma
+    );
+    println!("(true cosine for these pairs is ~0, so all of this is noise)\n");
+
+    println!(
+        "{:>6} {:>10} {:>10} {:>11} {:>12} {:>11}",
+        "k", "true max", "uncorrected", "invented", "CORRECTED", "residual"
+    );
+
+    const TRIALS: usize = 400;
+    for k in [1usize, 2, 4, 8, 16, 32, 64, 128, 256] {
+        let (mut est_acc, mut true_acc, mut lcb_acc) = (0.0f64, 0.0f64, 0.0f64);
+        for _ in 0..TRIALS {
+            let q = rng.below(n);
+            let (mut est_max, mut true_max, mut lcb_max) = (0.0f64, 0.0f64, 0.0f64);
+            for _ in 0..k {
+                let s = rng.below(n);
+                if s == q {
+                    continue;
+                }
+                let (fq, fs) = (frags[q].fingerprint, frags[s].fingerprint);
+                est_max = est_max.max(est_angular(hamming_distance(fq, fs)));
+                lcb_max = lcb_max.max(crate::dedup::simhash_cosine_lcb(fq, fs, k, 0.05));
+                true_max = true_max.max(cosine_tf(&frags[q].tf, &frags[s].tf));
+            }
+            est_acc += est_max;
+            true_acc += true_max;
+            lcb_acc += lcb_max;
+        }
+        let (e, t, l) = (
+            est_acc / TRIALS as f64,
+            true_acc / TRIALS as f64,
+            lcb_acc / TRIALS as f64,
+        );
+        println!(
+            "{:>6} {:>10.3} {:>10.3} {:>11.3} {:>12.3} {:>11.3}",
+            k,
+            t,
+            e,
+            (e - t).max(0.0),
+            l,
+            (l - t).max(0.0)
+        );
+    }
+
+    println!("\n'invented' is redundancy the uncorrected estimator perceives but which");
+    println!("does not exist. 'CORRECTED' is the union-bounded lower confidence bound");
+    println!("now used by diversity_factor; 'residual' is what it still over-states.");
+
+    // ── Discrimination check ──
+    //
+    // A bound that removes invented redundancy is worthless if it also stops
+    // detecting real redundancy — that would trade a noisy penalty for an
+    // inert one, which is the failure this whole line of work started from.
+    // So: replay genuine near-duplicates through the shipped path at a large
+    // selected-set size, where the union bound is at its most conservative.
+    /// (label, how to build the counterpart fragment).
+    type Relationship = (&'static str, fn(&str) -> String);
+
+    let classes: [Relationship; 4] = [
+        ("identical", |t: &str| t.to_string()),
+        ("comment prepended", |t: &str| {
+            format!("// NOTE: reviewed.\n{t}")
+        }),
+        ("one line changed", |t: &str| {
+            let mut lines: Vec<String> = t.lines().map(String::from).collect();
+            let mid = lines.len() / 2;
+            lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+            lines.join("\n")
+        }),
+        ("unrelated fragment", |_t: &str| String::new()),
+    ];
+
+    println!("\n--- discrimination retained at k=256 (penalty must survive) ---");
+    println!(
+        "{:<22} {:>10} {:>14} {:>14}",
+        "relationship", "true cos", "LCB penalty", "diversity mult"
+    );
+
+    for (label, gen) in classes {
+        let (mut sc, mut sl, mut cnt) = (0.0f64, 0.0f64, 0usize);
+        for (i, f) in frags.iter().take(300).enumerate() {
+            let (twin_tf, twin_fp) = if label == "unrelated fragment" {
+                // Pair against a different real fragment instead of a twin.
+                let o = &frags[(i + 137) % frags.len()];
+                (o.tf.clone(), o.fingerprint)
+            } else {
+                let t = gen(&f.body);
+                let tf = trigram_tf(&t);
+                if tf.len() < 5 {
+                    continue;
+                }
+                (tf, simhash(&t))
+            };
+            sc += cosine_tf(&f.tf, &twin_tf);
+            sl += crate::dedup::simhash_cosine_lcb(f.fingerprint, twin_fp, 256, 0.05);
+            cnt += 1;
+        }
+        if cnt == 0 {
+            continue;
+        }
+        let (c, l) = (sc / cnt as f64, sl / cnt as f64);
+        println!(
+            "{:<22} {:>10.3} {:>14.3} {:>14.3}",
+            label,
+            c,
+            l,
+            (1.0 - l).max(0.10)
+        );
+    }
+    println!("\n(diversity mult 1.0 = no penalty; 0.10 = floor. A usable bound must");
+    println!(" keep real duplicates well below 1.0 while leaving unrelated at 1.0.)\n");
 }

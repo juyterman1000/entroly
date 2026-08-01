@@ -28,7 +28,14 @@
 //!    Combined with SDS, each candidate is a (fragment, resolution)
 //!    pair with resolution-adjusted value and diversity penalty.
 //!
-use crate::dedup::simhash_cosine;
+use crate::dedup::{simhash_cosine, simhash_cosine_lcb};
+
+/// Confidence level for the redundancy penalty: a fragment is suppressed only
+/// when it is similar to something already selected at 1 - alpha confidence,
+/// jointly across every comparison drawn. Chosen to fail toward keeping
+/// information, since an unjustified penalty discards evidence while an
+/// unjustified reprieve only costs tokens.
+const DIVERSITY_ALPHA: f64 = 0.05;
 use crate::fragment::{compute_relevance, ContextFragment};
 use std::collections::HashMap;
 
@@ -157,9 +164,14 @@ fn diversity_factor(candidate_hash: Option<u64>, selected_hashes: &[u64]) -> f64
         return 1.0;
     }
 
+    // Union-bounded over the k comparisons being maximised. Without this, the
+    // maximum of k noisy estimates drifts upward like sigma*sqrt(2 ln k), so
+    // the penalty grows with how much has already been selected rather than
+    // with actual redundancy. See `dedup::simhash_cosine_lcb`.
+    let comparisons = selected_hashes.len();
     let max_sim = selected_hashes
         .iter()
-        .map(|&h| simhash_cosine(candidate_hash, h))
+        .map(|&h| simhash_cosine_lcb(candidate_hash, h, comparisons, DIVERSITY_ALPHA))
         .fold(0.0_f64, f64::max);
 
     // Diversity = 1 - max_similarity
