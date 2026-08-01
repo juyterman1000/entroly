@@ -169,6 +169,16 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
         # files it later drops are precisely the residual a sufficiency
         # certificate needs, and nothing downstream can recover them.
         candidate_utility = {src: best_by_file.get(src, 0.0) for src in file_sources}
+        # Chunk-level residual. `chunk_ranked` already scores every chunk, so
+        # keeping it costs nothing and is what makes boundary exposure
+        # computable: at file granularity a chunk's "neighbourhood" is the file
+        # itself, which is trivially retained, so E_B is structurally zero and
+        # the severed-span failure it exists to detect can never fire.
+        chunk_utility = {}
+        for idx, score in chunk_ranked:
+            if 0 <= idx < len(chunk_keys):
+                logical, _, part = chunk_keys[idx].partition(chr(0))
+                chunk_utility[(logical, int(part or 0))] = float(score)
         if ranked and any(sc > 0 for _, sc in ranked):
             feedback_by_file = {
                 source: sum(
@@ -233,6 +243,7 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
         _attach_sufficiency(
             selected,
             candidate_utility=locals().get("candidate_utility") or {},
+            chunk_utility=locals().get("chunk_utility") or {},
             by_file=by_file,
             query=query,
             token_budget=int(token_budget),
@@ -260,6 +271,7 @@ def _attach_sufficiency(
     selected: list[dict],
     *,
     candidate_utility: dict[str, float],
+    chunk_utility: dict | None = None,
     by_file: dict[str, list[dict]],
     query: str,
     token_budget: int,
@@ -280,7 +292,32 @@ def _attach_sufficiency(
     terms = set(_query_terms(query))
     corpus: list[str] = []
 
-    for source, utility in candidate_utility.items():
+    if chunk_utility:
+        # One candidate per chunk, with real adjacency. A retained chunk whose
+        # neighbour was dropped is the severed-span shape: anchor kept, answer
+        # cut. That is invisible at file granularity.
+        for (source, part), utility in chunk_utility.items():
+            group = by_file.get(source, [])
+            if part >= len(group):
+                continue
+            text = group[part].get("content") or ""
+            corpus.append(text)
+            neighbours = tuple(
+                f"{source}#{j}"
+                for j in range(max(0, part - 1), min(len(group), part + 2))
+            )
+            candidates.append(
+                Candidate(
+                    unit_id=f"{source}#{part}",
+                    utility=float(utility),
+                    cost=max(1, len(text) // 4),
+                    selected=source in chosen,
+                    anchors=tuple(sorted(t for t in terms if t in text.lower())),
+                    neighbourhood=neighbours,
+                )
+            )
+
+    for source, utility in ({} if chunk_utility else candidate_utility).items():
         text = chr(10).join((r.get("content") or "") for r in by_file.get(source, []))
         corpus.append(text)
         cost = max(1, len(text) // 4)
