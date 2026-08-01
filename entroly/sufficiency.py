@@ -286,3 +286,192 @@ def certify(
         verdict=verdict,
         reasons=tuple(reasons),
     )
+
+
+# ── Adapter: real selections, not synthetic shapes ──────────────────────────
+
+
+def _query_terms(query: str) -> list[str]:
+    """Discriminative terms as the user wrote them, identifier-split.
+
+    Deliberately not the intent-expanded vocabulary -- see ``query_coverage``.
+    Identifiers are split so a prose query can match a symbol: the measured
+    failure mode is "chunk oversized source files" never matching
+    `chunk_oversized_source`.
+    """
+    import re
+
+    split = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", query)
+    return [t for t in re.split(r"[^A-Za-z0-9]+", split.lower()) if len(t) > 2]
+
+
+def _idf(term: str, corpus_texts: Sequence[str]) -> float:
+    """Smoothed IDF over the candidate corpus. Rare terms dominate coverage."""
+    n = len(corpus_texts)
+    if n == 0:
+        return 1.0
+    df = sum(1 for text in corpus_texts if term in text.lower())
+    return math.log(1.0 + (n - df + 0.5) / (df + 0.5))
+
+
+def candidates_from_selection(
+    all_fragments: Sequence[dict[str, Any]],
+    selected_fragments: Sequence[dict[str, Any]],
+    query: str,
+    *,
+    neighbourhood_radius: int = 1,
+) -> list[Candidate]:
+    """Build certificate inputs from an actual entroly selection.
+
+    Anchors are the query's discriminative terms that a retained fragment
+    contains. The neighbourhood is the adjacent chunks of the same logical
+    source within ``neighbourhood_radius`` -- so an anchor whose neighbouring
+    chunk was dropped registers as boundary exposure, which is exactly the
+    severed-span failure this was built for.
+    """
+    from .qccr import logical_source
+
+    def _key(fragment: dict[str, Any]) -> str:
+        return str(fragment.get("id") or fragment.get("source") or id(fragment))
+
+    selected_keys = {_key(f) for f in selected_fragments}
+    terms = set(_query_terms(query))
+
+    # Order fragments within each logical source so "adjacent" is meaningful.
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for fragment in all_fragments:
+        by_source.setdefault(
+            logical_source(str(fragment.get("source") or "")), []
+        ).append(fragment)
+
+    position: dict[str, tuple[str, int]] = {}
+    for source, group in by_source.items():
+        for index, fragment in enumerate(group):
+            position[_key(fragment)] = (source, index)
+
+    candidates: list[Candidate] = []
+    for fragment in all_fragments:
+        key = _key(fragment)
+        content = str(fragment.get("content") or "")
+        lowered = content.lower()
+
+        utility = fragment.get("relevance")
+        if not isinstance(utility, (int, float)):
+            utility = fragment.get("relevance_score")
+        if not isinstance(utility, (int, float)):
+            utility = 0.0
+
+        cost = fragment.get("token_count")
+        if not isinstance(cost, (int, float)) or cost <= 0:
+            cost = max(1, len(content) // 4)
+
+        anchors = tuple(sorted(t for t in terms if t in lowered))
+
+        source, index = position.get(key, ("", 0))
+        group = by_source.get(source, [])
+        neighbourhood = tuple(
+            _key(group[j])
+            for j in range(
+                max(0, index - neighbourhood_radius),
+                min(len(group), index + neighbourhood_radius + 1),
+            )
+        )
+
+        candidates.append(
+            Candidate(
+                unit_id=key,
+                utility=float(utility),
+                cost=int(cost),
+                selected=key in selected_keys,
+                anchors=anchors,
+                neighbourhood=neighbourhood,
+            )
+        )
+    return candidates
+
+
+# NOT USABLE YET -- see the note on `certify_selection` below.
+
+
+def certify_selection(
+    all_fragments: Sequence[dict[str, Any]],
+    selected_fragments: Sequence[dict[str, Any]],
+    query: str,
+    *,
+    token_budget: int,
+    shadow_price_limit: float | None = None,
+) -> SufficiencyCertificate:
+    """Certify a real entroly selection.
+
+    .. warning::
+       **Not yet usable against the live engine.** Measured on this repository,
+       every signal reads 0.000 for real selections, for two reasons that are
+       properties of the engine rather than of this code:
+
+       1. ``export_fragments()`` carries ``entropy_score``, ``recency_score``
+          and ``frequency_score`` but **no per-candidate relevance**. Utility
+          is computed inside the optimizer and discarded before anything is
+          observable, so ``u_i`` is unavailable for candidates that were not
+          selected -- and those are precisely the ones λ_B is about.
+       2. The identifier namespaces do not intersect. Selected fragments are
+          QCCR synthetics (``qccr::file:entroly/cli.py``); index fragments
+          carry ``fragment_id`` with ``id`` unset. Membership of S_B therefore
+          cannot be recovered by matching.
+
+       The lesson is structural: an optimizer-derived certificate cannot be
+       derived from outside the optimizer. Reconstructing residual state from
+       the optimizer's inputs and outputs does not work, because the residue
+       -- the utilities of the candidates it rejected -- is never emitted.
+
+       Making this real requires the engine to emit, per candidate considered:
+       ``(unit_id, utility, cost, selected)``. That is a small addition to the
+       Rust selection path and is the actual prerequisite for this module.
+       Until then the maths and the calibration hold only on the synthetic
+       shapes in tests/test_sufficiency_certificate.py, which were fitted to
+       measured needle and squad behaviour but are not the live path.
+    """
+    candidates = candidates_from_selection(all_fragments, selected_fragments, query)
+    corpus = [str(f.get("content") or "") for f in all_fragments]
+    terms = _query_terms(query)
+    query_term_idf = {t: _idf(t, corpus) for t in terms}
+
+    retained = {
+        term
+        for candidate in candidates
+        if candidate.selected
+        for term in candidate.anchors
+    }
+
+    delivered = sum(c.cost for c in candidates if c.selected)
+    budget_exhausted = delivered >= int(token_budget) * 0.95
+
+    return certify(
+        candidates,
+        query_term_idf=query_term_idf,
+        retained_terms=retained,
+        budget_exhausted=budget_exhausted,
+        shadow_price_limit=(
+            calibrated_shadow_price_limit(candidates)
+            if shadow_price_limit is None
+            else shadow_price_limit
+        ),
+    )
+
+
+def calibrated_shadow_price_limit(candidates: Sequence[Candidate]) -> float:
+    """Scale-free threshold for "materially valuable evidence was excluded".
+
+    A fixed absolute limit cannot work: densities depend on the scorer's scale,
+    which differs per corpus and per query. Anchoring on the *selected*
+    distribution makes the threshold self-calibrating -- excluded evidence
+    matters when it rivals what was actually kept.
+
+    Set at the median selected density: an excluded unit denser than the
+    typical retained one is, by the optimizer's own ranking, evidence the
+    budget could not afford. Below that, the exclusion is the tail the
+    optimizer was right to drop.
+    """
+    selected = [c.density for c in candidates if c.selected]
+    if not selected:
+        return 0.0
+    return _median(selected)
