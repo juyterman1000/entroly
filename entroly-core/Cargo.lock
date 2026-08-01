@@ -217,6 +217,7 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 name = "entroly-core"
 version = "1.0.70"
 dependencies = [
+ "entroly-engine",
  "entroly-qccr",
  "flate2",
  "md-5",
@@ -230,6 +231,22 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "ureq",
+]
+
+[[package]]
+name = "entroly-engine"
+version = "1.0.70"
+dependencies = [
+ "entroly-qccr",
+ "flate2",
+ "md-5",
+ "pyo3",
+ "rand",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

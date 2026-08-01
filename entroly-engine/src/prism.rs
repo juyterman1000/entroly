@@ -35,6 +35,12 @@ pub struct SymMatrixN<const N: usize> {
     pub data: Vec<f64>,
 }
 
+impl<const N: usize> Default for SymMatrixN<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> SymMatrixN<N> {
     pub fn new() -> Self {
         SymMatrixN {

@@ -16,6 +16,9 @@ extension-module = ["pyo3/extension-module"]
 proxy = ["dep:tiny_http", "dep:ureq"]
 
 [dependencies]
+# The shared compute engine. Every algorithm lives there exactly once, so a fix
+# reaches the PyO3 and WebAssembly distributions together or not at all.
+entroly-engine = { path = "../entroly-engine", features = ["python"] }
 pyo3 = { version = "0.25", features = ["abi3-py310"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
