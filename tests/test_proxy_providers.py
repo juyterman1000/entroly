@@ -79,7 +79,7 @@ class TestProviderForwardingPolicy:
 
         kwargs = _http_client_kwargs()
 
-        assert kwargs["trust_env"] is True
+        assert kwargs["trust_env"] is False
         assert kwargs["verify"] == str(ca_file)
 
     def test_anthropic_headers_preserve_provider_metadata_without_hop_by_hop(self):

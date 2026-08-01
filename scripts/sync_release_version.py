@@ -43,6 +43,7 @@ RELEASE_SURFACES: tuple[str, ...] = (
     "entroly-core/pyproject.toml",
     "entroly-qccr/Cargo.lock",
     "entroly-qccr/Cargo.toml",
+    "entroly-qccr-audit/Cargo.toml",
     "entroly-wasm/Cargo.lock",
     "entroly-wasm/Cargo.toml",
     "entroly-wasm/package.json",
@@ -66,6 +67,7 @@ TOML_VERSION_SURFACES = {
     "entroly-core/Cargo.toml",
     "entroly-core/pyproject.toml",
     "entroly-qccr/Cargo.toml",
+    "entroly-qccr-audit/Cargo.toml",
     "entroly-wasm/Cargo.toml",
     "entroly/pyproject.toml",
     "pyproject.toml",
@@ -81,9 +83,17 @@ JSON_TOP_LEVEL_VERSION_SURFACES = {
 }
 
 CARGO_LOCK_PACKAGES: dict[str, tuple[str, ...]] = {
-    "entroly-core/Cargo.lock": ("entroly-core", "entroly-qccr"),
+    "entroly-core/Cargo.lock": (
+        "entroly-core",
+        "entroly-qccr",
+        "entroly-qccr-audit",
+    ),
     "entroly-qccr/Cargo.lock": ("entroly-qccr",),
-    "entroly-wasm/Cargo.lock": ("entroly-wasm", "entroly-qccr"),
+    "entroly-wasm/Cargo.lock": (
+        "entroly-wasm",
+        "entroly-qccr",
+        "entroly-qccr-audit",
+    ),
 }
 
 PYTHON_VERSION_PATTERNS: dict[str, str] = {

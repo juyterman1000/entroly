@@ -1192,6 +1192,18 @@ class PromptCompilerProxy:
                     "could not be initialized: %s",
                     exc,
                 )
+        # Opt-in assured conversation compression. The default is off, so
+        # existing proxy behavior remains unchanged. Initialization errors are
+        # contained by the controller and cause exact request pass-through.
+        from .proxy_assurance import ProxyAssuranceController
+        try:
+            self._assurance_controller = ProxyAssuranceController.from_config(
+                self.config
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.error("Proxy assurance disabled: %s", exc)
+            self._assurance_controller = ProxyAssuranceController()
+
         optimization_path = os.environ.get(
             "ENTROLY_OPTIMIZATION_LEDGER", ""
         ).strip()
@@ -2245,6 +2257,7 @@ class PromptCompilerProxy:
             "messages" in body
             and not self._bypass
             and not self._session_rescue_enabled
+            and not self._assurance_controller.enabled
         ):
             from .proxy_transform import compress_tool_messages
             # Stage 1: age-tiered pruning (collapses old tool outputs to digests).
@@ -2271,9 +2284,29 @@ class PromptCompilerProxy:
 
         if (
             "messages" in body
+            and not self._bypass
+            and self._assurance_controller.enabled
+        ):
+            model = extract_model(body, path) or str(body.get("model", ""))
+            assurance_window = (
+                context_window_for_model(model)
+                if model
+                else getattr(self.config, "context_window", 128_000)
+            )
+            assurance_outcome = self._assurance_controller.apply(
+                body,
+                query=extract_user_message(body, provider),
+                context_window=assurance_window,
+            )
+            body = assurance_outcome.body
+            control_headers.update(assurance_outcome.headers)
+
+        if (
+            "messages" in body
             and self.config.enable_conversation_compression
             and not self._session_rescue_enabled
             and not self._bypass
+            and not self._assurance_controller.enabled
         ):
             body["messages"] = compress_conversation_messages(
                 body["messages"],

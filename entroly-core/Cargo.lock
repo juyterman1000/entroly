@@ -218,6 +218,7 @@ name = "entroly-core"
 version = "1.0.70"
 dependencies = [
  "entroly-qccr",
+ "entroly-qccr-audit",
  "flate2",
  "md-5",
  "pyo3",
@@ -237,6 +238,15 @@ name = "entroly-qccr"
 version = "1.0.70"
 dependencies = [
  "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "entroly-qccr-audit"
+version = "1.0.70"
+dependencies = [
+ "entroly-qccr",
  "serde",
  "serde_json",
 ]

@@ -68,10 +68,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "entroly-qccr-audit"
+version = "1.0.70"
+dependencies = [
+ "entroly-qccr",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "entroly-wasm"
 version = "1.0.70"
 dependencies = [
  "entroly-qccr",
+ "entroly-qccr-audit",
  "flate2",
  "js-sys",
  "md-5",

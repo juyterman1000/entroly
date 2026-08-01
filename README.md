@@ -5,7 +5,7 @@
 <h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
 
 <p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
-Entroly uses budgeted context selection, content-addressed evidence, exact recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
+Entroly is a local-first **Context OS** and assurance layer. It uses budgeted context selection, content-addressed evidence, exact recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
 
 <p align="center">
   <sub>Works through supported proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.</sub>
@@ -90,6 +90,36 @@ pricing source and date.
 
 ---
 
+## Assurance-gated compression (opt-in)
+
+For evidence-critical workloads, Entroly now exposes an opt-in assured path
+that separates **selection** from **permission to trust the selection**. It
+returns exact candidate spans, selected and excluded residuals, scoped
+certificates, and an explicit accept/expand/bypass decision. Semantic scope is
+fail-closed until a held-out calibration profile meets its declared risk gate.
+
+```python
+from entroly import compress_assured, compress_file_assured
+
+result = compress_assured(
+    context,
+    query="Where is payment retry state persisted?",
+    budget=2_000,
+    required_scope="candidate_units",
+    fallback="original",
+)
+print(result.receipt["decision"])
+```
+
+Use `compress_file_assured(...)` for workspace-contained file compression;
+instruction/rule files are delivered byte-identically. Run the focused MCP
+surface with `entroly-assurance-mcp`. It also exposes
+dependency-aware `repo_impact` and whole-line `repo_context_bundle` tools plus a
+local assurance ledger that stores decision metadata and hashes, never raw
+context. [Read the full contract and examples](docs/ASSURED_CONTEXT.md).
+
+---
+
 ## One thing you can verify without trusting Entroly
 
 Context reduction is dangerous when a tool silently changes source text. An
@@ -165,8 +195,8 @@ Entroly ships as a full local runtime, not one proxy command:
 | Surface | What users get |
 |---|---|
 | **CLI** | `attach`, `context-commit`, `verify-claims`, `simulate`, `value`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
-| **SDK** | `compress`, `compress_messages`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
-| **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification |
+| **SDK** | `compress`, `compress_messages`, opt-in `compress_assured`, `compress_messages_assured`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
+| **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification; focused `entroly-assurance-mcp` adds assured compression, decision stats, repo impact, importance overviews, bounded code smells, and context bundles |
 | **Proxy** | OpenAI, Anthropic, Gemini, and compatible local optimization paths for API-key users and custom apps |
 | **Node/WASM** | `entroly`, `entroly-mcp`, and `entroly-wasm` packages for npm users |
 | **Trust layer** | WITNESS, EICV, STAVE, receipt proofs, provenance checks, prompt-injection scanning, and local verification reports |
@@ -178,7 +208,7 @@ Entroly ships as a full local runtime, not one proxy command:
 | **Knowledge vault/CogOps** | Belief compilation, vault search, workspace change sync, epistemic routing, verification engines, and flow orchestration |
 | **Framework/event gateways** | LangChain helpers, Ebbiforge provenance auditing and optional learned-dynamics adapter, AgentSkills export, Hermes, Slack, Discord, and Telegram gateway hooks for teams that want operational feedback loops |
 | **Self-improvement** | PRISM/RAVS feedback, autotune, verified model-based dreaming, skill crystallization, promotion gates, evolution logging, and budget-gated skill synthesis |
-| **Observability** | Dashboard, daemon supervisor, control plane, health reports, value tracker, release-surface checks, and local JSON proof reports |
+| **Observability** | Dashboard, daemon supervisor, control plane, health reports, value tracker, local assurance ledger with coverage/bypass/p50/p95 metrics, release-surface checks, and local JSON proof reports |
 
 Under the hood, the Python control plane has a pure-Python path and can use the
 optional Rust extension for supported operations. The separate Node runtime

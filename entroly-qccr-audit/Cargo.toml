@@ -1,0 +1,20 @@
+[package]
+name = "entroly-qccr-audit"
+version = "1.0.70"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/juyterman1000/entroly"
+description = "Audited atomic-unit selection and optimizer-residual receipts for Entroly QCCR"
+
+[lib]
+name = "entroly_qccr_audit"
+
+[features]
+default = ["regex-full"]
+regex-full = ["entroly-qccr/regex-full"]
+regex-lite = ["entroly-qccr/regex-lite"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+entroly-qccr = { path = "../entroly-qccr", default-features = false }

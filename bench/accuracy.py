@@ -108,21 +108,39 @@ def _wilson_ci(correct: int, total: int, z: float = 1.96) -> tuple[float, float]
     return (max(0.0, center - half), min(1.0, center + half))
 
 
+@dataclass(frozen=True)
+class LLMCallResult:
+    """Provider-observed usage for one benchmark call."""
+    text: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    latency_ms: float
+
+
 @dataclass
 class BenchmarkResult:
-    """Result of a single benchmark run."""
+    """Result of one run with compressor and provider usage separated."""
     benchmark: str
-    mode: str  # "baseline" or "entroly"
+    mode: str  # "baseline" or compressor name
     samples: int
     correct: int
     accuracy: float
     ci_low: float
     ci_high: float
-    avg_tokens: float
+    avg_emitted_context_tokens: float
+    avg_provider_input_tokens: float
+    avg_provider_output_tokens: float
+    avg_provider_total_tokens: float
     avg_latency_ms: float
     total_cost_usd: float
     errors: int = 0
     details: list[dict] = field(default_factory=list)
+
+    @property
+    def avg_tokens(self) -> float:
+        """Compatibility alias: token savings use emitted context only."""
+        return self.avg_emitted_context_tokens
 
 
 @dataclass
@@ -167,8 +185,23 @@ def _call_llm(
     ``_run_mode`` would just count this as an error and move on, but
     retrying transparently is strictly better data quality.
     """
-    return _call_llm_with_retry(
+    result = _call_llm_detailed(
         messages, model, max_tokens, base_url, api_key_env, max_retries=3
+    )
+    return result.text, result.total_tokens, result.latency_ms
+
+
+def _call_llm_detailed(
+    messages: list[dict],
+    model: str,
+    max_tokens: int = 1024,
+    base_url: str | None = None,
+    api_key_env: str | None = None,
+    max_retries: int = 3,
+) -> LLMCallResult:
+    """Call an LLM while preserving input/output/total usage separately."""
+    return _call_llm_with_retry(
+        messages, model, max_tokens, base_url, api_key_env, max_retries
     )
 
 
@@ -209,7 +242,7 @@ def _call_llm_with_retry(
     base_url: str | None,
     api_key_env: str | None,
     max_retries: int,
-) -> tuple[str, int, float]:
+) -> LLMCallResult:
     """Inner retry loop. Exponential backoff: 1s, 2s, 4s, … capped at 30s."""
     last_exc: Exception | None = None
     for attempt in range(max_retries + 1):
@@ -238,7 +271,7 @@ def _call_llm_once(
     max_tokens: int,
     base_url: str | None,
     api_key_env: str | None,
-) -> tuple[str, int, float]:
+) -> LLMCallResult:
     """Single LLM call attempt — provider routing only, no retry logic."""
     t0 = time.perf_counter()
 
@@ -259,7 +292,10 @@ def _call_llm_once(
             model=model, max_tokens=max_tokens, messages=messages,
         )
         text = resp.choices[0].message.content or ""
-        tokens = resp.usage.total_tokens if resp.usage else 0
+        usage = resp.usage
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
     elif model.startswith("claude"):
         import anthropic
         client = anthropic.Anthropic()
@@ -278,7 +314,9 @@ def _call_llm_once(
             messages=user_msgs,
         )
         text = resp.content[0].text
-        tokens = resp.usage.input_tokens + resp.usage.output_tokens
+        input_tokens = int(resp.usage.input_tokens)
+        output_tokens = int(resp.usage.output_tokens)
+        total_tokens = input_tokens + output_tokens
     elif model.startswith("gemini"):
         import openai
         # Gemini provides an OpenAI compatibility API
@@ -292,7 +330,10 @@ def _call_llm_once(
             messages=messages,
         )
         text = resp.choices[0].message.content or ""
-        tokens = resp.usage.total_tokens if resp.usage else 0
+        usage = resp.usage
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
     else:
         import openai
         client = openai.OpenAI()
@@ -302,10 +343,21 @@ def _call_llm_once(
             messages=messages,
         )
         text = resp.choices[0].message.content or ""
-        tokens = resp.usage.total_tokens if resp.usage else 0
+        usage = resp.usage
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
 
     latency = (time.perf_counter() - t0) * 1000
-    return text, tokens, latency
+    if total_tokens < input_tokens + output_tokens:
+        total_tokens = input_tokens + output_tokens
+    return LLMCallResult(
+        text=text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        latency_ms=latency,
+    )
 
 
 def _estimate_cost(
@@ -380,7 +432,9 @@ def _get_llmlingua():
 
 
 def _entroly_compress(text: str, budget_tokens: int, query: str) -> str:
-    """Fragment-level QCCR selection."""
+    """Fragment-level QCCR selection with identity pass-through."""
+    if (len(text) + 3) // 4 <= budget_tokens:
+        return text
     from entroly.qccr import select as qccr_select
     chunk_size = 400
     chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
@@ -1245,6 +1299,9 @@ def run_pareto_sweep(
         "baseline_accuracy": baseline.accuracy,
         "baseline_ci": [baseline.ci_low, baseline.ci_high],
         "baseline_avg_tokens": baseline.avg_tokens,
+        "baseline_avg_provider_input_tokens": baseline.avg_provider_input_tokens,
+        "baseline_avg_provider_output_tokens": baseline.avg_provider_output_tokens,
+        "baseline_avg_provider_total_tokens": baseline.avg_provider_total_tokens,
         "baseline_cost_usd": baseline.total_cost_usd,
         "budget_fractions": list(budget_fractions),
         "modes": {},
@@ -1272,6 +1329,9 @@ def run_pareto_sweep(
                 "ci_low": r.ci_low,
                 "ci_high": r.ci_high,
                 "avg_tokens": r.avg_tokens,
+                "avg_provider_input_tokens": r.avg_provider_input_tokens,
+                "avg_provider_output_tokens": r.avg_provider_output_tokens,
+                "avg_provider_total_tokens": r.avg_provider_total_tokens,
                 "avg_latency_ms": r.avg_latency_ms,
                 "total_cost_usd": r.total_cost_usd,
                 "errors": r.errors,
@@ -1311,6 +1371,19 @@ def run_pareto_sweep(
     return out
 
 
+
+def _emitted_context_tokens(messages: list[dict]) -> int:
+    """Estimate emitted context only; exclude question, output, and billing totals."""
+    total = 0
+    for message in messages:
+        if message.get("role") != "system":
+            continue
+        content = str(message.get("content") or "")
+        if content.startswith("Context:\n"):
+            content = content[len("Context:\n"):]
+        total += (len(content) + 3) // 4
+    return total
+
 def _run_mode(
     items: list[dict],
     benchmark: str,
@@ -1320,9 +1393,12 @@ def _run_mode(
     base_url: str | None = None,
     api_key_env: str | None = None,
 ) -> BenchmarkResult:
-    """Run all items in a given mode."""
+    """Run one mode while keeping compressor and provider usage separate."""
     correct = 0
-    total_tokens = 0
+    total_emitted_context_tokens = 0
+    total_provider_input_tokens = 0
+    total_provider_output_tokens = 0
+    total_provider_total_tokens = 0
     total_latency = 0.0
     total_cost = 0.0
     errors = 0
@@ -1335,63 +1411,70 @@ def _run_mode(
             messages.append({"role": "system", "content": f"Context:\n{item['context']}"})
         messages.append({"role": "user", "content": item["question"]})
 
-        # Compress if a compression mode is selected.
-        # Modes: "baseline" (no compression), "entroly", "llmlingua", "hybrid".
         if mode in _COMPRESSORS and budget:
             messages = _compress_messages_modal(
                 messages, budget, mode=mode, query=item["question"],
             )
 
+        emitted_context_tokens = _emitted_context_tokens(messages)
         try:
-            response, tokens, latency = _call_llm(
+            call = _call_llm_detailed(
                 messages, model, base_url=base_url, api_key_env=api_key_env,
             )
-            is_correct = _check_answer(response, item["expected"], benchmark, item.get("metadata"))
+            is_correct = _check_answer(
+                call.text, item["expected"], benchmark, item.get("metadata")
+            )
             if is_correct:
                 correct += 1
-            total_tokens += tokens
-            total_latency += latency
-            total_cost += _estimate_cost(model, tokens, 200, base_url=base_url)
+            total_emitted_context_tokens += emitted_context_tokens
+            total_provider_input_tokens += call.input_tokens
+            total_provider_output_tokens += call.output_tokens
+            total_provider_total_tokens += call.total_tokens
+            total_latency += call.latency_ms
+            if call.input_tokens or call.output_tokens:
+                total_cost += _estimate_cost(
+                    model, call.input_tokens, call.output_tokens, base_url=base_url
+                )
             details.append({
                 "index": i,
                 "correct": is_correct,
-                "tokens": tokens,
-                "latency_ms": round(latency, 1),
+                "emitted_context_tokens": emitted_context_tokens,
+                "provider_input_tokens": call.input_tokens,
+                "provider_output_tokens": call.output_tokens,
+                "provider_total_tokens": call.total_tokens,
+                "latency_ms": round(call.latency_ms, 1),
             })
-        except Exception as e:
+        except Exception as exc:
             errors += 1
-            err_label = f"{type(e).__name__}: {str(e)[:160]}"
-            error_classes[err_label] = error_classes.get(err_label, 0) + 1
-            details.append({"index": i, "error": str(e)[:300]})
-            # Surface the first occurrence of each unique error class
-            # immediately to stderr so the user sees what's failing without
-            # waiting for the whole run. Subsequent identical errors are
-            # silenced (counted in error_classes for the summary).
-            if error_classes[err_label] == 1:
-                import sys as _sys
+            error_label = f"{type(exc).__name__}: {str(exc)[:160]}"
+            error_classes[error_label] = error_classes.get(error_label, 0) + 1
+            details.append({"index": i, "error": str(exc)[:300]})
+            if error_classes[error_label] == 1:
                 print(
-                    f"  [{benchmark}/{mode}] ERROR (item {i}): {err_label}",
-                    file=_sys.stderr, flush=True,
+                    f"  [{benchmark}/{mode}] ERROR (item {i}): {error_label}",
+                    file=sys.stderr, flush=True,
                 )
 
-        # Progress
         if (i + 1) % 10 == 0:
             pct = correct / max(i + 1 - errors, 1) * 100
             print(f"    [{i+1}/{len(items)}] accuracy={pct:.0f}%")
 
-    n = len(items)
-    valid = max(n - errors, 1)
-    ci_lo, ci_hi = _wilson_ci(correct, valid)
+    sample_count = len(items)
+    valid = max(sample_count - errors, 1)
+    ci_low, ci_high = _wilson_ci(correct, valid)
     return BenchmarkResult(
         benchmark=benchmark,
         mode=mode,
-        samples=n,
+        samples=sample_count,
         correct=correct,
         accuracy=round(correct / valid, 4),
-        ci_low=round(ci_lo, 4),
-        ci_high=round(ci_hi, 4),
-        avg_tokens=round(total_tokens / max(n, 1), 1),
-        avg_latency_ms=round(total_latency / max(n, 1), 1),
+        ci_low=round(ci_low, 4),
+        ci_high=round(ci_high, 4),
+        avg_emitted_context_tokens=round(total_emitted_context_tokens / valid, 1),
+        avg_provider_input_tokens=round(total_provider_input_tokens / valid, 1),
+        avg_provider_output_tokens=round(total_provider_output_tokens / valid, 1),
+        avg_provider_total_tokens=round(total_provider_total_tokens / valid, 1),
+        avg_latency_ms=round(total_latency / valid, 1),
         total_cost_usd=round(total_cost, 4),
         errors=errors,
         details=details,
@@ -1573,6 +1656,8 @@ Custom OpenAI-compatible providers (Groq, Together, OpenRouter, Ollama, vLLM, ..
                 "entroly_ci_95": [r.entroly.ci_low, r.entroly.ci_high],
                 "baseline_avg_tokens": r.baseline.avg_tokens,
                 "entroly_avg_tokens": r.entroly.avg_tokens,
+                "baseline_avg_provider_total_tokens": r.baseline.avg_provider_total_tokens,
+                "entroly_avg_provider_total_tokens": r.entroly.avg_provider_total_tokens,
                 "samples": r.baseline.samples,
             })
         print(json.dumps(output, indent=2))

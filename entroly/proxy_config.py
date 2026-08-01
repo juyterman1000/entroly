@@ -349,6 +349,18 @@ class ProxyConfig:
     enable_conversation_compression: bool = True
     enable_passive_feedback: bool = True
 
+    # Opt-in fail-closed proxy assurance. ``off`` preserves all existing
+    # proxy behavior. ``candidate_units`` accepts exact structural evidence;
+    # ``semantic`` requires a disjoint-holdout-validated calibration profile.
+    assurance_mode: str = "off"
+    assurance_budget_tokens: int = 0
+    assurance_budget_fraction: float = 0.15
+    assurance_preserve_last_n: int = 4
+    assurance_fallback: str = "original"
+    assurance_max_expansions: int = 2
+    assurance_profile_path: str = ""
+    assurance_ledger_path: str = ""
+
     # Pipeline hardening
     enable_aged_tool_pruning: bool = True
     aged_tool_tail_window: int = 4
@@ -456,6 +468,30 @@ class ProxyConfig:
             enable_conversation_compression=(
                 os.environ.get("ENTROLY_CONVERSATION_COMPRESSION", "1") != "0"
             ),
+            assurance_mode=os.environ.get(
+                "ENTROLY_ASSURANCE_MODE", "off"
+            ).strip().lower() or "off",
+            assurance_budget_tokens=_env_int(
+                "ENTROLY_ASSURANCE_BUDGET_TOKENS", 0
+            ),
+            assurance_budget_fraction=_env_float(
+                "ENTROLY_ASSURANCE_BUDGET_FRACTION", 0.15
+            ),
+            assurance_preserve_last_n=_env_int(
+                "ENTROLY_ASSURANCE_PRESERVE_LAST_N", 4
+            ),
+            assurance_fallback=os.environ.get(
+                "ENTROLY_ASSURANCE_FALLBACK", "original"
+            ).strip().lower() or "original",
+            assurance_max_expansions=_env_int(
+                "ENTROLY_ASSURANCE_MAX_EXPANSIONS", 2
+            ),
+            assurance_profile_path=os.environ.get(
+                "ENTROLY_ASSURANCE_PROFILE", ""
+            ).strip(),
+            assurance_ledger_path=os.environ.get(
+                "ENTROLY_ASSURANCE_LEDGER", ""
+            ).strip(),
             tool_result_policy=os.environ.get(
                 "ENTROLY_TOOL_RESULT_POLICY", "auto"
             ).strip().lower() or "auto",

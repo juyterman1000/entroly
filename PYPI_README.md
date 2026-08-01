@@ -11,6 +11,18 @@ Entroly is a local-first Context Assurance layer for developers, teams, and AI a
 
 A small one-time setup is required; no agent-architecture rewrite.
 
+## Assurance-gated compression
+
+The opt-in `compress_assured`, `compress_file_assured`, and
+`compress_messages_assured` APIs return the
+compressed output together with an accept/expand/bypass receipt. Structural
+scope uses exact atomic source spans; semantic scope remains fail-closed without
+a validated held-out calibration profile. The separate
+`entroly-assurance-mcp` command exposes assured text/file compression, local decision
+stats, repository impact, and whole-line context bundles.
+
+See `docs/ASSURED_CONTEXT.md` in the source distribution for the full contract.
+
 ## What Entroly does
 
 AI applications often send repeated files, long histories, logs, and low-value material to a model. Entroly can:

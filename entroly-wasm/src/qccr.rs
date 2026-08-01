@@ -1,7 +1,7 @@
-//! QCCR wasm-bindgen bindings — thin wrappers over the shared `entroly-qccr`
-//! crate (the single source of truth, shared verbatim with the PyO3 build, so
-//! npm and pip/MCP/SDK rank and select identically). All logic lives in
-//! `entroly-qccr`; this file only marshals JSON across the JS boundary.
+//! QCCR wasm-bindgen bindings over the shared Rust selector crates.
+//!
+//! The compatibility selector and the audited atomic selector are both shared
+//! with PyO3, so npm and pip/MCP/SDK cannot drift.
 
 use std::collections::HashMap;
 
@@ -27,18 +27,35 @@ pub fn qccr_expand_query(query: &str) -> String {
         .unwrap_or_else(|_| "[]".to_string())
 }
 
-/// Full QCCR selection (rank + sentence-MMR + emit + trim). `fragments_json`
-/// is a JSON array of `{source, content}`; `preferred_json` is the optional
-/// file order (or "[]"); returns a JSON array of selected fragments.
+/// Compatibility QCCR selection; returns a JSON array of selected fragments.
 #[wasm_bindgen]
 pub fn qccr_select(
     fragments_json: &str,
-    token_budget: i32, // i32 -> JS number (i64 would surface as BigInt to callers)
+    token_budget: i32,
     query: &str,
     overrides_json: &str,
     preferred_json: &str,
 ) -> String {
     entroly_qccr::select_json(
+        fragments_json,
+        token_budget as i64,
+        query,
+        overrides_json,
+        preferred_json,
+    )
+}
+
+/// Audited atomic selection; returns selected fragments, exact source spans,
+/// every candidate and a scope-bounded structural sufficiency certificate.
+#[wasm_bindgen]
+pub fn qccr_select_with_audit(
+    fragments_json: &str,
+    token_budget: i32,
+    query: &str,
+    overrides_json: &str,
+    preferred_json: &str,
+) -> String {
+    entroly_qccr_audit::select_with_audit_json(
         fragments_json,
         token_budget as i64,
         query,

@@ -143,12 +143,12 @@ class BoundedAsyncClient(_safe.BoundedAsyncClient):
 
 
 def _safe_http_client_kwargs() -> dict[str, Any]:
-    """Return safe HTTPX kwargs while preserving explicit CA compatibility.
+    """Return safe HTTPX kwargs with explicit CA and proxy policies separated.
 
-    HTTPX historically uses ``trust_env=True`` both for CA discovery and proxy
-    discovery. When a CA bundle is explicitly configured but proxy inheritance is
-    not opted in, explicit direct mounts override environment proxy routes. The
-    mounts are lazy so validating a config dictionary does not parse the CA file.
+    An explicitly configured CA bundle is passed through ``verify`` and does not
+    require ``trust_env=True``. Ambient HTTP(S)_PROXY variables therefore remain
+    ignored unless the operator independently opts in with
+    ``ENTROLY_TRUST_PROXY_ENV=1``.
     """
     ca_bundle = _proxy._resolve_ca_bundle_from_env()
     trust_proxy_env = _safe._env_flag("ENTROLY_TRUST_PROXY_ENV")
@@ -164,12 +164,6 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
     }
     if ca_bundle:
         kwargs["verify"] = ca_bundle
-    if ca_bundle and not trust_proxy_env:
-        kwargs["trust_env"] = True
-        kwargs["mounts"] = {
-            "http://": _LazyDirectTransport(ca_bundle),
-            "https://": _LazyDirectTransport(ca_bundle),
-        }
     return kwargs
 
 

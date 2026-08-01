@@ -76,6 +76,7 @@ Issues = "https://github.com/juyterman1000/entroly/issues"
 entroly = "entroly.docker_launcher_safe:launch"
 entroly-memory = "entroly.memory_cli:main"
 entroly-compression-mcp = "entroly.compression_mcp:main"
+entroly-assurance-mcp = "entroly.assurance_mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["entroly"]

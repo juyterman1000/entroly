@@ -1,7 +1,9 @@
-//! QCCR PyO3 bindings — thin wrappers over the shared `entroly-qccr` crate
-//! (the single source of truth, shared verbatim with the WASM build, so Python
-//! and npm rank and select identically). All ranking/selection logic lives in
-//! `entroly-qccr`; this file only marshals types across the Python boundary.
+//! QCCR PyO3 bindings — thin wrappers over the shared Rust selector crates.
+//!
+//! `entroly-qccr` remains the compatibility selector SSOT. The optional audited
+//! path uses `entroly-qccr-audit`, which layers exact span/candidate receipts and
+//! atomic-unit packing over the same file ranker. Python and WASM therefore
+//! cannot drift in either ranking or audit semantics.
 
 use std::collections::HashMap;
 
@@ -25,23 +27,44 @@ pub fn py_qccr_expand_query(query: String) -> Vec<String> {
     entroly_qccr::expand_query_sorted(&query)
 }
 
-/// Full QCCR selection (rank + sentence-MMR + emit + trim). `fragments_json`
-/// is a JSON array of `{source, content}`; `preferred_json` is the optional
-/// post-localizer file order (or "[]"); returns a JSON array of fragments.
+/// Full QCCR selection.
+///
+/// The five-argument form is byte-compatible with the historical API and
+/// returns the legacy selected-fragment array. Passing `with_audit=true`
+/// returns an envelope containing `selected`, every considered candidate,
+/// exact UTF-8 spans, optimizer residuals and a scope-bounded certificate.
 #[pyfunction]
-#[pyo3(signature = (fragments_json, token_budget, query, overrides_json="{}".to_string(), preferred_json="[]".to_string()))]
+#[pyo3(signature = (
+    fragments_json,
+    token_budget,
+    query,
+    overrides_json="{}".to_string(),
+    preferred_json="[]".to_string(),
+    with_audit=false
+))]
 pub fn py_qccr_select(
     fragments_json: String,
     token_budget: i64,
     query: String,
     overrides_json: String,
     preferred_json: String,
+    with_audit: bool,
 ) -> String {
-    entroly_qccr::select_json(
-        &fragments_json,
-        token_budget,
-        &query,
-        &overrides_json,
-        &preferred_json,
-    )
+    if with_audit {
+        entroly_qccr_audit::select_with_audit_json(
+            &fragments_json,
+            token_budget,
+            &query,
+            &overrides_json,
+            &preferred_json,
+        )
+    } else {
+        entroly_qccr::select_json(
+            &fragments_json,
+            token_budget,
+            &query,
+            &overrides_json,
+            &preferred_json,
+        )
+    }
 }

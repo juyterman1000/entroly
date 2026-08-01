@@ -39,6 +39,28 @@ try:
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 
+# Assurance-gated compression: exact evidence scopes, fail-closed fallback,
+# local decision telemetry, and dependency-aware repository context bundles.
+try:
+    from .assurance_sdk import (  # noqa: F401
+        AssuredMessagesResult,
+        AssuredTextResult,
+        compress_assured,
+        compress_file_assured,
+        compress_messages_assured,
+    )
+    from .assurance_telemetry import AssuranceLedger, AssuranceSummary  # noqa: F401
+    from .assurance_mcp import create_assurance_mcp_server  # noqa: F401
+    from .repo_intelligence import (  # noqa: F401
+        CodeSmellReport,
+        ImpactReport,
+        RepositoryContextBundle,
+        RepositoryIntelligence,
+        RepositoryOverview,
+    )
+except ImportError:
+    pass
+
 # Context Commit: portable, content-addressed proof of what an agent received.
 try:
     from .context_commit import (  # noqa: F401
