@@ -14,6 +14,36 @@ the cut was. This module turns that residue into five signals at negligible
 cost -- no model, no training, no second pass -- and into a fail-closed verdict
 the caller can act on and a receipt an auditor can check.
 
+Related work, read rather than assumed
+--------------------------------------
+The *concept* of context sufficiency is not ours. "Sufficient Context: A New
+Lens on Retrieval Augmented Generation Systems" (arXiv:2411.06037, Google)
+defines sufficient context as containing "all the necessary information to
+provide a definitive answer", and shows large models often answer wrongly
+instead of abstaining when it is absent -- guided abstention improves correct
+answers by 2-10%.
+
+What differs is the mechanism and the setting, verified against that work:
+
+  * Their sufficiency signal is an LLM autorater -- a prompted Gemini 1.5 Pro
+    with chain-of-thought and a 1-shot example, ~93% classification accuracy,
+    one model call per query. This module reads state the optimizer has
+    already computed: no model, no prompt, no marginal cost.
+  * They evaluate query-context pairs *after* retrieval and do not use
+    retriever-internal scores. Every signal here is retriever-internal --
+    captured mass, shadow price, cutoff margin.
+  * They address retrieval depth and abstention, explicitly not compression
+    or truncation. This is a budgeted-compression signal: the failure it
+    detects is an answer span severed by a token budget, which no amount of
+    abstention or re-retrieval prevents.
+
+AdaComp (arXiv:2409.01579) trains a Llama2-7B predictor to choose retrieval
+depth k; EXIT (arXiv:2412.12559) learns contextual sentence extraction. Both
+decide *which units to keep* and neither reports whether the kept set was
+enough. The claim here is therefore narrow: a training-free sufficiency
+signal derived from optimizer residue, in the compression setting, emitted as
+an auditable receipt.
+
 Notation, for candidate unit ``i``:
 
     u_i   utility (relevance), c_i   token cost,   d_i = u_i / c_i   density
