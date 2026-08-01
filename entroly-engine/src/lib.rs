@@ -49,7 +49,6 @@ pub mod knapsack_sds;
 pub mod learning;
 pub mod lsh;
 pub mod prism;
-pub mod qccr;
 pub mod query;
 pub mod query_persona;
 pub mod resonance;

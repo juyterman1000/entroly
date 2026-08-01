@@ -22,39 +22,39 @@
     clippy::new_without_default
 )]
 
-mod anomaly;
-mod bm25;
-mod cache;
-mod causal;
-mod channel;
+pub(crate) use entroly_engine::anomaly;
+pub(crate) use entroly_engine::bm25;
+pub(crate) use entroly_engine::cache;
+pub(crate) use entroly_engine::causal;
+pub(crate) use entroly_engine::channel;
 mod cognitive_bus;
-mod conversation_pruner;
-mod dedup;
-mod depgraph;
-mod eicv;
-mod eicv_suppressor;
-mod entropy;
-mod fragment;
-mod guardrails;
-mod health;
-mod hierarchical;
-mod knapsack;
-mod knapsack_sds;
-mod learning;
+pub(crate) use entroly_engine::conversation_pruner;
+pub(crate) use entroly_engine::dedup;
+pub(crate) use entroly_engine::depgraph;
+pub(crate) use entroly_engine::eicv;
+pub(crate) use entroly_engine::eicv_suppressor;
+pub(crate) use entroly_engine::entropy;
+pub(crate) use entroly_engine::fragment;
+pub(crate) use entroly_engine::guardrails;
+pub(crate) use entroly_engine::health;
+pub(crate) use entroly_engine::hierarchical;
+pub(crate) use entroly_engine::knapsack;
+pub(crate) use entroly_engine::knapsack_sds;
+pub(crate) use entroly_engine::learning;
 mod localization;
-mod lsh;
+pub(crate) use entroly_engine::lsh;
 mod nkbe;
-mod prism;
+pub(crate) use entroly_engine::prism;
 mod qccr;
-mod query;
-mod query_persona;
-mod resonance;
-mod rnr;
-mod sast;
-mod semantic_dedup;
-mod skeleton;
-mod trajectory;
-mod utilization;
+pub(crate) use entroly_engine::query;
+pub(crate) use entroly_engine::query_persona;
+pub(crate) use entroly_engine::resonance;
+pub(crate) use entroly_engine::rnr;
+pub(crate) use entroly_engine::sast;
+pub(crate) use entroly_engine::semantic_dedup;
+pub(crate) use entroly_engine::skeleton;
+pub(crate) use entroly_engine::trajectory;
+pub(crate) use entroly_engine::utilization;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -136,7 +136,7 @@ pub fn classify_learning_query(query: &str) -> String {
 
 use cache::{CacheLookup, EgscCache, EgscConfig};
 use causal::CausalContextGraph;
-use dedup::{hamming_distance, simhash, DedupIndex};
+use dedup::{hamming_distance, simhash, simhash_cosine, DedupIndex};
 use depgraph::{extract_identifiers, DepGraph};
 use entropy::{
     boilerplate_ratio, entropy_divergence, information_score, normalized_entropy, renyi_entropy_2,
@@ -678,8 +678,12 @@ impl WasmEntrolyEngine {
         if !query.is_empty() {
             let query_hash = simhash(&query);
             for frag in self.fragments.values_mut() {
-                let dist = hamming_distance(query_hash, frag.simhash);
-                frag.semantic_score = (1.0 - dist as f64 / 64.0).max(0.0);
+                // See `dedup::simhash_cosine`: `1 - hamming/64` is linear in
+                // the angle rather than its cosine, and scores an unrelated
+                // query/fragment pair 0.5 instead of 0. That magnitude is
+                // blended into `compute_relevance`, so it distorts semantic
+                // relevance against the other signals.
+                frag.semantic_score = simhash_cosine(query_hash, frag.simhash);
             }
         }
 
@@ -840,8 +844,18 @@ impl WasmEntrolyEngine {
         let mut selection_method: &str = "ios";
 
         if self.enable_ios {
+            // `belief` is the engine default rather than a configurable knob:
+            // this build never populates `belief_content` on a fragment, and
+            // `ios_select` only offers the Belief resolution when
+            // `belief_token_count` is set, so the value is inert here.
+            //
+            // Its absence is itself a drift artefact — the Belief resolution
+            // level was added to the PyO3 build and never ported, so this
+            // package's users have never had belief-based compression. Wiring
+            // it up is follow-up work, not something to smuggle into a refactor.
             let info_factors = InfoFactors {
                 skeleton: self.ios_skeleton_info_factor,
+                belief: InfoFactors::default().belief,
                 reference: self.ios_reference_info_factor,
             };
             let ios_result = ios_select(
@@ -863,7 +877,14 @@ impl WasmEntrolyEngine {
             for (idx, resolution) in &ios_result.selections {
                 match resolution {
                     Resolution::Full => final_indices.push(*idx),
-                    Resolution::Skeleton | Resolution::Reference => skeleton_indices.push(*idx),
+                    // Beliefs use alternative content like skeletons — same
+                    // dispatch entroly-core uses (see its `Resolution::Belief`
+                    // arm). Unreachable in this build today, since nothing here
+                    // populates `belief_content`, but the arm must be correct
+                    // for when belief support is ported.
+                    Resolution::Skeleton | Resolution::Belief | Resolution::Reference => {
+                        skeleton_indices.push(*idx)
+                    }
                 }
                 ios_resolutions.insert(*idx, *resolution);
             }
@@ -2247,10 +2268,7 @@ impl WasmEntrolyEngine {
         let mut scored: Vec<(usize, f64)> = frags
             .iter()
             .enumerate()
-            .map(|(i, f)| {
-                let dist = hamming_distance(query_hash, f.simhash);
-                (i, (1.0 - dist as f64 / 64.0).max(0.0))
-            })
+            .map(|(i, f)| (i, simhash_cosine(query_hash, f.simhash)))
             .collect();
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let top_k: Vec<String> = scored
