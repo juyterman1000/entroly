@@ -235,6 +235,7 @@ def test_synchronizer_only_updates_entroly_cargo_lock_packages(tmp_path: Path) -
         'version = 4\n\n'
         '[[package]]\nname = "third-party"\nversion = "1.0.51"\n\n'
         '[[package]]\nname = "entroly-qccr"\nversion = "1.0.51"\n\n'
+        '[[package]]\nname = "entroly-qccr-audit"\nversion = "1.0.51"\n\n'
         '[[package]]\nname = "entroly-wasm"\nversion = "1.0.51"\n',
         encoding="utf-8",
     )
@@ -244,6 +245,7 @@ def test_synchronizer_only_updates_entroly_cargo_lock_packages(tmp_path: Path) -
     updated = lock.read_text(encoding="utf-8")
     assert 'name = "third-party"\nversion = "1.0.51"' in updated
     assert 'name = "entroly-qccr"\nversion = "1.0.52"' in updated
+    assert 'name = "entroly-qccr-audit"\nversion = "1.0.52"' in updated
     assert 'name = "entroly-wasm"\nversion = "1.0.52"' in updated
 
 
