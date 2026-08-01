@@ -164,6 +164,11 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
             if score > best_by_file.get(logical, float("-inf")):
                 best_by_file[logical] = score
         ranked = [(i, best_by_file.get(src, 0.0)) for i, src in enumerate(file_sources)]
+        # Keep the full ranked list. These are the per-candidate utilities
+        # the optimizer computes and then discards; the ones belonging to
+        # files it later drops are precisely the residual a sufficiency
+        # certificate needs, and nothing downstream can recover them.
+        candidate_utility = {src: best_by_file.get(src, 0.0) for src in file_sources}
         if ranked and any(sc > 0 for _, sc in ranked):
             feedback_by_file = {
                 source: sum(
@@ -221,6 +226,20 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
     )
     selected = json.loads(out_json)
 
+    # Sufficiency certificate, computed from residual state already in hand.
+    # Zero extra retrieval, zero model calls: `candidate_utility` holds the
+    # score of every candidate file including those the budget excluded.
+    try:
+        _attach_sufficiency(
+            selected,
+            candidate_utility=locals().get("candidate_utility") or {},
+            by_file=by_file,
+            query=query,
+            token_budget=int(token_budget),
+        )
+    except Exception:  # noqa: BLE001 - a certificate must never break selection
+        pass
+
     # QCCR emits one synthetic fragment per source file. Preserve the native
     # fragment IDs so callers can correlate compressed output with ingestion
     # receipts and feed outcomes back into the engine.
@@ -235,3 +254,63 @@ def select(fragments: list[dict], token_budget: int, query: str = "") -> list[di
         if origin_ids:
             fragment["source_fragment_ids"] = origin_ids
     return selected
+
+
+def _attach_sufficiency(
+    selected: list[dict],
+    *,
+    candidate_utility: dict[str, float],
+    by_file: dict[str, list[dict]],
+    query: str,
+    token_budget: int,
+) -> None:
+    """Attach an optimizer-derived sufficiency certificate to the selection.
+
+    Runs where the residual actually exists. `candidate_utility` carries the
+    ranking score of every candidate file, including the ones the budget
+    excluded -- those are the terms the shadow price is computed from, and
+    they are unavailable to any caller downstream of this function.
+    """
+    if not candidate_utility:
+        return
+    from .sufficiency import Candidate, certify, _idf, _query_terms
+
+    chosen = {logical_source(str(f.get("source") or "")) for f in selected}
+    candidates: list[Candidate] = []
+    terms = set(_query_terms(query))
+    corpus: list[str] = []
+
+    for source, utility in candidate_utility.items():
+        text = chr(10).join((r.get("content") or "") for r in by_file.get(source, []))
+        corpus.append(text)
+        cost = max(1, len(text) // 4)
+        candidates.append(
+            Candidate(
+                unit_id=source,
+                utility=float(utility),
+                cost=cost,
+                selected=source in chosen,
+                anchors=tuple(sorted(t for t in terms if t in text.lower())),
+                neighbourhood=(source,),
+            )
+        )
+
+    retained = {t for c in candidates if c.selected for t in c.anchors}
+    delivered = sum(c.cost for c in candidates if c.selected)
+    certificate = certify(
+        candidates,
+        query_term_idf={t: _idf(t, corpus) for t in terms},
+        retained_terms=retained,
+        budget_exhausted=delivered >= token_budget * 0.95,
+        shadow_price_limit=_calibrated_limit(candidates),
+    )
+    for fragment in selected:
+        if isinstance(fragment, dict):
+            fragment.setdefault("_sufficiency", certificate.to_dict())
+            break
+
+
+def _calibrated_limit(candidates) -> float:
+    from .sufficiency import calibrated_shadow_price_limit
+
+    return calibrated_shadow_price_limit(candidates)
