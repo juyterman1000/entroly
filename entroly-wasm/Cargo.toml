@@ -11,6 +11,15 @@ name = "entroly_wasm"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+# The shared compute engine — default features, so PyO3 is not linked.
+#
+# This generalises the principle already stated below for `entroly-qccr`. It had
+# only ever been applied to that one crate: every other module was copied here,
+# and the two copies drifted 4,065 lines, leaving this package shipping a
+# similarity estimator the PyO3 build had already corrected. A divergence now
+# fails to compile rather than silently reaching npm.
+entroly-engine = { path = "../entroly-engine" }
+
 # JS/Wasm bindings
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"

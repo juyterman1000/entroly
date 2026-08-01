@@ -39,7 +39,7 @@ mod nkbe;
 pub(crate) use entroly_engine::prism;
 /// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
 pub mod proxy;
-pub(crate) use entroly_engine::qccr;
+mod qccr;
 pub(crate) use entroly_engine::query;
 pub use entroly_engine::query_persona;
 pub(crate) use entroly_engine::resonance;
@@ -4635,9 +4635,14 @@ impl EntrolyEngine {
                 .iter()
                 .enumerate()
                 .map(|(i, f)| {
-                    let dist = dedup::hamming_distance(query_hash, f.simhash);
-                    let sim = (1.0 - dist as f64 / 64.0).max(0.0);
-                    (i, sim)
+                    // `1 - hamming/64` is linear in the angle, not its cosine,
+                    // and reports an unrelated query/fragment pair as 0.5
+                    // similar rather than 0. Ranking is unaffected (both forms
+                    // are monotone in distance), but this score is blended into
+                    // `compute_relevance` as a weighted sum, so the inflated
+                    // magnitude distorts semantic relevance against recency,
+                    // frequency and entropy.
+                    (i, dedup::simhash_cosine(query_hash, f.simhash))
                 })
                 .collect();
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -6423,20 +6428,28 @@ mod tests {
 
     #[test]
     fn test_simhash_distance_uses_64_not_32() {
-        // Previously /32 meant hamming dist 48 → negative → clamped to 0
-        // Now /64 means hamming dist 48 → (1.0 - 48/64) = 0.25
-        let dist: u32 = 48;
-        let score = (1.0 - dist as f64 / 64.0_f64).max(0.0);
-        assert!(
-            score > 0.0,
-            "Hamming dist 48 should give positive score, got {}",
-            score
-        );
-        assert!((score - 0.25).abs() < 0.001);
+        // Guards the fingerprint WIDTH used in the estimator's denominator: a
+        // regression to /32 silently halves the usable range.
+        //
+        // This used to assert `1 - dist/64` arithmetic inline. Production no
+        // longer computes that anywhere — it calls `dedup::simhash_cosine` —
+        // so the old assertions were checking arithmetic nothing performs and
+        // could not have caught a regression. Test the real function instead.
+        assert_eq!(crate::dedup::SIMHASH_BITS, 64.0);
 
-        // Old code would give: (1.0 - 48/32) = -0.5 → clamped to 0.0
-        let old_score = (1.0 - dist as f64 / 32.0_f64).max(0.0);
-        assert_eq!(old_score, 0.0, "Old /32 formula gives 0 for dist 48");
+        // Two fingerprints differing in exactly 16 of 64 bits.
+        let (a, b) = (0u64, 0xFFFFu64);
+        assert_eq!(crate::dedup::hamming_distance(a, b), 16);
+
+        // At width 64: cos(pi * 16/64) = cos(45 deg) = 0.7071
+        // At width 32: cos(pi * 16/32) = cos(90 deg) = 0.0
+        // So this distance discriminates the two widths cleanly.
+        let score = crate::dedup::simhash_cosine(a, b);
+        assert!(
+            (score - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-6,
+            "expected cos(pi/4) for a 16/64-bit difference, got {score} \
+             (a /32 width would give 0.0)"
+        );
     }
 
     #[test]

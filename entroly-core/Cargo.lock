@@ -237,16 +237,12 @@ dependencies = [
 name = "entroly-engine"
 version = "1.0.70"
 dependencies = [
- "entroly-qccr",
  "flate2",
  "md-5",
  "pyo3",
- "rand",
  "rayon",
- "regex",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
