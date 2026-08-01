@@ -838,10 +838,17 @@ impl Ord for LazyHeapEntry {
 pub struct SubmodularEvictor;
 
 impl SubmodularEvictor {
+    /// Delegates to the canonical estimator in `dedup`. Kept as a named method
+    /// so call sites read clearly; the formula itself must live in exactly one
+    /// place, since it had already drifted between this module and
+    /// `knapsack_sds`.
+    ///
+    /// Note: `simhash_cosine` clamps at 0. This previously returned a raw
+    /// cosine, which goes negative past hamming 32 and let `diversity_bonus`
+    /// exceed its documented 0.2 ceiling for strongly dissimilar entries.
     #[inline]
     fn simhash_similarity(fp_a: u64, fp_b: u64) -> f64 {
-        let hamming = hamming_distance(fp_a, fp_b);
-        (std::f64::consts::PI * hamming as f64 / 64.0).cos()
+        crate::dedup::simhash_cosine(fp_a, fp_b)
     }
 
     /// Compute the value of keeping an entry in the cache.
