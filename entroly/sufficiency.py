@@ -86,6 +86,11 @@ from typing import Any, Iterable, Sequence
 
 _EPS = 1e-9
 
+# Residual demand per unit captured, above which a selection reads degraded.
+# Geometric mean of the measured gap between the worst HIT (0.0060) and the
+# best MISS (0.0246). Calibrated on n=4 -- provisional, not authoritative.
+RESIDUAL_RISK_LIMIT = 0.0121
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -126,6 +131,9 @@ class SufficiencyCertificate:
             "cutoff_ambiguity": round(self.cutoff_ambiguity, 4),
             "boundary_exposure": round(self.boundary_exposure, 4),
             "query_coverage": round(self.query_coverage, 4),
+            "residual_risk": round(
+                self.shadow_price / max(self.captured_mass, _EPS), 6
+            ),
             "verdict": self.verdict,
             "reasons": list(self.reasons),
         }
@@ -253,28 +261,45 @@ def certify(
     e_b = boundary_exposure(candidates, anchor_weights)
     q_b = query_coverage(retained_terms, query_term_idf or {})
 
+    # Residual demand per unit of captured evidence.
+    #
+    # Neither lambda_B nor C_B alone gives a usable threshold: lambda_B is on
+    # the scorer's scale, C_B on a 0-1 scale, so any absolute cut on either is
+    # workload-specific. Their ratio is dimensionally right -- evidence the
+    # budget could not afford, per unit it did capture -- and separates
+    # measured outcomes better than either alone.
+    #
+    # Measured on this repository against known retrieval outcomes:
+    #
+    #     truth   C_B     lambda_B   ratio
+    #     HIT     0.230   0.00076    0.0033
+    #     HIT     0.242   0.00145    0.0060
+    #     MISS    0.147   0.00362    0.0246
+    #     MISS    0.101   0.02819    0.2790
+    #
+    # A 4x gap between the worst HIT and the best MISS. RESIDUAL_RISK_LIMIT
+    # sits at the geometric mean of that gap. Calibrated on n=4, which is far
+    # too few to be authoritative: a defensible starting point, not a validated
+    # constant. Any real workload should re-fit it.
+    residual_risk = lambda_b / max(c_b, _EPS)
+
     reasons: list[str] = []
-    # Order matters: the first two are the ones that fired on real failures.
-    if budget_exhausted and lambda_b > shadow_price_limit:
+    if budget_exhausted and residual_risk > RESIDUAL_RISK_LIMIT:
         reasons.append(
-            f"budget exhausted with excluded evidence still scoring "
-            f"{lambda_b:.4f} per token"
+            f"residual demand {residual_risk:.4f} per unit captured "
+            f"(lambda={lambda_b:.5f}, captured={c_b:.3f})"
         )
+    # The remaining signals are reported but do not by themselves condemn a
+    # selection. On this workload each was constant -- E_B and A_B at 0.00, Q_B
+    # at 1.00 across every case, hit and miss alike -- so letting them vote
+    # reproduces the failure this replaces: every verdict "degraded", which is
+    # indistinguishable from having no verdict at all.
     if e_b > 0.0:
         reasons.append(
             f"{e_b:.0%} of anchor weight lost its required neighbouring context"
         )
-    # Tolerance, not `< 1.0`: the ratio is divided by ``total + _EPS``, so full
-    # coverage lands a hair under 1.0 and a naive comparison reports
-    # "degraded: query coverage 100%" on a perfect selection. A certificate
-    # that fires on a flawless case teaches its readers to ignore it, which is
-    # exactly how a real degradation later gets waved through.
-    if q_b < 1.0 - 1e-6:
-        reasons.append(f"query coverage {q_b:.0%} of discriminative term weight")
-    if a_b >= 0.5:
-        reasons.append(
-            f"cutoff ambiguity {a_b:.2f}: selection is marginal at this budget"
-        )
+    if q_b < 0.5:
+        reasons.append(f"query coverage {q_b:.0%}: discriminative terms dropped")
 
     verdict = "sufficient" if not reasons else "degraded"
     return SufficiencyCertificate(
