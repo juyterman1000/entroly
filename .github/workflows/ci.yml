@@ -140,11 +140,81 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # entroly-engine holds the shared algorithms and must be exercised in BOTH
+      # feature configurations. The default (no `python`) build is what
+      # entroly-wasm compiles against, so a break there ships to npm even though
+      # no Python test would notice it.
+      - name: Clippy — engine (no python == the WebAssembly configuration)
+        run: cargo clippy --manifest-path ../entroly-engine/Cargo.toml --all-targets -- -D warnings
+
+      - name: Clippy — engine (python)
+        run: cargo clippy --manifest-path ../entroly-engine/Cargo.toml --all-targets --features python -- -D warnings
+
+      - name: Test — engine (no python == the WebAssembly configuration)
+        run: cargo test --manifest-path ../entroly-engine/Cargo.toml --lib
+
+      - name: Test — engine (python)
+        run: cargo test --manifest-path ../entroly-engine/Cargo.toml --lib --features python
+
       - name: Clippy (lint)
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: cargo test --lib
+
+  # The npm package had no CI at all, which is how entroly-wasm accumulated
+  # 4,065 lines of drift from the core and shipped a similarity estimator the
+  # PyO3 build had already corrected. Compiling for wasm32 on every push is what
+  # makes the shared-engine split self-enforcing rather than a convention.
+  wasm-build:
+    name: WebAssembly Build + Drift Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            entroly-wasm/target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('entroly-wasm/Cargo.toml', 'entroly-engine/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-
+
+      - name: Build for wasm32
+        run: cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown
+
+      - name: Clippy (wasm32)
+        run: cargo clippy --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Test (host target)
+        run: cargo test --manifest-path entroly-wasm/Cargo.toml --lib
+
+      # Structural guard: re-adding a local copy of an engine module is exactly
+      # how the two builds diverged before. Compilation alone will not catch it,
+      # because a shadowing local `mod` is perfectly valid Rust.
+      - name: Guard against re-duplicating engine modules
+        run: |
+          dupes=""
+          for m in $(sed -n 's/^pub mod \([a-z0-9_]*\);$/\1/p' entroly-engine/src/lib.rs); do
+            if [ -f "entroly-wasm/src/$m.rs" ]; then dupes="$dupes $m"; fi
+            if [ -f "entroly-core/src/$m.rs" ]; then dupes="$dupes $m(core)"; fi
+          done
+          if [ -n "$dupes" ]; then
+            echo "::error::These modules exist in entroly-engine AND in a binding crate:$dupes"
+            echo "The binding crates must consume the engine, not re-copy it."
+            exit 1
+          fi
+          echo "No duplicated engine modules."
 
   proxy-binary:
     name: Single-Binary Proxy (--features proxy)
