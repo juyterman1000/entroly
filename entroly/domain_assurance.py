@@ -345,7 +345,6 @@ def compress_domain_assured(
     validation = validate_domain_output(
         text, emitted, content_type=content_type, query=query
     )
-    output_hash = _sha256(emitted)
     budget_compliant = emitted_tokens <= budget_tokens
     positive_savings = emitted_tokens < original_tokens
 
