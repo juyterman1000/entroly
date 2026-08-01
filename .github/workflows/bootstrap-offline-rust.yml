@@ -49,23 +49,49 @@ jobs:
             fi
           done
 
+      - name: Prime wasm-pack offline cache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          wasm-pack build entroly-wasm \
+            --release \
+            --target nodejs \
+            --out-dir "$RUNNER_TEMP/entroly-wasm-pkg"
+
       - name: Assemble relocatable offline bundle
         shell: bash
         run: |
           set -euxo pipefail
           TOOLCHAIN="$(rustup show active-toolchain | awk '{print $1}')"
+          RUSTUP_HOME_DIR="${RUSTUP_HOME:-$HOME/.rustup}"
+          CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
           ROOT="$RUNNER_TEMP/offline-rust"
-          mkdir -p "$ROOT/toolchain" "$ROOT/cargo/bin" "$ROOT/cargo"
-          cp -a "$RUSTUP_HOME/toolchains/$TOOLCHAIN/." "$ROOT/toolchain/"
-          cp -a "$CARGO_HOME/bin/wasm-pack" "$ROOT/cargo/bin/wasm-pack"
-          if [[ -d "$CARGO_HOME/registry" ]]; then
-            cp -a "$CARGO_HOME/registry" "$ROOT/cargo/registry"
+          mkdir -p "$ROOT/toolchain" "$ROOT/cargo/bin" "$ROOT/source"
+          cp -a "$RUSTUP_HOME_DIR/toolchains/$TOOLCHAIN/." "$ROOT/toolchain/"
+          cp -a "$CARGO_HOME_DIR/bin/wasm-pack" "$ROOT/cargo/bin/wasm-pack"
+          if [[ -d "$CARGO_HOME_DIR/registry" ]]; then
+            cp -a "$CARGO_HOME_DIR/registry" "$ROOT/cargo/registry"
           fi
-          if [[ -d "$CARGO_HOME/git" ]]; then
-            cp -a "$CARGO_HOME/git" "$ROOT/cargo/git"
+          if [[ -d "$CARGO_HOME_DIR/git" ]]; then
+            cp -a "$CARGO_HOME_DIR/git" "$ROOT/cargo/git"
           fi
+          if [[ -d "$HOME/.cache/.wasm-pack" ]]; then
+            mkdir -p "$ROOT/cache"
+            cp -a "$HOME/.cache/.wasm-pack" "$ROOT/cache/.wasm-pack"
+          fi
+          if [[ -d "$HOME/.cache/wasm-pack" ]]; then
+            mkdir -p "$ROOT/cache"
+            cp -a "$HOME/.cache/wasm-pack" "$ROOT/cache/wasm-pack"
+          fi
+          cp -a "$RUNNER_TEMP/entroly-wasm-pkg" "$ROOT/verified-wasm-pkg"
+          tar \
+            --exclude='.git' \
+            --exclude='target' \
+            --exclude='*/target' \
+            --exclude='*/target/*' \
+            -cf - . | tar -xf - -C "$ROOT/source"
           printf '%s\n' "$TOOLCHAIN" > "$ROOT/toolchain-name.txt"
-          printf '%s\n' "${{ github.sha }}" > "$ROOT/source-sha.txt"
+          printf '%s\n' "${{ github.event.pull_request.head.sha }}" > "$ROOT/source-sha.txt"
           tar -czf "$RUNNER_TEMP/offline-rust-toolchain.tar.gz" -C "$ROOT" .
           du -h "$RUNNER_TEMP/offline-rust-toolchain.tar.gz"
 
