@@ -46,6 +46,10 @@ mod resonance;
 mod rnr;
 mod sast;
 mod semantic_dedup;
+/// Measurement-only probe for the 64-bit SimHash selection path.
+/// Test-gated: contributes nothing to the shipped library.
+#[cfg(test)]
+mod simhash_probe;
 mod skeleton;
 mod telemetry;
 mod trajectory;
