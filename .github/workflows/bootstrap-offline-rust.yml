@@ -1,0 +1,79 @@
+name: Bootstrap Offline Rust Toolchain
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.head_ref == 'ops/bootstrap-offline-rust-20260801'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact branch state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install complete Rust and WASM toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install stable --profile minimal \
+            --component rustfmt,clippy \
+            --target wasm32-unknown-unknown
+          rustup default stable
+          rustc --version
+          cargo --version
+          rustfmt --version
+          cargo clippy --version
+          rustup target list --installed
+
+      - name: Install wasm-pack
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo install wasm-pack --locked
+          wasm-pack --version
+
+      - name: Warm all Entroly Cargo dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for crate in entroly-core entroly-wasm entroly-qccr-audit; do
+            if [[ -f "$crate/Cargo.toml" ]]; then
+              cargo fetch --locked --manifest-path "$crate/Cargo.toml"
+            fi
+          done
+
+      - name: Assemble relocatable offline bundle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TOOLCHAIN="$(rustup show active-toolchain | awk '{print $1}')"
+          ROOT="$RUNNER_TEMP/offline-rust"
+          mkdir -p "$ROOT/toolchain" "$ROOT/cargo/bin" "$ROOT/cargo"
+          cp -a "$RUSTUP_HOME/toolchains/$TOOLCHAIN/." "$ROOT/toolchain/"
+          cp -a "$CARGO_HOME/bin/wasm-pack" "$ROOT/cargo/bin/wasm-pack"
+          if [[ -d "$CARGO_HOME/registry" ]]; then
+            cp -a "$CARGO_HOME/registry" "$ROOT/cargo/registry"
+          fi
+          if [[ -d "$CARGO_HOME/git" ]]; then
+            cp -a "$CARGO_HOME/git" "$ROOT/cargo/git"
+          fi
+          printf '%s\n' "$TOOLCHAIN" > "$ROOT/toolchain-name.txt"
+          printf '%s\n' "${{ github.sha }}" > "$ROOT/source-sha.txt"
+          tar -czf "$RUNNER_TEMP/offline-rust-toolchain.tar.gz" -C "$ROOT" .
+          du -h "$RUNNER_TEMP/offline-rust-toolchain.tar.gz"
+
+      - name: Upload offline toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-rust-toolchain
+          path: ${{ runner.temp }}/offline-rust-toolchain.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
