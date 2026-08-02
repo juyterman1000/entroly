@@ -66,6 +66,40 @@ def _token_estimate(value: Any) -> int:
     return max(1, len(raw.encode("utf-8")) // 4)
 
 
+_TEXT_BLOCK_TYPES = frozenset({"text", "input_text", "output_text"})
+_NON_TEXT_BLOCK_KEYS = frozenset({
+    "image_url", "image", "inline_data", "file_data",
+    "tool_use", "tool_result", "functionCall", "functionResponse",
+    "thinking", "reasoning", "audio", "video",
+})
+
+
+def _is_text_only_content(value: Any) -> bool:
+    if value is None or isinstance(value, str):
+        return True
+    if isinstance(value, (list, tuple)):
+        return all(_is_text_only_content(child) for child in value)
+    if not isinstance(value, Mapping):
+        return False
+    if _NON_TEXT_BLOCK_KEYS.intersection(value):
+        return False
+    block_type = value.get("type")
+    if block_type is not None and str(block_type) not in _TEXT_BLOCK_TYPES:
+        return False
+    if "text" in value:
+        return isinstance(value.get("text"), str)
+    for key in ("parts", "content", "input"):
+        if key in value:
+            return _is_text_only_content(value.get(key))
+    return False
+
+
+def _normalize_message_content(value: Any) -> Any:
+    if _is_text_only_content(value):
+        return _text_from_content(value)
+    return value
+
+
 def _has_vision(value: Any) -> bool:
     if isinstance(value, Mapping):
         if any(key in value for key in ("image_url", "image", "inline_data", "file_data")):
@@ -77,6 +111,52 @@ def _has_vision(value: Any) -> bool:
     if isinstance(value, (list, tuple)):
         return any(_has_vision(child) for child in value)
     return False
+
+
+def _has_cache_control(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        if any(key in value for key in ("cache_control", "cacheControl")):
+            return True
+        return any(_has_cache_control(child) for child in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_has_cache_control(child) for child in value)
+    return False
+
+
+def _nonportable_fields(provider: str, body: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return provider fields that cross-provider rendering cannot preserve."""
+    provider = provider.lower()
+    if provider in {"openai", "responses"}:
+        mapped = {
+            "model", "messages", "input", "instructions", "tools",
+            "response_format", "stream",
+        }
+        fields = {str(key) for key in body if key not in mapped}
+        response_format = body.get("response_format")
+        if response_format is not None and not (
+            isinstance(response_format, Mapping)
+            and response_format.get("type") in {"json_schema", "json_object"}
+        ):
+            fields.add("response_format")
+        return tuple(sorted(fields))
+
+    if provider == "anthropic":
+        mapped = {"model", "system", "messages", "tools", "response_schema", "stream"}
+        return tuple(sorted(str(key) for key in body if key not in mapped))
+
+    if provider == "gemini":
+        mapped = {"model", "systemInstruction", "contents", "tools", "generationConfig", "stream"}
+        fields = {str(key) for key in body if key not in mapped}
+        generation = body.get("generationConfig")
+        if isinstance(generation, Mapping):
+            for key in generation:
+                if key != "responseSchema":
+                    fields.add(f"generationConfig.{key}")
+        elif generation is not None:
+            fields.add("generationConfig")
+        return tuple(sorted(fields))
+
+    return tuple(sorted(str(key) for key in body))
 
 
 def _portable_metadata(headers: Mapping[str, str] | None) -> dict[str, str]:
@@ -99,7 +179,14 @@ def _last_user_text(messages: tuple[Mapping[str, Any], ...]) -> str:
 
 def _normalize_openai_messages(body: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     if isinstance(body.get("messages"), list):
-        return tuple(dict(m) for m in body["messages"] if isinstance(m, Mapping))
+        normalized: list[Mapping[str, Any]] = []
+        for message in body["messages"]:
+            if not isinstance(message, Mapping):
+                continue
+            item = dict(message)
+            item["content"] = _normalize_message_content(item.get("content", ""))
+            normalized.append(item)
+        return tuple(normalized)
 
     # Responses API: preserve a system-like instruction separately and convert
     # input items into user messages so conversation identity remains stable.
@@ -115,7 +202,7 @@ def _normalize_openai_messages(body: Mapping[str, Any]) -> tuple[Mapping[str, An
             if isinstance(item, Mapping):
                 role = str(item.get("role") or "user")
                 content = item.get("content", item.get("text", ""))
-                messages.append({"role": role, "content": content})
+                messages.append({"role": role, "content": _normalize_message_content(content)})
             elif isinstance(item, str):
                 messages.append({"role": "user", "content": item})
     return tuple(messages)
@@ -128,7 +215,12 @@ def _normalize_anthropic_messages(body: Mapping[str, Any]) -> tuple[Mapping[str,
         messages.append({"role": "system", "content": system})
     raw_messages = body.get("messages")
     if isinstance(raw_messages, list):
-        messages.extend(dict(m) for m in raw_messages if isinstance(m, Mapping))
+        for message in raw_messages:
+            if not isinstance(message, Mapping):
+                continue
+            item = dict(message)
+            item["content"] = _normalize_message_content(item.get("content", ""))
+            messages.append(item)
     return tuple(messages)
 
 
@@ -148,7 +240,8 @@ def _normalize_gemini_messages(body: Mapping[str, Any]) -> tuple[Mapping[str, An
             role = str(item.get("role") or "user")
             if role == "model":
                 role = "assistant"
-            messages.append({"role": role, "content": item.get("parts", item.get("content", ""))})
+            content = item.get("parts", item.get("content", ""))
+            messages.append({"role": role, "content": _normalize_message_content(content)})
     return tuple(messages)
 
 
@@ -217,8 +310,10 @@ def canonical_request_from_provider_body(
         stream=stream,
         response_schema=schema if isinstance(schema, Mapping) else None,
         metadata=_portable_metadata(headers),
-        requires_vision=_has_vision(messages),
+        requires_vision=_has_vision(body),
         requires_reasoning=any(key in body for key in ("thinking", "reasoning_effort", "effort")),
+        requires_cache_control=_has_cache_control(body),
+        nonportable_fields=_nonportable_fields(provider, body),
     )
     return ProviderRequestAdapterResult(
         provider=provider,
@@ -291,6 +386,11 @@ def render_canonical_request(
         raise ValueError("cross-provider vision translation is not implemented")
     if request.requires_reasoning:
         raise ValueError("cross-provider reasoning translation is not implemented")
+    if request.requires_cache_control:
+        raise ValueError("cross-provider cache-control translation is not implemented")
+    if request.nonportable_fields:
+        fields = ",".join(request.nonportable_fields)
+        raise ValueError(f"cross-provider request contains nonportable fields: {fields}")
     if request.response_schema is not None:
         raise ValueError("cross-provider response schema translation is not implemented")
     if request.tools:

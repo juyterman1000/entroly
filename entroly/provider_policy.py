@@ -21,6 +21,7 @@ class Capability(str, Enum):
     JSON_SCHEMA = "json_schema"
     VISION = "vision"
     REASONING = "reasoning"
+    CACHE_CONTROL = "cache_control"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,8 @@ class CanonicalGatewayRequest:
     metadata: Mapping[str, str] = field(default_factory=dict)
     requires_vision: bool = False
     requires_reasoning: bool = False
+    requires_cache_control: bool = False
+    nonportable_fields: tuple[str, ...] = ()
 
     def required_capabilities(self) -> frozenset[Capability]:
         required = {Capability.CHAT}
@@ -46,6 +49,8 @@ class CanonicalGatewayRequest:
             required.add(Capability.VISION)
         if self.requires_reasoning:
             required.add(Capability.REASONING)
+        if self.requires_cache_control:
+            required.add(Capability.CACHE_CONTROL)
         return frozenset(required)
 
 
