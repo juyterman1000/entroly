@@ -198,4 +198,9 @@ jobs:
             tests/test_memory_package_metadata.py \
             tests/test_recovery_default_wiring.py
           git commit -m "fix(runtime): secure recovery defaults and self-contain test tooling"
+          validated_commit="$(git rev-parse HEAD)"
+          git format-patch -1 --stdout "$validated_commit" > /tmp/validated-python-hardening.patch
+          git fetch origin feat/sufficiency-mainline
+          git switch --force-create validated-delivery origin/feat/sufficiency-mainline
+          git am /tmp/validated-python-hardening.patch
           git push origin HEAD:feat/sufficiency-mainline
