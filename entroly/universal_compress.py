@@ -549,22 +549,67 @@ def _compress_json_universal(text: str) -> str:
     return text
 
 
-def _json_to_schema(obj: Any, depth: int = 0, max_depth: int = 4) -> Any:
-    """Extract schema from JSON value, preserving short strings."""
+# Keys whose values are the answer, not the shape. A payload is usually sent
+# because of these: the amount that was charged, the code that came back, the
+# id to correlate on. Summarising them away leaves a document that describes
+# the response without containing it.
+_LOAD_BEARING_KEY = re.compile(
+    r"(?:^|_)(?:id|ids|uuid|guid|key|ref|reference|code|codes|status|state|"
+    r"error|errors|message|msg|reason|detail|details|amount|total|balance|"
+    r"price|cost|fee|tax|currency|sku|isbn|account|invoice|order|"
+    r"timestamp|time|date|created|updated|expires|version|hash|digest|"
+    r"signature|token|url|uri|path|email|phone)(?:$|_)",
+    re.IGNORECASE,
+)
+
+
+def _json_to_schema(
+    obj: Any, depth: int = 0, max_depth: int = 4, key: str = ""
+) -> Any:
+    """Extract schema from a JSON value, preserving values of record.
+
+    Structure is what repeats; values are what the payload was sent for. This
+    elides the first and keeps the second.
+
+    Numbers are preserved verbatim. They were previously replaced by
+    ``"<int>"`` / ``"<float>"`` unconditionally, destroying exactly the class of
+    value that must survive -- identifiers, timestamps, error codes, financial
+    amounts. Measured on a payment-error fixture, ``"amount_cents": 449900``
+    became ``"amount_cents": "<int>"``: the answer to "how much was declined"
+    replaced by a type name.
+
+    That trade never paid for itself. ``"<int>"`` serialises to seven
+    characters; the value it replaced was six. The placeholder is *longer* than
+    the number for anything under seven digits, so the substitution cost tokens
+    AND lost the data. The real saving comes from array elision below, where
+    one exemplar stands in for N records.
+
+    Long strings under a load-bearing key are kept for the same reason: an
+    error message or a signed URL is the payload's point, and ``<str:87>``
+    answers nothing.
+    """
     if depth > max_depth:
         return "..."
     if isinstance(obj, dict):
-        return {k: _json_to_schema(v, depth + 1, max_depth) for k, v in list(obj.items())[:20]}
+        return {
+            k: _json_to_schema(v, depth + 1, max_depth, key=str(k))
+            for k, v in list(obj.items())[:20]
+        }
     elif isinstance(obj, list):
         if not obj:
             return []
-        return [_json_to_schema(obj[0], depth + 1, max_depth), f"... ({len(obj)} items)"]
+        return [
+            _json_to_schema(obj[0], depth + 1, max_depth, key=key),
+            f"... ({len(obj)} items)",
+        ]
     elif isinstance(obj, str):
-        return f"<str:{len(obj)}>" if len(obj) > 50 else obj
+        if len(obj) <= 50 or _LOAD_BEARING_KEY.search(key or ""):
+            return obj
+        return f"<str:{len(obj)}>"
     elif isinstance(obj, bool):
         return obj
     elif isinstance(obj, (int, float)):
-        return f"<{type(obj).__name__}>"
+        return obj
     return str(type(obj).__name__)
 
 
