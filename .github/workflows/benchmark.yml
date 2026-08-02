@@ -19,6 +19,7 @@ on:
       - 'benchmarks/results/neural_query_shift*.md'
       - 'entroly/**'
       - 'entroly-core/**'
+      - 'entroly-engine/**'
       - 'tests/test_compression_gauntlet.py'
       - 'tests/test_compression_frontier.py'
       - 'tests/test_evidence_locked_compression.py'
