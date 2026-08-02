@@ -2,17 +2,41 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
+<h1 align="center">Entroly — Cut Your AI Bill by Sending Less Context</h1>
 
-<p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
-Entroly uses budgeted context selection, content-addressed evidence, exact recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
+<p align="center"><b>You pay for every word your AI reads. Entroly removes the words it doesn't need — and shows you a receipt for what it removed.</b></p>
 
 <p align="center">
-  <sub>Works through supported proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.</sub>
+  <code>pip install -U entroly</code> &nbsp;·&nbsp; <code>npm i entroly-mcp</code><br>
+  <sub>Then run <code>entroly simulate</code> in your project. No API key needed to see the number.</sub>
 </p>
 
+---
+
+### What is Entroly?
+
+Entroly is an open-source **context engineering** tool that reduces AI token costs. It sits between your code and your AI model, sends only the parts that matter, and records an auditable receipt of everything it left out — so nothing is lost, just not paid for.
+
+### Why does this save money?
+
+AI agents read roughly **100 tokens for every 1 they write.** Your bill is dominated by what the model *reads*, not what it says. Entroly shrinks the reading.
+
+### Does sending less context hurt answer quality?
+
+No — independent research points the other way. [Chroma's *Context Rot* study](https://www.trychroma.com/research/context-rot) tested **18 frontier models** (Claude, GPT, Gemini, Qwen) and found *"significantly higher performance on focused prompts compared to full prompts."* It also found that *"even a single distractor reduces performance"* — a distractor being content topically related to your question that doesn't actually answer it. That is precisely what Entroly removes.
+
+### Who is it for?
+
+Anyone paying for Claude, OpenAI, Gemini or a local model through **Claude Code, Cursor, Codex, GitHub Copilot, Aider, MCP clients, or the OpenAI-compatible API**. Works as a proxy, an MCP server, a plugin, a CLI, or a Python/JS SDK — no rewrite of your code or your agent.
+
+### What makes it different?
+
+Most tools compress and move on. Entroly gives you a **receipt**: what was kept, what was dropped, why, and byte-exact recovery of anything omitted. If your AI got the wrong answer, you can prove what it was and wasn't shown.
+
+---
+
 <p align="center">
-  <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
+  <sub>Local-first · Python with optional Rust acceleration · Node/WASM runtime · Apache-2.0</sub>
 </p>
 
 <!-- Distribution and licensing: registry badges report live package metadata. -->
@@ -39,7 +63,8 @@ Entroly uses budgeted context selection, content-addressed evidence, exact recov
 <p align="center"><sub>Registry badges show distribution metadata. Evidence badges link to committed results with scope and caveats. Community and marketplace status are not treated as technical proof.</sub></p>
 
 <p align="center">
-  <code>pip install -U entroly && cd /your/repo && entroly verify-claims && entroly simulate</code>
+  <b>See the number on your own code, no API key required:</b><br>
+  <code>cd /your/repo && entroly verify-claims && entroly simulate</code>
 </p>
 
 <p align="center">
