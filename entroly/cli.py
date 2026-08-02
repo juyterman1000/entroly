@@ -33,6 +33,7 @@ Commands:
     entroly ravs        RAVS offline evaluation (report)
     entroly witness     Verify or suppress hallucinated factual claims
     entroly cache       Inspect EGSC persistent cache (cross-session)
+    entroly unwrap      Safely remove persistent Entroly integration
 """
 
 from __future__ import annotations
@@ -411,50 +412,149 @@ def _generate_mcp_config() -> dict:
     }
 
 
-def _write_config(tool: dict, dry_run: bool = False) -> str:
-    """Write MCP config for a specific tool."""
-    config_path = tool["config_path"]
-    config_key = tool["config_key"]
-    entroly_config = _generate_mcp_config()
+def _load_config_object(config_path: str) -> dict:
+    """Load a JSON configuration as an object, failing closed on bad input."""
+    path = Path(config_path)
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
+        raise ValueError(f"existing config is not valid UTF-8 JSON: {config_path}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"existing config root must be a JSON object: {config_path}")
+    return value
 
-    # Read existing config if it exists
-    existing = {}
-    parse_failed = False
-    if os.path.exists(config_path):
+
+def _next_config_backup_path(config_path: Path, suffix: str) -> Path:
+    """Return a non-destructive backup path beside *config_path*."""
+    candidate = Path(f"{config_path}{suffix}")
+    if not candidate.exists():
+        return candidate
+    for index in range(1, 10_000):
+        candidate = Path(f"{config_path}{suffix}.{index}")
+        if not candidate.exists():
+            return candidate
+    raise OSError(f"too many Entroly backups beside {config_path}")
+
+
+def _backup_config_file(config_path: Path, suffix: str) -> Path:
+    """Create and fsync a non-destructive byte-for-byte configuration backup."""
+    backup_path = _next_config_backup_path(config_path, suffix)
+    try:
+        with config_path.open("rb") as source, backup_path.open("xb") as destination:
+            shutil.copyfileobj(source, destination)
+            destination.flush()
+            os.fsync(destination.fileno())
+        shutil.copystat(config_path, backup_path, follow_symlinks=False)
+        return backup_path
+    except BaseException:
         try:
-            with open(config_path, encoding="utf-8") as f:
-                existing = json.load(f)
-        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
-            parse_failed = True
-            existing = {}
-
-    # Merge entroly config into existing
-    if config_key not in existing:
-        existing[config_key] = {}
-    existing[config_key].update(entroly_config)
-
-    if dry_run:
-        return json.dumps(existing, indent=2)
-
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-    # Backup existing file before overwrite (skip if parse failed — preserve bytes).
-    if os.path.exists(config_path):
-        backup = config_path + ".entroly-backup"
-        try:
-            import shutil
-            shutil.copy2(config_path, backup)
+            backup_path.unlink(missing_ok=True)
         except OSError:
             pass
-        if parse_failed:
-            print(f"  {C.YELLOW if hasattr(C,'YELLOW') else ''}! Existing config at {config_path} was unparseable; original kept at {backup}{C.RESET}")
+        raise
 
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(existing, f, indent=2, ensure_ascii=False)
-        f.write("\n")
 
+def _fsync_directory(directory: Path) -> None:
+    """Best-effort durability barrier for a completed atomic replacement."""
+    if os.name == "nt":
+        return
+    descriptor = None
+    try:
+        descriptor = os.open(str(directory), os.O_RDONLY)
+        os.fsync(descriptor)
+    except OSError:
+        # Some filesystems do not allow directory fsync. The file itself was
+        # already fsynced; do not turn that platform limitation into data loss.
+        pass
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _atomic_write_config(config_path: str, value: dict) -> None:
+    """Atomically write a JSON config beside its final destination."""
+    path = Path(config_path)
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = None
+    if path.exists():
+        existing_mode = path.stat().st_mode & 0o777
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.entroly-",
+        suffix=".tmp",
+        dir=str(parent),
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(value, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        if existing_mode is not None:
+            os.chmod(temporary, existing_mode)
+        os.replace(temporary, path)
+        _fsync_directory(parent)
+    except BaseException:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _write_config(tool: dict, dry_run: bool = False) -> str:
+    """Merge Entroly into an MCP config with backup and atomic replacement."""
+    config_path = tool["config_path"]
+    config_key = tool["config_key"]
+    existing = _load_config_object(config_path)
+
+    servers = existing.get(config_key)
+    if servers is None:
+        servers = {}
+        existing[config_key] = servers
+    if not isinstance(servers, dict):
+        raise ValueError(f"{config_key!r} must be a JSON object in {config_path}")
+    servers.update(_generate_mcp_config())
+
+    if dry_run:
+        return json.dumps(existing, indent=2, ensure_ascii=False)
+
+    path = Path(config_path)
+    if path.exists():
+        _backup_config_file(path, ".entroly-backup")
+    _atomic_write_config(config_path, existing)
     return config_path
+
+
+def _remove_entroly_config(tool: dict, dry_run: bool = False) -> tuple[str, str | None]:
+    """Remove only Entroly's MCP entry and return (status, backup path)."""
+    config_path = tool["config_path"]
+    config_key = tool["config_key"]
+    path = Path(config_path)
+    if not path.exists():
+        return "missing", None
+
+    existing = _load_config_object(config_path)
+    servers = existing.get(config_key)
+    if servers is None:
+        return "absent", None
+    if not isinstance(servers, dict):
+        raise ValueError(f"{config_key!r} must be a JSON object in {config_path}")
+    if "entroly" not in servers:
+        return "absent", None
+
+    del servers["entroly"]
+    if dry_run:
+        return json.dumps(existing, indent=2, ensure_ascii=False), None
+
+    backup = _backup_config_file(path, ".entroly-unwrapped-backup")
+    _atomic_write_config(config_path, existing)
+    return "removed", str(backup)
 
 
 def cmd_init(args):
@@ -1885,7 +1985,7 @@ def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
     if dry_run:
         try:
             preview = _write_config(tool, dry_run=True)
-        except (OSError, PermissionError) as e:
+        except (OSError, PermissionError, ValueError) as e:
             print(f"  {C.RED}Could not read {config_path}: {e}{C.RESET}")
             return False
         print(f"  {C.YELLOW}[dry-run]{C.RESET} would write {config_path}:")
@@ -1896,7 +1996,7 @@ def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
 
     try:
         written = _write_config(tool)
-    except (OSError, PermissionError) as e:
+    except (OSError, PermissionError, ValueError) as e:
         print(f"  {C.RED}Could not write {config_path}: {e}{C.RESET}")
         return False
 
@@ -2415,6 +2515,69 @@ def cmd_wrap(args):
 
     # Empirical check: did the agent actually route through the proxy?
     _wrap_watchdog_report(agent, spec, port, req_before)
+
+
+
+def cmd_unwrap(args):
+    """entroly unwrap <agent> — reverse persistent Entroly integration safely."""
+    agent = getattr(args, "agent", None)
+    if not agent:
+        persistent = sorted(
+            name for name, spec in _WRAP_AGENTS.items() if spec.get("kind") == "mcp"
+        )
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Unwrap — persistent integrations{C.RESET}\n")
+        print(f"  {C.GRAY}{', '.join(persistent)}{C.RESET}\n")
+        return 0
+
+    agent = agent.lower()
+    spec = _WRAP_AGENTS.get(agent)
+    if spec is None:
+        print(f"\n  {C.RED}Unknown agent: {agent}{C.RESET}\n")
+        return 1
+
+    kind = spec.get("kind", "cli")
+    if kind != "mcp":
+        print(f"\n  {C.GREEN}No persistent Entroly config to remove for {spec['name']}.{C.RESET}")
+        if kind == "cli":
+            print(f"  {C.GRAY}CLI wrapping uses process-scoped environment variables only.{C.RESET}\n")
+        else:
+            print(f"  {C.GRAY}This integration only printed setup instructions; it wrote no files.{C.RESET}\n")
+        return 0
+
+    config_path = _resolve_agent_config_path(spec)
+    if not config_path:
+        print(f"  {C.RED}No config path defined for {spec['name']} on {platform.system()}.{C.RESET}")
+        return 1
+    tool = {
+        "config_path": config_path,
+        "config_key": spec.get("config_key", "mcpServers"),
+    }
+    dry_run = bool(getattr(args, "dry_run", False))
+    try:
+        status, backup = _remove_entroly_config(tool, dry_run=dry_run)
+    except (OSError, PermissionError, ValueError) as exc:
+        print(f"  {C.RED}Could not update {config_path}: {exc}{C.RESET}")
+        return 1
+
+    if dry_run and status not in {"missing", "absent", "removed"}:
+        print(f"  {C.YELLOW}[dry-run]{C.RESET} would write {config_path}:")
+        for line in status.splitlines():
+            print(f"    {line}")
+        print()
+        return 0
+    if status == "missing":
+        print(f"  {C.GRAY}No config file exists at {config_path}; nothing to remove.{C.RESET}\n")
+        return 0
+    if status == "absent":
+        print(f"  {C.GRAY}Entroly is not registered in {config_path}.{C.RESET}\n")
+        return 0
+
+    print(f"  {C.GREEN}✓ Entroly MCP entry removed{C.RESET}")
+    print(f"  {C.GRAY}  Wrote: {config_path}{C.RESET}")
+    if backup:
+        print(f"  {C.GRAY}  Backup: {backup}{C.RESET}")
+    print()
+    return 0
 
 
 # ── Learn: Failure pattern analysis ──────────────────────────────────
@@ -3900,7 +4063,7 @@ def cmd_completions(args):
         "init", "go", "serve", "proxy", "dashboard", "value", "health",
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
-        "batch", "wrap", "learn", "share", "demo",
+        "batch", "wrap", "unwrap", "learn", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
         "optimize", "ingest", "select", "receipt", "explain",
         "feedback", "compile", "verify", "sync",
@@ -5968,6 +6131,20 @@ def main():
         help="Additional arguments passed to the agent",
     )
 
+    # entroly unwrap
+    unwrap_parser = subparsers.add_parser(
+        "unwrap",
+        help="Remove Entroly's persistent integration without touching other tools",
+    )
+    unwrap_parser.add_argument(
+        "agent", type=str, nargs="?",
+        help=f"Agent to unwrap: {_wrap_agent_names()}",
+    )
+    unwrap_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview the resulting config without writing files",
+    )
+
     # entroly learn
     learn_parser = subparsers.add_parser(
         "learn",
@@ -6352,6 +6529,7 @@ def main():
         "finetune": cmd_finetune,
         "witness": cmd_witness,
         "wrap": cmd_wrap,
+        "unwrap": cmd_unwrap,
         "learn": cmd_learn,
         "share": cmd_share,
         "ravs": cmd_ravs,
