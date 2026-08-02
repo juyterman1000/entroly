@@ -3068,7 +3068,14 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         print(f"       {C.GRAY}top: {top}{C.RESET}\n")
 
     avg = report["average_reduction_pct"]
-    if report.get("budget_narrowed_to_demonstrate"):
+    # Gate on "did we actually save nothing", NOT merely on "the repo fits in
+    # the budget". A 2,623-token project fits inside a 4,096-token budget and
+    # still reduced context 42-98%, because the resolution ladder demotes
+    # lower-ranked files to skeletons even when nothing has to be dropped.
+    # Gating on fit alone printed "there is nothing to save yet" directly under
+    # "1,104 tokens saved".
+    nothing_saved = report.get("budget_narrowed_to_demonstrate") and avg <= 0.0
+    if nothing_saved:
         # A project smaller than the budget has nothing to drop, so every query
         # honestly reports 0.0%. Printing that bare number is the most common
         # first run and reads as "this tool does nothing". Say what actually

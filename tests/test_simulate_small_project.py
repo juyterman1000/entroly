@@ -90,3 +90,49 @@ def test_forcing_a_smaller_budget_demonstrates_selection(tiny_project: Path):
     )
     for row in report["queries"]:
         assert row["selected_fragments"] > 0
+
+
+def test_a_realistic_small_project_reports_its_savings(tmp_path: Path):
+    """The "already fits" message must never suppress real savings.
+
+    A 6-module, ~2,600-token project fits inside the default 4,096-token budget
+    and still reduces context 40-98%, because the resolution ladder demotes
+    lower-ranked files to skeletons even when nothing has to be dropped.
+
+    An earlier version of the small-project message gated on "does the repo fit
+    in the budget" rather than "did we actually save anything", and printed
+    "there is nothing to save yet" directly beneath "1,104 tokens saved".
+    """
+    app = tmp_path / "app"
+    app.mkdir()
+    modules = {
+        "auth": ("login", "verify_password", "issue_session_token", "refresh_session"),
+        "billing": ("charge_card", "refund_payment", "create_invoice", "void_invoice"),
+        "users": ("create_user", "get_user", "update_profile", "delete_user"),
+        "orders": ("place_order", "cancel_order", "track_shipment", "apply_coupon"),
+    }
+    for name, fns in modules.items():
+        lines = [f'"""{name} module."""', "import logging", "", "logger = logging.getLogger(__name__)", ""]
+        for fn in fns:
+            lines += [
+                f"def {fn}(request, context=None):",
+                f'    """Handle {fn.replace("_", " ")} for {name}."""',
+                f'    logger.info("{fn} called with %s", request)',
+                "    validated = validate_input(request)",
+                "    if not validated:",
+                '        raise ValueError("invalid request")',
+                f"    result = process_{name}(validated, context)",
+                "    return finalize(result)",
+                "",
+            ]
+        (app / f"{name}.py").write_text("\n".join(lines), encoding="utf-8")
+
+    report = _simulate(tmp_path)
+    assert report["repo_tokens_indexed"] < report["budget"], (
+        "fixture must fit inside the budget, or it does not test this path"
+    )
+    assert report["average_reduction_pct"] > 0, (
+        "a project that fits should still save via skeleton demotion; "
+        f"got {report['average_reduction_pct']}%"
+    )
+    assert report["total_tokens_saved"] > 0
