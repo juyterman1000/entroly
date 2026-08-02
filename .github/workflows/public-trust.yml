@@ -109,3 +109,32 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Check canonical public destinations
         run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20
+
+  export-current-main-source:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'ops/current-main-audit-20260802'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Export exact source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > CURRENT_MAIN_SHA
+          git archive --format=tar.gz --output=current-main-source.tar.gz HEAD
+          sha256sum current-main-source.tar.gz > current-main-source.tar.gz.sha256
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: current-main-source-07f0e31
+          path: |
+            CURRENT_MAIN_SHA
+            current-main-source.tar.gz
+            current-main-source.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
