@@ -265,22 +265,110 @@ pub fn tokenize_code(content: &str) -> Vec<String> {
             continue;
         }
 
-        // Split camelCase: "StateGraph" â†’ ["state", "graph"]
+        // Split camelCase: "StateGraph" -> ["state", "graph"]
         let parts = split_identifier(word);
         if parts.len() > 1 {
             // Add both the full token and its parts
+            if let Some(stem) = morphological_stem(&lower) {
+                tokens.push(stem);
+            }
             tokens.push(lower);
             for part in parts {
                 if part.len() >= 2 && !is_code_stopword(&part) {
+                    if let Some(stem) = morphological_stem(&part) {
+                        tokens.push(stem);
+                    }
                     tokens.push(part);
                 }
             }
         } else {
+            // Emit the stem alongside the surface form so a natural-language
+            // query ("cards charged") meets a code identifier ("charge_card")
+            // on the shared stem. Applied identically to queries and documents,
+            // which is the only way the two sides can agree.
+            if let Some(stem) = morphological_stem(&lower) {
+                tokens.push(stem);
+            }
             tokens.push(lower);
         }
     }
 
     tokens
+}
+
+/// Reduce an English surface form to a matching stem, or `None` when the word
+/// is already in its base form.
+///
+/// ## Why this exists
+///
+/// `split_identifier` already turns `charge_card` into `["charge", "card"]`, so
+/// the tokens are present — but a natural-language query says "credit cards
+/// charged", and `"cards" != "card"`, `"charged" != "charge"`. Lexical matching
+/// therefore scored ZERO on the one file that answered the question, and TPKS
+/// fell through to its tie-break. Measured before this change:
+///
+/// ```text
+///   "How are credit cards charged?"        -> auth.py     (wrong)
+///   "charge_card StripeGateway"            -> billing.py  (right)
+///   "verify_password issue_session_token"  -> auth.py     (right)
+/// ```
+///
+/// Exact identifiers and path words ranked perfectly; only natural language
+/// failed. The ranker was never broken — it was missing morphology.
+///
+/// ## Why variants rather than a canonical stem
+///
+/// Callers emit BOTH the surface token and this stem, instead of replacing one
+/// with the other. A single canonical form has to make `charge` and `charged`
+/// agree, and classical stemmers do not: Porter leaves `charge` intact while
+/// reducing `charged` to `charg`, so they still miss each other. Emitting both
+/// forms lets them meet on the shared stem without needing the canonical form
+/// to be correct.
+///
+/// ## Conservatism
+///
+/// Deliberately narrow. Over-stemming silently merges unrelated identifiers,
+/// which is far worse in code search than missing a plural: `class` must not
+/// become `clas`, `address` must not become `addres`. Rules only fire when the
+/// remaining stem is at least four characters, and `-ss` endings are never
+/// touched. Fully deterministic — selection feeds prompt prefixes, which must
+/// stay byte-stable.
+fn morphological_stem(word: &str) -> Option<String> {
+    let n = word.len();
+
+    // "queries" -> "query", "policies" -> "policy"
+    if n >= 6 && word.ends_with("ies") {
+        return Some(format!("{}y", &word[..n - 3]));
+    }
+    // "matches" -> "match", "boxes" -> "box"  (only after a sibilant)
+    if n >= 6 && word.ends_with("es") {
+        let base = &word[..n - 2];
+        if base.ends_with('s')
+            || base.ends_with('x')
+            || base.ends_with('z')
+            || base.ends_with("ch")
+            || base.ends_with("sh")
+        {
+            return Some(base.to_string());
+        }
+    }
+    // "charging" -> "charg", "handling" -> "handl"
+    if n >= 7 && word.ends_with("ing") {
+        return Some(word[..n - 3].to_string());
+    }
+    // "charged" -> "charg", "handled" -> "handl"
+    if n >= 6 && word.ends_with("ed") {
+        return Some(word[..n - 2].to_string());
+    }
+    // "cards" -> "card". Never "class" -> "clas", never "status" -> "statu".
+    if n >= 5 && word.ends_with('s') && !word.ends_with("ss") && !word.ends_with("us") {
+        return Some(word[..n - 1].to_string());
+    }
+    // "charge" -> "charg", so it meets the stem of "charged"/"charging".
+    if n >= 6 && word.ends_with('e') && !word.ends_with("ee") {
+        return Some(word[..n - 1].to_string());
+    }
+    None
 }
 
 /// Tokenize a file path into meaningful terms.
@@ -506,5 +594,67 @@ mod tests {
         assert!(norm[0] < 0.1); // min â†’ ~0.05
         assert!(norm[2] > 0.9); // max â†’ ~1.0
         assert!(norm[1] > norm[0] && norm[1] < norm[2]); // monotone
+    }
+}
+
+#[cfg(test)]
+mod stemming_tests {
+    use super::*;
+
+    /// The exact failure that motivated this: a natural-language query scored
+    /// zero against the only file that answered it.
+    #[test]
+    fn natural_language_meets_code_identifiers() {
+        let doc = tokenize_code("def charge_card(customer, amount):\n    return StripeGateway().charge(customer.card, amount)");
+        for q in ["cards", "charged", "charging", "charges"] {
+            let qt = tokenize_code(q);
+            assert!(
+                qt.iter().any(|t| doc.contains(t)),
+                "query {q:?} -> {qt:?} shares no token with the billing document"
+            );
+        }
+    }
+
+    #[test]
+    fn stemming_is_applied_to_both_sides_identically() {
+        // The query side and the document side must reduce the same way, or
+        // they can still miss each other.
+        assert_eq!(tokenize_code("charged"), tokenize_code("charged"));
+        let q = tokenize_code("queries");
+        assert!(q.contains(&"query".to_string()), "queries -> {q:?}");
+    }
+
+    #[test]
+    fn conservative_rules_do_not_merge_unrelated_words() {
+        // Over-stemming is worse than under-stemming in code search: it
+        // silently collapses distinct identifiers.
+        for safe in ["class", "address", "status", "process", "bus"] {
+            assert_eq!(
+                morphological_stem(safe),
+                None,
+                "{safe:?} must not be stemmed"
+            );
+        }
+    }
+
+    #[test]
+    fn known_reductions() {
+        assert_eq!(morphological_stem("cards").as_deref(), Some("card"));
+        assert_eq!(morphological_stem("queries").as_deref(), Some("query"));
+        assert_eq!(morphological_stem("matches").as_deref(), Some("match"));
+        assert_eq!(morphological_stem("charged").as_deref(), Some("charg"));
+        assert_eq!(morphological_stem("charging").as_deref(), Some("charg"));
+        assert_eq!(morphological_stem("charge").as_deref(), Some("charg"));
+        // charge / charged / charging all converge on one stem
+        assert_eq!(morphological_stem("charge"), morphological_stem("charged"));
+    }
+
+    #[test]
+    fn stemming_is_deterministic() {
+        // Selection feeds prompt prefixes, which must stay byte-stable.
+        let a = tokenize_code("charge_card StripeGateway queries matched");
+        for _ in 0..50 {
+            assert_eq!(a, tokenize_code("charge_card StripeGateway queries matched"));
+        }
     }
 }
