@@ -55,6 +55,7 @@ pub mod resonance;
 pub mod rnr;
 pub mod sast;
 pub mod semantic_dedup;
+pub mod simhash_wide;
 pub mod skeleton;
 pub mod trajectory;
 pub mod utilization;
