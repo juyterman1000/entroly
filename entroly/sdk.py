@@ -1248,7 +1248,17 @@ def optimize(
     # Optimize
     result = engine.optimize_context(token_budget=budget, query=query)
 
-    selected = result.get("selected", [])
+    # `optimize_context` names this key differently depending on which engine
+    # answered. The pure-Python path returns only `selected_fragments`; the
+    # native path additionally normalises a `selected` alias (see the comment
+    # in `server.py`). Reading `selected` alone meant this function returned an
+    # EMPTY selection, at every budget, for every user without the Rust
+    # extension -- that is, the default `pip install entroly` experience --
+    # while working correctly in development, where the native engine is
+    # present. Prefer the key the engine always sets.
+    selected = result.get("selected_fragments")
+    if selected is None:
+        selected = result.get("selected", [])
     context_parts = []
     total_tokens = 0
     for item in selected:
