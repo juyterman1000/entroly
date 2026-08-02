@@ -208,3 +208,71 @@ def test_representation_serialises_with_provenance():
 
 def test_registry_is_empty_by_default_rather_than_guessing():
     assert CodecRegistry().select("anything") is None
+
+# ── Shell / tool output (5.3) ───────────────────────────────────────────────
+
+
+def _pytest_output(passing: int = 200) -> str:
+    lines = ["$ pytest tests/", "tests/test_a.py::test_one PASSED"]
+    lines += [f"tests/test_c.py::test_{i} PASSED" for i in range(passing)]
+    lines += [
+        "tests/test_z.py::test_bad FAILED",
+        "E   AssertionError: expected 3 got 4",
+        f"1 failed, {passing + 1} passed",
+        "exit code 1",
+    ]
+    return "\n".join(lines)
+
+
+@pytest.mark.parametrize(
+    "label,needle",
+    [
+        ("command", "pytest tests/"),
+        ("failed target", "test_bad"),
+        ("failure marker", "FAILED"),
+        ("error text", "AssertionError"),
+        ("summary counts", "1 failed"),
+        ("exit status", "exit code 1"),
+    ],
+)
+def test_shell_codec_keeps_what_a_failure_is_read_from(label, needle):
+    from entroly.codecs_builtin import ShellCodec
+
+    rep = ShellCodec().representations(_pytest_output(), source_id="run")[-1]
+    assert needle in rep.text, (
+        f"{label} was dropped; a compressed test run that loses this cannot be "
+        f"{label} was dropped; a compressed test run that loses this "
+        f"cannot be acted on."
+    )
+
+
+def test_shell_codec_dropped_lines_are_recoverable():
+    from entroly.codec import RecoveryStore
+    from entroly.codecs_builtin import ShellCodec
+
+    store = RecoveryStore()
+    rep = ShellCodec(store).representations(_pytest_output(), source_id="run")[-1]
+    assert rep.recovery is not None and rep.recovery.item_count > 100
+    recovered = store.recover(rep.recovery)
+    assert "test_150 PASSED" in recovered
+
+
+def test_shell_codec_protected_evidence_is_real():
+    from entroly.codecs_builtin import ShellCodec
+
+    reps = ShellCodec().representations(_pytest_output(), source_id="run")
+    assert verify_all(reps) == {}
+    esc = reps[-1]
+    assert any("exit code" in e for e in esc.protected_evidence)
+    assert any("failed" in e for e in esc.protected_evidence), (
+        f"summary counts should be claimed as protected; got "
+        f"{esc.protected_evidence}"
+    )
+
+
+def test_prose_is_not_claimed_by_the_shell_codec():
+    from entroly.codecs_builtin import ShellCodec
+
+    assert not ShellCodec().supports(
+        "A quiet paragraph about nothing in particular, with no command in it."
+    )

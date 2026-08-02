@@ -250,6 +250,105 @@ class LogCodec:
         return reps
 
 
+
+class ShellCodec:
+    """Shell / tool output, via the Entropic Shell Codec.
+
+    ESC scores each line by entropy and structural role rather than matching
+    per-tool regexes, so it degrades safely on a command it has never seen --
+    which is what section 5.3 requires of unknown output. What it did not do is
+    say which lines it dropped; the omitted lines are now recoverable.
+
+    Exit status, failed targets and error text are asserted as protected
+    evidence, so a claim that they survived is checked rather than trusted.
+    """
+
+    name = "shell"
+    version = "1"
+    _SHELL_SHAPE = re.compile(
+        r"^\s*[$#>]\s+\S|^(?:PASS|FAIL|ok|error|warning|Error|Warning)\b"
+        r"|\b(?:exit(?:ed)? (?:code|status)|Traceback|npm ERR!|error\[E\d+\])"
+        r"|^\s*\d+ (?:passed|failed|error)",
+        re.MULTILINE,
+    )
+    _OUTCOME = re.compile(
+        r"exit(?:ed)?[ _](?:code|status)[ =:]*\d+"
+        r"|\b\d+ (?:passed|failed|errors?|warnings?)\b"
+        r"|error\[E\d+\]|npm ERR!",
+        re.IGNORECASE,
+    )
+
+    def __init__(self, store: RecoveryStore | None = None) -> None:
+        self.store = store if store is not None else RecoveryStore()
+
+    def supports(self, text: str, content_type: str = "") -> SupportDecision:
+        if content_type in {"shell", "tool_output"}:
+            return SupportDecision(True, 1.0, "declared content type")
+        if self._SHELL_SHAPE.search(text[:4000]):
+            return SupportDecision(True, 0.7, "prompt, status or tool-error shape")
+        return SupportDecision(False, 0.0, "no shell-output shape found")
+
+    def representations(
+        self, text: str, source_id: str = "", **options: Any
+    ) -> list[Representation]:
+        from .shell_codec import esc_compress
+
+        budget = int(options.get("budget", 1000))
+        src_digest = content_digest(text)
+        reps = [
+            Representation(
+                representation_id=f"{source_id}#shell.full",
+                source_id=source_id,
+                content_type="shell",
+                text=text,
+                token_cost=estimate_tokens(text),
+                codec=self.name,
+                codec_version=self.version,
+                source_sha256=src_digest,
+                distortion_risk=0.0,
+            )
+        ]
+
+        try:
+            result = esc_compress(text, budget=budget)
+        except Exception:
+            # An unknown shape must degrade to the original, not to a guess.
+            return reps
+        compressed = result.compressed
+        if not compressed or len(compressed) >= len(text):
+            return reps
+
+        kept = set(compressed.split("\n"))
+        dropped = [ln for ln in text.split("\n") if ln.strip() and ln not in kept]
+        recovery = None
+        if dropped:
+            recovery = self.store.put(
+                "\n".join(dropped),
+                item_count=len(dropped),
+                note=f"lines dropped from {source_id or 'shell output'}",
+            )
+
+        protected = tuple(
+            dict.fromkeys(m.group(0) for m in self._OUTCOME.finditer(compressed))
+        )
+        reps.append(
+            Representation(
+                representation_id=f"{source_id}#shell.esc",
+                source_id=source_id,
+                content_type="shell",
+                text=compressed,
+                token_cost=estimate_tokens(compressed),
+                codec=self.name,
+                codec_version=self.version,
+                source_sha256=src_digest,
+                protected_evidence=protected,
+                distortion_risk=1.0 - (len(compressed) / max(len(text), 1)),
+                recovery=recovery,
+            )
+        )
+        return reps
+
+
 def default_registry(store: RecoveryStore | None = None):
     """Registry with the built-in codecs. Unknown content selects nothing."""
     from .codec import CodecRegistry
@@ -258,4 +357,5 @@ def default_registry(store: RecoveryStore | None = None):
     registry = CodecRegistry()
     registry.register(JsonCodec(shared))
     registry.register(LogCodec(shared))
+    registry.register(ShellCodec(shared))
     return registry
