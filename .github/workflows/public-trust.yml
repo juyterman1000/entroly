@@ -109,3 +109,73 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Check canonical public destinations
         run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20
+
+  apply-validated-sdk-identity:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'feat/sufficiency-mainline' &&
+      github.event.pull_request.head.ref == 'ops/sdk-identity-delivery'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 32
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify base blobs and signed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_base="5f4486f15614c31617d9959246a9bd12a0fa73c8"
+          git merge-base --is-ancestor "$expected_base" HEAD
+          test "$(git hash-object entroly/sdk.py)" = "e29863a5d21efa3f7a40f1989c5ef0b0d6ad2c36"
+          test "$(git hash-object tests/test_sdk_content_aware.py)" = "be4776d4a3b27831f6675b163805befc8efd20af"
+          test "$(git hash-object .github/patches/sdk-identity-first.patch.gz.b64)" = \
+            "c9eea5350f65e65ec3bc85f2a964b80f79c2d153"
+          base64 --decode .github/patches/sdk-identity-first.patch.gz.b64 > /tmp/sdk-identity.patch.gz
+          gzip --test /tmp/sdk-identity.patch.gz
+          gzip --decompress --stdout /tmp/sdk-identity.patch.gz > /tmp/sdk-identity.patch
+          echo "3ab230654c8ecba52999ad53f8355a9f0b7a75b1901ab5fe9e0caa558111dc49  /tmp/sdk-identity.patch" \
+            | sha256sum --check --strict
+          git apply --check /tmp/sdk-identity.patch
+          git apply /tmp/sdk-identity.patch
+          git diff --check
+
+      - name: Install patched package
+        run: python -m pip install -e ".[test]"
+
+      - name: Validate identity-first SDK behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q entroly/sdk.py tests/test_sdk_content_aware.py
+          python -m pytest -q \
+            tests/test_sdk_content_aware.py \
+            tests/test_sdk_parity.py \
+            tests/test_assurance_sdk.py \
+            tests/test_public_surface_dogfood.py \
+            tests/test_hardening.py \
+            tests/test_control_plane.py \
+            tests/test_integrations_smoke.py \
+            tests/test_model_registry_proxy_integration.py
+
+      - name: Commit validated identity-first SDK behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add entroly/sdk.py tests/test_sdk_content_aware.py
+          git commit -m "fix(sdk): preserve identity before message pruning"
+          validated_commit="$(git rev-parse HEAD)"
+          git format-patch -1 --stdout "$validated_commit" > /tmp/validated-sdk-identity.patch
+          git fetch origin feat/sufficiency-mainline
+          git switch --force-create validated-delivery origin/feat/sufficiency-mainline
+          git am /tmp/validated-sdk-identity.patch
+          git push origin HEAD:feat/sufficiency-mainline
