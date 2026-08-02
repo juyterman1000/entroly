@@ -77,7 +77,11 @@ def test_discover_finds_only_the_fix_commit(mined_repo):
     assert fix.test_files == ["test_calc.py"]
 
 
-def test_validate_proves_fail_to_pass_for_the_fix(mined_repo):
+def test_validate_proves_fail_to_pass_for_the_fix(mined_repo, monkeypatch):
+    # Historical worktrees cannot be assumed to have pytest-timeout or any
+    # other third-party plugin installed. The miner's subprocess timeout must
+    # remain sufficient on its own.
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     candidates = discover(mined_repo, max_commits=50)
     fix = next(c for c in candidates if "fix: add()" in c.subject)
 
