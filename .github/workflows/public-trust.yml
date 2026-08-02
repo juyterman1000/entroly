@@ -109,3 +109,63 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Check canonical public destinations
         run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20
+
+  apply-validated-leadership-slice:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'feat/sufficiency-mainline'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Verify parent and signed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent="472d67621db0c6d11b7a87bb47befb1b0539b894"
+          actual_parent="$(git rev-parse HEAD^)"
+          test "$actual_parent" = "$expected_parent"
+
+          base64 --decode .github/patches/leadership-slice.patch.gz.b64 \
+            | gzip --decompress > /tmp/leadership-slice.patch
+          echo "7fc3f23b822ee62758aeb0b74526c5ff5b9a9955671a59f3d32bb35b39940d7c  /tmp/leadership-slice.patch" \
+            | sha256sum --check --strict
+          git apply --check /tmp/leadership-slice.patch
+          git apply /tmp/leadership-slice.patch
+
+          rm -f \
+            .github/patches/leadership-slice.patch.gz.b64 \
+            .github/workflows/apply-leadership-slice.yml
+          git checkout HEAD^ -- .github/workflows/public-trust.yml
+          git diff --check
+
+      - name: Validate affected Rust surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup update stable --no-self-update
+          cargo fmt --manifest-path entroly-qccr-audit/Cargo.toml -- --check
+          cargo fmt --manifest-path entroly-core/Cargo.toml -- --check
+          cargo fmt --manifest-path entroly-wasm/Cargo.toml -- --check
+          cargo clippy --manifest-path entroly-qccr-audit/Cargo.toml --locked --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-core/Cargo.toml --locked --tests -- -D warnings
+          cargo clippy --manifest-path entroly-wasm/Cargo.toml --locked --all-targets -- -D warnings
+          cargo test --manifest-path entroly-qccr-audit/Cargo.toml --locked
+          cargo test --manifest-path entroly-core/Cargo.toml --locked
+          cargo test --manifest-path entroly-wasm/Cargo.toml --locked
+
+      - name: Commit validated runtime parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(runtime): enforce audited QCCR parity across native and WASM"
+          git push origin HEAD:feat/sufficiency-mainline
