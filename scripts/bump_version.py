@@ -27,6 +27,7 @@ TARGETS = [
     ("entroly-core/Cargo.lock",
         r'(name\s*=\s*"entroly-qccr"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
     ("entroly-core/README.md", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly-core>={v}'),
+    ("entroly-engine/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
     ("entroly-qccr/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
     ("entroly-qccr/Cargo.lock",
         r'(name\s*=\s*"entroly-qccr"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
