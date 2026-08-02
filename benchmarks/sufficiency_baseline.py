@@ -121,6 +121,7 @@ import statistics
 import sys
 import tempfile
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -226,6 +227,8 @@ class Row:
     needle_retained: bool
     fragments_selected: int
     fragments_total: int
+    verdict: str               # shadow-mode sufficiency certificate
+    needle_present_in_pool: bool
     budget_utilization: float  # reported as a COST
     latency_ms: float
 
@@ -234,7 +237,8 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def _build_engine(fixture: dict, extra_distractors: int = 0):
+def _build_engine(fixture: dict, extra_distractors: int = 0,
+                  include_needle: bool = True):
     """One engine per fixture, reused across budgets.
 
     Engine construction dominates runtime (warm-start plus index load), so
@@ -254,6 +258,23 @@ def _build_engine(fixture: dict, extra_distractors: int = 0):
     engine = EntrolyEngine()
 
     pool = list(DISTRACTOR_POOL) + _generate_distractors(extra_distractors)
+    if not include_needle:
+        # Unanswerable arm: the evidence is not in the corpus at all, so NO
+        # selection can be sufficient. This is the only arm that can catch a
+        # false-sufficient verdict -- when the needle is present and retained,
+        # "sufficient" is right for the wrong reason as easily as the right one.
+        marker = fixture["must_contain"]
+        assert not any(marker in body for _, body in pool)
+        for src, body in pool:
+            engine.ingest_fragment(body, f"file:{src}", _estimate_tokens(body))
+        actual = int(engine.get_stats()["session"]["total_fragments"])
+        if actual > len(pool):
+            raise SystemExit(
+                f"REFUSING TO REPORT: engine holds {actual} fragments after "
+                f"ingesting {len(pool)}. ENTROLY_DIR="
+                f"{os.environ.get('ENTROLY_DIR')!r}"
+            )
+        return engine, actual
     marker = fixture["must_contain"]
     assert not any(marker in body for _, body in pool), (
         f"a distractor contains the {marker!r} marker, so recall would be "
@@ -291,7 +312,8 @@ def _build_engine(fixture: dict, extra_distractors: int = 0):
     return engine, actual
 
 
-def _run_fixture(fixture: dict, budget: int, engine, pool_size: int) -> Row:
+def _run_fixture(fixture: dict, budget: int, engine, pool_size: int,
+                 needle_in_pool: bool = True) -> Row:
     t0 = time.perf_counter()
     result = engine.optimize_context(token_budget=budget, query=fixture["query"])
     latency_ms = (time.perf_counter() - t0) * 1000
@@ -300,6 +322,15 @@ def _run_fixture(fixture: dict, budget: int, engine, pool_size: int) -> Row:
     text = "\n".join(f.get("content", "") for f in selected if isinstance(f, dict))
     selected_tokens = sum(int(f.get("token_count", 0) or 0) for f in selected if isinstance(f, dict))
     needle_tokens = _estimate_tokens(fixture["needle"])
+
+    # qccr attaches the certificate to the first selected fragment. It is
+    # observational today -- it never changes what was selected -- so reading it
+    # here scores the shadow-mode controller without altering behaviour.
+    verdict = "none"
+    for f in selected:
+        if isinstance(f, dict) and isinstance(f.get("_sufficiency"), dict):
+            verdict = str(f["_sufficiency"].get("verdict", "none"))
+            break
 
     return Row(
         fixture=fixture["id"],
@@ -312,12 +343,17 @@ def _run_fixture(fixture: dict, budget: int, engine, pool_size: int) -> Row:
         fragments_total=pool_size,
         budget_utilization=round(selected_tokens / budget, 4) if budget else 0.0,
         latency_ms=round(latency_ms, 2),
+        verdict=verdict,
+        needle_present_in_pool=needle_in_pool,
     )
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", dest="json_out", help="write the full report here")
+    ap.add_argument("--unanswerable", action="store_true",
+                    help="also run each fixture with the needle REMOVED from "
+                         "the corpus, where no selection can be sufficient")
     ap.add_argument("--pool", type=int, default=0, metavar="N",
                     help="add N generated distractors so the candidate pool "
                          "exceeds the budget (default 0 = curated pool only)")
@@ -343,6 +379,17 @@ def main(argv: list[str]) -> int:
         for budget in BUDGETS:
             rows.append(_run_fixture(fixture, budget, engine, live_pool))
 
+    if args.unanswerable:
+        for fixture in FIXTURES:
+            engine, live_pool = _build_engine(
+                fixture, extra_distractors=args.pool, include_needle=False
+            )
+            for budget in BUDGETS:
+                rows.append(
+                    _run_fixture(fixture, budget, engine, live_pool,
+                                 needle_in_pool=False)
+                )
+
     print(f"\n  Entroly sufficiency baseline  [{SCHEMA_VERSION}]")
     print(f"  version: {entroly.__version__}   engine: {engine_mode}")
     print(f"  fixtures: {len(FIXTURES)}  budgets: {BUDGETS}")
@@ -367,7 +414,30 @@ def main(argv: list[str]) -> int:
     by_budget = {b: statistics.mean([r.selected_tokens for r in rows if r.budget == b]) for b in BUDGETS}
     growth = by_budget[BUDGETS[-1]] - by_budget[BUDGETS[0]]
 
+    # ── Shadow-mode controller scored against ground truth ──────────────
+    # "Sufficient" is right only if the answer actually survived. The
+    # unanswerable arm is what makes false-sufficient detectable at all: when
+    # the needle is in the pool and retained, a blanket "sufficient" scores
+    # correct without discriminating anything.
+    scored = [r for r in rows if r.verdict != "none"]
+    says_ok = [r for r in scored if r.verdict == "sufficient"]
+    false_suff = [r for r in says_ok if not r.needle_retained]
+    false_insuff = [r for r in scored if r.verdict != "sufficient" and r.needle_retained]
+    unans = [r for r in rows if not r.needle_present_in_pool]
+    unans_ok = [r for r in unans if r.verdict == "sufficient"]
+
     print(f"\n  evidence recall            : {recall*100:.1f}%  ({len(retained)}/{len(rows)})")
+    print(f"  rows with a verdict        : {len(scored)}/{len(rows)}")
+    if scored:
+        print(f"  verdict distribution       : "
+              f"{dict(sorted(Counter(r.verdict for r in scored).items()))}")
+        print(f"  FALSE-SUFFICIENT           : {len(false_suff)}/{len(says_ok)} "
+              f"rows called sufficient without the answer")
+        print(f"  false-insufficient         : {len(false_insuff)}/{len(scored)}")
+    if unans:
+        print(f"  unanswerable arm           : {len(unans)} rows, "
+              f"{len(unans_ok)} still called sufficient "
+              f"({'FAIL-OPEN' if unans_ok else 'fails closed'})")
     if waste:
         print(f"  median tokens past needle  : {statistics.median(waste):.0f}")
         print(f"  max tokens past needle     : {max(waste)}")
@@ -388,6 +458,15 @@ def main(argv: list[str]) -> int:
         "rows": [asdict(r) for r in rows],
         "summary": {
             "evidence_recall": round(recall, 4),
+            "rows_with_verdict": len(scored),
+            "verdict_counts": dict(sorted(Counter(r.verdict for r in scored).items())),
+            "false_sufficient": len(false_suff),
+            "false_sufficient_of_sufficient": (
+                round(len(false_suff) / len(says_ok), 4) if says_ok else None
+            ),
+            "false_insufficient": len(false_insuff),
+            "unanswerable_rows": len(unans),
+            "unanswerable_called_sufficient": len(unans_ok),
             "median_waste_tokens": statistics.median(waste) if waste else None,
             "max_waste_tokens": max(waste) if waste else None,
             "mean_selected_smallest_budget": round(by_budget[BUDGETS[0]], 1),
