@@ -31,10 +31,10 @@ jobs:
       - name: Verify ancestry and signed patch
         shell: bash
         run: |
-          set -euo pipefail
-          expected_base='9f2168422779ede44b6086768bb3499767504398'
+          set -euxo pipefail
+          expected_base='a35ea1b4ab86046547769d6ab67ba142bd673ea5'
           git merge-base --is-ancestor "$expected_base" HEAD
-          test "$(git hash-object .github/patches/recovery-hardening-main-1071.patch.gz.b64)" = 'c6f816207453e73bb57fcc443d147f0a234670a7'
+          test "$(git hash-object .github/patches/recovery-hardening-main-1071.patch.gz.b64)" = 'afdbfef7b45544bb320f162167a669a29caa49da'
           base64 --decode .github/patches/recovery-hardening-main-1071.patch.gz.b64 > /tmp/recovery-hardening.patch.gz
           gzip --test /tmp/recovery-hardening.patch.gz
           gzip --decompress --stdout /tmp/recovery-hardening.patch.gz > /tmp/recovery-hardening.patch
