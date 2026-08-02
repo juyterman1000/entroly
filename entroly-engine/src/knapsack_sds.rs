@@ -124,6 +124,58 @@ struct Candidate {
     simhash: Option<u64>,
 }
 
+/// Order a selection by relevance, leaving the pinned prefix in place.
+///
+/// Selection order is chosen by value-per-token, which is right for filling a
+/// budget and wrong for presentation: a fragment one token shorter outranks a
+/// more relevant one. Measured on a two-file project for the query
+/// "who verifies the password":
+///
+/// ```text
+///     auth.py     24 tokens  relevance 0.58640  density 0.024308
+///     billing.py  23 tokens  relevance 0.57694  density 0.024960
+/// ```
+///
+/// Both exits of `ios_select` must apply this. The best-fit fast path returns
+/// early when everything fits, which is the common case for small projects --
+/// exactly where the wrong order is most visible.
+///
+/// Ties break on fragment index so prompt prefixes stay byte-stable.
+#[allow(clippy::too_many_arguments)]
+fn order_by_relevance(
+    selections: &mut [(usize, Resolution)],
+    pinned_len: usize,
+    fragments: &[ContextFragment],
+    feedback_mults: &HashMap<String, f64>,
+    w_recency: f64,
+    w_frequency: f64,
+    w_semantic: f64,
+    w_entropy: f64,
+) {
+    let split_at = pinned_len.min(selections.len());
+    let (_, tail) = selections.split_at_mut(split_at);
+    tail.sort_by(|a, b| {
+        let rel = |i: usize| {
+            let fm = feedback_mults
+                .get(&fragments[i].fragment_id)
+                .copied()
+                .unwrap_or(1.0);
+            compute_relevance(
+                &fragments[i],
+                w_recency,
+                w_frequency,
+                w_semantic,
+                w_entropy,
+                fm,
+            )
+        };
+        rel(b.0)
+            .partial_cmp(&rel(a.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+}
+
 /// Result of the IOS selection.
 pub struct SdsResult {
     /// (fragment_index, chosen_resolution) pairs
@@ -487,6 +539,16 @@ pub fn ios_select(
                 }
             }
 
+            order_by_relevance(
+                &mut selections,
+                pinned.len(),
+                fragments,
+                feedback_mults,
+                w_recency,
+                w_frequency,
+                w_semantic,
+                w_entropy,
+            );
             return SdsResult {
                 selections,
                 total_tokens: fast_tokens,
@@ -497,6 +559,9 @@ pub fn ios_select(
     }
 
     // ── Phase 3: Greedy SDS+MRK selection ──
+    // Captured before `pinned` is moved: Phase 4 re-sorts only the
+    // non-pinned tail, so it needs to know where the tail starts.
+    let pinned_len = pinned.len();
     let mut selected: Vec<(usize, Resolution)> = pinned;
     let mut selected_hashes: Vec<u64> = pinned_hashes;
     let mut selected_frags: Vec<bool> = vec![false; fragments.len()]; // Track which fragment_idx is selected
@@ -602,7 +667,20 @@ pub fn ios_select(
         }
     }
 
-    // ── Phase 4: Compute diversity score of final selection ──
+    // ── Phase 4: Present by relevance, pack by density ──────────────
+    // Shared with the best-fit fast path; see `order_by_relevance`.
+    order_by_relevance(
+        &mut selected,
+        pinned_len,
+        fragments,
+        feedback_mults,
+        w_recency,
+        w_frequency,
+        w_semantic,
+        w_entropy,
+    );
+
+    // ── Phase 5: Compute diversity score of final selection ──
     let diversity_score = compute_pairwise_diversity(&selected_hashes);
 
     SdsResult {
@@ -1152,5 +1230,85 @@ mod tests {
             "Fast path should use full resolution for all"
         );
         assert_eq!(result.total_tokens, 150);
+    }
+}
+
+#[cfg(test)]
+mod ordering_tests {
+    use super::*;
+    use crate::fragment::ContextFragment;
+
+    fn frag(id: &str, tokens: u32, semantic: f64) -> ContextFragment {
+        let mut f = ContextFragment::new(id.into(), format!("content of {id}"), tokens, id.into());
+        f.semantic_score = semantic;
+        f.recency_score = 1.0;
+        f.entropy_score = 0.5;
+        f.has_simhash = true;
+        f
+    }
+
+    /// Relevance and density must be allowed to disagree, and relevance must win.
+    ///
+    /// `high` is more relevant but one token larger, so value-per-token ranks
+    /// `low` first. That is correct for packing a budget and wrong for display,
+    /// and it is exactly the case that made the npm build answer an
+    /// authentication question with the billing file.
+    #[test]
+    fn relevance_wins_over_density_in_returned_order() {
+        let fragments = vec![frag("low.py", 10, 0.50), frag("high.py", 11, 0.95)];
+        let mut sel = vec![(0usize, Resolution::Full), (1usize, Resolution::Full)];
+
+        // Sanity: density really does prefer the less relevant fragment here.
+        let mults = HashMap::new();
+        let rel = |i: usize| compute_relevance(&fragments[i], 0.3, 0.25, 0.25, 0.2, 1.0);
+        let d_low = rel(0) / fragments[0].token_count as f64;
+        let d_high = rel(1) / fragments[1].token_count as f64;
+        assert!(rel(1) > rel(0), "high.py must be more relevant");
+
+        order_by_relevance(&mut sel, 0, &fragments, &mults, 0.3, 0.25, 0.25, 0.2);
+        assert_eq!(
+            sel[0].0,
+            1,
+            "expected high.py first by relevance (rel {:.4} vs {:.4}); density would \
+             have picked low.py ({:.5} vs {:.5})",
+            rel(1),
+            rel(0),
+            d_low,
+            d_high
+        );
+    }
+
+    #[test]
+    fn pinned_fragments_keep_their_position() {
+        let fragments = vec![frag("pinned.py", 10, 0.10), frag("relevant.py", 10, 0.99)];
+        let mut sel = vec![(0usize, Resolution::Full), (1usize, Resolution::Full)];
+        let mults = HashMap::new();
+        order_by_relevance(&mut sel, 1, &fragments, &mults, 0.3, 0.25, 0.25, 0.2);
+        assert_eq!(sel[0].0, 0, "the pinned prefix must not be reordered");
+    }
+
+    #[test]
+    fn ordering_is_deterministic() {
+        // Selection feeds prompt prefixes, which must stay byte-stable.
+        let fragments = vec![
+            frag("a.py", 10, 0.5),
+            frag("b.py", 10, 0.5),
+            frag("c.py", 10, 0.5),
+        ];
+        let mults = HashMap::new();
+        let mut first: Option<Vec<usize>> = None;
+        for _ in 0..25 {
+            let mut sel = vec![
+                (0usize, Resolution::Full),
+                (1, Resolution::Full),
+                (2, Resolution::Full),
+            ];
+            order_by_relevance(&mut sel, 0, &fragments, &mults, 0.3, 0.25, 0.25, 0.2);
+            let order: Vec<usize> = sel.iter().map(|s| s.0).collect();
+            match &first {
+                None => first = Some(order),
+                Some(f) => assert_eq!(f, &order, "tie order must be stable"),
+            }
+        }
     }
 }
