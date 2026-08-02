@@ -1138,9 +1138,18 @@ def cmd_status(args):
     """entroly status — check if server/proxy is running."""
     import urllib.request
 
+    port = args.port or 9377
+    if getattr(args, "json_output", False):
+        from .runtime_status import runtime_status
+
+        report = runtime_status(port=port)
+        print(json.dumps(report, sort_keys=True))
+        if getattr(args, "require_running", False) and not report["healthy"]:
+            return 1
+        return 0
+
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Status{C.RESET}\n")
 
-    port = args.port or 9377
     endpoints = [
         ("Proxy", f"http://127.0.0.1:{port}/health", "entroly-proxy"),
         ("Dashboard", "http://127.0.0.1:9378/health", "entroly-dashboard"),
@@ -6022,6 +6031,14 @@ def main():
     status_parser.add_argument(
         "--port", type=int, default=None,
         help="Proxy port to check (default: 9377)",
+    )
+    status_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit a stable machine-readable local status report",
+    )
+    status_parser.add_argument(
+        "--require-running", action="store_true",
+        help="Exit nonzero when the local Entroly proxy is not ready",
     )
 
     # entroly config
