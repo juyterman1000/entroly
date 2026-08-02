@@ -26,9 +26,17 @@ def run_functional_test() -> None:
         assert engine._use_rust, "functional test requires the Rust core"
         logger.info(f"Engine instantiated. Rust Core Active: {engine._use_rust}")
 
+        # Real repository files used as ingestion fixtures. This is a hardcoded
+        # path contract: `prism.rs` moved to entroly-engine when the shared
+        # compute crate was extracted so the PyO3 and WebAssembly builds stop
+        # carrying separate copies of the algorithms.
+        #
+        # Note this script is NOT collected by `pytest tests/` -- it runs
+        # standalone (`python tests/functional_test.py`) and in CI -- so a stale
+        # path here survives a fully green local test run.
         files_to_ingest = [
             "entroly-core/src/lib.rs",
-            "entroly-core/src/prism.rs",
+            "entroly-engine/src/prism.rs",
             "entroly/server.py",
             "README.md",
             "pyproject.toml",
