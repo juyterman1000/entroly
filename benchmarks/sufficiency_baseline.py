@@ -30,6 +30,50 @@ The failure that did appear is ranking, not stopping. On ``retry_needle``:
 That 130-token plateau is *running out of candidates*, not a sufficiency
 decision: it is 5 of the 6 fragments that exist.
 
+With a pool that DOES exceed the budget (--pool 800)
+----------------------------------------------------
+
+806 fragments / ~36,793 distractor tokens against a 4,096 ceiling. auth and
+billing are unchanged: still exactly 24 and 28 tokens, 1 fragment, at every
+budget. So the flat curve was never "ran out of candidates" -- with 800
+competitors available and 146x the budget it needs, selection still returns
+only the needle.
+
+retry gets worse, not better: 47 -> 529 tokens, 1 -> 12 fragments, and the
+needle is retained 0/7 (it was 5/7 on the small pool). At budget 64 it selects
+a SINGLE 47-token distractor over the 39-token needle, so this is a ranking
+failure, not a packing one.
+
+Why: measured, not inferred
+---------------------------
+
+Same fixtures and pool, varying only the query wording:
+
+    query                                        needle  frags  tokens
+    "...request times out and needs retrying"    LOST      12     527
+    "retry"                                      KEPT       1      39
+    "TimeoutError"                               KEPT       1      39
+    "retry attempts exhausted"                   KEPT       1      39
+
+Selection is near-optimal when the query lexically overlaps the answer and
+collapses when it does not. Two causes in the code:
+
+* Query relevance is 25% of the composite score (config.py: weight_recency
+  0.30, weight_frequency 0.25, weight_semantic_sim 0.25, weight_entropy 0.20).
+  The other 75% knows nothing about the query, and in a fresh session every
+  fragment has identical recency and frequency -- so ranking falls to entropy,
+  where a longer, more varied distractor outscores a short precise answer.
+* semantic_score itself is a rank-percentile of TPKS (lib.rs), which is
+  dominated by path-tier heuristics with BM25 content only breaking ties
+  within a tier. BM25 is lexical, and "retrying" does not match
+  "retry_request", nor "times out" match "TimeoutError".
+
+Consequence for a sufficiency controller: on the retry query it would be
+certifying a selection that does not contain the answer. Stopping earlier
+cannot help a set that never had the evidence in it -- false-sufficient is the
+failure mode to guard against here, and it is a retrieval problem before it is
+a stopping problem.
+
 Limitation this exposes
 -----------------------
 
@@ -72,6 +116,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import statistics
 import sys
 import tempfile
@@ -111,6 +156,38 @@ DISTRACTOR_POOL = [
     ("users.py", "def update_profile(user, fields):\n    validate(fields)\n    return save_user(user, fields)"),
     ("report.py", "def build_report(rows):\n    grouped = group_by_day(rows)\n    return render_table(grouped)"),
 ]
+
+def _generate_distractors(n: int, seed: int = 20260802) -> list[tuple[str, str]]:
+    """Deterministic filler that is plausible code but answers no fixture query.
+
+    The curated pool is only ~140 tokens, so it cannot test whether selection
+    grows to fill a budget -- at budget 4096 there is simply nothing to grow
+    into. This generates a pool that vastly exceeds the largest budget, which
+    is the only regime where "stopped at sufficiency" and "ran out of
+    candidates" give different answers.
+
+    Vocabulary is deliberately disjoint from every fixture's must_contain
+    marker, and asserted so below.
+    """
+    rng = random.Random(seed)
+    verbs = ["fetch", "build", "parse", "merge", "flush", "encode", "resolve",
+             "collect", "expand", "reduce", "sample", "batch", "sort", "filter"]
+    nouns = ["record", "buffer", "segment", "manifest", "chunk", "row", "entry",
+             "bucket", "frame", "packet", "digest", "column", "shard", "slot"]
+    mods = ["io", "graph", "table", "queue", "codec", "store", "view", "index",
+            "stream", "matrix", "pool", "route", "plan", "stat"]
+    out: list[tuple[str, str]] = []
+    for i in range(n):
+        v, nn, m = rng.choice(verbs), rng.choice(nouns), rng.choice(mods)
+        body = "\n".join([
+            f"def {v}_{nn}_{i}(source, options=None):",
+            f"    items = source.{v}_all(options or {{}})",
+            f"    staged = [x for x in items if x.{nn}_id is not None]",
+            f"    return {m}_writer.commit(staged)",
+        ])
+        out.append((f"{m}_{nn}_{i}.py", body))
+    return out
+
 
 FIXTURES = [
     {
@@ -157,7 +234,7 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def _build_engine(fixture: dict):
+def _build_engine(fixture: dict, extra_distractors: int = 0):
     """One engine per fixture, reused across budgets.
 
     Engine construction dominates runtime (warm-start plus index load), so
@@ -176,29 +253,45 @@ def _build_engine(fixture: dict):
     os.environ["ENTROLY_DIR"] = tempfile.mkdtemp(prefix="entroly-sufficiency-")
     engine = EntrolyEngine()
 
+    pool = list(DISTRACTOR_POOL) + _generate_distractors(extra_distractors)
+    marker = fixture["must_contain"]
+    assert not any(marker in body for _, body in pool), (
+        f"a distractor contains the {marker!r} marker, so recall would be "
+        f"measured against a false positive"
+    )
+
     # Fail loudly if isolation did not hold. The engine warm-starts lazily on
     # first mutation, so this is checked AFTER the ingests, not before.
-    expected = 1 + len(DISTRACTOR_POOL)
+    expected = 1 + len(pool)
     engine.ingest_fragment(fixture["needle"], f"file:{fixture['needle_source']}",
                            _estimate_tokens(fixture["needle"]))
-    for src, body in DISTRACTOR_POOL:
+    for src, body in pool:
         engine.ingest_fragment(body, f"file:{src}", _estimate_tokens(body))
 
     # get_stats()["session"]["total_fragments"] is the portable count: the Rust
     # path keeps state in self._rust and has no ._fragments at all, so reaching
     # for that attribute worked only on the pure-Python fallback.
     actual = int(engine.get_stats()["session"]["total_fragments"])
-    if actual != expected:
+
+    # Directional on purpose. MORE fragments than ingested means warm-start
+    # pulled in a foreign index and every number would describe that index
+    # instead of these fixtures -- refuse. FEWER means the engine's SimHash
+    # dedup collapsed near-duplicates, which is real behaviour under test, not
+    # contamination; record it and continue.
+    if actual > expected:
         raise SystemExit(
-            f"REFUSING TO REPORT: engine holds {actual} fragments, expected "
-            f"{expected}. Warm-start restored a foreign index, so 'one needle vs "
-            f"{len(DISTRACTOR_POOL)} distractors' is not what would be measured. "
+            f"REFUSING TO REPORT: engine holds {actual} fragments after "
+            f"ingesting {expected}. Warm-start restored a foreign index, so the "
+            f"measurement would not be 1 needle vs {len(pool)} distractors. "
             f"ENTROLY_DIR={os.environ.get('ENTROLY_DIR')!r}"
         )
-    return engine
+    if actual < expected:
+        print(f"  [dedup] {fixture['id']}: {expected - actual} of {expected} "
+              f"fragments collapsed as near-duplicates")
+    return engine, actual
 
 
-def _run_fixture(fixture: dict, budget: int, engine) -> Row:
+def _run_fixture(fixture: dict, budget: int, engine, pool_size: int) -> Row:
     t0 = time.perf_counter()
     result = engine.optimize_context(token_budget=budget, query=fixture["query"])
     latency_ms = (time.perf_counter() - t0) * 1000
@@ -216,7 +309,7 @@ def _run_fixture(fixture: dict, budget: int, engine) -> Row:
         waste_tokens=max(0, selected_tokens - needle_tokens),
         needle_retained=fixture["must_contain"] in text,
         fragments_selected=len(selected),
-        fragments_total=1 + len(DISTRACTOR_POOL),
+        fragments_total=pool_size,
         budget_utilization=round(selected_tokens / budget, 4) if budget else 0.0,
         latency_ms=round(latency_ms, 2),
     )
@@ -225,6 +318,9 @@ def _run_fixture(fixture: dict, budget: int, engine) -> Row:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", dest="json_out", help="write the full report here")
+    ap.add_argument("--pool", type=int, default=0, metavar="N",
+                    help="add N generated distractors so the candidate pool "
+                         "exceeds the budget (default 0 = curated pool only)")
     args = ap.parse_args(argv[1:])
 
     try:
@@ -235,15 +331,29 @@ def main(argv: list[str]) -> int:
 
     import entroly
 
+    pool_size = 1 + len(DISTRACTOR_POOL) + args.pool
+    pool_tokens = (
+        sum(_estimate_tokens(b) for _, b in DISTRACTOR_POOL)
+        + sum(_estimate_tokens(b) for _, b in _generate_distractors(args.pool))
+    )
+
     rows = []
     for fixture in FIXTURES:
-        engine = _build_engine(fixture)
+        engine, live_pool = _build_engine(fixture, extra_distractors=args.pool)
         for budget in BUDGETS:
-            rows.append(_run_fixture(fixture, budget, engine))
+            rows.append(_run_fixture(fixture, budget, engine, live_pool))
 
     print(f"\n  Entroly sufficiency baseline  [{SCHEMA_VERSION}]")
     print(f"  version: {entroly.__version__}   engine: {engine_mode}")
-    print(f"  fixtures: {len(FIXTURES)}  budgets: {BUDGETS}\n")
+    print(f"  fixtures: {len(FIXTURES)}  budgets: {BUDGETS}")
+    print(f"  candidate pool: {pool_size} fragments / ~{pool_tokens} distractor "
+          f"tokens  (largest budget {BUDGETS[-1]})")
+    if pool_tokens <= BUDGETS[-1]:
+        print("  NOTE: pool fits inside the largest budget, so a flat "
+              "selected-token curve cannot distinguish sufficiency from "
+              "running out of candidates. Re-run with --pool to test that.\n")
+    else:
+        print()
     print(f"  {'fixture':<16}{'budget':>7}{'sel':>7}{'needle':>8}{'waste':>7}{'keep':>6}{'util':>8}{'ms':>8}")
     for r in rows:
         print(f"  {r.fixture:<16}{r.budget:>7}{r.selected_tokens:>7}{r.needle_tokens:>8}"
@@ -272,6 +382,9 @@ def main(argv: list[str]) -> int:
         "entroly_version": entroly.__version__,
         "engine_mode": engine_mode,
         "budgets": BUDGETS,
+        "pool_fragments": pool_size,
+        "pool_distractor_tokens": pool_tokens,
+        "pool_exceeds_largest_budget": pool_tokens > BUDGETS[-1],
         "rows": [asdict(r) for r in rows],
         "summary": {
             "evidence_recall": round(recall, 4),
