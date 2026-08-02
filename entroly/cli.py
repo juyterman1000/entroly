@@ -3507,6 +3507,16 @@ def cmd_capabilities(args):
 
 def cmd_doctor(args):
     """entroly doctor — diagnose common issues (Gap #52)."""
+    if getattr(args, "json_output", False):
+        from .runtime_doctor import runtime_doctor
+
+        report = runtime_doctor(
+            data_dir=_ENTROLY_DIR,
+            port=args.port or 9377,
+        )
+        print(json.dumps(report, sort_keys=True))
+        return 0 if report["healthy"] else 1
+
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Doctor{C.RESET}\n")
 
     checks_passed = 0
@@ -6211,6 +6221,10 @@ def main():
     doctor_parser.add_argument(
         "--privacy", action="store_true", default=False,
         help="Run privacy audit: verify no data leaves your machine",
+    )
+    doctor_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit a stable machine-readable local diagnostic report",
     )
 
     # entroly digest (Gap #44)
