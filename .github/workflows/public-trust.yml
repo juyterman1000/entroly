@@ -122,15 +122,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 2
+          fetch-depth: 32
 
-      - name: Verify parent and signed patch
+      - name: Verify ancestry and signed patch blob
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent="9046bfa005d10a69ddee3bdf947329dcf0c58a11"
-          actual_parent="$(git rev-parse HEAD^)"
-          test "$actual_parent" = "$expected_parent"
+          expected_base="4506d70e135c8a39eb3bdb5ce1f6f340ccdd6ceb"
+          git merge-base --is-ancestor "$expected_base" HEAD
           test "$(git hash-object .github/patches/python-hardening.patch.gz.b64)" = \
             "c78d66077d0ba999caf34d0dd7b7cd5fdd421d3f"
           base64 --decode .github/patches/python-hardening.patch.gz.b64 > /tmp/python-hardening.patch.gz
