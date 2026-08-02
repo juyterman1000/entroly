@@ -1,9 +1,11 @@
 name: Apply validated leadership slice
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/sufficiency-mainline
+      - main
+    types:
+      - synchronize
     paths:
       - .github/patches/leadership-slice.patch.gz.b64
       - .github/workflows/apply-leadership-slice.yml
@@ -12,23 +14,25 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-leadership-slice-${{ github.ref }}
+  group: apply-leadership-slice-${{ github.event.pull_request.head.ref }}
   cancel-in-progress: false
 
 jobs:
   apply:
+    if: github.event.pull_request.head.ref == 'feat/sufficiency-mainline'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 2
 
       - name: Verify audited parent and apply patch
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent="ca571dc419283493fd2b5fd75967cfe1d13c8a73"
+          expected_parent="5925e59a3c9c754257b1f801c5dae5a10b839992"
           actual_parent="$(git rev-parse HEAD^)"
           test "$actual_parent" = "$expected_parent"
 
