@@ -127,3 +127,4 @@ python scripts/verify_readme.py
 Use `--online` only for bounded destination checks. After publication, `--require-published-version` can require PyPI and npm latest versions to match `server.json`.
 
 <!-- temporary CI synchronization marker; removed after validated patch delivery -->
+<!-- isolated delivery PR trigger; removed after validated patch delivery -->
