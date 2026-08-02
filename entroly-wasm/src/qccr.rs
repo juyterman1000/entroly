@@ -63,3 +63,50 @@ pub fn qccr_select_with_audit(
         preferred_json,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn fixture_json() -> String {
+        let first = "Résumé background. The Dutch name is:\nRhijn.";
+        let second = "Authentication tokens rotate. Authentication failures are logged.";
+        json!([
+            {
+                "fragment_id": "unicode-1",
+                "source": "doc.txt",
+                "content": first,
+                "start_byte": 0,
+                "end_byte": first.len(),
+                "token_count": 20
+            },
+            {
+                "fragment_id": "other-1",
+                "source": "other.txt",
+                "content": second,
+                "start_byte": 0,
+                "end_byte": second.len(),
+                "token_count": 20
+            }
+        ])
+        .to_string()
+    }
+
+    #[test]
+    fn audited_adapter_matches_cross_runtime_golden() {
+        let actual: Value = serde_json::from_str(&qccr_select_with_audit(
+            &fixture_json(),
+            12,
+            "What is the Dutch name?",
+            "{}",
+            "[]",
+        ))
+        .expect("WASM audited QCCR must return JSON");
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/audited_qccr_runtime_golden.json"
+        ))
+        .expect("golden fixture must be valid JSON");
+        assert_eq!(actual, expected);
+    }
+}

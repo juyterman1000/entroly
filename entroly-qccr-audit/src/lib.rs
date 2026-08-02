@@ -162,7 +162,7 @@ fn flush_identifier(buffer: &mut String, terms: &mut BTreeSet<String>) {
     if folded.chars().count() >= 2 || folded.chars().all(|ch| ch.is_numeric()) {
         terms.insert(folded.clone());
     }
-    for part in raw.split(|ch: char| matches!(ch, '_' | '.' | ':' | '/' | '-' | '\\')) {
+    for part in raw.split(['_', '.', ':', '/', '-', '\\']) {
         let part = part.to_lowercase();
         if part.chars().count() >= 2 || part.chars().all(|ch| ch.is_numeric()) {
             terms.insert(part);
@@ -176,7 +176,7 @@ fn flush_cjk(buffer: &mut Vec<char>, terms: &mut BTreeSet<String>) {
     }
     let run: String = buffer.iter().collect();
     terms.insert(run);
-    for ch in buffer.iter().copied() {
+    for &ch in buffer.iter() {
         terms.insert(ch.to_string());
     }
     for pair in buffer.windows(2) {
@@ -208,10 +208,9 @@ fn lexical_words(text: &str) -> BTreeSet<String> {
 
 fn query_terms(text: &str) -> BTreeSet<String> {
     const STOPWORDS: &[&str] = &[
-        "a", "an", "and", "are", "as", "at", "be", "by", "do", "does",
-        "for", "from", "how", "in", "is", "it", "of", "on", "or", "that",
-        "the", "this", "to", "was", "were", "what", "when", "where", "which",
-        "who", "why", "with",
+        "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for", "from", "how", "in",
+        "is", "it", "of", "on", "or", "that", "the", "this", "to", "was", "were", "what", "when",
+        "where", "which", "who", "why", "with",
     ];
     lexical_words(text)
         .into_iter()
@@ -250,8 +249,8 @@ fn atomic_spans(text: &str) -> Vec<(usize, usize)> {
     while let Some((index, ch)) = chars.next() {
         let next = chars.peek().map(|(_, candidate)| *candidate);
         let end = index + ch.len_utf8();
-        let sentence_end = matches!(ch, '.' | '!' | '?')
-            && next.map(char::is_whitespace).unwrap_or(true);
+        let sentence_end =
+            matches!(ch, '.' | '!' | '?') && next.map(char::is_whitespace).unwrap_or(true);
         let structural_end = matches!(ch, ':' | ';' | '}') && next == Some('\n');
         let paragraph_end = ch == '\n' && next == Some('\n');
         if sentence_end || structural_end || paragraph_end {
@@ -381,11 +380,7 @@ fn build_units(input: &[InFragment], allowed: &HashSet<String>, query: &str) -> 
             let anchors = original_terms.intersection(&words).cloned().collect();
             let unit_index = units.len();
             units.push(Unit {
-                id: format!(
-                    "{fragment_id}::{}:{}",
-                    start + byte_base,
-                    end + byte_base
-                ),
+                id: format!("{fragment_id}::{}:{}", start + byte_base, end + byte_base),
                 source: fragment.source.clone(),
                 fragment_id: fragment_id.clone(),
                 text,
@@ -463,8 +458,7 @@ fn pack(units: &mut [Unit], budget: usize) {
                         jaccard(&units[index].words, &units[*selected_index].words)
                     })
                     .fold(0.0, f64::max);
-                (0.75 * units[index].utility - 0.25 * redundancy)
-                    / units[index].cost.max(1) as f64
+                (0.75 * units[index].utility - 0.25 * redundancy) / units[index].cost.max(1) as f64
             };
             density(*left)
                 .total_cmp(&density(*right))
@@ -755,19 +749,15 @@ pub fn select_with_audit(
         .iter()
         .map(|source| source_text[source].clone())
         .collect();
-    let mut ranked: Vec<(String, f64)> = entroly_qccr::rank_files(
-        &source_order,
-        &documents,
-        query,
-        overrides,
-    )
-    .into_iter()
-    .map(|(index, score)| {
-        let source = source_order[index].clone();
-        let (sum, count) = feedback.get(&source).copied().unwrap_or((1.0, 1));
-        (source, score * sum / count.max(1) as f64)
-    })
-    .collect();
+    let mut ranked: Vec<(String, f64)> =
+        entroly_qccr::rank_files(&source_order, &documents, query, overrides)
+            .into_iter()
+            .map(|(index, score)| {
+                let source = source_order[index].clone();
+                let (sum, count) = feedback.get(&source).copied().unwrap_or((1.0, 1));
+                (source, score * sum / count.max(1) as f64)
+            })
+            .collect();
 
     if !preferred.is_empty() {
         let score_by_source: HashMap<String, f64> = ranked.iter().cloned().collect();
@@ -844,8 +834,7 @@ pub fn select_with_audit_json(
     preferred_json: &str,
 ) -> String {
     let input: Vec<InFragment> = serde_json::from_str(fragments_json).unwrap_or_default();
-    let overrides: HashMap<String, f64> =
-        serde_json::from_str(overrides_json).unwrap_or_default();
+    let overrides: HashMap<String, f64> = serde_json::from_str(overrides_json).unwrap_or_default();
     let preferred: Vec<String> = serde_json::from_str(preferred_json).unwrap_or_default();
     serde_json::to_string(&select_with_audit(
         &input,
@@ -934,13 +923,18 @@ mod tests {
             &[],
         );
         assert!(result.candidates.iter().any(|candidate| candidate.selected));
-        assert!(result.candidates.iter().any(|candidate| !candidate.selected));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|candidate| !candidate.selected));
     }
 
     #[test]
     fn cjk_subphrase_contributes_to_relevance_and_coverage() {
         let result = select_with_audit(
-            &[fragment("監査ログ。認証失敗を検出した。復旧手順を開始した。")],
+            &[fragment(
+                "監査ログ。認証失敗を検出した。復旧手順を開始した。",
+            )],
             100,
             "認証失敗の原因",
             &HashMap::new(),

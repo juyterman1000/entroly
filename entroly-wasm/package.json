@@ -48,7 +48,7 @@
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
     "autotune": "node js/cli.js autotune",
-    "test": "node test_wasm_e2e.js"
+    "test": "node test_wasm_e2e.js && node test_audited_qccr_parity.js"
   },
   "keywords": [
     "entroly",

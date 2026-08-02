@@ -451,7 +451,7 @@ fn extract_rust_skeleton(content: &str) -> String {
                                 fn_depth += count_char(lines[i], '{') as i32
                                     - count_char(lines[i], '}') as i32;
                                 if fn_depth <= 0 {
-                                    out.push(format!("{}}}", &" ".repeat(leading_spaces(l))));
+                                    out.push(format!("{}}}", " ".repeat(leading_spaces(l))));
                                 }
                                 i += 1;
                             }

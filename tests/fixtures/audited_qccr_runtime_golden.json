@@ -1,0 +1,164 @@
+{
+  "candidates": [
+    {
+      "cost_tokens": 5,
+      "end_byte": 20,
+      "end_token": 2,
+      "fragment_id": "unicode-1",
+      "neighbourhood_ids": [
+        "unicode-1::0:20"
+      ],
+      "query_anchor_ids": [],
+      "selected": false,
+      "selection_stage": "candidate",
+      "source_id": "doc.txt",
+      "start_byte": 0,
+      "start_token": 0,
+      "token_offset_kind": "qccr_internal_v1",
+      "trimmed": false,
+      "unit_id": "unicode-1::0:20",
+      "utility": 0.0
+    },
+    {
+      "cost_tokens": 5,
+      "end_byte": 39,
+      "end_token": 6,
+      "fragment_id": "unicode-1",
+      "neighbourhood_ids": [
+        "unicode-1::21:39",
+        "unicode-1::40:46"
+      ],
+      "query_anchor_ids": [
+        "dutch",
+        "name"
+      ],
+      "selected": true,
+      "selection_stage": "atomic_pack",
+      "source_id": "doc.txt",
+      "start_byte": 21,
+      "start_token": 2,
+      "token_offset_kind": "qccr_internal_v1",
+      "trimmed": false,
+      "unit_id": "unicode-1::21:39",
+      "utility": 3.881624
+    },
+    {
+      "cost_tokens": 2,
+      "end_byte": 46,
+      "end_token": 7,
+      "fragment_id": "unicode-1",
+      "neighbourhood_ids": [
+        "unicode-1::40:46"
+      ],
+      "query_anchor_ids": [],
+      "selected": true,
+      "selection_stage": "atomic_pack",
+      "source_id": "doc.txt",
+      "start_byte": 40,
+      "start_token": 6,
+      "token_offset_kind": "qccr_internal_v1",
+      "trimmed": false,
+      "unit_id": "unicode-1::40:46",
+      "utility": 0.0
+    },
+    {
+      "cost_tokens": 8,
+      "end_byte": 29,
+      "end_token": 3,
+      "fragment_id": "other-1",
+      "neighbourhood_ids": [
+        "other-1::0:29"
+      ],
+      "query_anchor_ids": [],
+      "selected": false,
+      "selection_stage": "candidate",
+      "source_id": "other.txt",
+      "start_byte": 0,
+      "start_token": 0,
+      "token_offset_kind": "qccr_internal_v1",
+      "trimmed": false,
+      "unit_id": "other-1::0:29",
+      "utility": 0.0
+    },
+    {
+      "cost_tokens": 9,
+      "end_byte": 65,
+      "end_token": 7,
+      "fragment_id": "other-1",
+      "neighbourhood_ids": [
+        "other-1::30:65"
+      ],
+      "query_anchor_ids": [],
+      "selected": false,
+      "selection_stage": "candidate",
+      "source_id": "other.txt",
+      "start_byte": 30,
+      "start_token": 3,
+      "token_offset_kind": "qccr_internal_v1",
+      "trimmed": false,
+      "unit_id": "other-1::30:65",
+      "utility": 0.0
+    }
+  ],
+  "emitted_tokens": 7,
+  "metrics": {
+    "boundary_exposure": 0.0,
+    "budget_saturation": 0.583333,
+    "calibration_dataset_fingerprint": null,
+    "calibration_version": null,
+    "captured_mass": 1.0,
+    "cutoff_ambiguity": 0.0,
+    "excluded_positive_candidates": 0,
+    "query_coverage": 1.0,
+    "reasons": [],
+    "residual_risk": 0.0,
+    "scope": "candidate_units",
+    "shadow_price": 0.0,
+    "signal_availability": {
+      "atomic_neighbourhoods": true,
+      "candidate_residuals": true,
+      "exact_utf8_byte_offsets": true,
+      "perturbation_stability": false,
+      "provider_token_offsets": false,
+      "qccr_internal_token_offsets": true,
+      "semantic_calibration": false,
+      "task_oracle": false
+    },
+    "source_span_integrity": true,
+    "verdict": "sufficient"
+  },
+  "raw_tokens": 28,
+  "requested_budget": 12,
+  "selected": [
+    {
+      "content": "The Dutch name is:\nRhijn.",
+      "fragment_id": "qccr-audit::doc.txt",
+      "id": "qccr-audit::doc.txt",
+      "relevance": 1.0,
+      "relevance_score": 1.0,
+      "source": "doc.txt",
+      "source_spans": [
+        {
+          "end_byte": 39,
+          "end_token": 6,
+          "fragment_id": "unicode-1",
+          "source": "doc.txt",
+          "start_byte": 21,
+          "start_token": 2,
+          "token_offset_kind": "qccr_internal_v1"
+        },
+        {
+          "end_byte": 46,
+          "end_token": 7,
+          "fragment_id": "unicode-1",
+          "source": "doc.txt",
+          "start_byte": 40,
+          "start_token": 6,
+          "token_offset_kind": "qccr_internal_v1"
+        }
+      ],
+      "token_count": 7
+    }
+  ],
+  "selection_mode": "atomic_audited"
+}
