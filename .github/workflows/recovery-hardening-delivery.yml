@@ -6,11 +6,7 @@ on:
       - feat/production-grade-defaults
     paths:
       - server.json
-      - .github/patches/recovery-hardening.part01
-      - .github/patches/recovery-hardening.part02
-      - .github/patches/recovery-hardening.part03
-      - .github/patches/recovery-hardening.part04
-      - .github/patches/recovery-hardening.part05
+      - .github/patches/recovery-hardening.patch.gz
       - .github/workflows/recovery-hardening-delivery.yml
 
 permissions:
@@ -38,16 +34,8 @@ jobs:
           set -euo pipefail
           expected_base='9f2168422779ede44b6086768bb3499767504398'
           git merge-base --is-ancestor "$expected_base" HEAD
-          cat \
-            .github/patches/recovery-hardening.part01 \
-            .github/patches/recovery-hardening.part02 \
-            .github/patches/recovery-hardening.part03 \
-            .github/patches/recovery-hardening.part04 \
-            .github/patches/recovery-hardening.part05 \
-            > /tmp/recovery-hardening.patch.gz.b64
-          base64 --decode /tmp/recovery-hardening.patch.gz.b64 > /tmp/recovery-hardening.patch.gz
-          gzip --test /tmp/recovery-hardening.patch.gz
-          gzip --decompress --stdout /tmp/recovery-hardening.patch.gz > /tmp/recovery-hardening.patch
+          gzip --test .github/patches/recovery-hardening.patch.gz
+          gzip --decompress --stdout .github/patches/recovery-hardening.patch.gz > /tmp/recovery-hardening.patch
           echo 'cdc9da4d981ac6aa781d2117f816c0d5e26280fc2b8bc32d90bdec63700c9182  /tmp/recovery-hardening.patch' | sha256sum --check --strict
           git apply --check /tmp/recovery-hardening.patch
           git apply /tmp/recovery-hardening.patch
