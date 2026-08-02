@@ -312,7 +312,7 @@ class ShellCodec:
     name = "shell"
     version = "2"
     _SHELL_SHAPE = re.compile(
-        r"^\s*[$#>]\s+\S|^(?:PASS|FAIL|ok|error|warning|Error|Warning)\b"
+        r"^\s*[$>]\s+\S|^(?:PASS|FAIL|ok|error|warning|Error|Warning)\b"
         r"|\b(?:exit(?:ed)? (?:code|status)|Traceback|npm ERR!|error\[E\d+\])"
         r"|^\s*\d+ (?:passed|failed|error)",
         re.MULTILINE,
@@ -406,7 +406,22 @@ def default_registry(store: RecoveryStore | None = None):
 
     shared = store if store is not None else RecoveryStore()
     registry = CodecRegistry()
+    from .codecs_content import (
+        CodeCodec,
+        ConversationCodec,
+        DocumentCodec,
+        SchemaCodec,
+    )
+
+    # Order does not decide the winner -- `select` takes the highest support
+    # confidence -- but SchemaCodec deliberately outbids JsonCodec (0.95 vs
+    # 0.90) on payloads that carry schema markers, because a schema compressed
+    # as generic JSON loses its contract.
     registry.register(JsonCodec(shared))
     registry.register(LogCodec(shared))
     registry.register(ShellCodec(shared))
+    registry.register(SchemaCodec(shared))
+    registry.register(CodeCodec(shared))
+    registry.register(DocumentCodec(shared))
+    registry.register(ConversationCodec(shared))
     return registry
