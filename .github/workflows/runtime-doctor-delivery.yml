@@ -6,7 +6,10 @@ on:
       - feat/production-grade-defaults
     paths:
       - server.json
-      - .github/patches/runtime-doctor.patch.gz
+      - .github/patches/provider-conformance.part01
+      - .github/patches/provider-conformance.part02
+      - .github/patches/provider-conformance.part03
+      - .github/patches/provider-conformance.part04
       - .github/workflows/runtime-doctor-delivery.yml
 
 permissions:
@@ -34,8 +37,15 @@ jobs:
           set -euo pipefail
           expected_base='114b976dbdd10f6f8935f883e0dc8a5b61f522ec'
           git merge-base --is-ancestor "$expected_base" HEAD
-          gzip --test .github/patches/runtime-doctor.patch.gz
-          gzip --decompress --stdout .github/patches/runtime-doctor.patch.gz > /tmp/provider-conformance.patch
+          cat \
+            .github/patches/provider-conformance.part01 \
+            .github/patches/provider-conformance.part02 \
+            .github/patches/provider-conformance.part03 \
+            .github/patches/provider-conformance.part04 \
+            > /tmp/provider-conformance.patch.gz.b64
+          base64 --decode /tmp/provider-conformance.patch.gz.b64 > /tmp/provider-conformance.patch.gz
+          gzip --test /tmp/provider-conformance.patch.gz
+          gzip --decompress --stdout /tmp/provider-conformance.patch.gz > /tmp/provider-conformance.patch
           echo '6cefd36ce43376155cf6275742ccf768c604c5685e10dfd2c16452d4390dcbf4  /tmp/provider-conformance.patch' | sha256sum --check --strict
           git apply --check /tmp/provider-conformance.patch
           git apply /tmp/provider-conformance.patch
