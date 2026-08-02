@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import ssl
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
+import certifi
 import httpx
 import pytest
 from starlette.requests import Request
@@ -87,6 +90,19 @@ def test_ambient_proxy_requires_explicit_operator_opt_in(monkeypatch) -> None:
     monkeypatch.setenv("ENTROLY_TRUST_PROXY_ENV", "1")
 
     assert _safe_http_client_kwargs()["trust_env"] is True
+
+
+def test_explicit_ca_bundle_does_not_enable_ambient_proxy(monkeypatch) -> None:
+    ca_file = Path(certifi.where())
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(ca_file))
+    monkeypatch.setenv("HTTPS_PROXY", "http://untrusted-proxy.invalid:8080")
+    monkeypatch.delenv("ENTROLY_TRUST_PROXY_ENV", raising=False)
+
+    kwargs = _safe_http_client_kwargs()
+
+    assert isinstance(kwargs["verify"], ssl.SSLContext)
+    assert kwargs["trust_env"] is False
+    assert "mounts" not in kwargs
 
 
 def test_provider_redirect_is_converted_to_explicit_block() -> None:
