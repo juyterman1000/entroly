@@ -1,0 +1,52 @@
+{
+  "schema_version": "entroly.qccr-parity.v1",
+  "purpose": "Cross-surface contract for entroly-qccr ranking. Python (PyO3) and npm/WASM (wasm-bindgen) wrap the SAME crate, so identical inputs must give identical file order. Regenerate only with a recorded reason.",
+  "cases": [
+    {
+      "id": "prose_query_meets_identifier",
+      "query": "how is a credit card charged through the payment gateway",
+      "budget": 256,
+      "files": {
+        "file:billing.py": "def charge_card(customer, amount):\n    gateway = StripeGateway()\n    return gateway.charge(customer.card, amount)",
+        "file:orders.py": "def place_order(cart, user):\n    total = calculate_total(cart)\n    return submit_order(user, total)",
+        "file:cache.py": "def get_cached(key):\n    entry = store.get(key)\n    return entry.value if entry else None"
+      },
+      "expected_rank_order": [
+        "file:billing.py",
+        "file:orders.py",
+        "file:cache.py"
+      ],
+      "expansion_terms": 6
+    },
+    {
+      "id": "expansion_must_not_outvote_query",
+      "query": "what happens when a request times out and needs retrying",
+      "budget": 256,
+      "files": {
+        "file:retry.py": "def retry_request(req, attempts=3):\n    for i in range(attempts):\n        if send(req).ok:\n            return True\n    raise TimeoutError('exhausted retries')",
+        "file:encode_handler.py": "def encode_event(source, options=None):\n    items = source.encode_all(options)\n    return database_writer.commit(items)",
+        "file:decode_handler.py": "def decode_event(dao, converter):\n    return converter.deserialize(dao.consume())"
+      },
+      "expected_rank_order": [
+        "file:retry.py",
+        "file:decode_handler.py",
+        "file:encode_handler.py"
+      ],
+      "expansion_terms": 59
+    },
+    {
+      "id": "stem_bridges_surface_forms",
+      "query": "where are queries matched against cards",
+      "budget": 256,
+      "files": {
+        "file:query.py": "def match_query(card, index):\n    return index.match(card.query_id)",
+        "file:unrelated.py": "def paint(canvas):\n    canvas.fill(color)"
+      },
+      "expected_rank_order": [
+        "file:query.py",
+        "file:unrelated.py"
+      ],
+      "expansion_terms": 36
+    }
+  ]
+}
