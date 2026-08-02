@@ -223,6 +223,10 @@ def main(argv: list[str]) -> int:
         ret = sum(r.retention for r in sel) / len(sel)
         print(f"    {arm:<13} reduction {red:>6.1f}%   evidence retained {ret*100:>5.1f}%")
 
+    print("\n  Note: truncation scores full marks on the JSON fixture only")
+    print("  because that payload front-loads its values before the 40-record")
+    print("  array. That flatters truncation and is a fixture property.")
+
     trunc = [r for r in rows if r.arm == "truncate"]
     spec = [r for r in rows if r.arm == "specialized"]
     print("\n  At equal token cost, truncation retains "
@@ -238,6 +242,14 @@ def main(argv: list[str]) -> int:
             "No model is called; retention is substring presence.",
             "Required evidence is declared by the fixture, not the codec.",
             "truncate is given the same budget the specialized arm used.",
+            "Truncation scores 6/6 on the JSON fixture only because that "
+            "payload puts its required values before its 40-record array. "
+            "Front-loaded evidence flatters truncation and is a property of "
+            "the fixture, not of the method.",
+            "The generic arm is universal_compress's prose summariser with "
+            "content detection bypassed. Routed normally it would reach the "
+            "same specialized code, so this measures generic-vs-specialized, "
+            "not universal_compress as shipped.",
         ],
     }
     if args.json_out:
