@@ -301,15 +301,30 @@ def corpus_gap(
     Callers must filter question words before computing the inputs. "how",
     "the" and "after" are absent from most code corpora and would otherwise
     report a total evidence gap for every natural-language query.
+
+    Deliberately UNWEIGHTED, unlike every other signal here. Weighting by IDF
+    computed over this corpus is circular: a term absent from every candidate
+    has df=0, which is exactly the input that makes smoothed IDF maximal, so
+    absent terms are weighted highest *because* they are absent. Measured on
+    the billing fixture, query "how is a credit card charged through the
+    payment gateway":
+
+        term      idf     df
+        credit   2.6391   0
+        charged  2.6391   0
+        payment  2.6391   0
+        card     1.5404   1
+        gateway  1.5404   1
+
+    IDF-weighted gap 0.7741 against an unweighted 0.6667 -- the weighting adds
+    11 points of apparent gap purely from the absences it is measuring. An
+    honest weighting needs document frequencies from a background corpus, which
+    is not available here, so this counts terms.
     """
-    total = sum(max(v, 0.0) for v in query_term_idf.values())
-    if total <= _EPS:
+    if not query_term_idf:
         return 0.0
-    unattainable = set(unattainable_terms)
-    missing = sum(
-        max(idf, 0.0) for term, idf in query_term_idf.items() if term in unattainable
-    )
-    return missing / (total + _EPS)
+    unattainable = set(unattainable_terms) & set(query_term_idf)
+    return len(unattainable) / len(query_term_idf)
 
 
 def certify(
@@ -427,6 +442,7 @@ _QUESTION_WORDS = frozenset(
     how what why when where which who whom whose does did done doing
     and are but for from has have had the this that these those there here
     with without into onto over under after before while during about
+    through across between among against along toward towards upon
     can could should would will shall may might must
     its it's their they them then than thus you your our ours
     get gets got use uses used using make makes made
@@ -450,6 +466,47 @@ def _query_terms(query: str) -> list[str]:
         for t in re.split(r"[^A-Za-z0-9]+", split.lower())
         if len(t) > 2 and t not in _QUESTION_WORDS
     ]
+
+
+def stem(word: str) -> str | None:
+    """Reduce an English surface form to a matching stem, or None if already base.
+
+    THIRD pinned copy of this rule. The others are
+    `entroly_engine::bm25::morphological_stem` and
+    `entroly_qccr::morphological_stem`; the three exist because entroly-engine
+    and entroly-qccr cannot depend on each other (entroly-engine's Cargo.toml
+    records why: it would force a regex-full/regex-lite choice on every
+    consumer, WASM included) and no binding exposes either to Python. All three
+    are pinned to identical behaviour by tests asserting the same cases.
+
+    Needed here because attainability is decided in Python by substring test.
+    Without it "charged" never meets "charge_card" and "retrying" never meets
+    "retry_request", so present evidence is reported as absent from the corpus.
+    """
+    n = len(word)
+    if n >= 6 and word.endswith("ies"):
+        return word[: n - 3] + "y"
+    if n >= 6 and word.endswith("es"):
+        base = word[: n - 2]
+        if base.endswith(("s", "x", "z", "ch", "sh")):
+            return base
+    if n >= 7 and word.endswith("ing"):
+        return word[: n - 3]
+    if n >= 6 and word.endswith("ed"):
+        return word[: n - 2]
+    if n >= 5 and word.endswith("s") and not word.endswith(("ss", "us")):
+        return word[: n - 1]
+    if n >= 6 and word.endswith("e") and not word.endswith("ee"):
+        return word[: n - 1]
+    return None
+
+
+def attainable(term: str, corpus_lowered: Sequence[str]) -> bool:
+    """True when `term` (or its stem) occurs in any candidate."""
+    if any(term in text for text in corpus_lowered):
+        return True
+    s = stem(term)
+    return bool(s) and any(s in text for text in corpus_lowered)
 
 
 def _idf(term: str, corpus_texts: Sequence[str]) -> float:

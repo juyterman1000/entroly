@@ -129,18 +129,82 @@ fn camel_pieces(tok: &str) -> Vec<String> {
     out
 }
 
+/// Reduce an English surface form to a matching stem, or `None` when the word
+/// is already in its base form.
+///
+/// DELIBERATE DUPLICATE of `entroly_engine::bm25::morphological_stem`. This
+/// crate cannot depend on entroly-engine, and entroly-engine documents in its
+/// Cargo.toml why it does not depend on this crate (it would force a
+/// regex-full/regex-lite feature choice on every consumer, including WASM).
+/// The two copies are pinned to identical behaviour by `stem_matches_bm25`
+/// below, which asserts the same cases entroly-engine's `stemming_tests` do:
+/// if either implementation drifts, one of the two suites fails.
+///
+/// Why this crate needed it: qccr's tokenizer did not stem, so "charged" never
+/// met "charge" and "retrying" never met "retry_request". Measured on
+/// benchmarks/sufficiency_baseline.py, that made discriminative query terms
+/// look ABSENT FROM THE CORPUS when the evidence was present -- 14 of 42 rows
+/// were reported `expand_required` for evidence the selection had actually
+/// retained.
+fn morphological_stem(word: &str) -> Option<String> {
+    let n = word.len();
+
+    // "queries" -> "query", "policies" -> "policy"
+    if n >= 6 && word.ends_with("ies") {
+        return Some(format!("{}y", &word[..n - 3]));
+    }
+    // "matches" -> "match", "boxes" -> "box"  (only after a sibilant)
+    if n >= 6 && word.ends_with("es") {
+        let base = &word[..n - 2];
+        if base.ends_with('s')
+            || base.ends_with('x')
+            || base.ends_with('z')
+            || base.ends_with("ch")
+            || base.ends_with("sh")
+        {
+            return Some(base.to_string());
+        }
+    }
+    // "charging" -> "charg", "handling" -> "handl"
+    if n >= 7 && word.ends_with("ing") {
+        return Some(word[..n - 3].to_string());
+    }
+    // "charged" -> "charg", "handled" -> "handl"
+    if n >= 6 && word.ends_with("ed") {
+        return Some(word[..n - 2].to_string());
+    }
+    // "cards" -> "card". Never "class" -> "clas", never "status" -> "statu".
+    if n >= 5 && word.ends_with('s') && !word.ends_with("ss") && !word.ends_with("us") {
+        return Some(word[..n - 1].to_string());
+    }
+    // "charge" -> "charg", so it meets the stem of "charged"/"charging".
+    if n >= 6 && word.ends_with('e') && !word.ends_with("ee") {
+        return Some(word[..n - 1].to_string());
+    }
+    None
+}
+
 fn split_identifier(tok: &str) -> Vec<String> {
     let low = tok.to_lowercase();
     let mut parts: HashSet<String> = HashSet::new();
     parts.insert(low.clone());
+    if let Some(stem) = morphological_stem(&low) {
+        parts.insert(stem);
+    }
     for piece in low.split('_') {
         if piece.chars().count() > 2 {
             parts.insert(piece.to_string());
+            if let Some(stem) = morphological_stem(piece) {
+                parts.insert(stem);
+            }
         }
     }
     for piece in camel_pieces(tok) {
         let p = piece.to_lowercase();
         if p.chars().count() > 2 {
+            if let Some(stem) = morphological_stem(&p) {
+                parts.insert(stem);
+            }
             parts.insert(p);
         }
     }
@@ -1466,5 +1530,56 @@ mod tests {
             &HashMap::new(),
         );
         assert_eq!(sources[ranked[0].0], "auth.py");
+    }
+
+    // ── Tokenizer stemming, and its parity with entroly-engine ─────────
+    //
+    // qccr's tokenizer did not stem, so a prose query never met a code
+    // identifier on a shared stem: "charged" vs "charge", "retrying" vs
+    // "retry_request". Measured on benchmarks/sufficiency_baseline.py, that
+    // made present evidence look absent from the corpus -- 14 of 42 rows were
+    // reported `expand_required` for terms the selection had retained.
+
+    #[test]
+    fn stem_matches_bm25() {
+        // The SAME assertions entroly-engine's bm25 stemming_tests make. This
+        // crate cannot depend on that one (see morphological_stem's doc), so
+        // these two suites are what keep the duplicated copies honest.
+        assert_eq!(morphological_stem("cards").as_deref(), Some("card"));
+        assert_eq!(morphological_stem("queries").as_deref(), Some("query"));
+        assert_eq!(morphological_stem("matches").as_deref(), Some("match"));
+        assert_eq!(morphological_stem("charged").as_deref(), Some("charg"));
+        assert_eq!(morphological_stem("charging").as_deref(), Some("charg"));
+        assert_eq!(morphological_stem("charge").as_deref(), Some("charg"));
+        assert_eq!(morphological_stem("charge"), morphological_stem("charged"));
+        // Conservative: never strip these.
+        assert_eq!(morphological_stem("class"), None);
+        assert_eq!(morphological_stem("status"), None);
+    }
+
+    #[test]
+    fn prose_query_meets_code_identifier_on_the_stem() {
+        let doc: HashSet<String> = tokenize(
+            "def charge_card(customer, amount):
+    return StripeGateway().charge(customer.card, amount)",
+        )
+        .into_iter()
+        .collect();
+        for surface in ["charged", "cards"] {
+            let q = query_tokens(surface);
+            assert!(
+                q.iter().any(|t| doc.contains(t)),
+                "query {surface:?} tokenized to {q:?} and met nothing in the                  document; stems must be emitted on both sides"
+            );
+        }
+    }
+
+    #[test]
+    fn stemming_does_not_displace_the_surface_form() {
+        // Both must be emitted: an exact identifier match has to keep working.
+        let toks: HashSet<String> = tokenize("retry_request").into_iter().collect();
+        assert!(toks.contains("retry_request"), "{toks:?}");
+        assert!(toks.contains("retry"), "{toks:?}");
+        assert!(toks.contains("request"), "{toks:?}");
     }
 }
