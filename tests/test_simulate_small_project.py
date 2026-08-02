@@ -27,6 +27,20 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _native_engine_available() -> bool:
+    """True when entroly_core (the Rust engine) is importable.
+
+    The resolution ladder -- full / skeleton / reference -- lives in the native
+    engine only. Behaviour that depends on it has to be asserted per surface,
+    or the pure-Python CI job fails for a feature it does not ship.
+    """
+    try:
+        import entroly_core  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 @pytest.fixture
 def tiny_project(tmp_path: Path) -> Path:
     src = tmp_path / "src"
@@ -131,11 +145,35 @@ def test_a_realistic_small_project_reports_its_savings(tmp_path: Path):
     assert report["repo_tokens_indexed"] < report["budget"], (
         "fixture must fit inside the budget, or it does not test this path"
     )
-    assert report["average_reduction_pct"] > 0, (
-        "a project that fits should still save via skeleton demotion; "
-        f"got {report['average_reduction_pct']}%"
-    )
-    assert report["total_tokens_saved"] > 0
+
+    # The saving comes from the resolution ladder, which only the native engine
+    # implements: the pure-Python fallback has no skeleton/multi-resolution
+    # path, so a project that fits its budget genuinely has nothing to drop and
+    # honestly reports 0%. Asserting a native-only number on both surfaces made
+    # the pure-Python CI job red for a capability that does not exist there --
+    # a real gap, recorded rather than papered over.
+    #
+    # This is a user-visible difference: a default `pip install entroly` with no
+    # Rust wheel sees 0% on exactly the small-project run that decides whether a
+    # first-time user keeps going.
+    if _native_engine_available():
+        assert report["average_reduction_pct"] > 0, (
+            "on the native engine a project that fits should still save via "
+            f"skeleton demotion; got {report['average_reduction_pct']}%"
+        )
+        assert report["total_tokens_saved"] > 0
+    else:
+        assert report["average_reduction_pct"] == 0, (
+            "the pure-Python fallback has no resolution ladder, so it should "
+            "report 0% rather than a number it cannot have earned; got "
+            f"{report['average_reduction_pct']}%"
+        )
+        # Whatever it reports, it must not have silently dropped context.
+        for row in report["queries"]:
+            assert row["selected_fragments"] > 0, (
+                f"0% saved must mean 'nothing needed dropping', not "
+                f"'nothing was selected'. row={row!r}"
+            )
 
 
 def test_results_are_ordered_by_relevance_not_by_density(tmp_path: Path, monkeypatch):
