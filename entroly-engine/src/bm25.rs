@@ -654,7 +654,10 @@ mod stemming_tests {
         // Selection feeds prompt prefixes, which must stay byte-stable.
         let a = tokenize_code("charge_card StripeGateway queries matched");
         for _ in 0..50 {
-            assert_eq!(a, tokenize_code("charge_card StripeGateway queries matched"));
+            assert_eq!(
+                a,
+                tokenize_code("charge_card StripeGateway queries matched")
+            );
         }
     }
 }
