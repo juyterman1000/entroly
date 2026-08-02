@@ -286,6 +286,7 @@ def _attach_sufficiency(
     if not candidate_utility:
         return
     from .sufficiency import Candidate, certify, _idf, _query_terms
+    from .sufficiency import attainable as _attainable
 
     chosen = {logical_source(str(f.get("source") or "")) for f in selected}
     candidates: list[Candidate] = []
@@ -340,7 +341,7 @@ def _attach_sufficiency(
     # "it was never retrieved". Computed here because `corpus` IS the candidate
     # set at this point.
     lowered = [text.lower() for text in corpus]
-    unattainable = {t for t in terms if not any(t in text for text in lowered)}
+    unattainable = {t for t in terms if not _attainable(t, lowered)}
     certificate = certify(
         candidates,
         query_term_idf={t: _idf(t, corpus) for t in terms},
