@@ -124,6 +124,9 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 32
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
 
       - name: Verify ancestry and signed patch blob
         shell: bash
