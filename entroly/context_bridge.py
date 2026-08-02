@@ -1554,7 +1554,22 @@ class HCCEngine:
            gain_ratio = Δinfo / Δtokens
            where info = relevance × level_retention × entropy
       3. Greedy: sort by gain_ratio, accept highest until budget full
-      4. Guarantee: (1 - 1/e) ≈ 63.2% optimal (submodular monotone)
+
+    No approximation ratio is claimed. `info` is separable across fragments
+    -- a fragment's value depends only on its own assigned level, never on
+    what else was selected -- so the objective is modular, not submodular,
+    and the (1 - 1/e) bound does not apply. This is a multiple-choice
+    knapsack (one of 3 levels per fragment under a shared budget); greedy on
+    it is Dantzig-style rounding, i.e. ½ at best.
+
+    Two further gaps between this code and the LP greedy it resembles:
+    upgrade candidates are ranked by gain measured from the *Reference*
+    baseline but charged the *incremental* cost from the fragment's current
+    level, so the ordering does not match the cost actually paid; and
+    LP-dominated levels are not pruned to the concave envelope first.
+    Budget safety is unaffected -- `actual_delta` is re-checked against
+    `remaining` before any upgrade commits -- so the cost of both gaps is
+    optimality, not overflow.
 
     This gives Users the right compression level per fragment:
       - SOUL.md → Full (always needed verbatim)

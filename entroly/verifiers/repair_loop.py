@@ -17,8 +17,11 @@ Prior Art & What's Different
 FORGE is different:
   1. VERIFICATION is external (BIPT/GRAPHS/PROVE) -- not LLM self-critique
   2. RETRIEVAL is guided by rejection reasons -- not LLM-chosen queries
-  3. CONVERGENCE is mathematically guaranteed -- IPD monotonically decreases
-     or the loop terminates
+  3. TERMINATION is guaranteed by construction -- the loop is bounded by
+     max_iters and exits as soon as IPD stops improving. That bounds cost;
+     it is not a guarantee that the output reaches groundedness, and the
+     E[T] figure below assumes a constant average GCR rather than deriving
+     one.
 
 The Loop
 --------

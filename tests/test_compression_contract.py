@@ -10,7 +10,7 @@ The right criterion is the **contract the math guarantees, at the
 precision the math allows**:
 
   C1  Feasibility       selected token count ≤ budget
-  C2  Guarantee floor   V(greedy) ≥ (1 − 1/e)·V(OPT)         [KMN 1999]
+  C2  Regression floor  V(greedy) ≥ 0.632·V(OPT) on these fixtures
   C4  Determinism       same input ⇒ same output
   C5  Budget monotone   larger budget ⇒ objective non-decreasing
 
@@ -37,7 +37,19 @@ import pytest
 from entroly.server import _py_compute_relevance, _py_knapsack_optimize
 
 W = (0.25, 0.25, 0.25, 0.25)  # equal weights; objective is generic
-INV_E_COMPLEMENT = 1.0 - 1.0 / 2.718281828459045  # (1 − 1/e) ≈ 0.6321
+# The bar C2 holds the selector to on the adversarial fixtures below. It is
+# an EMPIRICAL regression floor, not a theorem: the objective here (_val) is a
+# plain sum of independently-computed per-fragment scores, i.e. MODULAR, and
+# better-of-{density-greedy, best singleton} on a modular knapsack is provably
+# ½ (Dantzig/LP rounding). 0.632 is what the shipped selector actually achieves
+# on these instances, so it is a stricter bar than the proof supplies -- which
+# makes it a useful regression guard and an invalid citation.
+# (1 - 1/e) would require a monotone submodular objective (Nemhauser-Wolsey-
+# Fisher 1978, tight per Feige 1998) plus, under a knapsack, Sviridenko 2004
+# partial enumeration. KMN 1999's better-of-two gives ½(1 - 1/e) for submodular
+# coverage. None of those describe this code.
+PROVABLE_FLOOR = 0.5
+EMPIRICAL_OPT_FLOOR = 0.632
 
 
 class Frag:
@@ -92,7 +104,7 @@ def _selected(frags, budget):
     return sel, stats
 
 
-# ── C1 + C2: feasibility and the (1−1/e) guarantee vs true OPT ────────
+# ── C1 + C2: feasibility and the value floor vs brute-force OPT ───────
 
 
 ADVERSARIAL = [
@@ -125,11 +137,18 @@ def test_adversarial_guarantee(name, frags, budget):
     v = _val(sel)
     opt = _true_opt(frags, budget)
     assert tok <= budget, f"[{name}] C1: {tok} > budget {budget}"
-    assert v + 1e-9 >= INV_E_COMPLEMENT * opt, (
-        f"[{name}] C2 VIOLATED: greedy V={v:.4f} < (1-1/e)*OPT="
-        f"{INV_E_COMPLEMENT * opt:.4f} (OPT={opt:.4f}). The shipped "
-        f"Python fallback does not honour the (1-1/e) guarantee "
-        f"entroly advertises. Fix: Khuller–Moss–Naor singleton champion."
+    assert v + 1e-9 >= PROVABLE_FLOOR * opt, (
+        f"[{name}] C2 VIOLATED below the PROVABLE floor: greedy V={v:.4f} "
+        f"< 0.5*OPT={PROVABLE_FLOOR * opt:.4f} (OPT={opt:.4f}). Better-of-"
+        f"{{density-greedy, best singleton}} on a modular knapsack cannot do "
+        f"this badly -- the singleton champion is probably not being applied."
+    )
+    assert v + 1e-9 >= EMPIRICAL_OPT_FLOOR * opt, (
+        f"[{name}] C2 regression: greedy V={v:.4f} < 0.632*OPT="
+        f"{EMPIRICAL_OPT_FLOOR * opt:.4f} (OPT={opt:.4f}). This is the bar the "
+        f"selector has been holding on these fixtures, not a theoretical floor "
+        f"(see the constant's comment); a drop here means selection quality "
+        f"regressed even though the ½ proof is intact."
     )
 
 
@@ -168,9 +187,15 @@ def test_randomized_contract():
         opt = _true_opt(frags, budget)
         if opt > 1e-9:
             worst_ratio = min(worst_ratio, _val(sel) / opt)
-    assert worst_ratio + 1e-9 >= INV_E_COMPLEMENT, (
-        f"C2 VIOLATED over random instances: worst V/OPT={worst_ratio:.4f}"
-        f" < (1-1/e)={INV_E_COMPLEMENT:.4f}"
+    assert worst_ratio + 1e-9 >= PROVABLE_FLOOR, (
+        f"C2 VIOLATED below the PROVABLE floor over random instances: worst "
+        f"V/OPT={worst_ratio:.4f} < 0.5. Better-of-{{density-greedy, best "
+        f"singleton}} on a modular knapsack cannot do this badly."
+    )
+    assert worst_ratio + 1e-9 >= EMPIRICAL_OPT_FLOOR, (
+        f"C2 regression over random instances: worst V/OPT={worst_ratio:.4f}"
+        f" < {EMPIRICAL_OPT_FLOOR} (the bar this selector has been holding on "
+        f"random instances, not a theoretical floor)"
     )
 
 

@@ -45,9 +45,9 @@ def vault(tmp_path: Path) -> VaultManager:
         confidence=0.92,
         sources=["entroly-core/src/knapsack.rs:1"],
         title="Knapsack solver",
-        body="The knapsack solver uses 0/1 dynamic programming with the "
-             "submodular (1-1/e) approximation guarantee. Token budget "
-             "constraints are enforced at selection time.",
+        body="The knapsack solver uses 0/1 dynamic programming, exact for "
+             "the modular relevance objective. Token budget constraints are "
+             "enforced at selection time.",
     ))
 
     # Belief 2: medium confidence, fresh, unrelated to query

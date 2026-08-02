@@ -225,7 +225,7 @@ function cmdDemo() {
   const result = engine.optimize(80, 'fix the authentication bug');
   const optimized = result.total_tokens || 0;
 
-  console.log(`  ${C.GREEN}With Entroly:${C.RESET} ${optimized} tokens → mathematically optimal subset`);
+  console.log(`  ${C.GREEN}With Entroly:${C.RESET} ${optimized} tokens → budget-optimized subset`);
   console.log(`  ${C.GRAY}  Cost: $${(optimized * 0.000015).toFixed(6)}/call${C.RESET}`);
   console.log(`  ${C.GREEN}  Saved: ${totalTokens - optimized} tokens (${Math.round((1 - optimized / totalTokens) * 100)}% reduction)${C.RESET}`);
   console.log();
