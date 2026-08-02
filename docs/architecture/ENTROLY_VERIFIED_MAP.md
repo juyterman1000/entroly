@@ -88,11 +88,38 @@ python scripts/codebase_graph.py
 # modules/edges: 216/526 ; reachable 181/216 ; UNREACHABLE 35 modules, 11,449 lines
 ```
 
-**35 Python modules (11,449 lines) are not reachable from any shipped entry
-point.** They include `context_bridge`, `context_pipeline`, `benchmark_harness`,
-`auditable_receipts`, `container_entry`, and the `integrations.*` family. A test
-importing a module does not prove a user can reach it — check reachability
-before treating anything in that set as a shipped feature.
+**36 Python modules (11,785 lines) are not reachable from any shipped entry
+point.**
+
+**Do not read that as "dead code" — it is not, and that inference was checked
+and refuted.** "Unreachable" here means only *not reachable from entroly's own
+six entry points*, which is the expected and correct state for large parts of a
+library. Verified breakdown:
+
+| category | count | can it be deleted? |
+|---|---:|---|
+| `integrations.*` (langchain, slack, discord, telegram, hermes, …) | 11 | **No — public API.** Users import these directly, so they can never appear in entroly's internal graph. Deleting them is a breaking change. |
+| exercised by CI (`hermes_context_engine` via `tests/test_hermes_context_engine.py`, referenced in two workflows) | 3 | No |
+| imported by tests only | ~19 | Judgement call, not obviously dead |
+| genuinely unreferenced anywhere | 3 | `_rust_launcher` (54), `promotion_gate` (126), `integrate_entroly_mcp` (48) — and two of those have `__main__` blocks and are described as examples |
+
+So the deletable surface is roughly **228 lines, not 11,785** — about 2%.
+
+Two traps this exercise exposed, worth repeating because both produced
+confidently wrong answers first time:
+
+1. **Grepping bare module leaf names is useless.** Searching for `engine`,
+   `retry`, `collectors` reported 73/26/17 "production references" that were
+   almost entirely false positives. Match real import forms
+   (`from x import y`, `import x.y`, the full dotted path) instead.
+2. **A hit is not a reference.** `promotion_gate` appeared in a test file only
+   as part of a *test function name*; `integrate_entroly_mcp` appeared in
+   `repo_map.py` only as a *string in a description dict*.
+
+The useful direction of the inference still holds, and is the one CLAUDE.md
+states: a test importing a module does not prove a *user* can reach it, so
+don't promote anything in this set to a README claim without a real product
+path. The reverse inference — unreachable therefore dead — does not hold.
 
 ---
 
