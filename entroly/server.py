@@ -324,14 +324,22 @@ def _py_knapsack_optimize(
 
     # Khuller–Moss–Naor (1999) singleton champion. Pure density-greedy
     # has NO constant-factor guarantee: a low-value high-density item
-    # can block a high-value budget-filling item (proven by
+    # can block a high-value budget-filling item (measured by
     # tests/test_compression_contract.py against brute-force OPT —
-    # greedy hit 30% of optimal where ≥63% is required). KMN: take the
-    # better of {density-greedy, pinned ∪ best single feasible item};
-    # this restores the (1 − 1/e) guarantee qccr.py advertises, on the
-    # same objective, with no new dependency. The Rust 0/1-DP hot path
-    # is already exact; this makes the degraded fallback contract-
-    # honouring so every runtime keeps the guarantee.
+    # greedy hit 30% of optimal on the adversarial fixtures). Take the
+    # better of {density-greedy, pinned ∪ best single feasible item}.
+    #
+    # What that provably buys, precisely: this objective is MODULAR
+    # (_py_compute_relevance scores each fragment independently, so
+    # value is a plain sum with no co-selection term). For a modular
+    # objective under a knapsack, better-of-{density-greedy, best
+    # singleton} is the classic Dantzig/LP-rounding ½. It is NOT
+    # (1 − 1/e): that needs a monotone SUBMODULAR objective, and under a
+    # knapsack rather than a cardinality constraint it further needs
+    # Sviridenko (2004) partial enumeration. KMN's own better-of-two
+    # result is ½(1 − 1/e) ≈ 0.32, for submodular coverage.
+    # The Rust 0/1-DP hot path is exact for this modular objective; this
+    # keeps the degraded fallback within ½ of that.
     cand_budget = token_budget - pinned_tokens
     best_single = None
     best_single_rel = 0.0
@@ -394,7 +402,14 @@ def _py_knapsack_optimize(
     tail.sort(
         key=lambda f: (
             -_py_compute_relevance(f, w_recency, w_frequency, w_semantic, w_entropy),
-            f.source,  # deterministic tie-break: prompt prefixes must stay stable
+            # Deterministic tie-break so prompt prefixes stay byte-stable.
+            # getattr, not f.source: `source` is not part of the minimal
+            # fragment protocol this function accepts. Reading it directly
+            # crashed the pure-Python fallback -- the path that runs on a
+            # default pip install without the Rust wheel -- for any fragment
+            # lacking it (caught by tests/test_compression_contract.py, whose
+            # Frag declares __slots__ without `source`).
+            getattr(f, "source", "") or "",
         )
     )
     selected = head + tail
@@ -1051,7 +1066,12 @@ class EntrolyEngine:
         token_budget: int = 0,
         query: str = "",
     ) -> dict[str, Any]:
-        """Select the mathematically optimal subset of context fragments."""
+        """Select a high-value subset of context fragments within the budget.
+
+        Exact for the modular objective on the Rust 0/1-DP path; the Python
+        fallback is density-greedy with a singleton champion, provably within
+        ½ of optimal. See _py_knapsack_optimize for why ½ and not (1 - 1/e).
+        """
         self._ensure_index_loaded()  # lazy warm-start on first request
         if token_budget <= 0:
             token_budget = self.config.default_token_budget
@@ -3062,7 +3082,7 @@ def create_mcp_server(
         token_budget: int = 128000,
         query: str = "",
     ) -> str:
-        """Select the mathematically optimal context subset for a token budget.
+        """Select a high-value context subset for a token budget.
 
         Uses 0/1 Knapsack dynamic programming to maximize relevance within
         the budget. Scores fragments on four dimensions: recency (Ebbinghaus
