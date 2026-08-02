@@ -34,6 +34,7 @@ Commands:
     entroly witness     Verify or suppress hallucinated factual claims
     entroly cache       Inspect EGSC persistent cache (cross-session)
     entroly unwrap      Safely remove persistent Entroly integration
+    entroly capabilities Report installed runtime capabilities offline
 """
 
 from __future__ import annotations
@@ -3483,6 +3484,18 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
 </html>"""
 
 
+def cmd_capabilities(args):
+    """entroly capabilities — report installed surfaces without network access."""
+    from .runtime_capabilities import render_capabilities_text, runtime_capabilities
+
+    report = runtime_capabilities()
+    if getattr(args, "json_output", False):
+        print(json.dumps(report, sort_keys=True))
+    else:
+        print("\n" + render_capabilities_text(report) + "\n")
+    return 0
+
+
 def cmd_doctor(args):
     """entroly doctor — diagnose common issues (Gap #52)."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Doctor{C.RESET}\n")
@@ -4063,7 +4076,7 @@ def cmd_completions(args):
         "init", "go", "serve", "proxy", "dashboard", "value", "health",
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
-        "batch", "wrap", "unwrap", "learn", "share", "demo",
+        "batch", "wrap", "unwrap", "capabilities", "learn", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
         "optimize", "ingest", "select", "receipt", "explain",
         "feedback", "compile", "verify", "sync",
@@ -6159,6 +6172,16 @@ def main():
         help="Write learnings to CLAUDE.md / AGENTS.md",
     )
 
+    # entroly capabilities
+    capabilities_parser = subparsers.add_parser(
+        "capabilities",
+        help="Report installed runtime capabilities without network calls",
+    )
+    capabilities_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit a stable machine-readable capability report",
+    )
+
     # entroly doctor (Gap #52)
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -6515,6 +6538,7 @@ def main():
         "batch": cmd_batch,
         "demo": cmd_demo,
         "doctor": cmd_doctor,
+        "capabilities": cmd_capabilities,
         "digest": cmd_digest,
         "migrate": cmd_migrate,
         "role": cmd_role,

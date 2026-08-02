@@ -1005,6 +1005,7 @@ Ebbiforge adapter, and non-claims.
 | `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
 | `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
 | `entroly unwrap <agent>` | Remove Entroly's persistent MCP registration without changing other tools |
+| `entroly capabilities --json` | Report installed runtime surfaces offline without claiming provider connectivity |
 | `entroly attach create/list/revoke` | Grant, inspect, or revoke scoped and expiring MCP access for Claude Code, Codex, or OpenClaw |
 | `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
 | `entroly` as an MCP stdio command | Start the installed Python MCP server when launched by an MCP client |
