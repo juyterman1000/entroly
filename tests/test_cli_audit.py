@@ -109,7 +109,7 @@ def test_no_orphaned_registered_commands():
     # help pages — this test only checks the main README.)
     INTERNAL_ONLY = {
         "init", "feedback", "optimize", "status", "config", "telemetry",
-        "clean", "export", "import", "drift", "profile", "doctor",
+        "clean", "export", "import", "drift", "profile", "doctor", "capabilities",
         "migrate", "role", "completions", "compile", "sync", "search",
         "docs", "share", "finetune", "learn", "verify", "verify-code",
         "autotune", "digest", "health", "witness", "audit",
@@ -163,6 +163,36 @@ def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
     assert payload[0]["query"] == "Where is the CLI wired?"
 
 
+def test_capabilities_json_is_machine_readable_and_non_claiming(tmp_path: Path):
+    """Runtime discovery must be pure JSON and must not imply external proof."""
+    env = os.environ.copy()
+    env["ENTROLY_DIR"] = str(tmp_path / "state")
+    env["HOME"] = str(tmp_path / "home")
+    env["USERPROFILE"] = str(tmp_path / "home")
+    env["ENTROLY_DISABLE_UPDATE_CHECK"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "entroly.cli", "capabilities", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(ROOT),
+        env=env,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    payload = json.loads(proc.stdout)
+    assert payload["schema_version"] == "entroly.runtime-capabilities.v1"
+    assert payload["surfaces"]["secure_recovery"]["available"] is True
+    assert payload["claims"]["provider_connectivity_verified"] is False
+    assert payload["claims"]["benchmark_leadership_implied"] is False
+
+
+
 def test_value_json_separates_provider_and_local_evidence(tmp_path: Path):
     """`entroly value --json` must be pure JSON and conservative about money."""
     from entroly.value_tracker import ValueTracker
@@ -203,7 +233,7 @@ def test_value_json_separates_provider_and_local_evidence(tmp_path: Path):
 @pytest.mark.parametrize("subcmd", [
     "wrap", "ravs", "proxy", "serve", "dashboard", "demo", "batch",
     "benchmark", "go", "daemon", "verify", "verify-code", "compile",
-    "doctor", "witness", "audit", "value",
+    "doctor", "capabilities", "witness", "audit", "value",
 ])
 def test_subcommand_help_runs(subcmd: str):
     """Every advertised subcommand must produce help without crashing."""

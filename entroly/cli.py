@@ -26,6 +26,7 @@ Commands:
     entroly telemetry   Manage the local telemetry preference
     entroly demo        Before/after demo showing token savings
     entroly doctor      Diagnose common issues
+    entroly capabilities Report installed runtime capabilities
     entroly digest      Weekly summary of value delivered
     entroly migrate     Auto-migrate config/index to current version
     entroly role        Role-based weight presets (frontend/backend/sre/data)
@@ -3320,6 +3321,33 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
 </html>"""
 
 
+def cmd_capabilities(args):
+    """Report installed runtime capabilities without network or state mutation."""
+    from entroly.runtime_capabilities import (
+        build_runtime_capabilities,
+        capability_exit_code,
+    )
+
+    report = build_runtime_capabilities()
+    if getattr(args, "json_output", False):
+        print(json.dumps(report, sort_keys=True, separators=(",", ":")))
+        return capability_exit_code(report)
+
+    engine = report["engine"]
+    surfaces = report["surfaces"]
+    print(f"\n{C.CYAN}{C.BOLD}  Entroly Capabilities{C.RESET}\n")
+    print(f"  Version: {report['package']['version']}")
+    print(f"  Engine:  {engine['active_mode']}")
+    for name in ("python_sdk", "assured_compression", "context_receipts", "secure_recovery", "proxy", "mcp"):
+        available = bool(surfaces[name]["available"])
+        marker = f"{C.GREEN}+{C.RESET}" if available else f"{C.GRAY}-{C.RESET}"
+        print(f"  {marker} {name.replace('_', ' ')}")
+    providers = ", ".join(item["name"] for item in report["providers"])
+    print(f"  Provider protocol adapters: {providers}")
+    print(f"  {C.GRAY}Connectivity and benchmark leadership are not inferred by this command.{C.RESET}")
+    return capability_exit_code(report)
+
+
 def cmd_doctor(args):
     """entroly doctor — diagnose common issues (Gap #52)."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Doctor{C.RESET}\n")
@@ -3901,7 +3929,7 @@ def cmd_completions(args):
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
         "batch", "wrap", "learn", "share", "demo",
-        "doctor", "digest", "migrate", "role", "completions",
+        "doctor", "capabilities", "digest", "migrate", "role", "completions",
         "optimize", "ingest", "select", "receipt", "explain",
         "feedback", "compile", "verify", "sync",
         "search", "docs", "finetune", "witness",
@@ -5982,6 +6010,16 @@ def main():
         help="Write learnings to CLAUDE.md / AGENTS.md",
     )
 
+    # entroly capabilities
+    capabilities_parser = subparsers.add_parser(
+        "capabilities",
+        help="Report installed runtime capabilities",
+    )
+    capabilities_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit stable machine-readable JSON",
+    )
+
     # entroly doctor (Gap #52)
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -6298,6 +6336,7 @@ def main():
     internal_attach_serve = args.command == "attach" and args.attach_action == "serve"
     machine_readable = (
         (args.command == "value" and getattr(args, "json_output", False))
+        or (args.command == "capabilities" and getattr(args, "json_output", False))
         or args.command == "proof"
     )
     if not internal_attach_serve and not machine_readable:
@@ -6338,6 +6377,7 @@ def main():
         "batch": cmd_batch,
         "demo": cmd_demo,
         "doctor": cmd_doctor,
+        "capabilities": cmd_capabilities,
         "digest": cmd_digest,
         "migrate": cmd_migrate,
         "role": cmd_role,
