@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent="932e0fb52b19ea31989d367bd5ea6417413ae6db"
+          expected_parent="ca571dc419283493fd2b5fd75967cfe1d13c8a73"
           actual_parent="$(git rev-parse HEAD^)"
           test "$actual_parent" = "$expected_parent"
 
