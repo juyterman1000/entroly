@@ -286,12 +286,31 @@ def _attach_sufficiency(
     if not candidate_utility:
         return
     from .sufficiency import Candidate, certify, _idf, _query_terms
-    from .sufficiency import attainable as _attainable
+    from .sufficiency import stem as _stem
 
     chosen = {logical_source(str(f.get("source") or "")) for f in selected}
     candidates: list[Candidate] = []
     terms = set(_query_terms(query))
     corpus: list[str] = []
+
+    # Surface form and stem, resolved once per term rather than per candidate.
+    #
+    # `t in text.lower()` inside the anchor generator re-lowercases the whole
+    # candidate for EVERY query term, and attainability then walked the corpus
+    # again per term. On a 172-fragment corpus over a 20-turn session that was
+    # enough to hang the run -- pytest's faulthandler caught the main thread
+    # inside this generator. Both questions are the same question ("which terms
+    # occur in this text"), so they are answered in one pass below.
+    term_forms = [(t, _stem(t)) for t in sorted(terms)]
+
+    def _hits(lowered_text: str) -> tuple[str, ...]:
+        return tuple(
+            t
+            for t, st in term_forms
+            if t in lowered_text or (st and st in lowered_text)
+        )
+
+    attainable_terms: set[str] = set()
 
     if chunk_utility:
         # One candidate per chunk, with real adjacency. A retained chunk whose
@@ -303,6 +322,8 @@ def _attach_sufficiency(
                 continue
             text = group[part].get("content") or ""
             corpus.append(text)
+            hits = _hits(text.lower())
+            attainable_terms.update(hits)
             neighbours = tuple(
                 f"{source}#{j}"
                 for j in range(max(0, part - 1), min(len(group), part + 2))
@@ -313,7 +334,7 @@ def _attach_sufficiency(
                     utility=float(utility),
                     cost=max(1, len(text) // 4),
                     selected=source in chosen,
-                    anchors=tuple(sorted(t for t in terms if t in text.lower())),
+                    anchors=hits,
                     neighbourhood=neighbours,
                 )
             )
@@ -321,6 +342,8 @@ def _attach_sufficiency(
     for source, utility in ({} if chunk_utility else candidate_utility).items():
         text = chr(10).join((r.get("content") or "") for r in by_file.get(source, []))
         corpus.append(text)
+        hits = _hits(text.lower())
+        attainable_terms.update(hits)
         cost = max(1, len(text) // 4)
         candidates.append(
             Candidate(
@@ -328,7 +351,7 @@ def _attach_sufficiency(
                 utility=float(utility),
                 cost=cost,
                 selected=source in chosen,
-                anchors=tuple(sorted(t for t in terms if t in text.lower())),
+                anchors=hits,
                 neighbourhood=(source,),
             )
         )
@@ -340,8 +363,7 @@ def _attach_sufficiency(
     # corpus gap instead -- the difference between "selection dropped it" and
     # "it was never retrieved". Computed here because `corpus` IS the candidate
     # set at this point.
-    lowered = [text.lower() for text in corpus]
-    unattainable = {t for t in terms if not _attainable(t, lowered)}
+    unattainable = terms - attainable_terms
     certificate = certify(
         candidates,
         query_term_idf={t: _idf(t, corpus) for t in terms},
