@@ -128,13 +128,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent="f79ae9dc77e0285f8aa24706c23f5ca60f290f6b"
+          expected_parent="24f006ab912d5360cbf793f626a6790b71e80f8d"
           actual_parent="$(git rev-parse HEAD^)"
           test "$actual_parent" = "$expected_parent"
-          base64 --decode .github/patches/python-hardening.patch.gz.b64 \
-            | gzip --decompress > /tmp/python-hardening.patch
-          echo "119babe2b269d4cc28838fd19427553769b671478f4ae15f630177a39d5378ae  /tmp/python-hardening.patch" \
-            | sha256sum --check --strict
+          test "$(git hash-object .github/patches/python-hardening.patch.gz.b64)" = \
+            "c78d66077d0ba999caf34d0dd7b7cd5fdd421d3f"
+          base64 --decode .github/patches/python-hardening.patch.gz.b64 > /tmp/python-hardening.patch.gz
+          gzip --test /tmp/python-hardening.patch.gz
+          gzip --decompress --stdout /tmp/python-hardening.patch.gz > /tmp/python-hardening.patch
           git apply --check /tmp/python-hardening.patch
           git apply /tmp/python-hardening.patch
           git diff --check
