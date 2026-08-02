@@ -363,6 +363,7 @@ entroly wrap claude     # Claude Code
 entroly wrap cursor     # Cursor
 entroly wrap codex      # Codex CLI
 entroly wrap aider      # Aider
+entroly unwrap cursor   # Remove only Entroly from Cursor's MCP config
 ```
 
 **6. Or run the proxy — best for pay-as-you-go API keys and custom apps:**
@@ -770,7 +771,7 @@ Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
 messages, zero model calls. Token counts are estimates, not billed usage, and
 this result does not establish downstream model accuracy.</sub>
 
-`entroly wrap <agent>` chooses the safest available integration: a session-scoped proxy launch, an MCP registration, or guided custom-endpoint setup when a third-party schema should not be mutated automatically.
+`entroly wrap <agent>` chooses the safest available integration: a session-scoped proxy launch, an MCP registration, or guided custom-endpoint setup when a third-party schema should not be mutated automatically. `entroly unwrap <agent>` reverses persistent MCP registration with an atomic write and leaves unrelated tool configuration untouched.
 
 ### Agent compatibility
 
@@ -1003,6 +1004,8 @@ Ebbiforge adapter, and non-claims.
 |---|---|
 | `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
 | `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
+| `entroly unwrap <agent>` | Remove Entroly's persistent MCP registration without changing other tools |
+| `entroly capabilities --json` | Report installed runtime surfaces offline without claiming provider connectivity |
 | `entroly attach create/list/revoke` | Grant, inspect, or revoke scoped and expiring MCP access for Claude Code, Codex, or OpenClaw |
 | `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
 | `entroly` as an MCP stdio command | Start the installed Python MCP server when launched by an MCP client |

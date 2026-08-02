@@ -23,9 +23,11 @@ Covers the critical detection, extraction, injection, and routing logic.
   T-17  END-TO-END FORMAT CHAIN      detect → extract → inject full pipeline
 """
 
+import ssl
 import sys
 from pathlib import Path
 
+import certifi
 import pytest
 
 # Ensure the entroly package is importable
@@ -70,17 +72,17 @@ class TestProviderForwardingPolicy:
         assert proxy._auto_recovery_max_candidates == 8
         assert proxy._auto_recovery_max_tokens == 12000
 
-    def test_http_client_prefers_explicit_ca_bundle_env(self, monkeypatch, tmp_path):
+    def test_http_client_prefers_explicit_ca_bundle_env(self, monkeypatch):
         from entroly.proxy import _http_client_kwargs
 
-        ca_file = tmp_path / "ca.pem"
-        ca_file.write_text("test-ca", encoding="utf-8")
+        ca_file = Path(certifi.where())
         monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(ca_file))
 
         kwargs = _http_client_kwargs()
 
-        assert kwargs["trust_env"] is True
-        assert kwargs["verify"] == str(ca_file)
+        assert kwargs["trust_env"] is False
+        assert isinstance(kwargs["verify"], ssl.SSLContext)
+        assert "mounts" not in kwargs
 
     def test_anthropic_headers_preserve_provider_metadata_without_hop_by_hop(self):
         proxy = PromptCompilerProxy(object(), ProxyConfig())

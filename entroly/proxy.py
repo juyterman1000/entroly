@@ -64,7 +64,7 @@ from .behavioral_waste import BehavioralWasteDetector, observe_canonical_message
 from .cache_aligner import CacheAligner
 from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
 from .compression_proxy import compress_proxy_payload
-from .compression_retrieval_store import CompressionRetrievalStore
+from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .control_plane import (
     ControlAudit,
     ControlPlaneDecision,

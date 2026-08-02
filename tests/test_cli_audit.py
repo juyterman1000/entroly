@@ -201,7 +201,7 @@ def test_value_json_separates_provider_and_local_evidence(tmp_path: Path):
 
 
 @pytest.mark.parametrize("subcmd", [
-    "wrap", "ravs", "proxy", "serve", "dashboard", "demo", "batch",
+    "wrap", "unwrap", "ravs", "proxy", "serve", "dashboard", "demo", "batch",
     "benchmark", "go", "daemon", "verify", "verify-code", "compile",
     "doctor", "witness", "audit", "value",
 ])

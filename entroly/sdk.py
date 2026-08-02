@@ -663,7 +663,12 @@ def compress_messages(
         except Exception:
             pass  # Unknown model — keep the caller's budget.
 
-    if target_ratio == 1 and source_tokens <= budget:
+    # Identity is the safest and cheapest compression decision. Once caller
+    # controls and the provider-adjusted budget are known, return the original
+    # caller-owned list before pruning or any other heuristic transformation.
+    # A relative target below 1 lowers ``budget`` above, so explicitly
+    # requested compression still proceeds.
+    if source_tokens <= budget:
         return messages
 
     # Pre-pass: collapse aged tool outputs to one-line digests. This is

@@ -266,6 +266,30 @@ def test_compress_messages_target_ratio_one_is_exact_passthrough():
     assert out is messages
 
 
+def test_compress_messages_in_budget_is_exact_passthrough_before_pruning(monkeypatch):
+    messages = [
+        {"role": "tool", "content": "old tool evidence " * 40},
+        {"role": "assistant", "content": "intermediate analysis"},
+        {"role": "user", "content": "What happened?"},
+    ]
+
+    def unexpected_pruning(*args, **kwargs):
+        raise AssertionError("in-budget requests must bypass pruning")
+
+    monkeypatch.setattr(
+        "entroly.hardening.prune_aged_tool_outputs",
+        unexpected_pruning,
+    )
+
+    out = sdk.compress_messages(
+        messages,
+        budget=10_000,
+        preserve_last_n=1,
+    )
+
+    assert out is messages
+
+
 def test_compress_messages_rejects_unknown_profile_even_when_in_budget():
     with pytest.raises(ValueError, match="Unknown profile"):
         sdk.compress_messages(
