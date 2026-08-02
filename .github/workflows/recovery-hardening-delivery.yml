@@ -10,6 +10,7 @@ on:
       - .github/patches/recovery-hardening.part02
       - .github/patches/recovery-hardening.part03
       - .github/patches/recovery-hardening.part04
+      - .github/patches/recovery-hardening.part05
       - .github/workflows/recovery-hardening-delivery.yml
 
 permissions:
@@ -42,11 +43,12 @@ jobs:
             .github/patches/recovery-hardening.part02 \
             .github/patches/recovery-hardening.part03 \
             .github/patches/recovery-hardening.part04 \
+            .github/patches/recovery-hardening.part05 \
             > /tmp/recovery-hardening.patch.gz.b64
           base64 --decode /tmp/recovery-hardening.patch.gz.b64 > /tmp/recovery-hardening.patch.gz
           gzip --test /tmp/recovery-hardening.patch.gz
           gzip --decompress --stdout /tmp/recovery-hardening.patch.gz > /tmp/recovery-hardening.patch
-          echo 'a1f877cb97bec96611b3bace52210fe03484ccf060b49c1a216098fd17fc906b  /tmp/recovery-hardening.patch' | sha256sum --check --strict
+          echo 'cdc9da4d981ac6aa781d2117f816c0d5e26280fc2b8bc32d90bdec63700c9182  /tmp/recovery-hardening.patch' | sha256sum --check --strict
           git apply --check /tmp/recovery-hardening.patch
           git apply /tmp/recovery-hardening.patch
           git diff --check
