@@ -5,8 +5,10 @@ IOS — Information-Optimal Selection Test Suite
 Comprehensive tests for the three novel IOS algorithms:
 
 1. SDS — Submodular Diversity Selection
-   Tests that redundant fragments get penalized, diverse selections
-   are preferred, and the (1-1/e) approximation guarantee holds.
+   Tests that redundant fragments get penalized and diverse selections
+   are preferred. No approximation ratio is asserted: the subtractive
+   redundancy penalty can violate monotonicity, which is precisely the
+   assumption (1-1/e) needs (see knapsack_sds.rs's header).
 
 2. MRK — Multi-Resolution Knapsack
    Tests that fragments are selected at optimal resolution (full,
