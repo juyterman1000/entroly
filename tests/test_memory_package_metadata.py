@@ -64,6 +64,7 @@ def test_root_pyproject_defines_test_extra() -> None:
     test_section = text.split("test = [", 1)[1].split("]", 1)[0]
 
     assert "pytest" in test_section
+    assert "pytest-timeout" in test_section
 
 
 def test_nested_pyproject_dependency_shape_matches_root() -> None:
@@ -81,3 +82,4 @@ def test_nested_pyproject_dependency_shape_matches_root() -> None:
         assert "entroly-core" in native_extra
         assert "entroly-core" in full_extra
         assert "pytest" in test_extra
+        assert "pytest-timeout" in test_extra

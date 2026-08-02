@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .compression_retrieval_store import CompressionRetrievalStore, StoredSpan
+from .compression_retrieval_store_secure import CompressionRetrievalStore, StoredSpan
 
 ModelCall = Callable[[list[dict[str, Any]]], str]
 Verifier = Callable[[str, list[dict[str, Any]]], dict[str, Any]]

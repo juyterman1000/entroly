@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .compression_retrieval_store import CompressionRetrievalStore
+from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .evidence_locked_compression import compress_evidence_locked, estimate_tokens
 
 _QUERY_WORD_RE = re.compile(r"\b[\w.-]{3,}\b")

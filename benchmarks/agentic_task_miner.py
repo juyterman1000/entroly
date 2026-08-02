@@ -118,8 +118,10 @@ def _run_tests(workdir: Path, test_files: list[str],
     existing = [f for f in test_files if (workdir / f).exists()]
     if not existing:
         return False, 0.0
-    cmd = [sys.executable, "-m", "pytest", *existing, "-x", "-q",
-           "--timeout", str(min(timeout, 120))]
+    # Keep the miner self-contained: the outer subprocess timeout provides the
+    # hard execution bound, so do not require the optional pytest-timeout plugin
+    # inside every historical worktree being evaluated.
+    cmd = [sys.executable, "-m", "pytest", *existing, "-x", "-q"]
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(cmd, cwd=workdir, capture_output=True,

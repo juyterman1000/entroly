@@ -226,7 +226,7 @@ except ImportError:
 
 # Compression Retrieval Store — local recoverability for omitted spans.
 try:
-    from .compression_retrieval_store import (  # noqa: F401
+    from .compression_retrieval_store_secure import (  # noqa: F401
         CompressionRetrievalStore,
         StoredCompression,
         StoredSpan,
