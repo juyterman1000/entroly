@@ -35,7 +35,7 @@ jobs:
           expected_base='a35ea1b4ab86046547769d6ab67ba142bd673ea5'
           git merge-base --is-ancestor "$expected_base" HEAD
           test "$(git hash-object .github/patches/recovery-hardening-main-1071.patch.gz.b64)" = 'afdbfef7b45544bb320f162167a669a29caa49da'
-          base64 --decode .github/patches/recovery-hardening-main-1071.patch.gz.b64 > /tmp/recovery-hardening.patch.gz
+          tr -d '[:space:]' < .github/patches/recovery-hardening-main-1071.patch.gz.b64 | base64 --decode > /tmp/recovery-hardening.patch.gz
           gzip --test /tmp/recovery-hardening.patch.gz
           gzip --decompress --stdout /tmp/recovery-hardening.patch.gz > /tmp/recovery-hardening.patch
           echo 'e44c8cd733a13b64c55e060d36cf7dab6d876f9abee6ddbde85566c0c2636656  /tmp/recovery-hardening.patch' | sha256sum --check --strict
