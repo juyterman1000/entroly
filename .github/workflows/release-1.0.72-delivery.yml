@@ -1,0 +1,157 @@
+name: Validate Entroly 1.0.72 Release Sweep
+
+on:
+  pull_request:
+    branches:
+      - release/1.0.72
+    paths:
+      - .github/release-1.0.72-trigger.txt
+      - .github/workflows/release-1.0.72-delivery.yml
+      - .github/patches/release-1.0.72.part00
+      - .github/patches/release-1.0.72.part01
+
+permissions:
+  contents: read
+
+jobs:
+  generate-validate-deliver:
+    if: github.event.pull_request.head.ref == 'ops/release-1.0.72-delivery'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 64
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify ancestry and reconstruct signed tooling patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_main='048860686d0a2e84df415e7a6190462333d1d0da'
+          git merge-base --is-ancestor "$expected_main" HEAD
+          cat \
+            .github/patches/release-1.0.72.part00 \
+            .github/patches/release-1.0.72.part01 \
+            | tr -d '\r\n\t ' \
+            | base64 --decode > /tmp/release-1.0.72.patch
+          echo '0395421c8403dd653a9c96600d21a3a91e9ebfb5c9b5cb891b4be7a92d5a3153  /tmp/release-1.0.72.patch' \
+            | sha256sum --check --strict
+          git apply --check /tmp/release-1.0.72.patch
+          git apply /tmp/release-1.0.72.patch
+          git diff --check
+
+      - name: Generate every release surface from the canonical tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bump_version.py 1.0.72 | tee /tmp/bump-version.log
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import re
+
+          root = Path.cwd()
+          spec = importlib.util.spec_from_file_location(
+              'bump_version', root / 'scripts' / 'bump_version.py'
+          )
+          assert spec and spec.loader
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          existing_targets = sorted({
+              rel for rel, _pattern, _template in module.TARGETS
+              if (root / rel).exists()
+          })
+          stale = []
+          for rel in existing_targets:
+              text = (root / rel).read_text(encoding='utf-8')
+              if '1.0.71' in text:
+                  stale.append(rel)
+          assert not stale, f'stale active 1.0.71 release surfaces: {stale}'
+
+          summary = Path('/tmp/bump-version.log').read_text(encoding='utf-8')
+          match = re.search(r'bumped (\d+) target\(s\) across (\d+) file\(s\)', summary)
+          assert match, summary
+          assert int(match.group(1)) >= 45, summary
+          assert int(match.group(2)) >= 28, summary
+          PY
+          git diff --check
+
+      - name: Install release test dependencies
+        run: python -m pip install -e '.[test]'
+
+      - name: Validate Python and public release contracts
+        run: >-
+          python -m pytest -q
+          tests/test_bump_version.py
+          tests/test_release_surface.py
+          tests/test_release_surface_consistency.py
+          tests/test_memory_package_metadata.py
+          tests/test_public_trust.py
+
+      - name: Validate Rust package and lock consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --manifest-path entroly-engine/Cargo.toml
+          cargo check --locked --manifest-path entroly-qccr/Cargo.toml
+          cargo check --locked --manifest-path entroly-core/Cargo.toml
+          cargo check --locked --manifest-path entroly-wasm/Cargo.toml
+
+      - name: Validate npm, MCP registry, and bundled manifest versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+
+          expected = '1.0.72'
+          json_paths = [
+              '.claude-plugin/manifest.json',
+              '.mcpb-build/manifest.json',
+              'server.json',
+              'entroly/npm/package.json',
+              'entroly/npm-alias/package.json',
+              'entroly-wasm/package.json',
+              'integrations/openclaw/package.json',
+          ]
+          for rel in json_paths:
+              data = json.loads(Path(rel).read_text(encoding='utf-8'))
+              assert data['version'] == expected, (rel, data.get('version'))
+
+          server = json.loads(Path('server.json').read_text(encoding='utf-8'))
+          assert all(pkg['version'] == expected for pkg in server['packages'])
+
+          with zipfile.ZipFile('entroly.mcpb') as archive:
+              bundled = json.loads(archive.read('manifest.json'))
+          assert bundled['version'] == expected
+          PY
+
+      - name: Commit one validated 1.0.72 release change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add -A
+          git reset -- \
+            .github/patches/release-1.0.72.part00 \
+            .github/patches/release-1.0.72.part01 \
+            .github/workflows/release-1.0.72-delivery.yml \
+            .github/release-1.0.72-trigger.txt
+          git commit -m 'chore(release): bump every surface to 1.0.72'
+          validated_commit="$(git rev-parse HEAD)"
+          git format-patch -1 --stdout "$validated_commit" > /tmp/validated-release.patch
+          git fetch origin release/1.0.72
+          git switch --force-create validated-delivery origin/release/1.0.72
+          git am /tmp/validated-release.patch
+          git push origin HEAD:release/1.0.72
