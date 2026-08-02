@@ -42,6 +42,7 @@ RELEASE_SURFACES: tuple[str, ...] = (
     "entroly-core/README.md",
     "entroly-core/pyproject.toml",
     "entroly-qccr/Cargo.lock",
+    "entroly-engine/Cargo.toml",
     "entroly-qccr/Cargo.toml",
     "entroly-wasm/Cargo.lock",
     "entroly-wasm/Cargo.toml",
@@ -65,6 +66,7 @@ RELEASE_SURFACES: tuple[str, ...] = (
 TOML_VERSION_SURFACES = {
     "entroly-core/Cargo.toml",
     "entroly-core/pyproject.toml",
+    "entroly-engine/Cargo.toml",
     "entroly-qccr/Cargo.toml",
     "entroly-wasm/Cargo.toml",
     "entroly/pyproject.toml",

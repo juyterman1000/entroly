@@ -69,7 +69,7 @@ class EntrolyDaemonState:
     The dashboard polls it via /api/control/status.
     """
     status: str = "stopped"  # stopped | starting | running | stopping
-    version: str = "1.0.70"
+    version: str = "1.0.71"
     started_at: float | None = None
 
     # Feature flags
