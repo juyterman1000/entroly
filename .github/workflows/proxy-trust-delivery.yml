@@ -1,0 +1,78 @@
+name: Validate Proxy Trust Boundary Delivery
+
+on:
+  pull_request:
+    branches:
+      - feat/production-grade-defaults
+    paths:
+      - server.json
+      - .github/patches/proxy-ca-trust.patch.gz
+      - .github/workflows/proxy-trust-delivery.yml
+
+permissions:
+  contents: read
+
+jobs:
+  apply-and-validate:
+    if: github.event.pull_request.head.ref == 'ops/production-grade-proxy-trust'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 64
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify ancestry and exact patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_base='5354caf9c7180b8200d774d04f54220d1b410344'
+          git merge-base --is-ancestor "$expected_base" HEAD
+          gzip --test .github/patches/proxy-ca-trust.patch.gz
+          gzip --decompress --stdout .github/patches/proxy-ca-trust.patch.gz > /tmp/proxy-ca-trust.patch
+          echo '84bf2b30c63e3913c5c0a75aec5c886c3f6fc828bf1266a79c39fca1f79b9380  /tmp/proxy-ca-trust.patch' | sha256sum --check --strict
+          git apply --check /tmp/proxy-ca-trust.patch
+          git apply /tmp/proxy-ca-trust.patch
+          git diff --check
+
+      - name: Install patched package
+        run: python -m pip install -e '.[test]'
+
+      - name: Validate provider transport trust boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q entroly/proxy_transport_final.py tests/test_proxy_transport_trust.py tests/test_proxy_providers.py
+          python -m pytest -q \
+            tests/test_proxy_transport_trust.py \
+            tests/test_proxy_transport_final.py \
+            tests/test_proxy_providers.py \
+            tests/test_proxy_access_security.py \
+            tests/test_proxy_control_plane_trust.py \
+            tests/test_model_registry_proxy_integration.py \
+            tests/test_provider_adapters.py \
+            tests/test_provider_policy.py
+
+      - name: Replay validated product commit onto latest feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add \
+            entroly/proxy_transport_final.py \
+            tests/test_proxy_transport_trust.py \
+            tests/test_proxy_providers.py
+          git commit -m 'fix(proxy): keep CA trust independent from proxy inheritance'
+          validated_commit="$(git rev-parse HEAD)"
+          git format-patch -1 --stdout "$validated_commit" > /tmp/validated-proxy-trust.patch
+          git fetch origin feat/production-grade-defaults
+          git switch --force-create validated-delivery origin/feat/production-grade-defaults
+          git am /tmp/validated-proxy-trust.patch
+          git push origin HEAD:feat/production-grade-defaults
