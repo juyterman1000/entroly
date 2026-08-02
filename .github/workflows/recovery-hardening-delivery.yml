@@ -28,27 +28,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Verify ancestry and signed patch
+      - name: Verify ancestry and exact patch
         shell: bash
         run: |
-          set -euxo pipefail
-          expected_base='a35ea1b4ab86046547769d6ab67ba142bd673ea5'
+          set -euo pipefail
+          expected_base='9f2168422779ede44b6086768bb3499767504398'
           git merge-base --is-ancestor "$expected_base" HEAD
-          test "$(git hash-object .github/patches/recovery-hardening-main-1071.patch.gz.b64)" = 'afdbfef7b45544bb320f162167a669a29caa49da'
-          python - <<'PY'
-          import base64
-          import re
-          from pathlib import Path
-
-          source = Path('.github/patches/recovery-hardening-main-1071.patch.gz.b64')
-          cleaned = re.sub(rb'[^A-Za-z0-9+/=]', b'', source.read_bytes())
-          Path('/tmp/recovery-hardening.patch.gz').write_bytes(
-              base64.b64decode(cleaned, validate=True)
-          )
-          PY
+          test "$(git hash-object .github/patches/recovery-hardening-main-1071.patch.gz.b64)" = 'f4458347de8c3134a3272380fcd78f0fd3422159'
+          base64 --decode .github/patches/recovery-hardening-main-1071.patch.gz.b64 > /tmp/recovery-hardening.patch.gz
           gzip --test /tmp/recovery-hardening.patch.gz
           gzip --decompress --stdout /tmp/recovery-hardening.patch.gz > /tmp/recovery-hardening.patch
-          echo 'e44c8cd733a13b64c55e060d36cf7dab6d876f9abee6ddbde85566c0c2636656  /tmp/recovery-hardening.patch' | sha256sum --check --strict
+          echo 'a1f877cb97bec96611b3bace52210fe03484ccf060b49c1a216098fd17fc906b  /tmp/recovery-hardening.patch' | sha256sum --check --strict
           git apply --check /tmp/recovery-hardening.patch
           git apply /tmp/recovery-hardening.patch
           git diff --check
