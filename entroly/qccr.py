@@ -334,10 +334,18 @@ def _attach_sufficiency(
 
     retained = {t for c in candidates if c.selected for t in c.anchors}
     delivered = sum(c.cost for c in candidates if c.selected)
+    # Terms present in no candidate at all. Selection cannot retain what was
+    # never a candidate, so these are excluded from coverage and reported as a
+    # corpus gap instead -- the difference between "selection dropped it" and
+    # "it was never retrieved". Computed here because `corpus` IS the candidate
+    # set at this point.
+    lowered = [text.lower() for text in corpus]
+    unattainable = {t for t in terms if not any(t in text for text in lowered)}
     certificate = certify(
         candidates,
         query_term_idf={t: _idf(t, corpus) for t in terms},
         retained_terms=retained,
+        unattainable_terms=unattainable,
         budget_exhausted=delivered >= token_budget * 0.95,
         shadow_price_limit=_calibrated_limit(candidates),
     )

@@ -91,6 +91,17 @@ _EPS = 1e-9
 # best MISS (0.0246). Calibrated on n=4 -- provisional, not authoritative.
 RESIDUAL_RISK_LIMIT = 0.0121
 
+# Share of discriminative query-term IDF weight that may be absent from every
+# candidate before the selection is reported as `expand_required` rather than
+# merely degraded.
+#
+# Set at 0.5 -- a majority of what the question discriminates on is missing from
+# the corpus. This is a judgement, not a fit: the measured cases it must
+# separate are unambiguous at either end (0.0 when every content term is
+# present, 1.0 when the answer document was withheld entirely), and nothing in
+# between has been measured. Re-fit before treating it as authoritative.
+CORPUS_GAP_LIMIT = 0.5
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -117,6 +128,7 @@ class SufficiencyCertificate:
     cutoff_ambiguity: float
     boundary_exposure: float
     query_coverage: float
+    corpus_gap: float
     verdict: str
     reasons: tuple[str, ...] = field(default=())
 
@@ -131,6 +143,7 @@ class SufficiencyCertificate:
             "cutoff_ambiguity": round(self.cutoff_ambiguity, 4),
             "boundary_exposure": round(self.boundary_exposure, 4),
             "query_coverage": round(self.query_coverage, 4),
+            "corpus_gap": round(self.corpus_gap, 4),
             "residual_risk": round(
                 self.shadow_price / max(self.captured_mass, _EPS), 6
             ),
@@ -221,21 +234,82 @@ def boundary_exposure(
 def query_coverage(
     retained_terms: Iterable[str],
     query_term_idf: dict[str, float],
+    unattainable_terms: Iterable[str] = (),
 ) -> float:
-    """Q_B: IDF-weighted share of ORIGINAL query terms retained.
+    """Q_B: IDF-weighted share of ATTAINABLE query terms retained.
 
     Uses the discriminative terms the user actually wrote. Intent expansion
     would let a selection that dropped every rare term still score highly by
     retaining common expansions of it.
+
+    Terms absent from every candidate are excluded from the denominator: no
+    selection can retain what the corpus does not contain. Counting them made
+    this metric unusable, because smoothed IDF gives a term in ZERO documents
+    the HIGHEST weight, so ordinary question words dominated the denominator
+    while being unattainable by construction.
+
+    Measured on the auth fixture in benchmarks/sufficiency_baseline.py, query
+    "how is the session token issued after login":
+
+        term      idf     documents containing it
+        how      2.6391   0
+        the      2.6391   0
+        issued   2.6391   0
+        after    2.6391   0
+        session  1.5404   1
+        token    1.5404   1
+        login    1.5404   1
+
+    Coverage capped at 4.6212 / 15.1776 = 0.3045 for a selection that was the
+    complete answer and excluded nothing (captured_mass 1.0, shadow_price 0.0,
+    boundary_exposure 0.0). All 42 rows came back "degraded" on that basis.
+
+    Absence is not discarded -- it is a different signal, reported by
+    `corpus_gap`. Dropping it here without reporting it there would turn a
+    fail-closed certificate fail-open on the case that matters most: a query
+    whose answer is in no candidate at all.
+    """
+    unattainable = set(unattainable_terms)
+    attainable = {
+        t: max(v, 0.0) for t, v in query_term_idf.items() if t not in unattainable
+    }
+    total = sum(attainable.values())
+    if total <= _EPS:
+        # Nothing the query asked for exists in the corpus. Coverage is
+        # undefined rather than perfect; `corpus_gap` carries the verdict.
+        return 0.0
+    kept = set(retained_terms)
+    covered = sum(idf for term, idf in attainable.items() if term in kept)
+    return covered / (total + _EPS)
+
+
+def corpus_gap(
+    query_term_idf: dict[str, float],
+    unattainable_terms: Iterable[str] = (),
+) -> float:
+    """G_B: IDF-weighted share of discriminative query terms in NO candidate.
+
+    Separates two failures that one coverage number conflates:
+
+      * evidence exists and selection dropped it -> low `query_coverage`
+      * evidence is in no candidate at all       -> high `corpus_gap`
+
+    Only the second is fixable by retrieving more; selecting harder cannot
+    recover a term that was never a candidate. That distinction is what makes
+    `expand_required` a different verdict from `degraded`.
+
+    Callers must filter question words before computing the inputs. "how",
+    "the" and "after" are absent from most code corpora and would otherwise
+    report a total evidence gap for every natural-language query.
     """
     total = sum(max(v, 0.0) for v in query_term_idf.values())
     if total <= _EPS:
-        return 1.0
-    kept = set(retained_terms)
-    covered = sum(
-        max(idf, 0.0) for term, idf in query_term_idf.items() if term in kept
+        return 0.0
+    unattainable = set(unattainable_terms)
+    missing = sum(
+        max(idf, 0.0) for term, idf in query_term_idf.items() if term in unattainable
     )
-    return covered / (total + _EPS)
+    return missing / (total + _EPS)
 
 
 def certify(
@@ -243,6 +317,7 @@ def certify(
     *,
     query_term_idf: dict[str, float] | None = None,
     retained_terms: Iterable[str] = (),
+    unattainable_terms: Iterable[str] = (),
     anchor_weights: dict[str, float] | None = None,
     budget_exhausted: bool = True,
     shadow_price_limit: float = 0.0,
@@ -259,7 +334,8 @@ def certify(
     lambda_b = shadow_price(candidates)
     a_b = cutoff_ambiguity(candidates)
     e_b = boundary_exposure(candidates, anchor_weights)
-    q_b = query_coverage(retained_terms, query_term_idf or {})
+    q_b = query_coverage(retained_terms, query_term_idf or {}, unattainable_terms)
+    g_b = corpus_gap(query_term_idf or {}, unattainable_terms)
 
     # Residual demand per unit of captured evidence.
     #
@@ -301,19 +377,61 @@ def certify(
     if q_b < 0.5:
         reasons.append(f"query coverage {q_b:.0%}: discriminative terms dropped")
 
-    verdict = "sufficient" if not reasons else "degraded"
+    # ── Verdict ─────────────────────────────────────────────────────────
+    #
+    # `expand_required` is a distinct state, not a flavour of `degraded`,
+    # because the two call for opposite actions. Degraded means the evidence
+    # was a candidate and selection dropped it: a smaller budget or better
+    # ranking can fix it. expand_required means the discriminative terms are in
+    # NO candidate, so selecting differently cannot recover them -- only
+    # retrieving more can. Reporting both as "degraded" told a caller to tune
+    # the thing that was not broken.
+    #
+    # Ordered most severe first, and expansion outranks selection quality: if
+    # the evidence is not present, how well the present evidence was chosen is
+    # not the finding worth surfacing.
+    if g_b >= CORPUS_GAP_LIMIT:
+        verdict = "expand_required"
+        reasons.insert(
+            0,
+            f"{g_b:.0%} of discriminative query-term weight appears in no "
+            f"candidate: the evidence was never retrieved",
+        )
+    elif reasons:
+        verdict = "degraded"
+    else:
+        verdict = "sufficient"
+
     return SufficiencyCertificate(
         captured_mass=c_b,
         shadow_price=lambda_b,
         cutoff_ambiguity=a_b,
         boundary_exposure=e_b,
         query_coverage=q_b,
+        corpus_gap=g_b,
         verdict=verdict,
         reasons=tuple(reasons),
     )
 
 
 # ── Adapter: real selections, not synthetic shapes ──────────────────────────
+
+# Question words carry no retrievable evidence, and code corpora almost never
+# contain them. Left in, they are scored as maximally rare (df = 0 gives the
+# highest smoothed IDF) and dominate both coverage and the corpus gap, so every
+# natural-language query reports a near-total evidence gap regardless of what
+# was selected. Length alone does not exclude them: "how", "the", "what",
+# "does" and "after" all clear the len > 2 filter.
+_QUESTION_WORDS = frozenset(
+    """
+    how what why when where which who whom whose does did done doing
+    and are but for from has have had the this that these those there here
+    with without into onto over under after before while during about
+    can could should would will shall may might must
+    its it's their they them then than thus you your our ours
+    get gets got use uses used using make makes made
+    """.split()
+)
 
 
 def _query_terms(query: str) -> list[str]:
@@ -327,7 +445,11 @@ def _query_terms(query: str) -> list[str]:
     import re
 
     split = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", query)
-    return [t for t in re.split(r"[^A-Za-z0-9]+", split.lower()) if len(t) > 2]
+    return [
+        t
+        for t in re.split(r"[^A-Za-z0-9]+", split.lower())
+        if len(t) > 2 and t not in _QUESTION_WORDS
+    ]
 
 
 def _idf(term: str, corpus_texts: Sequence[str]) -> float:

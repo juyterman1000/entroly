@@ -16,6 +16,8 @@ success is worse than worthless -- it teaches its readers to ignore it.
 
 from __future__ import annotations
 
+import pytest
+
 from entroly.sufficiency import (
     Candidate,
     captured_mass,
@@ -138,3 +140,86 @@ def test_certificate_serialises_for_a_receipt() -> None:
         assert key in payload
     assert payload["verdict"] == "degraded"
     assert payload["reasons"], "a degraded verdict must say why"
+
+
+# ── Corpus gap: "selection dropped it" vs "it was never retrieved" ──────────
+#
+# query_coverage counted query terms that appear in NO candidate. Smoothed IDF
+# gives a term with df=0 the HIGHEST weight, so ordinary question words
+# dominated the denominator while being unattainable by construction.
+#
+# Measured on the auth fixture of benchmarks/sufficiency_baseline.py, query
+# "how is the session token issued after login": how/the/issued/after each in 0
+# documents at idf 2.6391; session/token/login each in 1 document at idf 1.5404.
+# Coverage capped at 0.3045 for a selection that WAS the complete answer, with
+# captured_mass 1.0 and shadow_price 0.0. All 42 harness rows returned
+# "degraded" on that alone -- a 100% false-insufficient rate.
+
+
+def test_absent_terms_do_not_cap_coverage_of_a_complete_selection():
+    from entroly.sufficiency import certify, Candidate
+
+    cert = certify(
+        [Candidate(unit_id="auth.py", utility=1.0, cost=24, selected=True,
+                   anchors=("session", "token", "login"))],
+        query_term_idf={
+            "session": 1.5404, "token": 1.5404, "login": 1.5404,
+            "issued": 2.6391,
+        },
+        retained_terms={"session", "token", "login"},
+        unattainable_terms={"issued"},
+        budget_exhausted=False,
+    )
+    assert cert.query_coverage == pytest.approx(1.0), (
+        "a selection retaining every attainable query term must score full "
+        f"coverage; got {cert.query_coverage}"
+    )
+    assert cert.verdict == "sufficient", cert.reasons
+
+
+def test_evidence_absent_from_corpus_is_expand_required_not_degraded():
+    """The two states call for opposite actions and must not be conflated."""
+    from entroly.sufficiency import certify, Candidate
+
+    cert = certify(
+        [Candidate(unit_id="distractor.py", utility=0.4, cost=20, selected=True,
+                   anchors=())],
+        query_term_idf={"stripegateway": 2.64, "charge": 2.64, "card": 2.64},
+        retained_terms=set(),
+        unattainable_terms={"stripegateway", "charge", "card"},
+        budget_exhausted=False,
+    )
+    assert cert.corpus_gap == pytest.approx(1.0)
+    assert cert.verdict == "expand_required", (
+        "when no discriminative term is in any candidate, selecting differently "
+        f"cannot help; got {cert.verdict} / {cert.reasons}"
+    )
+
+
+def test_unanswerable_selection_never_reports_sufficient():
+    """Fail-closed: dropping absent terms from coverage must not fail open."""
+    from entroly.sufficiency import certify, Candidate
+
+    cert = certify(
+        [Candidate(unit_id="noise.py", utility=0.5, cost=30, selected=True)],
+        query_term_idf={"timeouterror": 2.64, "retry": 2.64},
+        retained_terms=set(),
+        unattainable_terms={"timeouterror", "retry"},
+        budget_exhausted=False,
+    )
+    assert not cert.sufficient, (
+        "the answer is in no candidate; 'sufficient' here is the one verdict "
+        f"that must never appear. got {cert.verdict}"
+    )
+
+
+def test_question_words_are_not_treated_as_evidence():
+    from entroly.sufficiency import _query_terms
+
+    terms = set(_query_terms("how is the session token issued after login"))
+    assert "session" in terms and "token" in terms and "login" in terms
+    for noise in ("how", "the", "after"):
+        assert noise not in terms, (
+            f"{noise!r} carries no retrievable evidence and is absent from most "
+            "code corpora, where df=0 makes it maximally weighted"
+        )
