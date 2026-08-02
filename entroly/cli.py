@@ -204,6 +204,18 @@ def _check_first_run() -> None:
         pass
 
 
+def _version_is_newer(candidate: str, current: str) -> bool:
+    """True when `candidate` is a strictly newer release than `current`."""
+    if not candidate or candidate == current:
+        return False
+    try:
+        from packaging.version import Version
+        return Version(candidate) > Version(current)
+    except Exception:
+        # packaging unavailable: string compare is imperfect but never crashes
+        return candidate > current
+
+
 def _check_for_update() -> None:
     """Check PyPI for a newer version (non-blocking, cached for 24h).
 
@@ -221,10 +233,16 @@ def _check_for_update() -> None:
         if cache_file.exists():
             data = json.loads(cache_file.read_text())
             if now - data.get("ts", 0) < 86400:
-                if data.get("newer"):
+                cached = data.get("newer")
+                # Re-compare against the version running NOW. The cache records
+                # that a newer release existed, but it outlives the upgrade that
+                # resolves it -- so replaying it blindly told a user who had just
+                # updated "Update available: 1.0.72 -> 1.0.72", on every command,
+                # for up to 24 hours.
+                if cached and _version_is_newer(cached, __version__):
                     print(
                         f"  {C.YELLOW}Update available:{C.RESET} "
-                        f"{__version__} -> {data['newer']}  "
+                        f"{__version__} -> {cached}  "
                         f"{C.GRAY}(pip install --upgrade entroly){C.RESET}",
                         file=sys.stderr,
                     )
@@ -245,16 +263,7 @@ def _check_for_update() -> None:
             latest = pypi.get("info", {}).get("version", __version__)
 
             # Simple version comparison (works for semver)
-            newer = None
-            if latest != __version__:
-                from packaging.version import Version
-                try:
-                    if Version(latest) > Version(__version__):
-                        newer = latest
-                except Exception:
-                    # packaging not installed — fall back to string compare
-                    if latest > __version__:
-                        newer = latest
+            newer = latest if _version_is_newer(latest, __version__) else None
 
             _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps({"ts": now, "newer": newer}))
