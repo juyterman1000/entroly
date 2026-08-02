@@ -136,3 +136,55 @@ def test_a_realistic_small_project_reports_its_savings(tmp_path: Path):
         f"got {report['average_reduction_pct']}%"
     )
     assert report["total_tokens_saved"] > 0
+
+
+def test_results_are_ordered_by_relevance_not_by_density(tmp_path: Path, monkeypatch):
+    """The top result must be the most relevant, not the shortest.
+
+    The greedy knapsack sorts candidates by value-per-token, which is correct
+    for filling a budget -- but that ordering leaked out as the order callers
+    display. Measured on this fixture for "who verifies the password":
+
+        auth.py     24 tokens  relevance 0.58640  density 0.024308
+        billing.py  23 tokens  relevance 0.57694  density 0.024960
+
+    auth.py is the better answer and lost the top slot purely for being one
+    token longer, so `entroly simulate` reported "top: billing.py" for an
+    authentication question.
+    """
+    from entroly.auto_index import auto_index
+    from entroly.server import EntrolyEngine
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "auth.py").write_text(
+        "def login(user, pw):\n"
+        "    token = verify_password(user, pw)\n"
+        "    return issue_session_token(token)\n",
+        encoding="utf-8",
+    )
+    (src / "billing.py").write_text(
+        "def charge_card(customer, amount):\n"
+        "    return StripeGateway().charge(customer.card, amount)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    engine = EntrolyEngine()
+    auto_index(engine, project_dir=str(tmp_path), force=True)
+
+    for query, expected in [
+        ("who verifies the password", "auth.py"),
+        ("How are credit cards charged?", "billing.py"),
+        ("stripe payment gateway", "billing.py"),
+        ("login session token", "auth.py"),
+    ]:
+        result = engine.optimize_context(token_budget=4096, query=query)
+        selected = result.get("selected_fragments") or []
+        assert selected, f"nothing selected for {query!r}"
+        top = selected[0]["source"].rsplit("/", 1)[-1]
+        assert top == expected, (
+            f"{query!r} ranked {top} above {expected}. Ordering must follow "
+            f"relevance; density is for packing a budget, not for display. "
+            f"got={[f['source'].rsplit('/', 1)[-1] for f in selected]}"
+        )

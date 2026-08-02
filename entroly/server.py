@@ -371,6 +371,34 @@ def _py_knapsack_optimize(
             total_relevance = best_rel
             method = "greedy_python+oversize_excerpt"
 
+    # Present by relevance, pack by density.
+    #
+    # The greedy loop sorts candidates by value-per-token, which is the correct
+    # criterion for filling a budget -- but that ordering then leaked out as the
+    # order the caller displays. Measured on a two-file project, for the query
+    # "who verifies the password":
+    #
+    #     auth.py     24 tokens  relevance 0.58339  density 0.024308
+    #     billing.py  23 tokens  relevance 0.57407  density 0.024960
+    #
+    # auth.py is the better answer and loses the top slot purely for being one
+    # token longer, which is why `entroly simulate` reported "top: billing.py"
+    # for an authentication question.
+    #
+    # Packing and presentation are different jobs. WHICH fragments are selected
+    # is unchanged -- only the order they are handed back in. Pinned fragments
+    # keep their position at the front.
+    pinned_ids = {id(f) for f in pinned}
+    head = [f for f in selected if id(f) in pinned_ids]
+    tail = [f for f in selected if id(f) not in pinned_ids]
+    tail.sort(
+        key=lambda f: (
+            -_py_compute_relevance(f, w_recency, w_frequency, w_semantic, w_entropy),
+            f.source,  # deterministic tie-break: prompt prefixes must stay stable
+        )
+    )
+    selected = head + tail
+
     stats = {
         "total_tokens": used_tokens,
         "total_relevance": round(total_relevance, 4),
