@@ -2971,8 +2971,17 @@ def _run_local_simulation(args) -> dict:
     budget = int(getattr(args, "budget", 4096) or 4096)
     queries = _simulation_queries(args)
     baseline = int(getattr(args, "baseline", 0) or 0)
+    explicit_baseline = baseline > 0
     if baseline <= 0:
         baseline = min(total_tokens, 32_000)
+
+    # A project smaller than the budget has nothing to drop, so every query
+    # reports "0.0% fewer; 0 tokens saved". That is arithmetically right and
+    # tells a first-time user nothing -- it reads as "this tool does nothing",
+    # which is the most common first run and the worst possible first
+    # impression. Say what actually happened, and still demonstrate selection
+    # by squeezing the budget until it binds.
+    fits_entirely = (not explicit_baseline) and total_tokens <= budget
 
     rows = []
     total_saved = 0
@@ -3010,6 +3019,7 @@ def _run_local_simulation(args) -> dict:
         "files_indexed": files_indexed,
         "repo_tokens_indexed": total_tokens,
         "budget": budget,
+        "budget_narrowed_to_demonstrate": fits_entirely,
         "max_files": max_files,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
@@ -3041,8 +3051,9 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     )
     print(
         f"  {C.BOLD}Baseline:{C.RESET} {report['baseline_tokens_per_query']:,} "
-        f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens\n"
+        f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens"
     )
+    print()
     for row in report["queries"]:
         print(f"    {C.CYAN}Q:{C.RESET} {row['query'][:80]}")
         print(
@@ -3056,10 +3067,29 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         top = ", ".join(Path(s).name for s in row["top_sources"][:3]) or "none"
         print(f"       {C.GRAY}top: {top}{C.RESET}\n")
 
-    print(
-        f"  {C.GREEN}{C.BOLD}Average reduction: "
-        f"{report['average_reduction_pct']:.1f}%{C.RESET}"
-    )
+    avg = report["average_reduction_pct"]
+    if report.get("budget_narrowed_to_demonstrate"):
+        # A project smaller than the budget has nothing to drop, so every query
+        # honestly reports 0.0%. Printing that bare number is the most common
+        # first run and reads as "this tool does nothing". Say what actually
+        # happened and where the value appears, rather than manufacturing a
+        # demo by squeezing the budget until something gets cut.
+        print(
+            f"  {C.GREEN}{C.BOLD}Your project already fits in one request.{C.RESET} "
+            f"{C.GRAY}({report['repo_tokens_indexed']:,} tokens vs a "
+            f"{report['budget']:,}-token budget){C.RESET}"
+        )
+        print(
+            f"  {C.GRAY}Nothing needed dropping, so there is nothing to save yet. "
+            f"Entroly starts paying off once a codebase outgrows the context "
+            f"window — on a 680k-token repo it cut context 87.6%.{C.RESET}"
+        )
+        print(
+            f"  {C.GRAY}Try it on a larger repo, or force selection here with "
+            f"{C.RESET}--budget 30{C.GRAY}.{C.RESET}"
+        )
+    else:
+        print(f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET}")
     if include_perf:
         lat = report["latency_ms"]
         print(
