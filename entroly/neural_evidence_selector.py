@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, Sequence
 
 if TYPE_CHECKING:
-    from .compression_retrieval_store import CompressionRetrievalStore, StoredCompression
+    from .compression_retrieval_store_secure import CompressionRetrievalStore, StoredCompression
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.:/-]{2,}|\d+(?:\.\d+)*")
 _STOPWORDS = frozenset(

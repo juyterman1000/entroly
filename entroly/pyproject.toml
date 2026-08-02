@@ -63,6 +63,7 @@ full = [
 ]
 test = [
     "pytest>=8,<9",
+    "pytest-timeout>=2.3,<3",
 ]
 
 [project.urls]

@@ -25,7 +25,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
-from .compression_retrieval_store import CompressionRetrievalStore
+from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .evidence_locked_compression import compress_evidence_locked, estimate_tokens
 
 

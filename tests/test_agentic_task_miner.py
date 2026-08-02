@@ -95,3 +95,12 @@ def test_validate_rejects_commit_without_oracle(mined_repo):
     candidates = discover(mined_repo, max_commits=50)
     initial = next(c for c in candidates if "initial" in c.subject)
     assert validate(mined_repo, initial, timeout=120) is None
+
+
+def test_validate_does_not_require_external_pytest_plugins(mined_repo, monkeypatch):
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    candidates = discover(mined_repo, max_commits=50)
+    fix = next(c for c in candidates if "fix: add()" in c.subject)
+    task = validate(mined_repo, fix, timeout=120)
+    assert task is not None
+    assert task.status == "validated"

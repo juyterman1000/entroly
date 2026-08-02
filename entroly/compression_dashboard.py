@@ -12,7 +12,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .compression_retrieval_store import CompressionRetrievalStore
+from .compression_retrieval_store_secure import CompressionRetrievalStore
 
 
 @dataclass(slots=True)

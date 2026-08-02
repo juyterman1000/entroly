@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .compression_proxy import ProxyCompressionResult, _env_budget_tokens, compress_proxy_payload
-from .compression_retrieval_store import CompressionRetrievalStore
+from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .proxy_transform import extract_user_message
 
 
