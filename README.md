@@ -35,6 +35,46 @@ Most tools compress and move on. Entroly gives you a **receipt**: what was kept,
 
 ---
 
+## Proof, not promises
+
+Every number below comes from a committed result file you can open, and a script you can re-run.
+
+### Head-to-head on agent tool output
+
+| | **Entroly** | Headroom |
+|---|---:|---:|
+| Tokens removed *(weighted)* | **95.1%** | 31.4% |
+| Evidence kept | **100%** | 100% |
+| Speed *(median)* | **28ms** | 56ms |
+| Scenarios compressed | **4 of 4** | 2 of 4 |
+
+Both tools kept 100% of the required evidence. Entroly removed **3× more tokens in half the time**.
+
+<sub>Source: [`benchmarks/results/compression_gauntlet.json`](benchmarks/results/compression_gauntlet.json) · budget 1,200 tokens · `gpt-4o` tokenizer (`tiktoken==0.9.0`) · 3 runs + 1 warmup · fixtures pinned by SHA-256. **Scope, stated by the benchmark itself:** *"Deterministic compression and preregistered string-evidence retention on 4 generated agent-tool fixtures; no LLM answer-quality claim."* These are synthetic regression fixtures, not a public real-task dataset.</sub>
+
+### Nothing is lost — and you can check that yourself
+
+| What was verified | Result |
+|---|---:|
+| Source fragments byte-verified *(1,104 files, 13 languages)* | **5,117 / 5,117** |
+| Pure-Python path, independently | **11,986 / 11,986** |
+| Omitted fragments recovered exactly, through the public SDK | **13 / 13** |
+
+Receipts record the source file's SHA-256, the exact UTF-8 byte range, and the fragment's SHA-256. **You recompute those with Python's own `hashlib`** — verification never calls Entroly's hashing code, so you are not trusting us.
+
+### Run it on your own code, in one minute
+
+```bash
+pip install -U entroly
+cd /your/project
+entroly simulate        # how many tokens would this have saved? no API key needed
+entroly verify-claims   # prove the recovery path works on this machine
+```
+
+If it finds nothing useful on your code, that is a real answer too — open an issue with the JSON and we will look.
+
+---
+
 <p align="center">
   <sub>Local-first · Python with optional Rust acceleration · Node/WASM runtime · Apache-2.0</sub>
 </p>
