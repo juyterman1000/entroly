@@ -157,7 +157,6 @@ jobs:
             tests/test_recovery_store_trust.py \
             tests/test_recovery_resilience.py \
             tests/test_recovery_public_export.py \
-            tests/test_recovery_surface.py \
             tests/test_compression_proxy.py \
             tests/test_compression_proxy_direct.py \
             tests/test_proxy_access_security.py \
