@@ -30,6 +30,33 @@ const BM25_B: f64 = 0.75;
 const BM25F_W_BODY: f64 = 1.0;
 const BM25F_W_PATH: f64 = 2.5;
 const BM25F_B_PATH: f64 = 0.5;
+
+/// Weight applied to a term that came from intent-cluster expansion rather than
+/// from the user's query.
+///
+/// `expand_query` seeds with the real query tokens and then adds the FULL
+/// vocabulary of every matched intent cluster plus its linked clusters. When a
+/// cluster fires, the injected vocabulary can outnumber the question 10:1, and
+/// weighting every term equally lets a document that matches many generic
+/// cluster words outrank the one document that matches what was actually asked.
+///
+/// Measured on benchmarks/sufficiency_baseline.py fixtures (v1.0.72):
+///
+///   query                                    expansion  from query  needle
+///   "how is the session token issued..."          4          4      rank 1
+///   "how is a credit card charged..."             5          5      rank 1
+///   "...request times out and needs retrying"    55          5      rank 23
+///
+/// The two that stayed clean rank the answer first. The one a cluster fired on
+/// buried it under 50 injected terms.
+///
+/// This is the standard remedy for query expansion: keep the recall benefit,
+/// but score expansion terms below the original query (Rocchio 1971; Salton &
+/// Buckley 1990 give the alpha/beta form). 0.35 is a starting value chosen to
+/// keep a full expansion-term match worth clearly less than a real query-term
+/// match while still breaking ties among documents that match neither; it is
+/// not tuned, and `rank_expansion_weight` overrides it per repo.
+const EXPANSION_TERM_WEIGHT: f64 = 0.35;
 const MMR_LAMBDA: f64 = 0.7;
 const MIN_SENTENCE_CHARS: usize = 20;
 const MAX_FILES_CONSIDERED: usize = 12;
@@ -358,10 +385,7 @@ pub fn expand_query(query: &str) -> HashSet<String> {
     }
     terms
         .into_iter()
-        .filter(|t| {
-            !stopwords().contains(t.as_str())
-                && (t.chars().count() > 2 || is_cjk_token(t))
-        })
+        .filter(|t| !stopwords().contains(t.as_str()) && (t.chars().count() > 2 || is_cjk_token(t)))
         .collect()
 }
 
@@ -434,6 +458,10 @@ fn default_weights() -> &'static HashMap<&'static str, f64> {
             ("defines_transform", 0.16),
             ("defines_persistence", 0.30),
             ("defines_schema_type", 0.22),
+            // Not a rank feature -- the BM25F weight for a term that came from
+            // intent-cluster expansion rather than the query. Listed here so the
+            // tuning layer can override it like any other weight.
+            ("rank_expansion_weight", EXPANSION_TERM_WEIGHT),
         ])
     })
 }
@@ -530,6 +558,12 @@ pub fn rank_files(
     let q = expand_query(query);
     let base = query_tokens(query);
     let intents = query_intents(&base);
+    // Overridable per repo by the tuning layer, like the other rank weights.
+    let expansion_weight = w
+        .get("rank_expansion_weight")
+        .copied()
+        .unwrap_or(EXPANSION_TERM_WEIGHT)
+        .clamp(0.0, 1.0);
 
     let mut body_tf: Vec<HashMap<String, usize>> = Vec::with_capacity(n);
     let mut path_tf: Vec<HashMap<String, usize>> = Vec::with_capacity(n);
@@ -556,7 +590,10 @@ pub fn rank_files(
 
     let mut raw = vec![0f64; n];
     for i in 0..n {
-        let mut score = 0.0;
+        // Accumulated separately: terms the user typed, and terms injected by
+        // intent-cluster expansion. See EXPANSION_TERM_WEIGHT.
+        let mut query_score = 0.0;
+        let mut expansion_score = 0.0;
         for term in &q {
             let fb = *body_tf[i].get(term).unwrap_or(&0) as f64;
             let fp = *path_tf[i].get(term).unwrap_or(&0) as f64;
@@ -576,9 +613,26 @@ pub fn rank_files(
                 0.0
             };
             let wtf = BM25F_W_BODY * ntf_b + BM25F_W_PATH * ntf_p;
-            score += idf * (wtf * (BM25_K1 + 1.0)) / (wtf + BM25_K1);
+            let contrib = idf * (wtf * (BM25_K1 + 1.0)) / (wtf + BM25_K1);
+            if base.contains(term) {
+                query_score += contrib;
+            } else {
+                expansion_score += contrib;
+            }
         }
-        raw[i] = score;
+        // Expansion terms are drawn from ONE cluster vocabulary, so they are
+        // strongly correlated: matching forty of them is not forty independent
+        // confirmations, it is one cluster firing. Summing them linearly let a
+        // document written in generic cluster vocabulary outscore the document
+        // that answered the question. Saturate the aggregate instead, so the
+        // whole expansion is worth at most `expansion_weight` of a query match
+        // no matter how many terms hit, while query terms keep summing freely.
+        let expansion_contrib = if expansion_score > 0.0 {
+            expansion_weight * expansion_score / (1.0 + expansion_score)
+        } else {
+            0.0
+        };
+        raw[i] = query_score + expansion_contrib;
     }
     let max_b = raw.iter().cloned().fold(0.0f64, f64::max);
     let denom = if max_b > 0.0 { max_b } else { 1.0 };
@@ -914,11 +968,12 @@ pub fn select(
         .iter()
         .map(|&(i, sc)| {
             let source = &file_sources[i];
-            let (sum, count) = feedback_by_source
-                .get(source)
-                .copied()
-                .unwrap_or((1.0, 1));
-            (sc * sum / count.max(1) as f64, source.clone(), file_texts[i].clone())
+            let (sum, count) = feedback_by_source.get(source).copied().unwrap_or((1.0, 1));
+            (
+                sc * sum / count.max(1) as f64,
+                source.clone(),
+                file_texts[i].clone(),
+            )
         })
         .collect();
     file_scores.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -1236,7 +1291,9 @@ mod tests {
         assert!(toks.contains(&"修复".to_string()), "got {toks:?}");
         assert!(toks.contains(&"模块".to_string()), "got {toks:?}");
         // ASCII inside a CJK run breaks the run: no bigram spans the boundary.
-        assert!(!toks.iter().any(|t| t.contains('a') && t.chars().any(is_cjk)));
+        assert!(!toks
+            .iter()
+            .any(|t| t.contains('a') && t.chars().any(is_cjk)));
     }
 
     #[test]
@@ -1278,5 +1335,136 @@ mod tests {
         let out = select(&frags, 200, "令牌轮换错误", &HashMap::new(), &[]);
         assert!(!out.is_empty(), "CJK select must not come back empty");
         assert_eq!(out[0].source, "auth.py");
+    }
+
+    // ── Query-expansion dilution ────────────────────────────────────────
+    //
+    // `expand_query` adds the whole vocabulary of every matched intent
+    // cluster. Before expansion terms were down-weighted, a query that fired
+    // a cluster was outvoted by its own expansion: on the
+    // benchmarks/sufficiency_baseline.py retry fixture the question expanded
+    // from 5 terms to 55, and the one file answering it fell to rank 23 of 66
+    // behind files matching only injected generic vocabulary.
+
+    fn retry_corpus() -> (Vec<String>, Vec<String>) {
+        let mut sources = vec!["retry.py".to_string()];
+        let mut texts = vec!["def retry_request(req, attempts=3):
+    for i in range(attempts):
+        if send(req).ok:
+            return True
+    raise TimeoutError('exhausted retries')"
+            .to_string()];
+        // Distractors written in the generic vocabulary the intent clusters
+        // inject (encode/decode/handler/database/converter/...).
+        for (i, verb) in ["encode", "decode", "convert", "consume", "adapt", "delete"]
+            .iter()
+            .enumerate()
+        {
+            sources.push(format!("{verb}_handler_{i}.py"));
+            texts.push(format!(
+                "def {verb}_event_{i}(source, options=None):
+    items = source.{verb}_all(options)
+    return database_writer.commit(items)"
+            ));
+        }
+        (sources, texts)
+    }
+
+    #[test]
+    fn query_terms_outrank_expansion_terms() {
+        let (sources, texts) = retry_corpus();
+        let ranked = rank_files(
+            &sources,
+            &texts,
+            "what happens when a request times out and needs retrying",
+            &HashMap::new(),
+        );
+        let top = ranked[0].0;
+        assert_eq!(
+            sources[top], "retry.py",
+            "the file answering the question must outrank files that only match              injected intent-cluster vocabulary; got order {:?}",
+            ranked.iter().map(|(i, _)| &sources[*i]).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn expansion_contribution_is_bounded_by_saturation() {
+        // The invariant, stated directly: however many expansion terms a
+        // document matches, they cannot add up to more than one real match.
+        // A document saturated with cluster vocabulary and zero query terms
+        // must not outrank one that actually contains a query term.
+        let sources = vec!["answer.py".to_string(), "vocabulary_soup.py".to_string()];
+        let texts = vec![
+            // One query term ("request"), nothing else.
+            "def handle(request):
+    return None"
+                .to_string(),
+            // Stuffed with cluster vocabulary, no query term at all.
+            "def encode_decode_convert(consumer, adapter):
+                 database.deserialize(event); handler.delete(dao); converter.encode(events)"
+                .to_string(),
+        ];
+        let ranked = rank_files(
+            &sources,
+            &texts,
+            "what happens when a request times out and needs retrying",
+            &HashMap::new(),
+        );
+        assert_eq!(
+            sources[ranked[0].0], "answer.py",
+            "a document matching one query term must outrank one matching only              expansion vocabulary; got {:?}",
+            ranked.iter().map(|(i, s)| (&sources[*i], s)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn expansion_still_ranks_when_no_query_term_matches() {
+        // Saturation must not make expansion useless -- that is the whole
+        // point of expanding. With no document matching a query term, the one
+        // matching cluster vocabulary must still win over an unrelated file.
+        let sources = vec!["unrelated.py".to_string(), "persistence.py".to_string()];
+        let texts = vec![
+            "def paint(canvas):
+    canvas.fill(color)"
+                .to_string(),
+            "def encode_event(dao):
+    return database.deserialize(dao)"
+                .to_string(),
+        ];
+        let ranked = rank_files(
+            &sources,
+            &texts,
+            "what happens when a request times out and needs retrying",
+            &HashMap::new(),
+        );
+        assert_eq!(
+            sources[ranked[0].0], "persistence.py",
+            "expansion must still discriminate when nothing matches the query              literally; got {:?}",
+            ranked.iter().map(|(i, _)| &sources[*i]).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn clean_expansion_is_unaffected() {
+        // auth/billing expand to query terms only (4 and 5 terms, all from the
+        // question), so the discount must not perturb them.
+        let sources = vec!["auth.py".to_string(), "orders.py".to_string()];
+        let texts = vec![
+            "def login(user, pw):
+    token = verify_password(user, pw)
+    return issue_session_token(token)"
+                .to_string(),
+            "def place_order(cart, user):
+    total = calculate_total(cart)
+    return submit_order(user, total)"
+                .to_string(),
+        ];
+        let ranked = rank_files(
+            &sources,
+            &texts,
+            "how is the session token issued after login",
+            &HashMap::new(),
+        );
+        assert_eq!(sources[ranked[0].0], "auth.py");
     }
 }
