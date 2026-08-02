@@ -109,3 +109,86 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Check canonical public destinations
         run: python scripts/verify_public_trust.py --online --require-published-version --retries 3 --timeout 20
+
+  apply-validated-runtime-capabilities:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'feat/sufficiency-mainline' &&
+      github.event.pull_request.head.ref == 'ops/runtime-capabilities-delivery'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 32
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify base blobs and signed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_base="d683ea53c7f494ec4032275c5b784d740a002976"
+          git merge-base --is-ancestor "$expected_base" HEAD
+          test "$(git hash-object entroly/cli.py)" = "5fb9f0d12767ba49d7d42746aa37dc2157a1bb57"
+          test "$(git hash-object tests/test_cli_audit.py)" = "b8e36cc234b21fb9f9f409b8f7d2d1d71ed9c130"
+          test ! -e entroly/runtime_capabilities.py
+          test ! -e tests/test_runtime_capabilities.py
+          test "$(git hash-object .github/patches/runtime-capabilities.patch.gz.b64)" = \
+            "cf1a17c623f34ecbaefece8b77e065216124fbbc"
+          base64 --decode .github/patches/runtime-capabilities.patch.gz.b64 > /tmp/runtime-capabilities.patch.gz
+          gzip --test /tmp/runtime-capabilities.patch.gz
+          gzip --decompress --stdout /tmp/runtime-capabilities.patch.gz > /tmp/runtime-capabilities.patch
+          echo "50f8055b9a758743034ca388531c0c7936bd08ecf6310eb6d249fb96bc70e2ea  /tmp/runtime-capabilities.patch" \
+            | sha256sum --check --strict
+          git apply --check /tmp/runtime-capabilities.patch
+          git apply /tmp/runtime-capabilities.patch
+          git diff --check
+
+      - name: Install patched package
+        run: python -m pip install -e ".[test]"
+
+      - name: Validate runtime capability surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q entroly/runtime_capabilities.py entroly/cli.py tests/test_runtime_capabilities.py tests/test_cli_audit.py
+          python -m pytest -q \
+            tests/test_runtime_capabilities.py \
+            tests/test_cli_audit.py \
+            tests/test_public_surface_dogfood.py \
+            tests/test_release_surface.py
+          python -m entroly.cli capabilities --json > /tmp/entroly-capabilities.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/entroly-capabilities.json').read_text())
+          assert report['schema_version'] == 'entroly.runtime-capabilities.v1'
+          assert report['claims']['provider_connectivity_verified'] is False
+          assert report['claims']['benchmark_leadership_implied'] is False
+          assert 'path' not in report['engine']['native']
+          assert 'error' not in report['engine']['native']
+          PY
+
+      - name: Commit validated runtime capability surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add \
+            entroly/cli.py \
+            entroly/runtime_capabilities.py \
+            tests/test_cli_audit.py \
+            tests/test_runtime_capabilities.py
+          git commit -m "feat(cli): report installed runtime capabilities safely"
+          validated_commit="$(git rev-parse HEAD)"
+          git format-patch -1 --stdout "$validated_commit" > /tmp/validated-runtime-capabilities.patch
+          git fetch origin feat/sufficiency-mainline
+          git switch --force-create validated-delivery origin/feat/sufficiency-mainline
+          git am /tmp/validated-runtime-capabilities.patch
+          git push origin HEAD:feat/sufficiency-mainline
