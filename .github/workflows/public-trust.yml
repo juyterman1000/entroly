@@ -128,13 +128,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent="472d67621db0c6d11b7a87bb47befb1b0539b894"
+          expected_parent="efd2edbb939b24e090184b2f045f578a865141f8"
           actual_parent="$(git rev-parse HEAD^)"
           test "$actual_parent" = "$expected_parent"
 
           base64 --decode .github/patches/leadership-slice.patch.gz.b64 \
             | gzip --decompress > /tmp/leadership-slice.patch
-          echo "7fc3f23b822ee62758aeb0b74526c5ff5b9a9955671a59f3d32bb35b39940d7c  /tmp/leadership-slice.patch" \
+          echo "d9ebbcabd504e3b3ff9959abfcd3711069357dbd39d7433ba26cc10a1535dd2f  /tmp/leadership-slice.patch" \
             | sha256sum --check --strict
           git apply --check /tmp/leadership-slice.patch
           git apply /tmp/leadership-slice.patch
