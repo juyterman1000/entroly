@@ -1,1 +1,2 @@
 python-hardening-delivery
+retry=1
