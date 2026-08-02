@@ -613,8 +613,41 @@ def _json_to_schema(
     return str(type(obj).__name__)
 
 
+# Runs that vary between repetitions of the SAME log event: counters, ids,
+# durations, addresses, hex, uuids. Collapsing them is what turns two hundred
+# distinct-looking lines back into the one event they actually are.
+_LOG_VARIABLE = re.compile(
+    r"""
+    [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}  # uuid
+  | 0x[0-9a-fA-F]+                                                # hex literal
+  | \b[0-9a-fA-F]{16,}\b                                          # long hex/hash
+  | \b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b                          # ipv4[:port]
+  | \b\d+(?:\.\d+)?(?:ms|s|us|ns|kb|mb|gb)\b                      # durations/sizes
+  | \b\d[\d,._]*\b                                                # any number run
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def _log_template(line: str) -> str:
+    """Reduce a log line to the event it is an instance of.
+
+    Deduplication keyed on the raw line cannot collapse repeats that carry a
+    counter, and that is precisely the shape the requirement names -- hundreds
+    of downstream repeats after one causal error. Measured on a 203-line
+    fixture, 200 lines reading "request failed: connection pool exhausted
+    (retry N)" were all distinct keys, so none collapsed.
+
+    Replacing variable runs with a placeholder is the standard log-templating
+    move (Drain, He et al. ICWS 2017; LogPai). It is deliberately lossy for the
+    KEY only -- the first occurrence is emitted verbatim, so the exact values of
+    the representative line survive.
+    """
+    return _LOG_VARIABLE.sub("*", line)
+
+
 def _compress_log_universal(text: str) -> str:
-    """Deduplicate log lines."""
+    """Collapse repeated log events, keeping the first occurrence verbatim."""
     lines = text.split("\n")
     seen: dict[str, int] = {}
     result = []
@@ -624,7 +657,7 @@ def _compress_log_universal(text: str) -> str:
         stripped = line.strip()
         if not stripped:
             continue
-        key = ts_strip.sub("", stripped)[:100]
+        key = _log_template(ts_strip.sub("", stripped))[:100]
         if key in seen:
             seen[key] += 1
         else:
@@ -633,7 +666,7 @@ def _compress_log_universal(text: str) -> str:
 
     final = []
     for line in result:
-        key = ts_strip.sub("", line.strip())[:100]
+        key = _log_template(ts_strip.sub("", line.strip()))[:100]
         count = seen.get(key, 1)
         if count > 1:
             final.append(f"{line}  [×{count}]")
