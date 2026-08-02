@@ -165,3 +165,38 @@ def test_openclaw_readme_targets_update_install_floor_only():
 
     assert text.count('pip install "entroly>=1.0.40"') == 2
     assert "Entroly 1.0.38 bridge v2 protocol" in text
+
+
+def test_bump_updates_shared_engine_versions_in_all_workspace_locks(tmp_path, monkeypatch):
+    lock_paths = [
+        "entroly-engine/Cargo.lock",
+        "entroly-core/Cargo.lock",
+        "entroly-wasm/Cargo.lock",
+    ]
+    for rel in lock_paths:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            '[[package]]\nname = "entroly-engine"\nversion = "1.0.71"\n',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(bump_version, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        bump_version,
+        "TARGETS",
+        [
+            (
+                rel,
+                r'(name\s*=\s*"entroly-engine"\s*\nversion\s*=\s*)"[^"]+"',
+                r'\g<1>"{v}"',
+            )
+            for rel in lock_paths
+        ],
+    )
+
+    assert bump_version.main(["bump_version.py", "1.0.72"]) == 0
+    for rel in lock_paths:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert 'version = "1.0.72"' in text
+        assert 'version = "1.0.71"' not in text
