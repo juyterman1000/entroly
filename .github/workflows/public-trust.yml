@@ -113,7 +113,8 @@ jobs:
   apply-validated-python-hardening:
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.pull_request.head.ref == 'feat/sufficiency-mainline'
+      github.event.pull_request.base.ref == 'feat/sufficiency-mainline' &&
+      github.event.pull_request.head.ref == 'ops/python-hardening-delivery'
     permissions:
       contents: write
     runs-on: ubuntu-latest
