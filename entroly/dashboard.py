@@ -782,6 +782,7 @@ let hasRequests=false;
 
 let heroSparkData=[];
 function renderHero(d){
+  window.__lastDash=d;  // let the price selector re-render immediately
   // Only provider-classified traffic can support an API cost claim.
   // stats.engine is internal efficiency telemetry — never priced as $$.
   const s=d.stats||{},eng=s.engine||s.savings||{},ss=s.session||{},dd=s.dedup||{};
@@ -823,10 +824,36 @@ function renderHero(d){
 
   // Headline = modeled cost avoidance from provider-bound token reduction.
   // Pre-traffic state shows what's ready, not a projected dollar amount.
-  const bigNum=realReqs>0?'$'+realCost.toFixed(2):fmt(frags);
-  const bigLabel=realReqs>0?'MODELED API COST AVOIDED':'FRAGMENTS READY';
-  const subtitle=realReqs>0
-    ?`<b>${fmt(realTokens)}</b> input tokens reduced across <b>${realReqs}</b> provider-bound request${realReqs!==1?'s':''}`
+  // Headline is a COUNT, not an estimate. `local_tokens_reduced` is context
+  // this engine compressed before it reached a model, via the SDK, MCP server
+  // or npm package (see value_tracker `_LOCAL_SOURCES`). Those tokens were
+  // genuinely never billed; what they lack is a price, because the caller made
+  // its own API request and never told us which model it used.
+  //
+  // Deliberately NOT summed with `unclassified_tokens_reduced`: that bucket is
+  // pre-v4 history which mixed proxy, SDK, MCP and npm, and the migration
+  // quarantined it because there is no honest way to reconstruct after the fact
+  // which of it reached a paid provider.
+  //
+  // Verified dollars stay on their own tile. A dollar figure is only shown
+  // against a model the user picked, with the rate printed next to it — an
+  // unattributed "$ saved" is the one number a technical buyer can shoot down,
+  // and it was already stripped from this dashboard once for conflating local
+  // dedup with real LLM savings.
+  const savedTokens=lt.local_tokens_reduced||0;
+  const PRICES=[['claude-sonnet',3.00],['claude-opus',15.00],['gpt-4o',2.50],['gemini-2.5-pro',1.25]];
+  const priceIdx=Math.min(PRICES.length-1,Math.max(0,Number(localStorage.getItem('entrolyPriceIdx')||0)));
+  const [priceName,priceRate]=PRICES[priceIdx];
+  const scenarioUsd=savedTokens/1e6*priceRate;
+  const bigNum=savedTokens>0?fmt(savedTokens):fmt(frags);
+  const bigLabel=savedTokens>0?'TOKENS SAVED BEFORE THEY REACHED A MODEL':'FRAGMENTS READY';
+  const pricePicker='<select id="heroPrice" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:inherit;font:inherit;padding:1px 4px;">'
+    +PRICES.map(function(p,i){return '<option'+(i===priceIdx?' selected':'')+'>'+p[0]+'</option>';}).join('')+'</select>';
+    +PRICES.map((p,i)=>'<option'+(i===priceIdx?' selected':'')+'>'+p[0]+'</option>').join('')+'</select>';
+  const subtitle=savedTokens>0
+    ?`≈ <b>$${scenarioUsd.toFixed(2)}</b> at ${pricePicker} input pricing ($${priceRate.toFixed(2)}/M) · via SDK, MCP and npm`
+      +(realReqs>0?` · <b>$${realCost.toFixed(2)}</b> verified through the proxy`
+                  :` · <span style="opacity:.7">route through <code>http://localhost:9377/v1</code> for provider-verified dollars</span>`)
     :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
@@ -854,6 +881,14 @@ function renderHero(d){
         <div class="hm-label">Requests</div>
         <div class="hm-sub">${dedupCount} fragments deduped</div></div>
     </div>`;
+
+  // Bound here rather than as an inline onchange: the handler needs single
+  // quotes, and the markup above is a single-quoted JS string.
+  var hp=document.getElementById('heroPrice');
+  if(hp) hp.onchange=function(){
+    localStorage.setItem('entrolyPriceIdx', this.selectedIndex);
+    renderHero(window.__lastDash||{});
+  };
 }
 
 function renderBA(d){
