@@ -128,7 +128,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent="24f006ab912d5360cbf793f626a6790b71e80f8d"
+          expected_parent="9046bfa005d10a69ddee3bdf947329dcf0c58a11"
           actual_parent="$(git rev-parse HEAD^)"
           test "$actual_parent" = "$expected_parent"
           test "$(git hash-object .github/patches/python-hardening.patch.gz.b64)" = \
