@@ -27,7 +27,12 @@ Quick Setup (Claude Code)::
 __version__ = "1.0.73"
 
 try:
-    from .sdk import compress, compress_messages, verify  # noqa: F401
+    from .sdk import (  # noqa: F401
+        compress,
+        compress_messages,
+        compress_with_receipt,
+        verify,
+    )
     from .sdk import detect_hallucination, optimize  # noqa: F401
     from .sdk import eicv_verify, eicv_suppress  # noqa: F401
     from .sdk import (  # noqa: F401
