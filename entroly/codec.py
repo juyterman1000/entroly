@@ -1,71 +1,39 @@
 """Common contract for content-specific compression codecs.
 
-Entroly already had several codecs -- JSON/XML/CSV/markdown/log/stacktrace in
-``universal_compress``, shell output in ``shell_codec`` -- each with its own
-signature, its own return shape, and no way for a caller to ask *what did you
-throw away, and can I get it back*. Both codecs measured in this module's tests
-elided real content and reported only a count:
-
-    "... (40 items)"                      39 records, unrecoverable
-    "connection pool exhausted  [x200]"   199 lines, unrecoverable
-
-That is the gap this closes. A codec now returns ``Representation`` objects
-carrying provenance and, when it drops anything, a ``RecoveryReference`` whose
-digest resolves to the exact original bytes.
-
-Design notes
-------------
-
-* **Codecs do not judge sufficiency.** A codec reports what it did
-  (``distortion_risk``, ``protected_evidence``, ``omitted_bytes``) and never
-  whether the result is enough for a task. That decision belongs to the
-  sufficiency controller, which sees the whole selection; a codec sees one item.
-  ``Representation`` deliberately has no ``sufficient`` field.
-
-* **Provenance composes, it is not reinvented.** ``entroly.source_span``
-  already defines a validated ``SourceSpan`` (canonical path, whole-source
-  digest, byte offsets, fragment digest) and ``entroly.context_receipts`` uses
-  the same vocabulary. A ``Representation`` carries an optional ``SourceSpan``
-  rather than a parallel scheme, so a representation of a file region is
-  verifiable by the machinery receipts already use.
-
-* **Recovery is content-addressed.** The reference is the SHA-256 of the
-  omitted bytes, so a caller can verify what came back is what was dropped
-  without trusting the store.
+A compressed representation can always point back to the complete original
+source. Recovery is delegated to Entroly's hardened scoped retrieval store,
+which already provides inter-process locking, bounded persistence, atomic
+updates and exact source spans.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Protocol, runtime_checkable
 
 from .source_span import SourceSpan
 
-CODEC_CONTRACT_VERSION = "1"
+CODEC_CONTRACT_VERSION = "2"
 
 
 def content_digest(data: bytes | str) -> str:
-    """`sha256:<hex>` over UTF-8 bytes. The recovery key and its own checksum."""
+    """Return ``sha256:<hex>`` over exact UTF-8 bytes."""
     raw = data.encode("utf-8") if isinstance(data, str) else data
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
 @dataclass(frozen=True)
 class RecoveryReference:
-    """A verifiable pointer to content a codec removed.
-
-    ``digest`` is the SHA-256 of the omitted bytes, so recovery is checkable
-    against the reference itself. A store that returns the wrong content is
-    caught by ``verify``, not trusted.
-    """
+    """Verifiable pointer to the complete original source bytes."""
 
     digest: str
     byte_length: int
     item_count: int = 0
     note: str = ""
+    receipt_id: str = ""
+    span_id: str = ""
 
     def verify(self, recovered: bytes | str) -> bool:
         return content_digest(recovered) == self.digest
@@ -76,17 +44,14 @@ class RecoveryReference:
             "byte_length": self.byte_length,
             "item_count": self.item_count,
             "note": self.note,
+            "receipt_id": self.receipt_id,
+            "span_id": self.span_id,
         }
 
 
 @dataclass(frozen=True)
 class Representation:
-    """One way a codec can present one context item.
-
-    A codec may offer several (full, elided, reference-only); choosing among
-    them is the caller's job, which is why cost and risk are reported rather
-    than resolved here.
-    """
+    """One candidate representation of one context item."""
 
     representation_id: str
     source_id: str
@@ -96,13 +61,7 @@ class Representation:
     codec: str
     codec_version: str
     source_sha256: str
-    # Substrings the codec asserts it preserved verbatim. Checkable: see
-    # `verify_protected_evidence`. This is a claim about THIS text, not a claim
-    # that the text answers anything.
     protected_evidence: tuple[str, ...] = ()
-    # Codec's own estimate of how much meaning it altered, 0.0 (verbatim) to
-    # 1.0. NOT a sufficiency judgement -- a lossless excerpt of the wrong
-    # material has distortion 0.0 and is useless.
     distortion_risk: float = 0.0
     recovery: RecoveryReference | None = None
     span: SourceSpan | None = None
@@ -110,7 +69,6 @@ class Representation:
     dependency_coverage: float | None = None
 
     def verify_protected_evidence(self) -> tuple[str, ...]:
-        """Protected substrings that are NOT actually present. Empty is good."""
         return tuple(e for e in self.protected_evidence if e not in self.text)
 
     def to_dict(self) -> dict[str, Any]:
@@ -142,8 +100,6 @@ class Representation:
 
 @dataclass
 class SupportDecision:
-    """Whether a codec claims an item, and how strongly."""
-
     supported: bool
     confidence: float = 0.0
     reason: str = ""
@@ -154,8 +110,6 @@ class SupportDecision:
 
 @runtime_checkable
 class ContextCodec(Protocol):
-    """Produce candidate representations of one item. Never judge sufficiency."""
-
     name: str
     version: str
 
@@ -166,77 +120,108 @@ class ContextCodec(Protocol):
     ) -> list[Representation]: ...
 
 
-# ── Recovery store ──────────────────────────────────────────────────────────
-
-
 class RecoveryStore:
-    """Content-addressed store for what codecs removed.
+    """Adapter over Entroly's hardened scoped compression-retrieval store.
 
-    In-memory by default; ``path`` adds a JSON sidecar so recovery survives the
-    process. Deliberately dumb -- the digest IS the key, so a corrupted or
-    swapped entry fails ``RecoveryReference.verify`` at read time.
+    Every compressed representation stores one exact span covering the complete
+    original source. This deliberately trades some local storage for a simple,
+    auditable invariant: ``recover(reference) == original_text``.
     """
 
-    def __init__(self, path: str | Path | None = None) -> None:
-        self._mem: dict[str, str] = {}
-        self._path = Path(path) if path else None
-        if self._path and self._path.exists():
-            try:
-                self._mem.update(json.loads(self._path.read_text(encoding="utf-8")))
-            except (OSError, ValueError):
-                pass
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        scope_id: str | None = None,
+        max_bytes: int | None = None,
+    ) -> None:
+        from .compression_retrieval_store_secure import CompressionRetrievalStore
 
-    def put(self, content: str, *, item_count: int = 0, note: str = "") -> RecoveryReference:
-        ref = RecoveryReference(
-            digest=content_digest(content),
-            byte_length=len(content.encode("utf-8")),
-            item_count=item_count,
-            note=note,
+        scope = scope_id or f"codec:{Path.cwd().resolve()}"
+        self._store = CompressionRetrievalStore(
+            path,
+            scope_id=scope,
+            require_scope=True,
+            max_bytes=max_bytes,
         )
-        self._mem[ref.digest] = content
-        self._flush()
+        self._by_digest: dict[str, RecoveryReference] = {}
+
+    def put(
+        self,
+        content: str,
+        *,
+        item_count: int = 0,
+        note: str = "",
+    ) -> RecoveryReference:
+        digest = content_digest(content)
+        line_count = max(1, len(content.splitlines(keepends=True)))
+        receipt = {
+            "codec_contract_version": CODEC_CONTRACT_VERSION,
+            "original_tokens": estimate_tokens(content),
+            "compressed_tokens": 0,
+            "omitted_spans": [
+                {
+                    "start_line": 1,
+                    "end_line": line_count,
+                    "reason": "codec_original_source",
+                }
+            ],
+        }
+        stored = self._store.put(
+            original_text=content,
+            compressed_text="",
+            receipt=receipt,
+            metadata={
+                "codec_recovery": True,
+                "codec_digest": digest,
+                "codec_byte_length": len(content.encode("utf-8")),
+                "codec_item_count": int(item_count),
+                "codec_note": note,
+            },
+        )
+        if len(stored.spans) != 1:
+            raise RuntimeError("codec recovery must persist exactly one source span")
+        span = stored.spans[0]
+        ref = RecoveryReference(
+            digest=digest,
+            byte_length=len(content.encode("utf-8")),
+            item_count=int(item_count),
+            note=note,
+            receipt_id=stored.receipt_id,
+            span_id=span.span_id,
+        )
+        self._by_digest[digest] = ref
         return ref
 
     def get(self, ref: RecoveryReference | str) -> str | None:
-        digest = ref.digest if isinstance(ref, RecoveryReference) else ref
-        return self._mem.get(digest)
+        resolved = ref
+        if isinstance(ref, str):
+            resolved = self._by_digest.get(ref)
+            if resolved is None:
+                return None
+        if not resolved.receipt_id or not resolved.span_id:
+            return None
+        span = self._store.get_span(resolved.receipt_id, resolved.span_id)
+        return None if span is None else span.content
 
     def recover(self, ref: RecoveryReference) -> str:
-        """Return the exact omitted content, or raise if it cannot be verified."""
         content = self.get(ref)
         if content is None:
             raise KeyError(f"no recovery entry for {ref.digest}")
         if not ref.verify(content):
             raise ValueError(
                 f"recovered content does not match {ref.digest} -- the store is "
-                f"corrupt or the entry was replaced"
+                "corrupt or the reference was forged"
             )
         return content
 
     def __len__(self) -> int:
-        return len(self._mem)
-
-    def _flush(self) -> None:
-        if not self._path:
-            return
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text(json.dumps(self._mem), encoding="utf-8")
-        except OSError:
-            pass
-
-
-# ── Registry ────────────────────────────────────────────────────────────────
+        return len(self._by_digest)
 
 
 @dataclass
 class CodecRegistry:
-    """Pick the codec that claims an item most confidently.
-
-    Unknown content must degrade to something safe rather than be rewritten by
-    a codec that does not understand it, so selection requires a positive
-    support decision and falls back to `None` (caller keeps the original).
-    """
+    """Select the positively supporting codec with highest confidence."""
 
     codecs: list[ContextCodec] = field(default_factory=list)
 
@@ -264,8 +249,9 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def verify_all(representations: Iterable[Representation]) -> dict[str, tuple[str, ...]]:
-    """Representation id -> protected substrings it claimed but does not contain."""
+def verify_all(
+    representations: Iterable[Representation],
+) -> dict[str, tuple[str, ...]]:
     broken = {}
     for rep in representations:
         missing = rep.verify_protected_evidence()
