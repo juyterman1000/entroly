@@ -3,14 +3,27 @@ from __future__ import annotations
 import pytest
 
 from entroly.sufficiency import (
+    CalibrationPolicy,
     Candidate,
     _query_terms,
     captured_mass,
     certify,
+    certify_selection,
     cutoff_ambiguity,
     query_coverage,
     shadow_price,
 )
+
+
+def _policy(**overrides) -> CalibrationPolicy:
+    values = {
+        "calibration_id": "heldout-repo-v1",
+        "residual_risk_limit": 0.02,
+        "minimum_query_coverage": 0.5,
+        "maximum_boundary_exposure": 0.0,
+    }
+    values.update(overrides)
+    return CalibrationPolicy(**values)
 
 
 def _needle() -> list[Candidate]:
@@ -55,9 +68,10 @@ def test_clean_selection_is_uncalibrated_by_default() -> None:
     assert result.verdict == "uncalibrated"
     assert not result.sufficient
     assert not result.calibrated
+    assert result.calibration_id is None
 
 
-def test_separately_calibrated_clean_selection_can_certify() -> None:
+def test_legacy_calibrated_boolean_cannot_authorize_sufficiency() -> None:
     result = certify(
         _needle(),
         query_term_idf={"passphrase": 6.0},
@@ -65,9 +79,32 @@ def test_separately_calibrated_clean_selection_can_certify() -> None:
         budget_exhausted=True,
         calibrated=True,
     )
+    assert result.verdict == "uncalibrated"
+    assert not result.sufficient
+    assert any("CalibrationPolicy" in reason for reason in result.reasons)
+
+
+def test_named_calibration_policy_can_certify_clean_selection() -> None:
+    result = certify(
+        _needle(),
+        query_term_idf={"passphrase": 6.0},
+        retained_terms=["passphrase"],
+        budget_exhausted=True,
+        calibration=_policy(),
+    )
     assert result.verdict == "sufficient"
     assert result.sufficient
     assert result.calibrated
+    assert result.calibration_id == "heldout-repo-v1"
+
+
+def test_calibration_policy_rejects_invalid_thresholds() -> None:
+    with pytest.raises(ValueError, match="calibration_id"):
+        _policy(calibration_id="")
+    with pytest.raises(ValueError, match="residual_risk_limit"):
+        _policy(residual_risk_limit=-1)
+    with pytest.raises(ValueError, match="minimum_query_coverage"):
+        _policy(minimum_query_coverage=1.1)
 
 
 def test_severed_answer_span_certifies_degraded() -> None:
@@ -76,11 +113,25 @@ def test_severed_answer_span_certifies_degraded() -> None:
         query_term_idf={"rhine": 4.0, "bridge": 5.2},
         retained_terms=["rhine"],
         budget_exhausted=True,
-        calibrated=True,
+        calibration=_policy(),
     )
     assert result.verdict == "degraded"
     assert not result.sufficient
     assert len(result.reasons) >= 2
+
+
+def test_unmeasured_boundary_cannot_pass_strict_policy() -> None:
+    result = certify(
+        _needle(),
+        query_term_idf={"passphrase": 6.0},
+        retained_terms=["passphrase"],
+        budget_exhausted=False,
+        boundary_exposure_measured=False,
+        calibration=_policy(require_boundary_measurement=True),
+    )
+    assert result.verdict == "degraded"
+    assert not result.sufficient
+    assert not result.boundary_exposure_measured
 
 
 def test_full_query_coverage_is_not_reported_as_a_shortfall() -> None:
@@ -90,7 +141,7 @@ def test_full_query_coverage_is_not_reported_as_a_shortfall() -> None:
         query_term_idf={"passphrase": 6.0},
         retained_terms=["passphrase"],
         budget_exhausted=True,
-        calibrated=True,
+        calibration=_policy(),
     )
     assert all("coverage" not in reason for reason in result.reasons)
 
@@ -126,22 +177,25 @@ def test_query_coverage_uses_weights_not_counts() -> None:
     assert query_coverage(["bridge"], weights) > query_coverage(["the"], weights) * 4
 
 
-def test_certificate_serialises_calibration_state() -> None:
+def test_certificate_serialises_calibration_and_measurement_state() -> None:
     payload = certify(
         _squad_failure(),
         query_term_idf={"rhine": 4.0},
         retained_terms=[],
         budget_exhausted=True,
+        boundary_exposure_measured=False,
     ).to_dict()
     for key in (
         "captured_mass",
         "shadow_price",
         "cutoff_ambiguity",
         "boundary_exposure",
+        "boundary_exposure_measured",
         "query_coverage",
         "corpus_gap",
         "verdict",
         "calibrated",
+        "calibration_id",
         "reasons",
     ):
         assert key in payload
@@ -169,7 +223,7 @@ def test_absent_term_does_not_reduce_attainable_coverage_but_forces_expansion():
         retained_terms={"session", "token", "login"},
         unattainable_terms={"issued"},
         budget_exhausted=False,
-        calibrated=True,
+        calibration=_policy(),
     )
     assert certificate.query_coverage == pytest.approx(1.0)
     assert certificate.verdict == "expand_required"
@@ -183,7 +237,7 @@ def test_any_corpus_gap_is_expand_required() -> None:
         retained_terms={"card"},
         unattainable_terms={"charged"},
         budget_exhausted=False,
-        calibrated=True,
+        calibration=_policy(),
     )
     assert certificate.corpus_gap == pytest.approx(0.5)
     assert certificate.verdict == "expand_required"
@@ -196,7 +250,7 @@ def test_unanswerable_selection_never_reports_sufficient() -> None:
         retained_terms=set(),
         unattainable_terms={"timeouterror", "retry"},
         budget_exhausted=False,
-        calibrated=True,
+        calibration=_policy(),
     )
     assert certificate.verdict == "expand_required"
     assert not certificate.sufficient
@@ -206,3 +260,8 @@ def test_question_words_are_not_treated_as_evidence() -> None:
     terms = set(_query_terms("how is the session token issued after login"))
     assert {"session", "token", "issued", "login"}.issubset(terms)
     assert {"how", "the", "after"}.isdisjoint(terms)
+
+
+def test_external_selection_adapter_refuses_invented_residual_state() -> None:
+    with pytest.raises(RuntimeError, match="cannot reconstruct optimizer residual state"):
+        certify_selection([], [], "query", token_budget=100)

@@ -1,6 +1,6 @@
 //! QCCR wasm-bindgen bindings — thin wrappers over the shared `entroly-qccr`
-//! crate. The tests in this module execute the same frozen parity fixture as
-//! the Python/PyO3 surface while compiling `entroly-qccr` with `regex-lite`.
+//! crate. Tests execute the same frozen parity fixture as the Python/PyO3
+//! surface while compiling `entroly-qccr` with `regex-lite`.
 
 use std::collections::HashMap;
 
@@ -46,10 +46,42 @@ pub fn qccr_select(
 mod parity_tests {
     use super::*;
     use serde_json::Value;
+    use std::collections::HashSet;
 
     fn fixture() -> Value {
         serde_json::from_str(include_str!("../../tests/fixtures/qccr_parity.json"))
             .expect("QCCR parity fixture must be valid JSON")
+    }
+
+    fn ordered_inputs(case: &Value) -> (Vec<String>, Vec<String>) {
+        let files = case["files"]
+            .as_object()
+            .expect("case files must be an object");
+        let sources: Vec<String> = case["source_order"]
+            .as_array()
+            .expect("source_order must be an array")
+            .iter()
+            .map(|value| value.as_str().expect("source must be text").to_string())
+            .collect();
+        let unique: HashSet<&str> = sources.iter().map(String::as_str).collect();
+        assert_eq!(unique.len(), sources.len(), "source_order contains duplicates");
+        assert_eq!(unique.len(), files.len(), "source_order/files length mismatch");
+        assert!(
+            unique.iter().all(|source| files.contains_key(*source)),
+            "source_order and files must name the same inputs"
+        );
+        let texts = sources
+            .iter()
+            .map(|source| {
+                files
+                    .get(source)
+                    .expect("source_order entry must exist in files")
+                    .as_str()
+                    .expect("file content must be text")
+                    .to_string()
+            })
+            .collect();
+        (sources, texts)
     }
 
     #[test]
@@ -57,7 +89,7 @@ mod parity_tests {
         let fixture = fixture();
         assert_eq!(
             fixture["schema_version"].as_str(),
-            Some("entroly.qccr-parity.v1")
+            Some("entroly.qccr-parity.v2")
         );
         let cases = fixture["cases"]
             .as_array()
@@ -65,26 +97,10 @@ mod parity_tests {
         assert!(!cases.is_empty(), "QCCR parity fixture must not be empty");
 
         for case in cases {
-            let files = case["files"]
-                .as_object()
-                .expect("case files must be an object");
-            let sources: Vec<String> = files.keys().cloned().collect();
-            let texts: Vec<String> = sources
-                .iter()
-                .map(|source| {
-                    files[source]
-                        .as_str()
-                        .expect("file content must be text")
-                        .to_string()
-                })
-                .collect();
+            let (sources, texts) = ordered_inputs(case);
             let query = case["query"].as_str().expect("query must be text");
-            let mut ranked = entroly_qccr::rank_files(
-                &sources,
-                &texts,
-                query,
-                &HashMap::new(),
-            );
+            let mut ranked =
+                entroly_qccr::rank_files(&sources, &texts, query, &HashMap::new());
             ranked.sort_by(|left, right| {
                 right
                     .1

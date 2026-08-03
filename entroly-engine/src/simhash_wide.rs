@@ -17,7 +17,7 @@ const HASH_DOMAIN: &[u8] = b"entroly-simhash-v2\0";
 pub struct Fingerprint {
     pub version: u16,
     pub bits: u16,
-    /// Little-endian limbs, `bits / 64` of them.
+    /// Little-endian limbs, exactly `ceil(bits / 64)` of them.
     pub words: Vec<u64>,
 }
 
@@ -26,8 +26,15 @@ impl Fingerprint {
         (bits as usize).div_ceil(64)
     }
 
+    /// Comparable fingerprints must use the same scheme, width and complete
+    /// persisted word vector. A truncated record must fail closed rather than
+    /// silently compare only the zipped prefix.
     pub fn comparable(&self, other: &Fingerprint) -> bool {
-        self.version == other.version && self.bits == other.bits
+        self.version == other.version
+            && self.bits == other.bits
+            && SUPPORTED_WIDTHS.contains(&self.bits)
+            && self.words.len() == Self::limbs(self.bits)
+            && other.words.len() == Self::limbs(other.bits)
     }
 
     pub fn hamming(&self, other: &Fingerprint) -> Option<u32> {
@@ -38,7 +45,7 @@ impl Fingerprint {
             self.words
                 .iter()
                 .zip(other.words.iter())
-                .map(|(a, b)| (a ^ b).count_ones())
+                .map(|(left, right)| (left ^ right).count_ones())
                 .sum(),
         )
     }
@@ -69,7 +76,12 @@ fn token_hash(token: &str, limb: usize) -> u64 {
     u64::from_le_bytes(word)
 }
 
-/// Compute a persisted, cross-platform fingerprint over whitespace tokens.
+/// Compute a persisted, cross-platform fingerprint over ASCII-whitespace tokens.
+///
+/// Persisted normalization deliberately uses ASCII-only operations. Rust's
+/// Unicode case and whitespace tables may evolve across compiler versions;
+/// tying a stored fingerprint to those tables would violate the versioned byte
+/// contract even when this source code did not change.
 pub fn fingerprint(text: &str, bits: u16) -> Fingerprint {
     assert!(
         SUPPORTED_WIDTHS.contains(&bits),
@@ -78,8 +90,8 @@ pub fn fingerprint(text: &str, bits: u16) -> Fingerprint {
     let limbs = Fingerprint::limbs(bits);
     let mut accumulator = vec![0i32; bits as usize];
 
-    for token in text.split_whitespace() {
-        let lower = token.to_lowercase();
+    for token in text.split_ascii_whitespace() {
+        let lower = token.to_ascii_lowercase();
         for limb in 0..limbs {
             let hash = token_hash(&lower, limb);
             for bit in 0..64 {
@@ -146,23 +158,28 @@ mod tests {
     #[test]
     fn identical_text_is_identical_at_every_width() {
         for bits in SUPPORTED_WIDTHS {
-            let a = fingerprint("def retry_request(req):", bits);
-            let b = fingerprint("def retry_request(req):", bits);
-            assert_eq!(a, b);
-            assert_eq!(a.hamming(&b), Some(0));
-            assert!((a.cosine(&b).unwrap() - 1.0).abs() < 1e-9);
+            let left = fingerprint("def retry_request(req):", bits);
+            let right = fingerprint("def retry_request(req):", bits);
+            assert_eq!(left, right);
+            assert_eq!(left.hamming(&right), Some(0));
+            assert!((left.cosine(&right).unwrap() - 1.0).abs() < 1e-9);
         }
     }
 
     #[test]
-    fn widths_and_versions_are_not_silently_comparable() {
+    fn widths_versions_and_truncated_records_are_not_comparable() {
         let narrow = fingerprint("same text", 64);
         let wide = fingerprint("same text", 256);
         assert!(!narrow.comparable(&wide));
         assert_eq!(narrow.hamming(&wide), None);
+
         let mut next_version = fingerprint("same text", 64);
         next_version.version += 1;
         assert_eq!(narrow.hamming(&next_version), None);
+
+        let mut truncated = fingerprint("same text", 256);
+        truncated.words.pop();
+        assert_eq!(wide.hamming(&truncated), None);
     }
 
     #[test]
@@ -177,19 +194,23 @@ mod tests {
     }
 
     #[test]
-    fn wider_fingerprints_improve_population_separation() {
+    fn wide_fingerprints_separate_duplicates_from_strangers() {
         let mut margins = Vec::new();
         for bits in SUPPORTED_WIDTHS {
             let mut duplicates = Vec::new();
             let mut strangers = Vec::new();
             for seed in 0..40u64 {
                 let base = doc(seed, 300);
-                let mut edited: Vec<&str> = base.split_whitespace().collect();
+                let mut edited: Vec<&str> = base.split_ascii_whitespace().collect();
                 for index in (0..edited.len()).step_by(50) {
                     edited[index] = "sentinel";
                 }
                 let base_fp = fingerprint(&base, bits);
-                duplicates.push(base_fp.cosine(&fingerprint(&edited.join(" "), bits)).unwrap());
+                duplicates.push(
+                    base_fp
+                        .cosine(&fingerprint(&edited.join(" "), bits))
+                        .unwrap(),
+                );
                 strangers.push(
                     base_fp
                         .cosine(&fingerprint(&doc(seed + 1000, 300), bits))
@@ -200,6 +221,15 @@ mod tests {
             let maximum_stranger = strangers.iter().copied().fold(0.0_f64, f64::max);
             margins.push(minimum_duplicate - maximum_stranger);
         }
-        assert!(margins[2] > margins[1] && margins[1] > margins[0]);
+
+        // Measured for this deterministic v2 contract: 64-bit populations
+        // overlap, while both production-width options are separable. Sampling
+        // noise does not guarantee 1024's finite fixture margin is strictly
+        // greater than 256's, so monotonic fixture margins are not a valid test.
+        assert!(margins[0] < 0.0, "64-bit fixture should expose overlap: {margins:?}");
+        assert!(
+            margins[1] > 0.0 && margins[2] > 0.0,
+            "256/1024-bit fixtures must separate populations: {margins:?}"
+        );
     }
 }

@@ -8,8 +8,16 @@ import pytest
 from entroly.codec import RecoveryStore
 from entroly.codecs_builtin import JsonCodec, LogCodec, ShellCodec
 from entroly.qccr import _lexical_term_set
-from entroly.sufficiency import Candidate, certify
+from entroly.qccr_hotfix import attach_sufficiency
+from entroly.sufficiency import CalibrationPolicy, Candidate, certify
 from entroly.universal_compress import _compress_log_universal, _json_to_schema
+
+
+def _policy() -> CalibrationPolicy:
+    return CalibrationPolicy(
+        calibration_id="heldout-test-v1",
+        residual_risk_limit=0.02,
+    )
 
 
 def test_json_recovery_is_complete_original_byte_stream(tmp_path):
@@ -24,9 +32,9 @@ def test_json_recovery_is_complete_original_byte_stream(tmp_path):
 
     path = tmp_path / "secure-recovery.json"
     store = RecoveryStore(path, scope_id="test-json")
-    representation = JsonCodec(store).representations(
-        original, source_id="payload.json"
-    )[-1]
+    representations = JsonCodec(store).representations(original, source_id="payload.json")
+    assert len(representations) == 2, "safe late evidence should remain compressible"
+    representation = representations[-1]
     assert representation.recovery is not None
     assert store.recover(representation.recovery) == original
 
@@ -42,6 +50,21 @@ def test_camel_case_load_bearing_key_after_twentieth_field_survives():
         json.dumps(payload, indent=2), source_id="late.json"
     )[-1]
     assert "req-after-twenty" in representation.text
+
+
+def test_later_array_record_load_bearing_values_survive():
+    payload = {
+        "items": [
+            {"sku": f"SKU-{index:04d}", "amountCents": 1000 + index}
+            for index in range(40)
+        ]
+    }
+    representation = JsonCodec().representations(
+        json.dumps(payload, indent=2), source_id="records.json"
+    )[-1]
+    assert representation.representation_id.endswith("elided")
+    assert "SKU-0039" in representation.text
+    assert "1039" in representation.text
 
 
 @pytest.mark.parametrize(
@@ -74,6 +97,19 @@ def test_retry_counters_still_collapse():
     output = _compress_log_universal(text)
     assert output.count("connection pool exhausted") == 1
     assert "[×20]" in output or "[x20]" in output
+
+
+def test_untimestamped_level_and_event_text_are_not_stripped():
+    text = "\n".join(
+        [
+            "ERROR billing failed retry 1",
+            "WARN cache delayed retry 2",
+        ]
+    )
+    output = _compress_log_universal(text)
+    assert "ERROR billing failed" in output
+    assert "WARN cache delayed" in output
+    assert "[×2]" not in output
 
 
 def test_event_identity_is_not_truncated_at_one_hundred_characters():
@@ -119,10 +155,22 @@ def test_uncalibrated_certificate_never_claims_sufficient():
     assert not observational.sufficient
     assert not observational.calibrated
 
-    held_out_validated = certify(
+    boolean_only = certify(
         candidates,
+        query_term_idf={"answer": 1.0},
+        retained_terms={"answer"},
         budget_exhausted=False,
         calibrated=True,
+    )
+    assert boolean_only.verdict == "uncalibrated"
+    assert not boolean_only.sufficient
+
+    held_out_validated = certify(
+        candidates,
+        query_term_idf={"answer": 1.0},
+        retained_terms={"answer"},
+        budget_exhausted=False,
+        calibration=_policy(),
     )
     assert held_out_validated.verdict == "sufficient"
     assert held_out_validated.sufficient
@@ -135,7 +183,7 @@ def test_any_observed_corpus_gap_is_fail_closed():
         retained_terms={"a"},
         unattainable_terms={"critical"},
         budget_exhausted=False,
-        calibrated=True,
+        calibration=_policy(),
     )
     assert certificate.verdict == "expand_required"
     assert not certificate.sufficient
@@ -152,3 +200,22 @@ def test_schema_helper_keeps_load_bearing_camel_case_key():
     payload["errorMessage"] = "the exact failure"
     schema = _json_to_schema(payload)
     assert schema["errorMessage"] == "the exact failure"
+
+
+def test_qccr_certificate_marks_boundary_measurement_unavailable():
+    selected = [{"source": "file:answer.py", "content": "return session token"}]
+    attach_sufficiency(
+        selected,
+        candidate_utility={"file:answer.py": 2.0, "file:other.py": 0.1},
+        chunk_utility={("file:answer.py", 0): 2.0},
+        by_file={
+            "file:answer.py": [{"content": "return session token"}],
+            "file:other.py": [{"content": "unrelated cache"}],
+        },
+        query="session token",
+        token_budget=100,
+    )
+    certificate = selected[0]["sufficiency"]
+    assert certificate["verdict"] == "uncalibrated"
+    assert certificate["boundary_exposure_measured"] is False
+    assert certificate["calibration_id"] is None

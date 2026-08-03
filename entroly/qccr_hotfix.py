@@ -19,92 +19,68 @@ def attach_sufficiency(
     query: str,
     token_budget: int,
 ) -> None:
-    """Attach a token-boundary-safe, explicitly uncalibrated certificate."""
+    """Attach an honest file-level, explicitly uncalibrated certificate.
+
+    QCCR exposes a utility for every candidate file, so captured mass and shadow
+    price are measurable here. It does not expose which original chunks or
+    sentences produced each synthetic selected fragment, so boundary exposure
+    is marked unmeasured rather than incorrectly reported as zero.
+    """
+
     if not candidate_utility:
         return
+    del chunk_utility
 
-    from .sufficiency import (
-        Candidate,
-        _idf,
-        _lexical_terms,
-        _query_terms,
-        certify,
-        stem,
-    )
+    from .sufficiency import Candidate, _idf, _lexical_terms, _query_terms, certify
 
-    chosen = {_logical_source(str(fragment.get("source") or "")) for fragment in selected}
+    chosen = {
+        _logical_source(str(fragment.get("source") or ""))
+        for fragment in selected
+        if isinstance(fragment, dict)
+    }
     terms = set(_query_terms(query))
-    term_forms = [(term, stem(term)) for term in sorted(terms)]
     candidates: list[Candidate] = []
     corpus: list[str] = []
     attainable_terms: set[str] = set()
 
-    def hits(text: str) -> tuple[str, ...]:
+    for source, utility in candidate_utility.items():
+        text = "\n".join(
+            str(fragment.get("content") or "")
+            for fragment in by_file.get(source, [])
+        )
+        corpus.append(text)
         lexical = _lexical_terms(text)
-        return tuple(
-            term
-            for term, reduced in term_forms
-            if term in lexical or (reduced is not None and reduced in lexical)
+        matched = tuple(sorted(term for term in terms if term in lexical))
+        attainable_terms.update(matched)
+        candidates.append(
+            Candidate(
+                unit_id=source,
+                utility=float(utility),
+                cost=max(1, len(text) // 4),
+                selected=source in chosen,
+                anchors=matched,
+                neighbourhood=(source,),
+            )
         )
 
-    if chunk_utility:
-        for key, utility in chunk_utility.items():
-            source, part = key
-            group = by_file.get(source, [])
-            if not isinstance(part, int) or part < 0 or part >= len(group):
-                continue
-            text = str(group[part].get("content") or "")
-            corpus.append(text)
-            matched = hits(text)
-            attainable_terms.update(matched)
-            neighbours = tuple(
-                f"{source}#{index}"
-                for index in range(max(0, part - 1), min(len(group), part + 2))
-            )
-            candidates.append(
-                Candidate(
-                    unit_id=f"{source}#{part}",
-                    utility=float(utility),
-                    cost=max(1, len(text) // 4),
-                    selected=source in chosen,
-                    anchors=matched,
-                    neighbourhood=neighbours,
-                )
-            )
-    else:
-        for source, utility in candidate_utility.items():
-            text = "\n".join(
-                str(fragment.get("content") or "")
-                for fragment in by_file.get(source, [])
-            )
-            corpus.append(text)
-            matched = hits(text)
-            attainable_terms.update(matched)
-            candidates.append(
-                Candidate(
-                    unit_id=source,
-                    utility=float(utility),
-                    cost=max(1, len(text) // 4),
-                    selected=source in chosen,
-                    anchors=matched,
-                    neighbourhood=(source,),
-                )
-            )
+    # Retention must be measured from what was actually delivered, not from the
+    # full source file merely because some synthetic output from that file won.
+    delivered_text = "\n".join(
+        str(fragment.get("content") or "")
+        for fragment in selected
+        if isinstance(fragment, dict)
+    )
+    delivered_lexical = _lexical_terms(delivered_text)
+    retained = {term for term in terms if term in delivered_lexical}
+    delivered_tokens = max(1, len(delivered_text) // 4) if delivered_text else 0
 
-    retained = {
-        term
-        for candidate in candidates
-        if candidate.selected
-        for term in candidate.anchors
-    }
-    delivered = sum(candidate.cost for candidate in candidates if candidate.selected)
     certificate = certify(
         candidates,
         query_term_idf={term: _idf(term, corpus) for term in terms},
         retained_terms=retained,
         unattainable_terms=terms - attainable_terms,
-        budget_exhausted=delivered >= token_budget * 0.95,
-        calibrated=False,
+        budget_exhausted=delivered_tokens >= token_budget * 0.95,
+        boundary_exposure_measured=False,
     )
     payload: dict[str, Any] = certificate.to_dict()
     for fragment in selected:
