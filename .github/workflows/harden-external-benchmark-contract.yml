@@ -1,0 +1,250 @@
+name: Harden external benchmark contract
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.pull_request.head.ref == 'bench/external-context-efficiency-suite'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 8
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Apply anchored contract hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('benchmarks/external_context_efficiency.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''_PROXY_OVERRIDE_KEYS = {
+              "ANTHROPIC_BASE_URL",
+              "AZURE_OPENAI_ENDPOINT",
+              "GOOGLE_GEMINI_BASE_URL",
+              "LITELLM_PROXY_API_BASE",
+              "LITELLM_PROXY_URL",
+              "OPENAI_API_BASE",
+              "OPENAI_BASE_URL",
+          }
+          '''
+          new = old + '''_BASELINE_ENV_REMOVE_KEYS = _PROXY_OVERRIDE_KEYS | {"PYTHONPATH"}
+          _TRANSPORT_PROXY_KEYS = {
+              "ALL_PROXY",
+              "HTTPS_PROXY",
+              "HTTP_PROXY",
+              "all_proxy",
+              "https_proxy",
+              "http_proxy",
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('proxy-key anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        if key.startswith("ENTROLY_") or (
+                      not preserve_provider_base_urls and key in _PROXY_OVERRIDE_KEYS
+                  ):
+          '''
+          new = '''        if key.startswith("ENTROLY_") or (
+                      not preserve_provider_base_urls and key in _BASELINE_ENV_REMOVE_KEYS
+                  ):
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('environment-sanitizer anchor changed')
+          text = text.replace(old, new, 1)
+
+          anchor = '''def _environment_digest(environment: Mapping[str, str]) -> str:
+          '''
+          helper = '''def _assert_no_treatment_transport_proxy(
+              environment: Mapping[str, str],
+          ) -> tuple[str, ...]:
+              """Reject proxy hooks that could silently route A_full through Entroly."""
+              from urllib.parse import urlparse
+
+              present: list[str] = []
+              for key in sorted(_TRANSPORT_PROXY_KEYS):
+                  value = environment.get(key)
+                  if not value:
+                      continue
+                  present.append(key)
+                  lowered = value.casefold()
+                  host = (urlparse(value).hostname or "").casefold()
+                  if "entroly" in lowered or host in {"localhost", "::1"} or host.startswith("127."):
+                      raise BenchmarkContractError(
+                          f"A_full refuses loopback or Entroly transport proxy variable {key}"
+                      )
+              return tuple(present)
+
+
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit('environment-digest anchor changed')
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old = '''    if any(key.startswith("ENTROLY_") for key in clean_environment):
+                  raise BenchmarkContractError("failed to remove every ENTROLY_* variable")
+
+              credential_names = sorted(
+          '''
+          new = '''    if any(key.startswith("ENTROLY_") for key in clean_environment):
+                  raise BenchmarkContractError("failed to remove every ENTROLY_* variable")
+              transport_proxy_names = _assert_no_treatment_transport_proxy(clean_environment)
+
+              credential_names = sorted(
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('baseline-manifest validation anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        "removed_environment_keys": list(removed),
+                  "provider_base_url_overrides_preserved": preserve_provider_base_urls,
+          '''
+          new = '''        "removed_environment_keys": list(removed),
+                  "transport_proxy_environment_names": list(transport_proxy_names),
+                  "provider_base_url_overrides_preserved": preserve_provider_base_urls,
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('manifest-proxy metadata anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        if all(bool(record.get("excluded")) for record in pair):
+                      excluded_pairs += 1
+          '''
+          new = '''        exclusion_states = {bool(record.get("excluded")) for record in pair}
+                  if len(exclusion_states) != 1:
+                      raise BenchmarkContractError(
+                          f"pair {pair_id}: exclusion must apply to every arm or none"
+                      )
+                  if True in exclusion_states:
+                      reasons = {str(record.get("exclusion_reason")) for record in pair}
+                      if len(reasons) != 1:
+                          raise BenchmarkContractError(
+                              f"pair {pair_id}: excluded arms require one pair-level reason"
+                          )
+                      excluded_pairs += 1
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('pair-exclusion anchor changed')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+
+          tests = Path('tests/test_external_context_efficiency.py')
+          test_text = tests.read_text(encoding='utf-8')
+          insert_before = '''def test_baseline_environment_removes_treatment_and_proxy_hooks() -> None:
+          '''
+          additions = '''def test_partial_pair_exclusion_is_rejected() -> None:
+              baseline = _record()
+              treatment = _record("C_entroly_conservative")
+              treatment["excluded"] = True
+              treatment["exclusion_reason"] = "treatment failed before scoring"
+              with pytest.raises(BenchmarkContractError, match="exclusion must apply"):
+                  validate_records([baseline, treatment])
+
+
+def test_excluded_pair_requires_one_shared_reason() -> None:
+              baseline = _record()
+              treatment = _record("C_entroly_conservative")
+              baseline["excluded"] = treatment["excluded"] = True
+              baseline["exclusion_reason"] = "reason one"
+              treatment["exclusion_reason"] = "reason two"
+              with pytest.raises(BenchmarkContractError, match="pair-level reason"):
+                  validate_records([baseline, treatment])
+
+
+def test_baseline_rejects_loopback_transport_proxy(tmp_path: Path) -> None:
+              tasks = tmp_path / "tasks.json"
+              tasks.write_text("[]", encoding="utf-8")
+              with pytest.raises(BenchmarkContractError, match="transport proxy"):
+                  build_baseline_manifest(
+                      benchmark="swe-bench-verified",
+                      benchmark_version="v1",
+                      run_id="proxy-leak",
+                      model_id="gpt-test",
+                      agent_id="agent-test",
+                      provider_id="provider-test",
+                      harness_commit="abcdef0",
+                      task_set=tasks,
+                      command=[sys.executable, "-V"],
+                      environment={
+                          "HTTPS_PROXY": "http://127.0.0.1:8000",
+                          "PATH": os.environ.get("PATH", ""),
+                      },
+                      module_names=(),
+                  )
+
+
+          '''
+          if test_text.count(insert_before) != 1:
+              raise SystemExit('test insertion anchor changed')
+          test_text = test_text.replace(insert_before, additions + insert_before, 1)
+          old_assert = '''        "OPENAI_API_KEY": "secret-value", "PATH": "/usr/bin"}
+          '''
+          new_assert = '''        "OPENAI_API_KEY": "secret-value", "PATH": "/usr/bin"}
+          '''
+          # Add PYTHONPATH to the fixture and expected removed set without changing
+          # the intentionally exact clean-environment assertion.
+          fixture = '''        "OPENAI_API_KEY": "secret-value",
+                  "PATH": "/usr/bin",
+          '''
+          replacement = '''        "OPENAI_API_KEY": "secret-value",
+                  "PATH": "/usr/bin",
+                  "PYTHONPATH": "/tmp/entroly-checkout",
+          '''
+          if test_text.count(fixture) != 1:
+              raise SystemExit('environment fixture anchor changed')
+          test_text = test_text.replace(fixture, replacement, 1)
+          removed = '''        "OPENAI_BASE_URL",
+              }
+          '''
+          removed_new = '''        "OPENAI_BASE_URL",
+                  "PYTHONPATH",
+              }
+          '''
+          if test_text.count(removed) != 1:
+              raise SystemExit('removed-key assertion anchor changed')
+          test_text = test_text.replace(removed, removed_new, 1)
+          tests.write_text(test_text, encoding='utf-8')
+
+          pyproject = Path('pyproject.toml')
+          project_text = pyproject.read_text(encoding='utf-8')
+          old = '''benchmark = [
+              "tiktoken>=0.9,<0.14",
+          ]
+          '''
+          new = '''benchmark = [
+              "tiktoken>=0.9,<0.14",
+              "jsonschema>=4.20,<5",
+          ]
+          '''
+          if project_text.count(old) != 1:
+              raise SystemExit('benchmark-extra anchor changed')
+          pyproject.write_text(project_text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python -m pip install -e '.[test,benchmark]'
+          python -m pytest -q tests/test_external_context_efficiency.py
+          python -m ruff check benchmarks/external_context_efficiency.py tests/test_external_context_efficiency.py
+          git diff --check
+      - name: Commit product and test changes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git rm .github/workflows/harden-external-benchmark-contract.yml
+          git add benchmarks/external_context_efficiency.py tests/test_external_context_efficiency.py pyproject.toml
+          git diff --cached --check
+          git commit -m 'fix(bench): make raw-arm isolation fail closed'
+          git push origin HEAD:bench/external-context-efficiency-suite
