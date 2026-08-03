@@ -1,0 +1,81 @@
+name: Apply neutral display repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-neutral-display-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/main-evidence-release-1.0.74'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install focused dependencies
+        run: python -m pip install -e ".[test]" "tiktoken==0.9.0"
+      - name: Repair canonical public display labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('benchmarks/compression_frontier.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              'f"| {1 / float(ratio):.0f}x | {system.title()} | "': (
+                  'f"| {1 / float(ratio):.0f}x | "\n'
+                  '                f"{\'External Baseline A\' if system == \'headroom\' else system.title()} | "'
+              ),
+              'f"| {system.title()} | {value[\'exact_match\']:.1%} | "': (
+                  'f"| {\'External Baseline A\' if system == \'headroom\' else system.title()} | "\n'
+                  '                f"{value[\'exact_match\']:.1%} | "'
+              ),
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one renderer match: {old}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+          python -m benchmarks.compression_frontier render \
+            benchmarks/results/compression_frontier.json \
+            --output benchmarks/results/compression_frontier.md \
+            --svg docs/assets/compression_frontier.svg
+          if grep -q 'Headroom' benchmarks/results/compression_frontier.md; then
+            echo 'public Markdown still contains competitor label' >&2
+            exit 1
+          fi
+      - name: Run focused regressions
+        run: |
+          python -m pytest -q \
+            tests/test_compression_frontier.py \
+            tests/test_recovery_resilience.py \
+            tests/test_release_version_sync.py \
+            tests/test_release_surface.py \
+            tests/test_release_surface_consistency.py
+          python -m benchmarks.compression_frontier verify \
+            benchmarks/results/compression_frontier.json
+          python scripts/verify_public_trust.py
+      - name: Remove staging workflow and commit repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-neutral-display-repair.yml
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(evidence): keep generated public labels neutral"
+          git push origin HEAD:${{ github.head_ref }}
