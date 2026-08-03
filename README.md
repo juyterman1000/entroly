@@ -74,29 +74,6 @@ entroly value           # print the evidence-classified lifetime value receipt
 entroly value --json    # the same receipt for CI, audits, or a dashboard
 ```
 
-### Compress one file, then get it back
-
-The shortest demonstration of the contract. `compress` prints what it kept and
-the digest that recovers the original; `recover` returns the exact bytes — in a
-different process — verifying both the digest and the byte length before it
-hands anything over.
-
-```bash
-entroly compress response.json --out small.json
-#   response.json  via json codec
-#   963 -> 651 tokens (32.4% smaller)
-#   Kept: "req_8f3a21bc", "PAYMENT_DECLINED", 449900, ...
-#   Recover the original:
-#     entroly recover sha256:0b957c79...
-
-entroly recover sha256:0b957c79... --out restored.json
-diff response.json restored.json     # identical, byte for byte
-```
-
-`entroly compress --json` emits the same receipt as machine-readable JSON. If no
-codec understands the file, it is returned unchanged rather than handed to a
-compressor that would guess at it.
-
 The value receipt deliberately keeps unlike evidence separate:
 
 | Evidence class | What Entroly reports | Dollar claim |
@@ -148,6 +125,29 @@ python -m benchmarks.receipt_fragment_fidelity sdk-verify benchmarks/results/rec
 ## What it does
 
 Entroly is a local Context OS for AI agents. It unifies the full lifecycle of the information surrounding a model request. That makes it the observability, governance, and decision layer around context—not another general-purpose chat runtime.
+
+### Compress one file, then get it back
+
+The shortest demonstration of the contract. `compress` prints what it kept and
+the digest that recovers the original; `recover` returns the exact bytes — in a
+different process — verifying both the digest and the byte length before it
+hands anything over.
+
+```bash
+entroly compress response.json --out small.json
+#   response.json  via json codec
+#   963 -> 651 tokens (32.4% smaller)
+#   Kept: "req_8f3a21bc", "PAYMENT_DECLINED", 449900, ...
+#   Recover the original:
+#     entroly recover sha256:0b957c79...
+
+entroly recover sha256:0b957c79... --out restored.json
+diff response.json restored.json     # identical, byte for byte
+```
+
+`entroly compress --json` emits the same receipt as machine-readable JSON. If no
+codec understands the file, it is returned unchanged rather than handed to a
+compressor that would guess at it.
 
 **Frontier models reason. OpenClaw and Hermes run agents. Entroly manages what those agents read, remember, trust, recover, spend, and learn.** The same boundary applies to Claude Code and Codex: Entroly augments the agent you already use instead of becoming another chat client.
 
