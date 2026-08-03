@@ -35,7 +35,11 @@ def test_write_config_is_atomic_and_preserves_unrelated_entries(tmp_path: Path) 
 
 def test_repeated_wrap_keeps_every_backup_instead_of_overwriting(tmp_path: Path) -> None:
     config = tmp_path / "mcp.json"
-    config.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+    # write_bytes, not write_text: on Windows the text path translates "\n" to
+    # "\r\n", so this fixture wrote CRLF and then asserted LF on the next line.
+    # The backup was byte-faithful all along -- it copies the file with rb/xb --
+    # so the test failed on every Windows machine while passing in Linux CI.
+    config.write_bytes(b'{"mcpServers": {}}\n')
 
     cli._write_config(_tool(config))
     first_result = config.read_bytes()
