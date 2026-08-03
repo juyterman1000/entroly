@@ -289,7 +289,13 @@ def _attach_sufficiency(
         return
     del chunk_utility
 
-    from .sufficiency import Candidate, _idf, _lexical_terms, _query_terms, certify
+    from .sufficiency import (
+        Candidate,
+        _idf_map,
+        _lexical_terms,
+        _query_terms,
+        certify,
+    )
 
     chosen = {
         _logical_source(str(fragment.get("source") or ""))
@@ -334,7 +340,7 @@ def _attach_sufficiency(
 
     certificate = certify(
         candidates,
-        query_term_idf={term: _idf(term, corpus) for term in terms},
+        query_term_idf=_idf_map(terms, corpus),
         retained_terms=retained,
         unattainable_terms=terms - attainable_terms,
         budget_exhausted=delivered_tokens >= token_budget * 0.95,

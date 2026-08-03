@@ -224,6 +224,46 @@ class RecoveryStore:
         span = self._store.get_span(resolved.receipt_id, resolved.span_id)
         return None if span is None else span.content
 
+    def reference_for(self, digest: str) -> RecoveryReference | None:
+        """Rebuild a reference from a digest alone, across processes.
+
+        `_by_digest` only holds what THIS process stored, so a fresh
+        `entroly recover` would find nothing. The persisted receipt carries the
+        digest, byte length and span id, which is everything the reference
+        needs, so it is reconstructed from disk.
+
+        Returns None when no receipt carries the digest; the caller reports a
+        miss rather than recovering something adjacent.
+        """
+        known = self._by_digest.get(digest)
+        if known is not None:
+            return known
+        for receipt in self._store.list_receipts():
+            metadata = receipt.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            if metadata.get("codec_digest") != digest:
+                continue
+            # list_receipts() reports span_count but not the spans themselves,
+            # so the span id comes from the full record.
+            receipt_id = str(receipt.get("receipt_id") or "")
+            stored = self._store.get_receipt(receipt_id) if receipt_id else None
+            spans = getattr(stored, "spans", None) or []
+            span_id = str(getattr(spans[0], "span_id", "")) if spans else ""
+            try:
+                byte_length = int(metadata.get("codec_byte_length") or 0)
+            except (TypeError, ValueError):
+                byte_length = 0
+            return RecoveryReference(
+                digest=digest,
+                byte_length=byte_length,
+                item_count=int(metadata.get("codec_item_count") or 0),
+                note=str(metadata.get("codec_note") or ""),
+                receipt_id=receipt_id,
+                span_id=span_id,
+            )
+        return None
+
     def recover(self, ref: RecoveryReference) -> str:
         content = self.get(ref)
         if content is None:

@@ -74,6 +74,29 @@ entroly value           # print the evidence-classified lifetime value receipt
 entroly value --json    # the same receipt for CI, audits, or a dashboard
 ```
 
+### Compress one file, then get it back
+
+The shortest demonstration of the contract. `compress` prints what it kept and
+the digest that recovers the original; `recover` returns the exact bytes — in a
+different process — verifying both the digest and the byte length before it
+hands anything over.
+
+```bash
+entroly compress response.json --out small.json
+#   response.json  via json codec
+#   963 -> 651 tokens (32.4% smaller)
+#   Kept: "req_8f3a21bc", "PAYMENT_DECLINED", 449900, ...
+#   Recover the original:
+#     entroly recover sha256:0b957c79...
+
+entroly recover sha256:0b957c79... --out restored.json
+diff response.json restored.json     # identical, byte for byte
+```
+
+`entroly compress --json` emits the same receipt as machine-readable JSON. If no
+codec understands the file, it is returned unchanged rather than handed to a
+compressor that would guess at it.
+
 The value receipt deliberately keeps unlike evidence separate:
 
 | Evidence class | What Entroly reports | Dollar claim |

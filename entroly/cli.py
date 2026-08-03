@@ -3106,6 +3106,12 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
 
 
+# `compress` and `recover` live in their own module: they are the only
+# commands that touch the codec recovery contract, and keeping them apart
+# keeps that contract reviewable on its own.
+from .cli_recover import cmd_compress, cmd_recover  # noqa: E402
+
+
 def cmd_simulate(args):
     """entroly simulate -- local no-LLM savings estimate for this repo."""
     report = _run_local_simulation(args)
@@ -6062,6 +6068,44 @@ def main():
     )
     _add_local_measure_args(simulate_parser)
 
+    compress_parser = subparsers.add_parser(
+        "compress",
+        help="Compress a file with the content codecs and print a receipt",
+    )
+    compress_parser.add_argument("path", help="File to compress")
+    compress_parser.add_argument(
+        "--out", dest="out_path", default=None,
+        help="Write the compressed form here (default: stdout is not used; "
+             "only the receipt is printed)",
+    )
+    compress_parser.add_argument(
+        "--store", dest="store_path", default=None,
+        help="Recovery store path (default: <ENTROLY_DIR>/recovery.json)",
+    )
+    compress_parser.add_argument(
+        "--query", default="", help="Query to condition document selection on",
+    )
+    compress_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit the receipt as JSON",
+    )
+
+    recover_parser = subparsers.add_parser(
+        "recover",
+        help="Recover the exact original bytes for a recovery digest",
+    )
+    recover_parser.add_argument(
+        "digest", help="Recovery digest from a compress receipt (sha256:...)",
+    )
+    recover_parser.add_argument(
+        "--store", dest="store_path", default=None,
+        help="Recovery store path (default: <ENTROLY_DIR>/recovery.json)",
+    )
+    recover_parser.add_argument(
+        "--out", dest="out_path", default=None,
+        help="Write recovered bytes here (default: stdout)",
+    )
+
     perf_parser = subparsers.add_parser(
         "perf",
         help="Measure local optimizer savings and latency without calling an LLM",
@@ -6596,6 +6640,8 @@ def main():
         "proxy": cmd_proxy,
         "benchmark": cmd_benchmark,
         "simulate": cmd_simulate,
+        "compress": cmd_compress,
+        "recover": cmd_recover,
         "perf": cmd_perf,
         "ingest": cmd_ingest,
         "select": cmd_select,

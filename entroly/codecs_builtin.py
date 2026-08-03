@@ -54,6 +54,40 @@ def _unique(values: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
 
 
+
+# Nesting beyond this is declined without parsing. Real payloads are shallow --
+# JSON APIs rarely exceed ~20 levels -- while a nesting bomb is thousands deep.
+# Catching RecursionError was not enough: where it fires depends on the
+# platform's stack, so the guard passed on Windows and the same input still
+# recursed on Linux CI. Counting brackets is deterministic everywhere.
+_JSON_MAX_NESTING = 200
+
+
+def _exceeds_nesting_limit(text: str, limit: int = _JSON_MAX_NESTING) -> bool:
+    """True when bracket nesting exceeds `limit`, ignoring brackets in strings."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif ch in "]}":
+            depth -= 1
+    return False
+
+
 class JsonCodec:
     name = "json"
     version = "4"
@@ -85,6 +119,10 @@ class JsonCodec:
         stripped = text.strip()
         if not stripped.startswith(("{", "[")):
             return SupportDecision(False, 0.0, "does not open as a JSON value")
+        if _exceeds_nesting_limit(stripped):
+            return SupportDecision(
+                False, 0.0, f"nesting deeper than {_JSON_MAX_NESTING} levels"
+            )
         try:
             self._parse(stripped)
         except ValueError:
