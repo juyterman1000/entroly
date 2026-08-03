@@ -114,21 +114,32 @@ def test_wholesale_sidecar_replacement_does_not_yield_false_recovery(tmp_path):
 # ── Compression bombs and resource bounds ───────────────────────────────────
 
 
-def test_deeply_nested_json_does_not_recurse_without_bound():
-    depth = 4000
+@pytest.mark.parametrize("depth", [1000, 4000, 20000])
+def test_deeply_nested_json_is_declined_deterministically(depth):
+    """A nesting bomb must be refused by structure, not by stack luck.
+
+    Catching RecursionError was not enough: where it fires depends on the
+    platform's stack, so the guard held on Windows and the same input still
+    recursed on Linux CI. The depth is now counted before parsing, which is
+    the same answer everywhere.
+    """
     payload = "[" * depth + "1" + "]" * depth
     codec = JsonCodec()
-    try:
-        decision = codec.supports(payload)
-    except RecursionError:
-        pytest.fail("supports() recursed on nested input before any parsing decision")
-    if not decision:
-        return
-    try:
-        reps = codec.representations(payload, source_id="bomb")
-    except RecursionError:
-        pytest.fail("representations() recursed without bound on nested JSON")
-    assert reps
+    decision = codec.supports(payload)
+    assert not decision, f"depth {depth} should be declined without parsing"
+    assert "nesting" in decision.reason
+
+
+def test_realistic_nesting_is_still_accepted():
+    """The guard must not reject ordinary payloads."""
+    nested = json.dumps({"a": [{"b": [{"c": [1, 2, 3]}]}]})
+    assert JsonCodec().supports(nested)
+
+
+def test_brackets_inside_strings_do_not_count_as_nesting():
+    from entroly.codecs_builtin import _exceeds_nesting_limit
+
+    assert not _exceeds_nesting_limit(json.dumps({"s": "[" * 500}))
 
 
 def test_hugely_repetitive_log_stays_bounded():
