@@ -28,24 +28,18 @@ jobs:
           from pathlib import Path
           from textwrap import dedent
 
-          def block(value: str) -> str:
-              return dedent(value).lstrip("\n")
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} changed: expected 1 occurrence, found {count}')
+              return text.replace(old, new, 1)
 
           path = Path('benchmarks/external_context_efficiency.py')
           text = path.read_text(encoding='utf-8')
 
-          old = block('''
-              _PROXY_OVERRIDE_KEYS = {
-                  "ANTHROPIC_BASE_URL",
-                  "AZURE_OPENAI_ENDPOINT",
-                  "GOOGLE_GEMINI_BASE_URL",
-                  "LITELLM_PROXY_API_BASE",
-                  "LITELLM_PROXY_URL",
-                  "OPENAI_API_BASE",
-                  "OPENAI_BASE_URL",
+          proxy_end = '}\n_SECRET_NAME_RE = re.compile('
+          proxy_addition = dedent('''\
               }
-          ''')
-          new = old + block('''
               _BASELINE_ENV_REMOVE_KEYS = _PROXY_OVERRIDE_KEYS | {"PYTHONPATH"}
               _TRANSPORT_PROXY_KEYS = {
                   "ALL_PROXY",
@@ -55,27 +49,18 @@ jobs:
                   "https_proxy",
                   "http_proxy",
               }
+              _SECRET_NAME_RE = re.compile(
           ''')
-          if text.count(old) != 1:
-              raise SystemExit('proxy-key anchor changed')
-          text = text.replace(old, new, 1)
+          text = replace_once(text, proxy_end, proxy_addition, 'proxy-key boundary')
+          text = replace_once(
+              text,
+              'key in _PROXY_OVERRIDE_KEYS',
+              'key in _BASELINE_ENV_REMOVE_KEYS',
+              'environment sanitizer',
+          )
 
-          old = block('''
-                      if key.startswith("ENTROLY_") or (
-                          not preserve_provider_base_urls and key in _PROXY_OVERRIDE_KEYS
-                      ):
-          ''')
-          new = block('''
-                      if key.startswith("ENTROLY_") or (
-                          not preserve_provider_base_urls and key in _BASELINE_ENV_REMOVE_KEYS
-                      ):
-          ''')
-          if text.count(old) != 1:
-              raise SystemExit('environment-sanitizer anchor changed')
-          text = text.replace(old, new, 1)
-
-          anchor = 'def _environment_digest(environment: Mapping[str, str]) -> str:\n'
-          helper = block('''
+          helper_anchor = 'def _environment_digest(environment: Mapping[str, str]) -> str:\n'
+          helper = dedent('''\
               def _assert_no_treatment_transport_proxy(
                   environment: Mapping[str, str],
               ) -> tuple[str, ...]:
@@ -103,61 +88,69 @@ jobs:
 
 
           ''')
-          if text.count(anchor) != 1:
-              raise SystemExit('environment-digest anchor changed')
-          text = text.replace(anchor, helper + anchor, 1)
+          text = replace_once(
+              text,
+              helper_anchor,
+              helper + helper_anchor,
+              'transport-proxy helper',
+          )
 
-          old = block('''
-                  if any(key.startswith("ENTROLY_") for key in clean_environment):
-                      raise BenchmarkContractError("failed to remove every ENTROLY_* variable")
+          manifest_anchor = (
+              '        raise BenchmarkContractError('
+              '"failed to remove every ENTROLY_* variable")\n\n'
+              '    credential_names = sorted(\n'
+          )
+          manifest_replacement = (
+              '        raise BenchmarkContractError('
+              '"failed to remove every ENTROLY_* variable")\n'
+              '    transport_proxy_names = '
+              '_assert_no_treatment_transport_proxy(clean_environment)\n\n'
+              '    credential_names = sorted(\n'
+          )
+          text = replace_once(
+              text,
+              manifest_anchor,
+              manifest_replacement,
+              'baseline manifest isolation',
+          )
+          text = replace_once(
+              text,
+              '        "removed_environment_keys": list(removed),\n',
+              '        "removed_environment_keys": list(removed),\n'
+              '        "transport_proxy_environment_names": '
+              'list(transport_proxy_names),\n',
+              'manifest proxy metadata',
+          )
 
-                  credential_names = sorted(
-          ''')
-          new = block('''
-                  if any(key.startswith("ENTROLY_") for key in clean_environment):
-                      raise BenchmarkContractError("failed to remove every ENTROLY_* variable")
-                  transport_proxy_names = _assert_no_treatment_transport_proxy(clean_environment)
-
-                  credential_names = sorted(
-          ''')
-          if text.count(old) != 1:
-              raise SystemExit('baseline-manifest validation anchor changed')
-          text = text.replace(old, new, 1)
-
-          old = block('''
-                      "removed_environment_keys": list(removed),
-                      "provider_base_url_overrides_preserved": preserve_provider_base_urls,
-          ''')
-          new = block('''
-                      "removed_environment_keys": list(removed),
-                      "transport_proxy_environment_names": list(transport_proxy_names),
-                      "provider_base_url_overrides_preserved": preserve_provider_base_urls,
-          ''')
-          if text.count(old) != 1:
-              raise SystemExit('manifest-proxy metadata anchor changed')
-          text = text.replace(old, new, 1)
-
-          old = block('''
-                  if all(bool(record.get("excluded")) for record in pair):
-                      excluded_pairs += 1
-          ''')
-          new = block('''
-                  exclusion_states = {bool(record.get("excluded")) for record in pair}
-                  if len(exclusion_states) != 1:
-                      raise BenchmarkContractError(
-                          f"pair {pair_id}: exclusion must apply to every arm or none"
-                      )
-                  if True in exclusion_states:
-                      reasons = {str(record.get("exclusion_reason")) for record in pair}
-                      if len(reasons) != 1:
+          exclusion_anchor = (
+              '        if all(bool(record.get("excluded")) for record in pair):\n'
+              '            excluded_pairs += 1\n'
+          )
+          exclusion_replacement = dedent('''\
+                      exclusion_states = {bool(record.get("excluded")) for record in pair}
+                      if len(exclusion_states) != 1:
                           raise BenchmarkContractError(
-                              f"pair {pair_id}: excluded arms require one pair-level reason"
+                              f"pair {pair_id}: exclusion must apply to every arm or none"
                           )
-                      excluded_pairs += 1
+                      if True in exclusion_states:
+                          reasons = {str(record.get("exclusion_reason")) for record in pair}
+                          if len(reasons) != 1:
+                              raise BenchmarkContractError(
+                                  f"pair {pair_id}: excluded arms require one pair-level reason"
+                              )
+                          excluded_pairs += 1
           ''')
-          if text.count(old) != 1:
-              raise SystemExit('pair-exclusion anchor changed')
-          text = text.replace(old, new, 1)
+          # dedent removes all common indentation; restore the function-body level.
+          exclusion_replacement = ''.join(
+              ('        ' + line if line.strip() else line)
+              for line in exclusion_replacement.splitlines(keepends=True)
+          )
+          text = replace_once(
+              text,
+              exclusion_anchor,
+              exclusion_replacement,
+              'pair exclusion',
+          )
           path.write_text(text, encoding='utf-8')
 
           tests = Path('tests/test_external_context_efficiency.py')
@@ -165,7 +158,7 @@ jobs:
           insert_before = (
               'def test_baseline_environment_removes_treatment_and_proxy_hooks() -> None:\n'
           )
-          additions = block('''
+          additions = dedent('''\
               def test_partial_pair_exclusion_is_rejected() -> None:
                   baseline = _record()
                   treatment = _record("C_entroly_conservative")
@@ -208,53 +201,48 @@ jobs:
 
 
           ''')
-          if test_text.count(insert_before) != 1:
-              raise SystemExit('test insertion anchor changed')
-          test_text = test_text.replace(insert_before, additions + insert_before, 1)
-
-          fixture = block('''
-                      "OPENAI_API_KEY": "secret-value",
-                      "PATH": "/usr/bin",
-          ''')
-          replacement = block('''
-                      "OPENAI_API_KEY": "secret-value",
-                      "PATH": "/usr/bin",
-                      "PYTHONPATH": "/tmp/entroly-checkout",
-          ''')
-          if test_text.count(fixture) != 1:
-              raise SystemExit('environment fixture anchor changed')
-          test_text = test_text.replace(fixture, replacement, 1)
-
-          removed = block('''
-                      "OPENAI_BASE_URL",
-                  }
-          ''')
-          removed_new = block('''
-                      "OPENAI_BASE_URL",
-                      "PYTHONPATH",
-                  }
-          ''')
-          if test_text.count(removed) != 1:
-              raise SystemExit('removed-key assertion anchor changed')
-          test_text = test_text.replace(removed, removed_new, 1)
+          test_text = replace_once(
+              test_text,
+              insert_before,
+              additions + insert_before,
+              'test insertion',
+          )
+          test_text = replace_once(
+              test_text,
+              '        "PATH": "/usr/bin",\n',
+              '        "PATH": "/usr/bin",\n'
+              '        "PYTHONPATH": "/tmp/entroly-checkout",\n',
+              'PYTHONPATH fixture',
+          )
+          expected_removed = (
+              '        "OPENAI_BASE_URL",\n'
+              '    }\n'
+              '    assert clean == '
+          )
+          expected_removed_new = (
+              '        "OPENAI_BASE_URL",\n'
+              '        "PYTHONPATH",\n'
+              '    }\n'
+              '    assert clean == '
+          )
+          test_text = replace_once(
+              test_text,
+              expected_removed,
+              expected_removed_new,
+              'removed-key assertion',
+          )
           tests.write_text(test_text, encoding='utf-8')
 
           pyproject = Path('pyproject.toml')
           project_text = pyproject.read_text(encoding='utf-8')
-          old = block('''
-              benchmark = [
-                  "tiktoken>=0.9,<0.14",
-              ]
-          ''')
-          new = block('''
-              benchmark = [
-                  "tiktoken>=0.9,<0.14",
-                  "jsonschema>=4.20,<5",
-              ]
-          ''')
-          if project_text.count(old) != 1:
-              raise SystemExit('benchmark-extra anchor changed')
-          pyproject.write_text(project_text.replace(old, new, 1), encoding='utf-8')
+          project_text = replace_once(
+              project_text,
+              'benchmark = [\n    "tiktoken>=0.9,<0.14",\n]\n',
+              'benchmark = [\n    "tiktoken>=0.9,<0.14",\n'
+              '    "jsonschema>=4.20,<5",\n]\n',
+              'benchmark extra',
+          )
+          pyproject.write_text(project_text, encoding='utf-8')
           PY
           python -m pip install -e '.[test,benchmark]' ruff
           python -m pytest -q tests/test_external_context_efficiency.py
