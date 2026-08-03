@@ -202,6 +202,6 @@ def test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy() -
     ]
     assert headroom_errors == []
     assert "**66/66** exact entries for Entroly" in evidence
-    assert "**66/66** for the Headroom 0.31.0 comparison" in evidence
+    assert "**66/66** for the External Baseline A 0.31.0 comparison" in evidence
     assert "parity, not leadership" in evidence
     assert "does not establish universal recovery superiority" in evidence

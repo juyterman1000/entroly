@@ -16179,7 +16179,7 @@
   },
   "superiority_gate": {
     "passed": true,
-    "label": "Entroly wins every matched token-cap quality gate against Headroom",
+    "label": "Entroly wins every matched token-cap quality gate against External Baseline A",
     "claim_scope": "SQuAD v2 long-context answer retention at 2x/4x/8x requested compression, with a local short-answer guard",
     "reasons": [],
     "not_claimed": [
@@ -16194,8 +16194,8 @@
     "Requested target ratios are controls, not assumed outcomes; achieved ratios are primary.",
     "The local Ollama answer guard is not evidence about hosted frontier models.",
     "No retrieval or post-compression recovery is invoked in this active-context benchmark.",
-    "Headroom is measured through its released public compress() API and declared config.",
+    "External Baseline A is measured through its released public compress() API and declared config.",
     "Entroly is a 1.0.59 source candidate; publication must follow before claiming released-package parity."
   ],
-  "payload_sha256": "671819dc599215aeee234c0525e1a5ab03f7879732cbca314a9863fcbbefe5df"
+  "payload_sha256": "7425e182eb909325660146bf64214965188d323540d6d25b074790fc4a2896a2"
 }
