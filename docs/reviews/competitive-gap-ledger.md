@@ -69,17 +69,17 @@ D  documented by the vendor, NOT executed here
 
 | dimension | Entroly | Headroom | LeanCTX | evidence / gap |
 |---|---|---|---|---|
-| Exact recovery | **M — `recover(ref) == original byte stream`, digest AND length verified** | ? | D — "proves what they save" | Entroly's strongest verified position. |
+| Exact recovery | **M — `recover(ref) == original byte stream`, digest AND length verified, and reachable from a terminal via `entroly compress` / `entroly recover` across a process boundary** | ? | D — "proves what they save" | Entroly's strongest verified position. |
 | Content-addressed verification | M — forged digest and forged byte_length both rejected | ? | ? | |
 | Receipts / provenance | M — byte offsets + source/fragment SHA-256 | ? | D — "context proofs" | |
 | Fail-closed sufficiency | T — named `CalibrationPolicy`; uncalibrated never claims sufficient | ? | ? | No competitor documents an abstention contract. |
-| Threat model | **-** | ? | ? | **Gap: not written.** |
+| Threat model | partial — `tests/test_codec_abuse.py` covers forged receipts, corrupt stores, compression bombs, malformed input, cross-scope isolation (30 tests). Found and fixed a DoS and a crash | ? | ? | **Gap: prompt injection, path traversal, proxy auth and concurrent-writer durability are NOT covered.** |
 
 ## Pillar 5 — Performance, caching, scalability
 
 | dimension | Entroly | Headroom | LeanCTX | evidence / gap |
 |---|---|---|---|---|
-| Per-stage latency | partial — certificate build measured 13.8→6.2 ms | ? | ? | **Gap: no per-stage profile.** |
+| Per-stage latency | M — `benchmarks/stage_latency.py`, p50/p95 for digest/route/represent/prune/store/recover at tiny/10KB/100KB/1MB | ? | ? | Found routing a 1MB payload cost more than compressing it; fixed. Log codec at 665 ms/MB is measured and unaddressed. |
 | Cache-aware accounting | **-** | D — cache mode | ? | **Gap: Entroly reports gross, not net-of-cache savings.** |
 | Scale workloads | **-** | ? | D — monorepo | **Gap: no 1 MB / monorepo / concurrency runs.** |
 
@@ -98,7 +98,7 @@ D  documented by the vendor, NOT executed here
 |---|---|---|---|---|
 | One-command install | M | D | D | |
 | `doctor` | present | D | D | |
-| First-run value | **regression** — pure-Python reports 0% on a small project | ? | D — "zero config" | **Known gap, recorded in `test_simulate_small_project.py`.** |
+| First-run value | mixed — `entroly compress` -> receipt -> `entroly recover` is a complete journey with 9 tests across a process boundary; but pure-Python still reports 0% on a small project | ? | D — "zero config" | **Known gap, recorded in `test_simulate_small_project.py`.** |
 | Observability | partial | D — stats MCP tool | ? | **Gap: no Prometheus/OTel.** |
 | Enterprise controls | **-** | ? | ? | **Gap: no SBOM, signing, RBAC, air-gapped mode.** |
 
