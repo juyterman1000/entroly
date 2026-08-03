@@ -18,10 +18,23 @@ from .source_span import SourceSpan
 CODEC_CONTRACT_VERSION = "2"
 
 
+def _to_bytes(data: bytes | str) -> bytes:
+    """Encode text for hashing and length checks, tolerating lone surrogates.
+
+    Text arriving from a model, a tool or a file on disk is not guaranteed to
+    be well-formed Unicode. Plain ``.encode("utf-8")`` raises on an unpaired
+    surrogate, which turns hostile input into a crash on the trust-critical
+    path -- the digest is computed before any codec decision is made.
+
+    ``surrogatepass`` round-trips such input exactly, so the byte-exact
+    recovery contract still holds for content that is not valid UTF-8.
+    """
+    return data.encode("utf-8", "surrogatepass") if isinstance(data, str) else data
+
+
 def content_digest(data: bytes | str) -> str:
-    """Return ``sha256:<hex>`` over exact UTF-8 bytes."""
-    raw = data.encode("utf-8") if isinstance(data, str) else data
-    return "sha256:" + hashlib.sha256(raw).hexdigest()
+    """Return ``sha256:<hex>`` over exact bytes. See `_to_bytes`."""
+    return "sha256:" + hashlib.sha256(_to_bytes(data)).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -42,7 +55,7 @@ class RecoveryReference:
         could return content of any size and still verify, so the field was
         decoration rather than a check. Both are compared here.
         """
-        raw = recovered.encode("utf-8") if isinstance(recovered, str) else recovered
+        raw = _to_bytes(recovered)
         return len(raw) == self.byte_length and content_digest(raw) == self.digest
 
     def to_dict(self) -> dict[str, Any]:
@@ -191,7 +204,7 @@ class RecoveryStore:
         span = stored.spans[0]
         ref = RecoveryReference(
             digest=digest,
-            byte_length=len(content.encode("utf-8")),
+            byte_length=len(_to_bytes(content)),
             item_count=int(item_count),
             note=note,
             receipt_id=stored.receipt_id,
