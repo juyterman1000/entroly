@@ -71,6 +71,11 @@ class JsonCodec:
             json.loads(stripped)
         except ValueError:
             return SupportDecision(False, 0.0, "opens like JSON but does not parse")
+        except RecursionError:
+            # A nesting bomb -- thousands of levels of "[" exhaust the parser's
+            # stack. Declining hands the original back untouched, which is the
+            # safe outcome; attempting it takes the process down.
+            return SupportDecision(False, 0.0, "nesting too deep to parse safely")
         return SupportDecision(True, 0.9, "parses as JSON")
 
     def representations(
@@ -88,7 +93,10 @@ class JsonCodec:
         reps = [full]
         try:
             data = json.loads(text)
-        except ValueError:
+        except (ValueError, RecursionError):
+            # Unparseable or too deeply nested: offer only the verbatim
+            # representation rather than a partial rewrite of content this
+            # codec could not read.
             return reps
 
         elided = json.dumps(
