@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://entroly.dev/schemas/external-context-efficiency-v1.json",
+  "title": "Entroly External Context Efficiency Task Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "benchmark",
+    "benchmark_version",
+    "benchmark_task_id",
+    "arm",
+    "run_id",
+    "pair_id",
+    "model_id",
+    "agent_id",
+    "provider_id",
+    "harness_commit",
+    "environment_digest",
+    "task_input_digest",
+    "treatment_manifest_digest",
+    "entroly_commit",
+    "entroly_config_digest",
+    "seed",
+    "success",
+    "benchmark_score",
+    "provider_input_tokens",
+    "provider_output_tokens",
+    "cached_input_tokens",
+    "context_tokens_before",
+    "context_tokens_after",
+    "recovery_tokens",
+    "recovery_calls",
+    "wall_time_ms",
+    "compression_time_ms",
+    "peak_rss_bytes",
+    "context_overflow",
+    "sufficiency_verdict",
+    "calibration_policy_id",
+    "required_evidence_present",
+    "false_sufficient",
+    "error_class",
+    "excluded",
+    "exclusion_reason",
+    "artifact_digests"
+  ],
+  "properties": {
+    "protocol_version": {"const": "external-context-efficiency-v1"},
+    "benchmark": {
+      "enum": [
+        "swe-bench-verified",
+        "terminal-bench-2",
+        "deepsearchqa",
+        "tau2-telecom",
+        "livecodebench-pro",
+        "healthbench-hard",
+        "mmmu-pro",
+        "charxiv",
+        "zerobench",
+        "screenspot-pro",
+        "gpqa-diamond",
+        "humanitys-last-exam",
+        "arc-agi-2",
+        "medxpertqa-text"
+      ]
+    },
+    "benchmark_version": {"type": "string", "minLength": 1, "maxLength": 200},
+    "benchmark_task_id": {"type": "string", "minLength": 1, "maxLength": 500},
+    "arm": {
+      "enum": [
+        "A_full",
+        "B_native",
+        "C_entroly_conservative",
+        "D_entroly_balanced",
+        "E_entroly_no_recovery"
+      ]
+    },
+    "run_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "pair_id": {"type": "string", "minLength": 1, "maxLength": 500},
+    "model_id": {"type": "string", "minLength": 1, "maxLength": 300},
+    "agent_id": {"type": "string", "minLength": 1, "maxLength": 300},
+    "provider_id": {"type": ["string", "null"], "maxLength": 200},
+    "harness_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{7,64}$"},
+    "environment_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "task_input_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "treatment_manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "entroly_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{7,64}$"},
+    "entroly_config_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "seed": {"type": ["integer", "null"]},
+    "success": {"type": "boolean"},
+    "benchmark_score": {"type": ["number", "null"]},
+    "provider_input_tokens": {"type": ["integer", "null"], "minimum": 0},
+    "provider_output_tokens": {"type": ["integer", "null"], "minimum": 0},
+    "cached_input_tokens": {"type": ["integer", "null"], "minimum": 0},
+    "context_tokens_before": {"type": ["integer", "null"], "minimum": 0},
+    "context_tokens_after": {"type": ["integer", "null"], "minimum": 0},
+    "recovery_tokens": {"type": ["integer", "null"], "minimum": 0},
+    "recovery_calls": {"type": ["integer", "null"], "minimum": 0},
+    "wall_time_ms": {"type": "number", "minimum": 0},
+    "compression_time_ms": {"type": ["number", "null"], "minimum": 0},
+    "peak_rss_bytes": {"type": ["integer", "null"], "minimum": 0},
+    "context_overflow": {"type": "boolean"},
+    "sufficiency_verdict": {
+      "type": ["string", "null"],
+      "enum": [
+        null,
+        "collecting",
+        "no_detected_gap_uncalibrated",
+        "sufficient_calibrated",
+        "degraded",
+        "expand_required",
+        "insufficient",
+        "preserve_original"
+      ]
+    },
+    "calibration_policy_id": {"type": ["string", "null"], "maxLength": 200},
+    "required_evidence_present": {"type": ["boolean", "null"]},
+    "false_sufficient": {"type": ["boolean", "null"]},
+    "error_class": {"type": ["string", "null"], "maxLength": 200},
+    "excluded": {"type": "boolean"},
+    "exclusion_reason": {"type": ["string", "null"], "maxLength": 1000},
+    "artifact_digests": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"arm": {"const": "A_full"}}, "required": ["arm"]},
+      "then": {
+        "properties": {
+          "entroly_commit": {"const": null},
+          "entroly_config_digest": {"const": null},
+          "recovery_tokens": {"enum": [0, null]},
+          "recovery_calls": {"enum": [0, null]},
+          "compression_time_ms": {"enum": [0, null]},
+          "sufficiency_verdict": {"const": null},
+          "calibration_policy_id": {"const": null},
+          "false_sufficient": {"const": null}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "arm": {
+            "enum": [
+              "C_entroly_conservative",
+              "D_entroly_balanced",
+              "E_entroly_no_recovery"
+            ]
+          }
+        },
+        "required": ["arm"]
+      },
+      "then": {
+        "properties": {
+          "entroly_commit": {"type": "string"},
+          "entroly_config_digest": {"type": "string"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"excluded": {"const": true}}, "required": ["excluded"]},
+      "then": {
+        "properties": {"exclusion_reason": {"type": "string", "minLength": 1}}
+      },
+      "else": {"properties": {"exclusion_reason": {"const": null}}}
+    },
+    {
+      "if": {"properties": {"false_sufficient": {"const": true}}, "required": ["false_sufficient"]},
+      "then": {
+        "properties": {"required_evidence_present": {"const": false}},
+        "required": ["sufficiency_verdict", "required_evidence_present"]
+      }
+    }
+  ]
+}
