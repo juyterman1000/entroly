@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import ssl
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 from urllib.parse import urlunsplit
 
 import httpx
+from starlette.responses import StreamingResponse
 
 from . import proxy as _proxy
 from . import proxy_transport_safe as _safe
@@ -17,6 +20,7 @@ _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _STALE_ENTITY_HEADERS = frozenset(
     {"content-encoding", "content-length", "transfer-encoding"}
 )
+_STREAM_LIMIT_HEADER = "X-Entroly-Stream-Limit"
 
 
 class BoundedAsyncClient(_safe.BoundedAsyncClient):
@@ -116,6 +120,73 @@ class BoundedAsyncClient(_safe.BoundedAsyncClient):
         )
 
 
+async def _close_iterator(iterator: object) -> None:
+    closer = getattr(iterator, "aclose", None)
+    if closer is None:
+        return
+    try:
+        result = closer()
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:
+        _safe.logger.debug(
+            "Upstream stream close failed: %s", type(exc).__name__
+        )
+
+
+def _stream_limit_event(limit: int) -> bytes:
+    payload = json.dumps(
+        {
+            "error": "upstream_response_too_large",
+            "detail": "Upstream stream exceeded the configured proxy safety limit.",
+            "max_bytes": limit,
+            "source": "entroly_proxy",
+        },
+        separators=(",", ":"),
+    )
+    return f"data: {payload}\n\ndata: [DONE]\n\n".encode("utf-8")
+
+
+async def _bounded_stream_iterator(
+    iterator: AsyncIterator[bytes | str],
+    limit: int,
+    *,
+    on_overflow: Callable[[], None] | None = None,
+) -> AsyncIterator[bytes | str]:
+    """Forward a stream incrementally and close its upstream on every exit path."""
+    forwarded = 0
+    try:
+        async for chunk in iterator:
+            encoded = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+            if forwarded + len(encoded) > limit:
+                if on_overflow is not None:
+                    on_overflow()
+                yield _stream_limit_event(limit)
+                return
+            forwarded += len(encoded)
+            yield chunk
+    finally:
+        await _close_iterator(iterator)
+
+
+async def _bounded_stream_response(self, *args, **kwargs):
+    response = await _ORIGINAL_STREAM_RESPONSE(self, *args, **kwargs)
+    if not isinstance(response, StreamingResponse):
+        return response
+    limit = _safe._bounded_positive_int(
+        "ENTROLY_PROXY_MAX_STREAM_BYTES",
+        _safe._DEFAULT_MAX_RESPONSE_BYTES,
+    )
+    iterator = response.body_iterator
+    response.body_iterator = _bounded_stream_iterator(
+        iterator,
+        limit,
+        on_overflow=self._breaker.record_failure,
+    )
+    response.headers[_STREAM_LIMIT_HEADER] = str(limit)
+    return response
+
+
 def _safe_http_client_kwargs() -> dict[str, Any]:
     """Return safe HTTPX kwargs with independent CA and proxy trust controls.
 
@@ -187,16 +258,27 @@ def _safe_build_headers(
 
 
 # Replace the first-pass class/functions. The startup and resolver wrappers in
-# proxy_transport_safe resolve these module globals at call time.
+# proxy_transport_safe resolve these module globals at call time. Preserve the
+# underlying implementation across an explicit module reload so the wrapper
+# cannot recursively wrap itself.
+_current_stream_response = _proxy.PromptCompilerProxy._stream_response
+_ORIGINAL_STREAM_RESPONSE = getattr(
+    _current_stream_response,
+    "__entroly_unbounded_stream__",
+    _current_stream_response,
+)
+_bounded_stream_response.__entroly_unbounded_stream__ = _ORIGINAL_STREAM_RESPONSE
 _safe.BoundedAsyncClient = BoundedAsyncClient
 _safe._safe_http_client_kwargs = _safe_http_client_kwargs
 _safe._safe_target_url = _safe_target_url
 _safe._safe_build_headers = _safe_build_headers
 _proxy._http_client_kwargs = _safe_http_client_kwargs
 _proxy.PromptCompilerProxy._build_headers = _safe_build_headers
+_proxy.PromptCompilerProxy._stream_response = _bounded_stream_response
 
 __all__ = [
     "BoundedAsyncClient",
+    "_bounded_stream_iterator",
     "_safe_build_headers",
     "_safe_http_client_kwargs",
     "_safe_target_url",
