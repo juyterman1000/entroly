@@ -60,6 +60,24 @@ class JsonCodec:
 
     def __init__(self, store: RecoveryStore | None = None) -> None:
         self.store = store if store is not None else RecoveryStore()
+        # One-slot parse cache. supports() must parse to answer honestly --
+        # "opens like JSON" is not the same as "is JSON" -- and the registry
+        # then calls representations() on the same instance with the same text,
+        # so parsing twice was pure waste. Measured at 1MB: routing cost
+        # 106.8 ms p50 against 44.0 ms to do the actual work.
+        #
+        # Keyed by the exact string, so a different payload never reuses it.
+        self._parsed_key: str | None = None
+        self._parsed_value: Any = None
+
+    def _parse(self, stripped: str) -> Any:
+        """Parse once per distinct payload; raises as json.loads would."""
+        if self._parsed_key is not None and self._parsed_key == stripped:
+            return self._parsed_value
+        value = json.loads(stripped)
+        self._parsed_key = stripped
+        self._parsed_value = value
+        return value
 
     def supports(self, text: str, content_type: str = "") -> SupportDecision:
         if content_type == "json":
@@ -68,7 +86,7 @@ class JsonCodec:
         if not stripped.startswith(("{", "[")):
             return SupportDecision(False, 0.0, "does not open as a JSON value")
         try:
-            json.loads(stripped)
+            self._parse(stripped)
         except ValueError:
             return SupportDecision(False, 0.0, "opens like JSON but does not parse")
         except RecursionError:
@@ -92,7 +110,7 @@ class JsonCodec:
         )
         reps = [full]
         try:
-            data = json.loads(text)
+            data = self._parse(text.strip())
         except (ValueError, RecursionError):
             # Unparseable or too deeply nested: offer only the verbatim
             # representation rather than a partial rewrite of content this
