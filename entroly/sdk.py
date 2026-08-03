@@ -1515,3 +1515,77 @@ def eicv_suppress(
     suppressor = EICVSuppressor(profile=profile, mode=mode)
     result = suppressor.suppress(context, output)
     return result.as_dict()
+
+
+# ── Recoverable compression: the codec contract as a public surface ────────
+
+
+def compress_with_receipt(
+    content: str,
+    *,
+    source_id: str = "",
+    content_type: str | None = None,
+    query: str = "",
+    store: Any | None = None,
+) -> Any:
+    """Compress `content` and return the Representation, not just the text.
+
+    `compress()` returns a string, which is all most callers want and all they
+    can act on. It cannot answer the two questions that make compression safe
+    to deploy: what was preserved, and how do I get back what was dropped.
+
+    This routes through the codec registry and hands back the chosen
+    ``Representation``, carrying:
+
+      * ``text``                 the compressed content
+      * ``protected_evidence``   substrings the codec asserts it kept, and
+                                 ``verify_protected_evidence()`` checks
+      * ``recovery``             a reference whose digest AND byte length must
+                                 both match the original bytes
+      * ``source_sha256``        provenance of the input
+      * ``distortion_risk``      how much was altered, 0.0 for verbatim
+
+    When no codec claims the content, the original is returned verbatim as a
+    lossless representation rather than being handed to a compressor that does
+    not understand it.
+
+    Pass ``store`` (an ``entroly.codec.RecoveryStore``) to control where the
+    omitted bytes live and to recover them later; without one a per-call store
+    is used and the recovery reference will not resolve after the call.
+
+        >>> from entroly.codec import RecoveryStore
+        >>> store = RecoveryStore()
+        >>> rep = compress_with_receipt(payload, source_id="resp.json", store=store)
+        >>> store.recover(rep.recovery) == payload
+        True
+    """
+    from .codec import RecoveryStore
+    from .codecs_builtin import default_registry
+
+    if store is None:
+        store = RecoveryStore()
+    registry = default_registry(store)
+    reps = registry.representations(
+        content,
+        source_id=source_id,
+        content_type=content_type or "",
+        query=query,
+    )
+    if not reps:
+        from .codec import Representation, content_digest, estimate_tokens
+
+        return Representation(
+            representation_id=f"{source_id}#none",
+            source_id=source_id,
+            content_type=content_type or "unknown",
+            text=content,
+            token_cost=estimate_tokens(content),
+            codec="passthrough",
+            codec_version="1",
+            source_sha256=content_digest(content),
+            distortion_risk=0.0,
+        )
+    # Smallest representation that is still lossless-or-recoverable. A codec
+    # that dropped content without a recovery reference is not offered here.
+    usable = [r for r in reps if r.recovery is not None or r.text == content]
+    return min(usable or reps, key=lambda r: r.token_cost)
