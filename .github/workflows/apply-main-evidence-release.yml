@@ -1,0 +1,108 @@
+name: Apply evidence and release repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-main-evidence-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/main-evidence-release-1.0.74'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: python -m pip install -e ".[test]" "tiktoken==0.9.0"
+      - name: Repair neutral-label source contracts and regenerate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          from pathlib import Path
+
+          replacements = {
+              'benchmarks/compression_frontier.py': [('Headroom', 'External Baseline A')],
+              'tests/test_compression_frontier.py': [('Headroom', 'External Baseline A')],
+              'tests/test_recovery_resilience.py': [
+                  ('**66/66** for the Headroom 0.31.0 comparison',
+                   '**66/66** for the External Baseline A 0.31.0 comparison')
+              ],
+          }
+          for rel, pairs in replacements.items():
+              path = Path(rel)
+              text = path.read_text(encoding='utf-8')
+              original = text
+              for old, new in pairs:
+                  text = text.replace(old, new)
+              if text == original:
+                  raise SystemExit(f'expected replacement missing in {rel}')
+              path.write_text(text, encoding='utf-8')
+
+          artifact = Path('benchmarks/results/compression_frontier.json')
+          report = json.loads(artifact.read_text(encoding='utf-8'))
+
+          def neutralize(value):
+              if isinstance(value, str):
+                  return value.replace('Headroom', 'External Baseline A')
+              if isinstance(value, list):
+                  return [neutralize(item) for item in value]
+              if isinstance(value, dict):
+                  return {key: neutralize(item) for key, item in value.items()}
+              return value
+
+          report = neutralize(report)
+          report.pop('payload_sha256', None)
+          canonical = json.dumps(
+              report, ensure_ascii=False, separators=(',', ':'), sort_keys=True
+          ).encode('utf-8')
+          report['payload_sha256'] = hashlib.sha256(canonical).hexdigest()
+          artifact.write_text(
+              json.dumps(report, indent=2, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+          )
+          PY
+          python -m benchmarks.compression_frontier render \
+            benchmarks/results/compression_frontier.json \
+            --output benchmarks/results/compression_frontier.md \
+            --svg docs/assets/compression_frontier.svg
+      - name: Synchronize 1.0.74 across approved release surfaces
+        run: python scripts/bump_version.py 1.0.74
+      - name: Run focused regression and release gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_compression_frontier.py \
+            tests/test_recovery_resilience.py \
+            tests/test_bump_version.py \
+            tests/test_release_version_sync.py \
+            tests/test_release_surface.py \
+            tests/test_release_surface_consistency.py
+          python -m benchmarks.compression_frontier verify \
+            benchmarks/results/compression_frontier.json
+          python scripts/verify_readme.py
+      - name: Remove staging workflow and commit generated repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-main-evidence-release.yml
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(release): restore evidence contracts and synchronize 1.0.74"
+          git push origin HEAD:${{ github.head_ref }}
