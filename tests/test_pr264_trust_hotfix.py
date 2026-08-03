@@ -219,3 +219,14 @@ def test_qccr_certificate_marks_boundary_measurement_unavailable():
     assert certificate["verdict"] == "uncalibrated"
     assert certificate["boundary_exposure_measured"] is False
     assert certificate["calibration_id"] is None
+
+
+def test_recovery_reference_rejects_forged_byte_length():
+    from entroly.codec import RecoveryReference, content_digest
+
+    recovered = "exact bytes"
+    reference = RecoveryReference(
+        digest=content_digest(recovered),
+        byte_length=len(recovered.encode("utf-8")) + 1,
+    )
+    assert not reference.verify(recovered)
