@@ -12,7 +12,7 @@ while every selected or omitted source fragment carries an independently
 recomputable source-span digest and a local exact-recovery path.**
 
 That sentence is deliberately narrower than “reversible context compression.”
-Headroom and LeanCTX already make public recovery and cache-stability claims.
+External Baseline A and External Baseline B already make public recovery and cache-stability claims.
 Entroly's defensible distinction is the public source-authentication contract:
 source digest, byte range, fragment digest, omission record, and fail-closed
 recovery verification are emitted together.
@@ -21,8 +21,8 @@ recovery verification are emitted together.
 
 | Project | Primary public focus | Capability that falsifies a broad Entroly claim | Evidence to learn from |
 |---|---|---|---|
-| [Headroom](https://github.com/headroomlabs-ai/headroom) | Local context optimization across proxy, library, MCP, and agent integrations | Publicly documents reversible CCR, cached originals, cache-aware handling, and broad integrations. Entroly cannot claim recovery or cache safety is unique | Extensive integration surface, active releases, and benchmark-oriented README |
-| [LeanCTX](https://github.com/yvgude/lean-ctx) | Deterministic context compression and recovery for coding agents | Publicly documents content-addressed handles, several recovery paths, prompt-cache-safe behavior, and an audited savings ledger | Tight install story, byte-stability language, and concrete agent compatibility |
+| External Baseline A | Local context optimization across proxy, library, MCP, and agent integrations | Publicly documents reversible CCR, cached originals, cache-aware handling, and broad integrations. Entroly cannot claim recovery or cache safety is unique | Extensive integration surface, active releases, and benchmark-oriented README |
+| External Baseline B | Deterministic context compression and recovery for coding agents | Publicly documents content-addressed handles, several recovery paths, prompt-cache-safe behavior, and an audited savings ledger | Tight install story, byte-stability language, and concrete agent compatibility |
 | [LLMLingua](https://github.com/microsoft/LLMLingua) | Learned prompt compression | Demonstrates that learned token-level and coarse-to-fine compression are established research directions | Peer-reviewed papers, released code, and standard datasets |
 | [RECOMP](https://github.com/carriex/recomp) | Selective and abstractive compression for retrieval-augmented language models | Demonstrates query-conditioned compression is established prior art | Clear task-level evaluation against retrieval baselines |
 | [AutoCompressors](https://github.com/princeton-nlp/AutoCompressors) | Long-context compression into summary vectors | Demonstrates learned soft compression and recursive compression are prior art | Reproducible research code tied to a paper |
@@ -36,7 +36,7 @@ recovery verification are emitted together.
 
 | Safe when linked to evidence | Not established |
 |---|---|
-| A public receipt contains exact UTF-8 source and fragment SHA-256 values plus byte ranges | “Best compression” or “better than Headroom” |
+| A public receipt contains exact UTF-8 source and fragment SHA-256 values plus byte ranges | “Best compression” or “better than External Baseline A” |
 | Recovery fails visibly when a receipt digest, bundle digest, source identity, or byte range is changed | Generated-answer accuracy improvement |
 | A hard token budget and omission list are part of the same deterministic artifact | Provider cost savings for SDK or MCP operations that were not observed reaching a provider |
 | Python and native backends are tested against the same source-span contract | Novelty of reversible compression, memory, knowledge graphs, or learned selection |
@@ -55,7 +55,7 @@ scoreboard.
   compaction, and any integration being claimed.
 - Long-term memory: full transcript, Mem0, and Graphiti where their documented
   deployment assumptions fit the task.
-- Recovery and integrity: Headroom and LeanCTX only after pinning exact versions
+- Recovery and integrity: External Baseline A and External Baseline B only after pinning exact versions
   and defining a shared, black-box source-span oracle.
 
 Entroly should publish a comparison only after the competing versions,

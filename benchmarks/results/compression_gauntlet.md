@@ -9,7 +9,7 @@ Deterministic compression and preregistered string-evidence retention on 4 gener
 | System | Version | Evidence recall | Weighted savings | Median latency | Valid scenarios | Compressed | Result |
 |---|---|---:|---:|---:|---:|---:|---|
 | entroly | 1.0.59 | 100.0% | 95.1% | 28.4 ms | 4/4 | 4/4 | PASS |
-| headroom | 0.31.0 | 100.0% | 31.4% | 56.0 ms | 4/4 | 2/4 | PASS |
+| External Baseline A | 0.31.0 | 100.0% | 31.4% | 56.0 ms | 4/4 | 2/4 | PASS |
 
 ## Per-fixture evidence gate
 
@@ -19,10 +19,10 @@ Deterministic compression and preregistered string-evidence retention on 4 gener
 | json-incident-middle | entroly | 51,809 | 1,345 | 97.4% | 100% | yes | yes |
 | sre-incident-tail | entroly | 36,087 | 2,864 | 92.1% | 100% | yes | yes |
 | code-search-middle | entroly | 34,530 | 682 | 98.0% | 100% | yes | yes |
-| cargo-build-failure | headroom | 30,850 | 30,850 | 0.0% | 100% | yes | yes |
-| json-incident-middle | headroom | 51,809 | 19,844 | 61.7% | 100% | yes | yes |
-| sre-incident-tail | headroom | 36,087 | 19,869 | 44.9% | 100% | yes | yes |
-| code-search-middle | headroom | 34,530 | 34,530 | 0.0% | 100% | yes | yes |
+| cargo-build-failure | External Baseline A | 30,850 | 30,850 | 0.0% | 100% | yes | yes |
+| json-incident-middle | External Baseline A | 51,809 | 19,844 | 61.7% | 100% | yes | yes |
+| sre-incident-tail | External Baseline A | 36,087 | 19,869 | 44.9% | 100% | yes | yes |
+| code-search-middle | External Baseline A | 34,530 | 34,530 | 0.0% | 100% | yes | yes |
 
 ## Protocol
 
@@ -44,7 +44,7 @@ Deterministic compression and preregistered string-evidence retention on 4 gener
 
 ```bash
 python -m benchmarks.compression_gauntlet run \
-  --headroom-python /path/to/headroom-0.31.0-venv/bin/python \
+  --External Baseline A-python /path/to/External Baseline A-0.31.0-venv/bin/python \
   --require-comparator \
   --runs 3 --warmups 1 \
   --output benchmarks/results/compression_gauntlet.json \

@@ -10,7 +10,7 @@ Treat Entroly as an **auditable context-assurance control plane**, not merely a 
 
 ## Mission
 
-Make Entroly Pareto-competitive or dominant against the latest public versions of Headroom, LeanCTX, and other serious context-compression/context-OS systems across:
+Make Entroly Pareto-competitive or dominant against the latest public versions of External Baseline A, External Baseline B, and other serious context-compression/context-OS systems across:
 
 1. answer and task quality;
 2. token and monetary savings;
@@ -333,8 +333,8 @@ Controls:
 - truncation;
 - BM25/MMR baseline;
 - Entroly;
-- Headroom;
-- LeanCTX;
+- External Baseline A;
+- External Baseline B;
 - relevant learned compressor;
 - hybrid where fair.
 
@@ -439,7 +439,7 @@ After every implementation slice, perform an adversarial review:
 8. Replace final arbitrary trimming with atomic units.
 9. Instrument and rerun the four known SQuAD regressions.
 10. Calibrate only after a sufficiently large development set.
-11. Freeze a holdout and compare against current Headroom and LeanCTX.
+11. Freeze a holdout and compare against current External Baseline A and External Baseline B.
 12. Integrate guarded mode into SDK/proxy only after coverage and latency are acceptable.
 
 ## Final output required from the implementing agent

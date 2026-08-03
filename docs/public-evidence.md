@@ -45,9 +45,9 @@ These results measure artifact integrity and recovery, **not answer quality** or
 
 ### Recovery-resilience holdout
 
-The committed v5 recovery-resilience revalidation records **66/66** exact entries for Entroly and **66/66** for the Headroom 0.31.0 comparison under the frozen holdout protocol. This result establishes **parity, not leadership** for that recovery-integrity workload.
+The committed v5 recovery-resilience revalidation records **66/66** exact entries for Entroly and **66/66** for the External Baseline A 0.31.0 comparison under the frozen holdout protocol. This result establishes **parity, not leadership** for that recovery-integrity workload.
 
-The clean revalidation reproduced no Headroom worker errors. It therefore does not permit a public leadership claim and **does not establish universal recovery superiority**, production reliability, task-quality improvement, or provider-cost reduction.
+The clean revalidation reproduced no External Baseline A worker errors. It therefore does not permit a public leadership claim and **does not establish universal recovery superiority**, production reliability, task-quality improvement, or provider-cost reduction.
 
 - [Artifact](../benchmarks/results/recovery_resilience_holdout_revalidation_v5.json)
 - [Protocol implementation](../benchmarks/recovery_resilience.py)
@@ -72,7 +72,7 @@ The same-input compression gauntlet is **not production-outcome evidence**. It i
 
 ### Model-triggered recovery
 
-A frozen 24-case local Qwen2.5-1.5B holdout recorded 24/24 exact final answers for Entroly and 18/24 for the published Headroom 0.31.0 baseline. This is a synthetic, versioned workflow—not a universal product, provider-savings, or model-quality claim.
+A frozen 24-case local Qwen2.5-1.5B holdout recorded 24/24 exact final answers for Entroly and 18/24 for the published External Baseline A 0.31.0 baseline. This is a synthetic, versioned workflow—not a universal product, provider-savings, or model-quality claim.
 
 - [Artifact](../benchmarks/results/model_recovery_v7_holdout.json)
 - [Protocol and limitations](benchmarks/model-triggered-recovery.md)

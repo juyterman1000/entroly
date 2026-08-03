@@ -1,6 +1,6 @@
 # Competitive evidence matrix
 
-This protocol measures Entroly against the current released Headroom package
+This protocol measures Entroly against the current released External Baseline A package
 without collapsing unlike properties into a promotional score. Quality,
 recovery, latency, provider behavior, reliability, security, packaging, cost,
 and operator experience are reported separately. A win in one dimension cannot
@@ -70,7 +70,7 @@ misroutes one payload fails.
 ```powershell
 python -m benchmarks.recovery_resilience run `
   --phase development `
-  --headroom-python C:\path\to\headroom-0.31.0\Scripts\python.exe `
+  --External Baseline A-python C:\path\to\External Baseline A-0.31.0\Scripts\python.exe `
   --output benchmarks/results/recovery_resilience_development.json
 
 python -m benchmarks.recovery_resilience verify `
@@ -85,7 +85,7 @@ payload hash.
 ## Recorded recovery results
 
 The development run found a real Entroly data-loss bug. With four pre-opened
-writers, only 8 of 32 intended entries survived restart byte-exactly; Headroom
+writers, only 8 of 32 intended entries survived restart byte-exactly; External Baseline A
 recovered 32 of 32. Three Entroly workers failed. This unfavorable result is
 retained in
 [`recovery_resilience_development_before.json`](../../benchmarks/results/recovery_resilience_development_before.json).
@@ -97,7 +97,7 @@ process-level regression tests. The frozen holdout was not changed.
 The v2 fresh-seed Windows/Python 3.10 revalidation tied at 66/66 byte-exact
 recoveries. After complete-line preservation and relevance-before-fit changed
 the Entroly implementation hash, v3 froze a new seed; on that run Entroly
-recovered 66/66 while published Headroom 0.31.0 recovered 55/66 — one of six
+recovered 66/66 while published External Baseline A 0.31.0 recovered 55/66 — one of six
 writers exited with SQLite `OperationalError: database is locked`. A later
 docstring-only source cleanup changed the Entroly implementation hash again, so
 v4 froze a new seed and re-ran. On v4 both systems wrote and recovered 66/66
@@ -107,7 +107,7 @@ reproduce. The current result is **parity** — both satisfy the frozen integrit
 gate — and neither the tie nor the transient failure generalizes to universal
 recovery superiority.
 
-| Holdout metric (v4) | Entroly 1.0.65 source | Headroom 0.31.0 |
+| Holdout metric (v4) | Entroly 1.0.65 source | External Baseline A 0.31.0 |
 |---|---:|---:|
 | Successful writes | 66 / 66 | 66 / 66 |
 | Byte-exact restart recovery | 66 / 66 | 66 / 66 |
@@ -118,10 +118,10 @@ recovery superiority.
 | Live state files | **95,438 bytes** | 1,626,736 bytes |
 
 These latency and size observations describe this workload and platform; they
-are not standalone product-superiority claims. Headroom's successful calls were
+are not standalone product-superiority claims. External Baseline A's successful calls were
 substantially faster for writes. Entroly was faster for retrieval and used less
 live state.
-Headroom used SQLite WAL with `synchronous=NORMAL`; Entroly fsynced its state
+External Baseline A used SQLite WAL with `synchronous=NORMAL`; Entroly fsynced its state
 file on every commit and its parent directory where supported. The suite did
 not simulate machine power loss, so the store-call latency is not a matched
 power-loss-durability comparison.
@@ -144,7 +144,7 @@ evidence.
 ## Recorded compression-latency result
 
 The quality-gated Windows/Python 3.10 holdout measured Entroly 1.0.59 source as
-2.94x faster than Headroom 0.31.0 for warm public compressor calls (95%
+2.94x faster than External Baseline A 0.31.0 for warm public compressor calls (95%
 stratified bootstrap CI 2.74x to 3.13x) and 2.39x faster for import plus the
 first call in a fresh process (1.89x to 2.70x). Both participants completed all
 fixtures, retained every preregistered evidence needle, remained deterministic,
@@ -154,10 +154,10 @@ and never inflated tokens. See the
 ## Recorded model-triggered recovery result
 
 On the frozen 24-case synthetic query-shift holdout, raw context and Entroly
-both scored 24/24 final exact answers; Headroom scored 18/24. All six discordant
+both scored 24/24 final exact answers; External Baseline A scored 18/24. All six discordant
 pairs favored Entroly (two-sided exact McNemar `p = 0.03125`). Entroly's mean
 effective-context ratio was 28.88%, including source-exact recovery evidence on
-all 24 triggered retries, versus 42.97% for Headroom.
+all 24 triggered retries, versus 42.97% for External Baseline A.
 
 This is a scoped result for a local `qwen2.5:1.5b` workflow guard, not a
 frontier-model or universal-agent claim. The full protocol evolution—including
