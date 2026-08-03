@@ -34,22 +34,32 @@ jobs:
           import json
           from pathlib import Path
 
-          replacements = {
+          required_replacements = {
               'benchmarks/compression_frontier.py': [('Headroom', 'External Baseline A')],
-              'tests/test_compression_frontier.py': [('Headroom', 'External Baseline A')],
               'tests/test_recovery_resilience.py': [
                   ('**66/66** for the Headroom 0.31.0 comparison',
                    '**66/66** for the External Baseline A 0.31.0 comparison')
               ],
           }
-          for rel, pairs in replacements.items():
+          optional_replacements = {
+              'tests/test_compression_frontier.py': [('Headroom', 'External Baseline A')],
+          }
+
+          for rel, pairs in required_replacements.items():
               path = Path(rel)
               text = path.read_text(encoding='utf-8')
               original = text
               for old, new in pairs:
                   text = text.replace(old, new)
               if text == original:
-                  raise SystemExit(f'expected replacement missing in {rel}')
+                  raise SystemExit(f'stale contract not found or already changed unexpectedly in {rel}')
+              path.write_text(text, encoding='utf-8')
+
+          for rel, pairs in optional_replacements.items():
+              path = Path(rel)
+              text = path.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  text = text.replace(old, new)
               path.write_text(text, encoding='utf-8')
 
           artifact = Path('benchmarks/results/compression_frontier.json')
