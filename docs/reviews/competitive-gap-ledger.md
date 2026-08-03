@@ -37,10 +37,11 @@ D  documented by the vendor, NOT executed here
 | JSON / structured | T — codec preserves ids, codes, amounts, timestamps; recovery == original byte stream | D — "SmartCrusher", 60–95% fewer tokens on JSON | ? | Entroly measured on 3 fixtures only. Competitor ratio unverified. |
 | Logs | T — safe templating; critical numerics never merged | D | D — shell patterns | Entroly gap: no streaming operation. |
 | Shell / tool output | T — entropy+role scoring, command-agnostic | D | D — "60+ shell patterns" | LeanCTX claims per-tool breadth Entroly does not have. |
-| Code | T — skeleton, imports/signatures/error strings | D — AST for Python, JS/TS, Go, Rust, Java, C/C++, Perl | D — AST, 10 read modes | **Gap: Entroly's code codec is line-regex, not AST.** Both competitors document real AST parsing. |
+| Code | M — **AST skeleton for Python** (stdlib `ast`, exact node ranges); line-heuristic fallback elsewhere | D — AST for Python, JS/TS, Go, Rust, Java, C/C++, Perl | D — AST, 10 read modes | **Gap narrowed, not closed.** Entroly parses Python only; both competitors document many languages. |
 | RAG / documents | T — query-conditioned spans + neighbours + citations | D | ? | untested against a public RAG set |
 | Conversation / memory | T — instructions/decisions kept, prefix byte-identical | D | D — sessions/memory | |
 | Schema / MCP descriptions | T — contract preserved, prose dropped | ? | D — 62–76 MCP tools | |
+| Tabular / CSV | M — header verbatim, per-column type/quantiles/missingness, exact recovery; 3,915→111 tokens | D | ? | Added after the first ledger revision. |
 | Images / multimodal | **-** | D — "40–90% reduction via ML router" | ? | **Gap: Entroly has no multimodal path.** |
 | Learned/model-based compression | **-** | D — "Kompress-v2-base", HF model on agentic traces | ? | **Gap: Entroly is entirely training-free.** Not necessarily a deficiency; it is a different trade (no model download, no inference cost). |
 
@@ -118,8 +119,9 @@ recovery with digest-and-length verification, provenance, and a fail-closed
 sufficiency verdict that refuses to claim "sufficient" without a named
 calibration policy. No competitor documents an equivalent.
 
-Entroly's clearest documented deficits are **AST-based code understanding**
-(both competitors have it, Entroly uses line regexes), **multimodal** and
+Entroly's clearest documented deficits are **multi-language code understanding**
+(Python is now parsed; every other language still uses line heuristics, while both
+competitors document many), **multimodal** and
 **learned compression** (Headroom documents both, Entroly has neither),
 **framework/agent adapter breadth**, and **cache-aware net accounting**.
 

@@ -48,6 +48,7 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass
+import pathlib
 from pathlib import Path
 
 os.environ.setdefault("ENTROLY_DISABLE_UPDATE_CHECK", "1")
@@ -110,10 +111,38 @@ def _shell_fixture() -> tuple[str, list[str]]:
     return "\n".join(lines), required
 
 
+def _code_fixture() -> tuple[str, list[str]]:
+    src = pathlib.Path("entroly/codec.py").read_text(encoding="utf-8")
+    required = [
+        "class RecoveryReference",
+        "class Representation",
+        "def content_digest",
+        "def pareto_prune",
+        "import hashlib",
+    ]
+    return src, required
+
+
+def _table_fixture() -> tuple[str, list[str]]:
+    import random
+
+    random.seed(11)
+    rows = ["order_id,customer,amount_cents,status"]
+    for i in range(400):
+        rows.append(
+            f"ord-{i:05d},cust{i % 30},{random.randint(100, 900000)},"
+            f"{'paid' if i % 5 else 'failed'}"
+        )
+    required = ["order_id", "customer", "amount_cents", "status"]
+    return "\n".join(rows), required
+
+
 FIXTURES = {
     "json_payment_error": _json_fixture,
     "log_root_cause_flood": _log_fixture,
     "shell_failing_test_run": _shell_fixture,
+    "code_python_module": _code_fixture,
+    "table_orders_export": _table_fixture,
 }
 
 
