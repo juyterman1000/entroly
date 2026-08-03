@@ -1,26 +1,9 @@
-"""The codec contract, and the exact-recovery gap it closes.
-
-Both shipped codecs elided real content and reported only a count:
-
-    "... (40 items)"                       39 records, unrecoverable
-    "connection pool exhausted  [x200]"    199 lines, unrecoverable
-
-A count is an admission, not a recovery reference. These tests hold the codecs
-to the contract: what they drop goes to a content-addressed store, and the
-reference verifies against the bytes that come back.
-
-Two properties matter more than the compression:
-
-* a codec must not claim sufficiency -- it reports what it did, and the
-  decision about whether that is enough belongs to a caller that can see the
-  whole selection;
-* unknown or malformed content must decline rather than be rewritten by a
-  codec that only assumed it could parse it.
-"""
+"""The codec contract and exact full-source recovery invariants."""
 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -49,77 +32,64 @@ def _payload() -> dict:
 
 def _log_text(repeats: int = 200) -> str:
     lines = [
-        "2026-08-02T10:00:00Z INFO  worker starting pool_size=8",
+        "2026-08-02T10:00:00Z INFO worker starting pool_size=8",
         "2026-08-02T10:00:03Z ERROR db connect failed: FATAL password "
         "authentication failed for user 'svc_billing'",
     ]
-    for i in range(repeats):
-        lines.append(
-            f"2026-08-02T10:00:{4 + i % 50:02d}Z ERROR request failed: "
-            f"connection pool exhausted (retry {i})"
-        )
+    lines.extend(
+        f"2026-08-02T10:00:{4 + i % 50:02d}Z ERROR request failed: "
+        f"connection pool exhausted (retry {i})"
+        for i in range(repeats)
+    )
     return "\n".join(lines)
 
 
-# ── Recovery ────────────────────────────────────────────────────────────────
-
-
 def test_elided_json_records_are_exactly_recoverable():
+    original = json.dumps(_payload(), indent=2)
     store = RecoveryStore()
-    reps = JsonCodec(store).representations(
-        json.dumps(_payload(), indent=2), source_id="resp.json"
-    )
-    elided = next(r for r in reps if r.representation_id.endswith("elided"))
-    assert elided.recovery is not None, (
-        "the schema form drops 39 of 40 records; without a recovery reference "
-        "they are simply gone"
-    )
+    reps = JsonCodec(store).representations(original, source_id="resp.json")
+    elided = next(rep for rep in reps if rep.representation_id.endswith("elided"))
+    assert elided.recovery is not None
     recovered = store.recover(elided.recovery)
+    assert recovered == original
     assert elided.recovery.item_count == 39
-    assert "SKU-0039" in recovered, "the dropped records must come back intact"
-    assert elided.recovery.verify(recovered), "digest must match the bytes returned"
+    assert "SKU-0039" in recovered
+    assert elided.recovery.verify(recovered)
 
 
 def test_collapsed_log_repeats_are_exactly_recoverable():
+    original = _log_text()
     store = RecoveryStore()
-    reps = LogCodec(store).representations(_log_text(), source_id="worker.log")
-    collapsed = next(r for r in reps if r.representation_id.endswith("collapsed"))
+    reps = LogCodec(store).representations(original, source_id="worker.log")
+    collapsed = next(rep for rep in reps if rep.representation_id.endswith("collapsed"))
     assert collapsed.recovery is not None
     recovered = store.recover(collapsed.recovery)
-    assert collapsed.recovery.item_count == 199, (
-        f"200 occurrences, one kept, 199 collapsed; got "
-        f"{collapsed.recovery.item_count}"
-    )
+    assert recovered == original
+    assert collapsed.recovery.item_count == 199
     assert "(retry 199)" in recovered
 
 
-def test_recovery_reference_detects_a_swapped_entry():
-    """Content addressing must catch a store that returns the wrong thing."""
+def test_recovery_reference_detects_a_forged_digest():
     store = RecoveryStore()
     ref = store.put("the original", item_count=1)
-    store._mem[ref.digest] = "something else"
+    forged = replace(ref, digest=content_digest("something else"))
     with pytest.raises(ValueError, match="does not match"):
-        store.recover(ref)
+        store.recover(forged)
 
 
-def test_recovery_survives_a_process_via_the_sidecar(tmp_path):
+def test_recovery_survives_a_process_via_hardened_store(tmp_path):
     path = tmp_path / "recovery.json"
-    ref = RecoveryStore(path).put("dropped records", item_count=3)
-    assert RecoveryStore(path).recover(ref) == "dropped records"
-
-
-# ── The contract itself ─────────────────────────────────────────────────────
+    first = RecoveryStore(path, scope_id="codec-test")
+    ref = first.put("dropped records", item_count=3)
+    restarted = RecoveryStore(path, scope_id="codec-test")
+    assert restarted.recover(ref) == "dropped records"
 
 
 def test_codec_never_claims_sufficiency():
-    """A codec sees one item; sufficiency is a property of the whole selection."""
     assert not hasattr(Representation, "sufficient")
     fields = set(Representation.__dataclass_fields__)
     for forbidden in ("sufficient", "sufficiency", "verdict", "is_enough"):
-        assert forbidden not in fields, (
-            f"Representation.{forbidden} would let a codec judge sufficiency "
-            f"from a single item"
-        )
+        assert forbidden not in fields
 
 
 def test_protected_evidence_is_checkable_not_just_asserted():
@@ -140,11 +110,8 @@ def test_protected_evidence_is_checkable_not_just_asserted():
 
 def test_json_codec_actually_preserves_what_it_protects():
     reps = JsonCodec().representations(json.dumps(_payload(), indent=2), source_id="r")
-    assert verify_all(reps) == {}, (
-        "a codec that lists protected evidence it did not keep is worse than "
-        "one that lists none"
-    )
-    elided = next(r for r in reps if r.representation_id.endswith("elided"))
+    assert verify_all(reps) == {}
+    elided = next(rep for rep in reps if rep.representation_id.endswith("elided"))
     for value in ("req_8f3a21bc", "PAYMENT_DECLINED", "449900"):
         assert value in elided.text
 
@@ -152,31 +119,21 @@ def test_json_codec_actually_preserves_what_it_protects():
 def test_full_representation_is_offered_and_lossless():
     text = json.dumps(_payload(), indent=2)
     reps = JsonCodec().representations(text, source_id="r")
-    full = next(r for r in reps if r.representation_id.endswith("full"))
+    full = next(rep for rep in reps if rep.representation_id.endswith("full"))
     assert full.text == text
     assert full.distortion_risk == 0.0
-    assert full.recovery is None, "nothing was dropped, so nothing to recover"
+    assert full.recovery is None
 
 
-def test_elided_form_is_never_larger_than_the_original():
-    """Anti-inflation: a bigger 'compressed' form is not an option."""
+def test_elided_form_is_never_larger_than_original():
     tiny = '{"a": 1}'
     reps = JsonCodec().representations(tiny, source_id="tiny")
-    assert all(len(r.text) <= len(tiny) for r in reps), (
-        f"emitted a representation larger than the input: "
-        f"{[(r.representation_id, len(r.text)) for r in reps]}"
-    )
-
-
-# ── Unknown and malformed input ─────────────────────────────────────────────
+    assert all(len(rep.text) <= len(tiny) for rep in reps)
 
 
 def test_malformed_json_is_declined_not_rewritten():
     broken = '{"a": 1, "b": [1, 2,,]}'
-    assert not JsonCodec().supports(broken), (
-        "content that opens like JSON but does not parse must be declined; "
-        "rewriting it would corrupt something the codec never understood"
-    )
+    assert not JsonCodec().supports(broken)
 
 
 def test_registry_selects_nothing_for_unknown_content():
@@ -198,34 +155,36 @@ def test_declared_content_type_wins_over_sniffing():
 
 def test_representation_serialises_with_provenance():
     reps = JsonCodec().representations(json.dumps(_payload()), source_id="r.json")
-    d = next(r for r in reps if r.representation_id.endswith("elided")).to_dict()
-    assert d["contract_version"] == CODEC_CONTRACT_VERSION
-    assert d["source_sha256"].startswith("sha256:")
-    assert d["codec"] == "json" and d["codec_version"]
-    assert d["recovery"]["item_count"] == 39
-    assert 0.0 <= d["distortion_risk"] <= 1.0
+    data = next(rep for rep in reps if rep.representation_id.endswith("elided")).to_dict()
+    assert data["contract_version"] == CODEC_CONTRACT_VERSION
+    assert data["source_sha256"].startswith("sha256:")
+    assert data["codec"] == "json" and data["codec_version"]
+    assert data["recovery"]["item_count"] == 39
+    assert data["recovery"]["receipt_id"]
+    assert data["recovery"]["span_id"]
+    assert 0.0 <= data["distortion_risk"] <= 1.0
 
 
 def test_registry_is_empty_by_default_rather_than_guessing():
     assert CodecRegistry().select("anything") is None
 
-# ── Shell / tool output (5.3) ───────────────────────────────────────────────
-
 
 def _pytest_output(passing: int = 200) -> str:
     lines = ["$ pytest tests/", "tests/test_a.py::test_one PASSED"]
-    lines += [f"tests/test_c.py::test_{i} PASSED" for i in range(passing)]
-    lines += [
-        "tests/test_z.py::test_bad FAILED",
-        "E   AssertionError: expected 3 got 4",
-        f"1 failed, {passing + 1} passed",
-        "exit code 1",
-    ]
+    lines.extend(f"tests/test_c.py::test_{i} PASSED" for i in range(passing))
+    lines.extend(
+        [
+            "tests/test_z.py::test_bad FAILED",
+            "E AssertionError: expected 3 got 4",
+            f"1 failed, {passing + 1} passed",
+            "exit code 1",
+        ]
+    )
     return "\n".join(lines)
 
 
 @pytest.mark.parametrize(
-    "label,needle",
+    ("label", "needle"),
     [
         ("command", "pytest tests/"),
         ("failed target", "test_bad"),
@@ -235,26 +194,21 @@ def _pytest_output(passing: int = 200) -> str:
         ("exit status", "exit code 1"),
     ],
 )
-def test_shell_codec_keeps_what_a_failure_is_read_from(label, needle):
+def test_shell_codec_keeps_failure_evidence(label, needle):
     from entroly.codecs_builtin import ShellCodec
 
     rep = ShellCodec().representations(_pytest_output(), source_id="run")[-1]
-    assert needle in rep.text, (
-        f"{label} was dropped; a compressed test run that loses this cannot be "
-        f"{label} was dropped; a compressed test run that loses this "
-        f"cannot be acted on."
-    )
+    assert needle in rep.text, f"{label} was dropped"
 
 
-def test_shell_codec_dropped_lines_are_recoverable():
-    from entroly.codec import RecoveryStore
+def test_shell_codec_complete_original_is_recoverable():
     from entroly.codecs_builtin import ShellCodec
 
+    original = _pytest_output()
     store = RecoveryStore()
-    rep = ShellCodec(store).representations(_pytest_output(), source_id="run")[-1]
+    rep = ShellCodec(store).representations(original, source_id="run")[-1]
     assert rep.recovery is not None and rep.recovery.item_count > 100
-    recovered = store.recover(rep.recovery)
-    assert "test_150 PASSED" in recovered
+    assert store.recover(rep.recovery) == original
 
 
 def test_shell_codec_protected_evidence_is_real():
@@ -262,15 +216,12 @@ def test_shell_codec_protected_evidence_is_real():
 
     reps = ShellCodec().representations(_pytest_output(), source_id="run")
     assert verify_all(reps) == {}
-    esc = reps[-1]
-    assert any("exit code" in e for e in esc.protected_evidence)
-    assert any("failed" in e for e in esc.protected_evidence), (
-        f"summary counts should be claimed as protected; got "
-        f"{esc.protected_evidence}"
-    )
+    compressed = reps[-1]
+    assert any("exit code" in evidence for evidence in compressed.protected_evidence)
+    assert any("failed" in evidence.lower() for evidence in compressed.protected_evidence)
 
 
-def test_prose_is_not_claimed_by_the_shell_codec():
+def test_prose_is_not_claimed_by_shell_codec():
     from entroly.codecs_builtin import ShellCodec
 
     assert not ShellCodec().supports(
