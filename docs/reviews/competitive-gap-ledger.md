@@ -59,7 +59,7 @@ D  documented by the vendor, NOT executed here
 
 | dimension | Entroly | Headroom | LeanCTX | evidence / gap |
 |---|---|---|---|---|
-| Proxy | present, **not tested this cycle** | D — `headroom proxy` | ? | |
+| Proxy | M — 268 proxy tests pass (transport trust, cache alignment, access security, providers, session rescue, control plane). Live-provider suite excluded: no credentials | D — `headroom proxy` | ? | Corrects an earlier row in this file that said "not tested"; the suite existed and passes. **Gap: streaming cancellation, backpressure and cache-aware NET accounting are still unmeasured.** |
 | MCP | present | D — 3 tools | D — 62–76 tools | |
 | Framework adapters | ? | D — Anthropic, OpenAI, Vercel AI, LiteLLM, LangChain, Agno, Strands, ASGI | ? | **Gap: Headroom documents 8 framework adapters.** |
 | Agent integrations | OpenClaw + others advertised | D — 15 named agents | D — 30+ agents | **Gap, and Entroly's advertised list is not contract-tested.** |
