@@ -227,8 +227,11 @@ class LogCodec:
     def representations(
         self, text: str, source_id: str = "", **options: Any
     ) -> list[Representation]:
-        from .universal_compress import _compress_log_universal, _log_template
-        from .universal_compress_hotfix import _strip_log_prefix
+        from .universal_compress import (
+            _compress_log_universal,
+            _log_template,
+            _strip_log_prefix,
+        )
 
         full = _full_representation(
             text=text,

@@ -93,13 +93,30 @@ def test_preserving_values_did_not_cost_size():
     )
 
 
-def test_repeated_records_are_still_elided():
-    """The saving must still come from somewhere -- 40 items, one exemplar."""
-    out = _compress(json.dumps(_payload(), indent=2))
+def test_repeated_records_are_elided_without_losing_load_bearing_values():
+    """Structure is elided; load-bearing values are not.
+
+    This assertion previously required ``SKU-0039`` to be ABSENT -- i.e. it
+    encoded the defect. Keeping only ``obj[0]`` as an exemplar meant every
+    identifier, price and status in records 2..N was destroyed, and no
+    recovery reference pointed at them. An id the caller needs is not
+    "repetition" just because it sits inside an array.
+
+    The corrected codec still collapses the array's STRUCTURE -- the output is
+    far smaller than the input and declares the record count -- while carrying
+    the load-bearing values of every record. It compresses less than the
+    version that lost data, which is the correct trade.
+    """
+    original = json.dumps(_payload(), indent=2)
+    out = _compress(original)
+    assert len(out) < len(original), "structure should still be elided"
     assert "SKU-0000" in out, "the exemplar record should be kept"
-    assert "SKU-0039" not in out, "40 records should not be emitted verbatim"
+    assert "SKU-0039" in out, (
+        "a load-bearing identifier from the last record must survive; dropping "
+        "it is silent data loss, not compression"
+    )
     assert "40 items" in out, (
-        "an elided array must at least declare how many records were dropped"
+        "an elided array must declare how many records it stood for"
     )
 
 

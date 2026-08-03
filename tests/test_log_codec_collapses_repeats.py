@@ -83,26 +83,52 @@ def test_boundaries_are_kept():
     assert "exit_code=70" in out, "the exit status is a boundary and an outcome"
 
 
+# Templating must be SAFE, not maximal. An earlier version of this test
+# required every digit run to become "*", which is the rule that merges
+# "code 402" with "code 500" and loses the incident. Collapse is now limited to
+# shapes that are unambiguously instance identifiers.
+
+
 @pytest.mark.parametrize(
     "varying",
     [
-        "request 12345 failed",
-        "request 99999 failed",
         "conn 0x7ffe1234 dropped",
-        "conn 0x7ffe9999 dropped",
         "peer 10.0.0.4:8080 reset",
-        "peer 10.0.0.9:9090 reset",
         "took 12.5ms",
-        "took 99.1ms",
         "job 3f2a1b4c-1111-2222-3333-444455556666 done",
+        "connection pool exhausted (retry 7)",
     ],
 )
-def test_template_normalises_variable_runs(varying):
-    """Counters, hex, addresses, durations and uuids must not defeat collapse."""
+def test_template_normalises_unambiguous_instance_identifiers(varying):
+    """Hex, addresses, durations, uuids and bracketed counters may collapse."""
     from entroly.universal_compress import _log_template
 
-    template = _log_template(varying)
-    assert "*" in template, f"{varying!r} produced no placeholder: {template!r}"
+    assert "*" in _log_template(varying), (
+        f"{varying!r} produced no placeholder: {_log_template(varying)!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        ("payment failed code 402", "payment failed code 500"),
+        ("exit code 0", "exit code 70"),
+        ("request 12345 failed", "request 99999 failed"),
+    ],
+)
+def test_template_never_merges_values_that_change_the_meaning(left, right):
+    """A status code, an exit status or a bare id must not be normalised away.
+
+    Two lines differing only in such a value are DIFFERENT events. Collapsing
+    them reports one incident where there were two and destroys the value a
+    reader needs. Bare integers are treated as load-bearing because they could
+    be an amount, an identifier or a code, and guessing wrong is unrecoverable.
+    """
+    from entroly.universal_compress import _log_template
+
+    assert _log_template(left) != _log_template(right), (
+        f"{left!r} and {right!r} both templated to {_log_template(left)!r}"
+    )
 
 
 def test_distinct_events_do_not_collapse_into_each_other():
