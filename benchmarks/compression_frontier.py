@@ -1190,7 +1190,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         for system in ("entroly", "headroom"):
             aggregate = report["aggregates"][system][key]
             lines.append(
-                f"| {1 / float(ratio):.0f}x | {system.title()} | "
+                f"| {1 / float(ratio):.0f}x | "
+                f"{'External Baseline A' if system == 'headroom' else system.title()} | "
                 f"{aggregate['answer_retention']:.1%} | "
                 f"{aggregate['achieved_keep_ratio']:.1%} | "
                 f"{aggregate['p50_latency_ms']:.1f} ms |"
@@ -1229,7 +1230,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         for system in ("raw", "entroly", "headroom"):
             value = downstream["aggregates"][system]
             lines.append(
-                f"| {system.title()} | {value['exact_match']:.1%} | "
+                f"| {'External Baseline A' if system == 'headroom' else system.title()} | "
+                f"{value['exact_match']:.1%} | "
                 f"{value['mean_token_f1']:.1%} | {value['trials']} |"
             )
     if not gate["passed"]:
