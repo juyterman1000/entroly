@@ -227,3 +227,100 @@ def test_prose_is_not_claimed_by_shell_codec():
     assert not ShellCodec().supports(
         "A quiet paragraph about nothing in particular, with no command in it."
     )
+
+
+# ── Pareto pruning (5.3) ────────────────────────────────────────────────────
+#
+# "Remove dominated representations before global selection." A dominated form
+# can never be the right answer -- whatever weighting the caller applies, some
+# other representation beats it -- so keeping it only widens the choice set and
+# makes the eventual selection harder to explain.
+
+
+def _rep(rid, tokens, distortion=0.0, protected=(), recovery=None):
+    from entroly.codec import Representation
+
+    return Representation(
+        representation_id=rid,
+        source_id="s",
+        content_type="text",
+        text="x" * (tokens * 4),
+        token_cost=tokens,
+        codec="test",
+        codec_version="1",
+        source_sha256=content_digest("s"),
+        protected_evidence=tuple(protected),
+        distortion_risk=distortion,
+        recovery=recovery,
+    )
+
+
+def test_cheaper_and_less_distorted_dominates():
+    from entroly.codec import dominates
+
+    better = _rep("a", tokens=10, distortion=0.1)
+    worse = _rep("b", tokens=20, distortion=0.5)
+    assert dominates(better, worse)
+    assert not dominates(worse, better)
+
+
+def test_equal_on_every_axis_dominates_neither():
+    from entroly.codec import dominates
+
+    a, b = _rep("a", 10), _rep("b", 10)
+    assert not dominates(a, b) and not dominates(b, a)
+
+
+def test_more_protection_is_not_dominated_by_cheaper():
+    """Cheaper does not win if it protects less."""
+    from entroly.codec import dominates, pareto_prune
+
+    cheap = _rep("cheap", tokens=5, protected=())
+    protective = _rep("protective", tokens=9, protected=("error_code",))
+    assert not dominates(cheap, protective)
+    assert len(pareto_prune([cheap, protective])) == 2
+
+
+def test_unrecoverable_never_dominates_recoverable():
+    """A form that dropped content with no way back forecloses an option."""
+    from entroly.codec import RecoveryReference, dominates
+
+    ref = RecoveryReference(digest=content_digest("dropped"), byte_length=7)
+    lossy_recoverable = _rep("rec", tokens=10, distortion=0.5, recovery=ref)
+    lossy_gone = _rep("gone", tokens=5, distortion=0.5)
+    assert not dominates(lossy_gone, lossy_recoverable)
+
+
+def test_pruning_removes_the_dominated_one():
+    from entroly.codec import pareto_prune
+
+    kept = pareto_prune([_rep("a", 10, 0.1), _rep("b", 20, 0.5), _rep("c", 30, 0.9)])
+    assert [r.representation_id for r in kept] == ["a"]
+
+
+def test_pruning_preserves_order_of_survivors():
+    from entroly.codec import pareto_prune
+
+    reps = [_rep("cheap", 5), _rep("protective", 9, protected=("x",))]
+    assert [r.representation_id for r in pareto_prune(reps)] == ["cheap", "protective"]
+
+
+def test_pruning_never_empties_a_non_empty_list():
+    from entroly.codec import pareto_prune
+
+    for reps in ([_rep("only", 10)], [_rep("a", 10), _rep("b", 10)]):
+        assert pareto_prune(reps)
+
+
+def test_registry_returns_only_frontier_representations():
+    reps = default_registry().representations(
+        json.dumps(_payload(), indent=2), source_id="r.json"
+    )
+    from entroly.codec import dominates
+
+    for a in reps:
+        for b in reps:
+            assert not dominates(a, b), (
+                f"{a.representation_id} dominates {b.representation_id}; the "
+                f"registry returned a representation no caller would choose"
+            )
