@@ -1,0 +1,54 @@
+name: Apply neutral evidence contract
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'fix/neutral-evidence-contract'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 8
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Apply minimal neutral-label repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin bench/external-context-efficiency-suite --depth=1
+          git checkout FETCH_HEAD -- benchmarks/compression_frontier.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test_recovery_resilience.py')
+          text = path.read_text(encoding='utf-8')
+          old = '**66/66** for the Headroom 0.31.0 comparison'
+          new = '**66/66** for the External Baseline A 0.31.0 comparison'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale assertion, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python -m pip install -e '.[test,benchmark]' ruff
+          python -m pytest -q tests/test_recovery_resilience.py tests/test_compression_frontier.py
+          python -m ruff check benchmarks/compression_frontier.py tests/test_recovery_resilience.py
+          python benchmarks/compression_frontier.py --verify
+          git diff --check
+      - name: Commit only the repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git rm .github/workflows/apply-neutral-evidence-contract.yml
+          git add benchmarks/compression_frontier.py tests/test_recovery_resilience.py
+          git diff --cached --check
+          git commit -m 'fix(evidence): align neutral renderer and recovery contract'
+          git push origin HEAD:fix/neutral-evidence-contract
