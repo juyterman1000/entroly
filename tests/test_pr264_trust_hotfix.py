@@ -8,7 +8,10 @@ import pytest
 from entroly.codec import RecoveryStore
 from entroly.codecs_builtin import JsonCodec, LogCodec, ShellCodec
 from entroly.qccr import _lexical_term_set
-from entroly.qccr_hotfix import attach_sufficiency
+# Consolidated: the hotfix module was folded back into entroly.qccr, so
+# there is one implementation rather than a legacy module plus an
+# override module plus a wrapper that re-synchronised them per call.
+from entroly.qccr import _attach_sufficiency as attach_sufficiency
 from entroly.sufficiency import CalibrationPolicy, Candidate, certify
 from entroly.universal_compress import _compress_log_universal, _json_to_schema
 
