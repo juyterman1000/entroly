@@ -129,6 +129,8 @@ Does compression hurt answers? Measured with `gpt-4o-mini`; intervals are Wilson
 
 Hallucination detection (WITNESS, local, no API): **84.92%** accuracy / **0.7976 AUROC** on 20,000 [HaluEval-QA](https://github.com/RUCAIBox/HaluEval) decisions — within the reported uncertainty of `gpt-4o-mini` as an API judge on the same shared sample.
 
+Frozen evidence-selection benchmark (opt-in PRISM-R research prototype, not the default compressor): a disagreement guard kept the answer-bearing passage in 298 of 300 cases while selecting an average of 1.02 of 16 passages (paired exact McNemar p=0.21875 vs. BM25 alone) — this experiment measures retrieval of the known-answer passage, not generated-answer quality. Full protocol: [PRISM-R neural evidence frontier](docs/benchmarks/neural-evidence-frontier.md).
+
 Recovery, latency, and head-to-head frontier results — [context-cap retention](docs/BENCHMARKS.md#matched-token-cap-active-context-quality-frontier-1059-source-candidate), [compression gauntlet](docs/BENCHMARKS.md#same-input-compression-gauntlet), [cross-process recovery](docs/BENCHMARKS.md#cross-process-recovery-holdout), [model-triggered recovery](docs/benchmarks/model-triggered-recovery.md) — are in **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)** with every raw artifact linked, including the [PRISM-R neural evidence frontier](docs/benchmarks/neural-evidence-frontier.md). None of these numbers are a universal or production-savings guarantee for your workload — reproduce them on your own repo with `entroly simulate` and `entroly value`.
 
 ---
