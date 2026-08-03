@@ -159,6 +159,7 @@ class RepositoryIndex:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "schema_version": "entroly.repository-index.v1",
             "root": self.root,
             "files": [self.files[path].to_dict() for path in sorted(self.files)],
             "symbols": [

@@ -211,3 +211,26 @@ def test_changed_seed_limit_is_enforced(tmp_path: Path) -> None:
     assert report.truncated
     assert report.changed_paths == ("f0.py", "f1.py")
     assert report.impacted_paths == ("f0.py", "f1.py")
+
+
+def test_call_edge_limit_is_global_not_per_file(tmp_path: Path) -> None:
+    _write(tmp_path, "target.py", "def target():\n    return 1\n")
+    for index in range(5):
+        _write(
+            tmp_path,
+            f"caller_{index}.py",
+            "from target import target\n"
+            f"def caller_{index}():\n"
+            "    return target()\n",
+        )
+    repository = build_repository_index(
+        tmp_path,
+        limits=RepositoryLimits(max_edges=2),
+    )
+    assert len(repository.call_edges) == 2
+
+
+def test_index_serialization_is_explicitly_versioned(tmp_path: Path) -> None:
+    _write(tmp_path, "sample.py", "def sample():\n    return 1\n")
+    payload = build_repository_index(tmp_path).to_dict()
+    assert payload["schema_version"] == "entroly.repository-index.v1"

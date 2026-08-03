@@ -86,7 +86,10 @@ def resolve_calls(
         path = _unique_module(modules, module)
         return list(by_path_name.get((path, symbol_name), ())) if path else []
 
+    limit_reached = False
     for path, item in sorted(parsed.items()):
+        if limit_reached:
+            break
         for caller_id, target, line in item.calls:
             owner, dot, name = target.rpartition(".")
             if not dot:
@@ -103,6 +106,7 @@ def resolve_calls(
             caller = caller_id or f"{path}::<module>::module"
             edges.add(CallEdge(caller, callee.symbol_id, path, line))
             if len(edges) >= limits.max_edges:
+                limit_reached = True
                 break
     return tuple(
         sorted(
