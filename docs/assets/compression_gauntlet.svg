@@ -23,7 +23,7 @@ text{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#F4F8FC}
 <rect x="330" y="242" width="665.4" height="48" rx="12" fill="#35D0BA"/>
 <text x="1065" y="278" class="value" text-anchor="end">95.1%</text>
 <text x="330" y="318" class="detail">100% evidence retained · 4/4 fixtures compressed</text>
-<text x="90" y="395" class="system">Headroom</text>
+<text x="90" y="395" class="system">External Baseline A</text>
 <text x="90" y="429" class="version">v0.31.0</text>
 <rect x="330" y="362" width="700" height="48" rx="12" fill="#17253A"/>
 <rect x="330" y="362" width="220.0" height="48" rx="12" fill="#8A9BB0"/>

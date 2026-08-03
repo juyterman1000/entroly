@@ -6,7 +6,7 @@ future question by deciding when to retrieve and then using persistent source
 evidence?
 
 It compares current Entroly source at package version `1.0.59` with the
-published `headroom-ai==0.31.0` wheel. The shared guard is local
+published `External Baseline A-ai==0.31.0` wheel. The shared guard is local
 `qwen2.5:1.5b` Q4_K_M with temperature zero. That small model is useful for a
 deterministic workflow veto; it is not a proxy for a hosted frontier model.
 
@@ -16,7 +16,7 @@ Each fixture is a 48-record JSON audit log containing an initial incident and a
 different archived recovery record. Compression sees only the initial incident
 question. The future audit-case question is revealed after compression.
 
-For raw, Entroly, and Headroom context, the model must return either the exact
+For raw, Entroly, and External Baseline A context, the model must return either the exact
 recovery code or exactly `RETRIEVE`. Retrieval runs only after that exact token;
 a wrong or verbose response does not receive oracle help. A successful
 retrieval permits one retry, and that retry becomes the final answer.
@@ -25,7 +25,7 @@ retrieval permits one retry, and that retry becomes the final answer.
   bounded source-exact search. A complete query-matching JSON object is
   preferred when it fits the 600-token recovery cap; the full stored span is
   still available through the existing full-retrieval tool.
-- Headroom uses its public `compress()` entry point with the documented
+- External Baseline A uses its public `compress()` entry point with the documented
   `agent-90` profile, followed by the same persistent `CompressionStore`
   store/retrieve contract used by its MCP implementation.
 - This runner composes the public Python contracts. It does not include MCP
@@ -41,12 +41,12 @@ opened.
 ## Result
 
 The complete 24-case holdout passed every integrity gate with no execution
-errors. Raw context and Entroly both scored **24/24 exact**; Headroom scored
+errors. Raw context and Entroly both scored **24/24 exact**; External Baseline A scored
 **18/24 exact**. The six discordant pairs all favored Entroly, producing a
 two-sided exact McNemar **p = 0.03125**. This supports a scoped win for this
 frozen local query-shift workflow, not a general model or product claim.
 
-| Holdout metric | Entroly 1.0.59 source | Headroom 0.31.0 |
+| Holdout metric | Entroly 1.0.59 source | External Baseline A 0.31.0 |
 |---|---:|---:|
 | Final exact answers | **24 / 24 (100%)** | 18 / 24 (75%) |
 | First-pass exact answers | 0 / 24 | 18 / 24 |
@@ -57,9 +57,9 @@ frozen local query-shift workflow, not a general model or product claim.
 | Execution errors | 0 | 0 |
 
 Entroly's mean effective footprint (active context plus recovery evidence when
-triggered) was **32.8% lower relative to Headroom**. Every Entroly retry used a
+triggered) was **32.8% lower relative to External Baseline A**. Every Entroly retry used a
 complete query-matching JSON object copied byte-for-byte from the persistent
-source span. Headroom answered 18 cases from active context; on the other six
+source span. External Baseline A answered 18 cases from active context; on the other six
 it returned a wrong value rather than the exact `RETRIEVE` token, so the
 no-oracle rule correctly withheld retrieval.
 
@@ -83,7 +83,7 @@ The independent verifier regenerates every fixture and recomputes:
 - participant versions and frozen generation settings;
 - no-oracle retrieval triggers and retry context hashes;
 - retrieval content and per-item provenance hashes;
-- Entroly excerpt membership in the original source and Headroom's stored
+- Entroly excerpt membership in the original source and External Baseline A's stored
   source equality;
 - final scores, paired exact McNemar result, aggregates, and quality gates.
 
@@ -104,7 +104,7 @@ The protocol history is intentionally retained rather than rewritten:
   identity correctly recorded `qwen2.5:1.5b`. The artifact is preserved but is
   not the publication artifact.
 - V6 tried a smaller scalar-field projection. Development fell to 1/4 for
-  Entroly versus 4/4 for Headroom, so the optimization was rejected and never
+  Entroly versus 4/4 for External Baseline A, so the optimization was rejected and never
   became the default recovery path.
 - V7 restores the reliable complete-object strategy, generates model-scope
   limitations from the actual frozen model, and uses fresh seeds.
@@ -114,14 +114,14 @@ counts do not override answer reliability or metadata correctness.
 
 ## Reproduce and verify
 
-Install `headroom-ai==0.31.0` in an isolated Python 3.10 environment and run a
+Install `External Baseline A-ai==0.31.0` in an isolated Python 3.10 environment and run a
 local Ollama server with the exact model recorded by the protocol.
 
 ```powershell
 python -m benchmarks.model_recovery run `
   --phase holdout `
   --protocol benchmarks/model_recovery_protocol_v7.json `
-  --headroom-python C:\path\to\headroom-0.31.0\Scripts\python.exe `
+  --External Baseline A-python C:\path\to\External Baseline A-0.31.0\Scripts\python.exe `
   --output benchmarks\results\model_recovery_v7_holdout.json
 
 python -m benchmarks.model_recovery verify `

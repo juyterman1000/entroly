@@ -1,7 +1,7 @@
 # Eight-pillar competitive gap ledger
 
 **Status of this document.** Entroly columns cite measured evidence in this
-repository. Competitor columns record what Headroom and LeanCTX *document about
+repository. Competitor columns record what External Baseline A and External Baseline B *document about
 themselves*. Neither competitor has been installed or executed here, so no
 competitor row is verified behaviour and no comparative claim in this file is a
 benchmark result.
@@ -14,8 +14,8 @@ That requires executing both tools on shared workloads, which has not been done.
 | system | source | version | date | license | install | pinned? |
 |---|---|---|---|---|---|---|
 | Entroly | this repo | 1.0.73 | 2026-08-03 | see repo | `pip install entroly` | yes, SHA `0f3d131` |
-| Headroom | [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) | **not stated on the repo landing page** | — | Apache-2.0 | `pip install "headroom-ai[all]"` | **NO — version unpinned** |
-| LeanCTX | [yvgude/lean-ctx](https://github.com/yvgude/lean-ctx) | v3.9.13 | 2026-07-29 | — | Rust binary | tag pinned, SHA not resolved |
+| External Baseline A | external-baseline-a | **not stated on the repo landing page** | — | Apache-2.0 | `pip install "External Baseline A-ai[all]"` | **NO — version unpinned** |
+| External Baseline B | yvgude/External Baseline B | v3.9.13 | 2026-07-29 | — | Rust binary | tag pinned, SHA not resolved |
 
 §4.1 requires a commit SHA per competitor before final benchmarking. Neither is
 resolved. **Benchmarking against either is blocked until they are.**
@@ -32,11 +32,11 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 1 — Compression intelligence and content breadth
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | JSON / structured | T — codec preserves ids, codes, amounts, timestamps; recovery == original byte stream | D — "SmartCrusher", 60–95% fewer tokens on JSON | ? | Entroly measured on 3 fixtures only. Competitor ratio unverified. |
 | Logs | T — safe templating; critical numerics never merged | D | D — shell patterns | Entroly gap: no streaming operation. |
-| Shell / tool output | T — entropy+role scoring, command-agnostic | D | D — "60+ shell patterns" | LeanCTX claims per-tool breadth Entroly does not have. |
+| Shell / tool output | T — entropy+role scoring, command-agnostic | D | D — "60+ shell patterns" | External Baseline B claims per-tool breadth Entroly does not have. |
 | Code | M — **AST skeleton for Python** (stdlib `ast`, exact node ranges); line-heuristic fallback elsewhere | D — AST for Python, JS/TS, Go, Rust, Java, C/C++, Perl | D — AST, 10 read modes | **Gap narrowed, not closed.** Entroly parses Python only; both competitors document many languages. |
 | RAG / documents | T — query-conditioned spans + neighbours + citations | D | ? | untested against a public RAG set |
 | Conversation / memory | T — instructions/decisions kept, prefix byte-identical | D | D — sessions/memory | |
@@ -47,7 +47,7 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 2 — Code, repository and agent intelligence
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | Repo indexing | M — 215 modules / 524 edges mapped by `scripts/codebase_graph.py` | ? | D — local Rust binary, repo graphs | |
 | AST / tree-sitter | **-** | D | D | **Gap** |
@@ -57,17 +57,17 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 3 — Proxy, providers, integrations
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
-| Proxy | M — 268 proxy tests pass (transport trust, cache alignment, access security, providers, session rescue, control plane). Live-provider suite excluded: no credentials | D — `headroom proxy` | ? | Corrects an earlier row in this file that said "not tested"; the suite existed and passes. **Gap: streaming cancellation, backpressure and cache-aware NET accounting are still unmeasured.** |
+| Proxy | M — 268 proxy tests pass (transport trust, cache alignment, access security, providers, session rescue, control plane). Live-provider suite excluded: no credentials | D — `External Baseline A proxy` | ? | Corrects an earlier row in this file that said "not tested"; the suite existed and passes. **Gap: streaming cancellation, backpressure and cache-aware NET accounting are still unmeasured.** |
 | MCP | present | D — 3 tools | D — 62–76 tools | |
-| Framework adapters | ? | D — Anthropic, OpenAI, Vercel AI, LiteLLM, LangChain, Agno, Strands, ASGI | ? | **Gap: Headroom documents 8 framework adapters.** |
+| Framework adapters | ? | D — Anthropic, OpenAI, Vercel AI, LiteLLM, LangChain, Agno, Strands, ASGI | ? | **Gap: External Baseline A documents 8 framework adapters.** |
 | Agent integrations | OpenClaw + others advertised | D — 15 named agents | D — 30+ agents | **Gap, and Entroly's advertised list is not contract-tested.** |
 | Provider conformance | **not tested** | D | ? | **Blocked: no provider credentials available here.** |
 
 ## Pillar 4 — Assurance, recovery, security, privacy
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | Exact recovery | **M — `recover(ref) == original byte stream`, digest AND length verified, and reachable from a terminal via `entroly compress` / `entroly recover` across a process boundary** | ? | D — "proves what they save" | Entroly's strongest verified position. |
 | Content-addressed verification | M — forged digest and forged byte_length both rejected | ? | ? | |
@@ -77,7 +77,7 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 5 — Performance, caching, scalability
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | Per-stage latency | M — `benchmarks/stage_latency.py`, p50/p95 for digest/route/represent/prune/store/recover at tiny/10KB/100KB/1MB | ? | ? | Found routing a 1MB payload cost more than compressing it; fixed. Log codec at 665 ms/MB is measured and unaddressed. |
 | Cache-aware accounting | **-** | D — cache mode | ? | **Gap: Entroly reports gross, not net-of-cache savings.** |
@@ -85,7 +85,7 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 6 — Cross-surface and packaging parity
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | Shared engine across surfaces | M — Python and WASM compile the same `entroly-qccr` crate | ? | single Rust binary | |
 | Golden parity fixture | T — `tests/fixtures/qccr_parity.json`, **Python side only** | ? | ? | **Gap: npm side not wired to the fixture.** |
@@ -94,7 +94,7 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 7 — Operations and developer experience
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | One-command install | M | D | D | |
 | `doctor` | present | D | D | |
@@ -104,7 +104,7 @@ D  documented by the vendor, NOT executed here
 
 ## Pillar 8 — Benchmark credibility
 
-| dimension | Entroly | Headroom | LeanCTX | evidence / gap |
+| dimension | Entroly | External Baseline A | External Baseline B | evidence / gap |
 |---|---|---|---|---|
 | Committed harness | M — `benchmarks/sufficiency_baseline.py`, `benchmarks/codec_ablation.py` | ? | ? | |
 | Model-in-the-loop eval | **-** | ? | ? | **Gap: every Entroly number here is substring retention, not answer accuracy.** |
@@ -122,7 +122,7 @@ calibration policy. No competitor documents an equivalent.
 Entroly's clearest documented deficits are **multi-language code understanding**
 (Python is now parsed; every other language still uses line heuristics, while both
 competitors document many), **multimodal** and
-**learned compression** (Headroom documents both, Entroly has neither),
+**learned compression** (External Baseline A documents both, Entroly has neither),
 **framework/agent adapter breadth**, and **cache-aware net accounting**.
 
 Every Entroly capability marked `T` is a tested contract with **no production
@@ -131,8 +131,8 @@ caller**. Under §18 those score at most 2 ("works on limited fixtures"), not 3
 
 ## Blockers requiring the user
 
-1. **Competitor SHAs** — Headroom's version is not stated on its landing page.
+1. **Competitor SHAs** — External Baseline A's version is not stated on its landing page.
 2. **Provider credentials** — no API keys available here, so provider
    conformance and model-in-the-loop benchmarks cannot run.
-3. **Executing competitors** — installing and running Headroom and LeanCTX on
+3. **Executing competitors** — installing and running External Baseline A and External Baseline B on
    shared workloads is required before any comparative claim.

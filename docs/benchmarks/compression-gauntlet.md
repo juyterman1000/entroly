@@ -16,20 +16,20 @@ A system is eligible on a fixture only when it:
 Pass-through is valid but earns zero savings. The JSON output records input and output hashes, package versions, exact
 configuration, tokenizer version, evidence misses, per-run latency, and native
 transform metadata. Failures and missing fixtures stop the competitive claim.
-The pinned Headroom adapter uses its documented `agent-90` high-savings profile
+The pinned External Baseline A adapter uses its documented `agent-90` high-savings profile
 with `protect_recent=0` so every single-turn tool fixture is eligible.
 
-## Reproduce against a pinned Headroom release
+## Reproduce against a pinned External Baseline A release
 
 Install the competitor in an isolated environment so its dependencies cannot
 change Entroly's runtime:
 
 ```bash
-python -m venv .venv-headroom
-.venv-headroom/bin/python -m pip install "headroom-ai==0.31.0"
+python -m venv .venv-External Baseline A
+.venv-External Baseline A/bin/python -m pip install "External Baseline A-ai==0.31.0"
 
 python -m benchmarks.compression_gauntlet run \
-  --headroom-python .venv-headroom/bin/python \
+  --External Baseline A-python .venv-External Baseline A/bin/python \
   --require-comparator \
   --runs 5 --warmups 2 \
   --output benchmarks/results/compression_gauntlet.json \
@@ -40,8 +40,8 @@ python -m benchmarks.compression_gauntlet verify \
   benchmarks/results/compression_gauntlet.json
 ```
 
-On Windows, use `.venv-headroom\Scripts\python.exe` for
-`--headroom-python`.
+On Windows, use `.venv-External Baseline A\Scripts\python.exe` for
+`--External Baseline A-python`.
 
 ## What this can and cannot prove
 
