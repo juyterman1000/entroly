@@ -5,1074 +5,198 @@
 <h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
 
 <p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
-Entroly uses budgeted context selection, content-addressed evidence, exact recovery, and auditable receipts to lower provider-bound inference expenditure—without rewriting your codebase or agent architecture.</p>
+Select the highest-value evidence first, compress it, keep originals recoverable, and emit a receipt — without rewriting your codebase or agent architecture.</p>
 
 <p align="center">
-  <sub>Works through supported proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, local models, and OpenAI/Anthropic-compatible applications.</sub>
+  <sub>Entroly is a local-first Context OS: content-addressed evidence, recoverable compression, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
 </p>
 
-<p align="center">
-  <sub>Context selection + recoverable compression · receipts record what was used, omitted, and risky · local-first · Python with optional Rust acceleration · Node/WASM runtime</sub>
-</p>
-
-<!-- Distribution and licensing: registry badges report live package metadata. -->
 <p align="center">
   <a href="https://pypi.org/project/entroly/"><img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="Entroly on PyPI"></a>
   <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/v/entroly?color=red&label=npm" alt="Entroly on npm"></a>
+  <a href="https://pypistats.org/packages/entroly"><img src="https://img.shields.io/pypi/dm/entroly?color=blueviolet&label=PyPI%20downloads" alt="Entroly PyPI downloads per month"></a>
+  <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/dm/entroly?color=orange&label=npm%20downloads" alt="Entroly npm downloads per month"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache-2.0 license"></a>
-</p>
-
-<!-- Reproducible evidence: every badge links to the exact committed artifact. -->
-<p align="center">
   <a href="benchmarks/results/receipt_fragment_fidelity_default.json"><img src="https://img.shields.io/badge/Source_spans-5%2C117%2F5%2C117_verified-0A7B83" alt="5,117 of 5,117 native source fragments independently verified"></a>
   <a href="benchmarks/results/receipt_public_integrity.json"><img src="https://img.shields.io/badge/SDK_recovery-13%2F13_exact-blueviolet" alt="13 of 13 public SDK recovery probes exactly matched their source spans"></a>
-  <a href="docs/product-surface.md"><img src="https://img.shields.io/badge/Runtimes-Python_%7C_optional_Rust_%7C_WASM-orange?logo=rust" alt="Python, optional Rust, and WASM runtimes"></a>
-  <a href="#proof"><img src="https://img.shields.io/badge/Token_savings-measure_your_workload-brightgreen" alt="Measure token savings on your workload"></a>
-</p>
-
-<!-- Community signals are not product or benchmark verification. -->
-<p align="center">
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
-  <a href="https://juyterman1000.github.io/entroly/docs/discord.html"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?logo=discord&logoColor=white" alt="Entroly Discord community"></a>
 </p>
 
-<p align="center"><sub>Registry badges show distribution metadata. Evidence badges link to committed results with scope and caveats. Community and marketplace status are not treated as technical proof.</sub></p>
-
-<p align="center">
-  <code>pip install -U entroly && cd /your/repo && entroly verify-claims && entroly simulate</code>
-</p>
-
-<p align="center">
-  <a href="#get-started"><b>Get started</b></a> ·
-  <a href="#see-value-in-your-first-session"><b>See value</b></a> ·
-  <a href="docs/ai-cost-optimization.html"><b>AI cost guide</b></a> ·
-  <a href="#proof-in-30-seconds"><b>Proof videos</b></a> ·
-  <a href="#proof"><b>Proof</b></a> ·
-  <a href="#works-with-your-stack"><b>Integrations</b></a> ·
-  <a href="#whats-inside"><b>What's inside</b></a> ·
-  <a href="docs/DETAILS.md"><b>Architecture</b></a> ·
-  <a href="docs/for-teams.md"><b>For teams</b></a> ·
-  <a href="docs/limitations.md"><b>Limitations</b></a>
-</p>
-
-<p align="center">
-  <b>Deciding whether to star?</b> Run the no-key proof first: <code>entroly verify-claims && entroly simulate</code>.<br>
-  <sub>If it finds meaningful savings or gives you auditable receipts on your repo, star it so other agent builders can find it. If it does not, open an issue with the verification JSON.</sub>
-</p>
+<p align="center"><sub>~72,000 combined PyPI + npm downloads.</sub></p>
 
 ---
 
-## See value in your first session
+## Install
 
-Entroly should answer three questions quickly: **Did it reduce the context? Did
-that reduction reach a provider-bound request? What evidence and risk remained?**
+Pick your platform. Every path installs the same engine — Python is the
+reference runtime; npm and Rust are alternate ways to run it.
 
-```bash
-entroly verify-claims   # prove the installed trust/recovery path; no API key
-entroly simulate        # estimate reduction on this repo; no model call
-entroly value           # print the evidence-classified lifetime value receipt
-entroly value --json    # the same receipt for CI, audits, or a dashboard
-```
-
-The value receipt deliberately keeps unlike evidence separate:
-
-| Evidence class | What Entroly reports | Dollar claim |
-|---|---|---:|
-| **Provider-bound proxy requests** | Requests observed, pre/post input-token reduction, active days, and configured model-rate provenance | Modeled API input cost avoided; **not an invoice**. Unknown/unmatched models remain unpriced |
-| **SDK, MCP, and npm operations** | Local operations and tokens reduced | **$0 claimed** because delivery to a paid provider is not observable |
-| **Legacy or unknown-source history** | Preserved tokens and operations | **$0 claimed**; excluded from provider savings |
-
-`simulate` compares selected context with its stated local 32K dump baseline.
-It is a fast estimate, not provider billing or final-answer quality. Once a
-request travels through a supported proxy path, `entroly value` reports
-measured pre/post provider-bound token counts and labels the result with the
-pricing source and date.
-
----
-
-## One thing you can verify without trusting Entroly
-
-Context reduction is dangerous when a tool silently changes source text. An
-Entroly Context Receipt records the exact source-file SHA-256, UTF-8 byte range,
-and fragment SHA-256 for both selected and omitted source fragments. A receipt
-holder can recompute those values with `hashlib`; verification does not call
-Entroly's hash implementation.
-
-On a pinned, unsampled corpus of **1,104 files in 13 languages**, the installed
-native path produced **5,117 / 5,117** fragments whose text, source range,
-source digest, and fragment digest all verified. The pure-Python fallback
-independently passed **11,986 / 11,986** fragments. Through the public SDK,
-**13 / 13** omitted fragments recovered from two pinned source files matched
-their recorded source bytes and exact receipt-owned digest.
-
-These are deterministic source-integrity checks, not generated-answer accuracy,
-retrieval recall, latency, or provider savings. The full artifacts contain the
-denominators, per-file hashes, exclusions, implementation commit, harness hash,
-limitations, and checksum sidecars.
-
-```bash
-python -m benchmarks.receipt_fragment_fidelity verify benchmarks/results/receipt_fragment_fidelity_default.json
-python -m benchmarks.receipt_fragment_fidelity sdk-verify benchmarks/results/receipt_public_integrity.json
-```
-
-[Inspect the exhaustive artifact](benchmarks/results/receipt_fragment_fidelity_default.json)
-· [inspect the public-SDK probe](benchmarks/results/receipt_public_integrity.json)
-· [see the capability-to-proof map](docs/capability-coverage.json)
-· [submit a counterexample](https://github.com/juyterman1000/entroly/issues/new?template=evidence_report.yml)
-
----
-
-## What it does
-
-Entroly is a local Context OS for AI agents. It unifies the full lifecycle of the information surrounding a model request. That makes it the observability, governance, and decision layer around context—not another general-purpose chat runtime.
-
-### Compress one file, then get it back
-
-The shortest demonstration of the contract. `compress` prints what it kept and
-the digest that recovers the original; `recover` returns the exact bytes — in a
-different process — verifying both the digest and the byte length before it
-hands anything over.
-
-```bash
-entroly compress response.json --out small.json
-#   response.json  via json codec
-#   963 -> 651 tokens (32.4% smaller)
-#   Kept: "req_8f3a21bc", "PAYMENT_DECLINED", 449900, ...
-#   Recover the original:
-#     entroly recover sha256:0b957c79...
-
-entroly recover sha256:0b957c79... --out restored.json
-diff response.json restored.json     # identical, byte for byte
-```
-
-`entroly compress --json` emits the same receipt as machine-readable JSON. If no
-codec understands the file, it is returned unchanged rather than handed to a
-compressor that would guess at it.
-
-**Frontier models reason. OpenClaw and Hermes run agents. Entroly manages what those agents read, remember, trust, recover, spend, and learn.** The same boundary applies to Claude Code and Codex: Entroly augments the agent you already use instead of becoming another chat client.
-
-| Context OS job | What Entroly does |
-|---|---|
-| **Read** | Discovers, ranks, deduplicates, compresses, and secures evidence under an explicit budget. |
-| **Remember** | Maintains working, episodic, semantic, checkpoint, and knowledge-vault context locally. |
-| **Trust** | Checks prompts, code, provenance, and generated claims with layered security and verification. |
-| **Recover** | Keeps omitted originals reachable through content-addressed handles and replayable Context Commits. |
-| **Spend** | Keeps changing evidence in a live zone after stable history, accounts from provider usage, and applies explicit routing and budget policy. |
-| **Learn** | Uses tests, CI, command exits, edits, and user outcomes to improve guarded local policies and skills. |
-
-Most compression tools shrink whatever text the agent already chose. Entroly starts one step earlier: it chooses the highest-value evidence first, compresses only after selection, keeps originals recoverable, then verifies the answer against the evidence.
-
-- **Receipts** - every selection run can explain selected chunks, omitted nearby evidence, dependency links, exact source-span digests, token ratio, and residual risks.
-- **Select** - ranks your repo or document set, then sends the answer-relevant context under a token budget.
-- **Verify** - WITNESS can check an answer against supplied evidence locally, without an additional model call. See the scoped benchmark under [Proof](#proof).
-- **Route** - sends easy, repeated tasks to a cheaper model and keeps the flagship for hard ones (opt-in, fail-closed).
-- **Cache-safe live zone** - keeps stable system/history bytes ahead of changing Entroly evidence; exact matches may be reused, but changed evidence is never replaced by a merely similar stale block.
-- **Learn** - adapts local ranking signals from recorded outcomes. No embeddings API or training job is required for that path.
-
-Use it however you work: **wrap** your agent, run it as a **proxy**, plug it in as an **MCP server**, or import the **library**.
-
-### Why teams care
-
-| What usually breaks AI coding at scale | What Entroly adds |
-|---|---|
-| Autonomous loops keep appending logs until the provider rejects or the session crashes | An in-proxy high-water guard that compacts old tool output recoverably, preserves the recent tail, and blocks unsafe overflow before it reaches the provider |
-| Token savings look good but quality silently drops | Accuracy-retention benchmarks, receipts, and WITNESS verification |
-| Agents lose the exact line, stack trace, or omitted file they later need | Reversible compressed fragments and retrieval handles |
-| First-time setup depends on one IDE or one provider | CLI, SDK, MCP, proxy, npm, PyPI, Docker, and local simulation paths |
-| Enterprise teams need proof, not screenshots | Committed JSON artifacts, local self-tests, and reproducible commands |
-
-### Product surface
-
-Entroly ships as a full local runtime, not one proxy command:
-
-| Surface | What users get |
-|---|---|
-| **CLI** | `attach`, `context-commit`, `verify-claims`, `simulate`, `value`, `perf`, `wrap`, `proxy`, `serve`, `daemon`, `benchmark`, `witness`, `receipt`, `audit`, `doctor`, `health`, `batch`, `learn`, `ravs`, `cache`, and more |
-| **SDK** | `compress`, `compress_messages`, `optimize`, `verify`, hallucination detection, Context Receipts, localizers, cache alignment, cost cortex, Memory OS |
-| **MCP server** | Context optimization, exact retrieval, receipts, recovery, feedback, security scans, codebase health, smart reads, belief verification, response verification |
-| **Proxy** | OpenAI, Anthropic, Gemini, and compatible local optimization paths for API-key users and custom apps |
-| **Node/WASM** | `entroly`, `entroly-mcp`, and `entroly-wasm` packages for npm users |
-| **Trust layer** | WITNESS, EICV, STAVE, receipt proofs, provenance checks, prompt-injection scanning, and local verification reports |
-| **Proof-guided recovery** | Durable prepare/advance sessions turn unsupported claims into evidence obligations, recover exact omitted chunks, and stop under explicit round/token bounds |
-| **Memory/session intelligence** | Memory OS, Memory Fabric, long-term memory, session digests, checkpoint relevance, cache-retention forecasting, and lifetime value tracking |
-| **Multimodal intake** | Diff, diagram, voice, image, and structured-context ingestion with provider-aware image token estimates and compliance-gated optimization |
-| **Gateway/accounting** | Provider capability planning, failover policy, redaction receipts, usage ledger, cache routing, spend math, and budget harnesses |
-| **Model intelligence** | Bundled trust-labelled model metadata plus opt-in OpenRouter and local Ollama/LM Studio discovery; remote credentials are never persisted |
-| **Knowledge vault/CogOps** | Belief compilation, vault search, workspace change sync, epistemic routing, verification engines, and flow orchestration |
-| **Framework/event gateways** | LangChain helpers, Ebbiforge provenance auditing and optional learned-dynamics adapter, AgentSkills export, Hermes, Slack, Discord, and Telegram gateway hooks for teams that want operational feedback loops |
-| **Self-improvement** | PRISM/RAVS feedback, autotune, verified model-based dreaming, skill crystallization, promotion gates, evolution logging, and budget-gated skill synthesis |
-| **Observability** | Dashboard, daemon supervisor, control plane, health reports, value tracker, release-surface checks, and local JSON proof reports |
-
-Under the hood, the Python control plane has a pure-Python path and can use the
-optional Rust extension for supported operations. The separate Node runtime
-uses WASM. The implementation includes BM25, entropy scoring, SimHash dedup,
-dependency graphs, budgeted selection, caching, verification, and memory
-primitives; installed capabilities depend on the selected package and extras.
-
-See the full code-derived map in [docs/product-surface.md](docs/product-surface.md).
-
----
-
-## How it works (30 seconds)
-
-```
-your agent  ──►  Entroly (local)  ──►  LLM provider
-                 │
-                 ├─ rank the repo        (BM25 + entropy + dep-graph)
-                 ├─ select under budget  (knapsack, reversible)
-                 ├─ emit receipt         (included, omitted, risks)
-                 ├─ stable prefix + live zone (protect native cache boundaries)
-                 ├─ rescue runaway logs  (recoverable high-water checkpoints)
-                 └─ verify the reply      (WITNESS hallucination guard)
-```
-
-Critical files go in full. Supporting files can become signatures. Other material can become a reference that can be expanded on demand. Exact recovery is available only while the corresponding receipt and recovery store are retained; deleting that state deletes Entroly's recovery path.
-
-### Runaway-session rescue without cache churn
-
-When traffic passes through `entroly proxy`, Entroly now guards every outbound
-request before the provider sees it:
-
-- repetitive terminal, test, and function output is compressed in the live
-  zone while errors, failures, paths, and structural metadata remain visible;
-- the complete original tool block is persisted locally **before** mutation,
-  and the forwarded block carries an `entroly-recovery` receipt/span handle;
-- stable system and historical bytes stay ahead of changing Entroly context,
-  rather than rewriting the system prefix on every turn;
-- at soft pressure, a provider-observed warm cache defers optional reshaping;
-  a detected loop or hard pressure overrides that deferral to prevent overflow;
-- recent user/tool turns are preserved; if recoverable compaction still cannot
-  get below the safety watermark, the proxy returns an actionable `413` instead
-  of forwarding a request that is expected to fail upstream.
-
-The guard supports OpenAI messages and Responses input, Anthropic
-`tool_result`, and known textual Gemini `functionResponse` /
-`codeExecutionResult` fields. Gemini IDs, part order, and thought signatures
-are not rewritten. Unknown or ambiguous structures pass through unchanged and
-can trigger the explicit capacity error rather than being guessed at.
-
-This protects only requests routed through the Entroly proxy; it does not mutate
-an agent application's saved transcript in the background. Provider-reported
-cached-token and cache-write usage remains the source of truth—Entroly does not
-convert an internal exact-match counter into a dollar-savings claim.
-
-[Configuration, recovery, and operational limits](docs/session-rescue.md)
-
----
-
-## Proof in 30 seconds
-
-Three short, reproducible checks show the value before asking you to trust the
-product. These are not mocked terminal recordings: each video is rendered from
-a checked-in command that verifies its source artifact before printing a
-number. Click an animation for the MP4, or run the command below it yourself.
-
-### 1. Prove the installed path works—without an API key
-
-<p align="center">
-  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="900" alt="Entroly local verification: twelve checks pass without an API key"></a>
-</p>
-
-The packaged verifier exercises import, compression, receipts, witness checks,
-recovery, proxy routing, and replay, then writes a machine-readable JSON report.
-It is an install smoke test—not a savings or model-quality benchmark.
-
-```bash
-entroly verify-claims
-```
-
-### 2. Prove tighter context can preserve more answers
-
-> **Using External Baseline A today?** Run Entroly against the same workload and compare
-> answer retention, recoverability, state size, and context cost locally. The
-> results below use the published External Baseline A 0.31.0 package as a versioned
-> baseline; they are not a verdict on every External Baseline A or Entroly workload.
-
-<p align="center">
-  <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="900" alt="Frozen model-recovery holdout comparing Entroly with the published External Baseline A 0.31.0 baseline"></a>
-</p>
-
-On the frozen 24-case holdout, Entroly answered **24/24** cases; the published
-External Baseline A 0.31.0 baseline answered **18/24**, at **28.88%** versus **42.97%**
-effective context. This is a synthetic local Qwen2.5-1.5B test at temperature
-0, not a universal product or model claim. The six discordant cases favored
-Entroly (exact McNemar `p=0.03125`).
-
-```bash
-python scripts/readme_proof.py model-recovery
-```
-
-[Protocol and limitations](docs/benchmarks/model-triggered-recovery.md) ·
-[raw holdout artifact](benchmarks/results/model_recovery_v7_holdout.json)
-
-### 3. Prove omitted evidence remains recoverable after restart
-
-<p align="center">
-  <a href="docs/assets/proof_restart_recovery.mp4"><img src="docs/assets/proof_restart_recovery.gif" width="900" alt="Fresh-seed restart recovery comparing Entroly with the published External Baseline A 0.31.0 baseline"></a>
-</p>
-
-The prior v2 run tied at **66/66** and remains published. In the fresh-seed v4
-Windows revalidation, both Entroly and the published External Baseline A 0.31.0 baseline
-recovered **66/66** payloads byte-exactly after restart — both satisfy the
-recovery-integrity gate. This is **parity, not leadership**: an earlier v3 run
-recorded a single transient competitor store-lock failure (55/66) that a clean
-re-run did not reproduce. This is one reproducible run, not a universal
-durability claim.
-
-```bash
-python scripts/readme_proof.py restart-recovery
-```
-
-[Protocol, prior tie, and limitations](docs/benchmarks/competitive-evidence-matrix.md) ·
-[current raw artifact](benchmarks/results/recovery_resilience_holdout_revalidation_v5.json) ·
-[prior tie artifact](benchmarks/results/recovery_resilience_holdout_revalidation.json)
-
-The animations, MP4s, static frames, source hashes, and commands are bound in
-the [proof media manifest](docs/assets/proof_media_manifest.json). Maintainers
-can rebuild them with `python scripts/render_readme_proof_videos.py generate`
-and reject stale media with `python scripts/render_readme_proof_videos.py verify`.
-Rebuilding requires Pillow, `tiktoken`, and FFmpeg; a missing frozen-tokenizer
-dependency fails with an actionable install command instead of weakening the
-artifact check.
-
----
-
-## Get started
-
-The best first run is local and proof-driven. It should work before you connect
-an API key, proxy, paid model, or enterprise setup.
-
-```bash
-pip install -U entroly     # or: npm i -g entroly  ·  brew install juyterman1000/entroly/entroly
-```
-
-**1. Prove the package works on your machine:**
-
-```bash
-entroly verify-claims      # SDK import, indexing, optimization, exact recovery, engine mode
-entroly simulate           # local no-LLM savings estimate on your current repo
-```
-
-**2. Pick one integration path:**
-
-| You are using | Run this | Why |
+| Platform | Install | What you get |
 |---|---|---|
-| Claude Code subscription | `entroly attach create --client claude --project . --ttl 4h --install` | Installs scoped, expiring MCP access without placing a bearer token in process arguments |
-| Codex or OpenClaw | `entroly attach create --client codex --project . --ttl 4h --install` | Binds Entroly to this project with revocable least-privilege access; replace `codex` with `openclaw` as needed |
-| Cursor, VS Code, Windsurf, or another MCP client | `entroly init`, or register `entroly` as a stdio command with no arguments | Local MCP tools without requiring Docker |
-| Pay-as-you-go API keys or a custom app | `entroly proxy` | Transparent Anthropic/OpenAI-compatible optimization path |
-| Python app | `from entroly import compress, compress_messages, optimize` | Direct SDK control |
-| Node/npm workflow | `npm install -g entroly` | WASM runtime without a Python-first setup |
-| CI or release gate | `entroly batch --budget 8000 --fail-over-budget` | Enforce prompt budgets before merge |
+| **Python** (pip) | `pip install -U entroly` | Full CLI, SDK, MCP server, proxy, optional Rust acceleration |
+| **Node / npm** | `npm install -g entroly` | Same engine via WASM, no Python required |
+| **Rust** (source build) | `cd entroly-core && cargo build --release --bin entroly-rs --features proxy` | A standalone native proxy binary — no Python runtime at all |
+| **Homebrew** | `brew install juyterman1000/entroly/entroly` | CLI, macOS/Linux |
+| **Docker** | `docker pull ghcr.io/juyterman1000/entroly:latest` | Containerized MCP server / proxy |
 
-**3. Best setup for Claude Code subscription users:**
+**Verify it worked, no API key needed:**
 
 ```bash
-entroly attach create --client claude --project . --ttl 4h --install
+cd /your/repo
+entroly verify-claims   # proves the installed trust/recovery path
+entroly simulate        # estimates token reduction on this repo, no model call
 ```
 
-Claude Code stays your client. Entroly adds only the granted tools for compression, retrieval, receipts, and verification. Revoke access at any time with `entroly attach revoke <grant-id> --uninstall`; every tool call re-checks the grant, expiry, project, and scope.
-
-**4. One command — auto-detects your IDE, wraps your agent, opens the dashboard:**
-
-```bash
-cd /your/repo && entroly go
-```
-
-**5. Or wrap a specific agent:**
-
-```bash
-entroly wrap claude     # Claude Code
-entroly wrap cursor     # Cursor
-entroly wrap codex      # Codex CLI
-entroly wrap aider      # Aider
-entroly unwrap cursor   # Remove only Entroly from Cursor's MCP config
-```
-
-**6. Or run the proxy — best for pay-as-you-go API keys and custom apps:**
-
-```bash
-entroly proxy                                   # http://localhost:9377
-ANTHROPIC_BASE_URL=http://localhost:9377     your-app
-OPENAI_BASE_URL=http://localhost:9377/v1     your-app
-GOOGLE_GEMINI_BASE_URL=http://localhost:9377/v1beta     your-app
-```
-
-**7. Or measure it on your own repo first:**
-
-```bash
-entroly demo            # before/after token + cost estimate
-entroly simulate        # local no-LLM savings estimate
-entroly perf            # local no-LLM savings + optimizer latency
-entroly value           # provider value, local reductions, and legacy history kept separate
-entroly verify-claims   # runs the packaged self-test, writes a JSON report
-```
-
-> Local-first: Entroly performs indexing and selection on-device. The selected
-> prompt is sent only through the model integration you configure. Entroly does
-> not send outbound analytics by default. Apache-2.0.
-
-### First-run success contract
-
-Entroly should feel useful before you connect a paid model key:
-
-- `entroly verify-claims` proves SDK import, local indexing, optimization, exact recovery, and native/pure-Python engine mode.
-- `entroly simulate` shows the likely token reduction on your repo without making an LLM call.
-- `entroly value` reports measured provider-bound reduction separately from local-only SDK/MCP/npm reductions, with `$0` claimed for paths that cannot prove provider delivery.
-- MCP setup works for Claude Code subscription users who do not want proxy/API-key mode.
-- Proxy mode is available when you control the provider key and want transparent request optimization.
-- npm/WASM is available for Node-first users, but Python remains the fullest CLI/SDK path.
-
-If your repo is tiny or already under budget, Entroly should say so and pass through rather than invent fake savings.
+Extras (`entroly[proxy]`, `entroly[native]`, `entroly[full]`), the standalone
+Rust binary, and uninstall steps: [Engine & install options](docs/DETAILS.md#engine--install-options).
 
 ---
 
-## Context Commits
-
-A Context Commit is a portable JSON artifact for the exact context selected for
-an agent request. It binds the ordered selected text, omitted evidence, exact
-recovery data, engine/version identity, and optional parent lineage to one
-content-addressed `ctx_...` identifier.
-
-```bash
-entroly context-commit ./repo --query "Where is token rotation enforced?" \
-  --budget 8000 --out context-commit.json
-entroly context-commit --verify context-commit.json
-```
-
-```python
-from entroly import create_context_commit, replay_context, verify_context_commit
-
-commit = create_context_commit(
-    [("auth.py", open("auth.py", encoding="utf-8").read())],
-    query="Where is token rotation enforced?",
-    token_budget=8000,
-)
-assert verify_context_commit(commit).valid
-exact_context = replay_context(commit)
-```
-
-The artifact is self-contained and therefore may contain source text in its
-recovery bundle. Keep it under the same access and retention policy as the
-source repository. Content addressing proves mutation, not signer identity;
-use Entroly's optional Ed25519 attestation and Merkle-log APIs when custody or
-operator identity matters. [Contract and threat model](docs/context-commits.md).
-
----
-
-## Proof-guided exact recovery
-
-Entroly can begin with a small committed context, verify the model draft
-locally, turn unsupported claims into evidence obligations, and recover only
-the exact omitted chunks that may resolve them. The committed prefix stays
-byte-identical across rounds; recovery stops under explicit model-round, token,
-and chunk bounds.
-
-```bash
-entroly proof prepare ./docs --query "What proves restart recovery?" \
-  --budget 8000 --idempotency-key request-001 > prepared.json
-# Send prepared.json's request through the model route you already operate.
-entroly proof advance pgs_... --output-file draft.txt \
-  --idempotency-key model-round-0
-entroly proof inspect pgs_...
-```
-
-Prepare, advance, and inspect are local, durable, restart-safe, and perform no
-provider call. The CLI, MCP tools, and same-origin localhost sidecar share the
-same state machine. OpenClaw can optionally automate bounded revision passes,
-but that mode is off by default because each revision can be billable. Entroly
-never chooses the provider or receives its credentials.
-
-[Protocol, limits, integration setup, and executable contract](docs/proof-guided-context-fixed-point.md).
-
----
-
-## Context Receipts
-
-Receipt-producing selection workflows record what was used, what was omitted,
-why, and what risks remain. This is useful for hard multi-document work such as
-contracts, policies, addenda, code reviews, and audit evidence where a bare
-top-k result is not enough.
-
-```bash
-entroly ingest ./docs
-entroly select --query "Does this contract have a change-of-control clause?" --budget 8000
-entroly receipt .entroly/receipts/cr_example.json
-entroly audit .entroly/session_chain.json
-entroly explain --why-omitted chk_example --receipt .entroly/receipts/cr_example.json
-```
-
-The receipt JSON includes selected chunks, omitted relevant chunks, ranking
-reasons, dependency links, source fingerprints, token ratio, warnings, and a
-reproducibility hash. It also includes a selection certificate: bounded
-frontiers record exact optimality for Entroly's internal retrieval-score
-objective; larger frontiers record a conservative regret ceiling and a ranked
-recovery frontier instead of pretending to be optimal. The Markdown report is
-designed for human review before a compressed context is trusted.
-
-An independent exhaustive oracle found pure rank-order packing suboptimal in
-378 of 47,862 declared small-graph/budget cases. The certified selector improved
-all 378, regressed in zero, and matched the oracle in all 47,862—with zero
-partial dependency closures, budget violations, or invalid certificates.
-[Inspect the machine-readable result.](benchmarks/results/closed_set_selection_frontier.json)
-This is a synthetic internal-objective result, not an answer-quality or
-competitor claim.
-
-Implementation notes:
-
-- Rust core (`entroly-core/src/context_receipts.rs`) handles deterministic ingestion, BM25-style ranking, dependency scans, selection, and hashes when the native wheel is available.
-- Python control plane (`entroly/context_receipts/`) provides CLI wiring and a pure-Python fallback for source checkouts.
-- The semantic/vector scorer and reranker are explicit extension points; the local MVP ships with lexical scoring and dependency heuristics, not a legal-accuracy guarantee.
-
-Examples:
-
-- [Example receipt JSON](docs/examples/context_receipt.json)
-- [Example Markdown report](docs/examples/context_receipt.md)
-- [Limitations](docs/limitations.md#context-receipts)
-
----
-
-## Proof
-
-**Context Commit conformance** (synthetic deterministic code fixtures, local,
-no model or network calls):
-
-| Integrity property | Committed result |
-|---|---:|
-| Deterministic replay across Python + Rust modes | **128 / 128** |
-| Exact recovery of omitted chunks | **576 / 576** |
-| Tamper mutations detected | **768 / 768** |
-
-Reproduce: `python -m benchmarks.context_commit_conformance`.
-[Raw JSON](benchmarks/results/context_commit_conformance.json). These numbers
-measure artifact integrity, replay, and recovery on the committed fixtures;
-they do not measure model-answer quality or claim identical Python/Rust selection.
-
-**Context Efficiency Frontier research:** Entroly is building a paired,
-model-neutral benchmark for the question token-savings tables cannot answer:
-does less context preserve real task quality? The preregistered protocol
-compares raw context, model-native compaction, Entroly, and their combination
-using provider-observed tokens, cost, latency, task success, evidence recall,
-and unsupported claims.
-
-[Read the preregistered protocol](docs/benchmarks/context-efficiency-frontier.md).
-No headline result will be claimed until the paired confidence bounds pass.
-
-**Matched token-cap active-context quality frontier (1.0.59 source candidate):**
-across 60 frozen SQuAD v2 long-context RAG/tool-result trials, without invoking
-recovery from the published External Baseline A 0.31.0 baseline's CCR pointers, Entroly
-retained **95.0%**,
-**93.3%**, and **88.3%** of accepted answers at the 2x, 4x, and 8x token caps.
-The published External Baseline A 0.31.0 baseline retained **1.7%** at each cap. The paired
-two-sided exact McNemar tests pass at every point (`p <= 4.45e-16`). Entroly met
-all 180 caps; the baseline met the 2x/4x caps and exceeded the 8x cap, retaining
-18.6% of tokens against the 12.5% maximum.
-
-| Maximum token cap | Entroly answer retained / actual kept | Published External Baseline A 0.31.0 baseline |
-|---:|---:|---:|
-| 2x (50%) | **95.0% / 39.3%** | 1.7% / 18.6% |
-| 4x (25%) | **93.3% / 19.2%** | 1.7% / 18.6% |
-| 8x (12.5%) | **88.3% / 10.4%** | 1.7% / 18.6% (above cap) |
-
-A separate eight-question, randomized local `qwen2.5:1.5b` guard at 4x scored
-raw context at 62.5% exact match, Entroly at **87.5%**, and the published
-External Baseline A 0.31.0 baseline at 12.5%, with no errors. This small local-model sample
-is a veto guard, not the headline or a frontier-model claim.
-
-[Generated report](benchmarks/results/compression_frontier.md) ·
-[full auditable artifact](benchmarks/results/compression_frontier.json) ·
-[protocol and reproduction](docs/benchmarks/compression-frontier.md). Verify it
-with `python -m benchmarks.compression_frontier verify benchmarks/results/compression_frontier.json`.
-
-<sub>Scope: extractive answer retention in structured SQuAD-v2 RAG results.
-The published External Baseline A 0.31.0 baseline's CCR pointers remain in its output, but
-retrieval recovery is not run; this measures immediately visible active
-context, not External Baseline A's end-to-end CCR workflow. Entroly is measured from the
-1.0.59 source candidate; do not call this a released-package result until
-1.0.59 is published. This does not establish superiority for every task,
-model, compressor, or production workload.</sub>
-
-<p align="center">
-  <a href="benchmarks/results/compression_frontier.md"><img src="docs/assets/compression_frontier.svg" width="900" alt="Entroly 1.0.59 candidate and published External Baseline A 0.31.0 baseline on a matched token-cap frontier"></a>
-</p>
-
-**Same-input compression gauntlet:** on four deterministic agent-tool fixtures,
-current Entroly source (package version `1.0.59`) and the published External Baseline A
-0.31.0 baseline both retained **100% of the preregistered answer evidence**.
-Under the shared `o200k_base` tokenizer, Entroly reduced weighted input tokens
-by **95.1%** versus **31.4%** for the baseline's public `compress()` pipeline
-with its documented `agent-90` high-savings profile. Entroly compressed all
-four fixtures; the baseline compressed two and safely passed two through.
-
-[Generated report](benchmarks/results/compression_gauntlet.md) ·
-[raw inputs and outputs](benchmarks/results/compression_gauntlet.json) ·
-[protocol and reproduction](docs/benchmarks/compression-gauntlet.md). Verify the
-artifact with `python -m benchmarks.compression_gauntlet verify benchmarks/results/compression_gauntlet.json`.
-
-<sub>This is a synthetic, no-model compression/evidence result. It does not
-measure downstream answer quality or establish neural/ML superiority. The
-Context Efficiency Frontier above is the required gate for a real-model claim.</sub>
-
-<p align="center">
-  <a href="benchmarks/results/compression_gauntlet.md"><img src="docs/assets/compression_gauntlet.svg" width="900" alt="Entroly and the published External Baseline A 0.31.0 baseline on a same-input compression gauntlet"></a>
-</p>
-
-**Cross-process recovery holdout:** the preregistered six-writer test first
-exposed a serious Entroly failure (only 8/32 development payloads survived),
-which is preserved in the evidence. The original Entroly 1.0.59 holdout and
-the immutable v2 revalidation both recorded Entroly and the published External Baseline A
-0.31.0 recovering **66/66** payloads. On the fresh-seed v4 revalidation of the
-current complete-line recovery implementation, both Entroly and the published
-baseline recovered **66/66** byte-exactly — both satisfied the frozen integrity
-gate. An earlier v3 run recorded a single transient competitor store-lock
-failure (55/66) that a clean re-run did not reproduce, so this is parity; it
-does not establish universal recovery superiority.
-
-On the current-implementation Windows/Python 3.10 revalidation, the published
-External Baseline A 0.31.0 baseline had lower successful store-call latency (1.524 ms
-versus 34.848 ms p50). Entroly had lower retrieval latency (0.059 ms versus
-0.441 ms p50) and a smaller live state footprint (95,438 versus 1,626,736
-bytes). The baseline used SQLite WAL with
-`synchronous=NORMAL`; Entroly
-fsynced its state file on each commit, so this is not a matched power-loss
-durability comparison. These are scoped workload measurements, not universal
-claims.
-
-[Frozen protocol and full result table](docs/benchmarks/competitive-evidence-matrix.md)
-| [current v4 revalidation](benchmarks/results/recovery_resilience_holdout_revalidation_v5.json) |
-[prior v2 tie](benchmarks/results/recovery_resilience_holdout_revalidation.json) |
-[original post-repair holdout](benchmarks/results/recovery_resilience_holdout.json) |
-[original failing artifact](benchmarks/results/recovery_resilience_development_before.json).
-
-**Quality-gated compression latency holdout:** on the same four deterministic
-agent-tool fixtures and public entry points as the gauntlet, Entroly 1.0.59
-source was **2.94x faster** than the published External Baseline A 0.31.0 baseline for warm
-compressor calls (95% bootstrap CI **2.74x–3.13x**) and **2.39x faster** for
-product import plus the first call in a fresh process (**1.89x–2.70x**). Both
-systems completed every fixture, retained 100% of preregistered evidence,
-remained deterministic, and never inflated tokens.
-
-[Protocol, per-fixture timings, and limits](docs/benchmarks/compression-latency.md)
-| [full holdout artifact](benchmarks/results/compression_latency_holdout.json)
-| [development artifact](benchmarks/results/compression_latency_development.json).
-
-<sub>Scope: Windows/Python 3.10, synthetic local compression, 120 warm and 40
-cold observations per participant. Cold excludes interpreter startup and
-includes product import plus first call. This is not provider latency,
-downstream answer quality, neural superiority, or universal product
-superiority.</sub>
-
-**Model-triggered recovery holdout:** after compression for one question, a
-different future audit question was revealed to a local `qwen2.5:1.5b` guard.
-On 24 frozen query-shift cases, raw context and Entroly both scored **24/24
-exact**; the published External Baseline A 0.31.0 baseline scored **18/24**. All six paired
-differences favored Entroly (two-sided exact McNemar **p = 0.03125**). Entroly's
-mean effective context ratio, including recovery evidence on every triggered
-retry, was **28.88%** versus **42.97%** for the baseline.
-
-Every Entroly row triggered retrieval and recovered a complete source-exact
-JSON object. The published baseline answered 18 rows from active context; its
-remaining six rows were scored under the frozen no-oracle retrieval rule. The
-raw artifact retains every response. The complete artifact passed the
-strengthened verifier with zero execution errors.
-
-[Protocol, rejected variants, reproduction, and limits](docs/benchmarks/model-triggered-recovery.md)
-| [full holdout artifact](benchmarks/results/model_recovery_v7_holdout.json)
-| [development artifact](benchmarks/results/model_recovery_v7_development.json).
-
-<sub>Scope: synthetic 48-record JSON audit logs, Windows/Python 3.10, 24
-holdout cases, local Qwen2.5 1.5B Q4_K_M at temperature zero. The published
-External Baseline A 0.31.0 baseline uses its public `compress()` plus persistent
-`CompressionStore` contract; MCP
-transport is excluded. This is a scoped workflow result, not evidence about
-hosted frontier models, every agent workload, provider cost, or overall product
-superiority.</sub>
-
-**PRISM-R neural research preview:** Frozen evidence-selection benchmark. A
-generic MiniLM encoder did **not** beat BM25 as a primary paragraph scorer
-(97.7% versus 99.0% held-out evidence recall; paired exact McNemar
-`p=0.21875`), so Entroly rejects that neural-primary claim. A disagreement
-guard kept the answer-bearing passage in 298 of 300 cases while selecting an
-average of 1.02 of 16 passages. This experiment measures retrieval of the
-paragraph containing a known answer; it does not measure generated-answer
-quality. In a separate
-200-pair query-shift pilot at a nominal 25% active budget, PRISM-R retained
-87.0% of current-query evidence versus lexical selection's 60.5%; when a
-different future question was revealed, exact receipt-backed rehydration raised
-its evidence retention from 9.0% to 90.5%. Active plus recovered context was
-50.6% of the original.
-
-[Retrieval protocol and limits](docs/benchmarks/neural-evidence-frontier.md) ·
-[Research design and prior art](docs/research/prism-r-neural-compression.md) ·
-[held-out retrieval artifact](benchmarks/results/neural_evidence_frontier.json) ·
-[query-shift artifact](benchmarks/results/neural_query_shift.json).
-
-<sub>These are offline exact-evidence pilots on frozen SQuAD v2 subsets. They
-do not measure generated answers and are not downstream answer-quality, latency,
-production-savings, or general neural superiority claims. PRISM-R is an opt-in
-research prototype, is not reachable from a shipped entry point, is not the
-default compressor, and remains opt-in research code.</sub>
-
-The tables below link each reported number to its committed result. Treat them
-as evidence for those specific datasets, budgets, models, and commits—not as a
-guarantee for another repository. `entroly simulate` uses a local token
-estimate; use provider-observed usage for a billing or production claim.
-
-**Accuracy retention** — does compression hurt answers? Measured with `gpt-4o-mini`; intervals are Wilson 95% CIs. Each row links its raw result file.
-
-| Benchmark | n | Budget | Baseline | With Entroly | Retention | Token savings |
-|---|---|---|---|---|---|---|
-| [NeedleInAHaystack](benchmarks/results/needle_accuracy.json) | 20 | 2K | 100% | 100% | **100%** | **99.5%** |
-| [LongBench (HotpotQA)](benchmarks/results/longbench_accuracy.json) | 50 | 2K | 64% | 66% | **103%** | **85.3%** |
-| [Berkeley Function Calling](benchmarks/results/bfcl_accuracy.json) | 50 | 500 | 100% | 100% | **100%** | **79.3%** |
-| [SQuAD 2.0](benchmarks/results/squad_accuracy.json) | 50 | 100 | 80% | 72% | **90%** | **43.8%** |
-| [GSM8K](benchmarks/results/gsm8k_accuracy.json) | 20 | 50K | 85% | 85% | **100%** | pass-through* |
-
-<sub>*pass-through: context already fit the budget, so Entroly left it unchanged. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`). Scope, additional artifacts, and limitations are in the [public evidence ledger](docs/public-evidence.md).</sub>
-
-**Hallucination detection** — committed [HaluEval-QA](https://github.com/RUCAIBox/HaluEval)
-balanced, both-answers-scored run:
-
-| Result | Decisions | Accuracy | AUROC | Scope |
-|---|---:|---:|---:|---|
-| WITNESS full benchmark | 20,000 | 84.92% on the 16,000-decision held-out split | **0.7976** | Local, deterministic verifier |
-| WITNESS on the shared GPT sample | 1,200 | 86.58% | 0.8132 | Same sampled decisions used for the GPT rows |
-| gpt-4o-mini on the shared sample | 1,200 | 86.25% | not reported | API judge comparison only |
-
-Reproduce: `python benchmarks/halueval_qa_faithful.py`.
-[Protocol and raw result](benchmarks/results/halueval_qa_faithful.json). The
-shared-sample accuracies overlap within their reported uncertainty; this result
-does not establish superiority, general hallucination prevention, or production
-answer quality. The separate [STAVE exploratory result](benchmarks/results/stave_benchmark.json)
-is not used for the headline because it follows a different evaluation setup.
-
----
-
-## Works with your stack
-
-### OpenClaw: keep the evidence uniform compression drops
-
-OpenClaw remains the conversation and agent runtime. Attach Entroly as its context control plane with `entroly attach create --client openclaw --project . --ttl 4h --install`.
-
-The OpenClaw context-engine plugin keeps context assembly separate from provider
-routing. The same assembly path can be used with OpenAI, Anthropic, Gemini,
-Nemotron, OpenRouter, Ollama, and custom routes because OpenClaw owns routing
-and authentication. Its resolved prompt budget is authoritative; when an older
-or degraded host omits that value, Entroly can derive a conservative input
-ceiling from verified, operator-supplied, or explicitly discovered model
-metadata. Unknown and announced limits fail safely instead of being guessed.
-The receipt binds the discovery trust, registry digest, source, output reserve,
-and safety margin to the assembly decision. Entroly preserves opaque provider
-blocks and delegates `/compact` and overflow recovery back to OpenClaw.
-
-The beta OpenClaw context engine scores older messages against the current
-request. Matching evidence is pinned verbatim when it fits a bounded reserve;
-lower-value history is compressed around it, and every decision is written to
-a local receipt.
-
-For high-stakes answers, the plugin also has an explicit opt-in proof-guided
-mode: it verifies the draft locally, recovers exact omitted messages, and asks
-OpenClaw for no more than the configured revision bound. It is disabled by
-default, requires OpenClaw's conversation-access grant, and may add a paid model
-call. Unsafe or unverifiable delivery is visibly withheld rather than silently
-passed through. See the [plugin setup](integrations/openclaw/README.md#optional-proof-guided-exact-recovery).
-
-In the committed synthetic, no-model control below, both strategies fit the
-same 1,800-token estimated budget. Uniform compression lost the exact old
-authentication instruction; evidence pinning retained it byte-for-byte.
-
-| Strategy | Estimated assembled tokens | Exact evidence retained |
-|---|---:|---:|
-| Uniform budget compression | 1,797 | No |
-| Entroly evidence pinning | 1,793 | **Yes** |
-
-Reproduce locally: `python -m benchmarks.openclaw_evidence_pinning`.
-[Benchmark JSON](benchmarks/results/openclaw_evidence_pinning.json) ·
-[Plugin setup](integrations/openclaw/README.md)
-
-<sub>Synthetic deterministic normalized multi-provider workload, 23,089 estimated source tokens, 11
-messages, zero model calls. Token counts are estimates, not billed usage, and
-this result does not establish downstream model accuracy.</sub>
-
-`entroly wrap <agent>` chooses the safest available integration: a session-scoped proxy launch, an MCP registration, or guided custom-endpoint setup when a third-party schema should not be mutated automatically. `entroly unwrap <agent>` reverses persistent MCP registration with an atomic write and leaves unrelated tool configuration untouched.
-
-### Agent compatibility
-
-**Status describes integration depth—not a blanket quality or savings guarantee.** Provider-observed savings require requests to traverse an Entroly proxy route. MCP integrations add context, recovery, receipt, and verification tools but do not automatically intercept every model request.
-
-| Agent or platform | Entroly path | Current status | Important boundary |
-|---|---|---|---|
-| **Claude Code** | Scoped MCP attachment; API-key proxy | **Native** | Claude Pro/Max subscription sessions use MCP; public-API proxying requires `ANTHROPIC_API_KEY`. |
-| **Codex CLI** | Scoped MCP attachment; API-key proxy | **Native** | ChatGPT-account mode can bypass `OPENAI_BASE_URL`. |
-| **GitHub Copilot CLI** | MCP for subscription sessions; BYOK custom-provider proxy | **Supported with mode boundary** | Entroly does not claim interception of GitHub-hosted subscription inference. |
-| **OpenClaw** | ContextEngine plugin and scoped MCP attachment | **Native** | OpenClaw retains provider authentication; Entroly controls context assembly and receipts. |
-| **Cursor** | Automatic project MCP config; optional custom endpoint | **Automatic MCP** | Proxy accounting exists only when the model route points through Entroly. |
-| **Aider / OpenCode** | Session-scoped OpenAI-compatible proxy | **One command** | Requires a provider route that accepts a custom endpoint. |
-| **Cline / Continue** | Printed endpoint or provider configuration | **Guided setup** | Entroly avoids silently mutating versioned extension schemas. |
-| **Grok CLI** | Custom model pointed at Entroly | **Guided BYOK** | Default signed-in inference is not claimed as intercepted. |
-| **Goose / OpenHands** | Documented custom endpoint | **Validation pending** | Added to the registry only with explicit auth boundaries and watchdog verification. |
-| **Mistral Vibe / Oh My Pi / ZCode** | Generated custom-provider configuration | **Guided setup** | The user chooses the upstream model and credential contract. |
-| **Cortex Code** | SDK/library boundary only | **Not validated as a wrap target** | No official tested endpoint contract is currently advertised by Entroly. |
-
-[See the evidence-bounded compatibility guide](docs/agent-compatibility.md), including Copilot subscription vs BYOK behavior and the exact meaning of each status.
-
-<details>
-<summary><b>Code-backed setup registry</b></summary>
-
-| Integration class | Current targets |
-|---|---|
-| **CLI proxy launch** | Claude Code, Codex CLI, Aider, GitHub Copilot CLI BYOK, Gemini CLI, Qwen Code, OpenCode, Charm CRUSH, Hermes, Pi, Ollama, Goose, OpenHands |
-| **Automatic MCP config** | Cursor, Windsurf, VS Code MCP clients, Claude Desktop, Claude Code MCP mode, Zed |
-| **Guided endpoint setup** | Grok CLI, Mistral Vibe, Oh My Pi, ZCode, Cline, Roo Code, Continue, Cody, Amp, Kiro, Qoder, Trae, Antigravity, Amazon Q, Verdent, JetBrains AI, Helix, Tabby, Twinny, Sublime, Emacs, Neovim, Fitten Code, Tabnine, Supermaven |
-
-Any OpenAI-compatible client can use the proxy only when it supports a custom base URL, the upstream is configured correctly, and its authentication terms permit local routing. Entroly's post-session watchdog reports when a wrapped CLI sends the proxy zero requests.
-</details>
-
-**As a library** (LangChain, LangGraph nodes, LlamaIndex, your own code):
+## Quickstart — by how you work
+
+| I am a... | Do this | Why |
+|---|---|---|
+| **pip / Python user** | `pip install -U entroly && entroly go` | One command auto-detects your IDE, wraps your agent, opens a dashboard showing before/after tokens |
+| **npm / Node user** | `npm install -g entroly && entroly init` | Same engine over WASM — no Python install needed |
+| **Rust user** | `cargo build --release --bin entroly-rs --features proxy` (from `entroly-core/`) | A single native binary proxy — no runtime dependency at all |
+| **MCP client user** (Claude Code, Cursor, Windsurf, VS Code) | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your agent gets scoped, expiring tool access — compression, receipts, recovery — with zero code changes |
+| **SDK / library user** | `from entroly import compress, compress_messages, optimize` | Call it directly from Python; drop it into any pipeline that assembles a prompt |
+| **API-key / custom app user** | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request through the proxy is optimized transparently — no code changes on your side |
+
+**Why bother:** less unnecessary context reaches the model (lower bill, less
+distraction for the model), nothing is silently lost (every drop is
+recoverable and receipted), and you can prove it — `entroly verify-claims`
+and `entroly simulate` show real numbers on your own repo before you connect
+a paid key.
 
 ```python
 from entroly import compress, compress_messages, optimize
 
 compressed = compress(api_response, budget=2000)          # query-agnostic
 messages   = compress_messages(messages, budget=30000)    # whole conversation
-gentle     = compress_messages(messages, target_ratio=0.90)  # smooth relative operating point
 context    = optimize(fragments, budget=8000, query="fix the login bug")  # task-conditioned
 ```
 
-`compress_messages` infers the final user turn as the task and uses it to
-prioritize answer-relevant evidence in older context. `target_ratio` is based on
-Entroly's dependency-free token estimate; measure provider-observed tokens with
-the [Context Efficiency Frontier](docs/benchmarks/context-efficiency-frontier.md)
-before publishing a savings claim.
-
-LangChain has a packaged helper. LangGraph and other orchestrators can call the
-same Python SDK at their context-assembly boundaries; Entroly does not claim a
-dedicated LangGraph adapter.
-
-**In CI** — fail the build if a prompt blows the token budget:
-
-```yaml
-- run: pip install entroly && entroly batch --budget 8000 --fail-over-budget
-```
-
----
-
-## When to use it · when to skip
-
-**Great fit**
-- Large repos where the agent only sees a few files at a time
-- Chatty, multi-turn agents (cache alignment compounds the savings)
-- Anywhere you want answers checked against evidence before you trust them
-- Teams trying to cut a real, growing AI bill
-
-**Skip it (it'll just pass through)**
-- Tiny repos or short prompts that already fit the budget
-- Judgment-heavy tasks where you want the full flagship model every time
-
----
-
-## What's inside
-
-Entroly exposes **19 local control mechanisms** across input, inference, output,
-verification, and learning. The table describes their role and source location;
-it does not assign an unmeasured savings percentage to each mechanism.
-
-<details>
-<summary><b>The 19 mechanisms (and the file that implements each)</b></summary>
-
-| # | Mechanism | Role | Source |
-|---|---|---|---|
-| 1 | Context compression (knapsack + compressors + dep-graph) | Select and transform context under an explicit budget | `proxy_transform.py`, `qccr.py` |
-| 2 | WITNESS + STAVE verification gateway | Produce local grounding-risk signals; benchmark protocols remain separate | `witness.py`, `verifiers/stave.py` |
-| 3 | Cache Aligner | Preserve eligible prompt-prefix bytes for provider cache reuse | `cache_aligner.py` |
-| 4 | Escalation cascade (conformally calibrated) | Gate opt-in escalation under configured confidence policy | `escalation.py` |
-| 5 | Conformal cascade | Calibrate a cost/coverage operating point | `conformal_cascade.py` |
-| 6 | RAVS Bayesian router | routes easy tasks to cheaper models | `ravs/router.py` |
-| 7 | Fast-path crystallized skills | Reuse an accepted cached result when its key and policy match | `fast_path.py` |
-| 8 | Adaptive compression budget | right-sizes budget per query | `adaptive_budget.py` |
-| 9 | Entropic conversation pruning | flattens history-growth cost | `proxy_transform.py` |
-| 10 | Shell-output compression | Reduce tool output under an explicit policy and budget | `proxy_transform.py`, `shell_codec.py` |
-| 11 | Response distillation | fewer output tokens billed | `proxy_transform.py` |
-| 12 | Local DeBERTa NLI (opt-in) | Run supported NLI checks without an API call | `witness.py` |
-| 13 | EICV suppressor | Suppress content that crosses the configured risk threshold | `eicv_suppressor.py` |
-| 14 | PRISM 5D adaptive weights | Adapt weights from recorded outcomes | `online_learner.py`, `prism.rs` |
-| 15 | Federation (opt-in) | Share explicitly enabled weight contributions | `federation.py` |
-| 16 | Entropic Shell Codec | universal tool-output fallback | `shell_codec.py` |
-| 17 | Semantic Resolution Protocol | resolution-aware file reads | `semantic_resolution.py` |
-| 18 | Adversarial Context Firewall | Detect and apply policy to prompt-injection patterns | `context_firewall.py` |
-| 19 | Witness-Verified Handoff | Check handoff claims against supplied evidence | `verified_handoff.py` |
-
-Some levers can compound: input selection, cache alignment, opt-in model routing,
-and output distillation affect different parts of a request. The dashboard
-reports each contribution separately. Do not multiply estimated percentages
-into a billing claim; validate the complete path with provider-observed usage.
-Implementation details are in [docs/DETAILS.md](docs/DETAILS.md).
-</details>
-
-<details>
-<summary><b>Engine & install options</b></summary>
-
-Python is the reference runtime. The optional Rust core accelerates supported
-compute-heavy paths through PyO3, and a separate Node runtime ships through
-WASM. The base Python install does not imply that the Rust extension is active;
-`entroly verify-claims` reports the engine mode it actually exercised.
-
 ```bash
-pip install entroly            # core: MCP server + Python engine
-pip install entroly[proxy]     # + HTTP proxy
-pip install entroly[native]    # + Rust engine
-pip install entroly[full]      # everything
-
-npm install -g entroly         # WASM runtime, no Python needed
-docker pull ghcr.io/juyterman1000/entroly:latest
+entroly compress response.json --out small.json    # compress one file, get a receipt
+entroly recover sha256:0b957c79... --out restored.json   # get the exact original back
 ```
 
-**Single binary, no Python** — a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
-
-```bash
-cd entroly/entroly-core && cargo build --release --bin entroly-rs --features proxy
-./target/release/entroly-rs proxy --upstream https://api.anthropic.com
-```
-</details>
+Full setup paths for every agent, IDE, and CI use case: [Get started in depth](docs/first-run-trust.md) · [Command reference](docs/DETAILS.md#command-reference).
 
 ---
 
-## WITNESS — check answers before you trust them
+## See it work in 30 seconds
 
-```bash
-entroly witness --context-file evidence.txt --output-file answer.txt --mode strict
-entroly proxy --witness strict --witness-profile rag    # suppress unsupported claims inline
-```
+Not mocked recordings — each video is rendered from a checked-in command that
+verifies its source artifact before printing a number.
 
-Profiles tune false-positive behavior per workload (`rag`, `qa`, `code` fail closed; `chat`, `summary` warn). When WITNESS is enabled on a supported non-streaming proxy path, Entroly emits a certificate and the dashboard can show flagged claims, evidence snippets, and suppression counts. Optional offline DeBERTa NLI is enabled with `ENTROLY_LOCAL_NLI=1`; evaluate it on your workload before making an accuracy claim.
+<p align="center">
+  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Entroly local verification: twelve checks pass without an API key"></a>
+</p>
 
----
+<p align="center"><code>entroly verify-claims</code> — import, compression, receipts, WITNESS checks, recovery, proxy routing, replay. No API key.</p>
 
-## Why Entroly is different
+<p align="center">
+  <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="700" alt="Frozen model-recovery holdout: Entroly 24/24, published baseline 18/24"></a>
+</p>
 
-The winning product is not the one that makes the prompt smallest. It is the one that helps the model do the best work for the fewest tokens.
+<p align="center">On a frozen 24-case holdout, Entroly answered <b>24/24</b>; a published baseline answered <b>18/24</b> at roughly 1.5x the effective context. <code>python scripts/readme_proof.py model-recovery</code></p>
 
-Entroly is built around that trust contract: select the right evidence, compress supporting material, keep originals recoverable, emit a receipt, and verify the answer against the retained evidence.
+<p align="center">
+  <a href="docs/assets/proof_restart_recovery.mp4"><img src="docs/assets/proof_restart_recovery.gif" width="700" alt="Fresh-seed restart recovery: 66 of 66 payloads recovered byte-exactly"></a>
+</p>
 
-| Layer | Entroly answer |
-|---|---|
-| **Context engine** | BM25 + entropy + dependency graph + knapsack/IOS selection under budget |
-| **Compression/recovery** | Evidence-Locked Compression, exact CCR handles, omitted-span retrieval store |
-| **Trust** | Context Receipts, WITNESS, EICV, STAVE, provenance, receipt proofs |
-| **Gateway** | Provider adapters, cache-aware routing, usage ledger, cost cortex, harness budgets |
-| **Memory/session** | Memory OS, Memory Fabric, long-term memory, checkpoint relevance, session digests, value tracking |
-| **Multimodal** | Diff, diagram, voice, image, and structured-context ingestion with provider-aware token estimates |
-| **CogOps/vault** | Belief compiler, vault search, epistemic router, flow orchestrator, verification engine, workspace change sync |
-| **Learning** | Feedback, PRISM/RAVS, archetype adaptation, cache and routing signals |
-| **Self-improvement** | Autotune, real-benchmark-gated dreaming, reward crystallization, skill synthesis, promotion gates, rollback, optional federation |
-| **Security** | SAST, prompt-injection scanning, redaction policy, path containment |
-| **Observability** | Dashboard, daemon, control plane, health reports, usage accounting, local proof JSON |
-| **Runtime** | Python SDK/CLI/MCP plus Rust native engine and Node/WASM runtime |
+<p align="center">Omitted evidence recovered <b>byte-exact</b> after a process restart, 66/66 payloads. <code>python scripts/readme_proof.py restart-recovery</code></p>
 
-The goal is **same-quality or better model work at materially lower token cost**.
+Full protocols, sample sizes, and every caveat: **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**.
 
 ---
 
-## Self-improving local runtime
+## Benchmarks
 
-Entroly has a guarded self-improvement loop. It is designed to learn from real outcomes without letting adaptation run wild.
+Does compression hurt answers? Measured with `gpt-4o-mini`; intervals are Wilson 95% CIs.
 
-| Loop | What it does |
-|---|---|
-| **Feedback** | `record_test_result`, `record_command_exit`, `record_ci_result`, and `record_edit_outcome` turn real outcomes into learning signals |
-| **PRISM/RAVS** | Online Bayesian weights and honest-outcome correction move selection toward what actually passes tests, CI, and user acceptance |
-| **Autotune/dreaming** | Idle/offline loops test weight perturbations against real benchmark cases; optional world-model rollouts rank proposals but cannot promote them |
-| **Reward crystallization** | Repeated high-reward query families become reusable skills with statistical lower-bound checks |
-| **Skill synthesis** | Structural synthesis tries local, deterministic skill generation before any LLM fallback |
-| **Promotion gate** | Shadow policies must be non-inferior before promotion; rollback triggers on repair/retry/success regression |
-| **Budget guardrail** | Evolution is intended to stay token-negative by spending only a bounded fraction of provider-classified cost avoidance; local-only and legacy estimates do not fund it |
-| **Optional federation** | Weight contributions can be shared only when explicitly enabled |
+| Benchmark | Baseline | With Entroly | Retention | Token savings |
+|---|---|---|---|---|
+| NeedleInAHaystack | 100% | 100% | **100%** | **99.5%** |
+| LongBench (HotpotQA) | 64% | 66% | **103%** | **85.3%** |
+| Berkeley Function Calling | 100% | 100% | **100%** | **79.3%** |
+| SQuAD 2.0 | 80% | 72% | **90%** | **43.8%** |
+| GSM8K | 85% | 85% | **100%** | pass-through* |
 
-This is the important distinction: Entroly does not just remember context. It can learn which context-selection strategies, routes, and skills actually produce successful work.
+<sub>*pass-through: context already fit the budget, left unchanged. n=20–50 per row. Reproduce: `python benchmarks/run_readme_benchmarks.py` (needs `OPENAI_API_KEY`).</sub>
 
-Experimental verified dreaming can additionally learn
-`state + action -> next state + reward` from real benchmark transitions and use
-short, uncertainty-penalized rollouts to choose which experiment to run next.
-Real and synthetic transitions are hash-chained in separate ledgers, and only
-real holdout evidence can promote a policy or configuration. It is opt-in via
-`ENTROLY_VERIFIED_DREAMING=1`; see
-[Verified dreaming](docs/verified-dreaming.md) for the evidence contract,
-Ebbiforge adapter, and non-claims.
+Hallucination detection (WITNESS, local, no API): **84.92%** accuracy / **0.7976 AUROC** on 20,000 [HaluEval-QA](https://github.com/RUCAIBox/HaluEval) decisions — within the reported uncertainty of `gpt-4o-mini` as an API judge on the same shared sample.
+
+Recovery, latency, and head-to-head frontier results — [context-cap retention](docs/BENCHMARKS.md#matched-token-cap-active-context-quality-frontier-1059-source-candidate), [compression gauntlet](docs/BENCHMARKS.md#same-input-compression-gauntlet), [cross-process recovery](docs/BENCHMARKS.md#cross-process-recovery-holdout), [model-triggered recovery](docs/benchmarks/model-triggered-recovery.md) — are in **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)** with every raw artifact linked, including the [PRISM-R neural evidence frontier](docs/benchmarks/neural-evidence-frontier.md). None of these numbers are a universal or production-savings guarantee for your workload — reproduce them on your own repo with `entroly simulate` and `entroly value`.
 
 ---
 
-## Compared to
+## Features
 
-| Question | Entroly's documented behavior |
-|---|---|
-| What happens before compression? | Query-aware ranking and budgeted selection |
-| How are omissions handled? | Receipts and recovery handles when recoverable state is retained |
-| How are savings reported? | Local estimates for exploration; provider-observed usage for production claims |
-| Is answer quality guaranteed? | No. Use the linked task benchmarks and validate the target workload |
-| Is an embeddings API required? | No for the default local selection path |
-| Is answer verification automatic everywhere? | No. WITNESS must be enabled on a supported integration path |
+- **Select, then compress** — ranks your repo or document set (BM25 + entropy + dependency graph), then sends only the answer-relevant context under a token budget. Most tools compress whatever text was already chosen; Entroly chooses first.
+- **Exact recovery** — every compressed representation carries a digest- and length-verified handle back to the original bytes. `entroly compress` / `entroly recover` prove it across a process boundary.
+- **Receipts** — every selection explains what was kept, what was omitted and why, dependency links, source-span digests, and residual risk.
+- **Verify (WITNESS)** — checks an answer against supplied evidence locally, no extra model call.
+- **Cache-safe live zone** — stable system/history bytes stay ahead of changing context, so provider prompt caching isn't broken by every turn.
+- **Runaway-session rescue** — the proxy compacts recoverable tool output before a provider rejects an overlong request, instead of failing mid-session.
+- **Route + learn** — optionally sends easy tasks to a cheaper model (fail-closed), and adapts local ranking signals from recorded outcomes — no embeddings API required.
 
-> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
+Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or **library import**. Full surface map — every command, every SDK function, every MCP tool: **[docs/product-surface.md](docs/product-surface.md)**. Architecture and Rust internals: **[docs/DETAILS.md](docs/DETAILS.md)**.
+
+---
+
+## Works with your stack
+
+| Agent / platform | Path | Status |
+|---|---|---|
+| Claude Code | Scoped MCP attachment; API-key proxy | Native |
+| Codex CLI | Scoped MCP attachment; API-key proxy | Native |
+| OpenClaw | Context-engine plugin + scoped MCP | Native |
+| Cursor / Windsurf / VS Code | Automatic MCP config | Automatic |
+| GitHub Copilot CLI | MCP (subscription) / proxy (BYOK) | Supported |
+| Cortex Code | SDK/library boundary only | Not validated as a wrap target |
+| Aider, OpenCode, and 30+ more | Session-scoped OpenAI-compatible proxy | One command |
+
+Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix with every client and its authentication boundary: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
+
+---
+
+## When to use it · when to skip it
+
+**Great fit:** large repos where the agent only sees a few files at a time · chatty multi-turn agents (cache alignment compounds savings) · anywhere you want answers checked against evidence · cutting a real, growing AI bill.
+
+**Skip it:** tiny repos or short prompts that already fit the budget (Entroly passes them through unchanged) · judgment-heavy tasks where you always want the full flagship model.
+
+---
+
+## More commands
+
+Also available: `entroly wrap`, `entroly unwrap`, `entroly serve`,
+`entroly daemon`, `entroly dashboard`, `entroly demo`, `entroly capabilities`,
+`entroly ingest`, `entroly select`, `entroly receipt`, `entroly explain`,
+`entroly context-commit`, `entroly proof`, `entroly benchmark`,
+`entroly cache`, `entroly ravs`, `entroly perf`, `entroly batch`. Full
+description of every command: [command reference](docs/DETAILS.md#command-reference).
 
 ---
 
 ## Docs & community
 
-- **[Context control plane](docs/context-control-plane.md)** — model metadata, secure attachment, gateway recovery, and context-session UI guarantees.
-
-<details>
-<summary><b>Command reference</b></summary>
-
-| Command | What it does |
-|---|---|
-| `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
-| `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
-| `entroly unwrap <agent>` | Remove Entroly's persistent MCP registration without changing other tools |
-| `entroly capabilities --json` | Report installed runtime surfaces offline without claiming provider connectivity |
-| `entroly attach create/list/revoke` | Grant, inspect, or revoke scoped and expiring MCP access for Claude Code, Codex, or OpenClaw |
-| `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
-| `entroly` as an MCP stdio command | Start the installed Python MCP server when launched by an MCP client |
-| `entroly serve` | Start through the Docker image by default; set `ENTROLY_NO_DOCKER=1` for the installed Python runtime |
-| `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
-| `entroly dashboard` | Open the live metrics dashboard |
-| `entroly demo` | Before/after token + cost estimate on your repo |
-| `entroly ingest` | Ingest documents into a local Context Receipt index |
-| `entroly select` | Select context under budget and write a Context Receipt |
-| `entroly context-commit` | Create or verify a replayable, recoverable context artifact |
-| `entroly proof prepare/advance/inspect/run` | Run the durable, bounded proof-guided exact-recovery protocol |
-| `entroly receipt` | Render a Context Receipt as a Markdown report |
-| `entroly explain` | Explain why a chunk was selected or omitted |
-| `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
-| `entroly perf` | Local no-LLM savings and optimizer latency |
-| `entroly value` | Evidence-classified provider value, local token reduction, and legacy history |
-| `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
-| `entroly health` | Codebase health grade (A–F) |
-| `entroly cache stats` | Persistent cross-session cache stats |
-| `entroly ravs report` | Model-routing cost-savings report |
-| `entroly witness` | Check an answer against supplied evidence |
-| `entroly verify-claims` | Run the packaged self-test → JSON report |
-
-</details>
-
-- **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, RAG comparison, SDK, LangChain.
-- **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, npm/WASM, verification, memory, and security surfaces.
-- **[First-run trust guide](docs/first-run-trust.md)** — exactly what a new user should run before wiring a paid model.
-- **[Verified dreaming](docs/verified-dreaming.md)** — real transition learning, uncertainty-bounded world-model rollouts, Ebbiforge integration, and real-only promotion gates.
+- **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat, including [Context Commit conformance](benchmarks/results/context_commit_conformance.json) (128/128 deterministic replay, 576/576 exact recovery, 768/768 tamper detection).
+- **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, npm/WASM, verification, memory, security.
+- **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, command reference.
+- **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its exact authentication boundary.
+- **[First-run trust guide](docs/first-run-trust.md)** — exactly what to run before wiring a paid model key.
 - **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
-- **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, and what it does not guarantee.
-- **[Public evidence policy](docs/public-evidence.md)** — claim tiers, benchmark scope, package links, and marketplace status.
-- **[Cookbook](cookbook/README.md)** — copy-paste recipes for common workflows.
-- **[Discord Community](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
+- **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, what it doesn't guarantee.
+- **[Public evidence policy](docs/public-evidence.md)** — claim tiers and package links.
+- **[Context Commits](docs/context-commits.md)** · **[Context Receipts](docs/DETAILS.md#context-receipts)** · **[Proof-guided recovery](docs/proof-guided-context-fixed-point.md)** — portable, recoverable, verifiable context artifacts.
+- **[Cookbook](cookbook/README.md)** — copy-paste recipes.
+- **[Discord](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
-### Marketplace status
-
-Marketplace pages are discovery surfaces, not release verification. The public
-[LobeHub listing](https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score)
-was still showing stale version and capability metadata in the latest recorded
-audit. Use the live page for current external status and the
-[LobeHub score audit](docs/lobehub-score-audit.md) for the dated baseline. Until
-the listing matches the published package and passes external validation,
-install from PyPI or npm using the instructions above.
+> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
 
 <p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>

@@ -168,6 +168,105 @@ That command is a bounded local install smoke, not an answer-quality or billing 
 
 Keep failures in benchmark denominators. Publish repository revision, package version, environment, budget, cache state, and uncertainty. Never generalize a single workload into universal superiority.
 
+## Engine & install options
+
+Python is the reference runtime. The optional Rust core accelerates supported
+compute-heavy paths through PyO3, and a separate Node runtime ships through
+WASM. The base Python install does not imply that the Rust extension is active;
+`entroly verify-claims` reports the engine mode it actually exercised.
+
+```bash
+pip install entroly            # core: MCP server + Python engine
+pip install entroly[proxy]     # + HTTP proxy
+pip install entroly[native]    # + Rust engine
+pip install entroly[full]      # everything
+
+npm install -g entroly         # WASM runtime, no Python needed
+docker pull ghcr.io/juyterman1000/entroly:latest
+```
+
+**Single binary, no Python** — a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
+
+```bash
+cd entroly/entroly-core && cargo build --release --bin entroly-rs --features proxy
+./target/release/entroly-rs proxy --upstream https://api.anthropic.com
+```
+
+## Command reference
+
+| Command | What it does |
+|---|---|
+| `entroly go` | One shot: detect IDE, wrap your agent, open the dashboard |
+| `entroly wrap <agent>` | Wrap a specific coding agent (38 supported) |
+| `entroly unwrap <agent>` | Remove Entroly's persistent MCP registration without changing other tools |
+| `entroly capabilities --json` | Report installed runtime surfaces offline without claiming provider connectivity |
+| `entroly attach create/list/revoke` | Grant, inspect, or revoke scoped and expiring MCP access for Claude Code, Codex, or OpenClaw |
+| `entroly proxy` | Start the HTTP proxy on `localhost:9377` |
+| `entroly` as an MCP stdio command | Start the installed Python MCP server when launched by an MCP client |
+| `entroly serve` | Start through the Docker image by default; set `ENTROLY_NO_DOCKER=1` for the installed Python runtime |
+| `entroly daemon` | Supervise proxy + dashboard + MCP + file watcher |
+| `entroly dashboard` | Open the live metrics dashboard |
+| `entroly demo` | Before/after token + cost estimate on your repo |
+| `entroly ingest` | Ingest documents into a local Context Receipt index |
+| `entroly select` | Select context under budget and write a Context Receipt |
+| `entroly context-commit` | Create or verify a replayable, recoverable context artifact |
+| `entroly proof prepare/advance/inspect/run` | Run the durable, bounded proof-guided exact-recovery protocol |
+| `entroly receipt` | Render a Context Receipt as a Markdown report |
+| `entroly explain` | Explain why a chunk was selected or omitted |
+| `entroly compress` / `entroly recover` | Compress one file with a receipt; recover the exact original from a digest |
+| `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
+| `entroly perf` | Local no-LLM savings and optimizer latency |
+| `entroly value` | Evidence-classified provider value, local token reduction, and legacy history |
+| `entroly benchmark` | Local comparison: Entroly vs raw context vs top-K |
+| `entroly health` | Codebase health grade (A–F) |
+| `entroly cache stats` | Persistent cross-session cache stats |
+| `entroly ravs report` | Model-routing cost-savings report |
+| `entroly witness` | Check an answer against supplied evidence |
+| `entroly verify-claims` | Run the packaged self-test → JSON report |
+
+## Context Receipts
+
+Receipt-producing selection workflows record what was used, what was omitted,
+why, and what risks remain. This is useful for hard multi-document work such as
+contracts, policies, addenda, code reviews, and audit evidence where a bare
+top-k result is not enough.
+
+```bash
+entroly ingest ./docs
+entroly select --query "Does this contract have a change-of-control clause?" --budget 8000
+entroly receipt .entroly/receipts/cr_example.json
+entroly audit .entroly/session_chain.json
+entroly explain --why-omitted chk_example --receipt .entroly/receipts/cr_example.json
+```
+
+The receipt JSON includes selected chunks, omitted relevant chunks, ranking
+reasons, dependency links, source fingerprints, token ratio, warnings, and a
+reproducibility hash. It also includes a selection certificate: bounded
+frontiers record exact optimality for Entroly's internal retrieval-score
+objective; larger frontiers record a conservative regret ceiling and a ranked
+recovery frontier instead of pretending to be optimal. The Markdown report is
+designed for human review before a compressed context is trusted.
+
+An independent exhaustive oracle found pure rank-order packing suboptimal in
+378 of 47,862 declared small-graph/budget cases. The certified selector improved
+all 378, regressed in zero, and matched the oracle in all 47,862—with zero
+partial dependency closures, budget violations, or invalid certificates.
+[Inspect the machine-readable result.](../benchmarks/results/closed_set_selection_frontier.json)
+This is a synthetic internal-objective result, not an answer-quality or
+competitor claim.
+
+Implementation notes:
+
+- Rust core (`entroly-core/src/context_receipts.rs`) handles deterministic ingestion, BM25-style ranking, dependency scans, selection, and hashes when the native wheel is available.
+- Python control plane (`entroly/context_receipts/`) provides CLI wiring and a pure-Python fallback for source checkouts.
+- The semantic/vector scorer and reranker are explicit extension points; the local MVP ships with lexical scoring and dependency heuristics, not a legal-accuracy guarantee.
+
+Examples:
+
+- [Example receipt JSON](examples/context_receipt.json)
+- [Example Markdown report](examples/context_receipt.md)
+- [Limitations](limitations.md#context-receipts)
+
 ## Code map
 
 | Area | Representative implementation |
