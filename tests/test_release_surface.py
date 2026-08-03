@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.72"
+RELEASE_VERSION = "1.0.73"
 HOMEBREW_FORMULA_VERSION = "1.0.69"
 HOMEBREW_FORMULA_URL = (
     "https://files.pythonhosted.org/packages/26/5d/42821ed0da2cb2dd29926ee8a5"
@@ -75,7 +75,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_72() -> None:
+def test_public_package_versions_are_1_0_73() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION

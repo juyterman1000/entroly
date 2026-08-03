@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-qccr"
-version = "1.0.72"
+version = "1.0.73"
 dependencies = [
  "regex-lite",
  "serde",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-wasm"
-version = "1.0.72"
+version = "1.0.73"
 dependencies = [
  "entroly-engine",
  "entroly-qccr",
