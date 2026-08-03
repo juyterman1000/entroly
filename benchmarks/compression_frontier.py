@@ -1,7 +1,7 @@
 """Auditable matched-target context-compression frontier.
 
 The benchmark builds long contexts from a frozen, answerable SQuAD v2 subset,
-runs byte-identical inputs through isolated Entroly and Headroom environments,
+runs byte-identical inputs through isolated Entroly and External Baseline A environments,
 and measures the achieved keep ratio and exact retained-answer recall.  An
 optional local Ollama pass evaluates short-answer quality without sending the
 dataset or compressed outputs to a hosted service.
@@ -833,9 +833,9 @@ def _superiority_gate(
         if values["raw"]["exact_match"] < 0.5:
             reasons.append("raw-context downstream exact match is below 50%")
         if values["entroly"]["exact_match"] < values["headroom"]["exact_match"]:
-            reasons.append("Entroly downstream exact match is below Headroom")
+            reasons.append("Entroly downstream exact match is below External Baseline A")
         if values["entroly"]["mean_token_f1"] < values["headroom"]["mean_token_f1"]:
-            reasons.append("Entroly downstream token F1 is below Headroom")
+            reasons.append("Entroly downstream token F1 is below External Baseline A")
         if any(value["errors"] for value in values.values()):
             reasons.append("downstream evaluation contains errors")
 
@@ -843,7 +843,7 @@ def _superiority_gate(
     return {
         "passed": passed,
         "label": (
-            "Entroly wins every matched token-cap quality gate against Headroom"
+            "Entroly wins every matched token-cap quality gate against External Baseline A"
             if passed
             else "Superiority not established"
         ),
@@ -983,7 +983,7 @@ def analyze(
             "Requested target ratios are controls, not assumed outcomes; achieved ratios are primary.",
             "The local Ollama answer guard is not evidence about hosted frontier models.",
             "No retrieval or post-compression recovery is invoked in this active-context benchmark.",
-            "Headroom is measured through its released public compress() API and declared config.",
+            "External Baseline A is measured through its released public compress() API and declared config.",
             "Entroly is a 1.0.59 source candidate; publication must follow before claiming released-package parity.",
         ],
     }
@@ -1173,13 +1173,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         (
             f"{len(report['trials'])} frozen SQuAD v2 long-context trials; "
             f"Entroly {participants['entroly']['version']} source candidate vs "
-            f"released Headroom {participants['headroom']['version']}; achieved ratios use "
+            f"released External Baseline A {participants['headroom']['version']}; achieved ratios use "
             f"`{protocol['tokenizer']}`."
         ),
         (
-            "Active-context scope: Headroom's CCR pointers remain in its output, "
+            "Active-context scope: External Baseline A's CCR pointers remain in its output, "
             "but retrieval recovery is not invoked; this is not an end-to-end "
-            "Headroom CCR comparison."
+            "External Baseline A CCR comparison."
         ),
         "",
         "| Requested compression | System | Answer retained | Actual tokens kept | p50 latency |",
@@ -1190,7 +1190,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         for system in ("entroly", "headroom"):
             aggregate = report["aggregates"][system][key]
             lines.append(
-                f"| {1 / float(ratio):.0f}x | {system.title()} | "
+                f"| {1 / float(ratio):.0f}x | "
+                f"{'External Baseline A' if system == 'headroom' else system.title()} | "
                 f"{aggregate['answer_retention']:.1%} | "
                 f"{aggregate['achieved_keep_ratio']:.1%} | "
                 f"{aggregate['p50_latency_ms']:.1f} ms |"
@@ -1198,7 +1199,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.extend(["", "## Paired retained-answer statistics", ""])
     lines.extend(
         [
-            "| Target | Entroly only | Headroom only | Exact McNemar p |",
+            "| Target | Entroly only | External Baseline A only | Exact McNemar p |",
             "|---:|---:|---:|---:|",
         ]
     )
@@ -1229,7 +1230,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         for system in ("raw", "entroly", "headroom"):
             value = downstream["aggregates"][system]
             lines.append(
-                f"| {system.title()} | {value['exact_match']:.1%} | "
+                f"| {'External Baseline A' if system == 'headroom' else system.title()} | "
+                f"{value['exact_match']:.1%} | "
                 f"{value['mean_token_f1']:.1%} | {value['trials']} |"
             )
     if not gate["passed"]:
@@ -1292,10 +1294,10 @@ def render_svg(report: dict[str, Any]) -> str:
         downstream_text = (
             f'Local answer EM @ {1 / float(downstream["target_ratio"]):.0f}×: '
             f'Entroly {left["exact_match"]:.0%} · '
-            f'Headroom {right["exact_match"]:.0%} · n={left["trials"]}'
+            f'External Baseline A {right["exact_match"]:.0%} · n={left["trials"]}'
         )
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="610" viewBox="0 0 1400 610" role="img" aria-labelledby="title desc">
-  <title id="title">Entroly and Headroom matched token-cap quality frontier</title>
+  <title id="title">Entroly and External Baseline A matched token-cap quality frontier</title>
   <desc id="desc">{escape(gate["label"])}. Results show retained-answer recall and actual tokens kept.</desc>
   <rect width="1400" height="610" rx="28" fill="#07111f"/>
   <style>
@@ -1314,7 +1316,7 @@ def render_svg(report: dict[str, Any]) -> str:
   <text x="70" y="157" class="subtitle">{len(report["trials"])} frozen SQuAD v2 long-context trials · achieved o200k token ratios · exact retained answers</text>
   <line x1="70" y1="187" x2="1330" y2="187" stroke="#24364b"/>
   <text x="410" y="211" class="header">Entroly {escape(str(participants["entroly"]["version"]))} candidate</text>
-  <text x="890" y="211" class="header">Headroom {escape(str(participants["headroom"]["version"]))} release</text>
+  <text x="890" y="211" class="header">External Baseline A {escape(str(participants["headroom"]["version"]))} release</text>
   {''.join(rows)}
   <rect x="70" y="458" width="1260" height="62" rx="14" fill="#0d1b2c" stroke="#20344b"/>
   <text x="98" y="497" class="header">{escape(downstream_text)}</text>

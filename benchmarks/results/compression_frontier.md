@@ -47,4 +47,4 @@ python -m benchmarks.compression_frontier verify benchmarks/results/compression_
 - External Baseline A is measured through its released public compress() API and declared config.
 - Entroly is a 1.0.59 source candidate; publication must follow before claiming released-package parity.
 
-Payload SHA-256: `671819dc599215aeee234c0525e1a5ab03f7879732cbca314a9863fcbbefe5df`
+Payload SHA-256: `7425e182eb909325660146bf64214965188d323540d6d25b074790fc4a2896a2`
