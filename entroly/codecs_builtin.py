@@ -20,6 +20,14 @@ from .codec import (
     estimate_tokens,
 )
 
+_JSON_MAX_SCAN_NODES = 4096
+_JSON_MAX_PROTECTED_VALUES = 256
+_JSON_MAX_PROTECTED_BYTES = 16_384
+
+
+class _ProtectionOverflow(ValueError):
+    """The bounded evidence scan could not prove a lossy form safe."""
+
 
 def _full_representation(
     *,
@@ -48,7 +56,7 @@ def _unique(values: list[str]) -> tuple[str, ...]:
 
 class JsonCodec:
     name = "json"
-    version = "3"
+    version = "4"
 
     def __init__(self, store: RecoveryStore | None = None) -> None:
         self.store = store if store is not None else RecoveryStore()
@@ -83,11 +91,18 @@ class JsonCodec:
         except ValueError:
             return reps
 
-        elided = json.dumps(_json_to_schema(data, depth=0, max_depth=4), indent=2)
+        elided = json.dumps(
+            _json_to_schema(data, depth=0, max_depth=4),
+            indent=2,
+            ensure_ascii=True,
+        )
         if len(elided) >= len(text):
             return reps
 
-        protected = _protected_json_values(data, _is_load_bearing_key)
+        try:
+            protected = _protected_json_values(data, _is_load_bearing_key)
+        except _ProtectionOverflow:
+            return reps
         if any(value not in elided for value in protected):
             return reps
 
@@ -119,23 +134,51 @@ def _protected_json_values(
     obj: Any,
     is_load_bearing_key: Callable[[str], bool],
 ) -> tuple[str, ...]:
-    """Derive mandatory values from the source, not the compressed output."""
+    """Return serialized protected scalars from the complete source.
+
+    Repetitive records remain compressible because only values under explicit
+    load-bearing keys are mandatory. The walk covers every list element and is
+    bounded; exceeding the bound makes the codec decline the lossy form.
+    """
+
     out: list[str] = []
+    stack: list[tuple[Any, bool]] = [(obj, False)]
+    visited = 0
+    serialized_bytes = 0
 
-    def walk(node: Any, *, depth: int) -> None:
+    while stack:
+        node, inherited = stack.pop()
+        visited += 1
+        if visited > _JSON_MAX_SCAN_NODES:
+            raise _ProtectionOverflow("JSON evidence scan exceeded node budget")
+
         if isinstance(node, dict):
-            for child_key, value in node.items():
-                if isinstance(value, (str, int, float)) and not isinstance(value, bool):
-                    if depth == 0 or is_load_bearing_key(str(child_key)):
-                        rendered = str(value)
-                        if rendered:
-                            out.append(rendered)
-                else:
-                    walk(value, depth=depth + 1)
-        elif isinstance(node, list) and node:
-            walk(node[0], depth=depth + 1)
+            for child_key, value in reversed(list(node.items())):
+                stack.append((value, inherited or is_load_bearing_key(str(child_key))))
+            continue
+        if isinstance(node, list):
+            stack.extend((value, inherited) for value in reversed(node))
+            continue
+        if not inherited:
+            continue
 
-    walk(obj, depth=0)
+        rendered = json.dumps(
+            node,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if rendered not in out:
+            out.append(rendered)
+            serialized_bytes += len(rendered.encode("utf-8"))
+            if (
+                len(out) > _JSON_MAX_PROTECTED_VALUES
+                or serialized_bytes > _JSON_MAX_PROTECTED_BYTES
+            ):
+                raise _ProtectionOverflow(
+                    "JSON protected evidence exceeded bounded storage budget"
+                )
+
     return _unique(out)
 
 
@@ -160,7 +203,7 @@ def _count_elided_json_records(obj: Any) -> int:
 
 class LogCodec:
     name = "log"
-    version = "3"
+    version = "4"
     _LOG_SHAPE = re.compile(
         r"^\d{4}[-/]\d{2}|^\[?\d{2}:\d{2}|^(DEBUG|INFO|WARN|ERROR|TRACE|FATAL)",
         re.MULTILINE,
@@ -185,6 +228,7 @@ class LogCodec:
         self, text: str, source_id: str = "", **options: Any
     ) -> list[Representation]:
         from .universal_compress import _compress_log_universal, _log_template
+        from .universal_compress_hotfix import _strip_log_prefix
 
         full = _full_representation(
             text=text,
@@ -198,13 +242,18 @@ class LogCodec:
         if not collapsed or len(collapsed) >= len(text):
             return reps
 
-        protected = _protected_log_lines(text, _log_template, self._CRITICAL)
+        protected = _protected_log_lines(
+            text,
+            _log_template,
+            _strip_log_prefix,
+            self._CRITICAL,
+        )
         if any(value not in collapsed for value in protected):
             return reps
 
         recovery = self.store.put(
             text,
-            item_count=_log_omitted_count(text, _log_template),
+            item_count=_log_omitted_count(text, _log_template, _strip_log_prefix),
             note=f"complete original log for {source_id or 'log'}",
         )
         reps.append(
@@ -228,16 +277,16 @@ class LogCodec:
 def _protected_log_lines(
     text: str,
     template: Callable[[str], str],
+    strip_prefix: Callable[[str], str],
     critical: re.Pattern[str],
 ) -> tuple[str, ...]:
-    ts_strip = re.compile(r"^\S+\s+\S+\s+")
     seen: set[str] = set()
     protected: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
-        key = template(ts_strip.sub("", stripped))
+        key = template(strip_prefix(stripped))
         if key in seen:
             continue
         seen.add(key)
@@ -246,13 +295,16 @@ def _protected_log_lines(
     return _unique(protected)
 
 
-def _log_omitted_count(text: str, template: Callable[[str], str]) -> int:
-    ts_strip = re.compile(r"^\S+\s+\S+\s+")
+def _log_omitted_count(
+    text: str,
+    template: Callable[[str], str],
+    strip_prefix: Callable[[str], str],
+) -> int:
     counts: Counter[str] = Counter()
     for line in text.splitlines():
         stripped = line.strip()
         if stripped:
-            counts[template(ts_strip.sub("", stripped))] += 1
+            counts[template(strip_prefix(stripped))] += 1
     return sum(max(0, count - 1) for count in counts.values())
 
 

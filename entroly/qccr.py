@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from . import qccr_legacy as _legacy
 from .qccr_hotfix import attach_sufficiency as _safe_attach_sufficiency
-from .sufficiency import _lexical_terms as _lexical_term_set
+from .sufficiency import _lexical_terms
+
+# Public compatibility alias used by existing tests and integrations.
+_lexical_term_set = _lexical_terms
 
 for _name, _value in vars(_legacy).items():
     if not _name.startswith("__"):

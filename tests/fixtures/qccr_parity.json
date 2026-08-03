@@ -1,11 +1,16 @@
 {
-  "schema_version": "entroly.qccr-parity.v1",
-  "purpose": "Cross-surface contract for entroly-qccr ranking. Python (PyO3) and npm/WASM (wasm-bindgen) wrap the SAME crate, so identical inputs must give identical file order. Regenerate only with a recorded reason.",
+  "schema_version": "entroly.qccr-parity.v2",
+  "purpose": "Cross-surface contract for entroly-qccr ranking. source_order makes the exact input vector explicit across Python and serde_json map implementations.",
   "cases": [
     {
       "id": "prose_query_meets_identifier",
       "query": "how is a credit card charged through the payment gateway",
       "budget": 256,
+      "source_order": [
+        "file:billing.py",
+        "file:orders.py",
+        "file:cache.py"
+      ],
       "files": {
         "file:billing.py": "def charge_card(customer, amount):\n    gateway = StripeGateway()\n    return gateway.charge(customer.card, amount)",
         "file:orders.py": "def place_order(cart, user):\n    total = calculate_total(cart)\n    return submit_order(user, total)",
@@ -22,6 +27,11 @@
       "id": "expansion_must_not_outvote_query",
       "query": "what happens when a request times out and needs retrying",
       "budget": 256,
+      "source_order": [
+        "file:retry.py",
+        "file:encode_handler.py",
+        "file:decode_handler.py"
+      ],
       "files": {
         "file:retry.py": "def retry_request(req, attempts=3):\n    for i in range(attempts):\n        if send(req).ok:\n            return True\n    raise TimeoutError('exhausted retries')",
         "file:encode_handler.py": "def encode_event(source, options=None):\n    items = source.encode_all(options)\n    return database_writer.commit(items)",
@@ -38,6 +48,10 @@
       "id": "stem_bridges_surface_forms",
       "query": "where are queries matched against cards",
       "budget": 256,
+      "source_order": [
+        "file:query.py",
+        "file:unrelated.py"
+      ],
       "files": {
         "file:query.py": "def match_query(card, index):\n    return index.match(card.query_id)",
         "file:unrelated.py": "def paint(canvas):\n    canvas.fill(color)"
