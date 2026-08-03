@@ -423,6 +423,7 @@ def default_registry(store: RecoveryStore | None = None):
         DocumentCodec,
         SchemaCodec,
     )
+    from .codecs_table import TableCodec
 
     # Order does not decide the winner -- `select` takes the highest support
     # confidence -- but SchemaCodec deliberately outbids JsonCodec (0.95 vs
@@ -435,4 +436,5 @@ def default_registry(store: RecoveryStore | None = None):
     registry.register(CodeCodec(shared))
     registry.register(DocumentCodec(shared))
     registry.register(ConversationCodec(shared))
+    registry.register(TableCodec(shared))
     return registry
