@@ -262,7 +262,65 @@ class CodecRegistry:
         codec = self.select(text, content_type)
         if codec is None:
             return []
-        return codec.representations(text, source_id=source_id, **options)
+        produced = codec.representations(text, source_id=source_id, **options)
+        return pareto_prune(produced)
+
+
+def dominates(a: Representation, b: Representation) -> bool:
+    """True when `a` is at least as good as `b` on every axis, and better on one.
+
+    Standard Pareto dominance over the axes a caller actually trades between:
+
+      * token cost              lower is better
+      * distortion risk         lower is better
+      * protected evidence      a superset is better
+      * recoverability          having a way back is better
+
+    A dominated representation can never be the right answer: whatever the
+    caller's weighting, `a` beats `b` under it. Removing them shrinks the
+    choice set without removing any achievable outcome, which is what makes
+    downstream selection cheaper AND easier to explain -- every survivor is on
+    the frontier for some legitimate preference.
+
+    Recoverability is treated as a hard axis rather than a tiebreak: a form
+    that dropped content with no way back is not merely worse, it forecloses
+    an option the other keeps open.
+    """
+    if a is b:
+        return False
+    a_recoverable = a.recovery is not None or a.distortion_risk == 0.0
+    b_recoverable = b.recovery is not None or b.distortion_risk == 0.0
+    if b_recoverable and not a_recoverable:
+        return False
+    a_protects = set(a.protected_evidence)
+    b_protects = set(b.protected_evidence)
+    if not b_protects <= a_protects:
+        return False
+    if a.token_cost > b.token_cost or a.distortion_risk > b.distortion_risk:
+        return False
+    strictly_better = (
+        a.token_cost < b.token_cost
+        or a.distortion_risk < b.distortion_risk
+        or a_protects > b_protects
+        or (a_recoverable and not b_recoverable)
+    )
+    return strictly_better
+
+
+def pareto_prune(representations: list[Representation]) -> list[Representation]:
+    """Drop representations no rational caller would choose.
+
+    Order is preserved so the caller still sees the codec's own preference
+    among the survivors. Never returns empty when given a non-empty list.
+    """
+    if len(representations) < 2:
+        return list(representations)
+    survivors = [
+        rep
+        for rep in representations
+        if not any(dominates(other, rep) for other in representations)
+    ]
+    return survivors or list(representations)
 
 
 def estimate_tokens(text: str) -> int:
