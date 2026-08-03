@@ -41,6 +41,68 @@ _IMPORT_RE = re.compile(r"^\s*(?:import |from .+ import|use |require\(|#include)
 _ERROR_STRING_RE = re.compile(r"""["'][^"']*(?:error|fail|invalid|denied|expired)[^"']*["']""", re.I)
 
 
+def _python_ast_skeleton(text: str) -> tuple[list[str], list[str], tuple[str, ...]] | None:
+    """(kept, dropped, protected) using a real parse, or None if not Python.
+
+    The line-regex skeleton could not tell a `def` from the word "define" in a
+    string, kept decorators only when they started a line, and had no idea
+    where a body ended -- so it dropped continuation lines of a signature and
+    kept stray lines that merely looked declarative.
+
+    A parse gives exact line ranges. Signature lines, decorators, docstrings,
+    imports and module-level assignments are kept; statement bodies are
+    dropped and returned for recovery. Anything that does not parse -- another
+    language, a syntax error, a partial file -- returns None so the caller
+    falls back rather than guessing.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError, RecursionError):
+        return None
+
+    lines = text.split("\n")
+    keep: set[int] = set()          # 1-indexed
+    protected: list[str] = []
+
+    def signature_span(node) -> tuple[int, int]:
+        """Decorators through the line the signature's colon closes on."""
+        start = min([node.lineno] + [d.lineno for d in node.decorator_list])
+        body_starts_at = node.body[0].lineno if node.body else node.end_lineno
+        # A docstring is part of the surface a caller reads.
+        first = node.body[0] if node.body else None
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(getattr(first, "value", None), ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            body_starts_at = first.end_lineno + 1
+        return start, max(start, body_starts_at - 1)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            keep.update(range(node.lineno, node.end_lineno + 1))
+            protected.append(lines[node.lineno - 1].strip())
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            start, end = signature_span(node)
+            keep.update(range(start, end + 1))
+            protected.append(lines[node.lineno - 1].strip())
+
+    # Module-level constants are part of the surface; bodies of functions are not.
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            keep.update(range(node.lineno, node.end_lineno + 1))
+
+    kept, dropped = [], []
+    for i, line in enumerate(lines, start=1):
+        if i in keep or not line.strip():
+            kept.append(line)
+        else:
+            dropped.append(line)
+    return kept, dropped, tuple(dict.fromkeys(protected))[:40]
+
+
 class CodeCodec:
     """Source code: full, skeleton (imports + signatures), or reference only.
 
@@ -96,17 +158,36 @@ class CodeCodec:
             )
         ]
 
-        kept, dropped = [], []
-        for line in text.split("\n"):
-            if (
-                _IMPORT_RE.match(line)
-                or _DEF_RE.match(line)
-                or _ERROR_STRING_RE.search(line)
-                or not line.strip()
-            ):
-                kept.append(line)
-            else:
-                dropped.append(line)
+        # Prefer a real parse; fall back to line heuristics for other
+        # languages or for input that does not parse.
+        parsed = _python_ast_skeleton(text)
+        if parsed is not None:
+            kept, dropped, ast_protected = parsed
+            method = "ast"
+            # Error strings are what a user greps for, so pull them back in.
+            errs = {ln for ln in dropped if _ERROR_STRING_RE.search(ln)}
+            if errs:
+                dropped = [ln for ln in dropped if ln not in errs]
+                keepset = set(kept) | errs
+                kept = [
+                    ln
+                    for ln in text.split("\n")
+                    if ln in keepset or not ln.strip()
+                ]
+        else:
+            ast_protected = ()
+            method = "lines"
+            kept, dropped = [], []
+            for line in text.split("\n"):
+                if (
+                    _IMPORT_RE.match(line)
+                    or _DEF_RE.match(line)
+                    or _ERROR_STRING_RE.search(line)
+                    or not line.strip()
+                ):
+                    kept.append(line)
+                else:
+                    dropped.append(line)
 
         skeleton = "\n".join(kept)
         if not dropped or len(skeleton) >= len(text):
@@ -117,15 +198,17 @@ class CodeCodec:
             item_count=len(dropped),
             note=f"bodies elided from {source_id or 'source'}",
         )
-        protected = tuple(
+        protected = ast_protected or tuple(
             dict.fromkeys(
                 [ln.strip() for ln in kept if _IMPORT_RE.match(ln)][:20]
                 + [ln.strip() for ln in kept if _DEF_RE.match(ln)][:20]
             )
         )
+        # Only claim what the emitted skeleton actually contains.
+        protected = tuple(p for p in protected if p in skeleton)
         reps.append(
             Representation(
-                representation_id=f"{source_id}#code.skeleton",
+                representation_id=f"{source_id}#code.skeleton.{method}",
                 source_id=source_id,
                 content_type="code",
                 text=skeleton,

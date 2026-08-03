@@ -284,3 +284,125 @@ def test_schema_prose_is_recoverable():
 
 def test_plain_json_is_not_claimed_as_a_schema():
     assert not SchemaCodec().supports(json.dumps({"a": 1, "b": [1, 2]}))
+
+
+# ── AST code skeleton (6.5) ─────────────────────────────────────────────────
+#
+# The line-regex skeleton cannot see syntax. It matches "def " anywhere a line
+# starts with it -- including inside a triple-quoted string -- keeps only the
+# first line of a signature that wraps, and has no idea where a body ends.
+# A real parse gives exact line ranges. These tests pin the difference.
+
+AST_SOURCE = '''"""Module docstring."""
+import os
+from pathlib import Path
+
+MAX_RETRIES = 3
+
+
+def multi_line_signature(
+    first_argument,
+    second_argument=None,
+    *,
+    keyword_only=True,
+):
+    """What it does."""
+    intermediate = first_argument or second_argument
+    return intermediate
+
+
+@property
+def decorated(self):
+    hidden = compute()
+    return hidden
+
+
+EXAMPLE = """
+def not_a_real_function(this_is_inside_a_string):
+    return "text that merely looks like code"
+"""
+
+
+class Runner:
+    """Runs things."""
+
+    def run(self, task):
+        result = self.execute(task)
+        if not result:
+            raise ValueError("task failed or was invalid")
+        return result
+'''
+
+
+def _skeleton(text, source_id="m.py"):
+    return CodeCodec().representations(text, source_id=source_id)[-1]
+
+
+def test_python_uses_the_ast_path():
+    assert _skeleton(AST_SOURCE).representation_id.endswith("code.skeleton.ast")
+
+
+def test_non_python_falls_back_to_line_heuristics():
+    rust = "\n".join(
+        ["use std::io;", "", "pub fn run(x: u32) -> u32 {", "    let y = x + 1;",
+         "    y", "}", "", "pub fn other() -> u32 {", "    42", "}"]
+    )
+    rep = CodeCodec().representations(rust, source_id="lib.rs")[-1]
+    assert rep.representation_id.endswith("code.skeleton.lines")
+    assert "pub fn run" in rep.text
+
+
+def test_syntax_error_falls_back_rather_than_failing():
+    broken = "import os\n\n\ndef f(:\n    return 1\n\n\ndef g():\n    return 2\n"
+    rep = CodeCodec().representations(broken, source_id="broken.py")[-1]
+    assert rep.representation_id.endswith("code.skeleton.lines")
+
+
+def test_multi_line_signature_is_kept_whole():
+    text = _skeleton(AST_SOURCE).text
+    for part in ("first_argument", "second_argument=None", "keyword_only=True"):
+        assert part in text, (
+            f"{part!r} is part of the call surface and was dropped; the regex "
+            f"skeleton kept only the first line of a wrapped signature"
+        )
+
+
+def test_decorator_is_kept_with_its_function():
+    assert "@property" in _skeleton(AST_SOURCE).text
+
+
+def test_docstrings_are_kept_as_part_of_the_surface():
+    text = _skeleton(AST_SOURCE).text
+    assert '"""What it does."""' in text
+    assert '"""Runs things."""' in text
+
+
+def test_a_def_inside_a_string_is_not_treated_as_a_declaration():
+    """The defect a parse exists to prevent."""
+    text = _skeleton(AST_SOURCE).text
+    assert "not_a_real_function" not in text or "EXAMPLE" in text, (
+        "text inside a string literal was promoted into the skeleton as if it "
+        "were a declaration"
+    )
+
+
+def test_module_level_constants_survive():
+    assert "MAX_RETRIES = 3" in _skeleton(AST_SOURCE).text
+
+
+def test_error_strings_survive_the_ast_path():
+    assert "task failed or was invalid" in _skeleton(AST_SOURCE).text
+
+
+def test_bodies_are_dropped_and_recoverable():
+    store = RecoveryStore()
+    rep = CodeCodec(store).representations(AST_SOURCE, source_id="m.py")[-1]
+    assert "intermediate = first_argument" not in rep.text
+    assert rep.recovery is not None
+    assert "intermediate = first_argument" in store.recover(rep.recovery)
+
+
+def test_ast_protected_evidence_is_true_of_the_skeleton():
+    rep = _skeleton(AST_SOURCE)
+    assert rep.verify_protected_evidence() == ()
+    assert rep.protected_evidence, "the AST path should claim the surface it kept"
