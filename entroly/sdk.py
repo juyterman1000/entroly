@@ -1239,9 +1239,22 @@ def optimize(
         print(f"Selected {result['fragments_selected']}/{result['fragments_total']}")
         # Use result["context_text"] as your LLM system prompt context
     """
+    from .config import EntrolyConfig
     from .server import EntrolyEngine
 
-    engine = EntrolyEngine()
+    # Ephemeral by construction. A default EntrolyEngine() warm-starts from the
+    # shared index under ENTROLY_DIR, which made this function return fragments
+    # the caller never supplied -- content from whatever repository was indexed
+    # last, displacing the caller's own. Observed with three in-memory
+    # fragments: two of the three "selected" entries were files from an
+    # unrelated checkout, and the fragment the query actually needed was
+    # dropped. Since that content is then handed to a model, it is a
+    # cross-project leak as well as a correctness bug.
+    #
+    # optimize() is documented as selecting a subset of `fragments`, so it must
+    # see nothing else. Callers wanting repository-wide selection should drive
+    # EntrolyEngine directly, where persistence is an explicit choice.
+    engine = EntrolyEngine(EntrolyConfig(use_persistent_index=False))
 
     # Ingest all fragments
     for frag in fragments:

@@ -69,7 +69,19 @@ def test_optimize_preserves_query_for_full_engine(monkeypatch):
     seen: list[tuple[int, str]] = []
 
     class FakeEngine:
-        def __init__(self):
+        # Mirrors EntrolyEngine(config). optimize() must build an *ephemeral*
+        # engine: a default one warm-starts from the shared index and can
+        # return fragments the caller never supplied.
+        def __init__(self, config=None):
+            assert config is not None, (
+                "optimize() built a default engine, which warm-starts from "
+                "the shared index"
+            )
+            assert getattr(config, "use_persistent_index", True) is False, (
+                "optimize() must disable the persistent index, or the "
+                "selection can include foreign fragments"
+            )
+            self.config = config
             self.fragments: list[dict[str, object]] = []
 
         def ingest_fragment(self, content: str, source: str, tokens: int):
