@@ -57,14 +57,7 @@ jobs:
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
 
-          # bump_version.py is the exhaustive active-target inventory. It
-          # covers Python/Rust/WASM/npm, all workspace lockfiles, generated
-          # WASM metadata when present, runtime fallbacks, manifests, native
-          # minimums, release tests, and the Homebrew runbook.
           python scripts/bump_version.py "$version" | tee /tmp/bump-version.log
-
-          # The typed synchronizer validates the approved surface structure,
-          # repairs any drift, writes the release note, and rebuilds MCPB.
           python scripts/sync_release_version.py "$version"
 
           count="$(sed -nE 's/^bumped ([0-9]+) target\(s\).*/\1/p' /tmp/bump-version.log)"
