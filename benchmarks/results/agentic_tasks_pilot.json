@@ -11,33 +11,32 @@
   "summary": {
     "raw": {
       "tasks": 4,
-      "passed": 3,
+      "passed": 4,
       "total_input_tokens": 2756,
-      "mean_latency_s": 12.881
+      "mean_latency_s": 12.79
     },
     "entroly_compress_only": {
       "tasks": 4,
-      "passed": 2,
+      "passed": 4,
       "total_input_tokens": 942,
-      "mean_latency_s": 6.413
+      "mean_latency_s": 6.467
     }
   },
   "paired": {
-    "raw_only_successes": 1,
+    "raw_only_successes": 0,
     "compress_only_successes": 0,
     "mcnemar_exact_p": 1.0,
-    "regressions": [
-      "wrong_comparison"
-    ]
+    "regressions": []
   },
   "rows": [
     {
       "task_id": "off_by_one_slice",
       "arm": "raw",
-      "passed": false,
+      "passed": true,
+      "outcome": "passed",
       "input_tokens": 711,
       "output_tokens": 47,
-      "latency_s": 13.226,
+      "latency_s": 13.001,
       "context": {
         "arm": "raw",
         "estimated_context_tokens": 508,
@@ -56,15 +55,16 @@
           "full context, no selection"
         ]
       },
-      "oracle_tail": "x\n=========================== short test summary info ===========================\nERROR test_windows.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 1.09s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.52s"
     },
     {
       "task_id": "off_by_one_slice",
       "arm": "entroly_compress_only",
-      "passed": false,
+      "passed": true,
+      "outcome": "passed",
       "input_tokens": 430,
       "output_tokens": 107,
-      "latency_s": 9.841,
+      "latency_s": 9.938,
       "context": {
         "arm": "entroly_compress_only",
         "estimated_context_tokens": 253,
@@ -89,15 +89,16 @@
           "selected 4/7"
         ]
       },
-      "oracle_tail": "x\n=========================== short test summary info ===========================\nERROR test_windows.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.94s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.63s"
     },
     {
       "task_id": "wrong_comparison",
       "arm": "raw",
       "passed": true,
+      "outcome": "passed",
       "input_tokens": 695,
       "output_tokens": 36,
-      "latency_s": 12.897,
+      "latency_s": 12.904,
       "context": {
         "arm": "raw",
         "estimated_context_tokens": 511,
@@ -116,15 +117,16 @@
           "full context, no selection"
         ]
       },
-      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.60s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.58s"
     },
     {
       "task_id": "wrong_comparison",
       "arm": "entroly_compress_only",
-      "passed": false,
+      "passed": true,
+      "outcome": "passed",
       "input_tokens": 184,
       "output_tokens": 65,
-      "latency_s": 5.912,
+      "latency_s": 5.906,
       "context": {
         "arm": "entroly_compress_only",
         "estimated_context_tokens": 32,
@@ -152,15 +154,16 @@
           "selected 1/7"
         ]
       },
-      "oracle_tail": "========================= short test summary info ===========================\nERROR test_eligibility.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.96s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.53s"
     },
     {
       "task_id": "missing_zero_guard",
       "arm": "raw",
       "passed": true,
+      "outcome": "passed",
       "input_tokens": 674,
       "output_tokens": 41,
-      "latency_s": 12.771,
+      "latency_s": 12.761,
       "context": {
         "arm": "raw",
         "estimated_context_tokens": 512,
@@ -179,15 +182,16 @@
           "full context, no selection"
         ]
       },
-      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.56s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.45s"
     },
     {
       "task_id": "missing_zero_guard",
       "arm": "entroly_compress_only",
       "passed": true,
+      "outcome": "passed",
       "input_tokens": 163,
       "output_tokens": 45,
-      "latency_s": 5.076,
+      "latency_s": 5.2,
       "context": {
         "arm": "entroly_compress_only",
         "estimated_context_tokens": 32,
@@ -215,15 +219,16 @@
           "selected 1/7"
         ]
       },
-      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.55s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.54s"
     },
     {
       "task_id": "reversed_boolean",
       "arm": "raw",
       "passed": true,
+      "outcome": "passed",
       "input_tokens": 676,
       "output_tokens": 38,
-      "latency_s": 12.631,
+      "latency_s": 12.493,
       "context": {
         "arm": "raw",
         "estimated_context_tokens": 517,
@@ -242,12 +247,13 @@
           "full context, no selection"
         ]
       },
-      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.56s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.55s"
     },
     {
       "task_id": "reversed_boolean",
       "arm": "entroly_compress_only",
       "passed": true,
+      "outcome": "passed",
       "input_tokens": 165,
       "output_tokens": 38,
       "latency_s": 4.824,
@@ -278,7 +284,7 @@
           "selected 1/7"
         ]
       },
-      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.52s"
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.51s"
     }
   ],
   "input_token_reduction": 0.6582,
@@ -289,7 +295,7 @@
     "Distractor context is synthetic and uniform, so the selection problem is easier than a real repository.",
     "Single seed, no repeats, so per-task variance is unmeasured.",
     "No CLOSED-LOOP arm: recovery-on-failure is not exercised here.",
-    "Answer extraction is a confound. The model is asked for a bare file and strip_fences() unwraps it; when the model adds prose the result is unparseable and the task is scored as failed. In this run the one regression failed at pytest collection, not on an assertion, so at least part of it is formatting rather than a missing-evidence effect. A stronger harness would parse the answer robustly and separate 'wrong fix' from 'unusable output'.",
-    "Because of the above, a failed task here does NOT establish that compression removed necessary context. In this run the compressed arm's selection was inspected and was correct: it kept the file containing the bug and dropped only distractors."
+    "CEILING EFFECT: every arm solves every task, so this run has no power to detect a difference in success. Parity here is the absence of evidence, not evidence of equivalence. The tasks must be made hard enough that the raw arm sometimes fails before any non-inferiority statement is meaningful.",
+    "Answer extraction was a confound and materially changed the result. An earlier version of this harness unwrapped fenced code naively; the model's prose survived, the file failed to parse, and the run reported raw 3/4 versus compressed 2/4 -- an apparent regression caused by the harness, not by compression. With robust extraction both arms score 4/4. Outcomes are now classified so 'wrong_fix' (context may have been insufficient) is never conflated with 'unusable_output' (the reply could not be used)."
   ]
 }

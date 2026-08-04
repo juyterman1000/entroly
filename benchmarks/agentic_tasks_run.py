@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -282,19 +283,64 @@ def call_model(
     }
 
 
-def strip_fences(text: str) -> str:
-    """Models wrap code in fences despite instructions; unwrap without guessing."""
+def extract_source(text: str) -> str:
+    """Recover Python source from a chat reply.
+
+    Extraction quality is part of the measurement: if a fenced block is not
+    unwrapped, or surrounding prose is left in, the file fails to parse and the
+    task scores as failed for a reason that has nothing to do with the context
+    the arm was given. The first version of this harness lost a task that way,
+    so this prefers the largest fenced block and falls back to trimming
+    non-code prose rather than returning the reply verbatim.
+    """
     stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
+
+    fenced = re.findall(r"```(?:[A-Za-z0-9_+-]*)\n(.*?)(?:```|\Z)", stripped, re.S)
+    if fenced:
+        return max((block.strip() for block in fenced), key=len)
+
+    # No fences: drop leading/trailing prose lines that cannot begin a
+    # top-level Python statement, which is what chat models tend to add.
     lines = stripped.splitlines()
-    if lines and lines[0].startswith("```"):
-        lines = lines[1:]
-    while lines and not lines[-1].strip().startswith("```"):
-        break
-    if lines and lines[-1].strip().startswith("```"):
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
+    start = 0
+    while start < len(lines) and not _looks_like_code(lines[start]):
+        start += 1
+    end = len(lines)
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return "\n".join(lines[start:end]).strip()
+
+
+def _looks_like_code(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    keywords = (
+        "def ", "class ", "import ", "from ", "@", "#", "if ", "return ",
+        "async ", "try:", "with ", "for ", "while ",
+    )
+    return stripped.startswith(keywords) or bool(
+        re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*[:=]", stripped)
+    )
+
+
+def classify_failure(passed: bool, output: str) -> str:
+    """Separate a wrong fix from output this harness could not use.
+
+    Scoring both as 'failed' conflates a claim about compression with a claim
+    about answer formatting. Only `wrong_fix` speaks to whether the context was
+    sufficient.
+    """
+    if passed:
+        return "passed"
+    lowered = output.lower()
+    if "error during collection" in lowered or "syntaxerror" in lowered:
+        return "unusable_output"
+    if "importerror" in lowered or "modulenotfounderror" in lowered:
+        return "unusable_output"
+    if "assert" in lowered or "failed" in lowered:
+        return "wrong_fix"
+    return "unknown"
 
 
 def run_oracle(task: Task, patched_source: str) -> tuple[bool, str]:
@@ -345,12 +391,13 @@ def run_arm(
     generation = call_model(
         base_url=base_url, model=model, prompt=prompt, seed=seed, timeout=timeout
     )
-    passed, detail = run_oracle(task, strip_fences(generation["text"]))
+    passed, detail = run_oracle(task, extract_source(generation["text"]))
 
     return {
         "task_id": task.task_id,
         "arm": arm.value,
         "passed": passed,
+        "outcome": classify_failure(passed, detail),
         "input_tokens": generation["input_tokens"],
         "output_tokens": generation["output_tokens"],
         "latency_s": generation["latency_s"],
@@ -475,17 +522,19 @@ def main() -> int:
             "problem is easier than a real repository.",
             "Single seed, no repeats, so per-task variance is unmeasured.",
             "No CLOSED-LOOP arm: recovery-on-failure is not exercised here.",
-            "Answer extraction is a confound. The model is asked for a bare "
-            "file and strip_fences() unwraps it; when the model adds prose the "
-            "result is unparseable and the task is scored as failed. In this "
-            "run the one regression failed at pytest collection, not on an "
-            "assertion, so at least part of it is formatting rather than a "
-            "missing-evidence effect. A stronger harness would parse the "
-            "answer robustly and separate 'wrong fix' from 'unusable output'.",
-            "Because of the above, a failed task here does NOT establish that "
-            "compression removed necessary context. In this run the compressed "
-            "arm's selection was inspected and was correct: it kept the file "
-            "containing the bug and dropped only distractors.",
+            "CEILING EFFECT: every arm solves every task, so this run has no "
+            "power to detect a difference in success. Parity here is the "
+            "absence of evidence, not evidence of equivalence. The tasks must "
+            "be made hard enough that the raw arm sometimes fails before any "
+            "non-inferiority statement is meaningful.",
+            "Answer extraction was a confound and materially changed the "
+            "result. An earlier version of this harness unwrapped fenced code "
+            "naively; the model's prose survived, the file failed to parse, "
+            "and the run reported raw 3/4 versus compressed 2/4 -- an apparent "
+            "regression caused by the harness, not by compression. With robust "
+            "extraction both arms score 4/4. Outcomes are now classified so "
+            "'wrong_fix' (context may have been insufficient) is never "
+            "conflated with 'unusable_output' (the reply could not be used).",
         ],
     }
 
