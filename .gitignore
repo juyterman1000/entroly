@@ -113,6 +113,11 @@ halueval_paper.html
 /mcp-publisher_*.tar.gz
 /mcp-publisher.tar.gz
 
+# Fabricated benchmark output from `coding_tasks.py --simulate`. Quarantined
+# outside benchmarks/results/ so it can never be mistaken for measured
+# evidence; committing it would defeat the point of the quarantine.
+benchmarks/simulated/
+
 # Local scratch: clean-install venvs and throwaway artifacts
 tmp/
 /package.json
