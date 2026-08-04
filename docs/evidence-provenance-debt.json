@@ -1,0 +1,26 @@
+{
+  "purpose": "Benchmark artifacts cited as public evidence that carry no verifiable link to the code that produced them. Unsealed means unverifiable, not known-wrong. This list may only shrink: newly cited artifacts must be sealed. Seal an entry by re-running its benchmark so the artifact records benchmark_module, harness_sha256 and limitations, and by writing its .sha256 sidecar -- never by hand.",
+  "enforced_by": "scripts/verify_evidence_provenance.py",
+  "unsealed": [
+    "benchmarks/results/bfcl_accuracy.json",
+    "benchmarks/results/compression_frontier.json",
+    "benchmarks/results/compression_gauntlet.json",
+    "benchmarks/results/compression_latency_development.json",
+    "benchmarks/results/compression_latency_holdout.json",
+    "benchmarks/results/context_commit_conformance.json",
+    "benchmarks/results/gsm8k_accuracy.json",
+    "benchmarks/results/halueval_qa_faithful.json",
+    "benchmarks/results/longbench_accuracy.json",
+    "benchmarks/results/model_recovery_v7_development.json",
+    "benchmarks/results/model_recovery_v7_holdout.json",
+    "benchmarks/results/needle_accuracy.json",
+    "benchmarks/results/neural_evidence_frontier.json",
+    "benchmarks/results/neural_query_shift.json",
+    "benchmarks/results/recovery_resilience_development_before.json",
+    "benchmarks/results/recovery_resilience_holdout.json",
+    "benchmarks/results/recovery_resilience_holdout_revalidation.json",
+    "benchmarks/results/recovery_resilience_holdout_revalidation_v5.json",
+    "benchmarks/results/squad_accuracy.json",
+    "benchmarks/results/stave_benchmark.json"
+  ]
+}

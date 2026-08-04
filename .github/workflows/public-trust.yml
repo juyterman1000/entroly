@@ -38,9 +38,12 @@ on:
       - scripts/verify_public_trust.py
       - scripts/verify_readme.py
       - scripts/verify_readme_claims.py
+      - scripts/verify_evidence_provenance.py
       - scripts/verify_capability_coverage.py
+      - docs/evidence-provenance-debt.json
       - tests/test_public_trust.py
       - tests/test_verify_readme_claims.py
+      - tests/test_evidence_provenance_ratchet.py
       - tests/test_capability_coverage.py
       - .github/workflows/public-trust.yml
   schedule:
@@ -76,10 +79,15 @@ jobs:
           set -o pipefail
           python scripts/verify_readme_claims.py 2>&1 | tee readme-claims.log
           python scripts/verify_capability_coverage.py 2>&1 | tee capability-coverage.log
+          # verify_readme_claims.py only inspects the README first screen.
+          # This covers every artifact cited as evidence anywhere in README or
+          # docs/, and fails when a newly cited one arrives unsealed.
+          python scripts/verify_evidence_provenance.py 2>&1 | tee evidence-provenance.log
       - name: Run public trust regressions
         run: >-
           python -m pytest -q tests/test_public_trust.py
           tests/test_verify_readme_claims.py
+          tests/test_evidence_provenance_ratchet.py
           tests/test_capability_coverage.py
           tests/test_dependency_closure_integrity_benchmark.py
           tests/test_closed_set_selection_frontier_benchmark.py
