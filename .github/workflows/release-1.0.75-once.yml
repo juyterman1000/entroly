@@ -28,8 +28,20 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Synchronize every approved release surface
-        run: python scripts/sync_release_version.py 1.0.75
+      - name: Synchronize all legacy and typed release targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bump_version.py 1.0.75 | tee /tmp/bump-version.log
+          python scripts/sync_release_version.py 1.0.75
+
+          count="$(sed -nE 's/^bumped ([0-9]+) target\(s\).*/\1/p' /tmp/bump-version.log)"
+          if [[ -z "$count" || "$count" -lt 40 ]]; then
+            echo "::error::Expected at least 40 synchronized version targets, got ${count:-unknown}"
+            cat /tmp/bump-version.log
+            exit 1
+          fi
+          echo "Verified ${count} synchronized version targets plus generated artifacts."
 
       - name: Remove one-shot workflow
         run: rm .github/workflows/release-1.0.75-once.yml
@@ -38,10 +50,13 @@ jobs:
         run: |
           python -m pip install pytest
           python -m pytest \
+            tests/test_bump_version.py \
+            tests/test_release_sync_safety.py \
             tests/test_release_surface.py \
             tests/test_agentic_null_control.py \
             tests/test_agentic_task_miner.py -q
           python -m compileall -q \
+            scripts/bump_version.py \
             scripts/sync_release_version.py \
             benchmarks/agentic_null_control.py \
             benchmarks/agentic_task_miner.py \
@@ -54,5 +69,5 @@ jobs:
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add -A
-          git commit -m "release: synchronize Entroly 1.0.75"
+          git commit -m "release: synchronize Entroly 1.0.75 across 40+ targets"
           git push origin HEAD:main
