@@ -1,26 +1,27 @@
 name: One-shot Entroly 1.0.75 synchronization
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-    paths:
-      - '.github/workflows/release-1.0.75-once.yml'
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-1.0.75-once
+  group: release-1.0.75-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   synchronize:
+    if: github.event.pull_request.head.ref == 'release/v1.0.75'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main
+      - name: Checkout release branch
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -43,9 +44,6 @@ jobs:
           fi
           echo "Verified ${count} synchronized version targets plus generated artifacts."
 
-      - name: Remove one-shot workflow
-        run: rm .github/workflows/release-1.0.75-once.yml
-
       - name: Validate release and benchmark hardening
         run: |
           python -m pip install pytest
@@ -62,12 +60,16 @@ jobs:
             benchmarks/agentic_task_miner.py \
             entroly
 
-      - name: Commit synchronized release
+      - name: Commit synchronized release to PR head
         shell: bash
         run: |
           set -euo pipefail
+          if git diff --quiet && git diff --cached --quiet && [[ -z "$(git status --porcelain)" ]]; then
+            echo "Release branch is already fully synchronized."
+            exit 0
+          fi
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add -A
           git commit -m "release: synchronize Entroly 1.0.75 across 40+ targets"
-          git push origin HEAD:main
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
