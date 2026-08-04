@@ -9,7 +9,7 @@
     "command": "pip install entroly",
     "alternatives": {
       "brew": "brew tap juyterman1000/entroly && brew install entroly",
-      "npm": "npm install -g entroly-wasm",
+      "npm": "npm install -g entroly",
       "pipx": "pipx install entroly",
       "from-source": "git clone https://github.com/juyterman1000/entroly && cd entroly && pip install -e \".[full]\""
     }
@@ -108,6 +108,6 @@
     "readme": "README.md",
     "cookbook": "cookbook/README.md",
     "details": "docs/DETAILS.md",
-    "benchmarks": "BENCHMARKS.md"
+    "benchmarks": "docs/BENCHMARKS.md"
   }
 }
