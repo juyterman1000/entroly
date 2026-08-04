@@ -12,11 +12,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError as exc:  # pragma: no cover - Python 3.10 only
-    raise SystemExit("Python 3.11+ is required to run this standalone check") from exc
-
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_STATUSES = {"prepared", "submitted", "published", "blocked", "rejected"}
@@ -55,12 +50,23 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _project_version() -> str:
-    with (ROOT / "pyproject.toml").open("rb") as handle:
-        data = tomllib.load(handle)
-    version = data.get("project", {}).get("version")
-    if not isinstance(version, str) or not version:
-        raise ValueError("pyproject.toml is missing project.version")
-    return version
+    """Read project.version without adding a Python 3.10 TOML dependency."""
+
+    in_project = False
+    for raw_line in (ROOT / "pyproject.toml").read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line == "[project]":
+            in_project = True
+            continue
+        if in_project and line.startswith("["):
+            break
+        if in_project and line.startswith("version"):
+            key, separator, value = line.partition("=")
+            if key.strip() == "version" and separator:
+                version = value.strip().strip('"').strip("'")
+                if version:
+                    return version
+    raise ValueError("pyproject.toml is missing project.version")
 
 
 def validate() -> list[str]:
