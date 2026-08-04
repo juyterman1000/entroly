@@ -1,0 +1,295 @@
+{
+  "metadata": {
+    "model": "qwen2.5-coder:1.5b",
+    "seed": 7,
+    "budget": 220,
+    "distractors": 6,
+    "simulated": false,
+    "token_source": "ollama prompt_eval_count / eval_count",
+    "oracle": "pytest exit code"
+  },
+  "summary": {
+    "raw": {
+      "tasks": 4,
+      "passed": 3,
+      "total_input_tokens": 2756,
+      "mean_latency_s": 12.881
+    },
+    "entroly_compress_only": {
+      "tasks": 4,
+      "passed": 2,
+      "total_input_tokens": 942,
+      "mean_latency_s": 6.413
+    }
+  },
+  "paired": {
+    "raw_only_successes": 1,
+    "compress_only_successes": 0,
+    "mcnemar_exact_p": 1.0,
+    "regressions": [
+      "wrong_comparison"
+    ]
+  },
+  "rows": [
+    {
+      "task_id": "off_by_one_slice",
+      "arm": "raw",
+      "passed": false,
+      "input_tokens": 711,
+      "output_tokens": 47,
+      "latency_s": 13.226,
+      "context": {
+        "arm": "raw",
+        "estimated_context_tokens": 508,
+        "included_sources": [
+          "core/windows.py",
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_sources": [],
+        "omitted_digests": [],
+        "notes": [
+          "full context, no selection"
+        ]
+      },
+      "oracle_tail": "x\n=========================== short test summary info ===========================\nERROR test_windows.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 1.09s"
+    },
+    {
+      "task_id": "off_by_one_slice",
+      "arm": "entroly_compress_only",
+      "passed": false,
+      "input_tokens": 430,
+      "output_tokens": 107,
+      "latency_s": 9.841,
+      "context": {
+        "arm": "entroly_compress_only",
+        "estimated_context_tokens": 253,
+        "included_sources": [
+          "core/windows.py",
+          "analytics/metrics.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py"
+        ],
+        "omitted_sources": [
+          "billing/invoice.py",
+          "geo/routing.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_digests": [
+          "efb3a2dead779e0694ca0456dd0d04ab9ff81230e306fb3d93d685aef5917883",
+          "f09cbee354a539f10311ead049361df46ac492d0f7dbc53b3a16cf0eaf092200",
+          "f5e3013cb3f1eec0f6f9ddffbfc3ab47349e0dfc0e830947e493053ab76197d5"
+        ],
+        "notes": [
+          "budget=220",
+          "selected 4/7"
+        ]
+      },
+      "oracle_tail": "x\n=========================== short test summary info ===========================\nERROR test_windows.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.94s"
+    },
+    {
+      "task_id": "wrong_comparison",
+      "arm": "raw",
+      "passed": true,
+      "input_tokens": 695,
+      "output_tokens": 36,
+      "latency_s": 12.897,
+      "context": {
+        "arm": "raw",
+        "estimated_context_tokens": 511,
+        "included_sources": [
+          "core/eligibility.py",
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_sources": [],
+        "omitted_digests": [],
+        "notes": [
+          "full context, no selection"
+        ]
+      },
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.60s"
+    },
+    {
+      "task_id": "wrong_comparison",
+      "arm": "entroly_compress_only",
+      "passed": false,
+      "input_tokens": 184,
+      "output_tokens": 65,
+      "latency_s": 5.912,
+      "context": {
+        "arm": "entroly_compress_only",
+        "estimated_context_tokens": 32,
+        "included_sources": [
+          "core/eligibility.py"
+        ],
+        "omitted_sources": [
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_digests": [
+          "46ef6d85cab97199331f961197e37ebe1db030e6ea8699d31b6435eafccfd189",
+          "efb3a2dead779e0694ca0456dd0d04ab9ff81230e306fb3d93d685aef5917883",
+          "f09cbee354a539f10311ead049361df46ac492d0f7dbc53b3a16cf0eaf092200",
+          "4196f50e272bf025ca237fc85d87d2a5c7643b2e8d96b5647d6547cc23cfac86",
+          "c214ff89f4907249a7dc7c300e9f89a08488da54312cbae08b3ff9be114365cf",
+          "f5e3013cb3f1eec0f6f9ddffbfc3ab47349e0dfc0e830947e493053ab76197d5"
+        ],
+        "notes": [
+          "budget=220",
+          "selected 1/7"
+        ]
+      },
+      "oracle_tail": "========================= short test summary info ===========================\nERROR test_eligibility.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.96s"
+    },
+    {
+      "task_id": "missing_zero_guard",
+      "arm": "raw",
+      "passed": true,
+      "input_tokens": 674,
+      "output_tokens": 41,
+      "latency_s": 12.771,
+      "context": {
+        "arm": "raw",
+        "estimated_context_tokens": 512,
+        "included_sources": [
+          "core/stats.py",
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_sources": [],
+        "omitted_digests": [],
+        "notes": [
+          "full context, no selection"
+        ]
+      },
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.56s"
+    },
+    {
+      "task_id": "missing_zero_guard",
+      "arm": "entroly_compress_only",
+      "passed": true,
+      "input_tokens": 163,
+      "output_tokens": 45,
+      "latency_s": 5.076,
+      "context": {
+        "arm": "entroly_compress_only",
+        "estimated_context_tokens": 32,
+        "included_sources": [
+          "core/stats.py"
+        ],
+        "omitted_sources": [
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_digests": [
+          "46ef6d85cab97199331f961197e37ebe1db030e6ea8699d31b6435eafccfd189",
+          "efb3a2dead779e0694ca0456dd0d04ab9ff81230e306fb3d93d685aef5917883",
+          "f09cbee354a539f10311ead049361df46ac492d0f7dbc53b3a16cf0eaf092200",
+          "4196f50e272bf025ca237fc85d87d2a5c7643b2e8d96b5647d6547cc23cfac86",
+          "c214ff89f4907249a7dc7c300e9f89a08488da54312cbae08b3ff9be114365cf",
+          "f5e3013cb3f1eec0f6f9ddffbfc3ab47349e0dfc0e830947e493053ab76197d5"
+        ],
+        "notes": [
+          "budget=220",
+          "selected 1/7"
+        ]
+      },
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.55s"
+    },
+    {
+      "task_id": "reversed_boolean",
+      "arm": "raw",
+      "passed": true,
+      "input_tokens": 676,
+      "output_tokens": 38,
+      "latency_s": 12.631,
+      "context": {
+        "arm": "raw",
+        "estimated_context_tokens": 517,
+        "included_sources": [
+          "core/access.py",
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_sources": [],
+        "omitted_digests": [],
+        "notes": [
+          "full context, no selection"
+        ]
+      },
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.56s"
+    },
+    {
+      "task_id": "reversed_boolean",
+      "arm": "entroly_compress_only",
+      "passed": true,
+      "input_tokens": 165,
+      "output_tokens": 38,
+      "latency_s": 4.824,
+      "context": {
+        "arm": "entroly_compress_only",
+        "estimated_context_tokens": 38,
+        "included_sources": [
+          "core/access.py"
+        ],
+        "omitted_sources": [
+          "analytics/metrics.py",
+          "billing/invoice.py",
+          "geo/routing.py",
+          "inventory/warehouse.py",
+          "notifications/mailer.py",
+          "reporting/exporter.py"
+        ],
+        "omitted_digests": [
+          "46ef6d85cab97199331f961197e37ebe1db030e6ea8699d31b6435eafccfd189",
+          "efb3a2dead779e0694ca0456dd0d04ab9ff81230e306fb3d93d685aef5917883",
+          "f09cbee354a539f10311ead049361df46ac492d0f7dbc53b3a16cf0eaf092200",
+          "4196f50e272bf025ca237fc85d87d2a5c7643b2e8d96b5647d6547cc23cfac86",
+          "c214ff89f4907249a7dc7c300e9f89a08488da54312cbae08b3ff9be114365cf",
+          "f5e3013cb3f1eec0f6f9ddffbfc3ab47349e0dfc0e830947e493053ab76197d5"
+        ],
+        "notes": [
+          "budget=220",
+          "selected 1/7"
+        ]
+      },
+      "oracle_tail": ".                                                                        [100%]\n1 passed in 0.52s"
+    }
+  ],
+  "input_token_reduction": 0.6582,
+  "limitations": [
+    "Harness-validation pilot, not the preregistered experiment in benchmarks/AGENTIC_TASKS_PREREGISTRATION.md, which requires mined repository tasks at n >= 400 with a dev/holdout split.",
+    "n = 4 synthetic single-file bugs; far too few for a non-inferiority claim at any useful margin.",
+    "One small local model (qwen2.5-coder:1.5b); results do not transfer to frontier models.",
+    "Distractor context is synthetic and uniform, so the selection problem is easier than a real repository.",
+    "Single seed, no repeats, so per-task variance is unmeasured.",
+    "No CLOSED-LOOP arm: recovery-on-failure is not exercised here.",
+    "Answer extraction is a confound. The model is asked for a bare file and strip_fences() unwraps it; when the model adds prose the result is unparseable and the task is scored as failed. In this run the one regression failed at pytest collection, not on an assertion, so at least part of it is formatting rather than a missing-evidence effect. A stronger harness would parse the answer robustly and separate 'wrong fix' from 'unusable output'.",
+    "Because of the above, a failed task here does NOT establish that compression removed necessary context. In this run the compressed arm's selection was inspected and was correct: it kept the file containing the bug and dropped only distractors."
+  ]
+}
