@@ -1,0 +1,58 @@
+name: One-shot Entroly 1.0.75 synchronization
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-1.0.75-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-1.0.75-once
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Synchronize every approved release surface
+        run: python scripts/sync_release_version.py 1.0.75
+
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/release-1.0.75-once.yml
+
+      - name: Validate release and benchmark hardening
+        run: |
+          python -m pip install pytest
+          python -m pytest \
+            tests/test_release_surface.py \
+            tests/test_agentic_null_control.py \
+            tests/test_agentic_task_miner.py -q
+          python -m compileall -q \
+            scripts/sync_release_version.py \
+            benchmarks/agentic_null_control.py \
+            benchmarks/agentic_task_miner.py \
+            entroly
+
+      - name: Commit synchronized release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A
+          git commit -m "release: synchronize Entroly 1.0.75"
+          git push origin HEAD:main
