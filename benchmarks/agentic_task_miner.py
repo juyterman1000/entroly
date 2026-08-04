@@ -172,7 +172,11 @@ def _classify_test_run(returncode: int, output: str) -> str:
         return "no_tests_collected"
 
     lowered = output.lower()
-    if "error during collection" in lowered or "syntaxerror" in lowered:
+    if (
+        "error during collection" in lowered
+        or "error collecting" in lowered
+        or "syntaxerror" in lowered
+    ):
         return "collection_error"
     if "importerror" in lowered or "modulenotfounderror" in lowered:
         return "import_error"
