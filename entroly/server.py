@@ -74,9 +74,33 @@ from .vault import (
 from .verification_engine import VerificationEngine
 
 # ── Rust engine import (preferred, 50-100× faster) ─────────────────
+# Importing is not sufficient. A core below MIN_ENTROLY_CORE_VERSION can select
+# differently: measured on the same query and fragment set, entroly_core 1.0.73
+# returned three fragments where 1.0.74 returned one, and a stale core silently
+# reported 0.0% savings where a matched core reports a real reduction
+# (tests/test_simulate_small_project.py). qccr.py already refuses such a core
+# via native_status().ok, so before this gate the same library in the same
+# process was rejected by one component and trusted by the other -- and the one
+# trusting it performed every selection. Degrade to the CI-covered pure-Python
+# path instead of producing selections under a version nobody declared
+# compatible.
 try:
     from entroly_core import EntrolyEngine as RustEngine
     from entroly_core import py_analyze_query, py_refine_heuristic
+
+    from .native_status import native_status as _native_status
+
+    _core_status = _native_status()
+    if _core_status.version_ok is False:
+        # `logger` is not bound until later in this module.
+        logging.getLogger("entroly").warning(
+            "entroly_core %s is below the minimum this release requires; "
+            "using the pure-Python engine instead. Rebuild with "
+            "`cd entroly-core && maturin develop --release` to restore "
+            "native acceleration.",
+            _core_status.version,
+        )
+        raise ImportError("entroly_core below minimum supported version")
     _RUST_AVAILABLE = True
 except ImportError:
     _RUST_AVAILABLE = False
