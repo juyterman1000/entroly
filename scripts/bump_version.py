@@ -61,6 +61,8 @@ TARGETS = [
     (".claude-plugin/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("server.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("CITATION.cff", r'^version:\s*[^\s]+\s*$', 'version: {v}'),
+    ("codemeta.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/daemon.py", r'version:\s*str\s*=\s*"[^"]+"', 'version: str = "{v}"'),
     ("tests/test_release_surface.py",
         r'RELEASE_VERSION\s*=\s*"[^"]+"',
