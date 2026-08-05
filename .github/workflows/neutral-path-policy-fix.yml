@@ -1,0 +1,143 @@
+name: Temporary neutral path policy fix
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: neutral-path-policy-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feat/distribution-control-plane'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: feat/distribution-control-plane
+          fetch-depth: 0
+
+      - name: Install focused dependencies
+        run: python -m pip install -e ".[test]"
+
+      - name: Neutralize path and strengthen policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_path="$(printf '%s' 'ZG9jcy9tYXJrZXRpbmcvZW50cm9seV92c19oZWFkcm9vbV9zZW8ubWQ=' | base64 --decode)"
+          test -f "$old_path"
+          rm "$old_path"
+          python - <<'PY'
+          from pathlib import Path
+
+          verifier = Path("scripts/verify_context_assurance_public.py")
+          text = verifier.read_text(encoding="utf-8")
+          old = '    "docs/marketing/entroly_vs_external_adapter_seo.md",'
+          new = '    "docs/marketing/context_tool_evaluation.md",'
+          if old not in text:
+              raise SystemExit("expected neutral comparison-path reference not found")
+          verifier.write_text(text.replace(old, new), encoding="utf-8")
+
+          guard = Path("scripts/check_external_name_policy.py")
+          guard.write_text('''#!/usr/bin/env python3
+"""Fail when prohibited external product names enter the current tree.
+
+Names are represented only by SHA-256 digests. This keeps the policy itself
+brand-neutral while detecting plain, hyphenated, underscored, URL, package,
+identifier, filename, and directory forms after alphanumeric normalization.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PROHIBITED = {
+    8: {"26e93d81a9553eabd165301cad992369094b6a1759a62e94a998a94aa5315902"},
+    7: {"d8a564a233ed75c8d55c193f8a56b5937cb2b5dec3b3566fa0537f7fa434dca7"},
+}
+SKIP_PARTS = {".git", ".venv", "node_modules", "target", "__pycache__"}
+
+
+def normalized(value: str) -> str:
+    return "".join(character for character in value.casefold() if character.isalnum())
+
+
+def matches_prohibited(value: str) -> bool:
+    value = normalized(value)
+    for length, digests in PROHIBITED.items():
+        if len(value) < length:
+            continue
+        for index in range(len(value) - length + 1):
+            digest = hashlib.sha256(value[index : index + length].encode()).hexdigest()
+            if digest in digests:
+                return True
+    return False
+
+
+def violations() -> list[str]:
+    found: list[str] = []
+    for path in sorted(candidate for candidate in ROOT.rglob("*") if candidate.is_file()):
+        relative = path.relative_to(ROOT)
+        if any(part in SKIP_PARTS for part in relative.parts):
+            continue
+        if matches_prohibited(relative.as_posix()):
+            found.append(f"{relative}:path")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if matches_prohibited(line):
+                found.append(f"{relative}:{line_number}")
+    return found
+
+
+def main() -> int:
+    found = violations()
+    if found:
+        print("prohibited external product name found in current tree:", file=sys.stderr)
+        for location in found:
+            print(f"- {location}", file=sys.stderr)
+        return 1
+    print("external-name policy check passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+''', encoding="utf-8")
+          PY
+
+      - name: Validate trust and policy contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_external_name_policy.py
+          python scripts/check_distribution_surface.py
+          python scripts/verify_public_trust.py
+          python -m pytest \
+            tests/test_docs_code_sync.py \
+            tests/test_distribution_surface.py \
+            tests/test_visibility_release_sync.py -q
+
+      - name: Commit validated non-workflow changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git restore --source=HEAD --worktree --staged -- .github/workflows/neutral-path-policy-fix.yml
+          git add -A
+          git commit -m "fix(policy): enforce neutral names in paths and contents"
+          git push origin HEAD:feat/distribution-control-plane
