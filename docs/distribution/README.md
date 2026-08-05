@@ -1,7 +1,7 @@
 # Entroly distribution control plane
 
 This directory is the source of truth for Entroly's external discovery, listing,
-review, benchmark, and package-manager work.
+review, benchmark, launch, citation, media, and package-manager work.
 
 Distribution claims are product claims. They must be as auditable as Context
 Receipts: every published listing needs a public proof URL, every benchmark
@@ -10,12 +10,23 @@ entry needs a reproducible install path.
 
 ## Files
 
-- [`targets.json`](targets.json) — machine-readable status registry.
+- [`targets.json`](targets.json) — machine-readable external target registry.
+- [`visibility-dimensions.json`](visibility-dimensions.json) — complete competitive
+  visibility matrix across 30 dimensions.
+- [`competitive-visibility.md`](competitive-visibility.md) — category-leadership
+  rules and prioritization model.
 - [`submission-kit.md`](submission-kit.md) — canonical, evidence-bounded copy for
   directories, newsletters, guides, reviewers, and benchmark maintainers.
+- [`../../marketing/README.md`](../../marketing/README.md) — launch and outreach
+  operating rules.
+- [`../independent-review-program.md`](../independent-review-program.md) — minimum
+  evidence for independent reviews and reproductions.
+- [`../press-kit.md`](../press-kit.md) — approved project facts, descriptions, media
+  assets, and claim boundaries.
 - [`../../scripts/check_distribution_surface.py`](../../scripts/check_distribution_surface.py)
-  — local validation for version alignment, required discovery assets, target
-  states, and proof URLs.
+  — offline validation for version alignment, required discovery assets, target
+  states, visibility coverage, citation metadata, launch integrity, and proof
+  URLs.
 
 ## Status rules
 
@@ -81,8 +92,12 @@ superiority language in external submissions.
 The distribution program is healthy when:
 
 - every high-priority target has an honest status and next action;
-- Claude, MCP, CLI, local-first, benchmark, and package-manager discovery each
-  have maintained canonical metadata;
+- all 30 visibility dimensions remain represented and evidence-linked;
+- Claude, MCP, CLI, local-first, benchmark, launch, research, and package-manager
+  discovery each have maintained canonical metadata;
 - external listings resolve to current install commands;
 - neutral benchmark adapters stay version-pinned and runnable;
-- no release can silently drift the plugin, MCP, package, or submission copy.
+- citation metadata follows the release automatically;
+- launch and media assets disclose affiliation and preserve limitations;
+- no release can silently drift the plugin, MCP, package, citation, or submission
+  copy.
