@@ -1,0 +1,54 @@
+name: Temporary named-tool audit
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feat/distribution-control-plane'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/distribution-control-plane
+          fetch-depth: 0
+      - name: Enumerate current-tree references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          pattern = re.compile(r'headroom|lean(?:ctx|[-_ ]ctx)', re.IGNORECASE)
+          skip = {'.git', '.venv', 'node_modules', 'target', '__pycache__'}
+          matches = 0
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              if any(part in skip for part in path.parts):
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except (UnicodeDecodeError, OSError):
+                  continue
+              lines = text.splitlines()
+              for index, line in enumerate(lines, start=1):
+                  if not pattern.search(line):
+                      continue
+                  matches += 1
+                  start = max(1, index - 2)
+                  end = min(len(lines), index + 2)
+                  print(f'\n=== {path}:{index} ===')
+                  for line_number in range(start, end + 1):
+                      marker = '>' if line_number == index else ' '
+                      print(f'{marker}{line_number:6}: {lines[line_number - 1]}')
+          print(f'\nTOTAL_MATCHING_LINES={matches}')
+          if matches == 0:
+              print('No named external-tool references found.')
+          PY
