@@ -491,12 +491,12 @@ def _hybrid_compress(text: str, budget_tokens: int, query: str) -> str:
 
     Stage 1 (Entroly): fragment-level knapsack with budget = 1.5× target.
         Selects the most relevant fragments at a slightly relaxed budget,
-        leaving headroom for stage 2.
+        leaving external_adapter for stage 2.
 
     Stage 2 (LLMLingua-2): token-level compression to the actual budget.
         Removes filler tokens within the selected fragments.
 
-    The 1.5× headroom is empirically calibrated: too tight (1.0×) and
+    The 1.5× external_adapter is empirically calibrated: too tight (1.0×) and
     stage-2 has nothing to compress; too loose (≥2×) and stage-1 selects
     irrelevant fragments that stage-2 can't recover from.
     """

@@ -145,7 +145,7 @@ def model_recovery_proof() -> int:
     systems = report["aggregates"]["systems"]
     paired = report["aggregates"]["paired"]
     entroly = systems["entroly"]
-    headroom = systems["headroom"]
+    external_adapter = systems["external_adapter"]
 
     _header(
         "Does smaller context preserve the answer?",
@@ -154,17 +154,17 @@ def model_recovery_proof() -> int:
     print(f"{YELLOW}$ python -m benchmarks.model_recovery verify <artifact>{RESET}\n")
     _pass("Artifact integrity", f"sha256 {report['payload_sha256'][:16]}...")
     _pass("Execution", "24/24 trials complete; 0 errors")
-    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'HEADROOM BASELINE':>18}{RESET}")
-    _metric("Final exact answers", f"{entroly['final_exact']}/24", f"{headroom['final_exact']}/24")
+    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'EXTERNAL_ADAPTER BASELINE':>18}{RESET}")
+    _metric("Final exact answers", f"{entroly['final_exact']}/24", f"{external_adapter['final_exact']}/24")
     _metric(
         "Effective context ratio",
         f"{entroly['mean_effective_token_ratio'] * 100:.2f}%",
-        f"{headroom['mean_effective_token_ratio'] * 100:.2f}%",
+        f"{external_adapter['mean_effective_token_ratio'] * 100:.2f}%",
     )
     _metric(
         "Discordant wins",
         str(paired["entroly_only_final_exact"]),
-        str(paired["headroom_only_final_exact"]),
+        str(paired["external_adapter_only_final_exact"]),
     )
     print(
         f"\n{GREEN}{BOLD}Exact McNemar p = {paired['mcnemar_exact_p']:.5f}{RESET}"
@@ -184,10 +184,10 @@ def restart_recovery_proof() -> int:
     recovery_resilience.verify_report(prior)
     recovery_resilience.verify_report(report)
     entroly = report["aggregates"]["entroly"]
-    headroom = report["aggregates"]["headroom"]
+    external_adapter = report["aggregates"]["external_adapter"]
     errors = [
         error["message"]
-        for worker in report["adapters"]["headroom"]["worker_runs"]
+        for worker in report["adapters"]["external_adapter"]["worker_runs"]
         for error in worker["errors"]
     ]
 
@@ -198,12 +198,12 @@ def restart_recovery_proof() -> int:
     print(f"{YELLOW}$ python -m benchmarks.recovery_resilience verify <artifact>{RESET}\n")
     _pass("Artifact integrity", f"sha256 {report['payload_sha256'][:16]}...")
     _pass("Prior v2 retained", "both systems recovered 66/66")
-    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'HEADROOM BASELINE':>18}{RESET}")
-    _metric("Byte-exact after restart", f"{entroly['exact_entries']}/66", f"{headroom['exact_entries']}/66")
+    print(f"\n{BOLD}{'METRIC':<28} {'ENTROLY':>15} {'EXTERNAL_ADAPTER BASELINE':>18}{RESET}")
+    _metric("Byte-exact after restart", f"{entroly['exact_entries']}/66", f"{external_adapter['exact_entries']}/66")
     _metric(
         "Live state",
         f"{entroly['state_bytes'] / 1024:.1f} KiB",
-        f"{headroom['state_bytes'] / 1024:.1f} KiB",
+        f"{external_adapter['state_bytes'] / 1024:.1f} KiB",
     )
     if errors:
         print(f"\n{GRAY}Raw artifact retains the baseline's incomplete worker evidence.{RESET}")

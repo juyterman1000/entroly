@@ -94,7 +94,7 @@ def _limitations(model: str) -> list[str]:
             "hosted frontier models."
         ),
         "Synthetic JSON audit logs isolate query shift and recovery; they do not represent every agent workload.",
-        "Headroom recovery composes public compress() with its persistent CompressionStore contract; MCP transport latency is excluded.",
+        "External Baseline recovery composes public compress() with its persistent CompressionStore contract; MCP transport latency is excluded.",
         "A single exact RETRIEVE token is required; wrong or verbose first responses do not receive oracle recovery.",
         "No aggregate product score or universal superiority claim is allowed.",
     ]
@@ -193,7 +193,7 @@ def _participant_version(system: str) -> str:
         from entroly import __version__
 
         return str(__version__)
-    return importlib.metadata.version("headroom-ai")
+    return os.environ.get("ENTROLY_EXTERNAL_ADAPTER_VERSION", "operator-provided")
 
 
 def _compress_entroly(payload: dict[str, Any]) -> dict[str, Any]:
@@ -205,7 +205,7 @@ def _compress_entroly(payload: dict[str, Any]) -> dict[str, Any]:
     store = CompressionRetrievalStore(store_path)
     result = compress_proxy_payload(
         {
-            "model": payload["headroom_model"],
+            "model": payload["external_adapter_model"],
             "messages": _messages(
                 fixture["compression_query"], fixture["content"], fixture["fixture_id"]
             ),
@@ -239,10 +239,10 @@ def _compress_entroly(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _compress_headroom(payload: dict[str, Any]) -> dict[str, Any]:
-    from headroom import compress
-    from headroom.cache.backends.sqlite import SQLiteBackend
-    from headroom.cache.compression_store import (
+def _compress_external_adapter(payload: dict[str, Any]) -> dict[str, Any]:
+    from external_adapter import compress
+    from external_adapter.cache.backends.sqlite import SQLiteBackend
+    from external_adapter.cache.compression_store import (
         CompressionStore,
         clear_request_compression_store,
         set_request_compression_store,
@@ -262,10 +262,10 @@ def _compress_headroom(payload: dict[str, Any]) -> dict[str, Any]:
                     )
                 )
             ),
-            model=payload["headroom_model"],
+            model=payload["external_adapter_model"],
             protect_recent=0,
-            savings_profile=payload["headroom_savings_profile"],
-            target_ratio=float(payload["headroom_target_ratio"]),
+            savings_profile=payload["external_adapter_savings_profile"],
+            target_ratio=float(payload["external_adapter_target_ratio"]),
             min_tokens_to_compress=0,
         )
         active = str(result.messages[-1]["content"])
@@ -325,9 +325,9 @@ def _retrieve_entroly(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _retrieve_headroom(payload: dict[str, Any]) -> dict[str, Any]:
-    from headroom.cache.backends.sqlite import SQLiteBackend
-    from headroom.cache.compression_store import CompressionStore
+def _retrieve_external_adapter(payload: dict[str, Any]) -> dict[str, Any]:
+    from external_adapter.cache.backends.sqlite import SQLiteBackend
+    from external_adapter.cache.compression_store import CompressionStore
 
     store = CompressionStore(backend=SQLiteBackend(payload["store_path"]))
     entry = store.retrieve(payload["handle"]["hash"], query=payload["query"])
@@ -360,13 +360,13 @@ def run_adapter(system: str, operation: str, payload: dict[str, Any]) -> dict[st
         result = (
             _compress_entroly(payload)
             if system == "entroly"
-            else _compress_headroom(payload)
+            else _compress_external_adapter(payload)
         )
     elif operation == "retrieve":
         result = (
             _retrieve_entroly(payload)
             if system == "entroly"
-            else _retrieve_headroom(payload)
+            else _retrieve_external_adapter(payload)
         )
     else:
         raise ValueError(f"unsupported adapter operation: {operation}")
@@ -551,7 +551,7 @@ def _mcnemar_exact(left_only: int, right_only: int) -> float:
 def _aggregate(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     total = len(rows)
     systems: dict[str, Any] = {}
-    for system in ("entroly", "headroom"):
+    for system in ("entroly", "external_adapter"):
         selected = [row for row in rows if row["system"] == system]
         systems[system] = {
             "trials": len(selected),
@@ -593,14 +593,14 @@ def _aggregate(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         bool(left["final_exact"]) and not bool(right["final_exact"])
         for left, right in zip(
             [row for row in rows if row["system"] == "entroly"],
-            [row for row in rows if row["system"] == "headroom"],
+            [row for row in rows if row["system"] == "external_adapter"],
         )
     )
-    headroom_only = sum(
+    external_adapter_only = sum(
         bool(right["final_exact"]) and not bool(left["final_exact"])
         for left, right in zip(
             [row for row in rows if row["system"] == "entroly"],
-            [row for row in rows if row["system"] == "headroom"],
+            [row for row in rows if row["system"] == "external_adapter"],
         )
     )
     return {
@@ -608,8 +608,8 @@ def _aggregate(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "systems": systems,
         "paired": {
             "entroly_only_final_exact": entroly_only,
-            "headroom_only_final_exact": headroom_only,
-            "mcnemar_exact_p": _mcnemar_exact(entroly_only, headroom_only),
+            "external_adapter_only_final_exact": external_adapter_only,
+            "mcnemar_exact_p": _mcnemar_exact(entroly_only, external_adapter_only),
         },
     }
 
@@ -641,10 +641,10 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         phase=phase,
         model_digest=str(identity["digest"]),
     )
-    python_by_system = {"entroly": sys.executable, "headroom": args.headroom_python}
+    python_by_system = {"entroly": sys.executable, "external_adapter": args.external_adapter_python}
     participant_versions = {
         system: str(protocol["participants"][system]["version"])
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
     }
     rows: list[dict[str, Any]] = []
     raw_rows: list[dict[str, Any]] = []
@@ -653,7 +653,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         compression: dict[tuple[str, str], dict[str, Any]] = {}
         state_paths: dict[tuple[str, str], Path] = {}
         for fixture in fixtures:
-            for system in ("entroly", "headroom"):
+            for system in ("entroly", "external_adapter"):
                 suffix = ".json" if system == "entroly" else ".sqlite3"
                 store_path = temp_root / f"{system}-{fixture['fixture_id']}{suffix}"
                 state_paths[(system, fixture["fixture_id"])] = store_path
@@ -662,9 +662,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                     "store_path": str(store_path),
                     "expected_version": participant_versions[system],
                     "entroly_budget_tokens": protocol["entroly_budget_tokens"],
-                    "headroom_model": protocol["headroom_model"],
-                    "headroom_savings_profile": protocol["headroom_savings_profile"],
-                    "headroom_target_ratio": protocol["headroom_target_ratio"],
+                    "external_adapter_model": protocol["external_adapter_model"],
+                    "external_adapter_savings_profile": protocol["external_adapter_savings_profile"],
+                    "external_adapter_target_ratio": protocol["external_adapter_target_ratio"],
                 }
                 try:
                     compression[(system, fixture["fixture_id"])] = _call_adapter(
@@ -681,7 +681,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         model_order += [
             (system, fixture["fixture_id"])
             for fixture in fixtures
-            for system in ("entroly", "headroom")
+            for system in ("entroly", "external_adapter")
         ]
         random.Random(int(protocol["phases"][phase]["seed"]) + 17).shuffle(model_order)
         fixture_by_id = {fixture["fixture_id"]: fixture for fixture in fixtures}
@@ -727,7 +727,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 "canonical_prediction"
             ] == _canonical_answer(fixture["expected_answer"])
             raw_rows.append({"fixture_id": fixture["fixture_id"], **raw})
-            for system in ("entroly", "headroom"):
+            for system in ("entroly", "external_adapter"):
                 compressed = compression[(system, fixture["fixture_id"])]
                 active = first_pass[(system, fixture["fixture_id"])]
                 errors = [
@@ -922,7 +922,7 @@ def verify_report(report: dict[str, Any]) -> None:
         raise ValueError("participant matrix is incomplete")
     expected_pairs = {
         (system, fixture_id)
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
         for fixture_id in by_id
     }
     observed_pairs = {(str(row["system"]), str(row["fixture_id"])) for row in rows}
@@ -1056,11 +1056,11 @@ def verify_report(report: dict[str, Any]) -> None:
                             raise ValueError("Entroly recovery item hash mismatch")
                 else:
                     if content != fixture["content"]:
-                        raise ValueError("Headroom recovery is not the stored source")
+                        raise ValueError("External Baseline recovery is not the stored source")
                     if len(items) != 1 or items[0].get("content_sha256") != _sha256(
                         content
                     ):
-                        raise ValueError("Headroom recovery item hash mismatch")
+                        raise ValueError("External Baseline recovery item hash mismatch")
                 if retry is None:
                     raise ValueError("successful retrieval is missing its retry")
                 recovered_context = (
@@ -1128,12 +1128,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     adapter = subparsers.add_parser("adapter")
-    adapter.add_argument("--system", choices=("entroly", "headroom"), required=True)
+    adapter.add_argument("--system", choices=("entroly", "external_adapter"), required=True)
     adapter.add_argument("--operation", choices=("compress", "retrieve"), required=True)
     run = subparsers.add_parser("run")
     run.add_argument("--protocol", default=str(DEFAULT_PROTOCOL))
     run.add_argument("--phase", choices=("development", "holdout"), required=True)
-    run.add_argument("--headroom-python", required=True)
+    run.add_argument("--external_adapter-python", required=True)
     run.add_argument("--ollama-model")
     run.add_argument("--ollama-base-url")
     run.add_argument("--timeout", type=float)
@@ -1153,7 +1153,7 @@ def main() -> int:
             f"VERIFIED {args.output}: phase={report['phase']} "
             f"raw={report['quality_gates']['raw_exact_accuracy']:.1%} "
             f"entroly={report['aggregates']['systems']['entroly']['final_exact_accuracy']:.1%} "
-            f"headroom={report['aggregates']['systems']['headroom']['final_exact_accuracy']:.1%}"
+            f"external_adapter={report['aggregates']['systems']['external_adapter']['final_exact_accuracy']:.1%}"
         )
         if report["quality_gates"]["passed"]:
             checkpoint_path = (

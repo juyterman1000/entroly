@@ -97,7 +97,7 @@ CLAIM_SENSITIVE_PUBLIC_FILES = (
     "docs/DETAILS.md",
     "docs/for-teams.md",
     "docs/marketing/launch_playbook.md",
-    "docs/marketing/entroly_vs_headroom_seo.md",
+    "docs/marketing/entroly_vs_external_adapter_seo.md",
     "docs/generate_demo.py",
     "docs/assets/demo.svg",
     "docs/assets/demo_animated.svg",

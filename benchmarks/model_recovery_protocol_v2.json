@@ -13,11 +13,11 @@
       "compression_entry_point": "entroly.compression_proxy.compress_proxy_payload",
       "retrieval_entry_point": "entroly.compression_retrieval_store.CompressionRetrievalStore.search"
     },
-    "headroom": {
-      "package": "headroom-ai",
+    "external_adapter": {
+      "package": "external-adapter",
       "version": "0.31.0",
-      "compression_entry_point": "headroom.compress",
-      "retrieval_entry_point": "headroom.cache.compression_store.CompressionStore.retrieve"
+      "compression_entry_point": "external_adapter.compress",
+      "retrieval_entry_point": "external_adapter.cache.compression_store.CompressionStore.retrieve"
     }
   },
   "fixture_generator": "query-shift-json-v1",
@@ -27,9 +27,9 @@
   "shared_tokenizer": "o200k_base",
   "entroly_budget_tokens": 600,
   "entroly_retrieval_limit": 3,
-  "headroom_model": "gpt-4o",
-  "headroom_savings_profile": "agent-90",
-  "headroom_target_ratio": 0.25,
+  "external_adapter_model": "gpt-4o",
+  "external_adapter_savings_profile": "agent-90",
+  "external_adapter_target_ratio": 0.25,
   "ollama": {
     "model": "entroly-qwen2.5-7b-32k:latest",
     "base_url": "http://127.0.0.1:11434",
@@ -69,6 +69,6 @@
     "model_triggered_recovery": "Recovery is called only when the first model response canonicalizes exactly to RETRIEVE.",
     "final_exact_accuracy": "The first response is final unless it is RETRIEVE; then the single recovery retry is final.",
     "effective_tokens": "Active context tokens plus recovery tokens only for trials where retrieval was triggered.",
-    "headroom_recovery_scope": "The runner composes Headroom's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement."
+    "external_adapter_recovery_scope": "The runner composes External Baseline's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement."
   }
 }

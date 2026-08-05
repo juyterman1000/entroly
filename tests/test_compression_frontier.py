@@ -63,7 +63,7 @@ def test_frontier_report_verifier_detects_output_tampering() -> None:
         trials=trials,
         adapters=(
             _adapter("entroly", trials, "gold-answer"),
-            _adapter("headroom", trials, "unrelated"),
+            _adapter("external_adapter", trials, "unrelated"),
         ),
         ratios=(0.5,),
         protocol={"seed": 1, "dataset_fingerprint": "test"},
@@ -72,7 +72,7 @@ def test_frontier_report_verifier_detects_output_tampering() -> None:
 
     verify_report(report)
     assert report["aggregates"]["entroly"]["0.5"]["answer_retention"] == 1.0
-    assert report["aggregates"]["headroom"]["0.5"]["answer_retention"] == 0.0
+    assert report["aggregates"]["external_adapter"]["0.5"]["answer_retention"] == 0.0
     assert report["superiority_gate"]["passed"] is False
 
     tampered = copy.deepcopy(report)
@@ -83,7 +83,7 @@ def test_frontier_report_verifier_detects_output_tampering() -> None:
 
 def test_superiority_gate_requires_every_statistical_and_downstream_guard() -> None:
     ratios = (0.5, 0.25, 0.125)
-    aggregates: dict[str, dict[str, object]] = {"entroly": {}, "headroom": {}}
+    aggregates: dict[str, dict[str, object]] = {"entroly": {}, "external_adapter": {}}
     paired: dict[str, object] = {}
     for ratio in ratios:
         key = f"{ratio:g}"
@@ -92,7 +92,7 @@ def test_superiority_gate_requires_every_statistical_and_downstream_guard() -> N
             "target_attainment": 1.0,
             "answer_retention": 1.0,
         }
-        aggregates["headroom"][key] = {
+        aggregates["external_adapter"][key] = {
             "passed": True,
             "target_attainment": 1.0,
             "answer_retention": 0.0,
@@ -102,7 +102,7 @@ def test_superiority_gate_requires_every_statistical_and_downstream_guard() -> N
         "aggregates": {
             "raw": {"exact_match": 0.75, "mean_token_f1": 0.8, "errors": 0},
             "entroly": {"exact_match": 0.75, "mean_token_f1": 0.8, "errors": 0},
-            "headroom": {"exact_match": 0.25, "mean_token_f1": 0.3, "errors": 0},
+            "external_adapter": {"exact_match": 0.25, "mean_token_f1": 0.3, "errors": 0},
         }
     }
 

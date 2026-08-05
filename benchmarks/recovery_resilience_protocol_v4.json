@@ -8,7 +8,7 @@
   },
   "comparison": {
     "entroly": "1.0.65 source",
-    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+    "external_adapter": "external-adapter 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
   },
   "claim_policy": {
     "aggregate_score_allowed": false,

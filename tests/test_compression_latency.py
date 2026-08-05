@@ -28,7 +28,7 @@ def test_protocol_freezes_quality_gates_and_separate_latency_modes() -> None:
     protocol = latency._protocol()
 
     assert protocol["participants"]["entroly"]["version"] == "1.0.59"
-    assert protocol["participants"]["headroom"]["version"] == "0.31.0"
+    assert protocol["participants"]["external_adapter"]["version"] == "0.31.0"
     assert protocol["quality_gates"]["evidence_recall"] == 1.0
     assert protocol["quality_gates"]["maximum_token_inflation"] == 0.0
     assert protocol["claim_policy"]["aggregate_product_score_allowed"] is False
@@ -47,7 +47,7 @@ def test_development_artifact_verifies_but_cannot_enable_public_claim() -> None:
 
     latency.verify_report(report)
 
-    assert report["quality_gates"] == {"entroly": True, "headroom": True}
+    assert report["quality_gates"] == {"entroly": True, "external_adapter": True}
     assert report["claim_gate"]["any_latency_claim_allowed"] is False
     assert report["mode_analysis"]["warm"]["entroly_faster_claim_allowed"] is False
     assert report["mode_analysis"]["cold"]["entroly_faster_claim_allowed"] is False
@@ -84,7 +84,7 @@ def test_missing_participant_metadata_is_retained_as_failed_gate() -> None:
     warm = copy.deepcopy(report["raw"]["warm_cells"])
     cold = copy.deepcopy(report["raw"]["cold_cells"])
     for cell in [*warm, *cold]:
-        if cell["system"] == "headroom":
+        if cell["system"] == "external_adapter":
             cell.pop("participant", None)
 
     analyzed = latency.analyze(
@@ -94,8 +94,8 @@ def test_missing_participant_metadata_is_retained_as_failed_gate() -> None:
         cold_cells=cold,
     )
 
-    assert analyzed["participant_gates"]["headroom"]["passed"] is False
-    assert analyzed["quality_gates"]["headroom"] is False
+    assert analyzed["participant_gates"]["external_adapter"]["passed"] is False
+    assert analyzed["quality_gates"]["external_adapter"] is False
     assert analyzed["claim_gate"]["any_latency_claim_allowed"] is False
 
 
@@ -135,7 +135,7 @@ def test_holdout_verifies_historical_source_and_passes_scoped_claims() -> None:
     assert report["participants"]["entroly"]["version"] == report["protocol"][
         "participants"
     ]["entroly"]["version"]
-    assert report["quality_gates"] == {"entroly": True, "headroom": True}
+    assert report["quality_gates"] == {"entroly": True, "external_adapter": True}
     assert report["mode_analysis"]["warm"]["ci95_lower"] > 1.0
     assert report["mode_analysis"]["cold"]["ci95_lower"] > 1.0
     assert report["mode_analysis"]["warm"]["entroly_faster_claim_allowed"] is True

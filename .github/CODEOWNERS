@@ -16,6 +16,7 @@
 /scripts/bump_version.py @juyterman1000
 /scripts/sync_release_version.py @juyterman1000
 /scripts/check_distribution_surface.py @juyterman1000
+/scripts/check_external_name_policy.py @juyterman1000
 /tests/test_release_surface.py @juyterman1000
 /tests/test_distribution_surface.py @juyterman1000
 /tests/test_visibility_release_sync.py @juyterman1000

@@ -207,8 +207,8 @@ workload-specific artifact and caveat:
 
 - "up to 90% fewer tokens";
 - "zero quality loss";
-- "better than Headroom";
-- "better than LeanCTX";
+- "better than External Baseline";
+- "better than External Context Tool";
 - "production proven";
 - "works with every agent";
 - download, star, user, or installation counts;

@@ -343,14 +343,14 @@ def _entroly_adapter(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
-    from headroom import compress as headroom_compress
+def _external_adapter_adapter(payload: dict[str, Any]) -> dict[str, Any]:
+    from external_adapter import compress as external_adapter_compress
 
-    version = importlib.metadata.version("headroom-ai")
+    version = os.environ.get("ENTROLY_EXTERNAL_ADAPTER_VERSION", "operator-provided")
 
     def compress(scenario: Scenario) -> tuple[str, dict[str, Any]]:
         messages = json.loads(json.dumps(_messages(scenario)))
-        result = headroom_compress(
+        result = external_adapter_compress(
             messages,
             model=str(payload["model"]),
             protect_recent=0,
@@ -364,8 +364,8 @@ def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
         }
 
     return {
-        "system": "headroom",
-        "package": "headroom-ai",
+        "system": "external_adapter",
+        "package": "external-adapter",
         "version": version,
         "algorithm": "released public compress() pipeline with agent-90 profile",
         "config": {
@@ -376,9 +376,9 @@ def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
         "runtime": {
             "python": platform.python_version(),
             "dependencies": _versions(
-                ("headroom-ai", "litellm", "onnxruntime", "tiktoken", "transformers")
+                ("external-adapter", "litellm", "onnxruntime", "tiktoken", "transformers")
             ),
-            "distribution_record_sha256": _distribution_record_sha256("headroom-ai"),
+            "distribution_record_sha256": None,
         },
         "results": [
             _run_repeated(
@@ -410,8 +410,8 @@ def _scenarios_from_payload(payload: dict[str, Any]) -> list[Scenario]:
 def run_adapter(system: str, payload: dict[str, Any]) -> dict[str, Any]:
     if system == "entroly":
         return _entroly_adapter(payload)
-    if system == "headroom":
-        return _headroom_adapter(payload)
+    if system == "external_adapter":
+        return _external_adapter_adapter(payload)
     raise ValueError(f"unsupported adapter: {system}")
 
 
@@ -704,7 +704,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "```bash",
             "python -m benchmarks.compression_gauntlet run \\",
-            "  --headroom-python /path/to/headroom-0.31.0-venv/bin/python \\",
+            "  --external_adapter-python /path/to/external_adapter-0.31.0-venv/bin/python \\",
             "  --require-comparator \\",
             f"  --runs {report['protocol']['runs']} --warmups {report['protocol']['warmups']} \\",
             "  --output benchmarks/results/compression_gauntlet.json \\",
@@ -953,8 +953,8 @@ def _run(args: argparse.Namespace) -> int:
     scenarios = build_scenarios()
     payload = _adapter_payload(args, scenarios)
     commands = [_adapter_command(sys.executable, "entroly")]
-    if args.headroom_python:
-        commands.append(_adapter_command(str(Path(args.headroom_python).resolve()), "headroom"))
+    if args.external_adapter_python:
+        commands.append(_adapter_command(str(Path(args.external_adapter_python).resolve()), "external_adapter"))
 
     adapters = [
         _invoke_adapter(command, payload, root=root, timeout=args.timeout)
@@ -1022,7 +1022,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run = subparsers.add_parser("run", help="Run the same fixtures through isolated adapters")
-    run.add_argument("--headroom-python")
+    run.add_argument("--external_adapter-python")
     run.add_argument("--model", default=DEFAULT_MODEL)
     run.add_argument("--budget", type=int, default=DEFAULT_BUDGET)
     run.add_argument("--runs", type=int, default=DEFAULT_RUNS)
@@ -1035,7 +1035,7 @@ def main() -> int:
     run.set_defaults(func=_run)
 
     adapter = subparsers.add_parser("adapter", help=argparse.SUPPRESS)
-    adapter.add_argument("--system", choices=("entroly", "headroom"), required=True)
+    adapter.add_argument("--system", choices=("entroly", "external_adapter"), required=True)
     adapter.set_defaults(func=_adapter)
 
     render = subparsers.add_parser("render", help="Render Markdown from a JSON result")

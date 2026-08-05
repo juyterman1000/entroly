@@ -82,7 +82,7 @@ def test_verified_development_report_never_allows_public_claim() -> None:
     config = resilience._phase_config(protocol, "development")
     adapters = [
         _adapter("entroly", **config),
-        _adapter("headroom", **config),
+        _adapter("external_adapter", **config),
     ]
 
     report = resilience.analyze(
@@ -94,10 +94,10 @@ def test_verified_development_report_never_allows_public_claim() -> None:
     resilience.verify_report(report)
     assert report["claim_gate"]["public_leadership_claim_allowed"] is False
     assert report["aggregates"]["entroly"]["passed"] is True
-    assert report["aggregates"]["headroom"]["passed"] is True
+    assert report["aggregates"]["external_adapter"]["passed"] is True
 
 
-def test_holdout_claim_requires_entroly_pass_and_headroom_failure() -> None:
+def test_holdout_claim_requires_entroly_pass_and_external_adapter_failure() -> None:
     protocol = resilience._protocol()
     config = resilience._phase_config(protocol, "holdout")
     report = resilience.analyze(
@@ -105,7 +105,7 @@ def test_holdout_claim_requires_entroly_pass_and_headroom_failure() -> None:
         phase="holdout",
         adapters=[
             _adapter("entroly", **config),
-            _adapter("headroom", **config, missing=1),
+            _adapter("external_adapter", **config, missing=1),
         ],
     )
 
@@ -121,7 +121,7 @@ def test_verifier_rejects_payload_tampering() -> None:
         phase="development",
         adapters=[
             _adapter("entroly", **config),
-            _adapter("headroom", **config),
+            _adapter("external_adapter", **config),
         ],
     )
     tampered = copy.deepcopy(report)
@@ -145,7 +145,7 @@ def test_adapter_preserves_virtualenv_launcher_path(
 
     class _Completed:
         returncode = 0
-        stdout = json.dumps({"system": "headroom"})
+        stdout = json.dumps({"system": "external_adapter"})
         stderr = ""
 
     def fake_run(command: list[str], **kwargs: object) -> _Completed:
@@ -157,7 +157,7 @@ def test_adapter_preserves_virtualenv_launcher_path(
 
     result = resilience._invoke_adapter(
         str(launcher),
-        "headroom",
+        "external_adapter",
         {"workers": 1, "entries_per_worker": 1, "seed": 7},
         timeout=1.0,
     )
@@ -166,7 +166,7 @@ def test_adapter_preserves_virtualenv_launcher_path(
     assert isinstance(command, list)
     assert command[0] == str(launcher.absolute())
     assert command[0] != str(launcher.resolve())
-    assert result["system"] == "headroom"
+    assert result["system"] == "external_adapter"
 
 
 def test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy() -> None:
@@ -193,14 +193,14 @@ def test_committed_holdout_is_current_verified_and_scoped_in_evidence_policy() -
     # v4 is a parity run: both systems satisfy the recovery-integrity gate, so
     # no public leadership claim is permitted. The v3 competitor failure was a
     # transient store lock a clean re-run did not reproduce.
-    assert report["aggregates"]["headroom"]["exact_entries"] == 66
+    assert report["aggregates"]["external_adapter"]["exact_entries"] == 66
     assert report["claim_gate"]["public_leadership_claim_allowed"] is False
-    headroom_errors = [
+    external_adapter_errors = [
         error["message"]
-        for worker in report["adapters"]["headroom"]["worker_runs"]
+        for worker in report["adapters"]["external_adapter"]["worker_runs"]
         for error in worker["errors"]
     ]
-    assert headroom_errors == []
+    assert external_adapter_errors == []
     assert "**66/66** exact entries for Entroly" in evidence
     assert "**66/66** for the External Baseline A 0.31.0 comparison" in evidence
     assert "parity, not leadership" in evidence

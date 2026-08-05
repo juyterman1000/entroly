@@ -165,5 +165,5 @@ def compress(text: str, budget_tokens: int, query: str) -> str:
     chunks = _chunk_sliding(text, size=400, stride=400)  # non-overlapping
     primary = qccr_select(chunks, token_budget=budget_tokens, query=query)
     primary_text = "\n".join((s.get("content") or "") for s in primary).strip()
-    # Pick the one with more content (proxy for more answer-survival headroom)
+    # Pick the one with more content (proxy for more answer-survival external_adapter)
     return anchor_text if len(anchor_text) >= len(primary_text) else primary_text

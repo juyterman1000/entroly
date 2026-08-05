@@ -1,6 +1,6 @@
 # Competitive visibility operating model
 
-Entroly's goal is not to look louder than Headroom or LeanCTX. The goal is to
+Entroly's goal is not to look louder than External Baseline or External Context Tool. The goal is to
 be easier to discover, easier to install, easier to evaluate, and harder to
 misunderstand than any alternative in the context-engineering category.
 
@@ -28,9 +28,9 @@ is not leadership.
 
 ## What the strongest competitors currently demonstrate
 
-Headroom's official documentation provides separate pages for MCP, TypeScript,
+External Baseline's official documentation provides separate pages for MCP, TypeScript,
 Vercel AI SDK, framework integrations, proxy use, compression mechanics, and
-recovery. LeanCTX's official documentation emphasizes one-command onboarding,
+recovery. External Context Tool's official documentation emphasizes one-command onboarding,
 a broad agent matrix, managed Claude instructions and skills, native packages,
 and an interactive setup prompt.
 
@@ -40,10 +40,10 @@ verification, neutral benchmark discipline, and release-surface consistency.
 
 External references reviewed on 2026-08-04:
 
-- https://docs.headroomlabs.ai/docs
-- https://docs.headroomlabs.ai/docs/mcp
-- https://leanctx.com/docs/getting-started/
-- https://leanctx.com/docs/cli-reference/
+- https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md
+- https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md
+- https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md
+- https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md
 
 These references are competitive inputs, not evidence that Entroly is superior.
 
@@ -115,7 +115,7 @@ Allowed:
 
 Not allowed:
 
-- "better than Headroom" or "better than LeanCTX" without a named dimension and
+- "better than External Baseline" or "better than External Context Tool" without a named dimension and
   current neutral evidence;
 - universal token, quality, cost, latency, or reliability claims;
 - treating stars, downloads, launch votes, or list count as product quality;
