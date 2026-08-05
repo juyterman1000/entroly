@@ -24,6 +24,9 @@ jobs:
           ref: feat/distribution-control-plane
           fetch-depth: 0
 
+      - name: Install focused dependencies
+        run: python -m pip install --disable-pip-version-check pytest tiktoken
+
       - name: Neutralize current tree
         run: python .github/neutralize_external_names.py
 
@@ -63,7 +66,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check pytest tiktoken
           python -m pytest \
             tests/test_distribution_surface.py \
             tests/test_visibility_release_sync.py \
