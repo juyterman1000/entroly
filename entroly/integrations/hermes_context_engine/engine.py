@@ -195,10 +195,10 @@ class EntrolyContextEngine(_HermesBase):
         protected_tokens = sum(
             len(m.get("content", "")) // 4 for m in protected_system
         )
-        response_headroom = max(4096, self.context_length // 5)
+        response_external_adapter = max(4096, self.context_length // 5)
         budget = max(
             1024,
-            self.context_length - protected_tokens - response_headroom,
+            self.context_length - protected_tokens - response_external_adapter,
         )
 
         # ── Determine preserve_last_n ─────────────────────────────────

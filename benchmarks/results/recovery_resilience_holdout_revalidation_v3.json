@@ -1075,18 +1075,18 @@
         }
       ]
     },
-    "headroom": {
+    "external_adapter": {
       "adapter_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "adapter_stderr_tail": "",
       "configuration": {
-        "backend": "headroom SQLite CCR store",
+        "backend": "external_adapter SQLite CCR store",
         "entries_per_worker": 11,
         "path": "ccr.db",
         "seed": 20260731,
         "workers": 6
       },
       "participant": {
-        "package": "headroom-ai",
+        "package": "external-adapter",
         "release_status": "published PyPI release",
         "runtime": {
           "distribution_record_sha256": "4220e07c6ed4e116badc3c86e8d8e29922a529f73e798b86e759203834b6e349",
@@ -1108,7 +1108,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 48.057,
           "store_latency_ms": 32.4006,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1122,7 +1122,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.7082,
           "store_latency_ms": 0.4875,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1136,7 +1136,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.4027,
           "store_latency_ms": 0.5032,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1150,7 +1150,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6497,
           "store_latency_ms": 0.4717,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1164,7 +1164,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.5752,
           "store_latency_ms": 0.6408,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1178,7 +1178,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6116,
           "store_latency_ms": 0.4193,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1192,7 +1192,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.1104,
           "store_latency_ms": 0.4308,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1206,7 +1206,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0647,
           "store_latency_ms": 0.4995,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1220,7 +1220,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.2126,
           "store_latency_ms": 0.5275,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1234,7 +1234,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 2.1807,
           "store_latency_ms": 0.4726,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1248,7 +1248,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.148,
           "store_latency_ms": 0.515,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 1
         },
         {
@@ -1262,7 +1262,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0938,
           "store_latency_ms": 43.7264,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1276,7 +1276,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.2387,
           "store_latency_ms": 1.8883,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1290,7 +1290,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0365,
           "store_latency_ms": 1.7508,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1304,7 +1304,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.7781,
           "store_latency_ms": 1.5701,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1318,7 +1318,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.7251,
           "store_latency_ms": 1.7861,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1332,7 +1332,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6583,
           "store_latency_ms": 1.634,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1346,7 +1346,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6013,
           "store_latency_ms": 1.8908,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1360,7 +1360,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.8275,
           "store_latency_ms": 1.9911,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1374,7 +1374,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6746,
           "store_latency_ms": 2.392,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1388,7 +1388,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.5655,
           "store_latency_ms": 1.992,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1402,7 +1402,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.631,
           "store_latency_ms": 2.8009,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 2
         },
         {
@@ -1416,7 +1416,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6376,
           "store_latency_ms": 36.1686,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1430,7 +1430,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.532,
           "store_latency_ms": 1.6059,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1444,7 +1444,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6827,
           "store_latency_ms": 35.97,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1458,7 +1458,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6199,
           "store_latency_ms": 2.1188,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1472,7 +1472,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.5696,
           "store_latency_ms": 2.0464,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1486,7 +1486,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6782,
           "store_latency_ms": 2.1962,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1500,7 +1500,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6925,
           "store_latency_ms": 3.5286,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1514,7 +1514,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.8729,
           "store_latency_ms": 2.0201,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1528,7 +1528,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.81,
           "store_latency_ms": 2.1496,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1542,7 +1542,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.459,
           "store_latency_ms": 1.7568,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1556,7 +1556,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.8751,
           "store_latency_ms": 2.5166,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 3
         },
         {
@@ -1570,7 +1570,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.8812,
           "store_latency_ms": 35.3756,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1584,7 +1584,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.9152,
           "store_latency_ms": 1.5015,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1598,7 +1598,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6401,
           "store_latency_ms": 1.2742,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1612,7 +1612,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.5201,
           "store_latency_ms": 1.3531,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1626,7 +1626,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6046,
           "store_latency_ms": 1.099,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1640,7 +1640,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.5007,
           "store_latency_ms": 1.4906,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1654,7 +1654,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.9674,
           "store_latency_ms": 1.5184,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1668,7 +1668,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.3701,
           "store_latency_ms": 1.2034,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1682,7 +1682,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0425,
           "store_latency_ms": 1.4867,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1696,7 +1696,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.9712,
           "store_latency_ms": 1.4904,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1710,7 +1710,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.9351,
           "store_latency_ms": 1.5505,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 4
         },
         {
@@ -1724,7 +1724,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0939,
           "store_latency_ms": 33.793,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1738,7 +1738,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.005,
           "store_latency_ms": 1.3723,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1752,7 +1752,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0379,
           "store_latency_ms": 1.3289,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1766,7 +1766,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.9221,
           "store_latency_ms": 15.7296,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1780,7 +1780,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.6864,
           "store_latency_ms": 2.5532,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1794,7 +1794,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0294,
           "store_latency_ms": 2.8496,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1808,7 +1808,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.8231,
           "store_latency_ms": 2.8783,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1822,7 +1822,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.9106,
           "store_latency_ms": 2.232,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1836,7 +1836,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 0.8759,
           "store_latency_ms": 2.2715,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1850,7 +1850,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.0174,
           "store_latency_ms": 2.4431,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         },
         {
@@ -1864,7 +1864,7 @@
           "retrieval_error": null,
           "retrieve_latency_ms": 1.258,
           "store_latency_ms": 2.9054,
-          "system": "headroom",
+          "system": "external_adapter",
           "worker_id": 5
         }
       ],
@@ -1882,7 +1882,7 @@
           "name": "ccr.db-wal"
         }
       ],
-      "system": "headroom",
+      "system": "external_adapter",
       "worker_runs": [
         {
           "errors": [
@@ -2103,7 +2103,7 @@
       "worker_errors": 0,
       "written_entries": 66
     },
-    "headroom": {
+    "external_adapter": {
       "exact_entries": 55,
       "expected_entries": 66,
       "gates": {
@@ -2261,8 +2261,8 @@
       },
       "version": "1.0.60"
     },
-    "headroom": {
-      "package": "headroom-ai",
+    "external_adapter": {
+      "package": "external-adapter",
       "release_status": "published PyPI release",
       "runtime": {
         "distribution_record_sha256": "4220e07c6ed4e116badc3c86e8d8e29922a529f73e798b86e759203834b6e349",
@@ -2272,7 +2272,7 @@
       "version": "0.31.0"
     }
   },
-  "payload_sha256": "054a24953c41b5b588e206e487e37fda427e11e2c1997ede2b50c6652f6f50fb",
+  "payload_sha256": "cf702a7f2c609dafb58da7ff1042bdea6587d167a22034b1b65a1638e4de0485",
   "phase": "holdout",
   "protocol": {
     "claim_policy": {
@@ -2284,7 +2284,7 @@
     },
     "comparison": {
       "entroly": "1.0.60 source",
-      "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+      "external_adapter": "external-adapter 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
     },
     "frozen_at": "2026-07-15T03:58:00Z",
     "schema_version": "entroly.recovery-resilience-protocol.v3",
@@ -2318,6 +2318,6 @@
       "reason": "Revalidate Entroly 1.0.60 after exact recovery began preserving complete source lines and ranking the strongest evidence before applying the safe-fit budget. Preserve the immutable v2 protocol and result."
     }
   },
-  "protocol_sha256": "500b6e8a69f2c00041522bec9e7e705b6ce717032846ae2ac43783c5179df51f",
+  "protocol_sha256": "ba576cf7f50a9dd07662f94005af9dbaad0c32820463d8729eff76577bc86a8f",
   "schema_version": "entroly.recovery-resilience.v1"
 }

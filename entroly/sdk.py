@@ -653,7 +653,7 @@ def compress_messages(
 
     # ── Provider-aware budget ──
     # When a model is named, cap the budget to its context window (leaving
-    # ~20% headroom for the response) so the request stays provider-correct.
+    # ~20% external_adapter for the response) so the request stays provider-correct.
     if model:
         try:
             from .proxy_config import context_window_for_model

@@ -28,7 +28,7 @@ def test_artifact_proof_commands_verify_before_display(
     output = capsys.readouterr().out
     assert "[PASS]" in output
     assert expected in output
-    assert "HEADROOM BASELINE" in output
+    assert "EXTERNAL_ADAPTER BASELINE" in output
     assert "not a universal" in output.lower()
 
 

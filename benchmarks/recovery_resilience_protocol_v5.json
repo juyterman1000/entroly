@@ -8,7 +8,7 @@
   },
   "comparison": {
     "entroly": "1.0.66 source",
-    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+    "external_adapter": "external-adapter 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
   },
   "frozen_at": "2026-07-25T00:00:00Z",
   "schema_version": "entroly.recovery-resilience-protocol.v5",

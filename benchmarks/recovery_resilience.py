@@ -130,7 +130,7 @@ def _payload(seed: int, worker_id: int, entry_index: int) -> str:
 def _store_paths(system: str, state_dir: Path) -> list[Path]:
     if system == "entroly":
         return [state_dir / "recovery.json"]
-    if system == "headroom":
+    if system == "external_adapter":
         return [state_dir / "ccr.db"]
     raise ValueError(f"unsupported system: {system}")
 
@@ -144,13 +144,13 @@ def _open_store(system: str, state_dir: Path) -> tuple[Any, dict[str, Any]]:
             "backend": "entroly atomic JSON recovery store",
             "path": path.name,
         }
-    if system == "headroom":
-        from headroom.cache.backends.sqlite import SQLiteBackend
-        from headroom.cache.compression_store import CompressionStore
+    if system == "external_adapter":
+        from external_adapter.cache.backends.sqlite import SQLiteBackend
+        from external_adapter.cache.compression_store import CompressionStore
 
         path = state_dir / "ccr.db"
         return CompressionStore(backend=SQLiteBackend(path)), {
-            "backend": "headroom SQLite CCR store",
+            "backend": "external_adapter SQLite CCR store",
             "path": path.name,
         }
     raise ValueError(f"unsupported system: {system}")
@@ -177,7 +177,7 @@ def _store_payload(system: str, store: Any, payload: str) -> dict[str, str]:
             "receipt_id": stored.receipt_id,
             "span_id": stored.spans[0].span_id,
         }
-    if system == "headroom":
+    if system == "external_adapter":
         hash_key = store.store(
             original=payload,
             compressed=compressed,
@@ -196,7 +196,7 @@ def _retrieve_payload(system: str, store: Any, reference: dict[str, str]) -> str
     if system == "entroly":
         span = store.get_span(reference["receipt_id"], reference["span_id"])
         return None if span is None else str(span.content)
-    if system == "headroom":
+    if system == "external_adapter":
         entry = store.retrieve(reference["hash"])
         return None if entry is None else str(entry.original_content)
     raise ValueError(f"unsupported system: {system}")
@@ -413,14 +413,14 @@ def _adapter(args: argparse.Namespace) -> int:
         }
     else:
         participant = {
-            "package": "headroom-ai",
-            "version": importlib.metadata.version("headroom-ai"),
+            "package": "external-adapter",
+            "version": os.environ.get("ENTROLY_EXTERNAL_ADAPTER_VERSION", "operator-provided"),
             "release_status": "published PyPI release",
             "runtime": {
                 "python": platform.python_version(),
                 "platform": platform.platform(),
                 "distribution_record_sha256": _distribution_record_sha256(
-                    "headroom-ai"
+                    "external-adapter"
                 ),
             },
         }
@@ -504,12 +504,12 @@ def analyze(
 ) -> dict[str, Any]:
     expected_config = _phase_config(protocol, phase)
     systems = sorted(str(adapter["system"]) for adapter in adapters)
-    if systems != ["entroly", "headroom"]:
-        raise ValueError("recovery comparison requires Entroly and Headroom")
+    if systems != ["entroly", "external_adapter"]:
+        raise ValueError("recovery comparison requires Entroly and External Baseline")
     by_system = {str(adapter["system"]): adapter for adapter in adapters}
     expected_versions = {
         "entroly": str(protocol["comparison"]["entroly"]).split()[0],
-        "headroom": str(protocol["comparison"]["headroom"]).split()[1],
+        "external_adapter": str(protocol["comparison"]["external_adapter"]).split()[1],
     }
     for system, adapter in by_system.items():
         observed_version = str(adapter["participant"]["version"])
@@ -531,7 +531,7 @@ def analyze(
     aggregates = {system: _aggregate(by_system[system]) for system in systems}
     if phase == "development":
         label = "Development evidence only; no public leadership claim"
-    elif aggregates["entroly"]["passed"] and aggregates["headroom"]["passed"]:
+    elif aggregates["entroly"]["passed"] and aggregates["external_adapter"]["passed"]:
         label = "Both systems satisfy the frozen recovery-integrity gate"
     elif aggregates["entroly"]["passed"]:
         label = "Entroly alone satisfies the frozen recovery-integrity gate"
@@ -553,7 +553,7 @@ def analyze(
             "label": label,
             "public_leadership_claim_allowed": phase == "holdout"
             and aggregates["entroly"]["passed"]
-            and not aggregates["headroom"]["passed"],
+            and not aggregates["external_adapter"]["passed"],
             "universal_superiority_claim_allowed": False,
         },
     }
@@ -574,7 +574,7 @@ def verify_report(report: dict[str, Any]) -> None:
     if protocol not in _known_protocols():
         raise ValueError("artifact protocol does not match a frozen protocol file")
     phase = str(report["phase"])
-    adapters = [report["adapters"][system] for system in ("entroly", "headroom")]
+    adapters = [report["adapters"][system] for system in ("entroly", "external_adapter")]
     recomputed = analyze(protocol=protocol, phase=phase, adapters=adapters)
     for field in ("participants", "aggregates", "claim_gate"):
         if report[field] != recomputed[field]:
@@ -643,7 +643,7 @@ def _run(args: argparse.Namespace) -> int:
     adapters = [
         _invoke_adapter(sys.executable, "entroly", config, timeout=args.timeout),
         _invoke_adapter(
-            args.headroom_python, "headroom", config, timeout=args.timeout
+            args.external_adapter_python, "external_adapter", config, timeout=args.timeout
         ),
     ]
     report = analyze(protocol=protocol, phase=args.phase, adapters=adapters)
@@ -681,13 +681,13 @@ def main() -> int:
     run = subparsers.add_parser("run")
     run.add_argument("--protocol", type=Path, default=PROTOCOL_PATH)
     run.add_argument("--phase", choices=("development", "holdout"), required=True)
-    run.add_argument("--headroom-python", required=True)
+    run.add_argument("--external_adapter-python", required=True)
     run.add_argument("--timeout", type=float, default=60.0)
     run.add_argument("--output", type=Path, required=True)
     run.set_defaults(func=_run)
 
     adapter = subparsers.add_parser("adapter", help=argparse.SUPPRESS)
-    adapter.add_argument("--system", choices=("entroly", "headroom"), required=True)
+    adapter.add_argument("--system", choices=("entroly", "external_adapter"), required=True)
     adapter.add_argument("--state-dir", type=Path, required=True)
     adapter.add_argument("--workers", type=int, required=True)
     adapter.add_argument("--entries", type=int, required=True)
@@ -696,7 +696,7 @@ def main() -> int:
     adapter.set_defaults(func=_adapter)
 
     worker = subparsers.add_parser("worker", help=argparse.SUPPRESS)
-    worker.add_argument("--system", choices=("entroly", "headroom"), required=True)
+    worker.add_argument("--system", choices=("entroly", "external_adapter"), required=True)
     worker.add_argument("--state-dir", type=Path, required=True)
     worker.add_argument("--worker-id", type=int, required=True)
     worker.add_argument("--entries", type=int, required=True)

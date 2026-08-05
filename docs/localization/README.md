@@ -100,5 +100,4 @@ curated list. State the locale, pages, reviewer availability, and maintenance
 plan. A translation PR should contain one locale and one coherent page set so
 review remains bounded.
 
-Automated translation may be used as a draft aid, but cannot satisfy the review
-requirement by itself.
+Automated translation may be used as a draft aid, but cannot satisfy the review requirement by itself.

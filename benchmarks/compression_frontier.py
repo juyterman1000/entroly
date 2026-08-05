@@ -414,8 +414,8 @@ def _entroly_adapter(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
-    from headroom import compress as headroom_compress
+def _external_adapter_adapter(payload: dict[str, Any]) -> dict[str, Any]:
+    from external_adapter import compress as external_adapter_compress
 
     trials = [_trial_from_record(value) for value in payload["trials"]]
     ratios = [float(value) for value in payload["target_ratios"]]
@@ -430,7 +430,7 @@ def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
                 control_ratio = ratio
                 attempts: list[dict[str, float | int]] = []
                 for _ in range(3):
-                    result = headroom_compress(
+                    result = external_adapter_compress(
                         json.loads(json.dumps(_messages(trial))),
                         model=str(payload["model"]),
                         protect_recent=0,
@@ -470,9 +470,9 @@ def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
             )
 
     return {
-        "system": "headroom",
-        "package": "headroom-ai",
-        "version": importlib.metadata.version("headroom-ai"),
+        "system": "external_adapter",
+        "package": "external-adapter",
+        "version": os.environ.get("ENTROLY_EXTERNAL_ADAPTER_VERSION", "operator-provided"),
         "release_status": "published PyPI release",
         "algorithm": "released public compress() pipeline with agent-90 profile",
         "config": {
@@ -485,9 +485,9 @@ def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
         "runtime": {
             "python": platform.python_version(),
             "dependencies": _versions(
-                ("headroom-ai", "litellm", "onnxruntime", "tiktoken", "transformers")
+                ("external-adapter", "litellm", "onnxruntime", "tiktoken", "transformers")
             ),
-            "distribution_record_sha256": _distribution_record_sha256("headroom-ai"),
+            "distribution_record_sha256": None,
         },
         "results": results,
     }
@@ -496,8 +496,8 @@ def _headroom_adapter(payload: dict[str, Any]) -> dict[str, Any]:
 def run_adapter(system: str, payload: dict[str, Any]) -> dict[str, Any]:
     if system == "entroly":
         return _entroly_adapter(payload)
-    if system == "headroom":
-        return _headroom_adapter(payload)
+    if system == "external_adapter":
+        return _external_adapter_adapter(payload)
     raise ValueError(f"unsupported adapter: {system}")
 
 
@@ -612,19 +612,19 @@ def _paired_statistics(
         }
         trial_ids = sorted({str(row["trial_id"]) for row in selected})
         entroly_only = sum(
-            keyed[("entroly", trial_id)] and not keyed[("headroom", trial_id)]
+            keyed[("entroly", trial_id)] and not keyed[("external_adapter", trial_id)]
             for trial_id in trial_ids
         )
-        headroom_only = sum(
-            keyed[("headroom", trial_id)] and not keyed[("entroly", trial_id)]
+        external_adapter_only = sum(
+            keyed[("external_adapter", trial_id)] and not keyed[("entroly", trial_id)]
             for trial_id in trial_ids
         )
         statistics_by_ratio[f"{ratio:g}"] = {
             "entroly_only": entroly_only,
-            "headroom_only": headroom_only,
-            "discordant": entroly_only + headroom_only,
+            "external_adapter_only": external_adapter_only,
+            "discordant": entroly_only + external_adapter_only,
             "mcnemar_exact_two_sided_p": round(
-                _mcnemar_exact(entroly_only, headroom_only), 18
+                _mcnemar_exact(entroly_only, external_adapter_only), 18
             ),
         }
     return statistics_by_ratio
@@ -664,7 +664,7 @@ def _answer_prompt(context: str, question: str) -> str:
 
 def _aggregate_downstream(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     aggregates: dict[str, Any] = {}
-    for system in ("raw", "entroly", "headroom"):
+    for system in ("raw", "entroly", "external_adapter"):
         selected = [row for row in rows if row["system"] == system]
         if not selected:
             raise ValueError(f"downstream matrix has no {system} rows")
@@ -736,7 +736,7 @@ def _run_downstream(
     prompts: list[tuple[str, Trial, str]] = []
     for trial in selected_trials:
         prompts.append(("raw", trial, trial.content))
-        for system in ("entroly", "headroom"):
+        for system in ("entroly", "external_adapter"):
             prompts.append(
                 (system, trial, str(row_lookup[(system, trial.trial_id, ratio)]["output_text"]))
             )
@@ -814,12 +814,12 @@ def _superiority_gate(
     for ratio in ratios:
         key = f"{ratio:g}"
         entroly = aggregates["entroly"][key]
-        headroom = aggregates["headroom"][key]
-        if not entroly["passed"] or not headroom["passed"]:
+        external_adapter = aggregates["external_adapter"][key]
+        if not entroly["passed"] or not external_adapter["passed"]:
             reasons.append(f"incomplete or invalid matrix at target ratio {key}")
         if entroly["target_attainment"] != 1.0:
             reasons.append(f"Entroly misses the token cap at target ratio {key}")
-        if entroly["answer_retention"] <= headroom["answer_retention"]:
+        if entroly["answer_retention"] <= external_adapter["answer_retention"]:
             reasons.append(f"Entroly lacks a strict answer-quality win at target ratio {key}")
         if paired_statistics[key]["mcnemar_exact_two_sided_p"] > 0.05:
             reasons.append(
@@ -832,9 +832,9 @@ def _superiority_gate(
         values = downstream["aggregates"]
         if values["raw"]["exact_match"] < 0.5:
             reasons.append("raw-context downstream exact match is below 50%")
-        if values["entroly"]["exact_match"] < values["headroom"]["exact_match"]:
+        if values["entroly"]["exact_match"] < values["external_adapter"]["exact_match"]:
             reasons.append("Entroly downstream exact match is below External Baseline A")
-        if values["entroly"]["mean_token_f1"] < values["headroom"]["mean_token_f1"]:
+        if values["entroly"]["mean_token_f1"] < values["external_adapter"]["mean_token_f1"]:
             reasons.append("Entroly downstream token F1 is below External Baseline A")
         if any(value["errors"] for value in values.values()):
             reasons.append("downstream evaluation contains errors")
@@ -934,8 +934,8 @@ def analyze(
             raise ValueError(f"{system} returned incomplete matrix: {missing[:5]}")
 
     participants = sorted(participant_meta)
-    if participants != ["entroly", "headroom"]:
-        raise ValueError("frontier requires both entroly and headroom adapters")
+    if participants != ["entroly", "external_adapter"]:
+        raise ValueError("frontier requires both entroly and external_adapter adapters")
     aggregates = _aggregate_rows(rows, participants, ratios)
     paired = _paired_statistics(rows, ratios)
     downstream = None
@@ -1021,7 +1021,7 @@ def _verify_downstream(
     aggregates = downstream["aggregates"]
     sample_sizes = {
         int(aggregates[system]["trials"])
-        for system in ("raw", "entroly", "headroom")
+        for system in ("raw", "entroly", "external_adapter")
     }
     if len(sample_sizes) != 1:
         raise ValueError("downstream systems have different sample sizes")
@@ -1036,7 +1036,7 @@ def _verify_downstream(
     }
     expected = {
         (system, trial_id)
-        for system in ("raw", "entroly", "headroom")
+        for system in ("raw", "entroly", "external_adapter")
         for trial_id in trial_by_id
     }
     seen: set[tuple[str, str]] = set()
@@ -1100,7 +1100,7 @@ def verify_report(report: dict[str, Any]) -> None:
     ratios = [float(value) for value in report["protocol"]["target_ratios"]]
     expected = {
         (system, trial.trial_id, ratio)
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
         for trial in trials
         for ratio in ratios
     }
@@ -1173,7 +1173,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         (
             f"{len(report['trials'])} frozen SQuAD v2 long-context trials; "
             f"Entroly {participants['entroly']['version']} source candidate vs "
-            f"released External Baseline A {participants['headroom']['version']}; achieved ratios use "
+            f"released External Baseline A {participants['external_adapter']['version']}; achieved ratios use "
             f"`{protocol['tokenizer']}`."
         ),
         (
@@ -1187,11 +1187,11 @@ def render_markdown(report: dict[str, Any]) -> str:
     ]
     for ratio in protocol["target_ratios"]:
         key = f"{float(ratio):g}"
-        for system in ("entroly", "headroom"):
+        for system in ("entroly", "external_adapter"):
             aggregate = report["aggregates"][system][key]
             lines.append(
                 f"| {1 / float(ratio):.0f}x | "
-                f"{'External Baseline A' if system == 'headroom' else system.title()} | "
+                f"{'External Baseline A' if system == 'external_adapter' else system.title()} | "
                 f"{aggregate['answer_retention']:.1%} | "
                 f"{aggregate['achieved_keep_ratio']:.1%} | "
                 f"{aggregate['p50_latency_ms']:.1f} ms |"
@@ -1208,7 +1208,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         value = report["paired_statistics"][key]
         lines.append(
             f"| {1 / float(ratio):.0f}x | {value['entroly_only']} | "
-            f"{value['headroom_only']} | {value['mcnemar_exact_two_sided_p']:.4g} |"
+            f"{value['external_adapter_only']} | {value['mcnemar_exact_two_sided_p']:.4g} |"
         )
     downstream = report.get("downstream")
     if downstream:
@@ -1227,10 +1227,10 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "|---|---:|---:|---:|",
             ]
         )
-        for system in ("raw", "entroly", "headroom"):
+        for system in ("raw", "entroly", "external_adapter"):
             value = downstream["aggregates"][system]
             lines.append(
-                f"| {'External Baseline A' if system == 'headroom' else system.title()} | "
+                f"| {'External Baseline A' if system == 'external_adapter' else system.title()} | "
                 f"{value['exact_match']:.1%} | "
                 f"{value['mean_token_f1']:.1%} | {value['trials']} |"
             )
@@ -1277,7 +1277,7 @@ def render_svg(report: dict[str, Any]) -> str:
     for ratio in ratios:
         key = f"{ratio:g}"
         left = report["aggregates"]["entroly"][key]
-        right = report["aggregates"]["headroom"][key]
+        right = report["aggregates"]["external_adapter"][key]
         rows.append(
             f'<text x="70" y="{y}" class="target">{1 / ratio:.0f}× target</text>'
             f'<text x="410" y="{y}" class="value">{left["answer_retention"]:.0%} recall · '
@@ -1290,7 +1290,7 @@ def render_svg(report: dict[str, Any]) -> str:
     downstream_text = "Downstream guard not run"
     if downstream:
         left = downstream["aggregates"]["entroly"]
-        right = downstream["aggregates"]["headroom"]
+        right = downstream["aggregates"]["external_adapter"]
         downstream_text = (
             f'Local answer EM @ {1 / float(downstream["target_ratio"]):.0f}×: '
             f'Entroly {left["exact_match"]:.0%} · '
@@ -1316,7 +1316,7 @@ def render_svg(report: dict[str, Any]) -> str:
   <text x="70" y="157" class="subtitle">{len(report["trials"])} frozen SQuAD v2 long-context trials · achieved o200k token ratios · exact retained answers</text>
   <line x1="70" y1="187" x2="1330" y2="187" stroke="#24364b"/>
   <text x="410" y="211" class="header">Entroly {escape(str(participants["entroly"]["version"]))} candidate</text>
-  <text x="890" y="211" class="header">External Baseline A {escape(str(participants["headroom"]["version"]))} release</text>
+  <text x="890" y="211" class="header">External Baseline A {escape(str(participants["external_adapter"]["version"]))} release</text>
   {''.join(rows)}
   <rect x="70" y="458" width="1260" height="62" rx="14" fill="#0d1b2c" stroke="#20344b"/>
   <text x="98" y="497" class="header">{escape(downstream_text)}</text>
@@ -1375,17 +1375,17 @@ def _run(args: argparse.Namespace) -> int:
             timeout=args.timeout,
         )
     ]
-    if args.headroom_python:
+    if args.external_adapter_python:
         adapters.append(
             _invoke_adapter(
-                _adapter_command(str(Path(args.headroom_python).resolve()), "headroom"),
+                _adapter_command(str(Path(args.external_adapter_python).resolve()), "external_adapter"),
                 payload,
                 root=root,
                 timeout=args.timeout,
             )
         )
     if len(adapters) != 2:
-        raise RuntimeError("--headroom-python is required for the public frontier")
+        raise RuntimeError("--external_adapter-python is required for the public frontier")
     downstream_options = None
     if args.ollama_model:
         if args.answer_ratio not in ratios:
@@ -1460,7 +1460,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run = subparsers.add_parser("run", help="Run the isolated matched-target frontier")
-    run.add_argument("--headroom-python", required=True)
+    run.add_argument("--external_adapter-python", required=True)
     run.add_argument("--model", default=DEFAULT_MODEL)
     run.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     run.add_argument("--distractors", type=int, default=DEFAULT_DISTRACTORS)
@@ -1482,7 +1482,7 @@ def main() -> int:
     run.set_defaults(func=_run)
 
     adapter = subparsers.add_parser("adapter", help=argparse.SUPPRESS)
-    adapter.add_argument("--system", choices=("entroly", "headroom"), required=True)
+    adapter.add_argument("--system", choices=("entroly", "external_adapter"), required=True)
     adapter.set_defaults(func=_adapter)
 
     verify = subparsers.add_parser("verify", help="Verify the full artifact")

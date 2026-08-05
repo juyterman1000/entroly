@@ -3,7 +3,7 @@
   "frozen_at": "2026-07-14T11:30:00Z",
   "comparison": {
     "entroly": "1.0.59 merged source",
-    "headroom": "headroom-ai 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
+    "external_adapter": "external-adapter 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591"
   },
   "claim_policy": {
     "aggregate_score_allowed": false,

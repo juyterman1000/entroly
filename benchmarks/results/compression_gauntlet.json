@@ -10,7 +10,7 @@
       "valid_scenarios": 4,
       "weighted_savings_ratio": 0.950618
     },
-    "headroom": {
+    "external_adapter": {
       "compressed_scenarios": 2,
       "evidence_recall": 1.0,
       "macro_savings_ratio": 0.266598,
@@ -109,17 +109,17 @@
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "version": "1.0.59"
     },
-    "headroom": {
+    "external_adapter": {
       "algorithm": "released public compress() pipeline with agent-90 profile",
       "config": {
         "model": "gpt-4o",
         "protect_recent": 0,
         "savings_profile": "agent-90"
       },
-      "package": "headroom-ai",
+      "package": "external-adapter",
       "runtime": {
         "dependencies": {
-          "headroom-ai": "0.31.0",
+          "external-adapter": "0.31.0",
           "litellm": "1.92.0",
           "tiktoken": "0.13.0"
         },
@@ -325,7 +325,7 @@
       "output_tokens": 30850,
       "savings_ratio": 0.0,
       "scenario_id": "cargo-build-failure",
-      "system": "headroom",
+      "system": "external_adapter",
       "tokens_saved": 0,
       "valid": true
     },
@@ -364,7 +364,7 @@
       "output_tokens": 19844,
       "savings_ratio": 0.616978,
       "scenario_id": "json-incident-middle",
-      "system": "headroom",
+      "system": "external_adapter",
       "tokens_saved": 31965,
       "valid": true
     },
@@ -403,7 +403,7 @@
       "output_tokens": 19869,
       "savings_ratio": 0.449414,
       "scenario_id": "sre-incident-tail",
-      "system": "headroom",
+      "system": "external_adapter",
       "tokens_saved": 16218,
       "valid": true
     },
@@ -442,12 +442,12 @@
       "output_tokens": 34530,
       "savings_ratio": 0.0,
       "scenario_id": "code-search-middle",
-      "system": "headroom",
+      "system": "external_adapter",
       "tokens_saved": 0,
       "valid": true
     }
   ],
-  "runner_up": "headroom",
+  "runner_up": "external_adapter",
   "schema_version": "entroly.compression-gauntlet.v1",
   "suite_winner": "entroly",
   "winner_margin": 0.636264

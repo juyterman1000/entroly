@@ -7,8 +7,8 @@
       "version": "1.0.59",
       "source": "merged main source"
     },
-    "headroom": {
-      "package": "headroom-ai",
+    "external_adapter": {
+      "package": "external-adapter",
       "version": "0.31.0",
       "source": "published PyPI wheel"
     }
@@ -16,7 +16,7 @@
   "fixture_source": "benchmarks.compression_gauntlet.build_scenarios",
   "model": "gpt-4o",
   "entroly_budget_tokens": 1200,
-  "headroom_savings_profile": "agent-90",
+  "external_adapter_savings_profile": "agent-90",
   "shared_tokenizer": "o200k_base",
   "quality_gates": {
     "complete_matrix": true,

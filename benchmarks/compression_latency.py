@@ -182,16 +182,16 @@ def _make_compressor(
         }
         return compress, participant
 
-    if system == "headroom":
-        from headroom import compress as headroom_compress
+    if system == "external_adapter":
+        from external_adapter import compress as external_adapter_compress
 
         def compress(scenario: Scenario) -> tuple[str, dict[str, Any]]:
             messages = json.loads(json.dumps(_messages(scenario)))
-            result = headroom_compress(
+            result = external_adapter_compress(
                 messages,
                 model=str(payload["model"]),
                 protect_recent=0,
-                savings_profile=str(payload["headroom_savings_profile"]),
+                savings_profile=str(payload["external_adapter_savings_profile"]),
             )
             return str(result.messages[-1]["content"]), {
                 "tokens_before": int(result.tokens_before),
@@ -200,22 +200,22 @@ def _make_compressor(
             }
 
         participant = {
-            "package": "headroom-ai",
-            "version": importlib.metadata.version("headroom-ai"),
-            "entry_point": "headroom.compress",
+            "package": "external-adapter",
+            "version": os.environ.get("ENTROLY_EXTERNAL_ADAPTER_VERSION", "operator-provided"),
+            "entry_point": "external_adapter.compress",
             "configuration": {
                 "model": payload["model"],
                 "protect_recent": 0,
-                "savings_profile": payload["headroom_savings_profile"],
+                "savings_profile": payload["external_adapter_savings_profile"],
             },
             "runtime": {
                 "python": platform.python_version(),
                 "platform": platform.platform(),
                 "dependencies": _versions(
-                    ("headroom-ai", "litellm", "onnxruntime", "tiktoken")
+                    ("external-adapter", "litellm", "onnxruntime", "tiktoken")
                 ),
                 "distribution_record_sha256": _distribution_record_sha256(
-                    "headroom-ai"
+                    "external-adapter"
                 ),
             },
         }
@@ -293,7 +293,7 @@ def _invoke_adapter(
     payload = {
         "model": protocol["model"],
         "entroly_budget_tokens": protocol["entroly_budget_tokens"],
-        "headroom_savings_profile": protocol["headroom_savings_profile"],
+        "external_adapter_savings_profile": protocol["external_adapter_savings_profile"],
         "warmups": warmups,
         "runs": runs,
         "scenario": {
@@ -394,10 +394,10 @@ def _bootstrap_speedup(
         ratios = []
         for scenario_id in scenario_ids:
             entroly = statistics.median(source["entroly"][scenario_id])
-            headroom = statistics.median(source["headroom"][scenario_id])
-            if entroly <= 0 or headroom <= 0:
+            external_adapter = statistics.median(source["external_adapter"][scenario_id])
+            if entroly <= 0 or external_adapter <= 0:
                 return 0.0
-            ratios.append(headroom / entroly)
+            ratios.append(external_adapter / entroly)
         return _geometric_mean(ratios)
 
     observed = statistic(samples)
@@ -406,9 +406,9 @@ def _bootstrap_speedup(
     for _ in range(iterations):
         resampled: dict[str, dict[str, list[float]]] = {
             "entroly": {},
-            "headroom": {},
+            "external_adapter": {},
         }
-        for system in ("entroly", "headroom"):
+        for system in ("entroly", "external_adapter"):
             for scenario_id in scenario_ids:
                 values = samples[system][scenario_id]
                 resampled[system][scenario_id] = [
@@ -434,7 +434,7 @@ def analyze(
     scenario_by_id = {scenario.scenario_id: scenario for scenario in scenarios}
     expected_pairs = {
         (system, scenario.scenario_id)
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
         for scenario in scenarios
     }
     observed_warm = {
@@ -474,8 +474,8 @@ def analyze(
 
     measurements: list[dict[str, Any]] = []
     mode_samples: dict[str, dict[str, dict[str, list[float]]]] = {
-        "warm": {"entroly": {}, "headroom": {}},
-        "cold": {"entroly": {}, "headroom": {}},
+        "warm": {"entroly": {}, "external_adapter": {}},
+        "cold": {"entroly": {}, "external_adapter": {}},
     }
     for system, scenario_id in sorted(expected_pairs):
         scenario = scenario_by_id[scenario_id]
@@ -602,7 +602,7 @@ def analyze(
     quality_passed = {
         system: version_gates[system]
         and all(row["valid"] for row in measurements if row["system"] == system)
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
     }
     participant_gates = {
         system: {
@@ -612,7 +612,7 @@ def analyze(
             ),
             "passed": version_gates[system],
         }
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
     }
     mode_analysis: dict[str, Any] = {}
     for mode_index, mode in enumerate(("warm", "cold")):
@@ -707,11 +707,11 @@ def _run(args: argparse.Namespace) -> int:
     scenarios = build_scenarios()
     python_by_system = {
         "entroly": sys.executable,
-        "headroom": args.headroom_python,
+        "external_adapter": args.external_adapter_python,
     }
     order = [
         (system, scenario)
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
         for scenario in scenarios
     ]
     rng = random.Random(config["seed"])
@@ -732,7 +732,7 @@ def _run(args: argparse.Namespace) -> int:
     cold_order = [
         (system, scenario, replicate)
         for replicate in range(config["cold_runs_per_fixture"])
-        for system in ("entroly", "headroom")
+        for system in ("entroly", "external_adapter")
         for scenario in scenarios
     ]
     rng.shuffle(cold_order)
@@ -794,13 +794,13 @@ def main() -> int:
 
     run = subparsers.add_parser("run")
     run.add_argument("--phase", choices=("development", "holdout"), required=True)
-    run.add_argument("--headroom-python", required=True)
+    run.add_argument("--external_adapter-python", required=True)
     run.add_argument("--timeout", type=float, default=120.0)
     run.add_argument("--output", type=Path, required=True)
     run.set_defaults(func=_run)
 
     adapter = subparsers.add_parser("adapter", help=argparse.SUPPRESS)
-    adapter.add_argument("--system", choices=("entroly", "headroom"), required=True)
+    adapter.add_argument("--system", choices=("entroly", "external_adapter"), required=True)
     adapter.set_defaults(func=_adapter)
 
     verify = subparsers.add_parser("verify")

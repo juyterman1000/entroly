@@ -13,11 +13,11 @@
       "compression_entry_point": "entroly.compression_proxy.compress_proxy_payload",
       "retrieval_entry_point": "entroly.compression_retrieval_store.CompressionRetrievalStore.search_exact_excerpts"
     },
-    "headroom": {
-      "package": "headroom-ai",
+    "external_adapter": {
+      "package": "external-adapter",
       "version": "0.31.0",
-      "compression_entry_point": "headroom.compress",
-      "retrieval_entry_point": "headroom.cache.compression_store.CompressionStore.retrieve"
+      "compression_entry_point": "external_adapter.compress",
+      "retrieval_entry_point": "external_adapter.cache.compression_store.CompressionStore.retrieve"
     }
   },
   "fixture_generator": "query-shift-json-v1",
@@ -28,9 +28,9 @@
   "entroly_budget_tokens": 600,
   "entroly_retrieval_limit": 3,
   "entroly_recovery_excerpt_tokens": 600,
-  "headroom_model": "gpt-4o",
-  "headroom_savings_profile": "agent-90",
-  "headroom_target_ratio": 0.25,
+  "external_adapter_model": "gpt-4o",
+  "external_adapter_savings_profile": "agent-90",
+  "external_adapter_target_ratio": 0.25,
   "ollama": {
     "model": "qwen2.5:1.5b",
     "base_url": "http://127.0.0.1:11434",
@@ -72,7 +72,7 @@
     "bounded_exact_excerpt": "An oversized stored span returns an exact source lead plus exact query-local window separated by an explicit gap marker; full-span retrieval remains available.",
     "final_exact_accuracy": "The first response is final unless it is RETRIEVE; then the single recovery retry is final.",
     "effective_tokens": "Active context tokens plus recovery tokens only for trials where retrieval was triggered.",
-    "headroom_recovery_scope": "The runner composes Headroom's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement.",
+    "external_adapter_recovery_scope": "The runner composes External Baseline's public compress() with the same persistent CompressionStore store/retrieve contract used by its MCP server; it does not claim an MCP transport measurement.",
     "model_scope": "Qwen2.5 1.5B Q4_K_M is a local deterministic workflow guard only, not a frontier-model quality proxy."
   }
 }

@@ -303,8 +303,8 @@ def _validate_launch_assets(errors: list[str]) -> None:
         r"\bguaranteed savings\b",
         r"\bzero quality loss\b",
         r"\bbest context (?:tool|engine|compressor)\b",
-        r"\bbeats? Headroom\b",
-        r"\bbeats? LeanCTX\b",
+        r"\bbeats? External Baseline\b",
+        r"\bbeats? External Context Tool\b",
     )
     for pattern in prohibited_patterns:
         if re.search(pattern, combined, flags=re.IGNORECASE):
@@ -384,8 +384,8 @@ def validate() -> list[str]:
     )
     for forbidden_claim in (
         "zero quality loss",
-        "better than Headroom",
-        "better than LeanCTX",
+        "better than External Baseline",
+        "better than External Context Tool",
     ):
         marker = f'- "{forbidden_claim}";'
         if marker not in submission_kit:

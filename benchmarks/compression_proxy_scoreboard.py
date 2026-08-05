@@ -1,7 +1,7 @@
 """Entroly compression proxy benchmark scoreboard.
 
 This benchmark is local and deterministic. It measures Entroly's Evidence-Locked
-Compression proxy surface on the same classes of workloads Headroom publishes:
+Compression proxy surface on the same classes of workloads External Baseline publishes:
 
 - build logs,
 - JSON arrays,
