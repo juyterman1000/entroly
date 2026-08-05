@@ -1,0 +1,245 @@
+name: Deep audit tree export
+
+on:
+  push:
+    branches:
+      - audit/deep-dogfood-20260804
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-audit-tree-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Parse, inventory, and dogfood tracked tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ENTROLY_DISABLE_UPDATE_CHECK: "1"
+      ENTROLY_NO_DOCKER: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build complete tracked-file inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/deep-audit"
+          git ls-files > "$RUNNER_TEMP/deep-audit/tracked-files.txt"
+          git archive --format=tar.gz --output="$RUNNER_TEMP/deep-audit/entroly-tracked-tree.tar.gz" HEAD
+          python -m pip install --disable-pip-version-check PyYAML
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          import hashlib
+          import json
+          import re
+          import subprocess
+          import tomllib
+          from collections import Counter
+          from pathlib import Path
+
+          import yaml
+
+          root = Path.cwd()
+          out = Path(__import__("os").environ["RUNNER_TEMP"]) / "deep-audit"
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z"], text=False
+          ).split(b"\0")
+          paths = [root / raw.decode("utf-8") for raw in tracked if raw]
+
+          parse_errors: list[dict[str, str]] = []
+          risk_hits: list[dict[str, object]] = []
+          inventory: list[dict[str, object]] = []
+          python_symbols: dict[str, dict[str, object]] = {}
+          suffixes: Counter[str] = Counter()
+
+          text_suffixes = {
+              ".py", ".pyi", ".rs", ".js", ".mjs", ".cjs", ".ts", ".tsx",
+              ".json", ".toml", ".yaml", ".yml", ".md", ".rst", ".txt",
+              ".sh", ".bash", ".ps1", ".html", ".css", ".xml", ".ini", ".cfg",
+          }
+          risk_patterns = {
+              "python": [
+                  (re.compile(r"\beval\s*\("), "eval"),
+                  (re.compile(r"\bexec\s*\("), "exec"),
+                  (re.compile(r"shell\s*=\s*True"), "subprocess-shell-true"),
+                  (re.compile(r"\bos\.system\s*\("), "os-system"),
+                  (re.compile(r"\btempfile\.mktemp\s*\("), "insecure-mktemp"),
+                  (re.compile(r"\bpickle\.loads?\s*\("), "pickle-load"),
+                  (re.compile(r"except\s+BaseException"), "catch-baseexception"),
+                  (re.compile(r"except\s*:\s*(?:#.*)?$", re.M), "bare-except"),
+              ],
+              "rust": [
+                  (re.compile(r"\bunsafe\b"), "unsafe"),
+                  (re.compile(r"\.unwrap\s*\("), "unwrap"),
+                  (re.compile(r"\.expect\s*\("), "expect"),
+                  (re.compile(r"\b(?:todo|unimplemented)!\s*\("), "unfinished-macro"),
+                  (re.compile(r"\bpanic!\s*\("), "panic"),
+              ],
+              "javascript": [
+                  (re.compile(r"\beval\s*\("), "eval"),
+                  (re.compile(r"child_process\.(?:exec|execSync)\s*\("), "child-process-shell"),
+                  (re.compile(r"\bnew\s+Function\s*\("), "new-function"),
+              ],
+          }
+
+          for path in paths:
+              rel = path.relative_to(root).as_posix()
+              data = path.read_bytes()
+              suffix = path.suffix.lower()
+              suffixes[suffix or "<none>"] += 1
+              item: dict[str, object] = {
+                  "path": rel,
+                  "bytes": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+                  "suffix": suffix,
+              }
+              if suffix in text_suffixes or path.name in {"Dockerfile", "Makefile"}:
+                  text = data.decode("utf-8", errors="replace")
+                  item["lines"] = len(text.splitlines())
+                  if "\ufffd" in text:
+                      parse_errors.append({"path": rel, "error": "invalid UTF-8 replacement character"})
+
+                  try:
+                      if suffix in {".py", ".pyi"}:
+                          tree = ast.parse(text, filename=rel)
+                          functions = []
+                          classes = []
+                          imports = []
+                          for node in ast.walk(tree):
+                              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                  functions.append(node.name)
+                              elif isinstance(node, ast.ClassDef):
+                                  classes.append(node.name)
+                              elif isinstance(node, ast.Import):
+                                  imports.extend(alias.name for alias in node.names)
+                              elif isinstance(node, ast.ImportFrom):
+                                  imports.append(node.module or "")
+                          python_symbols[rel] = {
+                              "functions": sorted(set(functions)),
+                              "classes": sorted(set(classes)),
+                              "imports": sorted(set(filter(None, imports))),
+                          }
+                          patterns = risk_patterns["python"]
+                      elif suffix == ".json":
+                          json.loads(text)
+                          patterns = []
+                      elif suffix == ".toml":
+                          tomllib.loads(text)
+                          patterns = []
+                      elif suffix in {".yaml", ".yml"}:
+                          list(yaml.safe_load_all(text))
+                          patterns = []
+                      elif suffix == ".rs":
+                          patterns = risk_patterns["rust"]
+                      elif suffix in {".js", ".mjs", ".cjs", ".ts", ".tsx"}:
+                          patterns = risk_patterns["javascript"]
+                      else:
+                          patterns = []
+                  except Exception as exc:
+                      parse_errors.append({"path": rel, "error": f"{type(exc).__name__}: {exc}"})
+                      patterns = []
+
+                  for pattern, category in patterns:
+                      for match in pattern.finditer(text):
+                          risk_hits.append({
+                              "path": rel,
+                              "line": text.count("\n", 0, match.start()) + 1,
+                              "category": category,
+                              "excerpt": match.group(0)[:120],
+                          })
+              inventory.append(item)
+
+          manifest = {
+              "head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "tracked_file_count": len(inventory),
+              "total_bytes": sum(int(item["bytes"]) for item in inventory),
+              "total_text_lines": sum(int(item.get("lines", 0)) for item in inventory),
+              "suffix_counts": dict(sorted(suffixes.items())),
+              "parse_error_count": len(parse_errors),
+              "risk_hit_count": len(risk_hits),
+              "files": inventory,
+          }
+          (out / "tree-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+          (out / "python-symbol-index.json").write_text(json.dumps(python_symbols, indent=2), encoding="utf-8")
+          (out / "risk-hits.json").write_text(json.dumps(risk_hits, indent=2), encoding="utf-8")
+          (out / "parse-errors.json").write_text(json.dumps(parse_errors, indent=2), encoding="utf-8")
+          print(json.dumps({k: manifest[k] for k in (
+              "head", "tracked_file_count", "total_bytes", "total_text_lines",
+              "parse_error_count", "risk_hit_count"
+          )}, indent=2))
+          if parse_errors:
+              raise SystemExit(f"tracked-tree parse validation failed: {parse_errors[:10]}")
+          PY
+
+      - name: Compile all Python surfaces
+        run: python -m compileall -q entroly tests scripts benchmarks examples
+
+      - name: Install as a clean source-package user
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,proxy]" pytest-timeout psutil
+          python -m pip check
+
+      - name: Run documented no-key user journeys
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/clean-home"
+          export ENTROLY_DIR="$RUNNER_TEMP/clean-home/.entroly"
+          mkdir -p "$HOME" "$ENTROLY_DIR"
+          log="$RUNNER_TEMP/deep-audit/user-journeys.log"
+          {
+            echo '### version'; entroly --version
+            echo '### help'; entroly --help
+            echo '### capabilities'; entroly capabilities
+            echo '### config'; entroly config
+            echo '### doctor'; entroly doctor
+            echo '### verify-claims'; timeout 180 entroly verify-claims
+            echo '### simulate'; timeout 180 entroly simulate
+            echo '### demo'; timeout 180 entroly demo
+            echo '### health'; timeout 180 entroly health
+          } 2>&1 | tee "$log"
+          set +e
+          entroly status >> "$log" 2>&1
+          status=$?
+          set -e
+          echo "status-command-exit=$status" | tee -a "$log"
+          test "$status" -eq 0 -o "$status" -eq 1
+
+      - name: Run complete pure-Python-compatible suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest tests/ -q --tb=short --timeout=120 -p no:cacheprovider \
+            --ignore=tests/functional_test.py \
+            --ignore=tests/test_e2e.py \
+            --ignore=tests/test_ios.py \
+            --ignore=tests/test_rust_cogops.py \
+            --ignore=tests/test_deep_functional.py \
+            --ignore=tests/test_engine_isolation.py \
+            --ignore=tests/test_localization.py \
+            --ignore=tests/test_benchmark_harness.py \
+            2>&1 | tee "$RUNNER_TEMP/deep-audit/pure-python-suite.log"
+
+      - name: Upload complete audit evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deep-audit-complete-tree
+          path: |
+            ${{ runner.temp }}/deep-audit/
+          if-no-files-found: error
+          retention-days: 3
