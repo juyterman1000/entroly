@@ -4,11 +4,37 @@
 /PYPI_README.md @juyterman1000
 /pyproject.toml @juyterman1000
 /entroly/npm/package.json @juyterman1000
+/entroly/npm-alias/package.json @juyterman1000
+/entroly-wasm/package.json @juyterman1000
+/.claude-plugin/ @juyterman1000
+/CITATION.cff @juyterman1000
+/codemeta.json @juyterman1000
+/packaging/ @juyterman1000
 /.github/workflows/publish-mcp-registry.yml @juyterman1000
 /.github/workflows/entroly-publish.yml @juyterman1000
 /.github/workflows/publish-core-wheels.yml @juyterman1000
+/scripts/bump_version.py @juyterman1000
 /scripts/sync_release_version.py @juyterman1000
+/scripts/check_distribution_surface.py @juyterman1000
 /tests/test_release_surface.py @juyterman1000
+/tests/test_distribution_surface.py @juyterman1000
+/tests/test_visibility_release_sync.py @juyterman1000
+
+# Public product identity, discovery, and claims.
+/README.md @juyterman1000
+/llms.txt @juyterman1000
+/docs/llms.txt @juyterman1000
+/docs/llms-full.txt @juyterman1000
+/docs/index.html @juyterman1000
+/docs/robots.txt @juyterman1000
+/docs/sitemap.xml @juyterman1000
+/docs/distribution/ @juyterman1000
+/docs/press-kit.md @juyterman1000
+/docs/independent-review-program.md @juyterman1000
+/docs/choosing-context-assurance.md @juyterman1000
+/docs/localization/ @juyterman1000
+/marketing/ @juyterman1000
+/.github/workflows/visibility-integrity.yml @juyterman1000
 
 # Public trust, governance, and contributor experience.
 /SECURITY.md @juyterman1000
