@@ -12,6 +12,20 @@ DIMENSIONS = ROOT / "docs" / "distribution" / "visibility-dimensions.json"
 CHECKER = ROOT / "scripts" / "check_distribution_surface.py"
 
 
+def _project_version() -> str:
+    in_project = False
+    for raw_line in (ROOT / "pyproject.toml").read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line == "[project]":
+            in_project = True
+            continue
+        if in_project and line.startswith("["):
+            break
+        if in_project and line.startswith("version"):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    raise AssertionError("pyproject.toml is missing project.version")
+
+
 def test_distribution_surface_check_passes_offline() -> None:
     completed = subprocess.run(
         [sys.executable, str(CHECKER)],
@@ -101,7 +115,7 @@ def test_launch_assets_cannot_imply_publication() -> None:
 
 
 def test_research_metadata_tracks_release_version() -> None:
-    project_version = "1.0.75"
+    project_version = _project_version()
     citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
     codemeta = json.loads((ROOT / "codemeta.json").read_text(encoding="utf-8"))
 
