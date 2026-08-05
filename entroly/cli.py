@@ -2822,109 +2822,53 @@ def cmd_go(args):
 
 
 def cmd_demo(args):
-    """entroly demo — quick-win demo mode: before/after comparison (Gap #41)."""
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Demo{C.RESET} -- 3 sample queries, real measurements\n")
+    """Run the bounded no-key demo through the shared simulation path.
 
-    from entroly.auto_index import auto_index
-    from entroly.server import EntrolyEngine
-    from entroly.value_tracker import estimate_cost
-
-    engine = EntrolyEngine()
-    result = auto_index(engine)
-
-    if result["status"] == "indexed":
-        files_indexed = result["files_indexed"]
-        total_tokens_raw = result["total_tokens"]
-        if files_indexed == 0:
-            print(f"  {C.YELLOW}No files found to index.{C.RESET}")
-            print("  Run this from a project directory with source files.\n")
-            return
-        print(f"  {C.GREEN}Indexed {files_indexed} files ({total_tokens_raw:,} tokens total){C.RESET}\n")
-    elif result["status"] == "skipped":
-        existing = result.get("existing_fragments", 0)
-        if existing == 0:
-            print(f"  {C.YELLOW}No files found to index.{C.RESET}")
-            print("  Run this from a project directory with source files.\n")
-            return
-        if engine._use_rust:
-            stats = engine._rust.stats()
-            total_tokens_raw = stats.get("session", {}).get("total_tokens_tracked", 0)
-        else:
-            total_tokens_raw = getattr(engine, "_total_token_count", 0)
-        files_indexed = existing
-        print(f"  {C.GREEN}Using persistent index: {files_indexed} fragments ({total_tokens_raw:,} tokens total){C.RESET}\n")
-    else:
-        print(f"  {C.YELLOW}No files found to index.{C.RESET}")
-        print("  Run this from a project directory with source files.\n")
+    ``demo``, ``simulate``, and ``perf`` must measure the same indexed
+    surface. A separate auto-index path previously bypassed the file cap
+    and could spend minutes ingesting a large repository before printing.
+    """
+    report = _run_local_simulation(args)
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
         return
 
-    # Smart quality recommendation
-    project = _detect_project_type()
-    recommended = _recommend_quality(project, files_indexed)
-    print(f"  {C.GRAY}Recommended quality preset: {C.CYAN}{recommended}{C.GRAY} for this project{C.RESET}\n")
+    _print_local_simulation(
+        report,
+        title="Entroly Demo",
+        include_perf=False,
+    )
+    if report["files_indexed"] == 0:
+        return
 
-    sample_queries = [
-        "How does the authentication flow work?",
-        "Find and fix potential SQL injection vulnerabilities",
-        "Explain the module structure and dependency graph",
-    ]
+    from entroly.value_tracker import estimate_cost
 
-    # Model cost estimates for dollar impact
-    models = ["gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"]
+    per_query_saved = report["total_tokens_saved"] // max(
+        len(report["queries"]), 1
+    )
+    print(
+        f"  {C.BOLD}Per-query savings{C.RESET} "
+        f"(current input rates, {per_query_saved:,} tokens saved/query):"
+    )
+    for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
+        cost = estimate_cost(per_query_saved, model)
+        print(
+            f"    {C.CYAN}{model:25s}{C.RESET} "
+            f"${cost:.4f}/query"
+        )
+    print(
+        f"  {C.GRAY}Multiply by your actual request volume. "
+        f"We don't know what that is.{C.RESET}"
+    )
 
-    budget = 4096
-    # Honest baseline: a 32K "paste matching files until you fill the window" dump,
-    # not the whole repo. Claiming savings vs. total_tokens_raw (7M+ for AutoGPT)
-    # is theatrical — nobody sends their entire codebase.
-    BASELINE_PER_QUERY = min(total_tokens_raw, 32_000)
-    print(f"  {C.BOLD}Naive baseline:{C.RESET} dump ~{BASELINE_PER_QUERY:,} tokens of matching files per query")
-    print(f"  {C.BOLD}With Entroly:{C.RESET} selected context for each query:\n")
-
-    total_saved = 0
-    for query in sample_queries:
-        engine.advance_turn()
-        opt = engine.optimize_context(token_budget=budget, query=query)
-        selected = opt.get("selected_fragments", [])
-        tokens_used = sum(f.get("token_count", 0) for f in selected)
-        saved = max(0, BASELINE_PER_QUERY - tokens_used)
-        total_saved += saved
-        pct = (saved * 100) // max(BASELINE_PER_QUERY, 1)
-
-        # Per-query cost estimate
-        cost_gpt4o = estimate_cost(saved, "gpt-4o")
-
-        # Show top selected files
-        top_files = [f.get("source", f.get("id", "?")).split("/")[-1].split("\\")[-1]
-                     for f in selected[:3]]
-        top_str = ", ".join(top_files) if top_files else "none"
-
-        print(f"    {C.CYAN}Q:{C.RESET} {query[:60]}")
-        print(f"       {C.GREEN}{len(selected)} fragments, {tokens_used:,} tokens{C.RESET} "
-              f"({C.BOLD}{pct}% reduction{C.RESET}, ~${cost_gpt4o:.4f} saved)")
-        print(f"       {C.GRAY}Top files: {top_str}{C.RESET}\n")
-
-    avg_pct = (total_saved * 100) // max(BASELINE_PER_QUERY * len(sample_queries), 1)
-
-    # Show projected savings across popular models
-    if avg_pct == 0 and total_tokens_raw < 4096:
-        print(f"  {C.GREEN}{C.BOLD}Your entire codebase fits within the token budget!{C.RESET}")
-        print(f"  {C.GRAY}Entroly shines on larger codebases (>4K tokens) where it selects{C.RESET}")
-        print(f"  {C.GRAY}only relevant fragments instead of sending everything.{C.RESET}\n")
-    else:
-        print(f"  {C.GREEN}{C.BOLD}Average: {avg_pct}% fewer tokens per request{C.RESET}\n")
-    per_query_saved = total_saved // max(len(sample_queries), 1)
-    print(f"  {C.BOLD}Per-query savings{C.RESET} (today's input rates, {per_query_saved:,} tokens saved/query):")
-    for model in models:
-        per_query_cost = estimate_cost(per_query_saved, model)
-        print(f"    {C.CYAN}{model:25s}{C.RESET} ${per_query_cost:.4f}/query")
-    print(f"  {C.GRAY}Multiply by your actual request volume. We don't know what that is.{C.RESET}")
-
+    recommended = _recommend_quality(
+        _detect_project_type(), report["files_indexed"]
+    )
     print(f"""
-  {C.GREEN}{C.BOLD}Get started:{C.RESET}
-    {C.CYAN}entroly go{C.RESET}                One command: init + proxy + dashboard
-    {C.CYAN}entroly proxy --quality {recommended}{C.RESET}  Start optimizing
-""")
-
+    {C.GREEN}{C.BOLD}Get started:{C.RESET}
+      {C.CYAN}entroly go{C.RESET}                One command: init + proxy + dashboard
+      {C.CYAN}entroly proxy --quality {recommended}{C.RESET}  Start optimizing
+  """)
 
 def _simulation_queries(args) -> list[str]:
     queries = getattr(args, "query", None) or []
@@ -6233,11 +6177,12 @@ def main():
         help="Exit with non-zero status if any query's optimized tokens exceed --budget (for CI gating)",
     )
 
-    # entroly demo (Gap #41)
-    subparsers.add_parser(
+    # entroly demo (bounded local measurement)
+    demo_parser = subparsers.add_parser(
         "demo",
         help="Quick-win demo: before/after comparison showing token savings",
     )
+    _add_local_measure_args(demo_parser)
 
     # entroly wrap
     wrap_parser = subparsers.add_parser(

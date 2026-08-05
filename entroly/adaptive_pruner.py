@@ -286,5 +286,17 @@ class FragmentGuard:
             return []
         try:
             return list(self._guard.review_code(content, source))
-        except Exception:
-            return []
+        except Exception as exc:
+            # A scanner crash is not evidence that the fragment is clean. Keep
+            # ingestion available, but fail closed by surfacing a bounded issue
+            # that callers can attach to receipts, proxy warnings, and MCP
+            # responses. Do not include the exception message because third-
+            # party/native backends may place source content or secrets there.
+            logger.exception(
+                "FragmentGuard backend failed while scanning %s",
+                source or "fragment",
+            )
+            return [
+                "code quality scan failed "
+                f"({type(exc).__name__}); treat fragment as unverified"
+            ]
