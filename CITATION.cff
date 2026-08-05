@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use Entroly in research, evaluation, or tooling, please cite the software and the exact released version."
+title: "Entroly: Context Assurance for AI Agents"
+type: software
+authors:
+  - name: "Entroly Contributors"
+version: 1.0.75
+date-released: 2026-08-04
+license: Apache-2.0
+repository-code: "https://github.com/juyterman1000/entroly"
+url: "https://juyterman1000.github.io/entroly/docs/index.html"
+abstract: >-
+  Entroly is an open-source, local-first Context Assurance layer for AI agents.
+  It combines budget-aware evidence selection, recoverable compression,
+  content-addressed retrieval, Context Receipts, and evidence verification
+  across CLI, SDK, MCP, proxy, wrapper, Rust, Node/WASM, Docker, and Homebrew
+  surfaces.
+keywords:
+  - context assurance
+  - context engineering
+  - context compression
+  - AI agents
+  - model context protocol
+  - recoverable compression
+  - context receipts
+  - evidence verification
