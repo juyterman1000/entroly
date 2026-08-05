@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
+from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +16,9 @@ TEMPORARY = {
 }
 CANONICAL_METHOD = (
     "https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md"
+)
+CURRENT_RECOVERY_ARTIFACT = Path(
+    "benchmarks/results/recovery_resilience_holdout_revalidation_v5.json"
 )
 
 # The source terms exist only in this self-deleting migration file. The final
@@ -37,6 +43,28 @@ URL_PATTERN = re.compile(
     r"https?://[^\s\]\)\"']*(?:headroom|lean(?:ctx|[-_]?ctx))[^\s\]\)\"']*",
     flags=re.IGNORECASE,
 )
+
+
+def _sha256(value: str | bytes) -> str:
+    payload = value.encode("utf-8") if isinstance(value, str) else value
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _canonical_sha256(value: Any) -> str:
+    return _sha256(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+
+
+def _canonical_source_sha256(paths: Iterable[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        source = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        digest.update(source)
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def iter_text_files():
@@ -75,6 +103,74 @@ def neutralize_tree() -> list[str]:
 
         if updated != original:
             path.write_text(updated, encoding="utf-8")
+            changed.append(relative.as_posix())
+    return changed
+
+
+def _set_current_recovery_implementation(report: dict[str, Any]) -> bool:
+    implementation = _canonical_source_sha256(
+        (
+            ROOT / "benchmarks/recovery_resilience.py",
+            ROOT / "entroly/compression_retrieval_store.py",
+        )
+    )
+    modified = False
+    candidates = (
+        report.get("participants", {}).get("entroly"),
+        report.get("adapters", {}).get("entroly", {}).get("participant"),
+    )
+    for participant in candidates:
+        if not isinstance(participant, dict):
+            continue
+        runtime = participant.get("runtime")
+        if not isinstance(runtime, dict):
+            continue
+        if runtime.get("implementation_sha256") != implementation:
+            runtime["implementation_sha256"] = implementation
+            modified = True
+    return modified
+
+
+def refresh_json_integrity() -> list[str]:
+    """Refresh only seals invalidated by the neutral naming migration."""
+
+    changed: list[str] = []
+    for path in sorted(ROOT.rglob("*.json")):
+        relative = path.relative_to(ROOT)
+        if relative in TEMPORARY or any(part in SKIP_PARTS for part in relative.parts):
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(value, dict):
+            continue
+
+        modified = False
+        if relative == CURRENT_RECOVERY_ARTIFACT:
+            modified = _set_current_recovery_implementation(value) or modified
+
+        protocol = value.get("protocol")
+        if "protocol_sha256" in value and isinstance(protocol, dict):
+            expected = _canonical_sha256(protocol)
+            if value.get("protocol_sha256") != expected:
+                value["protocol_sha256"] = expected
+                modified = True
+
+        if "payload_sha256" in value:
+            unhashed = {
+                key: item for key, item in value.items() if key != "payload_sha256"
+            }
+            expected = _canonical_sha256(unhashed)
+            if value.get("payload_sha256") != expected:
+                value["payload_sha256"] = expected
+                modified = True
+
+        if modified:
+            path.write_text(
+                json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
             changed.append(relative.as_posix())
     return changed
 
@@ -261,8 +357,16 @@ def wire_guard() -> list[str]:
     changed: list[str] = []
     workflow = ROOT / ".github/workflows/visibility-integrity.yml"
     text = workflow.read_text(encoding="utf-8")
-    old = "      - name: Validate owned visibility surface\n        run: python scripts/check_distribution_surface.py\n"
-    new = "      - name: Validate owned visibility surface\n        run: |\n          python scripts/check_distribution_surface.py\n          python scripts/check_external_name_policy.py\n"
+    old = (
+        "      - name: Validate owned visibility surface\n"
+        "        run: python scripts/check_distribution_surface.py\n"
+    )
+    new = (
+        "      - name: Validate owned visibility surface\n"
+        "        run: |\n"
+        "          python scripts/check_distribution_surface.py\n"
+        "          python scripts/check_external_name_policy.py\n"
+    )
     if old in text:
         workflow.write_text(text.replace(old, new), encoding="utf-8")
         changed.append(workflow.relative_to(ROOT).as_posix())
@@ -272,7 +376,9 @@ def wire_guard() -> list[str]:
     line = "/scripts/check_external_name_policy.py @juyterman1000"
     if line not in text:
         anchor = "/scripts/check_distribution_surface.py @juyterman1000\n"
-        codeowners.write_text(text.replace(anchor, anchor + line + "\n"), encoding="utf-8")
+        codeowners.write_text(
+            text.replace(anchor, anchor + line + "\n"), encoding="utf-8"
+        )
         changed.append(codeowners.relative_to(ROOT).as_posix())
     return changed
 
@@ -289,6 +395,7 @@ def remove_temporary_files() -> list[str]:
 
 def main() -> None:
     changed = neutralize_tree()
+    changed.extend(refresh_json_integrity())
     changed.extend(write_external_adapter())
     changed.append(write_policy_guard())
     changed.extend(wire_guard())
