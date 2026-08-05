@@ -93,6 +93,7 @@ Not every review needs every control. The report must justify the chosen arms.
 - A ceiling where all arms pass does not establish non-inferiority.
 - Fewer active tokens do not prove lower total provider cost.
 - A larger reduction with worse task quality is not a win.
+- Provider-observed usage is distinguished from tokenizer estimates.
 - Estimated tokenizer counts must not be labeled provider-billed usage.
 - One repository, model, or content type cannot support a universal claim.
 - Tuning on the test set invalidates held-out status.
