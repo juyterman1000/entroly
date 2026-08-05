@@ -78,15 +78,19 @@ jobs:
             tests/test_readme_proof.py \
             tests/test_docs_code_sync.py -q
 
-      - name: Commit neutral tree and self-remove
+      - name: Commit validated non-workflow changes
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "juyterman1000"
           git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git restore --source=HEAD --worktree --staged -- \
+            .github/workflows/visibility-integrity.yml \
+            .github/workflows/competitor-name-audit.yml \
+            .github/workflows/one-shot-neutralize-external-names.yml
           git add -A
           if git diff --cached --quiet; then
-            echo "No changes required."
+            echo "No non-workflow changes required."
             exit 0
           fi
           git commit -m "refactor(policy): neutralize named external products repository-wide"
