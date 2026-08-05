@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check pytest
+          python -m pip install --disable-pip-version-check pytest tiktoken
           python -m pytest \
             tests/test_distribution_surface.py \
             tests/test_visibility_release_sync.py \
@@ -47,6 +47,8 @@ jobs:
             tests/test_recovery_resilience.py \
             tests/test_compression_latency.py \
             tests/test_compression_frontier.py \
+            tests/test_compression_gauntlet.py \
+            tests/test_model_recovery_benchmark.py \
             tests/test_readme_proof.py \
             tests/test_docs_code_sync.py -q
 
