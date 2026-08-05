@@ -1,0 +1,92 @@
+name: Independent review or reproduction
+description: Report an independent Entroly evaluation, reproduction, regression, or benchmark result.
+title: "[Review]: "
+labels:
+  - evidence
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing Entroly. Include negative results and pass-through cases. Do not post security-sensitive findings here; follow SECURITY.md instead.
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Disclosure
+      options:
+        - label: I am not an Entroly maintainer and controlled the workload, scoring, and interpretation.
+        - label: I disclosed any sponsorship, compensation, provided services, or maintainer assistance below.
+    validations:
+      required: true
+  - type: input
+    id: publication
+    attributes:
+      label: Reviewer or publication
+      placeholder: Name, handle, organization, article, repository, or channel
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Entroly version and installation source
+      placeholder: "Example: 1.0.75 from PyPI"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, runtime versions, hardware, model, provider, agent or host, and cache settings.
+    validations:
+      required: true
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload and frozen inputs
+      description: Task, repository or dataset revision, context budget, baseline, treatment, and control arms.
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands and configuration
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Task-level results
+      description: Include task outcomes, observed input/output usage and source, latency method, retries, recovery calls, receipts, and verification behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: Failures, regressions, exclusions, and pass-through cases
+    validations:
+      required: true
+  - type: input
+    id: artifacts
+    attributes:
+      label: Public raw artifacts
+      placeholder: URL to logs, result files, repository, dataset, or article
+    validations:
+      required: true
+  - type: textarea
+    id: relationship
+    attributes:
+      label: Relationship and support disclosure
+      description: Describe sponsorship, maintainer help, patches supplied during testing, or other conflicts.
+    validations:
+      required: true
+  - type: checkboxes
+    id: integrity
+    attributes:
+      label: Evidence integrity
+      options:
+        - label: The workload and scoring were not changed after viewing held-out outcomes.
+        - label: Provider-observed usage is distinguished from tokenizer estimates.
+        - label: The report does not convert one workload into a universal claim.
+        - label: I understand that a ceiling where every arm passes does not establish non-inferiority.
+    validations:
+      required: true
