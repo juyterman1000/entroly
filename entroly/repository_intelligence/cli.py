@@ -4,13 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import Counter
 from pathlib import Path
 from typing import Sequence
 
-from . import build_repository_index
-from .graph import analyze_change_impact, localize_tests
-from .models import RepositoryLimits, normalize_relative
+from .models import RepositoryLimits
+from .service import RepositoryIntelligenceError, RepositoryIntelligenceService
 
 CLI_SCHEMA_VERSION = "entroly.repository-cli.v1"
 
@@ -50,74 +48,39 @@ def _limits(args: argparse.Namespace) -> RepositoryLimits:
     )
 
 
-def _changed(args: argparse.Namespace, known: set[str]) -> tuple[list[str], list[str]]:
-    requested = sorted({normalize_relative(value) for value in args.changed})
-    unknown = [path for path in requested if path not in known]
-    return [path for path in requested if path in known], unknown
-
-
-def _summary(index) -> dict[str, object]:
-    languages = Counter(record.language for record in index.files.values())
-    return {
-        "schema_version": CLI_SCHEMA_VERSION,
-        "command": "summary",
-        "root": index.root,
-        "files": len(index.files),
-        "symbols": len(index.symbols),
-        "call_edges": len(index.call_edges),
-        "file_edges": sum(len(values) for values in index.file_dependencies.values()),
-        "tests": len(index.test_paths),
-        "languages": dict(sorted(languages.items())),
-        "diagnostics": list(index.diagnostics),
-    }
-
-
 def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
     args = _parser().parse_args(argv)
     try:
         root = Path(args.root).expanduser().resolve(strict=True)
-        index = build_repository_index(root, limits=_limits(args))
+        service = RepositoryIntelligenceService(root, limits=_limits(args))
+        if args.command == "summary":
+            payload = service.summary()
+            payload["command"] = "summary"
+            payload["schema_version"] = CLI_SCHEMA_VERSION
+            return 0, payload
+        if args.command == "impact":
+            payload = service.impact(
+                args.changed,
+                max_depth=args.max_depth,
+                limit=args.limit,
+            )
+            payload["command"] = "impact"
+            payload["schema_version"] = CLI_SCHEMA_VERSION
+            return 0, payload
+        payload = service.tests(args.changed, limit=args.limit)
+        payload["command"] = "tests"
+        payload["schema_version"] = CLI_SCHEMA_VERSION
+        return 0, payload
+    except RepositoryIntelligenceError as exc:
+        payload = exc.to_dict()
+        payload["schema_version"] = CLI_SCHEMA_VERSION
+        return 2, payload
     except (OSError, ValueError) as exc:
         return 2, {
             "schema_version": CLI_SCHEMA_VERSION,
             "error": "invalid_repository",
             "detail": str(exc),
         }
-
-    if args.command == "summary":
-        return 0, _summary(index)
-
-    changed, unknown = _changed(args, set(index.files))
-    if unknown:
-        return 2, {
-            "schema_version": CLI_SCHEMA_VERSION,
-            "error": "unknown_changed_paths",
-            "unknown": unknown,
-            "diagnostics": list(index.diagnostics),
-        }
-
-    if args.command == "impact":
-        report = analyze_change_impact(
-            index,
-            changed,
-            max_depth=args.max_depth,
-            max_impacted_paths=args.limit,
-        )
-        return 0, {
-            "schema_version": CLI_SCHEMA_VERSION,
-            "command": "impact",
-            "report": report.to_dict(),
-            "diagnostics": list(index.diagnostics),
-        }
-
-    candidates = localize_tests(index, changed, limit=args.limit)
-    return 0, {
-        "schema_version": CLI_SCHEMA_VERSION,
-        "command": "tests",
-        "changed_paths": changed,
-        "candidates": [candidate.to_dict() for candidate in candidates],
-        "diagnostics": list(index.diagnostics),
-    }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
