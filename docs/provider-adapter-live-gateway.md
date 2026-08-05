@@ -1,10 +1,14 @@
 # Production provider adapter seam
 
-The cache-aware gateway control plane is provider-neutral, while the live proxy receives provider-specific JSON payloads and forwards them to provider-specific endpoints. `entroly/provider_adapters.py` is the boundary between those worlds.
+The cache-aware gateway control plane reasons over a canonical request, while
+the live proxy receives provider-specific JSON and forwards it to a
+provider-specific endpoint. `entroly/provider_adapters.py` is the semantic
+boundary between those representations.
 
 ## Adapter responsibilities
 
-The adapter converts supported request bodies into `CanonicalGatewayRequest` for:
+The adapter converts supported request bodies into `CanonicalGatewayRequest`
+for:
 
 - OpenAI Chat Completions
 - OpenAI Responses API
@@ -30,19 +34,37 @@ It also computes the estimates used by cache-aware routing:
 
 ## Same-provider routing
 
-If the target provider is unchanged, the live proxy can preserve the original body and replace only the model. `apply_target_same_provider(...)` validates the target and performs that rewrite. For Gemini, the model is validated and rewritten in the `/models/{model}` path segment.
+When the target provider is unchanged, the live proxy can preserve the original
+body and replace only the model. `apply_target_same_provider(...)` validates the
+target and performs that rewrite. For Gemini, the model is validated and
+rewritten in the `/models/{model}` path segment.
 
-## Cross-provider failover
+## Cross-provider canonical rendering
 
-A cross-provider failover target must not reuse the original provider body. Provider-specific generation controls and tool formats are not interchangeable.
+`render_canonical_request(...)` is a conservative conformance utility. It can
+render a limited text-only canonical request for adapter tests and explicitly
+fails closed for tools, tool-call history, vision, reasoning controls, response
+schemas, and provider-specific controls.
 
-For that reason, cross-provider execution must render from the canonical request using `render_canonical_request(...)`. The current renderer accepts only text chat with portable system, user, and assistant roles. It fails closed for tools, tool-call history, vision, reasoning controls, and response schemas until a dedicated adapter proves equivalent semantics. Provider-specific controls are never silently dropped.
+That renderer is **not** permission to route a live request to another provider.
+It does not establish operator consent, target credential ownership, region,
+retention, contract, billing, or equivalent provider semantics.
+
+`GatewayControlPlane` therefore removes every target whose provider differs
+from the original provider and records `cross_provider_disabled` in the
+failover receipt. A source-provider failure fails closed rather than invoking
+this renderer as an automatic fallback.
 
 ## Production invariant
 
 ```text
-same provider  -> preserve body + validated model rewrite
-cross provider -> render from canonical request only
+same provider  -> preserve provider body + validated model rewrite
+cross provider -> non-executable target (`cross_provider_disabled`)
 ```
 
-This prevents silent semantic drift while still allowing a future enterprise transport layer to execute capability-safe cross-provider failover.
+Any future cross-provider product would require a separate operator-authorized
+credential, data-policy, contract, region, conformance, and execution boundary.
+It must not be introduced by weakening the current gateway invariant.
+
+See [`gateway-provider-boundary.md`](gateway-provider-boundary.md) for the
+executable evidence and supported claim boundary.

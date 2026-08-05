@@ -30,6 +30,13 @@ Entroly forwards your optimized prompt to the LLM API **you configured** through
 the proxy base URL. This is the API you already selected; Entroly changes the
 request shape and context size, not the provider's data policy.
 
+The gateway control plane does not automatically move a request to a different
+provider. Its executable plans are restricted to models belonging to the
+original provider. A source-provider failure fails closed instead of selecting
+another data recipient. See
+[`docs/gateway-provider-boundary.md`](docs/gateway-provider-boundary.md) for the
+code-backed boundary and test evidence.
+
 ```text
 Without Entroly:  IDE -> OpenAI (50K tokens)
 With Entroly:     IDE -> localhost:9377 -> compress -> OpenAI (12K tokens)
@@ -67,8 +74,9 @@ local deterministic verification.
 ### RAVS Model Routing (`ENTROLY_RAVS_ROUTER=1`)
 
 Can substitute a lower-cost model after local evidence gates pass. It is off by
-default because changing models can also change provider capabilities, cost, and
-data-handling semantics.
+default because changing models can also change capabilities and cost. The live
+proxy restricts this substitution to the same provider; it does not use RAVS as
+an automatic cross-provider fallback.
 
 ### Federation (`ENTROLY_FEDERATION=1`)
 
