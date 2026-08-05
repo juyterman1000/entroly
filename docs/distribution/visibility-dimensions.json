@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-08-04",
+  "goal": "Make Entroly the most discoverable, verifiable, installable, and independently evaluable open-source context-assurance project.",
+  "states": {
+    "strong": "A maintained repository-owned surface exists, is tested or release-gated, and has clear user value.",
+    "partial": "A useful surface exists but coverage, evidence, external reach, or maintenance is incomplete.",
+    "gap": "The dimension is relevant but lacks a sufficient maintained surface.",
+    "blocked": "Completion requires external infrastructure, third-party acceptance, or platform-specific evidence that is not yet available.",
+    "published": "A third-party surface is visibly published and recorded with a proof URL."
+  },
+  "leadership_rule": "Entroly may call a dimension leading only when its evidence is current, reproducible where applicable, broader or more trustworthy than named alternatives, and independently reviewable. Coverage alone is not leadership.",
+  "dimensions": [
+    {
+      "id": "category-positioning",
+      "name": "Category positioning",
+      "state": "strong",
+      "current_evidence": ["README.md", "llms.txt", "docs/index.html", "pyproject.toml"],
+      "leadership_target": "Own the Context Assurance category with one consistent definition across every package, registry, document, and external listing.",
+      "next_action": "Keep Context Assurance as the primary category and Context OS as the architectural explanation; prevent tagline drift in release checks."
+    },
+    {
+      "id": "repository-first-impression",
+      "name": "Repository first impression",
+      "state": "strong",
+      "current_evidence": ["README.md", "docs/assets/proof_local.gif", "docs/assets/proof_model_recovery.gif", "docs/assets/proof_restart_recovery.gif"],
+      "leadership_target": "A new visitor understands the problem, trust model, install path, proof, and limitations in under two minutes.",
+      "next_action": "Continuously validate badges, install commands, proof artifacts, and the first-screen message."
+    },
+    {
+      "id": "python-registry",
+      "name": "Python registry distribution",
+      "state": "strong",
+      "current_evidence": ["pyproject.toml", "PYPI_README.md", "tests/test_release_surface.py"],
+      "leadership_target": "Best-in-category PyPI metadata, fresh wheels, clear extras, Python 3.10-3.14 support, and tested pure-Python fallback.",
+      "next_action": "Keep package metadata, docs URLs, optional dependencies, and release versions synchronized."
+    },
+    {
+      "id": "node-registry",
+      "name": "Node and npm distribution",
+      "state": "strong",
+      "current_evidence": ["package.json", "npm/", "server.json", ".claude-plugin/manifest.json"],
+      "leadership_target": "Node, WASM, npm CLI, and MCP users receive the same core contract and current install instructions as Python users.",
+      "next_action": "Keep the primary `entroly` package, MCP bridge, WASM exports, docs, and version checks aligned."
+    },
+    {
+      "id": "rust-native",
+      "name": "Rust and native distribution",
+      "state": "strong",
+      "current_evidence": ["entroly-core/Cargo.toml", "entroly-core/src/", ".github/workflows/"],
+      "leadership_target": "One audited native engine with reproducible Rust, Python, WASM, and single-binary proxy behavior.",
+      "next_action": "Maintain Clippy, native tests, offline build evidence, and cross-surface conformance."
+    },
+    {
+      "id": "homebrew",
+      "name": "Homebrew distribution",
+      "state": "strong",
+      "current_evidence": ["Formula/entroly.rb", "docs/RELEASE.md"],
+      "leadership_target": "Release-synchronized Homebrew installation with verified source checksum and a clean-machine smoke test.",
+      "next_action": "Continue deriving formula URL and checksum from the released PyPI source artifact."
+    },
+    {
+      "id": "docker-container",
+      "name": "Container distribution",
+      "state": "strong",
+      "current_evidence": ["Dockerfile", ".github/workflows/"],
+      "leadership_target": "Documented and tested container use for CLI, MCP, and proxy modes with explicit persistence and network boundaries.",
+      "next_action": "Add container-specific user journeys when public usage shows recurring configuration errors."
+    },
+    {
+      "id": "mcp-discovery",
+      "name": "MCP discovery and registries",
+      "state": "partial",
+      "current_evidence": ["server.json", "entroly/compression_mcp.py", "docs/mcp-server-guide.html", "docs/distribution/targets.json"],
+      "leadership_target": "Current manifests and verified listings across major MCP catalogs, with scoped roots, bounded outputs, and security documentation.",
+      "next_action": "Submit the prepared catalog entries and record public PR or listing URLs before changing status."
+    },
+    {
+      "id": "claude-plugin-skill",
+      "name": "Claude plugin and Agent Skill visibility",
+      "state": "partial",
+      "current_evidence": [".claude-plugin/manifest.json", "SKILLS.md", "docs/distribution/submission-kit.md"],
+      "leadership_target": "Native Claude plugin metadata, managed instructions, Agent Skill documentation, and presence in Claude-specific catalogs.",
+      "next_action": "Validate the installed Claude experience end to end and submit to the prepared Claude catalogs."
+    },
+    {
+      "id": "agent-integration-breadth",
+      "name": "Agent and IDE integration breadth",
+      "state": "strong",
+      "current_evidence": ["docs/agent-integrations.html", "docs/product-surface.md", "tests/test_agent_integration_contracts.py"],
+      "leadership_target": "Every claimed integration has an explicit path, bounded support status, installation instructions, and conformance evidence.",
+      "next_action": "Convert compatibility claims into executable journeys wherever the host can be installed in CI."
+    },
+    {
+      "id": "onboarding-experience",
+      "name": "One-command onboarding and verification",
+      "state": "strong",
+      "current_evidence": ["README.md", "entroly/docker_launcher_safe.py", "entroly/verify_claims.py", ".github/workflows/user-journey-trust.yml"],
+      "leadership_target": "A user can install, configure, verify, simulate value, inspect privacy boundaries, and undo changes without reading internal architecture docs.",
+      "next_action": "Add a generated integration prompt and reversible setup summary for every supported host."
+    },
+    {
+      "id": "owned-documentation",
+      "name": "Owned documentation depth",
+      "state": "strong",
+      "current_evidence": ["docs/index.html", "docs/DETAILS.md", "docs/BENCHMARKS.md", "docs/product-surface.md"],
+      "leadership_target": "Task-specific pages for installation, integrations, security, benchmarks, troubleshooting, architecture, and limitations.",
+      "next_action": "Keep the documentation information architecture concise and add pages only when they answer a distinct user query."
+    },
+    {
+      "id": "seo-technical",
+      "name": "Technical SEO",
+      "state": "strong",
+      "current_evidence": ["docs/index.html", "docs/robots.txt", "docs/sitemap.xml"],
+      "leadership_target": "Canonical URLs, accurate metadata, structured data, sitemap coverage, stable titles, and crawlable task-specific pages.",
+      "next_action": "Generate sitemap entries from the published-page inventory and fail CI when indexed pages or canonical URLs drift."
+    },
+    {
+      "id": "answer-engine-discovery",
+      "name": "AEO, GEO, and machine-readable discovery",
+      "state": "strong",
+      "current_evidence": ["llms.txt", "docs/llms.txt", "docs/llms-full.txt", "docs/robots.txt", "tests/test_llms_discovery.py"],
+      "leadership_target": "Search and answer engines can retrieve direct, caveated answers about product fit, privacy, integrations, recovery, and limitations.",
+      "next_action": "Add machine-readable citation and release metadata, then test important direct answers for drift."
+    },
+    {
+      "id": "multilingual-discovery",
+      "name": "Multilingual discovery",
+      "state": "gap",
+      "current_evidence": ["docs/distribution/submission-kit.md"],
+      "leadership_target": "High-quality maintained pages and catalog entries for major developer languages, beginning with Chinese, Japanese, Spanish, and Portuguese.",
+      "next_action": "Start with concise installation and trust-boundary pages; require native or expert review before publication."
+    },
+    {
+      "id": "comparison-evaluation",
+      "name": "Comparison and buyer evaluation",
+      "state": "partial",
+      "current_evidence": ["docs/BENCHMARKS.md", "docs/public-evidence.md", "docs/limitations.md"],
+      "leadership_target": "Help users choose among Entroly, raw context, and alternatives through reproducible criteria rather than rank claims.",
+      "next_action": "Publish a workload-selection guide covering recovery, proxy behavior, content types, latency, trust, integration, and total-session impact."
+    },
+    {
+      "id": "independent-reviews",
+      "name": "Independent hands-on reviews",
+      "state": "gap",
+      "current_evidence": ["docs/distribution/submission-kit.md"],
+      "leadership_target": "Multiple independent reviews with raw commands, pinned versions, real tasks, task outcomes, token usage, failures, recovery, and receipts.",
+      "next_action": "Launch the reviewer program and prioritize Claude Code debugging, structured-data compression, and matched-budget agent tasks."
+    },
+    {
+      "id": "neutral-benchmarks",
+      "name": "Neutral external benchmark participation",
+      "state": "blocked",
+      "current_evidence": ["docs/distribution/targets.json", "benchmarks/", "docs/BENCHMARKS.md"],
+      "leadership_target": "Version-pinned adapters in independent harnesses with unchanged workloads, control arms, raw artifacts, and quality-plus-cost reporting.",
+      "next_action": "Complete adapters only after upstream protocols are frozen; never tune on held-out outcomes."
+    },
+    {
+      "id": "awesome-lists-directories",
+      "name": "Curated lists and developer directories",
+      "state": "partial",
+      "current_evidence": ["docs/distribution/targets.json", "docs/distribution/submission-kit.md"],
+      "leadership_target": "Accurate placement in the highest-signal Claude, MCP, Rust, LLMOps, local-AI, CLI, and agent-infrastructure catalogs.",
+      "next_action": "Submit priority targets one at a time and monitor merged wording for stale commands or claims."
+    },
+    {
+      "id": "os-package-managers",
+      "name": "Operating-system package managers",
+      "state": "blocked",
+      "current_evidence": ["docs/distribution/targets.json"],
+      "leadership_target": "Maintained Nix, Scoop, FreeBSD, and additional platform packages with reproducible artifacts and update automation.",
+      "next_action": "Produce target-platform smoke evidence before requesting inclusion."
+    },
+    {
+      "id": "launch-channels",
+      "name": "Launch channels",
+      "state": "gap",
+      "current_evidence": [],
+      "leadership_target": "Evidence-bounded launch packages for Show HN, Product Hunt, relevant developer communities, and release-specific announcements.",
+      "next_action": "Create reusable launch assets that lead with inspectable mechanics and honest limitations rather than headline percentages."
+    },
+    {
+      "id": "newsletters-media",
+      "name": "Newsletters, podcasts, and technical media",
+      "state": "gap",
+      "current_evidence": ["docs/distribution/targets.json"],
+      "leadership_target": "Earn recurring independent coverage by providing reproducible stories, not paid or copied announcements.",
+      "next_action": "Prepare reviewer and editor pitches around exact recovery, Context Receipts, neutral benchmarks, and local verification."
+    },
+    {
+      "id": "community-social-proof",
+      "name": "Community and social proof",
+      "state": "partial",
+      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "docs/discord.html"],
+      "leadership_target": "Visible user stories, integration contributions, benchmark reproduction reports, and responsive issue handling.",
+      "next_action": "Create structured templates for independent reviews, integration requests, case studies, and reproducibility reports."
+    },
+    {
+      "id": "release-communications",
+      "name": "Release communication and changelog visibility",
+      "state": "partial",
+      "current_evidence": ["CHANGELOG.md", "docs/RELEASE.md", ".github/workflows/"],
+      "leadership_target": "Every meaningful release has concise user-facing notes, migration guidance, trustworthy evidence, and channel-specific summaries.",
+      "next_action": "Generate release announcement drafts from a reviewed manifest and publish only after package availability is verified."
+    },
+    {
+      "id": "research-citation",
+      "name": "Research and citation metadata",
+      "state": "gap",
+      "current_evidence": [],
+      "leadership_target": "CITATION.cff, CodeMeta, stable benchmark artifact identifiers, and research-friendly methodology documentation.",
+      "next_action": "Add citation metadata and validate it against the current release and canonical repository URLs."
+    },
+    {
+      "id": "press-media-kit",
+      "name": "Press and media kit",
+      "state": "gap",
+      "current_evidence": ["docs/assets/logo.png", "docs/assets/entroly_wordmark.svg"],
+      "leadership_target": "Approved descriptions, logos, screenshots, founder/project facts, claim rules, and reproducible demo commands in one maintained location.",
+      "next_action": "Publish a repository-owned press kit without inventing company, funding, customer, or adoption claims."
+    },
+    {
+      "id": "security-trust",
+      "name": "Security, privacy, and trust visibility",
+      "state": "strong",
+      "current_evidence": ["SECURITY.md", "PRIVACY.md", "docs/limitations.md", "docs/for-teams.md", ".github/workflows/deep-dogfood.yml"],
+      "leadership_target": "The clearest privacy boundary, threat model, fail-closed behavior, recovery integrity, dependency audit, and vulnerability reporting in the category.",
+      "next_action": "Keep security claims tied to executable checks and document residual risks for proxy, MCP, local stores, and generated configuration."
+    },
+    {
+      "id": "governance-contribution",
+      "name": "Governance and contributor experience",
+      "state": "partial",
+      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "AGENTS.md"],
+      "leadership_target": "Clear contribution paths for product code, integrations, benchmarks, documentation, translations, and distribution maintenance.",
+      "next_action": "Add ownership and review requirements for externally visible metadata, integrations, benchmark adapters, and translations."
+    },
+    {
+      "id": "extension-ecosystem",
+      "name": "Extension and addon ecosystem",
+      "state": "partial",
+      "current_evidence": ["docs/product-surface.md", "entroly/plugins/", "cookbook/"],
+      "leadership_target": "A safe extension contract with discoverable community integrations, explicit permissions, version compatibility, and uninstall behavior.",
+      "next_action": "Define a signed or checksum-verifiable addon manifest before promoting a community registry."
+    },
+    {
+      "id": "distribution-observability",
+      "name": "Distribution observability and maintenance",
+      "state": "partial",
+      "current_evidence": ["docs/distribution/targets.json", "scripts/check_distribution_surface.py", "tests/test_distribution_surface.py"],
+      "leadership_target": "One dashboard and CI contract for every package, catalog, listing, docs page, launch asset, benchmark adapter, and external proof URL.",
+      "next_action": "Extend validation to the complete visibility dimension registry, launch assets, citation metadata, press kit, and stale external proofs."
+    }
+  ]
+}
