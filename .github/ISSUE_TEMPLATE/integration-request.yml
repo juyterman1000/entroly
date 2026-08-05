@@ -1,0 +1,82 @@
+name: Agent, IDE, framework, or package integration
+description: Propose or report an Entroly integration with an executable support contract.
+title: "[Integration]: "
+labels:
+  - integration
+body:
+  - type: input
+    id: target
+    attributes:
+      label: Target product or platform
+      placeholder: "Example: Claude Code, Cursor, LangChain, Nix, Scoop"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Integration type
+      options:
+        - MCP client or server catalog
+        - Coding agent or IDE
+        - Python or TypeScript framework
+        - Proxy or provider gateway
+        - Package manager or operating system
+        - Container or deployment platform
+        - Community addon or plugin
+        - Documentation or curated list
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: Official target documentation
+      placeholder: URL to the target's integration or contribution rules
+    validations:
+      required: true
+  - type: textarea
+    id: user_path
+    attributes:
+      label: Intended user journey
+      description: Installation, configuration, verification, normal use, status inspection, and uninstall or rollback.
+    validations:
+      required: true
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Permissions, data, and network boundary
+      description: Files, commands, environment variables, network access, credentials, and provider-bound data.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Required Entroly contract
+      description: Selection, compression, recovery, receipts, verification, memory, repository intelligence, proxying, or accounting.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test and conformance evidence
+      description: Clean-install smoke test, host version, commands, expected outputs, rollback test, and CI feasibility.
+    validations:
+      required: true
+  - type: textarea
+    id: maintenance
+    attributes:
+      label: Versioning and maintenance plan
+      description: Compatibility range, release updates, checksums, ownership, and what happens when the host changes.
+    validations:
+      required: true
+  - type: checkboxes
+    id: claims
+    attributes:
+      label: Claim boundaries
+      options:
+        - label: I will not mark this integration supported until the documented user journey passes.
+        - label: I will not claim package or catalog publication without a public proof URL.
+        - label: I will document uninstall or rollback behavior.
+        - label: I will distinguish local processing from provider-bound traffic.
+    validations:
+      required: true
