@@ -1,4 +1,4 @@
-name: Temporary named-tool audit
+name: Temporary neutral naming migration
 
 on:
   pull_request:
@@ -7,48 +7,59 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: neutral-naming-migration-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
-  audit:
+  migrate:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feat/distribution-control-plane'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout migration branch
+        uses: actions/checkout@v6
         with:
           ref: feat/distribution-control-plane
           fetch-depth: 0
-      - name: Enumerate current-tree references
+
+      - name: Neutralize current tree
+        run: python .github/neutralize_external_names.py
+
+      - name: Validate neutral policy and syntax
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import re
+          python scripts/check_external_name_policy.py
+          python scripts/check_distribution_surface.py
+          python -m compileall -q external_adapter benchmarks bench entroly scripts tests
 
-          root = Path('.')
-          pattern = re.compile(r'headroom|lean(?:ctx|[-_ ]ctx)', re.IGNORECASE)
-          skip = {'.git', '.venv', 'node_modules', 'target', '__pycache__'}
-          matches = 0
-          for path in sorted(p for p in root.rglob('*') if p.is_file()):
-              if any(part in skip for part in path.parts):
-                  continue
-              try:
-                  text = path.read_text(encoding='utf-8')
-              except (UnicodeDecodeError, OSError):
-                  continue
-              lines = text.splitlines()
-              for index, line in enumerate(lines, start=1):
-                  if not pattern.search(line):
-                      continue
-                  matches += 1
-                  start = max(1, index - 2)
-                  end = min(len(lines), index + 2)
-                  print(f'\n=== {path}:{index} ===')
-                  for line_number in range(start, end + 1):
-                      marker = '>' if line_number == index else ' '
-                      print(f'{marker}{line_number:6}: {lines[line_number - 1]}')
-          print(f'\nTOTAL_MATCHING_LINES={matches}')
-          if matches == 0:
-              print('No named external-tool references found.')
-          PY
+      - name: Run focused regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest \
+            tests/test_distribution_surface.py \
+            tests/test_visibility_release_sync.py \
+            tests/test_bump_version.py \
+            tests/test_recovery_resilience.py \
+            tests/test_compression_latency.py \
+            tests/test_compression_frontier.py \
+            tests/test_readme_proof.py \
+            tests/test_docs_code_sync.py -q
+
+      - name: Commit neutral tree and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyterman1000"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes required."
+            exit 0
+          fi
+          git commit -m "refactor(policy): neutralize named external products repository-wide"
+          git push origin HEAD:feat/distribution-control-plane
