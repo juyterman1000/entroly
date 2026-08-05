@@ -16,7 +16,7 @@ concurrency:
 jobs:
   migrate:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feat/distribution-control-plane'
-    runs-on: macos-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout migration branch
         uses: actions/checkout@v6
