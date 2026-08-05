@@ -39,7 +39,7 @@
       "id": "node-registry",
       "name": "Node and npm distribution",
       "state": "strong",
-      "current_evidence": ["package.json", "npm/", "server.json", ".claude-plugin/manifest.json"],
+      "current_evidence": ["entroly/npm/package.json", "entroly/npm-alias/package.json", "entroly-wasm/package.json", "server.json", ".claude-plugin/manifest.json"],
       "leadership_target": "Node, WASM, npm CLI, and MCP users receive the same core contract and current install instructions as Python users.",
       "next_action": "Keep the primary `entroly` package, MCP bridge, WASM exports, docs, and version checks aligned."
     },
@@ -55,7 +55,7 @@
       "id": "homebrew",
       "name": "Homebrew distribution",
       "state": "strong",
-      "current_evidence": ["Formula/entroly.rb", "docs/RELEASE.md"],
+      "current_evidence": ["packaging/homebrew/entroly.rb", "packaging/homebrew/README.md", "docs/RELEASE.md"],
       "leadership_target": "Release-synchronized Homebrew installation with verified source checksum and a clean-machine smoke test.",
       "next_action": "Continue deriving formula URL and checksum from the released PyPI source artifact."
     },
@@ -87,7 +87,7 @@
       "id": "agent-integration-breadth",
       "name": "Agent and IDE integration breadth",
       "state": "strong",
-      "current_evidence": ["docs/agent-integrations.html", "docs/product-surface.md", "tests/test_agent_integration_contracts.py"],
+      "current_evidence": ["docs/agent-integrations.html", "docs/product-surface.md", ".github/workflows/agent-integration-contracts.yml"],
       "leadership_target": "Every claimed integration has an explicit path, bounded support status, installation instructions, and conformance evidence.",
       "next_action": "Convert compatibility claims into executable journeys wherever the host can be installed in CI."
     },
@@ -95,7 +95,7 @@
       "id": "onboarding-experience",
       "name": "One-command onboarding and verification",
       "state": "strong",
-      "current_evidence": ["README.md", "entroly/docker_launcher_safe.py", "entroly/verify_claims.py", ".github/workflows/user-journey-trust.yml"],
+      "current_evidence": ["README.md", "entroly/docker_launcher_safe.py", "entroly/verify_claims.py"],
       "leadership_target": "A user can install, configure, verify, simulate value, inspect privacy boundaries, and undo changes without reading internal architecture docs.",
       "next_action": "Add a generated integration prompt and reversible setup summary for every supported host."
     },
@@ -142,10 +142,10 @@
     {
       "id": "independent-reviews",
       "name": "Independent hands-on reviews",
-      "state": "gap",
-      "current_evidence": ["docs/distribution/submission-kit.md"],
+      "state": "partial",
+      "current_evidence": ["docs/independent-review-program.md", ".github/ISSUE_TEMPLATE/independent-review.yml", "docs/distribution/submission-kit.md"],
       "leadership_target": "Multiple independent reviews with raw commands, pinned versions, real tasks, task outcomes, token usage, failures, recovery, and receipts.",
-      "next_action": "Launch the reviewer program and prioritize Claude Code debugging, structured-data compression, and matched-budget agent tasks."
+      "next_action": "Recruit technically independent reviewers for Claude Code debugging, structured-data compression, conversation compaction, and matched-budget agent tasks."
     },
     {
       "id": "neutral-benchmarks",
@@ -174,26 +174,26 @@
     {
       "id": "launch-channels",
       "name": "Launch channels",
-      "state": "gap",
-      "current_evidence": [],
+      "state": "partial",
+      "current_evidence": ["marketing/README.md", "marketing/launch/product-hunt.md", "marketing/launch/show-hn.md", "marketing/launch/community-and-newsletters.md"],
       "leadership_target": "Evidence-bounded launch packages for Show HN, Product Hunt, relevant developer communities, and release-specific announcements.",
-      "next_action": "Create reusable launch assets that lead with inspectable mechanics and honest limitations rather than headline percentages."
+      "next_action": "Verify the released package and publish one technical launch at a time, then record public URLs and outcomes."
     },
     {
       "id": "newsletters-media",
       "name": "Newsletters, podcasts, and technical media",
-      "state": "gap",
-      "current_evidence": ["docs/distribution/targets.json"],
+      "state": "partial",
+      "current_evidence": ["marketing/launch/community-and-newsletters.md", "docs/press-kit.md", "docs/independent-review-program.md"],
       "leadership_target": "Earn recurring independent coverage by providing reproducible stories, not paid or copied announcements.",
-      "next_action": "Prepare reviewer and editor pitches around exact recovery, Context Receipts, neutral benchmarks, and local verification."
+      "next_action": "Pitch technically relevant editors and reviewers around exact recovery, Context Receipts, neutral benchmarks, and local verification."
     },
     {
       "id": "community-social-proof",
       "name": "Community and social proof",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "docs/discord.html"],
+      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "docs/discord.html", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Visible user stories, integration contributions, benchmark reproduction reports, and responsive issue handling.",
-      "next_action": "Create structured templates for independent reviews, integration requests, case studies, and reproducibility reports."
+      "next_action": "Collect permissioned user stories and reproducibility reports while preserving failures and conflict disclosures."
     },
     {
       "id": "release-communications",
@@ -206,24 +206,24 @@
     {
       "id": "research-citation",
       "name": "Research and citation metadata",
-      "state": "gap",
-      "current_evidence": [],
+      "state": "strong",
+      "current_evidence": ["CITATION.cff", "codemeta.json", "docs/BENCHMARKS.md", "docs/independent-review-program.md"],
       "leadership_target": "CITATION.cff, CodeMeta, stable benchmark artifact identifiers, and research-friendly methodology documentation.",
-      "next_action": "Add citation metadata and validate it against the current release and canonical repository URLs."
+      "next_action": "Add citation files to the release version-synchronization contract and introduce stable artifact identifiers when a public dataset archive is created."
     },
     {
       "id": "press-media-kit",
       "name": "Press and media kit",
-      "state": "gap",
-      "current_evidence": ["docs/assets/logo.png", "docs/assets/entroly_wordmark.svg"],
-      "leadership_target": "Approved descriptions, logos, screenshots, founder/project facts, claim rules, and reproducible demo commands in one maintained location.",
-      "next_action": "Publish a repository-owned press kit without inventing company, funding, customer, or adoption claims."
+      "state": "strong",
+      "current_evidence": ["docs/press-kit.md", "docs/assets/logo.png", "docs/assets/entroly_wordmark.svg", "docs/assets/proof_local.gif"],
+      "leadership_target": "Approved descriptions, logos, screenshots, project facts, claim rules, and reproducible demo commands in one maintained location.",
+      "next_action": "Keep media assets and approved facts synchronized with releases and reject invented customer, company, funding, or adoption claims."
     },
     {
       "id": "security-trust",
       "name": "Security, privacy, and trust visibility",
       "state": "strong",
-      "current_evidence": ["SECURITY.md", "PRIVACY.md", "docs/limitations.md", "docs/for-teams.md", ".github/workflows/deep-dogfood.yml"],
+      "current_evidence": ["SECURITY.md", "PRIVACY.md", "docs/limitations.md", "docs/for-teams.md"],
       "leadership_target": "The clearest privacy boundary, threat model, fail-closed behavior, recovery integrity, dependency audit, and vulnerability reporting in the category.",
       "next_action": "Keep security claims tied to executable checks and document residual risks for proxy, MCP, local stores, and generated configuration."
     },
@@ -231,7 +231,7 @@
       "id": "governance-contribution",
       "name": "Governance and contributor experience",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "AGENTS.md"],
+      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "AGENTS.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Clear contribution paths for product code, integrations, benchmarks, documentation, translations, and distribution maintenance.",
       "next_action": "Add ownership and review requirements for externally visible metadata, integrations, benchmark adapters, and translations."
     },
@@ -239,17 +239,17 @@
       "id": "extension-ecosystem",
       "name": "Extension and addon ecosystem",
       "state": "partial",
-      "current_evidence": ["docs/product-surface.md", "entroly/plugins/", "cookbook/"],
+      "current_evidence": ["docs/product-surface.md", "cookbook/README.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "A safe extension contract with discoverable community integrations, explicit permissions, version compatibility, and uninstall behavior.",
-      "next_action": "Define a signed or checksum-verifiable addon manifest before promoting a community registry."
+      "next_action": "Define a checksum-verifiable addon manifest and explicit permission model before promoting a community registry."
     },
     {
       "id": "distribution-observability",
       "name": "Distribution observability and maintenance",
-      "state": "partial",
-      "current_evidence": ["docs/distribution/targets.json", "scripts/check_distribution_surface.py", "tests/test_distribution_surface.py"],
+      "state": "strong",
+      "current_evidence": ["docs/distribution/targets.json", "docs/distribution/visibility-dimensions.json", "scripts/check_distribution_surface.py", "tests/test_distribution_surface.py"],
       "leadership_target": "One dashboard and CI contract for every package, catalog, listing, docs page, launch asset, benchmark adapter, and external proof URL.",
-      "next_action": "Extend validation to the complete visibility dimension registry, launch assets, citation metadata, press kit, and stale external proofs."
+      "next_action": "Add periodic freshness checks for published third-party proof URLs and package-registry availability without turning transient outages into false failures."
     }
   ]
 }
