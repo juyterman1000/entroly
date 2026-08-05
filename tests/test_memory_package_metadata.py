@@ -32,6 +32,11 @@ def test_root_pyproject_exposes_memory_entrypoints() -> None:
     # against accidentally restoring the legacy Docker-first entrypoint.
     assert scripts["entroly"] == "entroly.docker_launcher_safe:launch"
     assert scripts["entroly-memory"] == "entroly.memory_cli:main"
+    assert scripts["entroly-compression-mcp"] == "entroly.compression_mcp:main"
+    assert (
+        scripts["entroly-repository-mcp"]
+        == "entroly.repository_intelligence.mcp:main"
+    )
 
 
 def test_nested_pyproject_exposes_memory_entrypoint() -> None:
@@ -39,6 +44,10 @@ def test_nested_pyproject_exposes_memory_entrypoint() -> None:
 
     assert scripts["entroly-memory"] == "entroly.memory_cli:main"
     assert scripts["entroly-compression-mcp"] == "entroly.compression_mcp:main"
+    assert (
+        scripts["entroly-repository-mcp"]
+        == "entroly.repository_intelligence.mcp:main"
+    )
 
 
 def test_root_pyproject_defines_documented_full_extra() -> None:

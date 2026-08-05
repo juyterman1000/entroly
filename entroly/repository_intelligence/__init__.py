@@ -11,17 +11,31 @@ import os
 from pathlib import Path
 
 from .graph import analyze_change_impact, localize_tests, resolve_calls, resolve_imports
-from .models import CallEdge, FileRecord, ImpactReport, RepositoryIndex, RepositoryLimits, Symbol, TestCandidate
+from .models import (
+    CallEdge,
+    FileRecord,
+    ImpactReport,
+    RepositoryIndex,
+    RepositoryLimits,
+    Symbol,
+    TestCandidate,
+)
 from .parsers import scan_repository
 
 __all__ = [
     "CallEdge", "FileRecord", "ImpactReport", "RepositoryIndex",
     "RepositoryLimits", "Symbol", "TestCandidate", "analyze_change_impact",
-    "build_repository_index", "localize_tests",
+    "build_repository_index", "localize_tests", "InvalidChangedPaths",
+    "RepositoryIntelligenceError", "RepositoryIntelligenceService",
+    "UnknownChangedPaths",
 ]
 
 
-def build_repository_index(root: str | os.PathLike[str], *, limits: RepositoryLimits | None = None) -> RepositoryIndex:
+def build_repository_index(
+    root: str | os.PathLike[str],
+    *,
+    limits: RepositoryLimits | None = None,
+) -> RepositoryIndex:
     """Build a deterministic, resource-bounded repository index."""
     policy = limits or RepositoryLimits()
     root_path = Path(root).expanduser().resolve(strict=True)
@@ -43,3 +57,11 @@ def build_repository_index(root: str | os.PathLike[str], *, limits: RepositoryLi
         file_dependencies=dependencies,
         diagnostics=tuple(sorted(dict.fromkeys(diagnostics))),
     )
+
+
+from .service import (  # noqa: E402
+    InvalidChangedPaths,
+    RepositoryIntelligenceError,
+    RepositoryIntelligenceService,
+    UnknownChangedPaths,
+)
