@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - audit/deep-dogfood-20260804
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
