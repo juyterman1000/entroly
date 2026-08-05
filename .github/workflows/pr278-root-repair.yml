@@ -1,0 +1,105 @@
+name: PR278 root repair
+
+on:
+  push:
+    branches:
+      - feat/distribution-control-plane
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr278-root-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Align distribution and honesty contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/distribution-control-plane
+          fetch-depth: 0
+
+      - name: Apply exact root-cause repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          submission_path = Path("docs/distribution/submission-kit.md")
+          submission = submission_path.read_text(encoding="utf-8")
+          old_claim = '- "zero quality loss";'
+          new_claim = (
+              "- any unconditional statement that compression cannot reduce "
+              "answer quality;"
+          )
+          if submission.count(old_claim) != 1:
+              raise SystemExit(
+                  f"expected exactly one legacy quality-claim marker, found "
+                  f"{submission.count(old_claim)}"
+              )
+          submission_path.write_text(
+              submission.replace(old_claim, new_claim), encoding="utf-8"
+          )
+
+          checker_path = Path("scripts/check_distribution_surface.py")
+          checker = checker_path.read_text(encoding="utf-8")
+          old_block = '''    for forbidden_claim in (
+              "zero quality loss",
+              "better than External Baseline",
+              "better than External Context Tool",
+          ):
+              marker = f'- "{forbidden_claim}";'
+              if marker not in submission_kit:
+                  errors.append(
+                      "submission kit must explicitly prohibit the claim "
+                      f"{forbidden_claim!r}"
+                  )
+          '''
+          new_block = '''    required_prohibitions = (
+              "any unconditional statement that compression cannot reduce answer quality;",
+              '- "better than External Baseline";',
+              '- "better than External Context Tool";',
+          )
+          for marker in required_prohibitions:
+              if marker not in submission_kit:
+                  errors.append(
+                      "submission kit is missing required prohibited-claim policy "
+                      f"{marker!r}"
+                  )
+          '''
+          if checker.count(old_block) != 1:
+              raise SystemExit(
+                  f"expected exactly one legacy checker block, found "
+                  f"{checker.count(old_block)}"
+              )
+          checker_path.write_text(
+              checker.replace(old_block, new_block), encoding="utf-8"
+          )
+          PY
+
+      - name: Remove temporary diagnostic workflows
+        run: |
+          git rm .github/workflows/pr278-pytest-diagnostic.yml
+          git rm .github/workflows/pr278-root-repair.yml
+
+      - name: Run focused contract gates
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python scripts/check_distribution_surface.py
+          python -m pytest \
+            tests/test_no_unsupported_theory_claims.py \
+            tests/test_distribution_surface.py \
+            -q
+
+      - name: Commit verified repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/distribution/submission-kit.md scripts/check_distribution_surface.py
+          git diff --cached --check
+          git commit -m "fix(distribution): align claim policy with honesty guard"
+          git push origin HEAD:feat/distribution-control-plane
