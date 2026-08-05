@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
-from scripts import bump_version
-
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "bump_version.py"
+SPEC = importlib.util.spec_from_file_location("visibility_bump_version", SCRIPT)
+assert SPEC and SPEC.loader
+bump_version = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(bump_version)
 
 
 def _project_version() -> str:
