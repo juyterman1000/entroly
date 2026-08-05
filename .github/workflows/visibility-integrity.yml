@@ -16,6 +16,7 @@ on:
       - 'pyproject.toml'
       - 'scripts/bump_version.py'
       - 'scripts/check_distribution_surface.py'
+      - 'scripts/check_external_name_policy.py'
       - 'server.json'
       - 'tests/test_distribution_surface.py'
       - 'tests/test_visibility_release_sync.py'
@@ -36,6 +37,7 @@ on:
       - 'pyproject.toml'
       - 'scripts/bump_version.py'
       - 'scripts/check_distribution_surface.py'
+      - 'scripts/check_external_name_policy.py'
       - 'server.json'
       - 'tests/test_distribution_surface.py'
       - 'tests/test_visibility_release_sync.py'
@@ -69,7 +71,9 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest
 
       - name: Validate owned visibility surface
-        run: python scripts/check_distribution_surface.py
+        run: |
+          python scripts/check_distribution_surface.py
+          python scripts/check_external_name_policy.py
 
       - name: Run visibility and release-sync tests
         run: >-
@@ -84,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -RFl 'Status: prepared, not submitted.' marketing/launch/*.md >/dev/null
-          if grep -REi '\b(beats? Headroom|beats? LeanCTX|zero quality loss|guaranteed savings)\b' marketing/launch; then
+          if grep -REi '\b(zero quality loss|guaranteed savings|best context (tool|engine|compressor))\b' marketing/launch; then
             echo '::error::Launch assets contain an unsupported claim.'
             exit 1
           fi
