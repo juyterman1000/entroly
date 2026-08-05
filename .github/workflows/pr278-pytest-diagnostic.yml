@@ -4,12 +4,15 @@ on:
   push:
     branches:
       - feat/distribution-control-plane
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr278-pytest-diagnostic-${{ github.ref }}
+  group: pr278-pytest-diagnostic-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
