@@ -1,0 +1,53 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "Entroly",
+  "version": "1.0.75",
+  "description": "Open-source, local-first Context Assurance for AI agents with budget-aware evidence selection, recoverable compression, content-addressed retrieval, Context Receipts, and evidence verification.",
+  "codeRepository": "https://github.com/juyterman1000/entroly",
+  "issueTracker": "https://github.com/juyterman1000/entroly/issues",
+  "url": "https://juyterman1000.github.io/entroly/docs/index.html",
+  "license": "https://spdx.org/licenses/Apache-2.0",
+  "datePublished": "2026-08-04",
+  "programmingLanguage": [
+    "Python",
+    "Rust",
+    "TypeScript",
+    "JavaScript"
+  ],
+  "runtimePlatform": [
+    "Python 3.10-3.14",
+    "Rust",
+    "Node.js",
+    "WebAssembly",
+    "Docker"
+  ],
+  "applicationCategory": "DeveloperApplication",
+  "keywords": [
+    "context assurance",
+    "context engineering",
+    "context compression",
+    "AI agents",
+    "MCP",
+    "recoverable compression",
+    "Context Receipts",
+    "evidence verification"
+  ],
+  "author": {
+    "@type": "Organization",
+    "name": "Entroly Contributors",
+    "url": "https://github.com/juyterman1000/entroly/graphs/contributors"
+  },
+  "maintainer": {
+    "@type": "Organization",
+    "name": "Entroly Contributors",
+    "url": "https://github.com/juyterman1000/entroly"
+  },
+  "developmentStatus": "active",
+  "isAccessibleForFree": true,
+  "downloadUrl": [
+    "https://pypi.org/project/entroly/",
+    "https://www.npmjs.com/package/entroly",
+    "https://github.com/juyterman1000/entroly/releases"
+  ]
+}
