@@ -1,0 +1,175 @@
+name: Harden PR 266 service bounds
+
+on:
+  push:
+    branches: [feat/repository-intelligence-surfaces]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/repository-intelligence-surfaces
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Enforce bounds in the shared SDK service
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('entroly/repository_intelligence/service.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''_MAX_CHANGED_PATHS = 200
+_MAX_DIAGNOSTICS = 100
+'''
+          new = '''_MAX_CHANGED_PATHS = 200
+_MAX_DIAGNOSTICS = 100
+_MAX_IMPACT_DEPTH = 12
+_MAX_IMPACT_PATHS = 5_000
+_MAX_TEST_CANDIDATES = 100
+'''
+          if text.count(old) != 1:
+              raise SystemExit('service constants anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        normalized_paths: set[str] = set()
+        invalid_count = 0
+        observed_count = 0
+        for path in changed_paths:
+'''
+          new = '''        if isinstance(changed_paths, (str, bytes, os.PathLike)):
+            raise InvalidChangedPaths(1)
+        normalized_paths: set[str] = set()
+        invalid_count = 0
+        observed_count = 0
+        for path in changed_paths:
+'''
+          if text.count(old) != 1:
+              raise SystemExit('changed-path anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        if invalid_count:
+            raise InvalidChangedPaths(invalid_count)
+        requested = tuple(sorted(normalized_paths))
+'''
+          new = '''        if observed_count == 0:
+            raise InvalidChangedPaths(0)
+        if invalid_count:
+            raise InvalidChangedPaths(invalid_count)
+        requested = tuple(sorted(normalized_paths))
+'''
+          if text.count(old) != 1:
+              raise SystemExit('empty-path anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        report = analyze_change_impact(
+            index,
+            changed,
+            max_depth=max_depth,
+            max_impacted_paths=limit,
+        )
+'''
+          new = '''        report = analyze_change_impact(
+            index,
+            changed,
+            max_depth=max(0, min(int(max_depth), _MAX_IMPACT_DEPTH)),
+            max_impacted_paths=max(1, min(int(limit), _MAX_IMPACT_PATHS)),
+        )
+'''
+          if text.count(old) != 1:
+              raise SystemExit('impact-bound anchor changed')
+          text = text.replace(old, new, 1)
+
+          old = '''        candidates = localize_tests(index, changed, limit=limit)
+'''
+          new = '''        candidates = localize_tests(
+            index,
+            changed,
+            limit=max(1, min(int(limit), _MAX_TEST_CANDIDATES)),
+        )
+'''
+          if text.count(old) != 1:
+              raise SystemExit('test-bound anchor changed')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('tests/test_repository_intelligence_service.py')
+          test_text = tests.read_text(encoding='utf-8')
+          anchor = '''def test_service_counts_input_paths_before_deduplication(tmp_path: Path) -> None:
+'''
+          additions = '''def test_service_rejects_empty_and_scalar_changed_paths(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    for changed in ([], "pkg/source.py"):
+        try:
+            service.impact(changed)
+        except InvalidChangedPaths as exc:
+            assert exc.to_dict()["error"] == "invalid_changed_paths"
+        else:
+            raise AssertionError("empty or scalar changed paths must fail visibly")
+
+
+def test_service_caps_direct_sdk_limits(tmp_path: Path, monkeypatch) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    observed = {}
+
+    class Report:
+        def to_dict(self):
+            return {"impacted_paths": []}
+
+    def fake_impact(index, changed, *, max_depth, max_impacted_paths):
+        observed["depth"] = max_depth
+        observed["impact_limit"] = max_impacted_paths
+        return Report()
+
+    def fake_tests(index, changed, *, limit):
+        observed["test_limit"] = limit
+        return []
+
+    monkeypatch.setattr(
+        "entroly.repository_intelligence.service.analyze_change_impact",
+        fake_impact,
+    )
+    monkeypatch.setattr(
+        "entroly.repository_intelligence.service.localize_tests",
+        fake_tests,
+    )
+    service.impact(["pkg/source.py"], max_depth=999, limit=999_999)
+    service.tests(["pkg/source.py"], limit=999_999)
+    assert observed == {
+        "depth": 12,
+        "impact_limit": 5_000,
+        "test_limit": 100,
+    }
+
+
+'''
+          if test_text.count(anchor) != 1:
+              raise SystemExit('test insertion anchor changed')
+          tests.write_text(test_text.replace(anchor, additions + anchor, 1), encoding='utf-8')
+          PY
+          python -m pip install -e '.[test]' ruff
+          python -m pytest -q tests/test_repository_intelligence.py tests/test_repository_intelligence_service.py tests/test_memory_package_metadata.py
+          python -m ruff check entroly/repository_intelligence tests/test_repository_intelligence_service.py tests/test_memory_package_metadata.py
+          git diff --check
+      - name: Commit hardened feature only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git rm .github/workflows/harden-pr266-service.yml
+          git add entroly/repository_intelligence/service.py tests/test_repository_intelligence_service.py
+          git diff --cached --check
+          git commit -m 'fix(repo): enforce bounded repository service inputs'
+          git push origin HEAD:feat/repository-intelligence-surfaces
