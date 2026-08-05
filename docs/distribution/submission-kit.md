@@ -206,7 +206,7 @@ Do not write any of the following without a directly linked, current,
 workload-specific artifact and caveat:
 
 - "up to 90% fewer tokens";
-- "zero quality loss";
+- "any unconditional statement that compression cannot reduce answer quality";
 - "better than External Baseline";
 - "better than External Context Tool";
 - "production proven";

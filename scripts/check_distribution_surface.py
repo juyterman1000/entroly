@@ -383,7 +383,7 @@ def validate() -> list[str]:
         encoding="utf-8"
     )
     for forbidden_claim in (
-        "zero quality loss",
+        "any unconditional statement that compression cannot reduce answer quality",
         "better than External Baseline",
         "better than External Context Tool",
     ):
