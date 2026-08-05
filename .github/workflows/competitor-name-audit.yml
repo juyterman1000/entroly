@@ -27,6 +27,30 @@ jobs:
       - name: Neutralize current tree
         run: python .github/neutralize_external_names.py
 
+      - name: Refresh derived neutral artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          localization = Path("docs/localization/README.md")
+          text = localization.read_text(encoding="utf-8")
+          text = text.replace(
+              "cannot satisfy the review\nrequirement by itself",
+              "cannot satisfy the review requirement by itself",
+          )
+          localization.write_text(text, encoding="utf-8")
+
+          from benchmarks.compression_frontier import render_markdown
+
+          result_path = Path("benchmarks/results/compression_frontier.json")
+          markdown_path = Path("benchmarks/results/compression_frontier.md")
+          report = json.loads(result_path.read_text(encoding="utf-8"))
+          markdown_path.write_text(render_markdown(report), encoding="utf-8")
+          PY
+
       - name: Validate neutral policy and syntax
         shell: bash
         run: |
