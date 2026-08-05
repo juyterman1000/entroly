@@ -15,6 +15,9 @@ from .models import RepositoryIndex, RepositoryLimits, normalize_relative
 SERVICE_SCHEMA_VERSION = "entroly.repository-service.v1"
 _MAX_CHANGED_PATHS = 200
 _MAX_DIAGNOSTICS = 100
+_MAX_IMPACT_DEPTH = 12
+_MAX_IMPACT_PATHS = 5_000
+_MAX_TEST_CANDIDATES = 100
 
 
 class RepositoryIntelligenceError(ValueError):
@@ -192,6 +195,8 @@ class RepositoryIntelligenceService:
         index: RepositoryIndex,
         changed_paths: Iterable[str],
     ) -> tuple[str, ...]:
+        if isinstance(changed_paths, (str, bytes, os.PathLike)):
+            raise InvalidChangedPaths(1)
         normalized_paths: set[str] = set()
         invalid_count = 0
         observed_count = 0
@@ -206,6 +211,8 @@ class RepositoryIntelligenceService:
                 invalid_count += 1
             else:
                 normalized_paths.add(normalized)
+        if observed_count == 0:
+            raise InvalidChangedPaths(0)
         if invalid_count:
             raise InvalidChangedPaths(invalid_count)
         requested = tuple(sorted(normalized_paths))
@@ -226,8 +233,8 @@ class RepositoryIntelligenceService:
         report = analyze_change_impact(
             index,
             changed,
-            max_depth=max_depth,
-            max_impacted_paths=limit,
+            max_depth=max(0, min(int(max_depth), _MAX_IMPACT_DEPTH)),
+            max_impacted_paths=max(1, min(int(limit), _MAX_IMPACT_PATHS)),
         )
         return {
             "schema_version": SERVICE_SCHEMA_VERSION,
@@ -244,7 +251,11 @@ class RepositoryIntelligenceService:
     ) -> dict[str, object]:
         index, digest, generation = self._snapshot()
         changed = self._changed(index, changed_paths)
-        candidates = localize_tests(index, changed, limit=limit)
+        candidates = localize_tests(
+            index,
+            changed,
+            limit=max(1, min(int(limit), _MAX_TEST_CANDIDATES)),
+        )
         return {
             "schema_version": SERVICE_SCHEMA_VERSION,
             "index_digest": digest,
