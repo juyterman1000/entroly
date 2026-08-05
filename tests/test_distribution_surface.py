@@ -122,3 +122,49 @@ def test_research_metadata_tracks_release_version() -> None:
     assert f"version: {project_version}" in citation
     assert codemeta["version"] == project_version
     assert codemeta["codeRepository"] == "https://github.com/juyterman1000/entroly"
+
+
+def test_expanded_visibility_assets_are_owned_and_present() -> None:
+    required = (
+        ".github/CODEOWNERS",
+        ".github/workflows/visibility-integrity.yml",
+        "docs/choosing-context-assurance.md",
+        "docs/localization/README.md",
+        "marketing/release-announcement-template.md",
+    )
+    for relative in required:
+        assert (ROOT / relative).is_file(), relative
+
+    codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    for protected_path in (
+        "/docs/distribution/",
+        "/docs/press-kit.md",
+        "/docs/choosing-context-assurance.md",
+        "/docs/localization/",
+        "/marketing/",
+        "/CITATION.cff",
+        "/codemeta.json",
+        "/scripts/check_distribution_surface.py",
+    ):
+        assert protected_path in codeowners
+
+
+def test_release_announcement_template_is_fail_closed() -> None:
+    template = (ROOT / "marketing/release-announcement-template.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Status: template, not a published release announcement." in template
+    assert "after the coordinated release workflow verifies" in template
+    assert "Do not hide a known regression" in template
+    assert "Version is synchronized in citation metadata" in template
+
+
+def test_localization_contract_requires_human_and_technical_review() -> None:
+    localization = (ROOT / "docs/localization/README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "one language reviewer and one Entroly technical reviewer" in localization
+    assert "Draft pages must not be indexed" in localization
+    assert "cannot satisfy the review requirement by itself" in localization
