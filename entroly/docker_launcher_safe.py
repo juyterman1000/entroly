@@ -209,11 +209,13 @@ def _routing_check(argv: list[str]) -> None:
     args = parser.parse_args(argv)
 
     from .proxy_config import ProxyConfig
+    from .proxy_routing_official_guard import validate_official_routing_boundary
     from .proxy_routing_safety import validate_routing_environment
 
     proxy_config = ProxyConfig.from_env()
     proxy_config.host = args.host
     config = validate_routing_environment(proxy_config=proxy_config, host=args.host)
+    config = validate_official_routing_boundary(config)
     print(json.dumps(config.public_summary(), indent=2, sort_keys=True))
 
 
