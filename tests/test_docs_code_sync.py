@@ -32,7 +32,7 @@ DOC_FILES = [
 
 # Commands entroly routes to a local handler *before* argparse (so they do not
 # appear in ``entroly --help``), but are real, shipped, and documented.
-ROUTED_COMMANDS = frozenset({"memory"})
+ROUTED_COMMANDS = frozenset({"memory", "routing"})
 
 # `uvx --from entroly entroly` names the package then the console script; the
 # token after `entroly ` there is the command name itself, not a subcommand.
