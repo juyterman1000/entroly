@@ -21,7 +21,8 @@ from typing import Any
 # independent of HTTP extras while protecting every live proxy construction path.
 # Import order is a security and observability contract:
 #   bounded transport -> final transport -> control-plane audit -> access guard
-#   -> gateway shadow -> routing authority -> routing deployment safety.
+#   -> gateway shadow -> routing authority -> routing deployment safety
+#   -> official API execution guard.
 from . import proxy as _proxy
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
@@ -29,6 +30,7 @@ from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: F40
 from . import proxy_access_security as _proxy_access_security
 from . import proxy_gateway_shadow as _proxy_gateway_shadow
 from . import proxy_routing_authority as _proxy_routing_authority
+from . import proxy_routing_official_guard as _proxy_routing_official_guard
 from . import proxy_routing_safety as _proxy_routing_safety
 from .compression_proxy import compress_proxy_payload_from_env
 
@@ -76,7 +78,12 @@ def _install_gateway_sidecar_factory_seam() -> None:
             proxy_config=proxy_config,
             host=str(getattr(proxy_config, "host", "127.0.0.1")),
         )
-        _proxy_routing_safety.install_routing_safety()
+        safety_config = (
+            _proxy_routing_official_guard.validate_official_routing_boundary(
+                safety_config
+            )
+        )
+        _proxy_routing_official_guard.install_official_routing_guard()
 
         app = original(*args, **kwargs)
         proxy = getattr(getattr(app, "state", None), "proxy", None)
@@ -92,6 +99,7 @@ def _install_gateway_sidecar_factory_seam() -> None:
     gateway_inner_factory.__entroly_gateway_shadow_original__ = original
     gateway_inner_factory.__entroly_routing_authority_original__ = original
     gateway_inner_factory.__entroly_routing_safety_original__ = original
+    gateway_inner_factory.__entroly_official_routing_guard_original__ = original
     _proxy_access_security._ORIGINAL_CREATE_PROXY_APP = gateway_inner_factory
     _proxy.create_proxy_app = _proxy_access_security.create_proxy_app
 
