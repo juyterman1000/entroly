@@ -26,6 +26,11 @@ from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: F40
 from . import proxy_access_security as _proxy_access_security  # noqa: F401
 from .proxy import create_proxy_app
 from .proxy_config import ProxyConfig
+from .proxy_routing_safety import (
+    configure_proxy_routing_safety,
+    install_routing_safety,
+    validate_routing_environment,
+)
 from .server import EntrolyEngine, _start_background_services
 
 logger = logging.getLogger("entroly.container_proxy")
@@ -94,6 +99,14 @@ def main() -> None:
     config.port = _validated_port(os.environ.get("ENTROLY_PROXY_PORT", config.port))
     dashboard_enabled = _env_flag("ENTROLY_PROXY_DASHBOARD", default=False)
 
+    # Validate the entire routing deployment contract before constructing the
+    # engine, indexing the repository, or starting any background thread.
+    routing_safety = validate_routing_environment(
+        proxy_config=config,
+        host=config.host,
+    )
+    install_routing_safety()
+
     engine = EntrolyEngine()
     checkpoint = _checkpoint_once(engine)
     atexit.register(checkpoint)
@@ -114,7 +127,21 @@ def main() -> None:
         start_dashboard=dashboard_enabled,
         start_autotune=False,
     )
+    proxy = getattr(getattr(app, "state", None), "proxy", None)
+    if proxy is not None:
+        configure_proxy_routing_safety(proxy, routing_safety)
+
     _start_background_services(engine)
+    if routing_safety.enabled:
+        logger.info(
+            "Routing authority %s: providers=%s models=%d origins=%d pricing=%s loopback_only=%s",
+            routing_safety.mode.upper(),
+            ",".join(sorted(routing_safety.allowed_providers)),
+            len(routing_safety.allowed_models),
+            len(routing_safety.allowed_origins),
+            routing_safety.pricing_catalog_name or "not-required-in-observe",
+            routing_safety.loopback_only,
+        )
     logger.info(
         "Starting hardened Entroly proxy on %s:%d",
         config.host,
