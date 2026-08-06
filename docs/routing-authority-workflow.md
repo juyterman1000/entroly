@@ -7,7 +7,7 @@ same-provider authorization.
 
 The feature is disabled by default. The public workflow is:
 
-1. **Observe** validated proposals without changing the model.
+1. **Observe** proposals without changing the model.
 2. **Inspect** bounded routing receipts and denial reasons.
 3. **Execute** only after the operator supplies exact provider, origin, model,
    pricing, and credential-authorization controls.
@@ -21,15 +21,23 @@ For each live proxy request:
 3. RAVS proposes at most one model change.
 4. Existing cache economics may reject the proposal.
 5. The deployment safety boundary verifies:
+   - exactly one provider authority is configured per proxy process;
    - the proxy is loopback-only in execute mode;
-   - exactly authorized providers and model IDs are used;
+   - exact provider and model allowlists are used;
    - the upstream origin is pinned;
    - execute mode uses the official provider API origin;
    - the pricing catalog is absolute, present, valid JSON, bounded in size,
      not world-writable, and complete for every allowlisted model;
    - the operator acknowledged use of an authorized official API credential;
    - RAVS is enabled and no competing escalation authority is active.
-6. `RoutingAuthorityCoordinator` verifies:
+6. The official execution guard verifies:
+   - a provider-specific API-key header or non-empty Bearer credential is present;
+   - only a presence signal is retained, never credential content;
+   - source, proxy, and target use the selected provider authority;
+   - model registry records are exact;
+   - canonical model IDs use the official provider namespace (`openai/`,
+     `anthropic/`, or `google/`), not merely a compatible wire format.
+7. `RoutingAuthorityCoordinator` verifies:
    - source and target remain on the detected provider transport;
    - source and target resolve to the same registry provider;
    - target metadata is exact and sufficiently trusted;
@@ -39,11 +47,11 @@ For each live proxy request:
    - the target has lower estimated uncached cost;
    - `GatewayControlPlane` produces the same executable target;
    - no previous model mutation occurred for the request.
-7. The existing provider adapter performs the sole model rewrite.
-8. Existing provider transport, streaming, usage parsing, and spend accounting
+8. The existing provider adapter performs the sole model rewrite.
+9. Existing provider transport, streaming, usage parsing, and spend accounting
    continue unchanged.
-9. A bounded receipt records execution or denial without prompt or credential
-   content.
+10. A bounded receipt records execution or denial without prompt or credential
+    content. Preflight denials are registered as proposals exactly once.
 
 Any missing or conflicting evidence keeps the original model.
 
@@ -75,8 +83,20 @@ entroly proxy \
   --provider gemini
 ```
 
-Observe mode never changes the requested model. It pins the provider origin and
-records why a proposal would have been executed or denied.
+Observe mode never changes the requested model. It pins the selected provider
+origin and records why a proposal was denied. Entroly deliberately does not ship
+a silently changing provider-price table. Without a pricing catalog, economic
+proposals remain denied with `auditable_pricing_required`.
+
+To observe complete cost eligibility, provide the same operator-verified catalog
+that would be required for execution:
+
+```bash
+entroly proxy \
+  --routing observe \
+  --provider openai \
+  --pricing-catalog /absolute/path/to/pricing.json
+```
 
 ### 2. Inspect evidence
 
@@ -93,7 +113,7 @@ http://127.0.0.1:9377/routing-authority
 Receipts include provider/model identifiers, pricing provenance and digest,
 estimated source/target cost, capability requirements, gateway-plan evidence,
 and the final execution or denial reason. They exclude prompts, authorization
-values, API keys, and raw request IDs.
+values, API keys, full pricing paths, and raw request IDs.
 
 ### 3. Prepare pricing
 
@@ -102,24 +122,24 @@ model:
 
 ```json
 {
-  "source": "operator-verified-2026-08-06",
+  "source": "operator-verified-date",
   "models": {
-    "openai:gpt-4o": {
-      "input_per_million": 10.0,
-      "output_per_million": 30.0,
-      "cache_read_per_million": 5.0
+    "openai:SOURCE_MODEL": {
+      "input_per_million": 0.0,
+      "output_per_million": 0.0,
+      "cache_read_per_million": 0.0
     },
-    "openai:gpt-4o-mini": {
-      "input_per_million": 0.15,
-      "output_per_million": 0.60,
-      "cache_read_per_million": 0.075
+    "openai:TARGET_MODEL": {
+      "input_per_million": 0.0,
+      "output_per_million": 0.0,
+      "cache_read_per_million": 0.0
     }
   }
 }
 ```
 
-The values above are an illustrative schema, not a current pricing claim. The
-operator must use provider-published prices applicable to their account.
+This is a schema example, not a pricing claim. Replace every placeholder and
+zero with provider-published prices applicable to the operator's account.
 
 ### 4. Enable execution explicitly
 
@@ -127,17 +147,18 @@ operator must use provider-published prices applicable to their account.
 entroly proxy \
   --routing execute \
   --provider openai \
-  --allow-model gpt-4o \
-  --allow-model gpt-4o-mini \
+  --allow-model SOURCE_MODEL \
+  --allow-model TARGET_MODEL \
   --pricing-catalog /absolute/path/to/pricing.json \
   --ack-authorized-api
 ```
 
 The acknowledgement means the operator is using an official API credential they
-or their organization is authorized to use. Entroly does not inspect, persist,
-or copy the credential into receipts.
+or their organization is authorized to use. Entroly validates credential
+presence without persisting or copying the credential into receipts.
 
-Before starting the proxy, validate an environment-based deployment with:
+Before starting an environment-based deployment, run the same complete startup
+validation used by the proxy:
 
 ```bash
 entroly routing check
@@ -160,7 +181,7 @@ Execute mode additionally requires:
 
 ```bash
 export ENTROLY_ROUTING_AUTHORITY_MODE=execute
-export ENTROLY_ROUTING_AUTHORITY_ALLOWED_MODELS=openai:gpt-4o,openai:gpt-4o-mini
+export ENTROLY_ROUTING_AUTHORITY_ALLOWED_MODELS=openai:SOURCE_MODEL,openai:TARGET_MODEL
 export ENTROLY_PRICING_CATALOG=/absolute/path/to/pricing.json
 export ENTROLY_ROUTING_AUTHORITY_REQUIRE_PRICING=1
 export ENTROLY_ROUTING_AUTHORITY_ACK=authorized-official-api
@@ -172,6 +193,7 @@ entroly serve --proxy
 
 Execute mode refuses to start when any of these conditions is true:
 
+- more or fewer than one provider authority is configured;
 - the bind host is not loopback;
 - no provider or upstream-origin pin is configured;
 - the configured proxy base origin differs from the pin;
@@ -188,8 +210,10 @@ Execute mode refuses to start when any of these conditions is true:
 
 Even after startup, the original model remains unchanged when:
 
-- the source, target, or proxy provider is not allowlisted;
+- the required official API credential header is absent or malformed;
+- the source, target, or proxy provider differs from the selected authority;
 - the source or target model is not allowlisted;
+- a model resolves only by prefix or outside the official provider namespace;
 - the request upstream does not match the pinned origin;
 - provider, registry, capability, context-budget, pricing, or gateway evidence
   fails;
