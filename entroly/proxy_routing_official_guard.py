@@ -1,13 +1,14 @@
 """Final official-API execution guard for safe model routing.
 
-This guard sits outside the generic deployment-safety layer. It closes three
-execution-specific gaps that matter when Entroly is allowed to mutate a live
-provider request:
+This guard sits outside the generic deployment-safety layer. It closes four
+execution-specific gaps that matter when Entroly may mutate a live provider
+request:
 
 * exactly one provider authority is permitted per proxy process;
-* an official provider-specific API credential header must be present;
-* model-registry provider identity must match the pinned official provider,
-  even when another service uses an OpenAI-compatible wire format.
+* an official provider-specific API credential header must be meaningful;
+* model-registry provider identity must match the pinned official provider;
+* the canonical registry namespace must identify the official provider, even
+  when another service uses an OpenAI-compatible wire format.
 
 It also guarantees that a preflight denial becomes a bounded routing proposal
 receipt. The inner routing coordinator normally increments the proposal counter,
@@ -39,8 +40,14 @@ _REQUIRED_AUTH_HEADERS = {
     "anthropic": frozenset({"x-api-key", "authorization"}),
     "gemini": frozenset({"x-goog-api-key", "authorization"}),
 }
+_OFFICIAL_MODEL_NAMESPACES = {
+    "openai": "openai/",
+    "anthropic": "anthropic/",
+    "gemini": "google/",
+}
 _INSTALLED = False
 _ORIGINAL_AUTHORIZE = None
+_ORIGINAL_SAFE_REQUEST_HEADERS = None
 
 
 def validate_official_routing_boundary(
@@ -85,12 +92,16 @@ def _prepare_audit_context(
     return source_provider, source_model
 
 
-def _registry_provider(model: str) -> tuple[str, bool]:
+def _registry_identity(model: str) -> tuple[str, str, bool]:
     resolution = resolve_model(model)
     capability = resolution.capability
     if capability is None:
-        return "", bool(resolution.exact)
-    return str(capability.provider).strip().casefold(), bool(resolution.exact)
+        return "", str(resolution.model_id).strip().casefold(), bool(resolution.exact)
+    return (
+        str(capability.provider).strip().casefold(),
+        str(capability.id).strip().casefold(),
+        bool(resolution.exact),
+    )
 
 
 def _enforce_official_execution(
@@ -102,16 +113,13 @@ def _enforce_official_execution(
     body: Mapping[str, Any],
     url: str,
 ) -> None:
-    del url  # The inner deployment-safety layer enforces the exact pinned origin.
+    del body, url  # Inner safety enforces exact model allowlists and pinned origin.
     config = getattr(context.proxy, "_routing_safety_config", None)
     if not isinstance(config, RoutingSafetyConfig) or config.mode != "execute":
         return
 
-    source_provider, source_model = _prepare_audit_context(
-        context,
-        target=target,
-        body=body,
-    )
+    source_provider = context.source_provider
+    source_model = context.source_model
     selected_provider = next(iter(config.allowed_providers))
     if source_provider != selected_provider:
         coordinator._deny(context, "source_provider_not_selected_authority")
@@ -124,8 +132,12 @@ def _enforce_official_execution(
     if not any(name in context.headers for name in required_headers):
         coordinator._deny(context, "official_api_credential_missing")
 
-    source_registry_provider, source_exact = _registry_provider(source_model)
-    target_registry_provider, target_exact = _registry_provider(str(target.model))
+    source_registry_provider, source_registry_id, source_exact = _registry_identity(
+        source_model
+    )
+    target_registry_provider, target_registry_id, target_exact = _registry_identity(
+        str(target.model)
+    )
     if not source_exact:
         coordinator._deny(context, "source_model_not_exact")
     if not target_exact:
@@ -141,15 +153,54 @@ def _enforce_official_execution(
             "target_registry_provider_not_selected_authority",
         )
 
+    namespace = _OFFICIAL_MODEL_NAMESPACES[selected_provider]
+    if not source_registry_id.startswith(namespace):
+        coordinator._deny(
+            context,
+            "source_model_not_official_provider_namespace",
+        )
+    if not target_registry_id.startswith(namespace):
+        coordinator._deny(
+            context,
+            "target_model_not_official_provider_namespace",
+        )
+
+
+def _meaningful_bearer(value: str | None) -> bool:
+    normalized = str(value or "").strip()
+    scheme, separator, credential = normalized.partition(" ")
+    return (
+        scheme.casefold() == "bearer"
+        and bool(separator)
+        and bool(credential.strip())
+    )
+
 
 def install_official_routing_guard() -> None:
     """Install the outer guard after generic routing safety, idempotently."""
-    global _INSTALLED, _ORIGINAL_AUTHORIZE
+    global _INSTALLED, _ORIGINAL_AUTHORIZE, _ORIGINAL_SAFE_REQUEST_HEADERS
     if _INSTALLED:
         return
 
+    from . import proxy_routing_authority as authority
+
     install_routing_safety()
     _ORIGINAL_AUTHORIZE = RoutingAuthorityCoordinator.authorize
+    _ORIGINAL_SAFE_REQUEST_HEADERS = authority._safe_request_headers
+
+    def strict_safe_request_headers(request: Any) -> dict[str, str]:
+        result = _ORIGINAL_SAFE_REQUEST_HEADERS(request)
+        authorization = request.headers.get("authorization")
+        if authorization is not None:
+            if _meaningful_bearer(authorization):
+                result["authorization"] = "present"
+            else:
+                result.pop("authorization", None)
+        for name in ("x-api-key", "x-goog-api-key"):
+            value = request.headers.get(name)
+            if value is not None and not str(value).strip():
+                result.pop(name, None)
+        return result
 
     def official_authorize(
         self: RoutingAuthorityCoordinator,
@@ -161,9 +212,9 @@ def install_official_routing_guard() -> None:
         body = kwargs["body"]
         url = kwargs["url"]
         config = getattr(context.proxy, "_routing_safety_config", None)
-        if isinstance(config, RoutingSafetyConfig) and config.enabled:
-            _prepare_audit_context(context, target=target, body=body)
         try:
+            if isinstance(config, RoutingSafetyConfig) and config.enabled:
+                _prepare_audit_context(context, target=target, body=body)
             _enforce_official_execution(
                 self,
                 context,
@@ -181,9 +232,13 @@ def install_official_routing_guard() -> None:
                 self.ledger.register_proposal()
             raise
 
+    strict_safe_request_headers.__entroly_official_guard_original__ = (
+        _ORIGINAL_SAFE_REQUEST_HEADERS
+    )
     official_authorize.__entroly_official_routing_guard_original__ = (
         _ORIGINAL_AUTHORIZE
     )
+    authority._safe_request_headers = strict_safe_request_headers
     RoutingAuthorityCoordinator.authorize = official_authorize
     _INSTALLED = True
 
