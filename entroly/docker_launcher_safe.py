@@ -116,7 +116,12 @@ def _canonical_models(provider: str, values: list[str]) -> list[str]:
 
 def _apply_proxy_cli_overrides(argv: list[str]) -> None:
     """Translate the documented native proxy CLI surface into validated env config."""
-    args = _routing_parser().parse_args(_proxy_arguments(argv))
+    try:
+        args = _routing_parser().parse_args(_proxy_arguments(argv))
+    except SystemExit as exc:
+        if exc.code == 0:
+            raise
+        raise ValueError("unsupported or incomplete proxy argument") from exc
     if args.port is not None:
         os.environ["ENTROLY_PROXY_PORT"] = str(args.port)
     if args.host is not None:
