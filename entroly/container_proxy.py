@@ -26,9 +26,12 @@ from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: F40
 from . import proxy_access_security as _proxy_access_security  # noqa: F401
 from .proxy import create_proxy_app
 from .proxy_config import ProxyConfig
+from .proxy_routing_official_guard import (
+    install_official_routing_guard,
+    validate_official_routing_boundary,
+)
 from .proxy_routing_safety import (
     configure_proxy_routing_safety,
-    install_routing_safety,
     validate_routing_environment,
 )
 from .server import EntrolyEngine, _start_background_services
@@ -105,7 +108,8 @@ def main() -> None:
         proxy_config=config,
         host=config.host,
     )
-    install_routing_safety()
+    routing_safety = validate_official_routing_boundary(routing_safety)
+    install_official_routing_guard()
 
     engine = EntrolyEngine()
     checkpoint = _checkpoint_once(engine)
