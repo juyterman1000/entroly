@@ -57,7 +57,6 @@ def validate_official_routing_boundary(
 def _prepare_audit_context(
     context: RoutingRequestContext,
     *,
-    provider: str,
     target: Any,
     body: Mapping[str, Any],
 ) -> tuple[str, str]:
@@ -110,7 +109,6 @@ def _enforce_official_execution(
 
     source_provider, source_model = _prepare_audit_context(
         context,
-        provider=provider,
         target=target,
         body=body,
     )
@@ -158,11 +156,22 @@ def install_official_routing_guard() -> None:
         context: RoutingRequestContext,
         **kwargs: Any,
     ):
+        provider = kwargs["provider"]
+        target = kwargs["target"]
+        body = kwargs["body"]
+        url = kwargs["url"]
         config = getattr(context.proxy, "_routing_safety_config", None)
         if isinstance(config, RoutingSafetyConfig) and config.enabled:
-            _prepare_audit_context(context, **kwargs)
+            _prepare_audit_context(context, target=target, body=body)
         try:
-            _enforce_official_execution(self, context, **kwargs)
+            _enforce_official_execution(
+                self,
+                context,
+                provider=provider,
+                target=target,
+                body=body,
+                url=url,
+            )
             return _ORIGINAL_AUTHORIZE(self, context, **kwargs)
         except RoutingAuthorityDenied:
             # Inner authority increments before its own denials. Preflight guards
