@@ -303,9 +303,10 @@ def validate_routing_environment(
             "ENTROLY_ROUTING_AUTHORITY_MODE must be observe or execute"
         )
 
-    provider_values = tuple(value.casefold() for value in _csv(
-        "ENTROLY_ROUTING_AUTHORITY_ALLOWED_PROVIDERS"
-    ))
+    provider_values = tuple(
+        value.casefold()
+        for value in _csv("ENTROLY_ROUTING_AUTHORITY_ALLOWED_PROVIDERS")
+    )
     unknown = sorted(set(provider_values) - _SUPPORTED_PROVIDERS)
     if unknown:
         raise RoutingSafetyConfigurationError(
