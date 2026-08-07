@@ -429,6 +429,132 @@ def _columnar_json(
     return json.dumps(payload, indent=2, ensure_ascii=True)
 
 
+#: Minimum group size before a template is worth emitting. Below this the
+#: template line plus its value columns costs more than the raw lines.
+_LOG_MIN_GROUP = 4
+
+#: Runs this treats as varying slots. Digits cover counters, ids, durations and
+#: status codes; hex covers request ids and short digests.
+_LOG_SLOT = re.compile(r"\b(?:0[xX][0-9a-fA-F]{4,}|[0-9]+(?:\.[0-9]+)?)\b")
+
+
+def _log_slots(line: str) -> tuple[str, tuple[str, ...]]:
+    """Split a line into its invariant template and its varying values.
+
+    The existing ``_log_template`` masks only the final numeric run, so two
+    lines differing anywhere earlier never share a template. Measured on 400
+    templated lines that produced 0% reduction, while 400 *identical* lines
+    reduced 100% -- the codec collapses duplicates, and real logs are templated
+    rather than duplicated.
+
+    Masking every numeric run instead makes those lines group, and the values
+    are not discarded: they are returned so the caller can keep them verbatim.
+    That is what separates this from the aggressive collapsing that once merged
+    ``code 402`` with ``code 500`` -- the template is shared, the values are
+    not.
+    """
+    values: list[str] = []
+
+    def take(match: re.Match[str]) -> str:
+        values.append(match.group(0))
+        return "\x00"
+
+    return _LOG_SLOT.sub(take, line), tuple(values)
+
+
+def _template_factored_log(
+    text: str,
+    is_critical: Callable[[str], bool],
+) -> str | None:
+    """Emit each repeated template once, with its values kept verbatim.
+
+    Lines matching the critical pattern are never templated: an error or
+    traceback is the reason someone is reading the log, and it stays exactly as
+    written. Everything else is grouped by template; groups at or above
+    ``_LOG_MIN_GROUP`` collapse to one template line plus per-slot value lists,
+    and smaller groups stay verbatim because collapsing them would cost more
+    than it saves.
+
+    Returns None when nothing groups, so the caller keeps today's behaviour.
+    """
+    lines = text.splitlines()
+    if len(lines) < _LOG_MIN_GROUP:
+        return None
+
+    order: list[str] = []
+    groups: dict[str, list[tuple[int, tuple[str, ...]]]] = {}
+    verbatim: dict[int, str] = {}
+
+    for index, line in enumerate(lines):
+        if not line.strip() or is_critical(line):
+            verbatim[index] = line
+            continue
+        template, values = _log_slots(line)
+        if not values:
+            verbatim[index] = line
+            continue
+        if template not in groups:
+            groups[template] = []
+            order.append(template)
+        groups[template].append((index, values))
+
+    collapsible = {t: g for t, g in groups.items() if len(g) >= _LOG_MIN_GROUP}
+    if not collapsible:
+        return None
+
+    for template, entries in groups.items():
+        if template not in collapsible:
+            for index, values in entries:
+                verbatim[index] = _restore(template, values)
+
+    out: list[str] = []
+    emitted: set[str] = set()
+    for index in range(len(lines)):
+        if index in verbatim:
+            out.append(verbatim[index])
+            continue
+        template, _ = _log_slots(lines[index])
+        if template in emitted:
+            continue
+        emitted.add(template)
+        entries = collapsible[template]
+        out.append(f"[x{len(entries)}] {template.replace(chr(0), '{}')}")
+        slot_count = len(entries[0][1])
+        for slot in range(slot_count):
+            column = [values[slot] for _, values in entries]
+            out.append(f"    {{{slot}}}: {','.join(column)}")
+
+    rendered = "\n".join(out)
+    return rendered if len(rendered) < len(text) else None
+
+
+def _restore(template: str, values: tuple[str, ...]) -> str:
+    parts = template.split("\x00")
+    rebuilt = parts[0]
+    for value, part in zip(values, parts[1:]):
+        rebuilt += value + part
+    return rebuilt
+
+
+def _log_values_preserved(rendered: str, text: str, is_critical) -> bool:
+    """Every value the source carried must still appear in the rendering.
+
+    A template that dropped a status code would be indistinguishable from one
+    that kept it, if the check only compared templates. Comparing the value
+    multiset is what stops ``code 402`` and ``code 500`` collapsing into one.
+    """
+    source_values = Counter(
+        value
+        for line in text.splitlines()
+        if line.strip() and not is_critical(line)
+        for value in _log_slots(line)[1]
+    )
+    if not source_values:
+        return True
+    present = Counter(_LOG_SLOT.findall(rendered))
+    return all(present.get(value, 0) >= count for value, count in source_values.items())
+
+
 def _columnar_preserves_columns(
     columnar: str,
     data: Any,
@@ -546,6 +672,48 @@ class LogCodec:
             version=self.version,
         )
         reps = [full]
+
+        # Template-factored form, offered before the duplicate collapse below,
+        # which returns early when it cannot shrink the text. That happens on
+        # ordinary logs: _log_template masks only the final numeric run, so two
+        # lines differing anywhere earlier never share a template. Measured on
+        # 400 templated lines it produced 0%, while 400 *identical* lines
+        # produced 100% -- it collapses duplicates, and real logs are templated
+        # rather than duplicated.
+        #
+        # Masking every numeric run makes those lines group, and the values are
+        # kept verbatim in per-slot columns rather than discarded, so `code 402`
+        # and `code 500` remain distinct. _log_values_preserved checks that as a
+        # multiset before the representation is offered.
+        factored = _template_factored_log(text, lambda ln: bool(self._CRITICAL.search(ln)))
+        if factored is not None and _log_values_preserved(
+            factored, text, lambda ln: bool(self._CRITICAL.search(ln))
+        ):
+            reps.append(
+                Representation(
+                    representation_id=f"{source_id}#log.templated",
+                    source_id=source_id,
+                    content_type="log",
+                    text=factored,
+                    token_cost=estimate_tokens(factored),
+                    codec=self.name,
+                    codec_version=self.version,
+                    source_sha256=content_digest(text),
+                    protected_evidence=_protected_log_lines(
+                        text, _log_template, _strip_log_prefix, self._CRITICAL
+                    ),
+                    distortion_risk=1.0 - (len(factored) / max(len(text), 1)),
+                    recovery=self.store.put(
+                        text,
+                        item_count=len(text.splitlines()),
+                        note=(
+                            f"complete original log for {source_id or 'log'} "
+                            "(templated form kept every value verbatim)"
+                        ),
+                    ),
+                )
+            )
+
         collapsed = _compress_log_universal(text)
         if not collapsed or len(collapsed) >= len(text):
             return reps
