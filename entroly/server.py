@@ -85,24 +85,16 @@ from .verification_engine import VerificationEngine
 # path instead of producing selections under a version nobody declared
 # compatible.
 try:
-    from entroly_core import EntrolyEngine as RustEngine
-    from entroly_core import py_analyze_query, py_refine_heuristic
+    from .native_status import usable_core as _usable_core
 
-    from .native_status import native_status as _native_status
-
-    _core_status = _native_status()
-    if _core_status.version_ok is False:
-        # `logger` is not bound until later in this module.
-        logging.getLogger("entroly").warning(
-            "entroly_core %s is below the minimum this release requires; "
-            "using the pure-Python engine instead. Rebuild with "
-            "`cd entroly-core && maturin develop --release` to restore "
-            "native acceleration.",
-            _core_status.version,
-        )
-        raise ImportError("entroly_core below minimum supported version")
+    _core = _usable_core()
+    if _core is None:
+        raise ImportError("entroly_core unavailable or below minimum version")
+    RustEngine = _core.EntrolyEngine
+    py_analyze_query = _core.py_analyze_query
+    py_refine_heuristic = _core.py_refine_heuristic
     _RUST_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError):
     _RUST_AVAILABLE = False
     RustEngine = None  # type: ignore[assignment,misc]
 

@@ -87,8 +87,15 @@ def test_engine_refuses_a_below_minimum_core() -> None:
 def test_refusal_is_announced_not_silent() -> None:
     """Degrading must be visible; a silent downgrade is the original defect."""
     output = _probe_with_stale_core()
-    assert "below the minimum" in output, (
-        f"the fallback happened without telling anyone:\n{output}"
+    # Assert on substance, not wording: the operator must learn which version
+    # was rejected and how to fix it. Pinning the exact sentence made this fail
+    # when the check moved into the shared gate, even though the warning was
+    # still emitted and still said the same thing.
+    assert "0.0.1" in output, (
+        f"the fallback happened without naming the rejected version:\n{output}"
+    )
+    assert "pure-Python" in output, (
+        f"the warning does not say what is being used instead:\n{output}"
     )
     assert "maturin develop" in output, (
         "the warning should say how to fix it, not just that it happened"
