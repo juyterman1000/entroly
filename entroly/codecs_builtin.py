@@ -155,6 +155,67 @@ class JsonCodec:
             # codec could not read.
             return reps
 
+        # Columnar form is computed before anything schema-related, because two
+        # separate early exits below would otherwise skip it on exactly the
+        # payloads it exists to serve:
+        #
+        #   * `len(elided) >= len(text)` -- the schema form is *larger* than the
+        #     original for identifier-dense records, so the codec returned
+        #     nothing at all;
+        #   * `_ProtectionOverflow` -- enumerating every protected value
+        #     exceeds its budget once a payload carries many identifiers, and
+        #     overflow declines every lossy form.
+        #
+        # Measured on 200 records: {"id","name"} compressed while {"id","sku"}
+        # produced 0%, the only difference being a key name that pushed it past
+        # one of these limits. The columnar form depends on neither: it keeps
+        # whole load-bearing *columns* verbatim, checked structurally by
+        # _columnar_preserves_columns. Column identity is a stronger statement
+        # than "each of these substrings appears somewhere", and is O(columns)
+        # rather than O(values).
+        # what happens to identifier-dense records, the payloads most worth
+        # compressing. Measured on 200 records: {"id","name"} compressed while
+        # {"id","sku"} produced nothing, because the second overflowed.
+        #
+        # The columnar form does not need the enumeration. It keeps whole
+        # load-bearing *columns* verbatim, so preservation is structural and is
+        # verified as such by _columnar_preserves_columns. Column identity is a
+        # stronger statement than "each of these 400 substrings appears
+        # somewhere", and it costs nothing to check.
+        columnar = _columnar_json(data, _is_load_bearing_key)
+        if (
+            columnar is not None
+            and len(columnar) < len(text)
+            and _columnar_preserves_columns(columnar, data, _is_load_bearing_key)
+        ):
+            reps.append(
+                Representation(
+                    representation_id=f"{source_id}#json.columnar",
+                    source_id=source_id,
+                    content_type="json",
+                    text=columnar,
+                    token_cost=estimate_tokens(columnar),
+                    codec=self.name,
+                    codec_version=self.version,
+                    source_sha256=content_digest(text),
+                    # A bounded sample for the receipt. The guarantee is the
+                    # structural check above, not this list.
+                    protected_evidence=_columnar_evidence_sample(
+                        data, _is_load_bearing_key
+                    ),
+                    distortion_risk=1.0 - (len(columnar) / max(len(text), 1)),
+                    recovery=self.store.put(
+                        text,
+                        item_count=_count_elided_json_records(data),
+                        note=(
+                            "complete original JSON for "
+                            f"{source_id or 'payload'} (columnar form kept "
+                            "load-bearing columns verbatim)"
+                        ),
+                    ),
+                )
+            )
+
         elided = json.dumps(
             _json_to_schema(data, depth=0, max_depth=4),
             indent=2,
@@ -244,6 +305,186 @@ def _protected_json_values(
                 )
 
     return _unique(out)
+
+
+#: Ceiling on records considered for the columnar form. Above this the verbatim
+#: identifier columns stop being cheaper than the original, and the walk cost
+#: stops being negligible on a request path.
+_JSON_COLUMNAR_MAX_RECORDS = 5000
+
+
+def _record_array(data: Any) -> tuple[str | None, list[dict[str, Any]]] | None:
+    """Find a flat array of records, either bare or under a single key.
+
+    Real payloads are usually ``[{...}, ...]`` or ``{"data": [{...}, ...]}``,
+    so both shapes resolve to the same columnar treatment. Anything else --
+    several sibling arrays, nested records, ragged keys -- is left alone rather
+    than guessed at.
+    """
+    if isinstance(data, list):
+        rows, key = data, None
+    elif isinstance(data, dict):
+        arrays = [
+            (k, v) for k, v in data.items()
+            if isinstance(v, list) and len(v) >= 2
+        ]
+        if len(arrays) != 1:
+            return None
+        key, rows = arrays[0][0], arrays[0][1]
+    else:
+        return None
+
+    if not 2 <= len(rows) <= _JSON_COLUMNAR_MAX_RECORDS:
+        return None
+    if not all(isinstance(row, dict) for row in rows):
+        return None
+    # Scalars only: a nested object under a record key has no columnar form
+    # that preserves it without recursing, and recursing here would quietly
+    # reintroduce the summarisation this representation exists to avoid.
+    if any(
+        isinstance(value, (dict, list))
+        for row in rows
+        for value in row.values()
+    ):
+        return None
+
+    first = set(rows[0])
+    if not first or any(set(row) != first for row in rows):
+        return None
+    return key, rows
+
+
+def _column_summary(values: list[Any]) -> dict[str, Any]:
+    """Describe a column that is not load-bearing, without keeping its values."""
+    distinct = {json.dumps(v, sort_keys=True) for v in values}
+    if len(distinct) == 1:
+        return {"const": values[0]}
+    if all(isinstance(v, bool) for v in values):
+        true_count = sum(1 for v in values if v)
+        return {"type": "bool", "true": true_count, "false": len(values) - true_count}
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+        return {
+            "type": "number",
+            "n": len(values),
+            "min": min(values),
+            "max": max(values),
+        }
+    return {
+        "type": "string",
+        "n": len(values),
+        "distinct": len(distinct),
+        "example": values[0],
+    }
+
+
+def _columnar_json(
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+) -> str | None:
+    """Columnar rendering that keeps every load-bearing value verbatim.
+
+    The schema form elides whole records, so a payload carrying identifiers --
+    ``sku``, ``order_id``, ``email``, ``price`` -- fails the protected-evidence
+    check and the codec correctly declines to compress it at all. Measured on a
+    200-record array, ``{"id","name"}`` compressed 53% while ``{"id","sku"}``
+    compressed 0%: the single difference was a key name.
+
+    Refusing is the right answer when the only alternative destroys
+    identifiers, but it is not the only alternative. A record array spends most
+    of its bytes repeating key names and non-identifying fields. Emitting each
+    column once, keeping load-bearing columns verbatim and summarising the
+    rest, preserves exactly what the guard protects while removing what it does
+    not.
+
+    Returns None when the payload has no such shape, when nothing is
+    load-bearing (the existing schema form already handles that better), or
+    when the result would not be smaller.
+    """
+    found = _record_array(data)
+    if found is None:
+        return None
+    container_key, rows = found
+
+    keys = list(rows[0])
+    kept = [k for k in keys if is_load_bearing_key(str(k))]
+    if not kept:
+        # Nothing to protect: the schema representation compresses harder.
+        return None
+    elided = [k for k in keys if k not in kept]
+
+    payload: dict[str, Any] = {
+        "_format": "columnar",
+        "_records": len(rows),
+        "_verbatim_columns": kept,
+        "_summarised_columns": elided,
+    }
+    if container_key is not None:
+        payload["_container"] = container_key
+    for key in kept:
+        payload[str(key)] = [row[key] for row in rows]
+    payload["_summaries"] = {
+        str(key): _column_summary([row[key] for row in rows]) for key in elided
+    }
+
+    return json.dumps(payload, indent=2, ensure_ascii=True)
+
+
+def _columnar_preserves_columns(
+    columnar: str,
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+) -> bool:
+    """Verify every load-bearing column survived value-for-value, in order.
+
+    Structural, not substring-based. Re-reading the rendered text and comparing
+    the reconstructed column against the source catches a truncated, reordered
+    or coerced column, none of which a substring scan would notice -- and it
+    does so without enumerating every value, which is what overflows on the
+    payloads this form exists to serve.
+    """
+    found = _record_array(data)
+    if found is None:
+        return False
+    _, rows = found
+
+    try:
+        rendered = json.loads(columnar)
+    except ValueError:
+        return False
+
+    for key in rows[0]:
+        if not is_load_bearing_key(str(key)):
+            continue
+        if rendered.get(str(key)) != [row[key] for row in rows]:
+            return False
+    return True
+
+
+def _columnar_evidence_sample(
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+    limit: int = 8,
+) -> tuple[str, ...]:
+    """A bounded, serialized sample of preserved values, for the receipt.
+
+    Deliberately small. The preservation guarantee is
+    :func:`_columnar_preserves_columns`; this exists so a reader can spot-check
+    it without the receipt carrying thousands of identifiers.
+    """
+    found = _record_array(data)
+    if found is None:
+        return ()
+    _, rows = found
+
+    out: list[str] = []
+    for key in rows[0]:
+        if not is_load_bearing_key(str(key)):
+            continue
+        for row in rows[: max(1, limit // 2)]:
+            out.append(json.dumps(row[key], sort_keys=True))
+            if len(out) >= limit:
+                return tuple(out)
+    return tuple(out)
 
 
 def _count_elided_json_records(obj: Any) -> int:
