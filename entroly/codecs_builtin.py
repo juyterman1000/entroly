@@ -435,7 +435,22 @@ _LOG_MIN_GROUP = 4
 
 #: Runs this treats as varying slots. Digits cover counters, ids, durations and
 #: status codes; hex covers request ids and short digests.
-_LOG_SLOT = re.compile(r"\b(?:0[xX][0-9a-fA-F]{4,}|[0-9]+(?:\.[0-9]+)?)\b")
+#:
+#: Deliberately no \b anchors. Identifiers embed their varying part -- in
+#: `test_mod_1` the digit follows an underscore, so both are word characters
+#: and there is no boundary to match. With anchors, 300 lines of pytest output
+#: yielded no slots at all, every line fell through as verbatim, and nothing
+#: grouped. Over-splitting inside a token is harmless here because the values
+#: are kept and checked as a multiset; failing to split is not.
+#: Order matters: a timestamp is one varying slot, not six. Matching its parts
+#: separately cost real compression -- an interleaved-error log fell from 42%
+#: to 24% purely because each line gained five extra value columns.
+_LOG_SLOT = re.compile(
+    r"\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
+    r"|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?"
+    r"|0[xX][0-9a-fA-F]{4,}"
+    r"|[0-9]+(?:\.[0-9]+)?"
+)
 
 
 def _log_slots(line: str) -> tuple[str, tuple[str, ...]]:
@@ -522,7 +537,11 @@ def _template_factored_log(
         slot_count = len(entries[0][1])
         for slot in range(slot_count):
             column = [values[slot] for _, values in entries]
-            out.append(f"    {{{slot}}}: {','.join(column)}")
+            # Separated by | rather than a comma: `,` is a decimal
+            # separator in European locales, so the timestamp pattern
+            # swallowed the delimiter and the values became unfindable to
+            # the preservation check that gates this representation.
+            out.append(f"    {{{slot}}}: {'|'.join(column)}")
 
     rendered = "\n".join(out)
     return rendered if len(rendered) < len(text) else None
@@ -636,11 +655,28 @@ class LogCodec:
     name = "log"
     version = "4"
     _LOG_SHAPE = re.compile(
+        # Timestamped or level-prefixed lines, plus test-runner and build-tool
+        # output. The latter was claimed by no codec at all, so it reached the
+        # content-blind generic path: 300 lines of pytest output compressed 74%
+        # while keeping only 2 of 8 FAILED lines. Silently discarding failures
+        # is worse than not compressing, and the only reason anyone reads this
+        # output is to find them.
         r"^\d{4}[-/]\d{2}|^\[?\d{2}:\d{2}|^(DEBUG|INFO|WARN|ERROR|TRACE|FATAL)",
         re.MULTILINE,
     )
+    #: Test-runner and build-tool lines. Scored below ShellCodec's 0.7 so a
+    #: shell session containing test output still routes to the shell codec;
+    #: this only wins when nothing shell-shaped is present.
+    _TOOL_SHAPE = re.compile(
+        r"^\S+::\S+\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL)"
+        r"|^\s{2,}(Compiling|Finished|Running|Downloaded)\s+\S"
+        r"|^(added|removed|changed)\s+\S+@",
+        re.MULTILINE,
+    )
     _CRITICAL = re.compile(
-        r"\b(ERROR|FATAL|Traceback|Exception|panic|exit_code|exit status|"
+        # Anything naming a failure. FAILED was absent, so pytest failures were
+        # templated away with the passes.
+        r"\b(ERROR|FATAL|FAILED|Traceback|Exception|panic|exit_code|exit status|"
         r"status(?:_code)?\s*[:=]\s*[45]\d\d)\b",
         re.IGNORECASE,
     )
@@ -653,6 +689,8 @@ class LogCodec:
             return SupportDecision(True, 1.0, "declared content type")
         if self._LOG_SHAPE.search(text[:2000]):
             return SupportDecision(True, 0.8, "timestamped or levelled lines")
+        if self._TOOL_SHAPE.search(text[:2000]):
+            return SupportDecision(True, 0.6, "test-runner or build-tool lines")
         return SupportDecision(False, 0.0, "no log line shape found")
 
     def representations(
