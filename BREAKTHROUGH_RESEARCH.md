@@ -170,12 +170,47 @@ context compression produces derived views and, per the two papers above,
 representation itself**, with the base retained for exact recovery, is the
 combination neither field applies.
 
-**Status: INFERRED, not established.** Four searches across LLM compression and
-databases; none showed the combination, which is weak evidence of absence.
-VLDB/SIGMOD on constrained view maintenance, and OSDI/SOSP on storage integrity,
-remain unsearched. Approximate query processing with error *guarantees* (rather
-than error *estimates*) is the nearest thing likely to already exist and should
-be checked next.
+### Third pass: bounded AQP largely pre-empts this too — **READ**
+
+Approximate query processing was checked, as the previous revision said it must
+be. **Bounded AQP (BAQ, TKDE'18)** gives *"deterministic approximate results --
+where the estimated query results must be within the error bound with 100%
+confidence"*, and such systems *"select a subset of data that is guaranteed to
+satisfy the error bound"*, declining when they cannot. **BEAS** likewise answers
+exactly when feasible and otherwise within a deterministic accuracy lower bound
+under a resource budget.
+
+That is structurally the same move: a derived representation emitted only when a
+guarantee provably holds, refused otherwise. **The gated-derived-representation
+pattern is therefore not novel either**, and the "placement" claimed in the
+previous revision is largely pre-empted. Recorded as a third rejection.
+
+What has *not* been pre-empted, stated as narrowly as the evidence supports:
+
+| | bounded AQP | Entroly |
+|---|---|---|
+| guaranteed quantity | numeric error of an aggregate | **set inclusion** of evidence spans |
+| query | **known at selection time** | **unknown** — the representation is built before anyone asks |
+| failure mode | answer outside the bound | evidence absent when a future question needs it |
+
+AQP always has the query in hand; the bound is defined against it. Entroly must
+commit to a representation *before* the query exists, so its guarantee has to be
+**query-agnostic** — identifiers survive whatever is asked later.
+
+**That is the same open problem as §15 (unknown-future-query compression), and
+this is where the remaining research value sits.** A deterministic guarantee
+over an unknown future query is not something the AQP formulation expresses,
+because a bound requires a query to be a bound *on*. Whether a useful
+query-agnostic guarantee exists at all — beyond "keep everything that looks like
+an identifier" — is unresolved and is the honest frontier here.
+
+**Status after three prior-art passes: two claims killed (protected/lossy
+framing; enforcement-vs-validation), one largely pre-empted (gated derived
+representation). Surviving question is query-agnostic guarantee, UNTESTED.**
+Unsearched: VLDB/SIGMOD constrained view maintenance, OSDI/SOSP storage
+integrity, and the sufficient-statistics / information-bottleneck treatment of
+"sufficient for an unknown downstream task", which is the closest theoretical
+framing and the most likely place for prior art on the surviving question.
 
 ### Superseded: outstanding threat (kept for the record)
 
