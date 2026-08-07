@@ -482,8 +482,19 @@ def install_routing_safety() -> None:
     _ORIGINAL_SNAPSHOT = RoutingAuthorityLedger.snapshot
     _ORIGINAL_LEDGER_FOR_PROXY = authority._ledger_for_proxy
 
-    def safe_authorize(self: RoutingAuthorityCoordinator, context: RoutingRequestContext, **kwargs: Any):
-        _enforce_request_policy(self, context, **kwargs)
+    def safe_authorize(
+        self: RoutingAuthorityCoordinator,
+        context: RoutingRequestContext,
+        **kwargs: Any,
+    ):
+        _enforce_request_policy(
+            self,
+            context,
+            provider=kwargs["provider"],
+            target=kwargs["target"],
+            body=kwargs["body"],
+            url=kwargs["url"],
+        )
         return _ORIGINAL_AUTHORIZE(self, context, **kwargs)
 
     def safe_snapshot(self: RoutingAuthorityLedger) -> dict[str, Any]:
