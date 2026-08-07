@@ -108,7 +108,43 @@ searching for it. Recorded so it is not re-claimed.
 Prior-art search for the *conjunction* (gated + structural + model-free
 recovery) has **not** been done. Do that before claiming anything.
 
-### Outstanding threat to the remaining claim — **MUST READ PROPERLY**
+### Threat resolved — the distinction survives, and sharpens — **READ**
+
+**arXiv 2605.17304**, *Compress the Context, Keep the Commitments* (Trukhina,
+Vashkelis). Read via the abstract page after the PDF failed to render.
+
+Its "commitments" are *"goals, constraints, decisions, preferences, tool
+results, retrieved evidence, artifacts, and safety boundaries that future
+responses must preserve"* — semantic obligations, not cryptographic bindings.
+It contributes **Critical Atom Recall** and **round-trip recoverability** as
+*metrics*, together with a *taxonomy of semantic compression errors*.
+
+That taxonomy is the decisive detail. Cataloguing compression errors is only
+necessary in a framework where they occur; the abstract confirms lossless
+recovery is not guaranteed, only measured.
+
+| | 2605.17304 | Entroly |
+|---|---|---|
+| preservation | **measured** — Critical Atom Recall | **gated** — the form is refused unless it holds |
+| recovery | **round-trip recoverability, a metric**; lossless not guaranteed | **byte-exact**, content-addressed, model-free |
+| errors | taxonomised | prevented at creation |
+
+**The distinction is therefore: that work formalises how to *evaluate*
+preservation; Entroly makes preservation a *precondition of emitting the
+representation at all*.** A measured system reports its Critical Atom Recall; a
+gated system has no path that emits a form failing the property.
+
+This is a genuine and defensible difference in kind rather than degree, and it
+is narrower than the claim originally made. It is **not** a quality claim: no
+head-to-head has been run, and their framework covers conversational
+commitments that Entroly's codecs do not address at all.
+
+**Still open:** whether any published system *gates* rather than scores. Two
+adjacent papers now checked, neither does. That is suggestive, not settled —
+SIGIR/VLDB/OSDI and the provenance-database literature remain unsearched, and
+gating resembles integrity constraints there.
+
+### Superseded: outstanding threat (kept for the record)
 
 **"Compress the Context, Keep the Commitments: A Formal Framework for Verifiable
 LLM Context Compression"**, arXiv 2605.17304 (Trukhina, Vashkelis).
