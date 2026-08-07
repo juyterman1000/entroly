@@ -264,6 +264,83 @@ def _prepend_code_symbol_summary(out: str, content: str, budget: int | None) -> 
     return f"{summary}\n\n{out[:remaining]}"
 
 
+def _codec_compressed_text(
+    content: str,
+    content_type: str | None,
+    budget: int | None,
+    ratio: float,
+) -> str | None:
+    """Best specialized-codec rendering of ``content``, or None to fall back.
+
+    The codec registry understands JSON, tables, logs, shell output, code and
+    conversations structurally; ``universal_compress`` does not. Until now the
+    registry was reachable from ``compress_with_receipt`` alone, so which
+    compressor a caller got depended on which function they happened to call.
+
+    Two contracts differ and must be reconciled here rather than by changing
+    either side:
+
+    * ``compress()`` promises a token budget. The registry does not take one --
+      ``compress_with_receipt`` picks the globally smallest representation. So
+      this selects the smallest representation that *fits*, and declines when
+      none does, leaving the budget-aware generic path to truncate.
+    * ``compress()`` returns ``str`` and exposes no recovery. A representation
+      is therefore used for its structural fidelity, not its recovery
+      reference, which would not resolve after this call. Lossless and
+      recoverable representations are still preferred, matching the discipline
+      in ``compress_with_receipt``.
+
+    Returns None whenever the codec path cannot be shown to be applicable, so
+    the caller keeps today's behaviour. Never raises: a codec fault must not
+    turn a compression call into an error.
+    """
+    try:
+        from .codec import RecoveryStore
+        from .codecs_builtin import default_registry
+
+        # Discarded with the call. compress() surfaces no recovery handle, so
+        # nothing outside this function can resolve what the store holds.
+        registry = default_registry(RecoveryStore())
+        reps = registry.representations(
+            content,
+            source_id="",
+            content_type=content_type or "",
+            query="",
+        )
+    except Exception:  # noqa: BLE001 - fall back rather than fail the call
+        return None
+
+    if not reps:
+        return None
+
+    # A representation that dropped content and cannot hand it back is worse
+    # than the generic path here, because compress() exposes no way to ask.
+    usable = [r for r in reps if r.recovery is not None or r.text == content]
+    candidates = usable or reps
+
+    if budget is not None:
+        ceiling = budget
+    else:
+        # Mirror the generic path's target: a share of the original estimate.
+        ceiling = max(1, int((len(content) // 4) * ratio))
+
+    fitting = [r for r in candidates if r.token_cost <= ceiling]
+    if not fitting:
+        # Every codec rendering overshoots. Truncating a structural rendering
+        # would break the structure it exists to preserve, so hand back to the
+        # generic path, which truncates by design.
+        return None
+
+    best = min(fitting, key=lambda r: r.token_cost)
+    text = best.text
+    if not text or not text.strip():
+        return None
+    # Never let "specialized" mean "larger".
+    if len(text) > len(content):
+        return None
+    return text
+
+
 def compress(
     content: str,
     budget: int | None = None,
@@ -313,17 +390,26 @@ def compress(
     else:
         ratio = max(0.05, target_ratio)
 
-    # Code can use the native skeletonizer. Other formats keep the existing
-    # content-aware structural compactors. Neither path is query-conditioned.
-    is_code = content_type == "code" or (content_type is None and _looks_like_code(content))
-    if is_code:
-        try:
-            out = _compress_code(content, ratio)
-        except Exception:
+    # Specialized codecs first, when one claims this content and its rendering
+    # fits the budget. This is what makes compress() and compress_with_receipt()
+    # agree about how a given content type should be compressed, instead of the
+    # answer depending on which entry point the caller reached for.
+    out = _codec_compressed_text(content, content_type, budget, ratio)
+
+    if out is None:
+        # Code can use the native skeletonizer. Other formats keep the existing
+        # content-aware structural compactors. Neither path is query-conditioned.
+        is_code = content_type == "code" or (
+            content_type is None and _looks_like_code(content)
+        )
+        if is_code:
+            try:
+                out = _compress_code(content, ratio)
+            except Exception:
+                out, _, _ = universal_compress(content, ratio, content_type)
+            out = _prepend_code_symbol_summary(out, content, budget)
+        else:
             out, _, _ = universal_compress(content, ratio, content_type)
-        out = _prepend_code_symbol_summary(out, content, budget)
-    else:
-        out, _, _ = universal_compress(content, ratio, content_type)
 
     out = _ensure_non_empty(out, content, budget, ratio)
     out = _enforce_budget(out, budget)
