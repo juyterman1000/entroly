@@ -108,6 +108,48 @@ searching for it. Recorded so it is not re-claimed.
 Prior-art search for the *conjunction* (gated + structural + model-free
 recovery) has **not** been done. Do that before claiming anything.
 
+### Outstanding threat to the remaining claim — **MUST READ PROPERLY**
+
+**"Compress the Context, Keep the Commitments: A Formal Framework for Verifiable
+LLM Context Compression"**, arXiv 2605.17304 (Trukhina, Vashkelis).
+
+The title alone targets the same ground as the surviving claim above. A fetch
+was attempted and the extraction **hedged throughout** ("appears to",
+"suggesting") because the PDF streams did not render — so it has **NOT** been
+read and nothing from that attempt is cited here. The tentative signal was that
+verification may be *post-hoc* rather than a creation-time gate, which would
+preserve the differentiator, but that is far too weak to rely on.
+
+Read it properly and answer, specifically:
+
+1. Are "commitments" cryptographic bindings over the original, or semantic
+   assertions about meaning?
+2. Is verification a **gate that refuses** a compressed form, or a post-hoc
+   score? This is the crux — Entroly refuses.
+3. Does verification or compression require an LLM?
+4. Is byte-level recovery of omitted content provided?
+5. What is actually proved?
+
+If it gates at compression time *and* recovers exactly *and* needs no model,
+the remaining claim is dead too, and this section becomes a second
+**D — REJECTED**. Record that outcome either way.
+
+### Adjacent baseline, now characterised — **READ**
+
+LLMLingua / LongLLMLingua (arXiv 2310.06839): coarse-to-fine with a budget
+controller, then **iterative token-level compression driven by per-token
+perplexity from a small LM (GPT-2 / LLaMA-7B)**. Reported up to 20x with ~1.5%
+loss on reasoning; LongLLMLingua adds question-aware compression and document
+reordering, +21.4% on NaturalQuestions at 4x fewer tokens.
+
+Architectural contrast worth stating precisely, because it is structural rather
+than a matter of tuning: that family **requires a model to compress** (download,
+load, inference per call, and perplexity is tokenizer- and model-dependent).
+Entroly's codecs require none — deterministic, offline, no per-call inference.
+That is a real difference in operating envelope, and it is *not* a quality
+claim: no head-to-head has been run, and their reported ratios are far above
+what the codec path achieves on prose.
+
 ---
 
 ## 8. Experimental results — **OBSERVED**
