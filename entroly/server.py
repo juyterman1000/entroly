@@ -75,9 +75,9 @@ from .verification_engine import VerificationEngine
 
 # ── Rust engine import (preferred, 50-100× faster) ─────────────────
 # Importing is not sufficient. A core below MIN_ENTROLY_CORE_VERSION can select
-# differently: measured on the same query and fragment set, entroly_core 1.0.73
-# returned three fragments where 1.0.74 returned one, and a stale core silently
-# reported 0.0% savings where a matched core reports a real reduction
+# differently: measured on the same query and fragment set, a core one release
+# behind returned three fragments where the matched core returned one, and it
+# silently reported 0.0% savings where a matched core reports a real reduction
 # (tests/test_simulate_small_project.py). qccr.py already refuses such a core
 # via native_status().ok, so before this gate the same library in the same
 # process was rejected by one component and trusted by the other -- and the one

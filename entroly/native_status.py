@@ -144,7 +144,7 @@ def usable_core() -> ModuleType | None:
     the declared minimum version. A core below that minimum was therefore
     refused by the engine and used by everything else *in the same process*.
 
-    That is not a theoretical split. With a 1.0.74 core against a 1.0.75
+    That is not a theoretical split. With a core one release behind the
     package, ``server.py`` correctly fell back to Python and passed
     ``recency_score`` to a ``ContextFragment`` that ``checkpoint.py`` had
     imported from the stale Rust core, which has no such field:
