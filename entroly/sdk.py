@@ -264,6 +264,28 @@ def _prepend_code_symbol_summary(out: str, content: str, budget: int | None) -> 
     return f"{summary}\n\n{out[:remaining]}"
 
 
+def _truncate_lines_to_budget(text: str, budget_tokens: int) -> str | None:
+    """Keep whole leading lines that fit the budget.
+
+    Only sound when the caller has front-loaded what matters; used for the
+    templated log form, whose critical lines are emitted first for exactly this
+    reason. Returns None if nothing meaningful fits, so the caller can fall
+    back rather than emit a stub.
+    """
+    char_budget = max(1, budget_tokens * 4)
+    kept: list[str] = []
+    used = 0
+    for line in text.splitlines():
+        cost = len(line) + 1
+        if used + cost > char_budget:
+            break
+        kept.append(line)
+        used += cost
+    if not kept:
+        return None
+    return "\n".join(kept)
+
+
 def _codec_compressed_text(
     content: str,
     content_type: str | None,
@@ -327,9 +349,23 @@ def _codec_compressed_text(
     fitting = [r for r in candidates if r.token_cost <= ceiling]
     if not fitting:
         # Every codec rendering overshoots. Truncating a structural rendering
-        # would break the structure it exists to preserve, so hand back to the
-        # generic path, which truncates by design.
-        return None
+        # normally breaks the structure it exists to preserve, so the generic
+        # path -- which truncates by design -- takes over.
+        #
+        # The templated log form is the exception: it emits critical lines
+        # first precisely so a tail truncation costs repetition rather than
+        # evidence. Handing those to the generic path instead destroyed what
+        # the codec had protected -- measured on an interleaved-error log at a
+        # 30% budget, 1 of 8 ERROR lines survived. Truncating the codec's own
+        # front-loaded rendering keeps them.
+        front_loaded = [
+            r for r in candidates
+            if r.representation_id.endswith("#log.templated")
+        ]
+        if not front_loaded:
+            return None
+        best_effort = min(front_loaded, key=lambda r: r.token_cost)
+        return _truncate_lines_to_budget(best_effort.text, ceiling)
 
     best = min(fitting, key=lambda r: r.token_cost)
     text = best.text

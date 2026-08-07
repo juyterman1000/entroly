@@ -522,28 +522,38 @@ def _template_factored_log(
             for index, values in entries:
                 verbatim[index] = _restore(template, values)
 
-    out: list[str] = []
-    emitted: set[str] = set()
-    for index in range(len(lines)):
-        if index in verbatim:
-            out.append(verbatim[index])
+    # Critical lines first, then templates, then the bulk value columns.
+    #
+    # Chronological order is already gone -- this form replaces runs of lines
+    # with a template and its columns -- so ordering by importance costs
+    # nothing and buys graceful degradation. compress() enforces a token
+    # budget, and when this rendering does not fit it is truncated; with
+    # source order a tail truncation silently removed error lines. Measured on
+    # an interleaved-error log at a 30% budget, status code 500 was lost that
+    # way. Front-loading what a reader is looking for means truncation costs
+    # repetition, not evidence.
+    critical: list[str] = []
+    other: list[str] = []
+    for index in sorted(verbatim):
+        (critical if is_critical(verbatim[index]) else other).append(verbatim[index])
+
+    templates: list[str] = []
+    columns: list[str] = []
+    for template in order:
+        entries = collapsible.get(template)
+        if entries is None:
             continue
-        template, _ = _log_slots(lines[index])
-        if template in emitted:
-            continue
-        emitted.add(template)
-        entries = collapsible[template]
-        out.append(f"[x{len(entries)}] {template.replace(chr(0), '{}')}")
+        templates.append(f"[x{len(entries)}] {template.replace(chr(0), '{}')}")
         slot_count = len(entries[0][1])
         for slot in range(slot_count):
             column = [values[slot] for _, values in entries]
-            # Separated by | rather than a comma: `,` is a decimal
-            # separator in European locales, so the timestamp pattern
-            # swallowed the delimiter and the values became unfindable to
-            # the preservation check that gates this representation.
-            out.append(f"    {{{slot}}}: {'|'.join(column)}")
+            # Separated by | rather than a comma: `,` is a decimal separator in
+            # European locales, so the timestamp pattern swallowed the
+            # delimiter and the values became unfindable to the preservation
+            # check that gates this representation.
+            columns.append(f"    {{{slot}}}: {'|'.join(column)}")
 
-    rendered = "\n".join(out)
+    rendered = "\n".join(critical + templates + other + columns)
     return rendered if len(rendered) < len(text) else None
 
 
