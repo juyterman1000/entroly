@@ -204,7 +204,52 @@ because a bound requires a query to be a bound *on*. Whether a useful
 query-agnostic guarantee exists at all — beyond "keep everything that looks like
 an identifier" — is unresolved and is the honest frontier here.
 
-**Status after three prior-art passes: two claims killed (protected/lossy
+### Fourth pass: the open question has a partly negative answer — **READ**
+
+Searched the sufficient-statistics / information-bottleneck treatment of
+"sufficient for an unknown downstream task", named above as the likeliest home
+for prior art on the surviving question.
+
+The IB principle defines an optimal representation as **minimal and sufficient
+for a task**. The relevant result is the task-dependence: *"the optimal views
+for one task may not be suitable for another task"* — a representation that is
+minimal *and* sufficient for task A is generally **not** sufficient for task B.
+
+**So a minimal query-agnostic sufficient statistic does not exist in general.**
+That is a negative answer to the question this programme had narrowed to, and it
+is more useful than a positive one, because it says what cannot be built and
+therefore what the sensible design is.
+
+Given the impossibility, a system committing to a representation before the
+query exists has exactly three options:
+
+1. **keep everything** — sufficient, not compressed;
+2. **optimise for a guessed task** — compressed, silently insufficient when the
+   guess is wrong, which is the failure mode arXiv 2503.19114 measures;
+3. **keep a task-invariant core, recover the rest on demand** — compressed,
+   and sufficiency is restored rather than gambled.
+
+Entroly is (3), and this reframes it as the rational response to a proven
+impossibility rather than a heuristic. Identifiers are the right core precisely
+because they are *not* task-specific: an identifier is the join key for whatever
+question arrives later, which is why destroying them is unrecoverable in a way
+that dropping prose is not. Exact recovery is not a safety feature bolted on —
+it is what makes (3) admissible at all, since without it (3) degenerates into
+(2).
+
+**This is a theoretical grounding, not a novelty claim.** IB, minimal
+sufficiency and their task-dependence are long established. What the programme
+can honestly say is that Entroly's architecture is the correct response to a
+known impossibility result, and that the ceiling on any query-agnostic
+compressor is set by how well its invariant core is chosen.
+
+**Open and genuinely unresolved:** whether a better task-invariant core than
+"identifiers plus structure" exists — an evidence class that is provably
+join-critical across query distributions. That is the remaining research
+question, and it is a question about *which invariant*, not about whether the
+architecture is right.
+
+**Status after four prior-art passes: two claims killed (protected/lossy
 framing; enforcement-vs-validation), one largely pre-empted (gated derived
 representation). Surviving question is query-agnostic guarantee, UNTESTED.**
 Unsearched: VLDB/SIGMOD constrained view maintenance, OSDI/SOSP storage
