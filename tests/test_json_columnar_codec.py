@@ -110,8 +110,16 @@ def test_nested_values_are_declined() -> None:
 
 
 def test_payload_without_identifiers_is_left_to_the_schema_form() -> None:
-    """Nothing to protect means the existing schema form compresses harder."""
-    rows = [{"note": f"n{i}", "label": "x", "flag": True} for i in range(50)]
+    """Nothing to protect means the existing schema form compresses harder.
+
+    `note` is deliberately low-cardinality here. Protection is now decided by
+    the data as well as the key name, so a near-unique column counts as an
+    identifier whatever it is called -- which is the point -- and a payload
+    where every column repeats has nothing for the columnar form to hold.
+    """
+    rows = [
+        {"note": f"n{i % 3}", "label": "x", "flag": True} for i in range(50)
+    ]
     assert _columnar_for(json.dumps(rows)) is None
 
 

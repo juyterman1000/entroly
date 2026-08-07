@@ -182,11 +182,15 @@ class JsonCodec:
         # verified as such by _columnar_preserves_columns. Column identity is a
         # stronger statement than "each of these 400 substrings appears
         # somewhere", and it costs nothing to check.
-        columnar = _columnar_json(data, _is_load_bearing_key)
+        # Protection is decided by name *and* by what the data shows, so an
+        # identifier column with an unlisted name is not summarised away.
+        _protects = _identifier_predicate(data, _is_load_bearing_key)
+
+        columnar = _columnar_json(data, _protects)
         if (
             columnar is not None
             and len(columnar) < len(text)
-            and _columnar_preserves_columns(columnar, data, _is_load_bearing_key)
+            and _columnar_preserves_columns(columnar, data, _protects)
         ):
             reps.append(
                 Representation(
@@ -201,7 +205,7 @@ class JsonCodec:
                     # A bounded sample for the receipt. The guarantee is the
                     # structural check above, not this list.
                     protected_evidence=_columnar_evidence_sample(
-                        data, _is_load_bearing_key
+                        data, _protects
                     ),
                     distortion_risk=1.0 - (len(columnar) / max(len(text), 1)),
                     recovery=self.store.put(
@@ -225,7 +229,7 @@ class JsonCodec:
             return reps
 
         try:
-            protected = _protected_json_values(data, _is_load_bearing_key)
+            protected = _protected_json_values(data, _protects)
         except _ProtectionOverflow:
             return reps
         if any(value not in elided for value in protected):
@@ -331,6 +335,13 @@ def _record_array(data: Any) -> tuple[str | None, list[dict[str, Any]]] | None:
         if len(arrays) != 1:
             return None
         key, rows = arrays[0][0], arrays[0][1]
+        # The columnar rendering describes the record array and nothing else,
+        # so any sibling key would be dropped without trace. That is real data
+        # loss -- a top-level `requestId` beside an `items` array vanished --
+        # and it is not worth guessing a representation for. Decline and let
+        # the schema form, which walks the whole document, handle it.
+        if len(data) != 1:
+            return None
     else:
         return None
 
@@ -686,6 +697,58 @@ def _log_values_preserved(rendered: str, text: str, is_critical) -> bool:
     # which is the failure this codec was made conservative to avoid.
     present = set(_LOG_SLOT.findall(rendered))
     return source_values.issubset(present)
+
+
+#: A column this close to all-distinct is an identifier whatever it is called.
+#: Below it, values repeat enough to be describable by a summary.
+_IDENTIFIER_UNIQUENESS = 0.9
+
+
+def _identifier_predicate(
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+) -> Callable[[str], bool]:
+    """Widen name-based protection with what the data itself shows.
+
+    Load-bearing keys were decided by name alone. A name list cannot enumerate
+    every identifier in every domain, and the gap is not cosmetic: 200 records
+    carrying a `vin` column compressed 99% with 199 of 200 VINs destroyed,
+    because `vin` is not a listed name, while `tracking_ref` beside it survived.
+    The difference was spelling.
+
+    This is the same lesson fixed-depth log parsing teaches for logs -- decide
+    what varies from the data, not from how it is written. A column whose
+    values are near-unique across records is an identifier regardless of its
+    name; one that repeats is describable by a summary. `vin` has 200 distinct
+    values in 200 rows, `tier` has one.
+
+    The returned predicate only ever *widens* the original, so nothing that was
+    protected by name becomes unprotected.
+    """
+    found = _record_array(data)
+    if found is None:
+        return is_load_bearing_key
+    _, rows = found
+
+    discovered: set[str] = set()
+    total = len(rows)
+    for key in rows[0]:
+        if is_load_bearing_key(str(key)):
+            continue
+        try:
+            distinct = len({json.dumps(row[key], sort_keys=True) for row in rows})
+        except (TypeError, ValueError):
+            continue
+        if distinct / total >= _IDENTIFIER_UNIQUENESS:
+            discovered.add(str(key))
+
+    if not discovered:
+        return is_load_bearing_key
+
+    def predicate(key: str) -> bool:
+        return is_load_bearing_key(key) or key in discovered
+
+    return predicate
 
 
 def _columnar_preserves_columns(
