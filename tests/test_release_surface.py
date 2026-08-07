@@ -94,6 +94,57 @@ def test_bundled_mcpb_manifest_matches_release_source() -> None:
     assert bundled == source
 
 
+#: Top-level keys ClawHub accepts in openclaw.plugin.json. An unlisted key is
+#: rejected as `manifest-unknown-fields` and blocks publication -- v1.0.75 was
+#: rejected for a top-level `uiHints` object. Presentation metadata belongs in
+#: the JSON Schema's own `title`/`description`, not beside it.
+#:
+#: Widening this set is a deliberate act: confirm the field against the host
+#: version first with
+#:     clawhub package validate integrations/openclaw --openclaw-version <ver>
+OPENCLAW_MANIFEST_TOP_LEVEL_KEYS = frozenset(
+    {"id", "activation", "name", "description", "icon", "configSchema"}
+)
+
+
+def test_openclaw_manifest_has_no_unsupported_top_level_fields() -> None:
+    """Catch a rejected manifest here rather than at upload.
+
+    The failing case is silent locally: the plugin still loads, the tests still
+    pass, and only ClawHub refuses the release. Pinning the key set turns that
+    into a local failure naming the offending field.
+    """
+    manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
+    unexpected = sorted(set(manifest) - OPENCLAW_MANIFEST_TOP_LEVEL_KEYS)
+    assert not unexpected, (
+        f"openclaw.plugin.json has top-level field(s) {unexpected} that ClawHub "
+        "rejects as manifest-unknown-fields. Move presentation metadata into "
+        "configSchema property title/description, or add the field to "
+        "OPENCLAW_MANIFEST_TOP_LEVEL_KEYS once `clawhub package validate` "
+        "accepts it."
+    )
+
+
+def test_openclaw_config_properties_keep_their_labels_and_help() -> None:
+    """Every setting an operator can change must stay self-describing.
+
+    The labels and help text moved out of `uiHints` into the schema; this stops
+    that move from quietly degrading into bare types with no explanation.
+    """
+    manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
+    properties = manifest["configSchema"]["properties"]
+    assert properties, "configSchema declares no properties"
+
+    undocumented = sorted(
+        name
+        for name, spec in properties.items()
+        if not spec.get("title") or not spec.get("description")
+    )
+    assert not undocumented, (
+        f"config properties without a title/description: {undocumented}"
+    )
+
+
 def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
     package = _read_json("integrations/openclaw/package.json")
     manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
@@ -105,11 +156,21 @@ def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
     assert install["npmSpec"] == package["name"]
     assert install["defaultChoice"] == "npm"
     assert install["minHostVersion"] == openclaw["compat"]["pluginApi"]
+    # Labels and help text live in the JSON Schema's own `title`/`description`
+    # keywords. A top-level `uiHints` object is not a supported OpenClaw
+    # manifest field and fails ClawHub validation, so the presentation metadata
+    # moved inside `configSchema`, where renderers already read it.
+    assert "uiHints" not in manifest, (
+        "top-level uiHints is rejected by ClawHub validation "
+        "(manifest-unknown-fields); use per-property title/description"
+    )
+
     discovery = manifest["configSchema"]["properties"]["autoDiscoverContextBudget"]
-    assert discovery == {"type": "boolean", "default": True}
-    assert "No remote discovery is enabled automatically" in manifest["uiHints"][
-        "autoDiscoverContextBudget"
-    ]["help"]
+    assert discovery["type"] == "boolean"
+    assert discovery["default"] is True
+    # The default must stay opt-out-safe and the disclosure must stay visible to
+    # the operator: this setting is the one that could imply remote lookups.
+    assert "No remote discovery is enabled automatically" in discovery["description"]
 
 
 def test_mcp_registry_manifest_points_at_release_package() -> None:

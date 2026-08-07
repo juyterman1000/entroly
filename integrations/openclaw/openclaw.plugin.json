@@ -13,141 +13,109 @@
       "pythonCommand": {
         "type": "string",
         "minLength": 1,
-        "default": "python"
+        "default": "python",
+        "title": "Python Command",
+        "description": "Python executable where the entroly package is installed."
       },
       "preserveLastN": {
         "type": "integer",
         "minimum": 1,
         "maximum": 32,
-        "default": 4
+        "default": 4,
+        "title": "Recent Messages Preserved",
+        "description": "Number of recent messages kept byte-for-byte unchanged."
       },
       "timeoutMs": {
         "type": "integer",
         "minimum": 100,
         "maximum": 30000,
-        "default": 5000
+        "default": 5000,
+        "title": "Bridge Timeout (ms)",
+        "description": "Maximum time for one Entroly context assembly request."
       },
       "fallbackTokenBudget": {
         "type": "integer",
         "minimum": 1024,
-        "maximum": 4000000
+        "maximum": 4000000,
+        "title": "Fallback Prompt Token Budget",
+        "description": "Operator-approved budget used when OpenClaw cannot provide one. It takes precedence over automatic registry discovery."
       },
       "autoDiscoverContextBudget": {
         "type": "boolean",
-        "default": true
+        "default": true,
+        "title": "Auto-discover Context Budget",
+        "description": "When OpenClaw omits a budget, resolve a conservative input ceiling from verified, user-supplied, or explicitly discovered model metadata. No remote discovery is enabled automatically."
       },
       "receiptDir": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "title": "Receipt Directory",
+        "description": "Optional local directory for Entroly OpenClaw receipts."
       },
       "receiptMaxFiles": {
         "type": "integer",
         "minimum": 8,
         "maximum": 10000,
-        "default": 512
+        "default": 512,
+        "title": "Receipt File Limit",
+        "description": "Fail safely instead of writing when this append-only receipt count is reached."
       },
       "receiptMaxBytes": {
         "type": "integer",
         "minimum": 1048576,
         "maximum": 1073741824,
-        "default": 67108864
+        "default": 67108864,
+        "title": "Receipt Byte Limit",
+        "description": "Fail safely instead of allowing the receipt directory to exceed this byte quota."
       },
       "writeReceipts": {
         "type": "boolean",
-        "default": true
+        "default": true,
+        "title": "Write Local Receipts",
+        "description": "Record context hashes, estimated savings, warnings, and decision metadata locally."
       },
       "distill": {
         "type": "boolean",
-        "default": true
+        "default": true,
+        "title": "Distill Older Assistant Messages",
+        "description": "Remove filler from compressible older assistant responses before budget compression."
       },
       "evidencePinning": {
         "type": "boolean",
-        "default": true
+        "default": true,
+        "title": "Query-Aware Evidence Pinning",
+        "description": "Keep older messages that match the current request verbatim when they fit the bounded evidence reserve."
       },
       "proofGuidedRecovery": {
         "type": "boolean",
-        "default": false
+        "default": false,
+        "title": "Proof-Guided Recovery",
+        "description": "Opt in to local output verification and at most the configured number of OpenClaw revision passes using exact recovered evidence. Requires hooks.allowConversationAccess=true because it inspects model input and output."
       },
       "proofGuidedMaxRounds": {
         "type": "integer",
         "minimum": 1,
         "maximum": 4,
-        "default": 2
+        "default": 2,
+        "title": "Maximum Proof Rounds",
+        "description": "Hard cap on model attempts, including the first response. Additional paid calls occur only when Proof-Guided Recovery is explicitly enabled."
       },
       "proofGuidedRecoveryTokens": {
         "type": "integer",
         "minimum": 1,
         "maximum": 100000,
-        "default": 1200
+        "default": 1200,
+        "title": "Recovery Token Budget",
+        "description": "Maximum estimated exact-evidence tokens recovered for one revision decision."
       },
       "proofGuidedMaxMessages": {
         "type": "integer",
         "minimum": 1,
         "maximum": 16,
-        "default": 3
+        "default": 3,
+        "title": "Recovery Message Limit",
+        "description": "Maximum exact omitted messages appended to one revision instruction."
       }
-    }
-  },
-  "uiHints": {
-    "pythonCommand": {
-      "label": "Python Command",
-      "help": "Python executable where the entroly package is installed."
-    },
-    "preserveLastN": {
-      "label": "Recent Messages Preserved",
-      "help": "Number of recent messages kept byte-for-byte unchanged."
-    },
-    "timeoutMs": {
-      "label": "Bridge Timeout (ms)",
-      "help": "Maximum time for one Entroly context assembly request."
-    },
-    "fallbackTokenBudget": {
-      "label": "Fallback Prompt Token Budget",
-      "help": "Operator-approved budget used when OpenClaw cannot provide one. It takes precedence over automatic registry discovery."
-    },
-    "autoDiscoverContextBudget": {
-      "label": "Auto-discover Context Budget",
-      "help": "When OpenClaw omits a budget, resolve a conservative input ceiling from verified, user-supplied, or explicitly discovered model metadata. No remote discovery is enabled automatically."
-    },
-    "receiptDir": {
-      "label": "Receipt Directory",
-      "help": "Optional local directory for Entroly OpenClaw receipts."
-    },
-    "receiptMaxFiles": {
-      "label": "Receipt File Limit",
-      "help": "Fail safely instead of writing when this append-only receipt count is reached."
-    },
-    "receiptMaxBytes": {
-      "label": "Receipt Byte Limit",
-      "help": "Fail safely instead of allowing the receipt directory to exceed this byte quota."
-    },
-    "writeReceipts": {
-      "label": "Write Local Receipts",
-      "help": "Record context hashes, estimated savings, warnings, and decision metadata locally."
-    },
-    "distill": {
-      "label": "Distill Older Assistant Messages",
-      "help": "Remove filler from compressible older assistant responses before budget compression."
-    },
-    "evidencePinning": {
-      "label": "Query-Aware Evidence Pinning",
-      "help": "Keep older messages that match the current request verbatim when they fit the bounded evidence reserve."
-    },
-    "proofGuidedRecovery": {
-      "label": "Proof-Guided Recovery",
-      "help": "Opt in to local output verification and at most the configured number of OpenClaw revision passes using exact recovered evidence. Requires hooks.allowConversationAccess=true because it inspects model input and output."
-    },
-    "proofGuidedMaxRounds": {
-      "label": "Maximum Proof Rounds",
-      "help": "Hard cap on model attempts, including the first response. Additional paid calls occur only when Proof-Guided Recovery is explicitly enabled."
-    },
-    "proofGuidedRecoveryTokens": {
-      "label": "Recovery Token Budget",
-      "help": "Maximum estimated exact-evidence tokens recovered for one revision decision."
-    },
-    "proofGuidedMaxMessages": {
-      "label": "Recovery Message Limit",
-      "help": "Maximum exact omitted messages appended to one revision instruction."
     }
   }
 }
