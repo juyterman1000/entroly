@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feat/gateway-same-provider-execution
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
