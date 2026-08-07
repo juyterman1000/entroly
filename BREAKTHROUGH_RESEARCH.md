@@ -139,10 +139,43 @@ is narrower than the claim originally made. It is **not** a quality claim: no
 head-to-head has been run, and their framework covers conversational
 commitments that Entroly's codecs do not address at all.
 
-**Still open:** whether any published system *gates* rather than scores. Two
-adjacent papers now checked, neither does. That is suggestive, not settled —
-SIGIR/VLDB/OSDI and the provenance-database literature remain unsearched, and
-gating resembles integrity constraints there.
+### The database framing — concept not novel, application appears to be — **READ**
+
+The gate/score distinction was searched in the database literature, where it
+should exist if anywhere. It does, precisely: an integrity constraint in the
+**ENABLE** state *"ensures that all data modifications upon a given table
+satisfy the conditions of the constraint"* — enforcement refuses the write —
+whereas **VALIDATE** concerns whether existing rows conform. Enforcement versus
+validation is textbook. **The concept is therefore not novel, and must not be
+claimed as such.**
+
+The useful finding is the adjacent one: *"constraints are generally not
+supported for view materializations."* A materialized view **is** a lossy
+derived representation of a source, and the database world leaves those
+unconstrained — integrity is enforced on base tables, while derived
+representations are optimisation artefacts, refreshed and trusted rather than
+gated.
+
+That yields the right vocabulary for what Entroly does, and a precise statement
+of where it sits:
+
+> A codec representation is a **materialized view over the original with an
+> ENABLED integrity constraint** — the preservation predicate — such that a view
+> violating it is never emitted. The source remains content-addressed and
+> byte-exactly recoverable, so the view never becomes the system of record.
+
+Databases enforce constraints on base tables and not on derived views. LLM
+context compression produces derived views and, per the two papers above,
+*measures* their fidelity. Enforcing a constraint **on the derived
+representation itself**, with the base retained for exact recovery, is the
+combination neither field applies.
+
+**Status: INFERRED, not established.** Four searches across LLM compression and
+databases; none showed the combination, which is weak evidence of absence.
+VLDB/SIGMOD on constrained view maintenance, and OSDI/SOSP on storage integrity,
+remain unsearched. Approximate query processing with error *guarantees* (rather
+than error *estimates*) is the nearest thing likely to already exist and should
+be checked next.
 
 ### Superseded: outstanding threat (kept for the record)
 
