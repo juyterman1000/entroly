@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -173,6 +174,10 @@ def test_proxy_scoped_policy_denies_unallowlisted_model(
     pricing_path = _pricing_file(tmp_path)
     _configure_execute(monkeypatch, pricing_path)
     config = validate_routing_environment(proxy_config=ProxyConfig.from_env())
+    # Startup validation requires both exact source and target models. Narrow the
+    # already-validated per-request policy here so this test reaches the inner
+    # allowlist denial while the outer official-model identity guard still passes.
+    config = replace(config, allowed_models=frozenset({"openai:gpt-4o"}))
     install_routing_safety()
 
     ledger = RoutingAuthorityLedger()
@@ -191,7 +196,7 @@ def test_proxy_scoped_policy_denies_unallowlisted_model(
     )
     target = ProviderTarget(
         provider="openai",
-        model="gpt-4.1-mini",
+        model="gpt-4o-mini",
         capabilities=frozenset({Capability.CHAT}),
     )
 
