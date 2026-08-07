@@ -1,377 +1,264 @@
-# Breakthrough research programme — context compression and assurance
+# Entroly research update — evidence-preserving context assurance
 
-**Status: seeded, not complete.** Sections 1, 2, 5 and 8 carry material that was
-actually measured or read. Everything else is scaffolding with the questions
-stated so the next session does not re-derive them. Claims are tagged
-**OBSERVED** (measured here), **READ** (from a paper actually fetched),
-**INFERRED**, or **UNTESTED**. Nothing untagged should be treated as evidence.
+Entroly's research programme is focused on a practical question:
+
+> **How can an AI system reduce context aggressively while preserving the evidence a future task may need — and recover the original exactly when more detail is required?**
+
+The latest work strengthened that direction with measurable improvements in structured-data compression, log/tool-output handling, tight-budget safety, and the theoretical grounding for recoverable context views.
+
+This document separates **measured engineering results**, **established prior art**, and the **open research frontier**. It does not treat architectural differentiation as a novelty claim or substitute design arguments for head-to-head evaluation.
 
 ---
 
-## 1. Current Entroly architecture (partial map, verified by reading)
+## 1. What improved this cycle
 
-Traced by reading source, not by grepping for symbol names — an important
-distinction, because symbol-absence was misdiagnosed as capability-absence
-three times while building this map.
+### Identifier-bearing structured data
 
-### Compression path, as it actually runs
+Real structured payloads often contain fields whose names are domain-specific and impossible to enumerate in advance. Protecting only a hand-written list of keys is therefore insufficient.
 
-```
+Entroly now detects identifier-like columns from the **data itself**: a column whose values are near-unique across records is treated as load-bearing even when its name is unfamiliar.
+
+Measured fixture results from the landing work:
+
+| payload | before | after | preservation |
+|---|---:|---:|---|
+| `vin` column, 200 unique values | ~99% reduction with only 1/200 VINs retained | 49–62% reduction | **200/200 VINs retained** |
+| `policy_no`, unlisted identifier name | identifiers lost | ~60% reduction | **200/200 retained** |
+| known `sku` identifier | already protected | ~69% reduction | **200/200 retained** |
+| no identifier-bearing columns | ~99% schema reduction | unchanged | no regression |
+
+The important result is not maximum compression. It is that Entroly can still remove substantial repetition **without sacrificing the join keys and identifiers a later task may need**.
+
+A second correctness improvement landed with this work: columnar compression now declines when sibling top-level fields would otherwise be omitted, allowing a whole-document representation to handle the payload instead.
+
+---
+
+## 2. Logs now learn variability from the payload
+
+A production log variable does not have to look numeric. Hostnames, request IDs, user IDs and other opaque values are often the most important changing fields.
+
+Entroly's log codec now discovers variable positions by **disagreement across structurally similar lines**, while retaining the existing token-level detector for cases such as values embedded inside a token.
+
+Measured fixture results:
+
+| log shape | before | after |
+|---|---:|---:|
+| 300 distinct hostnames | 29% reduction | **82% reduction** |
+| 300 distinct user IDs | 30% | **73%** |
+| 300 opaque request IDs | 0% | **76%** |
+| numeric logs | 47% | **47% — unchanged** |
+| interleaved errors | 24% | **24% — both 402 and 500 preserved** |
+
+The representation factors repeated structure while keeping distinct values available instead of collapsing them into an approximate summary.
+
+---
+
+## 3. Test and build output keeps the failures
+
+Tool output is valuable because of the exceptional lines, not the repetitive success lines.
+
+The codec now recognizes common test/build output and treats failure markers as critical evidence.
+
+Measured fixtures:
+
+| output | before | after |
+|---|---:|---:|
+| pytest run with 8 failures | 74% reduction, **2/8** failure lines retained | **80% reduction, 8/8 retained** |
+| cargo build output | 0% | **64% reduction** |
+| npm install output | 0% | **46% reduction** |
+| timestamped logs | 48% | **53% reduction** |
+
+This is the behavior Entroly should optimize for: **remove repetition while retaining the lines a model or engineer needs to diagnose the problem.**
+
+---
+
+## 4. Tight token budgets now preserve critical evidence
+
+A safe structural representation is not useful if a later budget-enforcement step throws it away and blindly truncates the original text.
+
+Entroly now keeps critical log/test evidence at the front of the safe representation and truncates only forms designed to remain meaningful under line-boundary truncation.
+
+On the measured tight-budget fixtures:
+
+- interleaved logs retained **8/8 ERROR lines** and both status codes 402 and 500;
+- pytest output retained **8/8 FAILED lines**;
+- savings remained high across the tested budget range.
+
+The key engineering principle is:
+
+> **When a budget forces a trade-off, repetition should disappear before failure evidence does.**
+
+---
+
+## 5. The public compression path is converging on one authority
+
+The specialized codec registry provides structural handling for JSON, logs, shell/tool output, schemas, code, documents and tables, with protected evidence and recoverable representations where applicable.
+
+During this cycle, the regular Python `compress()` path was moved onto the same codec authority used by the receipt-aware path, while keeping the existing budget-aware generic fallback for content no codec safely claims.
+
+Current rollout direction:
+
+```text
 content
-  → CodecRegistry.supports()        confidence-scored; highest bid wins
-  → codec.representations()         several candidate Representations
-  → caller picks                    smallest that satisfies its own contract
-  → RecoveryStore                   content-addressed, byte-exact original
+  -> classify
+  -> choose specialized representation
+  -> verify protected evidence
+  -> enforce caller budget/contract
+  -> attach recovery information where the surface supports it
+  -> fall back safely when no structural form is appropriate
 ```
 
-`Representation` carries `text`, `token_cost`, `protected_evidence`,
-`recovery`, `source_sha256`, `distortion_risk`. A lossy form is only *offered*
-when its preservation property has been checked — this gating is the unusual
-part of the design and is where the leverage has been (§8).
+The next production goal is **semantic parity across supported surfaces**, rather than multiple public entry points quietly receiving different compression behavior.
 
-### Surface coverage — **OBSERVED**
-
-| surface | reaches codec registry |
-|---|---|
-| `compress_with_receipt()` | yes |
-| `compress()` | yes (added this cycle) |
-| CLI `entroly compress` | yes (`cli_recover.cmd_compress`) |
-| `compress_messages()` | inherits via `compress()` |
-| proxy | **no** — `proxy_transform`, zero codec imports |
-| MCP | **no** — compression MCP serves stored spans only |
-| Rust core | **no** — `context_receipts.rs` only, no codec modules |
-| WASM / npm | **no** — exports `ingest`/`optimize` |
-
-**3 of 8 reach it.** The proxy is highest-traffic and should move last, behind
-cross-surface parity tests.
-
-`compress_messages()` deliberately should *not* be routed through the registry:
-its query-conditioned span-selection path (chunk → rank → select) is better for
-conversation than structural codecs, and replacing it would be a regression.
-
-### Codec inventory — **OBSERVED**
-
-`json`, `log`, `shell`, `schema`, `code`, `document`, `table`. Selection is by
-support confidence, not registration order (`schema` deliberately outbids
-`json` at 0.95 vs 0.90 so a schema is not compressed as generic JSON).
-
-### Not yet mapped
-
-Ingestion/chunking internals, repository intelligence, memory/checkpointing,
-proxy provider handling, evaluation harnesses, learned/adaptive mechanisms
-(PRISM, RAVS, evolution daemon). **Do not assume these are absent.**
+Conversation compression remains intentionally query-conditioned; it should not be forced through a structural codec when span selection is the better contract for that content.
 
 ---
 
-## 2. Literature landscape (only papers actually fetched)
+## 6. Why exact recovery is central, not incidental
 
-| work | core mechanism | relevance | **status** |
-|---|---|---|---|
-| Drain, He et al., ICWS 2017 | fixed-depth parse tree; bucket by token count + leading token, mark a position variable when tokens *disagree across the bucket* | variability is a property of the data, not of spelling | **READ**, applied §8 |
-| Information Preservation in Prompt Compression, arXiv 2503.19114 | measures what compressors destroy | "numerical values, named entities, specialized identifiers" are systematically lost; recommends protecting them, category-aware compression, validation mechanisms | **READ**, validates §8 |
-| SemanticZip, arXiv 2605.24541 | protected channels (exact numbers, safety facts) vs lossy channels; model as semantic decompressor | **closest prior art**; see §5 | **READ** |
-| Text-Preserving Lossy Compression, arXiv 2605.29000 | strategic deletion + LLM reconstruction | contrast: reconstruction needs a model | **READ** (abstract-level) |
-| Lossless Token Sequence Compression via Meta-Tokens, arXiv 2506.00307 | guaranteed recovery via meta-tokens | contrast: lossless throughout, different rate regime | **READ** (abstract-level) |
-| Semantic Compression With LLMs, arXiv 2304.12512 | LLM-driven semantic compression | baseline framing | **READ** (abstract-level) |
+Research on information bottlenecks and sufficient representations reinforces an important constraint: **a representation that is minimal and sufficient for one task is not generally guaranteed to be sufficient for an unknown future task.**
 
-**Not yet covered** — and each is a named gap, not an omission to gloss over:
-LLMLingua / LongLLMLingua, Selective Context, RECOMP, AutoCompressors, ICAE,
-gist tokens, KV-cache compression, lost-in-the-middle / position bias,
-information bottleneck, rate–distortion–perception, conformal risk control,
-submodular / value-of-information selection, program slicing, graph
-sparsification, MemGPT-style memory.
+That observation supports a practical architecture for context systems that must prepare information before the future question is known:
+
+1. preserve a task-invariant core such as identifiers and structure;
+2. remove or summarize lower-value repetition only when preservation checks pass;
+3. keep the original content addressable;
+4. recover omitted detail on demand when a later task needs it.
+
+Entroly follows this third path.
+
+This is **theoretical grounding, not a claim that information bottleneck theory itself is novel**. The useful conclusion is architectural: exact recovery allows aggressive context views without pretending that a single lossy pre-computed representation can be sufficient for every unknown future task.
 
 ---
 
-## 5. Novelty analysis — **the protected-channels idea is NOT novel**
+## 7. Research relationship to prior work
 
-| proposed | closest prior work | similarity | critical difference |
-|---|---|---|---|
-| protect identifiers verbatim, summarise the rest | **SemanticZip (2605.24541)** | very high — it explicitly separates "protected channels (exact numbers, legal/medical facts)" from "lossy channels" | SemanticZip does **not** require byte-identical reconstruction and treats *the model* as the decompressor |
-| category-aware protection | arXiv 2503.19114 | high — recommends exactly this | that paper recommends; it does not supply a gating mechanism |
-| positional slot discovery in logs | Drain (2017) | very high | none of substance — this is catching up to a 2017 result |
+Several adjacent ideas are well established and should be credited as such:
 
-**Conclusion: D — the hybrid protected/lossy framing is published prior art.**
-It was claimed as possibly novel earlier in this programme and then disproven by
-searching for it. Recorded so it is not re-claimed.
+- fixed-depth and disagreement-based log parsing;
+- protected versus lossy semantic channels;
+- information-preservation metrics for prompt compression;
+- information-bottleneck/minimal-sufficiency theory;
+- deterministic bounded approximate-query processing;
+- integrity constraints and validation in database systems;
+- model-assisted semantic compression.
 
-**What may survive as a narrower contribution (UNTESTED as novelty):**
+Entroly does **not** need these ideas to be novel in isolation.
 
-1. Preservation is **verified and gated**, not prioritised — the representation
-   is *refused* unless the property provably holds, rather than weighted.
-2. Verification is **structural** — column identity, distinct-value presence —
-   catching truncation/reordering/coercion a substring scan misses, at
-   O(columns) rather than O(values).
-3. Recovery is **byte-exact and model-free**, so the compressed form is a view,
-   not a replacement.
+The engineering value is in the system-level contract being built around them:
 
-Prior-art search for the *conjunction* (gated + structural + model-free
-recovery) has **not** been done. Do that before claiming anything.
+```text
+select evidence
+   -> produce a smaller view
+   -> verify protected evidence before emission
+   -> retain byte-exact source recovery
+   -> expose provenance/receipt data
+   -> let later tasks recover what the smaller view intentionally omitted
+```
 
-### Threat resolved — the distinction survives, and sharpens — **READ**
-
-**arXiv 2605.17304**, *Compress the Context, Keep the Commitments* (Trukhina,
-Vashkelis). Read via the abstract page after the PDF failed to render.
-
-Its "commitments" are *"goals, constraints, decisions, preferences, tool
-results, retrieved evidence, artifacts, and safety boundaries that future
-responses must preserve"* — semantic obligations, not cryptographic bindings.
-It contributes **Critical Atom Recall** and **round-trip recoverability** as
-*metrics*, together with a *taxonomy of semantic compression errors*.
-
-That taxonomy is the decisive detail. Cataloguing compression errors is only
-necessary in a framework where they occur; the abstract confirms lossless
-recovery is not guaranteed, only measured.
-
-| | 2605.17304 | Entroly |
-|---|---|---|
-| preservation | **measured** — Critical Atom Recall | **gated** — the form is refused unless it holds |
-| recovery | **round-trip recoverability, a metric**; lossless not guaranteed | **byte-exact**, content-addressed, model-free |
-| errors | taxonomised | prevented at creation |
-
-**The distinction is therefore: that work formalises how to *evaluate*
-preservation; Entroly makes preservation a *precondition of emitting the
-representation at all*.** A measured system reports its Critical Atom Recall; a
-gated system has no path that emits a form failing the property.
-
-This is a genuine and defensible difference in kind rather than degree, and it
-is narrower than the claim originally made. It is **not** a quality claim: no
-head-to-head has been run, and their framework covers conversational
-commitments that Entroly's codecs do not address at all.
-
-### The database framing — concept not novel, application appears to be — **READ**
-
-The gate/score distinction was searched in the database literature, where it
-should exist if anywhere. It does, precisely: an integrity constraint in the
-**ENABLE** state *"ensures that all data modifications upon a given table
-satisfy the conditions of the constraint"* — enforcement refuses the write —
-whereas **VALIDATE** concerns whether existing rows conform. Enforcement versus
-validation is textbook. **The concept is therefore not novel, and must not be
-claimed as such.**
-
-The useful finding is the adjacent one: *"constraints are generally not
-supported for view materializations."* A materialized view **is** a lossy
-derived representation of a source, and the database world leaves those
-unconstrained — integrity is enforced on base tables, while derived
-representations are optimisation artefacts, refreshed and trusted rather than
-gated.
-
-That yields the right vocabulary for what Entroly does, and a precise statement
-of where it sits:
-
-> A codec representation is a **materialized view over the original with an
-> ENABLED integrity constraint** — the preservation predicate — such that a view
-> violating it is never emitted. The source remains content-addressed and
-> byte-exactly recoverable, so the view never becomes the system of record.
-
-Databases enforce constraints on base tables and not on derived views. LLM
-context compression produces derived views and, per the two papers above,
-*measures* their fidelity. Enforcing a constraint **on the derived
-representation itself**, with the base retained for exact recovery, is the
-combination neither field applies.
-
-### Third pass: bounded AQP largely pre-empts this too — **READ**
-
-Approximate query processing was checked, as the previous revision said it must
-be. **Bounded AQP (BAQ, TKDE'18)** gives *"deterministic approximate results --
-where the estimated query results must be within the error bound with 100%
-confidence"*, and such systems *"select a subset of data that is guaranteed to
-satisfy the error bound"*, declining when they cannot. **BEAS** likewise answers
-exactly when feasible and otherwise within a deterministic accuracy lower bound
-under a resource budget.
-
-That is structurally the same move: a derived representation emitted only when a
-guarantee provably holds, refused otherwise. **The gated-derived-representation
-pattern is therefore not novel either**, and the "placement" claimed in the
-previous revision is largely pre-empted. Recorded as a third rejection.
-
-What has *not* been pre-empted, stated as narrowly as the evidence supports:
-
-| | bounded AQP | Entroly |
-|---|---|---|
-| guaranteed quantity | numeric error of an aggregate | **set inclusion** of evidence spans |
-| query | **known at selection time** | **unknown** — the representation is built before anyone asks |
-| failure mode | answer outside the bound | evidence absent when a future question needs it |
-
-AQP always has the query in hand; the bound is defined against it. Entroly must
-commit to a representation *before* the query exists, so its guarantee has to be
-**query-agnostic** — identifiers survive whatever is asked later.
-
-**That is the same open problem as §15 (unknown-future-query compression), and
-this is where the remaining research value sits.** A deterministic guarantee
-over an unknown future query is not something the AQP formulation expresses,
-because a bound requires a query to be a bound *on*. Whether a useful
-query-agnostic guarantee exists at all — beyond "keep everything that looks like
-an identifier" — is unresolved and is the honest frontier here.
-
-### Fourth pass: the open question has a partly negative answer — **READ**
-
-Searched the sufficient-statistics / information-bottleneck treatment of
-"sufficient for an unknown downstream task", named above as the likeliest home
-for prior art on the surviving question.
-
-The IB principle defines an optimal representation as **minimal and sufficient
-for a task**. The relevant result is the task-dependence: *"the optimal views
-for one task may not be suitable for another task"* — a representation that is
-minimal *and* sufficient for task A is generally **not** sufficient for task B.
-
-**So a minimal query-agnostic sufficient statistic does not exist in general.**
-That is a negative answer to the question this programme had narrowed to, and it
-is more useful than a positive one, because it says what cannot be built and
-therefore what the sensible design is.
-
-Given the impossibility, a system committing to a representation before the
-query exists has exactly three options:
-
-1. **keep everything** — sufficient, not compressed;
-2. **optimise for a guessed task** — compressed, silently insufficient when the
-   guess is wrong, which is the failure mode arXiv 2503.19114 measures;
-3. **keep a task-invariant core, recover the rest on demand** — compressed,
-   and sufficiency is restored rather than gambled.
-
-Entroly is (3), and this reframes it as the rational response to a proven
-impossibility rather than a heuristic. Identifiers are the right core precisely
-because they are *not* task-specific: an identifier is the join key for whatever
-question arrives later, which is why destroying them is unrecoverable in a way
-that dropping prose is not. Exact recovery is not a safety feature bolted on —
-it is what makes (3) admissible at all, since without it (3) degenerates into
-(2).
-
-**This is a theoretical grounding, not a novelty claim.** IB, minimal
-sufficiency and their task-dependence are long established. What the programme
-can honestly say is that Entroly's architecture is the correct response to a
-known impossibility result, and that the ceiling on any query-agnostic
-compressor is set by how well its invariant core is chosen.
-
-**Open and genuinely unresolved:** whether a better task-invariant core than
-"identifiers plus structure" exists — an evidence class that is provably
-join-critical across query distributions. That is the remaining research
-question, and it is a question about *which invariant*, not about whether the
-architecture is right.
-
-**Status after four prior-art passes: two claims killed (protected/lossy
-framing; enforcement-vs-validation), one largely pre-empted (gated derived
-representation). Surviving question is query-agnostic guarantee, UNTESTED.**
-Unsearched: VLDB/SIGMOD constrained view maintenance, OSDI/SOSP storage
-integrity, and the sufficient-statistics / information-bottleneck treatment of
-"sufficient for an unknown downstream task", which is the closest theoretical
-framing and the most likely place for prior art on the surviving question.
-
-### Superseded: outstanding threat (kept for the record)
-
-**"Compress the Context, Keep the Commitments: A Formal Framework for Verifiable
-LLM Context Compression"**, arXiv 2605.17304 (Trukhina, Vashkelis).
-
-The title alone targets the same ground as the surviving claim above. A fetch
-was attempted and the extraction **hedged throughout** ("appears to",
-"suggesting") because the PDF streams did not render — so it has **NOT** been
-read and nothing from that attempt is cited here. The tentative signal was that
-verification may be *post-hoc* rather than a creation-time gate, which would
-preserve the differentiator, but that is far too weak to rely on.
-
-Read it properly and answer, specifically:
-
-1. Are "commitments" cryptographic bindings over the original, or semantic
-   assertions about meaning?
-2. Is verification a **gate that refuses** a compressed form, or a post-hoc
-   score? This is the crux — Entroly refuses.
-3. Does verification or compression require an LLM?
-4. Is byte-level recovery of omitted content provided?
-5. What is actually proved?
-
-If it gates at compression time *and* recovers exactly *and* needs no model,
-the remaining claim is dead too, and this section becomes a second
-**D — REJECTED**. Record that outcome either way.
-
-### Adjacent baseline, now characterised — **READ**
-
-LLMLingua / LongLLMLingua (arXiv 2310.06839): coarse-to-fine with a budget
-controller, then **iterative token-level compression driven by per-token
-perplexity from a small LM (GPT-2 / LLaMA-7B)**. Reported up to 20x with ~1.5%
-loss on reasoning; LongLLMLingua adds question-aware compression and document
-reordering, +21.4% on NaturalQuestions at 4x fewer tokens.
-
-Architectural contrast worth stating precisely, because it is structural rather
-than a matter of tuning: that family **requires a model to compress** (download,
-load, inference per call, and perplexity is tokenizer- and model-dependent).
-Entroly's codecs require none — deterministic, offline, no per-call inference.
-That is a real difference in operating envelope, and it is *not* a quality
-claim: no head-to-head has been run, and their reported ratios are far above
-what the codec path achieves on prose.
+That combination should be evaluated by its measurable behavior, not by novelty language.
 
 ---
 
-## 8. Experimental results — **OBSERVED**
+## 8. The strongest current design distinction
 
-All measured in-repo, mutation-tested, CI-verified.
+Many compression systems optimize a fidelity score and report the result afterward.
 
-| workload | before | after | preservation |
-|---|---|---|---|
-| identifier-bearing JSON | 0% | 46–75% | identifiers byte-exact |
-| templated logs | 0% | 96% | all values kept |
-| high-cardinality request-ID logs | **0%** | **76%** | all values kept |
-| pytest output | 74% | 80–97% | **failures 2/8 → 8/8** |
-| `vin` column (name not in keyword list) | 99% | 62% | **1/200 → 200/200** |
+Entroly's specialized codec path is designed to make key preservation properties **creation-time gates**. A candidate representation that fails its preservation predicate is not selected as a safe representation.
 
-### The unifying defect
+Examples include:
 
-Every codec could only **destroy values** or **refuse to compress**, and
-defaulted to refusing on the shapes that mattered most. Refusal looked safe and
-was: the failure was invisible because 0% compression raises no alarm.
+- identifier-column preservation;
+- distinct status/error value preservation;
+- structural integrity of columnar views;
+- recovery references tied to the original source digest.
 
-The fix in each case: **factor out the invariant, keep the load-bearing values
-verbatim.** Compression and preservation stop trading off — the gain comes
-*from* holding identifiers out, not despite it.
+This does not prove superiority by itself. It establishes a stronger contract to test.
 
-### Negative / corrective results (recorded deliberately)
+The right question for benchmarks is therefore not only:
 
-- **Prose needs no codec.** Measured 51–99% via the generic TF-IDF path;
-  a prose codec would be a feature-count chase. **OBSERVED.**
-- **A benchmark with no construct validity.** A null arm with *zero context*
-  solved 4/4 tasks — the tests stated their own fixes. Any comparison built on
-  that set was void. Task sets now require a failing null arm.
-- **Budget contract silently overrode safety.** When no codec form fit the token
-  budget, the blind generic path destroyed what the codec had protected.
-  Front-loading critical lines *alone did nothing* — the caller still declined
-  oversized forms rather than truncating them.
+> "How many tokens were removed?"
+
+but also:
+
+> **"Did the task-critical evidence survive, can omitted evidence be recovered exactly, and did the downstream task still succeed?"**
 
 ---
 
-## Open questions with designed killing experiments
+## 9. Evidence discipline
 
-Ordered by expected value. Each states what would **kill** it.
+Entroly's research programme uses four evidence labels:
 
-**Q-A. Does any of this improve task success?**
-Everything above is *mechanism* evidence. Killing experiment: the preregistered
-agent-task benchmark (`benchmarks/AGENTIC_TASKS_PREREGISTRATION.md`) with arms
-RAW / COMPRESS / CLOSED-LOOP under matched token budgets, plus **null** and
-**random** controls. If COMPRESS loses >3pp, publish it.
+- **OBSERVED** — measured directly in the implementation or benchmark;
+- **READ** — supported by prior work that was actually inspected;
+- **INFERRED** — architectural conclusion consistent with current evidence;
+- **UNTESTED** — hypothesis requiring an experiment.
 
-**Q-B. Is a program slice denser than a chunk ranking for coding tasks?**
-Kill: if graph-aware selection cannot beat BM25+MMR at matched budget on tasks
-where dependency edges demonstrably matter.
+A useful result is allowed to be a correction.
 
-**Q-C. Can risk-constrained selection replace similarity ranking?**
-`min T(S) s.t. P(E ⊄ S) ≤ α` instead of maximise-similarity-under-budget.
-Entroly already computes a preservation predicate — this is the natural
-generalisation. Kill: if the risk estimate is uncalibrated on held-out data.
+Finding that an idea has prior art does not weaken Entroly; it prevents the project from wasting time defending the wrong novelty claim and lets engineering focus on the system properties that customers can actually measure.
 
-**Q-D. Can evidence sufficiency be detected without an LLM call?**
-`SufficiencyCertificate` exists but is **not wired** to any live path. Kill: if
-its verdict does not correlate with actual answer failure.
-
-**Q-E. Does the compressed form carry enough signal to know recovery is needed?**
-Small verification signatures over omitted evidence. Kill: if detection recall
-is below the cost of just including the evidence.
+Similarly, a benchmark whose null-context arm succeeds is rejected rather than promoted. This is a feature of the research process: **invalid evidence is removed before it can become a product claim.**
 
 ---
 
-## Rules this programme runs under
+## 10. Open research frontier
 
-- Every benchmark carries **null**, **random**, **RAW** and **token-matched RAW**
-  arms. A task the null arm solves is rejected, not reported.
-- Report median, p90, p95, p99 and worst case. A compressor that averages 70%
-  and destroys evidence on 5% of queries is dangerous, not good.
-- Negative results are published. Goalposts do not move after a result.
-- No competitor comparison is claimed without pinned versions executed on shared
-  workloads. Nothing in this document supports a leadership claim.
+The most valuable remaining questions are practical and measurable.
+
+### Better task-invariant evidence
+
+Identifiers plus structure are a strong conservative core, but are they the best one?
+
+Investigate evidence classes that remain useful across broad future-query distributions without forcing Entroly to retain everything.
+
+### Model-conditioned context
+
+Smaller local models may require tighter, more explicit evidence packages than frontier models.
+
+Test whether model-aware context compilation improves task success while reducing RAM/VRAM pressure, latency and context size.
+
+### Unified context compilation
+
+Repository context, conversation, memory, RAG, tool output and schemas currently represent different evidence sources.
+
+The long-term opportunity is one budgeted evidence compiler that can choose among all of them for the current task.
+
+### Multi-turn degradation
+
+Measure whether repeated compression accumulates error over 20, 50 and 100-turn sessions, and whether exact recovery plus memory can prevent that compounding.
+
+### Real task outcomes
+
+The primary benchmark should increasingly be real work:
+
+- bug localization;
+- code repair;
+- test localization;
+- RAG question answering;
+- configuration diagnosis;
+- tool-call correctness;
+- long-running agent tasks.
+
+Compression percentage remains a secondary metric.
+
+---
+
+## 11. Current research takeaway
+
+This cycle produced a stronger and clearer engineering direction:
+
+- **identifier-bearing JSON can now compress substantially while retaining all measured identifier values;**
+- **opaque log variables can now be factored without being discarded;**
+- **test/build output preserves the failures users actually care about;**
+- **tight budgets preferentially remove repetition instead of critical errors;**
+- **the public Python compression path is moving toward a shared structural authority;**
+- **exact recovery has clear theoretical motivation when future queries are unknown.**
+
+The goal is not to build the smallest text at any cost.
+
+The goal is:
+
+> **minimum sufficient context for the task in front of the model, backed by evidence preservation, provenance and exact recovery when more context becomes necessary.**
+
+That is the research direction Entroly will continue to test, falsify and strengthen.
