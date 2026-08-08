@@ -914,12 +914,46 @@ component in the system, and excluding it measured the wrong thing.
 
 ### Status
 
-**C — INTERESTING BUT UNPROVEN**, and the strongest candidate in this document.
-Prior art unsearched — code-search and repository-map tools ship signature
-indexes, so the *artifact* is certainly not novel; what may be novel is the
-**objective**: selecting to maximise addressability under a budget, with
-recovery as the completeness mechanism, rather than selecting to maximise
-relevance. That distinction must survive a search before any claim is made.
+**D — REJECTED as novel.** The search took one query, and the objective — not
+merely the artifact — is prior art.
+
+| work | what it does |
+|---|---|
+| **aider repo map** | tree-sitter extraction of signatures only, **ranked by a graph algorithm over the file dependency graph**, fitted to a `--map-tokens` budget that adapts to chat state. This *is* "maximise addressability under a token budget", shipped since 2023 |
+| **SigMap** | "a deterministic, auditable signature-and-evidence map — no LLM calls, no embeddings, **byte-stable output** — so agents, CI and reviewers can trust and verify which files and symbols are real". Nearly verbatim Entroly's own differentiator, already applied to an index |
+| **jCodeMunch** | indexes once, then retrieves "only the exact symbols needed … with byte-level precision" — index plus precise recovery, the completeness mechanism proposed above |
+
+Six novelty claims generated in this programme, six rejected.
+
+### But this rejection inverts into the most actionable result here
+
+The previous five said "your idea is already published." This one says something
+sharper and worse:
+
+> **The technique is standard practice in competing coding agents, it is
+> measurably better than what Entroly's primary selector does, and Entroly does
+> not do it.**
+
+qccr performs *span selection over file contents*. It does not build an index.
+The measurement above quantifies the cost of that choice on Entroly's own
+corpus: at a matched budget the index carries the evidence **12/12** against
+qccr's **9/12**, and it matches the raw ceiling at **2.6%** of raw tokens.
+
+That reframes the finding from a research claim into a **product gap with a
+measured size**. It is worth more than the novelty claim would have been,
+because it is actionable today and the evidence already exists.
+
+**Recommended work, in order:**
+
+1. Add an index arm to the retrieval path — signatures for the whole candidate
+   set, before any span selection — and measure delivery and tokens against
+   qccr on the existing graph-lane harness.
+2. Test the general thesis on a **body-resident** task, where the answer is not
+   in a signature. That is where an index must lose, and the boundary between
+   the two regimes is the thing actually worth knowing.
+3. If both hold, the selector becomes index-first with spans as refinement,
+   which is a rebuild of the primary path and must go behind a flag with
+   parity tests.
 
 ---
 
