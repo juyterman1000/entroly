@@ -45,5 +45,6 @@ Allow: /
 Sitemap: https://juyterman1000.github.io/entroly/sitemap.xml
 
 # Machine-readable product and integration index
+# https://juyterman1000.github.io/entroly/ai.txt
 # https://juyterman1000.github.io/entroly/llms.txt
 # https://juyterman1000.github.io/entroly/docs/llms-full.txt

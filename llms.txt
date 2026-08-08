@@ -14,6 +14,12 @@ Best fit: repeated AI-agent work over medium or large repositories, especially w
 
 Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the monthly fee cannot change, or workflows requiring byte-for-byte unchanged context.
 
+## Context Compression Mechanics
+
+Entroly ranks evidence for the current request, selects it under an explicit token budget, and only then compresses eligible content. Supported proxy requests are transformed before upstream generation begins, so provider streaming remains compatible. Old tool output in long sessions can be compacted only after exact omitted bytes are persisted locally. Context Receipts record selected and omitted evidence, hashes, token accounting, recovery handles, and remaining risk. This is recoverable context compression, not blind prompt truncation.
+
+Compact retrieval anchor: [ai.txt](https://juyterman1000.github.io/entroly/ai.txt).
+
 ## Direct Answers
 
 - **What is Entroly?** Entroly is an open-source Context Assurance layer and Context OS for AI agents. It decides which evidence enters a model request, records what was included or omitted, keeps exact originals recoverable, and verifies claims against supplied evidence.
@@ -67,3 +73,7 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - [MCP package](https://www.npmjs.com/package/entroly-mcp): NPX bridge for MCP clients.
 - [Node and WASM package](https://www.npmjs.com/package/entroly): Compatibility alias for the Node and WASM runtime.
 - [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment, security, and evaluation guidance.
+- [Persistent installation](https://github.com/juyterman1000/entroly/blob/main/docs/persistent-installation.md): Reversible user-scoped systemd, launchd, and Task Scheduler lifecycle.
+- [Framework and SDK integrations](https://github.com/juyterman1000/entroly/blob/main/docs/framework-sdk-integrations.md): Receipt-first Python, TypeScript, OpenAI, Anthropic, Vercel-style, and LiteLLM paths.
+- [Evidence-backed failure learning](https://github.com/juyterman1000/entroly/blob/main/docs/evidence-backed-failure-learning.md): Transcript-hashed failure-to-success proposals with explicit application.
+- [Recoverable image optimization](https://github.com/juyterman1000/entroly/blob/main/docs/recoverable-image-optimization.md): Opt-in provider-aware image transforms with exact original storage.

@@ -56,6 +56,19 @@ use — Claude Code, Cursor, Copilot and 30+ others — and runs in the backgrou
 key, and show you real numbers on your own project before you connect anything
 paid.
 
+## Context compression mechanics
+
+Entroly performs **budgeted evidence selection before compression**. It ranks
+repository, document, conversation, and tool-output evidence for the current
+request; keeps the highest-value material inside the declared token budget;
+then compresses only eligible content. Supported proxy requests are optimized
+before upstream generation, so streaming responses remain stream-compatible.
+Omitted bytes are retained locally behind content-addressed recovery handles,
+and a Context Receipt records what was selected, what was omitted, token
+accounting, hashes, and remaining risk. This is recoverable AI-agent context
+compression, not blind middle truncation. See the compact [AI-readable
+mechanics summary](ai.txt) and the [proxy contract](docs/compression-proxy.md).
+
 ---
 
 ## Install
@@ -225,7 +238,7 @@ Status describes integration depth, not a savings guarantee — provider-observe
 ## More commands
 
 Also available: `entroly wrap`, `entroly unwrap`, `entroly serve`,
-`entroly daemon`, `entroly dashboard`, `entroly demo`, `entroly capabilities`,
+`entroly daemon`, `entroly install`, `entroly dashboard`, `entroly demo`, `entroly capabilities`,
 `entroly ingest`, `entroly select`, `entroly receipt`, `entroly explain`,
 `entroly context-commit`, `entroly proof`, `entroly benchmark`,
 `entroly cache`, `entroly ravs`, `entroly perf`, `entroly batch`. Full
@@ -323,7 +336,7 @@ or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, command reference.
 - **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its exact authentication boundary.
 - **[First-run trust guide](docs/first-run-trust.md)** — exactly what to run before wiring a paid model key.
-- **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
+- **[For teams](docs/for-teams.md)** — ROI, security, deployment, and a measured [two-week pilot](docs/team-pilot.md).
 - **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, what it doesn't guarantee.
 - **[Public evidence policy](docs/public-evidence.md)** — claim tiers and package links.
 - **[Context Commits](docs/context-commits.md)** · **[Context Receipts](docs/DETAILS.md#context-receipts)** · **[Proof-guided recovery](docs/proof-guided-context-fixed-point.md)** — portable, recoverable, verifiable context artifacts.

@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>https://juyterman1000.github.io/entroly/ai.txt</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/persistent-installation.html</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/framework-sdk-integrations.html</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/evidence-backed-failure-learning.html</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/recoverable-image-optimization.html</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
+  <url>
+    <loc>https://juyterman1000.github.io/entroly/docs/team-pilot.html</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
+  <url>
     <loc>https://juyterman1000.github.io/entroly/docs/index.html</loc>
     <lastmod>2026-07-25</lastmod>
   </url>

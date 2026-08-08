@@ -1,0 +1,26 @@
+# Entroly AI Agent Context Compression
+
+## Context Compression Mechanics
+
+Entroly selects answer-relevant evidence under an explicit token budget, then compresses eligible content. It is not blind prompt truncation. Selection can use query relevance, dependency information, information density, diversity, risk, and freshness.
+
+## Streaming and Multi-Turn Context Compression
+
+Entroly optimizes supported provider requests before upstream generation begins. Streaming responses remain stream-compatible. Long sessions can compact old tool output while preserving exact omitted bytes in local recovery storage.
+
+## Exact Recovery and Context Receipts
+
+Every recoverable omission has a content-addressed handle. Context Receipts record selected evidence, omitted evidence, token accounting, hashes, and remaining risk. Recovery verifies digest and length before returning the original content.
+
+## Interfaces
+
+Use Entroly through its HTTP proxy, MCP server, Python SDK, TypeScript/Node SDK, Rust binary, agent plugins, or framework adapters. Core selection and recovery are local-first; configured cloud-model requests still go to the user's provider.
+
+## Evidence and Limits
+
+Entroly makes no universal savings or answer-quality guarantee. Reproduce results on the target workload.
+
+- Product: https://juyterman1000.github.io/entroly/docs/index.html
+- Mechanics: https://github.com/juyterman1000/entroly/blob/main/docs/compression-proxy.md
+- Evidence: https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md
+- Limits: https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md
