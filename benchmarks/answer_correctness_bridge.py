@@ -39,6 +39,32 @@ Two leakage filters, applied before any model call:
 Scoring is exact set equality on parameter names. No partial credit, no judge
 model -- a fuzzy scorer here would be the benchmark theater this programme
 exists to avoid.
+
+FIRST RUN: VOID -- the model, not the context, was the bottleneck
+----------------------------------------------------------------
+Executed against a local `qwen2.5-coder:1.5b` via Ollama (12 probes, budget
+6000, 0 errors):
+
+    null 0/12 | oracle 4/12 | bm25 1/12 | qccr 0/12 | hcc 0/12
+
+**The oracle arm scored 4/12.** Oracle hands the model the single file that
+defines the callee, so it is the capability control: if the model cannot answer
+with the evidence directly in front of it, no arm below it is interpretable.
+At 33% the 1.5B model is the limiting factor, and reading `qccr 0/12` as a
+statement about selection quality would be measuring the model and blaming the
+compressor -- the exact error this file exists to prevent.
+
+The run is therefore recorded as VOID rather than as a result. The same model
+answered a 50-token version of the question correctly, so the failure is
+context-length capability, not prompt format.
+
+Re-run on a stronger model before drawing any conclusion:
+
+    python benchmarks/answer_correctness_bridge.py --limit 12 --budget 6000 \
+        --backend ollama --model entroly-qwen2.5-7b-32k:latest
+
+That model answered the smoke test exactly ("index, store, budget") but needs
+roughly 50 minutes on CPU for the full matrix.
 """
 
 from __future__ import annotations
@@ -48,6 +74,7 @@ import ast
 import json
 import os
 import random
+import urllib.request
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -196,14 +223,56 @@ def _context_for(arm: str, probe: Probe, pool: list[str],
         return "\n\n".join(parts)
 
 
-_PROMPT = """You are answering a question about a Python codebase.
+# Deliberately small. The arms differ only in context, so the question must be
+# answerable by a modest local model whenever the evidence is present -- a task
+# that is hard for reasons other than retrieval measures the model, not the
+# context. Two earlier faults are fixed here: it asked for parameters "in order"
+# while the scorer compares sets, and it made the model first reason from caller
+# to callee before answering. The model only has to find `def <callee>(...)`.
+_PROMPT = """{context_block}
+What are the parameter names of the function `{callee}`?
+Answer with only the names separated by commas. If it is not shown above, answer: UNKNOWN"""
 
-{context_block}
-Question: the function `{caller}` calls a helper named `{callee}`, which is
-defined in a different file. List the parameter names of `{callee}`, in order.
 
-Reply with ONLY a comma-separated list of parameter names. If you do not know,
-reply exactly: UNKNOWN"""
+def _ollama_post(base_url: str, path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _ollama_identity(base_url: str, model: str, timeout: float) -> dict[str, Any]:
+    """Pin which weights answered, so the result is reproducible later."""
+    with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as response:
+        tags = json.loads(response.read().decode("utf-8"))
+    matches = [v for v in tags.get("models", []) if v.get("name") == model]
+    if not matches:
+        raise RuntimeError(f"Ollama model {model!r} is not installed")
+    return {
+        "name": model,
+        "digest": matches[0].get("digest"),
+        "details": matches[0].get("details", {}),
+    }
+
+
+def _ask_ollama(base_url: str, model: str, prompt: str, timeout: float) -> str:
+    """Greedy, seeded decoding -- the arms must differ only in context."""
+    response = _ollama_post(
+        base_url,
+        "/api/generate",
+        {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0, "seed": 0, "num_predict": 60},
+        },
+        timeout,
+    )
+    return str(response.get("response", "")).strip()
 
 
 def _ask(client: Any, model: str, prompt: str) -> str:
@@ -223,10 +292,17 @@ def _score(reply: str, gold: tuple[str, ...]) -> bool:
     return set(got) == set(gold)
 
 
-def run(limit: int, budget: int, model: str, seed: int) -> dict[str, Any]:
-    from openai import OpenAI
+def run(limit: int, budget: int, model: str, seed: int,
+        backend: str = "ollama", base_url: str = "http://127.0.0.1:11434",
+        timeout: float = 300.0) -> dict[str, Any]:
+    client = None
+    identity: dict[str, Any] = {}
+    if backend == "ollama":
+        identity = _ollama_identity(base_url, model, 30.0)
+    else:
+        from openai import OpenAI
 
-    client = OpenAI()
+        client = OpenAI()
     payload = json.loads(
         (REPO / "benchmarks" / "results" / "graph_lane_tasks.json").read_text(encoding="utf-8")
     )
@@ -249,7 +325,10 @@ def run(limit: int, budget: int, model: str, seed: int) -> dict[str, Any]:
                 callee=probe.task.callee,
             )
             try:
-                reply = _ask(client, model, prompt)
+                if backend == "ollama":
+                    reply = _ask_ollama(base_url, model, prompt, timeout)
+                else:
+                    reply = _ask(client, model, prompt)
                 error = ""
             except Exception as exc:  # noqa: BLE001
                 reply, error = "", f"{type(exc).__name__}: {exc}"
@@ -268,7 +347,9 @@ def run(limit: int, budget: int, model: str, seed: int) -> dict[str, Any]:
 
     return {
         "pinned_ref": payload["pinned_ref"],
+        "backend": backend,
         "model": model,
+        "model_identity": identity,
         "budget": budget,
         "probes": len(probes),
         "records": records,
@@ -279,13 +360,17 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=12)
     ap.add_argument("--budget", type=int, default=2000)
-    ap.add_argument("--model", default=os.environ.get("BRIDGE_MODEL", "gpt-4o-mini"))
+    ap.add_argument("--backend", choices=("ollama", "openai"), default="ollama")
+    ap.add_argument("--model", default=os.environ.get("BRIDGE_MODEL", "entroly-qwen2.5-7b-32k:latest"))
+    ap.add_argument("--base-url", default="http://127.0.0.1:11434")
+    ap.add_argument("--timeout", type=float, default=300.0)
     ap.add_argument("--seed", type=int, default=20260807)
     ap.add_argument("--out", type=Path,
                     default=REPO / "benchmarks" / "results" / "answer_correctness_bridge.json")
     args = ap.parse_args()
 
-    payload = run(args.limit, args.budget, args.model, args.seed)
+    payload = run(args.limit, args.budget, args.model, args.seed,
+                  backend=args.backend, base_url=args.base_url, timeout=args.timeout)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
