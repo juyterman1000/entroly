@@ -1,0 +1,226 @@
+{
+  "budget": 6000,
+  "probes": 20,
+  "rows": [
+    {
+      "func": "_classify_bind_host",
+      "file": "entroly/proxy_access_security.py",
+      "exception": "ValueError",
+      "index_tokens": 5687,
+      "qccr_tokens": 5185,
+      "raw_tokens": 229292,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "_replace_versions",
+      "file": "scripts/sync_release_version.py",
+      "exception": "RuntimeError",
+      "index_tokens": 4686,
+      "qccr_tokens": 5937,
+      "raw_tokens": 140786,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "_validate_assembly_invariants",
+      "file": "entroly/openclaw_bridge.py",
+      "exception": "ValueError",
+      "index_tokens": 5302,
+      "qccr_tokens": 5680,
+      "raw_tokens": 144886,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "cmd_attach",
+      "file": "entroly/cli.py",
+      "exception": "ValueError",
+      "index_tokens": 6576,
+      "qccr_tokens": 4899,
+      "raw_tokens": 259344,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "compress_proxy_payload",
+      "file": "entroly/compression_proxy.py",
+      "exception": "ValueError",
+      "index_tokens": 5091,
+      "qccr_tokens": 5990,
+      "raw_tokens": 174929,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "fit_cascade",
+      "file": "entroly/conformal_cascade.py",
+      "exception": "ValueError",
+      "index_tokens": 6230,
+      "qccr_tokens": 5441,
+      "raw_tokens": 234943,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "_proof_prepare_route",
+      "file": "entroly/proxy.py",
+      "exception": "ValueError",
+      "index_tokens": 7821,
+      "qccr_tokens": 5778,
+      "raw_tokens": 287017,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "image_dimensions",
+      "file": "entroly/image_optimizer.py",
+      "exception": "ValueError",
+      "index_tokens": 6745,
+      "qccr_tokens": 5998,
+      "raw_tokens": 257546,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "_docker_image",
+      "file": "entroly/_docker_launcher.py",
+      "exception": "RuntimeError",
+      "index_tokens": 6306,
+      "qccr_tokens": 6010,
+      "raw_tokens": 196886,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "optimal_stop_dp",
+      "file": "entroly/escalation.py",
+      "exception": "ValueError",
+      "index_tokens": 7100,
+      "qccr_tokens": 4565,
+      "raw_tokens": 218692,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "apply_target_same_provider",
+      "file": "entroly/provider_adapters.py",
+      "exception": "ValueError",
+      "index_tokens": 6804,
+      "qccr_tokens": 5980,
+      "raw_tokens": 256652,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "chain_handoff",
+      "file": "entroly/verified_handoff.py",
+      "exception": "ValueError",
+      "index_tokens": 7054,
+      "qccr_tokens": 5216,
+      "raw_tokens": 217174,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "_apply_mcp_access_policy",
+      "file": "entroly/server.py",
+      "exception": "RuntimeError",
+      "index_tokens": 6529,
+      "qccr_tokens": 5259,
+      "raw_tokens": 293866,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "assess_context_commit",
+      "file": "entroly/context_check.py",
+      "exception": "ValueError",
+      "index_tokens": 5971,
+      "qccr_tokens": 5459,
+      "raw_tokens": 223666,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "certify_selection",
+      "file": "entroly/sufficiency.py",
+      "exception": "RuntimeError",
+      "index_tokens": 5860,
+      "qccr_tokens": 3384,
+      "raw_tokens": 164877,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "calibrate",
+      "file": "entroly/witness_calibration.py",
+      "exception": "ValueError",
+      "index_tokens": 6780,
+      "qccr_tokens": 5753,
+      "raw_tokens": 269499,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "transition_from_ravs",
+      "file": "entroly/ravs/world_model.py",
+      "exception": "ValueError",
+      "index_tokens": 7293,
+      "qccr_tokens": 5775,
+      "raw_tokens": 255522,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "sanitized_environment",
+      "file": "entroly/process_safety.py",
+      "exception": "ValueError",
+      "index_tokens": 5849,
+      "qccr_tokens": 5660,
+      "raw_tokens": 163664,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "allocate_session_turn_budget",
+      "file": "entroly/session_intelligence.py",
+      "exception": "ValueError",
+      "index_tokens": 6529,
+      "qccr_tokens": 5980,
+      "raw_tokens": 227907,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "func": "_resolved_nonexistent_path",
+      "file": "entroly/compression_mcp.py",
+      "exception": "ValueError",
+      "index_tokens": 7077,
+      "qccr_tokens": 5786,
+      "raw_tokens": 286627,
+      "index_carries": false,
+      "qccr_carries": true,
+      "raw_carries": true
+    }
+  ]
+}

@@ -925,7 +925,46 @@ merely the artifact — is prior art.
 
 Six novelty claims generated in this programme, six rejected.
 
-### But this rejection inverts into the most actionable result here
+### CORRECTION — the "product gap" claim below was overstated — **OBSERVED**
+
+`benchmarks/regime_boundary.py` measured the complementary regime, where the
+gold evidence is the exception a function raises: body-resident, provably absent
+from any signature, and filtered so the name appears in neither the query nor
+the index.
+
+| regime | index | qccr @ matched budget | raw (ceiling) |
+|---|---:|---:|---:|
+| signature-resident (parameter names) | **12/12** | 9/12 | 12/12 @ 234,351 |
+| body-resident (raised exception) | **0/20** | **20/20** | 20/20 @ 229,292 |
+| **overall** | **12/32** | **29/32** | 32/32 |
+
+**qccr wins overall, 29/32 against the index's 12/32.** The claim written below —
+that an index "dominates span selection" and that this constitutes a product gap
+— generalised from the single regime that structurally favours indexes. It is
+withdrawn. The confound was stated when §10 was written and then not respected
+one section later, which is the error worth recording.
+
+The index scoring **0/20** is also the metric's own sanity check: a signature map
+physically cannot carry body evidence, and anything above zero would have meant
+the measurement was leaking rather than the index working.
+
+**The real finding is that the two are complementary, and the boundary is
+binary rather than gradual.** Each mechanism is near-perfect in its regime and
+near-useless in the other. What separates them is *where the evidence lives* —
+signature or body — and that is a property of the **question**, knowable before
+retrieval runs.
+
+That yields a mechanism neither the surveyed tools nor this document had:
+**route on predicted evidence locus.** An oracle router scores 32/32 against
+qccr's 29/32 at comparable token cost. The gain is real but modest (≈9pp), and
+the honest reading is that qccr is already the better single default — the
+router's value is eliminating a *catastrophic* failure mode on one question
+class, not a broad quality lift.
+
+**Prior art for locus routing is unsearched.** Given six for six so far, assume
+it exists until shown otherwise.
+
+### The rejected reasoning, kept for the record
 
 The previous five said "your idea is already published." This one says something
 sharper and worse:
