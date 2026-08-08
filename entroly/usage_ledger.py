@@ -202,6 +202,30 @@ def _int(value: Any) -> int:
         return 0
 
 
+def _gemini_output_tokens(raw: Mapping[str, Any]) -> int:
+    """Return Gemini billable output tokens without double-counting thoughts.
+
+    Gemini usage payloads are not uniform across model generations: some report
+    ``candidatesTokenCount`` inclusive of ``thoughtsTokenCount`` while others
+    expose thoughts as a separate billed output bucket.  ``totalTokenCount``
+    disambiguates the inclusive shape when it is present.
+    """
+    candidates = _int(
+        raw.get("candidatesTokenCount", raw.get("candidates_token_count"))
+    )
+    thoughts = _int(
+        raw.get("thoughtsTokenCount", raw.get("thoughts_token_count"))
+    )
+    if thoughts == 0:
+        return candidates
+
+    prompt = _int(raw.get("promptTokenCount", raw.get("prompt_token_count")))
+    total = _int(raw.get("totalTokenCount", raw.get("total_token_count")))
+    if total > 0 and prompt + candidates == total:
+        return candidates
+    return candidates + thoughts
+
+
 def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsage:
     """Normalize OpenAI, Anthropic, and Gemini usage payloads."""
     provider_key = provider.lower().strip()
@@ -239,9 +263,7 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         cached = _int(
             raw.get("cachedContentTokenCount", raw.get("cached_content_token_count"))
         )
-        output = _int(
-            raw.get("candidatesTokenCount", raw.get("candidates_token_count"))
-        )
+        output = _gemini_output_tokens(raw)
         return TokenUsage(
             uncached_input_tokens=max(0, input_total - cached),
             cache_read_tokens=min(cached, input_total),

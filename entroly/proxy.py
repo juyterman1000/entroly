@@ -100,6 +100,61 @@ from .value_tracker import get_tracker
 
 logger = logging.getLogger("entroly.proxy")
 
+_ROUTING_IMAGE_FALLBACK_TOKENS = 256
+
+
+def _scrub_routing_inline_media(
+    value: Any,
+    *,
+    inside_image: bool = False,
+) -> tuple[Any, int]:
+    """Remove inline image bytes from cache-economics serialization.
+
+    Provider image tokens depend on dimensions and model rules, not on the
+    length of the base64 transport encoding. The returned image count supplies
+    a bounded fallback when the control-plane estimator cannot inspect an
+    image.
+    """
+    if isinstance(value, dict):
+        block_type = str(value.get("type", "")).lower()
+        is_image = inside_image or block_type in {
+            "image",
+            "image_url",
+            "input_image",
+            "output_image",
+        } or "inlineData" in value or "inline_data" in value
+        image_count = int(is_image and not inside_image)
+        scrubbed: dict[str, Any] = {}
+        for key, item in value.items():
+            child_is_image = is_image or key in {"inlineData", "inline_data"}
+            if child_is_image and key == "data" and isinstance(item, str):
+                scrubbed[key] = "[inline-image-bytes]"
+                continue
+            if child_is_image and key in {"url", "image_url"} and isinstance(
+                item, str
+            ) and item.lower().startswith("data:image/"):
+                scrubbed[key] = "[inline-image-bytes]"
+                continue
+            child, child_count = _scrub_routing_inline_media(
+                item,
+                inside_image=child_is_image,
+            )
+            scrubbed[key] = child
+            image_count += child_count
+        return scrubbed, image_count
+    if isinstance(value, list):
+        scrubbed_items = []
+        image_count = 0
+        for item in value:
+            child, child_count = _scrub_routing_inline_media(
+                item,
+                inside_image=inside_image,
+            )
+            scrubbed_items.append(child)
+            image_count += child_count
+        return scrubbed_items, image_count
+    return value, 0
+
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
@@ -1723,6 +1778,8 @@ class PromptCompilerProxy:
     def _routing_token_estimates(
         body: dict[str, Any],
         user_message: str,
+        *,
+        image_tokens: int = 0,
     ) -> tuple[int, int, int]:
         """Estimate the cacheable prefix, new input, and expected output."""
         input_surface = {
@@ -1738,14 +1795,23 @@ class PromptCompilerProxy:
             )
             if key in body
         }
+        routing_surface, image_count = _scrub_routing_inline_media(input_surface)
         serialized = json.dumps(
-            input_surface,
+            routing_surface,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
             default=str,
         )
-        total_input = max(1, len(serialized.encode("utf-8")) // 4)
+        bounded_image_tokens = (
+            max(0, int(image_tokens))
+            if image_tokens > 0
+            else image_count * _ROUTING_IMAGE_FALLBACK_TOKENS
+        )
+        total_input = max(
+            1,
+            len(serialized.encode("utf-8")) // 4 + bounded_image_tokens,
+        )
         new_input = max(1, len(user_message.encode("utf-8")) // 4)
         prefix_tokens = max(0, total_input - new_input)
 
@@ -1771,6 +1837,7 @@ class PromptCompilerProxy:
         recommended_model: str,
         user_message: str,
         risk: str,
+        control_decision: ControlPlaneDecision | None = None,
     ) -> tuple[bool, str]:
         """Apply observed cache economics after RAVS has passed quality gates."""
         if self._pricing_catalog is None:
@@ -1817,8 +1884,15 @@ class PromptCompilerProxy:
                 }
             return False, "stay:missing_conversation_identity"
 
-        prefix_tokens, new_input_tokens, output_tokens = (
-            self._routing_token_estimates(body, user_message)
+        image_tokens = sum(
+            surface.estimated_tokens
+            for surface in (control_decision.surfaces if control_decision else ())
+            if surface.modality == "image"
+        )
+        prefix_tokens, new_input_tokens, output_tokens = self._routing_token_estimates(
+            body,
+            user_message,
+            image_tokens=image_tokens,
         )
         route = self._cache_router.decide(
             conversation_id,
@@ -2785,6 +2859,7 @@ class PromptCompilerProxy:
                                     recommended_model=decision.recommended_model,
                                     user_message=user_message,
                                     risk=decision.risk_level,
+                                    control_decision=control_decision,
                                 )
                             )
                             if not cache_allows:
@@ -5050,6 +5125,136 @@ async def _health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "service": "entroly-proxy"})
 
 
+def _compression_provider(body: dict[str, Any], requested: str) -> str:
+    """Resolve the provider label for the compression-only sidecar surface."""
+    value = requested.strip().lower()
+    aliases = {
+        "": "",
+        "openai": "openai",
+        "azure": "openai",
+        "azure_openai": "openai",
+        "anthropic": "anthropic",
+        "claude": "anthropic",
+        "gemini": "gemini",
+        "google": "gemini",
+        "vertex": "gemini",
+    }
+    if value not in aliases:
+        raise ValueError("provider must be openai, anthropic, or gemini")
+    if aliases[value]:
+        return aliases[value]
+    if isinstance(body.get("contents"), list):
+        return "gemini"
+    model = str(body.get("model", "")).strip().lower()
+    if model.startswith("claude") or "anthropic" in model:
+        return "anthropic"
+    return "openai"
+
+
+async def _compress_only(request: Request) -> JSONResponse:
+    """Compress a provider request body locally without calling an upstream.
+
+    The response body is the transformed provider payload itself, so a gateway
+    can forward it without removing an Entroly envelope. Audit metrics and
+    recovery availability are carried in response headers.
+    """
+    body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"error": "invalid_request", "detail": "request body must be an object"},
+            status_code=400,
+        )
+
+    requested_provider = (
+        request.query_params.get("provider")
+        or request.headers.get("x-entroly-provider", "")
+    )
+    try:
+        provider = _compression_provider(body, requested_provider)
+    except ValueError as exc:
+        return JSONResponse(
+            {"error": "invalid_provider", "detail": str(exc)},
+            status_code=400,
+        )
+
+    raw_budget = request.query_params.get("budget_tokens")
+    try:
+        budget_tokens = (
+            _env_int("ENTROLY_SESSION_TOOL_BUDGET", 1200)
+            if raw_budget is None
+            else int(raw_budget)
+        )
+    except ValueError:
+        return JSONResponse(
+            {"error": "invalid_budget", "detail": "budget_tokens must be an integer"},
+            status_code=400,
+        )
+    if not 32 <= budget_tokens <= 1_000_000:
+        return JSONResponse(
+            {
+                "error": "invalid_budget",
+                "detail": "budget_tokens must be between 32 and 1000000",
+            },
+            status_code=400,
+        )
+
+    compress_user = request.query_params.get("compress_user", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    query = request.query_params.get("query", "")[:4096]
+    proxy = request.app.state.proxy
+    recovery_store = getattr(proxy, "_session_rescue_store", None)
+    if recovery_store is None:
+        return JSONResponse(
+            {
+                "error": "compression_recovery_unavailable",
+                "detail": "local recovery storage is unavailable; compression was not attempted",
+            },
+            status_code=503,
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            compress_proxy_payload,
+            body,
+            provider=provider,
+            query=query,
+            budget_tokens=budget_tokens,
+            mode="elc",
+            include_receipt_header=True,
+            compress_user_messages=compress_user,
+            retrieval_store=recovery_store,
+        )
+    except OSError:
+        logger.exception("Compression-only recovery store write failed")
+        return JSONResponse(
+            {
+                "error": "compression_recovery_failed",
+                "detail": "local recovery evidence could not be persisted",
+            },
+            status_code=507,
+        )
+    except Exception:
+        logger.exception("Compression-only request failed")
+        return JSONResponse(
+            {"error": "compression_failed", "detail": "request was not transformed"},
+            status_code=500,
+        )
+
+    response_headers = result.headers()
+    response_headers["x-entroly-changed"] = str(result.changed).lower()
+    response_headers["x-entroly-receipt-count"] = str(
+        len(result.receipt.receipts)
+    )
+    response_headers["x-entroly-recovery"] = (
+        "stored" if result.changed else "not-needed"
+    )
+    return JSONResponse(result.body, headers=response_headers)
+
+
 async def _context_inspect(request: Request) -> JSONResponse:
     """Gap #29: Context transparency — show what fragments entroly injected."""
     proxy = request.app.state.proxy
@@ -5342,12 +5547,102 @@ async def _context_explain(request: Request) -> JSONResponse:
 async def _context_retrieve(request: Request) -> JSONResponse:
     """CCR: Compressed Context Retrieval — get full original of a compressed fragment.
 
+    GET /retrieve?receipt_id=...&span_id=... → exact compression span
     GET /retrieve?source=file:src/auth.py → full original content
     GET /retrieve → list all retrievable fragments
 
     This is the architectural answer to 'silent truncation':
     nothing is permanently lost, the LLM can always get the original back.
     """
+    receipt_id = request.query_params.get("receipt_id", "")
+    span_id = request.query_params.get("span_id", "")
+    if receipt_id or span_id:
+        if not receipt_id or not span_id:
+            return JSONResponse(
+                {
+                    "error": "invalid_recovery_handle",
+                    "detail": "receipt_id and span_id must be supplied together",
+                },
+                status_code=400,
+            )
+        identifier_pattern = r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}"
+        if not re.fullmatch(identifier_pattern, receipt_id) or not re.fullmatch(
+            identifier_pattern, span_id
+        ):
+            return JSONResponse(
+                {
+                    "error": "invalid_recovery_handle",
+                    "detail": "recovery identifiers contain unsupported characters",
+                },
+                status_code=400,
+            )
+
+        proxy = request.app.state.proxy
+        recovery_store = getattr(proxy, "_session_rescue_store", None)
+        if recovery_store is None:
+            return JSONResponse(
+                {
+                    "error": "compression_recovery_unavailable",
+                    "detail": "local recovery storage is unavailable",
+                },
+                status_code=503,
+            )
+
+        retrieval_id = (
+            request.query_params.get("retrieval_id")
+            or request.headers.get("x-entroly-retrieval-id")
+            or uuid.uuid4().hex
+        )
+        if not re.fullmatch(identifier_pattern, retrieval_id):
+            return JSONResponse(
+                {
+                    "error": "invalid_retrieval_id",
+                    "detail": "retrieval_id contains unsupported characters",
+                },
+                status_code=400,
+            )
+        try:
+            span = await asyncio.to_thread(
+                recovery_store.retrieve_span,
+                receipt_id,
+                span_id,
+                retrieval_id=retrieval_id,
+            )
+        except OSError:
+            logger.exception("Compression recovery store read failed")
+            return JSONResponse(
+                {"error": "compression_recovery_failed"},
+                status_code=507,
+            )
+        except Exception:
+            logger.exception("Compression recovery failed")
+            return JSONResponse(
+                {"error": "compression_recovery_failed"},
+                status_code=500,
+            )
+        if span is None:
+            return JSONResponse(
+                {"error": "compression_span_not_found"},
+                status_code=404,
+            )
+        content_sha256 = span.content_sha256 or hashlib.sha256(
+            span.content.encode("utf-8")
+        ).hexdigest()
+        return JSONResponse(
+            {
+                "receipt_id": span.receipt_id,
+                "span_id": span.span_id,
+                "content": span.content,
+                "content_sha256": content_sha256,
+                "source_id": span.source_id,
+                "start_line": span.start_line,
+                "end_line": span.end_line,
+                "reason": span.reason,
+                "retrieval_id": retrieval_id,
+            },
+            headers={"x-entroly-retrieval-id": retrieval_id},
+        )
+
     try:
         from .ccr import get_ccr_store
         store = get_ccr_store()
@@ -5940,6 +6235,7 @@ def create_proxy_app(
             # Gemini: model name is embedded in the URL path
             Route("/v1beta/models/{model_id:path}", proxy.handle_proxy, methods=["POST"]),
             Route("/health", _health),
+            Route("/v1/compress", _sidecar_guard(_compress_only), methods=["POST"]),
             Route("/stats", _sidecar_guard(_proxy_stats)),
             Route("/context", _sidecar_guard(_context_inspect)),          # Gap #29
             Route("/metrics", _sidecar_guard(_metrics_prometheus)),        # Gap #34

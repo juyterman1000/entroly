@@ -103,6 +103,38 @@ def test_gemini_usage_accepts_camel_case_usage_metadata() -> None:
     assert usage.output_tokens == 80
 
 
+def test_gemini_usage_adds_separately_reported_thinking_tokens() -> None:
+    usage = parse_provider_usage(
+        "gemini",
+        {
+            "usageMetadata": {
+                "promptTokenCount": 1_000,
+                "candidatesTokenCount": 200,
+                "thoughtsTokenCount": 500,
+                "totalTokenCount": 1_700,
+            }
+        },
+    )
+
+    assert usage.output_tokens == 700
+
+
+def test_gemini_usage_does_not_double_count_inclusive_thinking_tokens() -> None:
+    usage = parse_provider_usage(
+        "gemini",
+        {
+            "usage_metadata": {
+                "prompt_token_count": 1_000,
+                "candidates_token_count": 700,
+                "thoughts_token_count": 500,
+                "total_token_count": 1_700,
+            }
+        },
+    )
+
+    assert usage.output_tokens == 700
+
+
 def test_stream_usage_reads_openai_terminal_frame() -> None:
     transcript = (
         'data: {"id":"x","choices":[{"delta":{"content":"hi"}}]}\n\n'

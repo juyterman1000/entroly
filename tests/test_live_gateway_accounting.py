@@ -262,6 +262,38 @@ def test_cache_economics_fail_closed_when_catalog_is_incomplete() -> None:
     proxy._usage_ledger.close()
 
 
+def test_routing_estimate_does_not_count_base64_transport_bytes_as_text() -> None:
+    def body(payload: str) -> dict:
+        return {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe this image"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{payload}"
+                            },
+                        },
+                    ],
+                }
+            ]
+        }
+
+    short = PromptCompilerProxy._routing_token_estimates(
+        body("A" * 16),
+        "describe this image",
+    )
+    large = PromptCompilerProxy._routing_token_estimates(
+        body("A" * 160_000),
+        "describe this image",
+    )
+
+    assert large == short
+    assert large[0] < 1_000
+
+
 def test_usage_ledger_survives_reopen(tmp_path) -> None:
     path = tmp_path / "usage.sqlite3"
     pricing = UsagePricing.from_values(

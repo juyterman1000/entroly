@@ -64,7 +64,7 @@ def test_start_proxy_reports_early_child_exit(tmp_path, monkeypatch, capsys):
     class FakeProc:
         returncode = 7
 
-        def __init__(self, cmd, stdout=None, stderr=None):
+        def __init__(self, cmd, stdout=None, stderr=None, **_kwargs):
             self.cmd = cmd
             if hasattr(stdout, "write"):
                 stdout.write(b"proxy boom\n")
@@ -91,7 +91,7 @@ def test_start_proxy_overwrites_stale_log(tmp_path, monkeypatch, capsys):
     class FakeProc:
         returncode = 8
 
-        def __init__(self, cmd, stdout=None, stderr=None):
+        def __init__(self, cmd, stdout=None, stderr=None, **_kwargs):
             if hasattr(stdout, "write"):
                 stdout.write(b"fresh failure\n")
                 stdout.flush()
@@ -136,7 +136,7 @@ def test_start_proxy_timeout_reports_log_and_terminates(tmp_path, monkeypatch, c
         terminated = False
         waited = False
 
-        def __init__(self, cmd, stdout=None, stderr=None):
+        def __init__(self, cmd, stdout=None, stderr=None, **_kwargs):
             if hasattr(stdout, "write"):
                 stdout.write(b"still loading\n")
                 stdout.flush()
@@ -173,6 +173,31 @@ def test_start_proxy_timeout_reports_log_and_terminates(tmp_path, monkeypatch, c
     assert "still loading" in out
     assert proc_box["proc"].terminated is True
     assert proc_box["proc"].waited is True
+
+
+def test_start_proxy_uses_safe_import_environment(tmp_path, monkeypatch):
+    captured = {}
+
+    class FakeProc:
+        returncode = 9
+
+        def poll(self):
+            return self.returncode
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return FakeProc()
+
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    monkeypatch.setattr(cli, "_is_entroly_proxy_running", lambda port: False)
+    monkeypatch.setattr(cli, "_free_port", lambda port: True)
+    monkeypatch.setattr(cli.subprocess, "Popen", fake_popen)
+
+    assert cli._start_proxy_if_needed(9455) is False
+    assert captured["kwargs"]["env"]["PYTHONSAFEPATH"] == "1"
+    assert captured["kwargs"]["cwd"] == tmp_path
+    assert captured["cmd"][:3] == [cli.sys.executable, "-m", "entroly.cli"]
 
 
 def test_wrap_print_agents_share_proxy_start_diagnostics(tmp_path, monkeypatch, capsys):

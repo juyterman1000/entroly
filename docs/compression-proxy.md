@@ -55,6 +55,36 @@ result = compress_proxy_payload_from_env(body, provider="openai", query="why did
 Defaults are safe: if `ENTROLY_COMPRESSION_PROXY_MODE` is not `elc`, the helper
 passes requests through unchanged.
 
+### Compression-only gateway endpoint
+
+Gateways that need Entroly to transform a provider request without forwarding
+it can call the local sidecar directly:
+
+```bash
+curl -sS -X POST \
+  'http://127.0.0.1:9377/v1/compress?provider=openai&budget_tokens=1200' \
+  -H 'content-type: application/json' \
+  --data-binary @provider-request.json \
+  > compressed-provider-request.json
+```
+
+The response body is the provider-native request body, ready to forward. Audit
+counts are returned in `x-entroly-*` headers. The endpoint never calls the
+provider and fails closed if it cannot persist exact recovery evidence.
+
+When the compressed body contains
+`[entroly-recovery:<receipt-id>:<span-id>]`, retrieve that exact local span with:
+
+```bash
+curl -sS \
+  'http://127.0.0.1:9377/retrieve?receipt_id=<receipt-id>&span_id=<span-id>&retrieval_id=<request-id>'
+```
+
+Reuse a stable `retrieval_id` when retrying the same retrieval so savings
+accounting stays idempotent. Both endpoints use the proxy's sidecar access
+guard: remote access is rejected unless `ENTROLY_SIDECAR_TOKEN` is configured
+and sent as `X-Entroly-Sidecar-Token`.
+
 ## What gets compressed
 
 By default Entroly compresses:

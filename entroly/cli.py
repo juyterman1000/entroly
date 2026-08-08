@@ -2117,7 +2117,20 @@ def _start_proxy_if_needed(port: int) -> bool:
             log_fh.write(f"\n--- entroly wrap proxy start port={port} ---\n".encode("utf-8"))
             log_fh.flush()
         try:
-            proc = subprocess.Popen(proxy_cmd, stdout=log_fh, stderr=subprocess.STDOUT)
+            proxy_env = os.environ.copy()
+            # ``python -m entroly.cli`` normally prepends the launch directory
+            # to sys.path.  A project-local ``entroly`` directory can then
+            # shadow the installed package in this child even though the parent
+            # CLI imported correctly.  PYTHONSAFEPATH covers Python 3.11+ and
+            # the neutral state directory cwd closes the same hole on 3.10.
+            proxy_env["PYTHONSAFEPATH"] = "1"
+            proc = subprocess.Popen(
+                proxy_cmd,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                env=proxy_env,
+                cwd=_ENTROLY_DIR,
+            )
         except OSError as e:
             print(f"  {C.RED}Could not start proxy process:{C.RESET} {e}")
             if log_path is not None:
