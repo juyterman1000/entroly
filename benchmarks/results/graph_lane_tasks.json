@@ -1,0 +1,489 @@
+{
+  "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
+  "seed": 20260807,
+  "corpus_files": 289,
+  "unique_symbols": 2241,
+  "candidate_tasks": 275,
+  "tasks": [
+    {
+      "caller": "_start_background_services",
+      "caller_file": "entroly/server.py",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "query": "_start_background_services Initialize project services without delaying MCP transport readiness.",
+      "caller_lineno": 6231
+    },
+    {
+      "caller": "create_context_commit",
+      "caller_file": "entroly/context_commit.py",
+      "callee": "build_recovery_bundle",
+      "callee_file": "entroly/context_receipts/recover.py",
+      "query": "create_context_commit Create a self-contained commit for selected and omitted context.",
+      "caller_lineno": 82
+    },
+    {
+      "caller": "assess_provider_request",
+      "caller_file": "entroly/provider_conformance.py",
+      "callee": "render_canonical_request",
+      "callee_file": "entroly/provider_adapters.py",
+      "query": "assess_provider_request Assess whether a request can be rendered without semantic loss.",
+      "caller_lineno": 86
+    },
+    {
+      "caller": "cmd_sync",
+      "caller_file": "entroly/cli.py",
+      "callee": "VaultManager",
+      "callee_file": "entroly/vault.py",
+      "query": "cmd_sync entroly sync -- detect workspace changes and update beliefs.",
+      "caller_lineno": 5110
+    },
+    {
+      "caller": "assess_context_commit",
+      "caller_file": "entroly/context_check.py",
+      "callee": "stable_hash",
+      "callee_file": "entroly/context_receipts/models.py",
+      "query": "assess_context_commit Create a stable Context Check from a verified Context Commit.",
+      "caller_lineno": 87
+    },
+    {
+      "caller": "create_mcp_server",
+      "caller_file": "entroly/server.py",
+      "callee": "EICVAnalyzer",
+      "callee_file": "entroly/eicv.py",
+      "query": "create_mcp_server Create the MCP server with all tools registered.",
+      "caller_lineno": 2772
+    },
+    {
+      "caller": "_start_autotune_daemon",
+      "caller_file": "entroly/server.py",
+      "callee": "load_active_tuning_config",
+      "callee_file": "entroly/config.py",
+      "query": "_start_autotune_daemon Spawn the autotune loop as a daemon background thread.",
+      "caller_lineno": 6137
+    },
+    {
+      "caller": "_has_evidence_query",
+      "caller_file": "entroly/sdk.py",
+      "callee": "tokenize",
+      "callee_file": "entroly/context_receipts/retrieval.py",
+      "query": "_has_evidence_query Return whether a query contains terms that can rank source evidence.",
+      "caller_lineno": 509
+    },
+    {
+      "caller": "_attach_sufficiency",
+      "caller_file": "entroly/qccr.py",
+      "callee": "Candidate",
+      "callee_file": "entroly/sufficiency.py",
+      "query": "_attach_sufficiency Attach an honest file-level, explicitly uncalibrated certificate.",
+      "caller_lineno": 271
+    },
+    {
+      "caller": "cmd_feedback",
+      "caller_file": "entroly/cli.py",
+      "callee": "EntrolyEngine",
+      "callee_file": "entroly/server.py",
+      "query": "cmd_feedback entroly feedback \u2014 signal outcome quality to improve future context selection.",
+      "caller_lineno": 4929
+    },
+    {
+      "caller": "_cache_align_older",
+      "caller_file": "entroly/sdk.py",
+      "callee": "CacheAligner",
+      "callee_file": "entroly/cache_aligner.py",
+      "query": "_cache_align_older Reuse the previous compressed older-context when the new one is",
+      "caller_lineno": 942
+    },
+    {
+      "caller": "score_with_config",
+      "caller_file": "entroly/adversarial_calibration.py",
+      "callee": "_split_atoms",
+      "callee_file": "entroly/esg.py",
+      "query": "score_with_config Compute T(G) with custom hyperparameters.",
+      "caller_lineno": 141
+    },
+    {
+      "caller": "build_repository_index",
+      "caller_file": "entroly/repository_intelligence/__init__.py",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "query": "build_repository_index Build a deterministic, resource-bounded repository index.",
+      "caller_lineno": 34
+    },
+    {
+      "caller": "assess_context_commit",
+      "caller_file": "entroly/context_check.py",
+      "callee": "verify_context_commit",
+      "callee_file": "entroly/context_commit.py",
+      "query": "assess_context_commit Create a stable Context Check from a verified Context Commit.",
+      "caller_lineno": 87
+    },
+    {
+      "caller": "cmd_batch",
+      "caller_file": "entroly/cli.py",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "query": "cmd_batch entroly batch \u2014 headless/CI mode for batch optimization (Gap #33).",
+      "caller_lineno": 1527
+    },
+    {
+      "caller": "apply_elc_to_proxy_body",
+      "caller_file": "entroly/compression_proxy_direct.py",
+      "callee": "_env_budget_tokens",
+      "callee_file": "entroly/compression_proxy.py",
+      "query": "apply_elc_to_proxy_body Apply Evidence-Locked Compression directly to a proxy request body.",
+      "caller_lineno": 19
+    },
+    {
+      "caller": "create_context_receipt",
+      "caller_file": "entroly/sdk.py",
+      "callee": "run_receipt_pipeline",
+      "callee_file": "entroly/context_receipts/__init__.py",
+      "query": "create_context_receipt Create an auditable Context Receipt from in-memory documents.",
+      "caller_lineno": 1438
+    },
+    {
+      "caller": "swap_model_in_body",
+      "caller_file": "entroly/ravs/router.py",
+      "callee": "strip_anthropic_unsupported_params",
+      "callee_file": "entroly/proxy_transform.py",
+      "query": "swap_model_in_body Swap the model field and strip target-incompatible transport params.",
+      "caller_lineno": 590
+    },
+    {
+      "caller": "scan_codebase",
+      "caller_file": "entroly/archetype_optimizer.py",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "query": "scan_codebase Scan a codebase directory and collect structural statistics.",
+      "caller_lineno": 133
+    },
+    {
+      "caller": "handoff",
+      "caller_file": "entroly/verified_handoff.py",
+      "callee": "WitnessAnalyzer",
+      "callee_file": "entroly/witness.py",
+      "query": "handoff Create a WITNESS-verified handoff bundle.",
+      "caller_lineno": 137
+    },
+    {
+      "caller": "safe_compress_hermes",
+      "caller_file": "entroly/integrations/hermes.py",
+      "callee": "compress_messages",
+      "callee_file": "entroly/sdk.py",
+      "query": "safe_compress_hermes Compresses an LLM conversation while specifically protecting Hermes structural markers.",
+      "caller_lineno": 26
+    },
+    {
+      "caller": "_value_trends",
+      "caller_file": "entroly/proxy.py",
+      "callee": "get_tracker",
+      "callee_file": "entroly/value_tracker.py",
+      "query": "_value_trends Historical savings trends for dashboard charts.",
+      "caller_lineno": 5401
+    },
+    {
+      "caller": "attach_novelty_frontier",
+      "caller_file": "entroly/context_receipts/receipts.py",
+      "callee": "novelty_summary",
+      "callee_file": "entroly/context_receipts/novelty.py",
+      "query": "attach_novelty_frontier Return a receipt dict with Python novelty-frontier fields attached.",
+      "caller_lineno": 224
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "caller_file": "entroly/compression_retrieval_store.py",
+      "callee": "slice_recovery_content",
+      "callee_file": "entroly/ccr.py",
+      "query": "_bounded_exact_excerpt Slice exact source windows under an exact or conservative token cap.",
+      "caller_lineno": 987
+    },
+    {
+      "caller": "create_compression_mcp_server",
+      "caller_file": "entroly/compression_mcp.py",
+      "callee": "OptimizationLedger",
+      "callee_file": "entroly/optimization_ledger.py",
+      "query": "create_compression_mcp_server Create a focused MCP server for scope-bound compressed-span retrieval.",
+      "caller_lineno": 109
+    },
+    {
+      "caller": "verify_proof_guided_output",
+      "caller_file": "entroly/openclaw_bridge.py",
+      "callee": "EICVSuppressor",
+      "callee_file": "entroly/eicv_suppressor.py",
+      "query": "verify_proof_guided_output Verify one OpenClaw output and recover exact omitted message evidence.",
+      "caller_lineno": 1429
+    },
+    {
+      "caller": "compute_dynamic_budget",
+      "caller_file": "entroly/proxy_transform.py",
+      "callee": "context_window_for_model",
+      "callee_file": "entroly/proxy_config.py",
+      "query": "compute_dynamic_budget Compute token budget calibrated by query entropy and codebase size.",
+      "caller_lineno": 262
+    },
+    {
+      "caller": "_contradiction_score",
+      "caller_file": "entroly/esg.py",
+      "callee": "modifier_mismatch",
+      "callee_file": "entroly/atomic_decomposition.py",
+      "query": "_contradiction_score K(u, v) \u2014 how strongly evidence atom u contradicts claim atom v.",
+      "caller_lineno": 354
+    },
+    {
+      "caller": "localize_files",
+      "caller_file": "entroly/file_localizer.py",
+      "callee": "Tier0Localizer",
+      "callee_file": "entroly/localization.py",
+      "query": "localize_files Rank a `{path: content}` corpus by relevance to a query.",
+      "caller_lineno": 38
+    },
+    {
+      "caller": "evaluate",
+      "caller_file": "entroly/autotune.py",
+      "callee": "EntrolyEngine",
+      "callee_file": "entroly/server.py",
+      "query": "evaluate Run the benchmark suite with a given config.",
+      "caller_lineno": 179
+    },
+    {
+      "caller": "pyright_available",
+      "caller_file": "entroly/verifiers/type_check.py",
+      "callee": "run_bounded_process",
+      "callee_file": "entroly/process_safety.py",
+      "query": "pyright_available Return whether Pyright is installed and its bounded probe succeeds.",
+      "caller_lineno": 143
+    },
+    {
+      "caller": "install_live_compression_proxy",
+      "caller_file": "entroly/compression_proxy_live.py",
+      "callee": "compress_proxy_payload_from_env",
+      "callee_file": "entroly/compression_proxy.py",
+      "query": "install_live_compression_proxy Install ELC into the live HTTP proxy path when the env flag is enabled.",
+      "caller_lineno": 110
+    },
+    {
+      "caller": "assess_novelty_frontier",
+      "caller_file": "entroly/context_receipts/__init__.py",
+      "callee": "novelty_frontier_assessment",
+      "callee_file": "entroly/context_receipts/novelty.py",
+      "query": "assess_novelty_frontier Assess novelty-frontier pressure from a receipt dict or novelty summary.",
+      "caller_lineno": 258
+    },
+    {
+      "caller": "verify_proof_guided_output",
+      "caller_file": "entroly/openclaw_bridge.py",
+      "callee": "scan",
+      "callee_file": "entroly/context_firewall.py",
+      "query": "verify_proof_guided_output Verify one OpenClaw output and recover exact omitted message evidence.",
+      "caller_lineno": 1429
+    },
+    {
+      "caller": "default_recovery_store_path",
+      "caller_file": "entroly/cli_recover.py",
+      "callee": "_project_checkpoint_dir",
+      "callee_file": "entroly/config.py",
+      "query": "default_recovery_store_path Where recovery material lives unless the caller says otherwise.",
+      "caller_lineno": 22
+    },
+    {
+      "caller": "verify_context_commit",
+      "caller_file": "entroly/context_commit.py",
+      "callee": "text_fingerprint",
+      "callee_file": "entroly/context_receipts/models.py",
+      "query": "verify_context_commit Fail closed unless the commit, receipt, replay, and recovery all verify.",
+      "caller_lineno": 132
+    },
+    {
+      "caller": "generate_report",
+      "caller_file": "entroly/ravs/report.py",
+      "callee": "aggregate_shadow_agreement",
+      "callee_file": "entroly/ravs/shadow.py",
+      "query": "generate_report Generate the complete RAVS v1 offline evaluation report.",
+      "caller_lineno": 98
+    },
+    {
+      "caller": "cmd_compress",
+      "caller_file": "entroly/cli_recover.py",
+      "callee": "RecoveryStore",
+      "callee_file": "entroly/codec.py",
+      "query": "cmd_compress Compress a file with the content codecs and print an auditable receipt.",
+      "caller_lineno": 40
+    },
+    {
+      "caller": "select_band",
+      "caller_file": "entroly/conformal_cascade.py",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "query": "select_band Closed-form-ish band: the *largest* cheap region whose empirical",
+      "caller_lineno": 202
+    },
+    {
+      "caller": "create_repository_mcp_server",
+      "caller_file": "entroly/repository_intelligence/mcp.py",
+      "callee": "RepositoryIntelligenceService",
+      "callee_file": "entroly/repository_intelligence/service.py",
+      "query": "create_repository_mcp_server Create a workspace-fixed MCP server with no caller-controlled root.",
+      "caller_lineno": 48
+    },
+    {
+      "caller": "rank_chunks",
+      "caller_file": "entroly/context_receipts/retrieval.py",
+      "callee": "RankedChunk",
+      "callee_file": "entroly/context_receipts/models.py",
+      "query": "rank_chunks Rank chunks with BM25-style lexical scoring plus optional semantic/rerank hooks.",
+      "caller_lineno": 146
+    },
+    {
+      "caller": "build_recovery_bundle",
+      "caller_file": "entroly/context_receipts/recover.py",
+      "callee": "text_fingerprint",
+      "callee_file": "entroly/context_receipts/models.py",
+      "query": "build_recovery_bundle Capture full chunk text + integrity hashes from a ContextIndex dict.",
+      "caller_lineno": 87
+    },
+    {
+      "caller": "build_model_decision_receipt",
+      "caller_file": "entroly/model_decision_receipt.py",
+      "callee": "resolve_model",
+      "callee_file": "entroly/models/registry.py",
+      "query": "build_model_decision_receipt Resolve a request model and produce a reproducible decision receipt.",
+      "caller_lineno": 171
+    },
+    {
+      "caller": "compress_tool_output",
+      "caller_file": "entroly/proxy_transform.py",
+      "callee": "esc_compress",
+      "callee_file": "entroly/shell_codec.py",
+      "query": "compress_tool_output Compress a tool/MCP call result using pattern-based rules.",
+      "caller_lineno": 1041
+    },
+    {
+      "caller": "_apply_proxy_cli_overrides",
+      "caller_file": "entroly/docker_launcher_safe.py",
+      "callee": "official_origin",
+      "callee_file": "entroly/proxy_routing_safety.py",
+      "query": "_apply_proxy_cli_overrides Translate the documented native proxy CLI surface into validated env config.",
+      "caller_lineno": 117
+    },
+    {
+      "caller": "_contradiction_score",
+      "caller_file": "entroly/esg.py",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "query": "_contradiction_score K(u, v) \u2014 how strongly evidence atom u contradicts claim atom v.",
+      "caller_lineno": 354
+    },
+    {
+      "caller": "verify_code",
+      "caller_file": "entroly/verifiers/symbol_resolution.py",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "query": "verify_code One-call verification for ad-hoc use.",
+      "caller_lineno": 672
+    },
+    {
+      "caller": "cmd_compress",
+      "caller_file": "entroly/cli_recover.py",
+      "callee": "default_registry",
+      "callee_file": "entroly/codecs_builtin.py",
+      "query": "cmd_compress Compress a file with the content codecs and print an auditable receipt.",
+      "caller_lineno": 40
+    },
+    {
+      "caller": "runtime_capabilities",
+      "caller_file": "entroly/runtime_capabilities.py",
+      "callee": "native_status",
+      "callee_file": "entroly/native_status.py",
+      "query": "runtime_capabilities Return a stable, non-mutating description of installed capabilities.",
+      "caller_lineno": 28
+    },
+    {
+      "caller": "verify_proof_guided_output",
+      "caller_file": "entroly/openclaw_bridge.py",
+      "callee": "VerifiedEfficiencyLayer",
+      "callee_file": "entroly/verified_efficiency.py",
+      "query": "verify_proof_guided_output Verify one OpenClaw output and recover exact omitted message evidence.",
+      "caller_lineno": 1429
+    },
+    {
+      "caller": "_nli_proxy",
+      "caller_file": "entroly/semantic_entropy.py",
+      "callee": "feat_reverse_entail",
+      "callee_file": "entroly/witness_features.py",
+      "query": "_nli_proxy Compute (forward_entail, reverse_entail) using existing primitives.",
+      "caller_lineno": 118
+    },
+    {
+      "caller": "run_mcp_server",
+      "caller_file": "entroly/integrate_entroly_mcp.py",
+      "callee": "create_mcp_server",
+      "callee_file": "entroly/server.py",
+      "query": "run_mcp_server Boot entroly's MCP server in this Python process.",
+      "caller_lineno": 32
+    },
+    {
+      "caller": "build_repository_index",
+      "caller_file": "entroly/repository_intelligence/__init__.py",
+      "callee": "RepositoryIndex",
+      "callee_file": "entroly/repository_intelligence/models.py",
+      "query": "build_repository_index Build a deterministic, resource-bounded repository index.",
+      "caller_lineno": 34
+    },
+    {
+      "caller": "install_official_routing_guard",
+      "caller_file": "entroly/proxy_routing_official_guard.py",
+      "callee": "install_routing_safety",
+      "callee_file": "entroly/proxy_routing_safety.py",
+      "query": "install_official_routing_guard Install the outer guard after generic routing safety, idempotently.",
+      "caller_lineno": 179
+    },
+    {
+      "caller": "_try_pyo3_compress_block",
+      "caller_file": "entroly/native_elc.py",
+      "callee": "OmittedSpan",
+      "callee_file": "entroly/evidence_locked_compression.py",
+      "query": "_try_pyo3_compress_block Use the existing Rust/PyO3 block compressor as a guarded fast path.",
+      "caller_lineno": 116
+    },
+    {
+      "caller": "_sanitized_test_environment",
+      "caller_file": "entroly/ravs/safe_executors.py",
+      "callee": "sanitized_environment",
+      "callee_file": "entroly/process_safety.py",
+      "query": "_sanitized_test_environment Return a child environment that omits credentials unless opted in.",
+      "caller_lineno": 38
+    },
+    {
+      "caller": "_proof_prepare_route",
+      "caller_file": "entroly/proxy.py",
+      "callee": "read_documents_from_path",
+      "callee_file": "entroly/context_receipts/ingest.py",
+      "query": "_proof_prepare_route Prepare a provider-neutral proof-guided request; never call upstream.",
+      "caller_lineno": 5446
+    },
+    {
+      "caller": "attach_novelty_frontier",
+      "caller_file": "entroly/context_receipts/receipts.py",
+      "callee": "stable_hash",
+      "callee_file": "entroly/context_receipts/models.py",
+      "query": "attach_novelty_frontier Return a receipt dict with Python novelty-frontier fields attached.",
+      "caller_lineno": 224
+    },
+    {
+      "caller": "create_context_commit",
+      "caller_file": "entroly/context_commit.py",
+      "callee": "select_from_index",
+      "callee_file": "entroly/context_receipts/__init__.py",
+      "query": "create_context_commit Create a self-contained commit for selected and omitted context.",
+      "caller_lineno": 82
+    },
+    {
+      "caller": "retrieve_exact",
+      "caller_file": "entroly/integrations/exact_recovery.py",
+      "callee": "get_ccr_store",
+      "callee_file": "entroly/ccr.py",
+      "query": "retrieve_exact Return the complete original content for an exact CCR handle.",
+      "caller_lineno": 39
+    }
+  ]
+}
