@@ -1,0 +1,197 @@
+{
+  "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
+  "budget": 2000,
+  "pairs": 19,
+  "rows": [
+    {
+      "query_a": "_start_background_services Initialize project services witho",
+      "query_b": "create_context_commit Create a self-contained commit for sel",
+      "tokens_b": 2079,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 8,
+      "fragments_shared": 1,
+      "content_overlap_frac": 0.125
+    },
+    {
+      "query_a": "create_context_commit Create a self-contained commit for sel",
+      "query_b": "assess_provider_request Assess whether a request can be rend",
+      "tokens_b": 2072,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 8,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "assess_provider_request Assess whether a request can be rend",
+      "query_b": "cmd_sync entroly sync -- detect workspace changes and update",
+      "tokens_b": 2063,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 8,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "cmd_sync entroly sync -- detect workspace changes and update",
+      "query_b": "assess_context_commit Create a stable Context Check from a v",
+      "tokens_b": 2080,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 9,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "assess_context_commit Create a stable Context Check from a v",
+      "query_b": "create_mcp_server Create the MCP server with all tools regis",
+      "tokens_b": 2070,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 9,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "create_mcp_server Create the MCP server with all tools regis",
+      "query_b": "_start_autotune_daemon Spawn the autotune loop as a daemon b",
+      "tokens_b": 2071,
+      "shared_prefix_tokens": 5,
+      "fragments_a": 9,
+      "fragments_b": 9,
+      "fragments_shared": 1,
+      "content_overlap_frac": 0.1111111111111111
+    },
+    {
+      "query_a": "_start_autotune_daemon Spawn the autotune loop as a daemon b",
+      "query_b": "_has_evidence_query Return whether a query contains terms th",
+      "tokens_b": 2070,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 8,
+      "fragments_shared": 1,
+      "content_overlap_frac": 0.125
+    },
+    {
+      "query_a": "_has_evidence_query Return whether a query contains terms th",
+      "query_b": "_attach_sufficiency Attach an honest file-level, explicitly ",
+      "tokens_b": 2041,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 6,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "_attach_sufficiency Attach an honest file-level, explicitly ",
+      "query_b": "cmd_feedback entroly feedback \u2014 signal outcome quality to im",
+      "tokens_b": 2077,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 6,
+      "fragments_b": 9,
+      "fragments_shared": 2,
+      "content_overlap_frac": 0.2222222222222222
+    },
+    {
+      "query_a": "cmd_feedback entroly feedback \u2014 signal outcome quality to im",
+      "query_b": "_cache_align_older Reuse the previous compressed older-conte",
+      "tokens_b": 2050,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 7,
+      "fragments_shared": 1,
+      "content_overlap_frac": 0.14285714285714285
+    },
+    {
+      "query_a": "_cache_align_older Reuse the previous compressed older-conte",
+      "query_b": "score_with_config Compute T(G) with custom hyperparameters.",
+      "tokens_b": 2071,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 7,
+      "fragments_b": 9,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "score_with_config Compute T(G) with custom hyperparameters.",
+      "query_b": "build_repository_index Build a deterministic, resource-bound",
+      "tokens_b": 2075,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 8,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "build_repository_index Build a deterministic, resource-bound",
+      "query_b": "assess_context_commit Create a stable Context Check from a v",
+      "tokens_b": 2061,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 8,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "assess_context_commit Create a stable Context Check from a v",
+      "query_b": "cmd_batch entroly batch \u2014 headless/CI mode for batch optimiz",
+      "tokens_b": 2045,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 8,
+      "fragments_shared": 1,
+      "content_overlap_frac": 0.125
+    },
+    {
+      "query_a": "cmd_batch entroly batch \u2014 headless/CI mode for batch optimiz",
+      "query_b": "apply_elc_to_proxy_body Apply Evidence-Locked Compression di",
+      "tokens_b": 2088,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 8,
+      "fragments_b": 9,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "apply_elc_to_proxy_body Apply Evidence-Locked Compression di",
+      "query_b": "create_context_receipt Create an auditable Context Receipt f",
+      "tokens_b": 2080,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 9,
+      "fragments_shared": 1,
+      "content_overlap_frac": 0.1111111111111111
+    },
+    {
+      "query_a": "create_context_receipt Create an auditable Context Receipt f",
+      "query_b": "swap_model_in_body Swap the model field and strip target-inc",
+      "tokens_b": 2074,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 9,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "swap_model_in_body Swap the model field and strip target-inc",
+      "query_b": "scan_codebase Scan a codebase directory and collect structur",
+      "tokens_b": 2075,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 9,
+      "fragments_b": 11,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    },
+    {
+      "query_a": "scan_codebase Scan a codebase directory and collect structur",
+      "query_b": "handoff Create a WITNESS-verified handoff bundle.",
+      "tokens_b": 2083,
+      "shared_prefix_tokens": 3,
+      "fragments_a": 11,
+      "fragments_b": 10,
+      "fragments_shared": 0,
+      "content_overlap_frac": 0.0
+    }
+  ]
+}

@@ -395,6 +395,232 @@ what the codec path achieves on prose.
 
 ---
 
+## 6. Candidate mechanisms — **HYPOTHESIZED**
+
+Generated against the corrected architecture map (§1), so anything already
+implemented in `entroly-engine` is excluded by construction rather than
+proposed and later discovered to exist. Nothing below has been measured.
+
+### Excluded before generation — these already exist here
+
+Proposing any of these would repeat the mistake §1 records. Listed so the
+exclusion is explicit and auditable:
+
+| idea | where it already lives |
+|---|---|
+| causal / interventional fragment value | `causal.rs` (do-calculus, instrument variable) |
+| program-slice context via call graph | `depgraph.rs` + `hierarchical.rs` — and **measured worse than lexical**, §Q-B |
+| multi-resolution representation | `skeleton.rs`, `hierarchical.rs` |
+| submodular diversity selection | `knapsack_sds.rs` |
+| near-duplicate suppression | `dedup.rs`, `semantic_dedup.rs`, `simhash_wide.rs` |
+| BM25 + MMR query conditioning | `qccr.py` |
+| gated preservation + byte-exact recovery | codec registry |
+| conformal cascade / selective abstention | `conformal_cascade.py`, `escalation.py` |
+| bitemporal provenance ledger | `vault_time.py` |
+| cross-fragment statistical factoring | **rejected**, 16–24% ceiling measured |
+
+### The 22 candidates
+
+**Information theory / rate–distortion**
+
+1. **Conformal risk-constrained selection.** Solve `min T(S) s.t. P(E ⊄ S) ≤ α`
+   with α a *calibrated* guarantee, not a heuristic. `sufficiency.py` already
+   computes the KKT dual (`shadow_price`) and refuses to certify without a named
+   policy; the missing half is a conformal calibration mapping residual risk to
+   observed evidence loss on held-out queries. Turns an uncalibrated diagnostic
+   into a distribution-free bound.
+2. **Successive-refinement layering.** Emit a coarse layer, then refinement
+   layers that are *provably* successively refinable (Equitz–Cover), so an
+   expansion never re-sends what layer 1 already carried. HCC's three levels are
+   independent renderings, not a refinement chain — expanding re-sends.
+3. **Syndrome context (Wyner–Ziv).** The encoder commits before the query
+   exists; the decoder has the query. Slepian–Wolf says decoder-side information
+   costs nothing asymptotically. Practically: ship a small syndrome over omitted
+   evidence; if the retained context plus query implies the omission, it
+   reconstructs, and if it does not, decoding *fails loudly* — an insufficiency
+   detector that is a theorem rather than a heuristic.
+4. **Distortion measured in answer space, not text space.** Define distortion as
+   the probability the answer changes, and fit the rate–distortion curve
+   empirically per workload, so budgets are chosen on a measured curve instead of
+   a guessed ratio.
+
+**Economics of billed tokens**
+
+5. **Cache-aligned selection.** Optimise *billed* cost, not token count. Under
+   prompt-prefix caching a cached read costs roughly a tenth of a fresh one, so a
+   selection that is slightly less relevant but preserves a long cached prefix can
+   be markedly cheaper. Objective becomes
+   `min [ c_fresh·|S \ prefix| + c_cached·|S ∩ prefix| ]` subject to a quality
+   floor. Entroly already maintains byte-stable prefixes as an invariant and ships
+   `cache_aligner.py`; nothing selects *for* cache reuse.
+6. **Session-level budget allocation.** Treat total spend across a session as one
+   resource allocated over turns — a knapsack in time — rather than an independent
+   budget per call. Early exploratory turns get less, the decisive turn gets more.
+
+**Active learning / value of information**
+
+7. **Expected-information-gain allocation.** Spend the next token where it most
+   reduces uncertainty *about the answer*, using the retrieval-score distribution
+   as a surrogate posterior, instead of taking the next most relevant fragment.
+8. **Sequential context as best-arm identification.** Start minimal, expand only
+   the region of highest posterior uncertainty, with a formal stopping rule.
+   Distinct from 2: this is a stopping problem, not a coding problem.
+
+**Coding theory**
+
+9. **Erasure-coded evidence.** Encode fragments so any *k* of *n* reconstruct,
+   letting the selector drop arbitrary members without losing recoverability.
+   Recovery is out-of-band via a tool call, since a model cannot decode.
+10. **Omission manifest / Bloom filter.** A tiny structure enumerating what was
+    dropped, so the model can request exactly what it lacks instead of guessing.
+    Weaker than 3 — detection only, no reconstruction — but far cheaper.
+
+**Database systems**
+
+11. **Materialised context views with incremental maintenance.** Cache selected
+    context keyed by (repo state, query class) and invalidate by change impact —
+    `change_pipeline`/`blast_radius` already computes the impact set. IVM
+    semantics for context.
+12. **Synopsis-first retrieval.** Per-file sketches answering "could the answer be
+    here?" cheaply, pruning the corpus before ranking. Attacks latency, not quality.
+13. **Query planning over context operators.** Treat selection as a plan over
+    operators with cost estimates, chosen per query, rather than one fixed pipeline.
+
+**Search / IR**
+
+14. **Learned sparse expansion (SPLADE-style).** Fix qccr's vocabulary-mismatch
+    ceiling with term expansion that stays sparse and inspectable, unlike dense
+    embeddings — but it needs a model, trading the $0/offline property.
+15. **Late interaction over lexical units.** Token-level max-similarity scoring
+    rather than whole-fragment scores, keeping determinism.
+
+**Program analysis**
+
+16. **Type-and-contract slicing.** Slice by the type signatures and invariants
+    needed to answer, not by call reachability — which Q-B measured as a loser.
+17. **Test-as-specification context.** For a failing test, treat its assertions as
+    the specification and select context by what those assertions reference.
+    Concrete, high-signal, and directly matched to coding-agent work.
+
+**Compiler theory**
+
+18. **Liveness analysis for conversation context.** A fact is live if a future turn
+    may read it; dead facts are dropped. Replaces recency/relevance heuristics in
+    long agent sessions with a dataflow criterion.
+19. **Partial evaluation of context.** Resolve configuration and constants directly
+    into the code shown, so the model never needs the config file — removes a
+    cross-file dependency rather than compressing it.
+
+**Control theory**
+
+20. **Closed-loop budget controller.** Predict answer quality, adjust budget, stop
+    when a conformal bound is met. Compression as feedback control instead of a
+    one-shot transform.
+
+**Agent memory**
+
+21. **Write-time / read-time asymmetry.** Compress hard on write, keep recent
+    material exact on read, consolidating on a schedule. Partially present in
+    `memory/consolidation.rs`; the asymmetry itself is not exploited.
+22. **Answer-shaped compression.** Compress toward the expected *answer schema*
+    rather than the query string — for "which function does X call", retain call
+    edges preferentially.
+
+---
+
+## 7. Scoring — **HYPOTHESIZED**
+
+Weights are the mandate's: novelty 15, quality gain 15, token savings 10,
+evidence preservation 15, recoverability 10, provider independence 5, latency 5,
+determinism 5, feasibility 5, moat 10, publishability 5.
+
+Scored harshly. Anything needing a model to compress loses provider
+independence, determinism *and* the offline property at once, which is why the
+IR candidates rank low here despite being strong ideas in general.
+
+| # | candidate | score | note |
+|---|---|---:|---|
+| 5 | **Cache-aligned selection** | **82** | optimises the quantity actually billed; validated without a model |
+| 1 | **Conformal risk-constrained selection** | **78** | half-built; converts a diagnostic into a guarantee |
+| 3 | **Syndrome context (Wyner–Ziv)** | **71** | strongest theory; unproven that a useful syndrome is small |
+| 17 | Test-as-specification context | 68 | high signal, narrow to one workload |
+| 11 | Materialised context views | 64 | large latency/cost win, modest novelty |
+| 2 | Successive-refinement layering | 62 | clean theory, needs the closed loop to matter |
+| 19 | Partial evaluation of context | 58 | removes dependencies outright; scope unclear |
+| 18 | Liveness for conversation context | 57 | needs a future-read model |
+| 20 | Closed-loop budget controller | 55 | depends on 1 for its stopping rule |
+| 10 | Omission manifest | 54 | cheap, low ceiling |
+| 6 | Session-level budget allocation | 52 | real, but an accounting change |
+| 7/8 | EIG allocation / best-arm | 50 | surrogate posterior is the weak link |
+| 22 | Answer-shaped compression | 48 | risks over-fitting to query taxonomy |
+| 13 | Query planning over operators | 46 | large build, unclear payoff |
+| 4 | Answer-space distortion | 45 | measurement programme, not a mechanism |
+| 12 | Synopsis-first retrieval | 44 | latency only |
+| 21 | Write/read asymmetry | 42 | partly present already |
+| 9 | Erasure-coded evidence | 38 | out-of-band recovery already exists and is simpler |
+| 16 | Type-and-contract slicing | 35 | Q-B result casts doubt on all slicing |
+| 14/15 | Learned sparse / late interaction | 30 | forfeits $0, offline and deterministic at once |
+
+### Why **cache-aligned selection** ranks first
+
+It is the only candidate whose primary metric is **the quantity the user is
+actually billed for**, and the one place where this programme's blocked
+dependency does not bite: cached versus fresh token counts are reported by the
+provider, so it can be validated **without a model-quality judgement** — unlike
+every proxy measured so far.
+
+It also inverts the field's assumption. Everyone minimises tokens; under prefix
+caching, tokens are not fungible, and a 10x price difference between cached and
+fresh means the cheapest context is often *not* the smallest. Entroly already
+holds the two prerequisites — byte-stable prefixes as an invariant, and
+`cache_aligner.py` — and nothing currently selects *for* reuse.
+
+**Prior-art search not yet done.** Per this programme's own rule, that must
+happen before any novelty claim: search prompt-caching-aware retrieval,
+cache-aware query planning, and the CDN/cache-admission literature, which is the
+likeliest place this already exists under another name.
+
+**Killing experiment.** Measure billed cost across a realistic multi-turn agent
+session with arms {current selection, cache-aligned selection} at matched answer
+quality. Kill it if cache-aligned selection fails to reduce billed cost by ≥25%,
+or if it degrades evidence recall at all — a cheaper context that loses evidence
+is the failure mode this programme exists to prevent.
+
+#### First measurement: premise confirmed, opportunity not yet tested — **OBSERVED**
+
+`entroly/cache_aligner.py::align` matches a SHA-256 of the **whole** context:
+byte-identical or total miss. Providers cache by *prefix*, so any change in
+selection currently bills everything fresh. `qccr.py` contains **zero**
+references to cache state. The premise holds and is sharper than stated above —
+there is no partial-reuse path at all.
+
+`benchmarks/cache_reuse_opportunity.py` over 19 consecutive query pairs at a
+2000-token budget:
+
+| metric | median | p90 | max |
+|---|---:|---:|---:|
+| shared prefix (what is billed today) | 0.1% | 0.1% | 0.2% |
+| shared content (recoverable by reordering) | 0.0% | 14.3% | 22.2% |
+
+**This does not test the hypothesis, and must not be read as refuting it.** The
+20 graph-lane tasks are 20 *unrelated* queries about different symbols. Cache
+reuse is a property of successive turns **within one session**, where the task is
+fixed and context largely repeats; independent queries have no reason to share
+fragments, and 0.0% median overlap is the expected result rather than an
+informative one.
+
+What it *does* establish, validly and narrowly: **cache-aligned selection cannot
+help a cold, diverse query stream** — there is nothing to reuse. Its value, if
+any, is confined to multi-turn sessions on a stable task. That bounds the claim
+before any build.
+
+**The correct experiment**, still to run: successive turns of a single agent
+task, measuring billed cost with cached-vs-fresh accounting from the provider's
+own usage numbers. `usage_ledger.py` already separates uncached, cache-read and
+cache-write tokens and prices each tier, so the accounting exists.
+
+---
+
 ## 8. Experimental results — **OBSERVED**
 
 All measured in-repo, mutation-tested, CI-verified.
