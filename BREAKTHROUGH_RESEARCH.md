@@ -262,3 +262,126 @@ The goal is:
 > **minimum sufficient context for the task in front of the model, backed by evidence preservation, provenance and exact recovery when more context becomes necessary.**
 
 That is the research direction Entroly will continue to test, falsify and strengthen.
+
+---
+
+## 12. Measured follow-ups to the open frontier (§10)
+
+A parallel session ran experiments against the questions §10 leaves open,
+principally **better task-invariant evidence**. Results are reported here rather
+than folded into the sections above, so the prior narrative stays intact and
+these can be checked independently. Every harness is committed and deterministic;
+none requires a model or an API key.
+
+### Architecture corrections — **OBSERVED**
+
+Three claims elsewhere in the repository were checked against source and found
+wrong. They matter because the sections above reason about "the compression
+path" as if it were single.
+
+- **The selection engine is a fourth crate.** `CLAUDE.md` places `knapsack.rs`,
+  `bm25.rs`, `depgraph.rs`, `entropy.rs` and `prism.rs` in `entroly-core/src/`.
+  They are in **`entroly-engine/`** (31 modules, 29,189 lines), a path dependency
+  of `entroly-core`. It also holds `causal.rs`, `hierarchical.rs` and
+  `skeleton.rs` — three mechanisms a research programme might otherwise propose
+  as new.
+- **Three selectors run on three surfaces.** SDK/MCP `optimize_context` uses
+  QCCR; the **proxy** uses the Rust hierarchical path (`proxy.py:3061`,
+  default-on); `context_bridge.load_hcc_context` uses a *separate pure-Python*
+  `HCCEngine`. Only QCCR is covered by any accuracy benchmark, so the
+  highest-traffic surface is the least measured.
+- **The sufficiency certificate is wired**, not dormant: `qccr.py:244` attaches
+  it inside the primary selector. It is *fail-closed* — `sufficient` requires a
+  named `CalibrationPolicy`, and none ships — which is a deliberate posture, not
+  an omission.
+
+### Graph-aware selection loses to lexical ranking — **OBSERVED**
+
+Preregistered in `benchmarks/GRAPH_LANE_PREREGISTRATION.md` before running.
+60 tasks where the evidence is reachable **only** along an import-and-call edge,
+so a dependency graph should be decisive.
+
+| arm | indirect recall @2k | @8k |
+|---|---:|---:|
+| BM25 | 5.0% | 28.3% |
+| **QCCR** | **76.7%** | **81.7%** |
+| hierarchical (graph-aware) | 3.3% | 6.7% |
+
+The graph-aware path loses to plain BM25 on the tasks the graph exists to serve.
+Validity gates passed: BM25 far below the void threshold, and QCCR selects 8–12
+files from a 48-file pool rather than passing everything through. **This retires
+the assumption that the graph lane is a latent advantage awaiting wiring.**
+
+### The index/span regime boundary is binary — **OBSERVED**
+
+The strongest result, and the one no prior-art search matched. A signature index
+(paths and top-level signatures, no bodies) was compared against span selection
+at matched budget across two task families:
+
+| regime | index | QCCR @matched | raw pool |
+|---|---:|---:|---:|
+| signature-resident (parameter names) | **12/12** | 9/12 | 12/12 @ 234,351 tok |
+| body-resident (raised exception) | **0/20** | **20/20** | 20/20 @ 229,292 tok |
+| overall | 12/32 | **29/32** | 32/32 |
+
+Each mechanism is near-perfect in one regime and near-useless in the other, and
+what separates them is **where the evidence physically lives** — a property of
+the question, knowable before retrieval. The index reaching 0/20 is the metric's
+own sanity check: a signature map cannot carry body evidence, so anything above
+zero would have meant leakage.
+
+Tools that ship signature maps as the default — aider's repo map among them — do
+not publish where that default fails. **This boundary is a measurement, not a
+mechanism, and should be presented as one.**
+
+### The four-property conjunction, on real inputs — **OBSERVED**
+
+§8 argues preservation gating is the strongest design distinction. Measured on
+28 real inputs (captured command output and tracked source, nothing authored):
+recovery verified 28/28, determinism 28/28, protected evidence 28/28, **all four
+simultaneously 24/28** at a median 78.6% reduction. The four gaps are coverage,
+not correctness: no codec claims a plain file listing, a package listing, or
+pytest output.
+
+### Directions closed cheaply — **OBSERVED**
+
+- **Cross-fragment factoring.** Everything compresses fragments independently,
+  so the mutual information between correlated fragments is unexploited. Measured
+  ceiling for an entropy coder: **15.9–23.7%**. A mechanism emitting readable
+  text recovers a fraction of that, and cross-*call* redundancy is already served
+  by prefix-cache stability. Not worth building.
+- **Sound abstraction** (compressed context as abstract interpretation, so the
+  guarantee is universal rather than probabilistic). Over 1,959 functions:
+  params 99.3% decidable, calls 98.5%, mutates 93.8%, **raises 6.5%**. The last
+  is not a missing builtin model — of 9,844 unresolved call sites only 37% are
+  builtins, while **63% are method calls on receivers of unknown type**.
+  Interprocedural effect reasoning needs whole-program type inference. This
+  predicts the approach is far stronger on Rust, Go or TypeScript, which is
+  testable against this repository's own Rust crate.
+
+### Prior art found for every mechanism proposed — **READ**
+
+Seven mechanism-level candidates were generated across information theory,
+coding theory, databases, IR, program analysis, compilers and control. **All
+seven were already published**, each found in one or two searches, extending the
+list in §7:
+
+| candidate | prior art |
+|---|---|
+| cache-aligned selection (optimise billed, not raw, tokens) | CacheWeaver 2606.19667, RAGCache 2404.12457; also vendor-documented practice |
+| conformal risk-constrained selection | arXiv 2511.17908, C-RAG 2402.03181 |
+| addressability objective (index over content) | aider repo map, SigMap, jCodeMunch |
+| evidence-locus routing | Adaptive-RAG, RAGRouter-Bench 2604.03455 |
+
+This supports §7's position rather than complicating it: the defensible claim is
+the assembled system and its measured behaviour, not any single mechanism.
+**Generating further mechanism candidates has low expected value.**
+
+### What remains genuinely unmeasured
+
+**No model has been in the loop for any of the above.** Every number here is an
+evidence-delivery or compression proxy for a quality effect nobody has observed.
+`benchmarks/answer_correctness_bridge.py` is committed, preregistered and
+budget-matched to close that gap, and is blocked only on a working API key. Until
+it runs, §10's "Real task outcomes" remains the binding constraint on every claim
+in this document.
