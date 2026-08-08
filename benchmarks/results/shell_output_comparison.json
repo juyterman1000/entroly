@@ -1,0 +1,202 @@
+{
+  "commands": 7,
+  "void": [
+    "pip_list: external returned empty",
+    "pytest_run: external returned empty",
+    "ruff: empty capture"
+  ],
+  "rows": [
+    {
+      "sample": "git_status",
+      "system": "raw",
+      "in_tokens": 196,
+      "out_tokens": 196,
+      "ratio": 0.0,
+      "evidence_total": 16,
+      "evidence_kept": 16,
+      "latency_ms": 0.0,
+      "note": "control",
+      "retention": 1.0
+    },
+    {
+      "sample": "git_status",
+      "system": "entroly",
+      "in_tokens": 196,
+      "out_tokens": 119,
+      "ratio": 0.3928571428571429,
+      "evidence_total": 16,
+      "evidence_kept": 14,
+      "latency_ms": 22.77219999814406,
+      "note": "git_status",
+      "retention": 0.875
+    },
+    {
+      "sample": "git_status",
+      "system": "external",
+      "in_tokens": 196,
+      "out_tokens": 196,
+      "ratio": 0.0,
+      "evidence_total": 16,
+      "evidence_kept": 16,
+      "latency_ms": 2012.1734000276774,
+      "note": "",
+      "retention": 1.0
+    },
+    {
+      "sample": "git_log",
+      "system": "raw",
+      "in_tokens": 18586,
+      "out_tokens": 18586,
+      "ratio": 0.0,
+      "evidence_total": 300,
+      "evidence_kept": 300,
+      "latency_ms": 0.0,
+      "note": "control",
+      "retention": 1.0
+    },
+    {
+      "sample": "git_log",
+      "system": "entroly",
+      "in_tokens": 18586,
+      "out_tokens": 392,
+      "ratio": 0.9789088561282686,
+      "evidence_total": 300,
+      "evidence_kept": 5,
+      "latency_ms": 15.453600004548207,
+      "note": "codec",
+      "retention": 0.016666666666666666
+    },
+    {
+      "sample": "git_log",
+      "system": "external",
+      "in_tokens": 18586,
+      "out_tokens": 18586,
+      "ratio": 0.0,
+      "evidence_total": 300,
+      "evidence_kept": 300,
+      "latency_ms": 363.7276999943424,
+      "note": "",
+      "retention": 1.0
+    },
+    {
+      "sample": "git_diff",
+      "system": "raw",
+      "in_tokens": 221,
+      "out_tokens": 221,
+      "ratio": 0.0,
+      "evidence_total": 18,
+      "evidence_kept": 18,
+      "latency_ms": 0.0,
+      "note": "control",
+      "retention": 1.0
+    },
+    {
+      "sample": "git_diff",
+      "system": "entroly",
+      "in_tokens": 221,
+      "out_tokens": 113,
+      "ratio": 0.4886877828054299,
+      "evidence_total": 18,
+      "evidence_kept": 9,
+      "latency_ms": 2.278100000694394,
+      "note": "codec",
+      "retention": 0.5
+    },
+    {
+      "sample": "git_diff",
+      "system": "external",
+      "in_tokens": 221,
+      "out_tokens": 221,
+      "ratio": 0.0,
+      "evidence_total": 18,
+      "evidence_kept": 18,
+      "latency_ms": 253.61159999738447,
+      "note": "",
+      "retention": 1.0
+    },
+    {
+      "sample": "file_listing",
+      "system": "raw",
+      "in_tokens": 10887,
+      "out_tokens": 10887,
+      "ratio": 0.0,
+      "evidence_total": 300,
+      "evidence_kept": 300,
+      "latency_ms": 0.0,
+      "note": "control",
+      "retention": 1.0
+    },
+    {
+      "sample": "file_listing",
+      "system": "entroly",
+      "in_tokens": 10887,
+      "out_tokens": 1489,
+      "ratio": 0.8632313768714981,
+      "evidence_total": 300,
+      "evidence_kept": 33,
+      "latency_ms": 1531.976600002963,
+      "note": "esc_universal",
+      "retention": 0.11
+    },
+    {
+      "sample": "file_listing",
+      "system": "external",
+      "in_tokens": 10887,
+      "out_tokens": 10887,
+      "ratio": 0.0,
+      "evidence_total": 300,
+      "evidence_kept": 300,
+      "latency_ms": 194.816000002902,
+      "note": "",
+      "retention": 1.0
+    },
+    {
+      "sample": "pip_list",
+      "system": "raw",
+      "in_tokens": 11135,
+      "out_tokens": 11135,
+      "ratio": 0.0,
+      "evidence_total": 137,
+      "evidence_kept": 137,
+      "latency_ms": 0.0,
+      "note": "control",
+      "retention": 1.0
+    },
+    {
+      "sample": "pip_list",
+      "system": "entroly",
+      "in_tokens": 11135,
+      "out_tokens": 248,
+      "ratio": 0.9777278850471486,
+      "evidence_total": 137,
+      "evidence_kept": 8,
+      "latency_ms": 307.8006000141613,
+      "note": "esc_universal",
+      "retention": 0.058394160583941604
+    },
+    {
+      "sample": "pytest_run",
+      "system": "raw",
+      "in_tokens": 649,
+      "out_tokens": 649,
+      "ratio": 0.0,
+      "evidence_total": 35,
+      "evidence_kept": 35,
+      "latency_ms": 0.0,
+      "note": "control",
+      "retention": 1.0
+    },
+    {
+      "sample": "pytest_run",
+      "system": "entroly",
+      "in_tokens": 649,
+      "out_tokens": 533,
+      "ratio": 0.17873651771956856,
+      "evidence_total": 35,
+      "evidence_kept": 20,
+      "latency_ms": 7.418799999868497,
+      "note": "test_output",
+      "retention": 0.5714285714285714
+    }
+  ]
+}

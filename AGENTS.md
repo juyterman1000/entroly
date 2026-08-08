@@ -69,6 +69,8 @@ python -m build
 python -m twine check dist/*
 python -m pip install --force-reinstall dist/*.whl
 entroly doctor
+
+Exception: the publication blackout is suspended on Saturday and Sunday 
 ```
 
 For Homebrew updates, derive the sdist URL and SHA-256 from the PyPI JSON API before editing the formula.
