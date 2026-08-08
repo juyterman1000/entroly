@@ -961,8 +961,58 @@ the honest reading is that qccr is already the better single default — the
 router's value is eliminating a *catastrophic* failure mode on one question
 class, not a broad quality lift.
 
-**Prior art for locus routing is unsearched.** Given six for six so far, assume
-it exists until shown otherwise.
+**Locus routing is prior art too — seventh rejection.** — **READ**
+
+| work | what it does |
+|---|---|
+| **Adaptive-RAG** | trains a query classifier routing each question to no-retrieval, single-step, or multi-step retrieval |
+| **RAGRouter-Bench**, arXiv 2604.03455 | query-type annotation over `single_hop`, `multi_hop` and **`summary`** — explicitly routing between summary-level and full-content retrieval |
+| **arXiv 2604.14222**, tier-based hybrid routing | dynamic strategy selection by query type and corpus topology |
+| survey line in 2606.18508 | names **"query-adaptive granularity selection"** as an established prior-work category, alongside proposition-level retrieval and hierarchical retrieval across abstraction levels |
+
+Choosing retrieval granularity from the query is a named, populated research
+area. Routing on evidence locus is an instance of it.
+
+### Seven for seven — the programme's actual conclusion
+
+| # | claim | killed by |
+|---|---|---|
+| 1 | protected / lossy channels | SemanticZip |
+| 2 | preservation as enforcement | DB integrity constraints |
+| 3 | gated derived representation | bounded AQP, BEAS |
+| 4 | cache-aligned selection | CacheWeaver, RAGCache, vendor docs |
+| 5 | conformal risk-constrained selection | 2511.17908, C-RAG |
+| 6 | addressability objective | aider repo map, SigMap, jCodeMunch |
+| 7 | evidence-locus routing | Adaptive-RAG, RAGRouter-Bench |
+
+Seven mechanism-level ideas, generated across information theory, coding theory,
+databases, IR, program analysis, compilers and control. **All seven published,
+most within two years, several by multiple groups concurrently.** Each died on
+one or two searches.
+
+**This is now overdetermined, and generating candidate #8 has an expected value
+near zero.** The correct inference is not "keep looking" but: *mechanism-level
+novelty in context compression is not reachable by first-principles reasoning
+from inside a codebase*, because the field has many groups publishing monthly
+against the same constraints. Anything a careful thinker derives, someone has
+derived and published.
+
+**What is left, and it is not nothing:**
+
+1. **The integrated system.** Seven published components, assembled with gated
+   preservation, byte-exact model-free recovery, determinism and receipts.
+   Verdict **B**, defensible on engineering merit and measured evidence.
+2. **The measurement rigor.** Preregistration, null and matched-budget controls,
+   mutation-tested harnesses, and published negative results. Three harness bugs
+   were caught this way, one of which would have reported a fabricated
+   catastrophe.
+3. **The regime boundary map** (§ above) — the one artifact not found in any
+   search. aider, SigMap and jCodeMunch all ship signature maps as the default;
+   none publishes *where that default fails*. `index 12/12 → 0/20` across the
+   boundary is a negative space the field's standard practice assumes away.
+
+Item 3 is a **measurement**, not a mechanism, and should be presented as one.
+That is the honest shape of the contribution available here.
 
 ### The rejected reasoning, kept for the record
 
