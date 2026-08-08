@@ -84,6 +84,13 @@ const {
   wrapGemini,
   wrapOpenAI,
 } = require('./js/app_sdk');
+const {
+  EntrolyGatewayClient,
+  createGatewayMiddleware,
+  wrapAnthropicWithGateway,
+  wrapGeminiWithGateway,
+  wrapOpenAIWithGateway,
+} = require('./js/gateway_client');
 
 function classifyQueryTransition(...args) {
   if (!classifyQueryTransitionRust) {
@@ -172,6 +179,14 @@ module.exports = {
   wrapAnthropic,
   wrapGemini,
   wrapOpenAI,
+
+  // Receipt-first sidecar SDK. Every changed payload is recoverable through
+  // the local /v1/compress and /retrieve contract.
+  EntrolyGatewayClient,
+  createGatewayMiddleware,
+  wrapAnthropicWithGateway,
+  wrapGeminiWithGateway,
+  wrapOpenAIWithGateway,
 
   // Context Receipts: auditable context selection receipts for JS users.
   ingestReceiptDocuments,

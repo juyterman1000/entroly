@@ -55,6 +55,62 @@ export function wrapOpenAI<TClient>(client: TClient, options?: EntrolyAppSdkOpti
 export function wrapAnthropic<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
 export function wrapGemini<TClient>(client: TClient, options?: EntrolyAppSdkOptions): unknown;
 
+export interface EntrolyGatewayOptions {
+  baseUrl?: string;
+  provider?: EntrolyProvider;
+  budgetTokens?: number;
+  accessToken?: string;
+  sidecarToken?: string;
+  allowRemote?: boolean;
+  fetch?: typeof fetch;
+  signal?: AbortSignal;
+}
+
+export interface EntrolyGatewayReceipt {
+  count: number;
+  recovery: string;
+  compression: string;
+  headers: Record<string, string>;
+}
+
+export class EntrolyGatewayClient {
+  constructor(options?: EntrolyGatewayOptions);
+  compress<T extends Record<string, unknown>>(
+    payload: T,
+    options?: EntrolyGatewayOptions,
+  ): Promise<{ payload: T; receipt: EntrolyGatewayReceipt }>;
+  retrieve(options: {
+    receiptId: string;
+    spanId: string;
+    retrievalId?: string;
+    signal?: AbortSignal;
+  }): Promise<Record<string, unknown>>;
+  retrieveImage(options: {
+    receiptId: string;
+    signal?: AbortSignal;
+  }): Promise<{
+    receipt_id: string;
+    media_type: string;
+    source_sha256: string;
+    source_bytes: number;
+    original_base64: string;
+  }>;
+}
+
+export function createGatewayMiddleware(options?: EntrolyGatewayOptions & {
+  client?: EntrolyGatewayClient;
+}): {
+  specificationVersion: "v3";
+  transformParams(args: { params: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  wrapGenerate(args: { doGenerate: () => Promise<unknown> }): Promise<unknown>;
+  wrapStream(args: { doStream: () => Promise<unknown> }): Promise<unknown>;
+  entrolyGateway: EntrolyGatewayClient;
+};
+
+export function wrapOpenAIWithGateway<TClient>(client: TClient, options?: EntrolyGatewayOptions): unknown;
+export function wrapAnthropicWithGateway<TClient>(client: TClient, options?: EntrolyGatewayOptions): unknown;
+export function wrapGeminiWithGateway<TClient>(client: TClient, options?: EntrolyGatewayOptions): unknown;
+
 export interface EntrolyValueReceipt {
   schema_version: "entroly.value-receipt.v1";
   provider_path: Record<string, number | string>;

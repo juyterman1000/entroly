@@ -33,6 +33,7 @@ Commands:
     entroly ravs        RAVS offline evaluation (report)
     entroly witness     Verify or suppress hallucinated factual claims
     entroly cache       Inspect EGSC persistent cache (cross-session)
+    entroly install     Manage a persistent user-scoped Entroly service
     entroly unwrap      Safely remove persistent Entroly integration
     entroly capabilities Report installed runtime capabilities offline
 """
@@ -2616,7 +2617,58 @@ def cmd_unwrap(args):
 
 
 def cmd_learn(args):
-    """entroly learn — analyze session for failure patterns."""
+    """Analyze observations or build/apply transcript-backed proposals."""
+    from entroly.failure_learning import (
+        apply_learning_proposal,
+        build_learning_proposal,
+        write_learning_proposal,
+    )
+
+    proposal_to_apply = getattr(args, "apply_proposal", None)
+    if proposal_to_apply:
+        if not getattr(args, "target", None):
+            print(
+                f"  {C.RED}--target is required with --apply-proposal.{C.RESET}",
+                file=sys.stderr,
+            )
+            return 2
+        result = apply_learning_proposal(Path(proposal_to_apply), Path(args.target))
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+
+    transcripts = [Path(value) for value in getattr(args, "transcript", [])]
+    if transcripts:
+        proposal = build_learning_proposal(transcripts)
+        output = Path(
+            getattr(args, "output", None)
+            or _ENTROLY_DIR
+            / "learning-proposals"
+            / f"{proposal['proposal_id']}.json"
+        )
+        written = write_learning_proposal(proposal, output)
+        print(
+            json.dumps(
+                {
+                    "proposal_path": str(written),
+                    "proposal_id": proposal["proposal_id"],
+                    "corrections": len(proposal["corrections"]),
+                    "mode": proposal["mode"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
+    if getattr(args, "apply", False):
+        print(
+            f"  {C.RED}Direct instruction mutation has been retired.{C.RESET}\n"
+            "  Create a transcript-backed proposal with --transcript, inspect it,\n"
+            "  then apply it with --apply-proposal PROPOSAL --target FILE.",
+            file=sys.stderr,
+        )
+        return 2
+
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
 
     import urllib.request
@@ -2676,23 +2728,66 @@ def cmd_learn(args):
     for msg in learnings or ["No thresholds crossed."]:
         print(f"    {C.YELLOW}• {msg}{C.RESET}")
 
-    if getattr(args, "apply", False) and learnings and total > 5:
-        for fname in ["CLAUDE.md", "AGENTS.md"]:
-            fpath = Path.cwd() / fname
-            if fpath.exists():
-                existing = fpath.read_text(encoding="utf-8", errors="replace")
-                if "## Entroly Learnings" not in existing:
-                    import time as _time
-                    stamp = _time.strftime("%Y-%m-%d")
-                    section = f"\n\n## Entroly Learnings ({stamp}, n={total})\n\n"
-                    section += "\n".join(f"- {msg}" for msg in learnings) + "\n"
-                    fpath.write_text(existing + section, encoding="utf-8")
-                    print(f"\n  {C.GREEN}Written learnings to {fname}{C.RESET}")
-                else:
-                    print(f"\n  {C.GRAY}{fname} already has learnings section — remove the old one to refresh.{C.RESET}")
-                break
-
     print()
+
+
+def cmd_install(args):
+    """Manage the reversible, user-scoped Entroly daemon installation."""
+    from entroly.install_manager import InstallSpec, PersistentInstallManager
+
+    action = args.install_action
+    manager = PersistentInstallManager(state_dir=_ENTROLY_DIR / "install")
+    dry_run = bool(getattr(args, "dry_run", False))
+    if action == "apply":
+        result = manager.apply(
+            InstallSpec(
+                proxy_port=args.proxy_port,
+                dashboard_port=args.dashboard_port,
+                mcp_port=args.mcp_port,
+                host=args.host,
+                no_proxy=args.no_proxy,
+                no_mcp=args.no_mcp,
+                quality=args.quality,
+            ),
+            dry_run=dry_run,
+        )
+    elif action == "status":
+        result = manager.status()
+    elif action == "remove":
+        result = manager.remove(dry_run=dry_run)
+    else:
+        result = manager.lifecycle(action, dry_run=dry_run)
+
+    payload = result.as_dict()
+    if getattr(args, "json_output", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    state = (
+        "running"
+        if result.running is True
+        else "stopped"
+        if result.running is False and result.installed
+        else "installed"
+        if result.installed
+        else "not installed"
+    )
+    preview = " (dry run)" if result.dry_run else ""
+    print(f"\n{C.CYAN}{C.BOLD}  Entroly persistent service{C.RESET}{preview}")
+    print(f"  Platform: {result.platform}")
+    print(f"  State:    {state}")
+    print(f"  Artifact: {result.artifact_path}")
+    if result.detail:
+        if result.dry_run and action == "apply":
+            print(f"\n{result.detail.rstrip()}\n")
+        else:
+            print(f"  Detail:   {result.detail}")
+    if result.commands:
+        print("  Lifecycle commands:")
+        for command in result.commands:
+            print("    " + subprocess.list2cmdline(list(command)))
+    print()
+    return 0
 
 
 def _recommend_quality(project: dict, file_count: int) -> str:
@@ -6244,7 +6339,44 @@ def main():
     )
     learn_parser.add_argument(
         "--apply", action="store_true",
-        help="Write learnings to CLAUDE.md / AGENTS.md",
+        help="Deprecated unsafe mode; use --apply-proposal with --target",
+    )
+    learn_parser.add_argument(
+        "--transcript", action="append", default=[], metavar="JSONL",
+        help="Local JSONL transcript to analyze; repeat for multiple files",
+    )
+    learn_parser.add_argument(
+        "--output", type=str, default=None, metavar="JSON",
+        help="Proposal output path (default: ~/.entroly/learning-proposals/<id>.json)",
+    )
+    learn_parser.add_argument(
+        "--apply-proposal", type=str, default=None, metavar="JSON",
+        help="Explicitly apply one previously reviewed proposal",
+    )
+    learn_parser.add_argument(
+        "--target", type=str, default=None, metavar="FILE",
+        help="Instruction file to update when applying a proposal",
+    )
+
+    # entroly install
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Manage a persistent user-scoped Entroly daemon",
+    )
+    install_parser.add_argument(
+        "install_action",
+        choices=("apply", "status", "start", "stop", "restart", "remove"),
+    )
+    install_parser.add_argument("--dry-run", action="store_true")
+    install_parser.add_argument("--json", dest="json_output", action="store_true")
+    install_parser.add_argument("--proxy-port", type=int, default=9377)
+    install_parser.add_argument("--dashboard-port", type=int, default=9378)
+    install_parser.add_argument("--mcp-port", type=int, default=9379)
+    install_parser.add_argument("--host", default="127.0.0.1")
+    install_parser.add_argument("--no-proxy", action="store_true")
+    install_parser.add_argument("--no-mcp", action="store_true")
+    install_parser.add_argument(
+        "--quality", choices=("fast", "balanced", "max"), default="balanced"
     )
 
     # entroly capabilities
@@ -6636,6 +6768,7 @@ def main():
         "wrap": cmd_wrap,
         "unwrap": cmd_unwrap,
         "learn": cmd_learn,
+        "install": cmd_install,
         "share": cmd_share,
         "ravs": cmd_ravs,
         "cache": cmd_cache,

@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from .gateway import (  # noqa: F401
+    CompressionGatewayClient,
+    GatewayCompression,
+    GatewayError,
+    GatewayReceipt,
+    wrap_anthropic,
+    wrap_openai,
+)
+
 try:
     from .ebbiforge import (  # noqa: F401
         EbbiforgeAuditResult,

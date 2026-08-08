@@ -19,6 +19,7 @@ Errors fall back to forwarding the original request unmodified.
 from __future__ import annotations
 
 import asyncio
+import base64
 import collections
 import copy
 import hashlib
@@ -1032,6 +1033,10 @@ def _is_trusted_sidecar_request(request: Request) -> bool:
 
 def _sidecar_guard(handler):
     async def _guarded(request: Request):
+        # In explicit remote mode, RemoteProxyAccessMiddleware has already
+        # authenticated and stripped the capability header before dispatch.
+        if getattr(request.app.state, "remote_access_required", False):
+            return await handler(request)
         if not _is_trusted_sidecar_request(request):
             return JSONResponse(
                 {
@@ -1244,6 +1249,34 @@ class PromptCompilerProxy:
                 self._session_rescue_init_error = str(exc)
                 logger.error(
                     "Session rescue disabled because its recoverable store "
+                    "could not be initialized: %s",
+                    exc,
+                )
+        self._image_optimization_enabled = (
+            os.environ.get("ENTROLY_OPTIMIZE_IMAGES", "0").lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self._image_recovery_store: Any = None
+        self._image_optimization_init_error = ""
+        if self._image_optimization_enabled:
+            try:
+                from .proxy_image_optimization import ImageRecoveryStore
+
+                image_root = Path(
+                    os.environ.get("ENTROLY_DIR", str(Path.home() / ".entroly"))
+                ) / "image-recovery"
+                self._image_recovery_store = ImageRecoveryStore(
+                    image_root,
+                    max_image_bytes=max(
+                        1,
+                        _env_int("ENTROLY_IMAGE_MAX_BYTES", 20 * 1024 * 1024),
+                    ),
+                )
+            except Exception as exc:
+                self._image_optimization_init_error = str(exc)
+                self._image_recovery_store = None
+                logger.error(
+                    "Image optimization disabled because exact recovery storage "
                     "could not be initialized: %s",
                     exc,
                 )
@@ -2081,6 +2114,37 @@ class PromptCompilerProxy:
         request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
         usage_dimensions = self._usage_dimensions(headers)
         provider = detect_provider(path, headers, body)
+        # Authoritative subscription-auth guard — fail fast before any local
+        # transformation or recovery-store write, as well as before forwarding.
+        _sub_block = self._subscription_guard(provider, headers)
+        if _sub_block is not None:
+            return _sub_block
+
+        image_headers: dict[str, str] = {}
+        if self._image_optimization_enabled:
+            if self._image_recovery_store is None:
+                image_headers["X-Entroly-Image-Optimization"] = "preserved-store-unavailable"
+            else:
+                try:
+                    from .proxy_image_optimization import optimize_inline_images
+
+                    image_result = optimize_inline_images(
+                        body,
+                        provider=provider,
+                        model=extract_model(body, path) or str(body.get("model", "")),
+                        store=self._image_recovery_store,
+                        enabled=True,
+                        min_quality_ratio=_env_float(
+                            "ENTROLY_IMAGE_MIN_QUALITY_RATIO", 0.72
+                        ),
+                    )
+                    body = image_result.body
+                    image_headers.update(image_result.headers())
+                except Exception as exc:
+                    # Recoverability is the mutation boundary. Any decode,
+                    # optimization, or store error keeps the original request.
+                    logger.warning("Recoverable image optimization skipped: %s", exc)
+                    image_headers["X-Entroly-Image-Optimization"] = "preserved-error"
         gateway_adapter = None
         behavior_findings = ()
         conversation_id = ""
@@ -2094,11 +2158,6 @@ class PromptCompilerProxy:
             )
         except ValueError as exc:
             logger.debug("Canonical provider adapter unavailable: %s", exc)
-        # Authoritative subscription-auth guard — fail fast with actionable guidance
-        # before any forwarding, instead of a confusing upstream 401/429.
-        _sub_block = self._subscription_guard(provider, headers)
-        if _sub_block is not None:
-            return _sub_block
         if gateway_adapter is not None:
             conversation_id = self._routing_conversation_id(body, provider)
             if conversation_id:
@@ -2151,7 +2210,7 @@ class PromptCompilerProxy:
                     logger.debug("Behavioral waste observation failed: %s", exc)
         control_before = copy.deepcopy(body)
         control_decision: ControlPlaneDecision | None = None
-        control_headers: dict[str, str] = {}
+        control_headers: dict[str, str] = dict(image_headers)
         try:
             control_decision = plan_request(
                 control_before,
@@ -5544,6 +5603,54 @@ async def _context_explain(request: Request) -> JSONResponse:
     })
 
 
+async def _image_retrieve(request: Request) -> JSONResponse:
+    """Recover an exact original image from an authenticated local receipt."""
+    receipt_id = request.query_params.get("receipt_id", "")
+    if not receipt_id:
+        return JSONResponse(
+            {
+                "error": "missing_image_receipt_id",
+                "detail": "receipt_id is required",
+            },
+            status_code=400,
+        )
+
+    store = getattr(request.app.state.proxy, "_image_recovery_store", None)
+    if store is None:
+        return JSONResponse(
+            {
+                "error": "image_recovery_unavailable",
+                "detail": "recoverable image optimization is not enabled",
+            },
+            status_code=503,
+        )
+
+    from .proxy_image_optimization import ImageTransformError
+
+    try:
+        original, receipt = await asyncio.to_thread(store.recover, receipt_id)
+    except ImageTransformError as exc:
+        status = 400 if "invalid image receipt id" in str(exc) else 404
+        return JSONResponse(
+            {"error": "image_receipt_unavailable", "detail": str(exc)},
+            status_code=status,
+        )
+    except Exception:
+        logger.exception("Image recovery store read failed")
+        return JSONResponse({"error": "image_recovery_failed"}, status_code=500)
+
+    return JSONResponse(
+        {
+            "receipt_id": receipt.receipt_id,
+            "media_type": receipt.media_type,
+            "source_sha256": receipt.source_sha256,
+            "source_bytes": receipt.source_bytes,
+            "original_base64": base64.b64encode(original).decode("ascii"),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 async def _context_retrieve(request: Request) -> JSONResponse:
     """CCR: Compressed Context Retrieval — get full original of a compressed fragment.
 
@@ -6246,6 +6353,7 @@ def create_proxy_app(
             Route("/confidence", _sidecar_guard(_confidence)),                         # IDE widget API
             Route("/trends", _sidecar_guard(_value_trends)),                           # Dashboard trends
             Route("/retrieve", _sidecar_guard(_context_retrieve)),                     # CCR: lossless retrieval
+            Route("/retrieve-image", _sidecar_guard(_image_retrieve)),                 # exact image recovery
             Route("/witness", _sidecar_guard(_witness_list)),                           # WITNESS certificate index
             Route("/witness/train", _sidecar_guard(_witness_train_route), methods=["POST"]),
             Route("/witness/{witness_id}/feedback", _sidecar_guard(_witness_feedback_route), methods=["POST"]),

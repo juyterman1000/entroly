@@ -245,6 +245,24 @@ the text again. Structure extraction supports the native engine's recognized
 language families and fails open to full source when it cannot produce a useful
 smaller outline; it is not presented as a concrete-syntax-tree API.
 
+## Operational product completion surfaces
+
+| Surface | Public path | Assurance boundary |
+|---|---|---|
+| Persistent user service | `entroly install apply/status/start/stop/restart/remove` | User-scoped definitions; digest-verified removal; dry-run available |
+| Python gateway SDK | `entroly.integrations.CompressionGatewayClient`, `wrap_openai`, `wrap_anthropic` | Non-loopback destinations require explicit authorization; changed payloads use `/v1/compress` recovery |
+| LiteLLM proxy | `entroly.integrations.litellm.EntrolyLiteLLMHook` | Completion-only pre-call mutation; Entroly receipt headers exposed after the call |
+| TypeScript gateway SDK | `EntrolyGatewayClient`, `createGatewayMiddleware`, `wrap*WithGateway` | Receipt-first sidecar path; Node 16 requires an injected Fetch implementation |
+| Failure learning | `entroly learn --transcript ...`; `--apply-proposal ... --target ...` | Transcript hashes and line evidence; separate explicit apply with backup |
+| Proxy image optimization | `ENTROLY_OPTIMIZE_IMAGES=1` | Opt-in; exact original stored before mutation; provider estimate must decrease |
+| Supply-chain evidence | `.github/workflows/supply-chain.yml` | SPDX/CycloneDX artifacts every run; release artifacts attested only on release events |
+| Platform readiness | `docs/platform-readiness.json` | Distinguishes CI execution from contract-only service lifecycle tests |
+
+These surfaces are documented in [Persistent installation](persistent-installation.md),
+[Framework and SDK integrations](framework-sdk-integrations.md),
+[Evidence-backed failure learning](evidence-backed-failure-learning.md), and
+[Recoverable image optimization](recoverable-image-optimization.md).
+
 ## Trust stack
 
 Entroly's trust layer is intentionally layered:

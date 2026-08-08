@@ -171,9 +171,13 @@ def test_remote_app_rejects_missing_wrong_duplicate_and_query_tokens(monkeypatch
                 "/health",
                 headers={"X-Entroly-Access-Token": token},
             )
-            return missing, wrong, query, duplicate, allowed
+            allowed_sidecar = await client.get(
+                "/stats",
+                headers={"X-Entroly-Access-Token": token},
+            )
+            return missing, wrong, query, duplicate, allowed, allowed_sidecar
 
-    missing, wrong, query, duplicate, allowed = asyncio.run(run())
+    missing, wrong, query, duplicate, allowed, allowed_sidecar = asyncio.run(run())
 
     for denied in (missing, wrong, query, duplicate):
         assert denied.status_code == 401
@@ -182,6 +186,7 @@ def test_remote_app_rejects_missing_wrong_duplicate_and_query_tokens(monkeypatch
         assert denied.headers["cache-control"].startswith("no-store")
     assert allowed.status_code == 200
     assert allowed.json()["status"] == "ok"
+    assert allowed_sidecar.status_code == 200
     assert app.state.remote_access_required is True
     assert app.state.remote_bind_host == "0.0.0.0"
     assert token not in repr(app.user_middleware)
@@ -229,6 +234,45 @@ def test_access_header_is_removed_before_downstream_dispatch() -> None:
     assert (b"authorization", b"Bearer provider-key") in headers
     assert not any(name.lower() == b"x-entroly-access-token" for name, _value in headers)
     assert events[0]["status"] == 204
+
+
+def test_remote_sidecar_requires_both_proxy_and_sidecar_capabilities(monkeypatch) -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    access_token = "remote_capability_" + "x" * 32
+    sidecar_token = "sidecar_capability_" + "y" * 32
+    _enable_remote(monkeypatch, access_token)
+    monkeypatch.setenv("ENTROLY_SIDECAR_TOKEN", sidecar_token)
+    app = security.create_proxy_app(
+        _FakeEngine(),
+        ProxyConfig(host="0.0.0.0"),
+        start_dashboard=False,
+        start_autotune=False,
+    )
+
+    async def run():
+        transport = ASGITransport(app=app, client=("198.51.100.20", 43120))
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://proxy.internal:9377",
+        ) as client:
+            proxy_only = await client.get(
+                "/stats",
+                headers={"X-Entroly-Access-Token": access_token},
+            )
+            both = await client.get(
+                "/stats",
+                headers={
+                    "X-Entroly-Access-Token": access_token,
+                    "X-Entroly-Sidecar-Token": sidecar_token,
+                },
+            )
+            return proxy_only, both
+
+    proxy_only, both = asyncio.run(run())
+
+    assert proxy_only.status_code == 403
+    assert both.status_code == 200
 
 
 def test_invalid_asgi_header_shape_fails_closed_without_dispatch() -> None:
