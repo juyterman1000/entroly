@@ -1,0 +1,27 @@
+{
+  "files": 8,
+  "revisits": 3,
+  "raw_tokens_per_pass": 28982,
+  "entroly": {
+    "cold_tokens": 28982,
+    "warm_tokens_total": 285,
+    "warm_tokens_per_pass": 95,
+    "stats": {
+      "tracked_paths": 8,
+      "suppressed_deliveries": 24,
+      "tokens_saved": 86661,
+      "turn": 4,
+      "baseline": "counts content already delivered verbatim in this session; local telemetry, not a provider bill delta"
+    }
+  },
+  "external": {
+    "cold_tokens": 28985,
+    "warm_tokens_total": 168,
+    "warm_tokens_per_pass": 56
+  },
+  "modified_file_probe": {
+    "suppressed": false,
+    "delivered_tokens": 1514,
+    "expected": "not suppressed; a changed file must be delivered in full"
+  }
+}
