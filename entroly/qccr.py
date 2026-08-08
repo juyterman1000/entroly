@@ -305,6 +305,10 @@ def _attach_sufficiency(
     terms = set(_query_terms(query))
     candidates: list[Candidate] = []
     corpus: list[str] = []
+    # Retained so `_idf_map` does not re-tokenise a corpus this loop has just
+    # tokenised. Certificate construction measured ~47% of a selection call,
+    # and half of that was a second identical pass over the same text.
+    corpus_terms: list[set[str]] = []
     attainable_terms: set[str] = set()
 
     for source, utility in candidate_utility.items():
@@ -314,6 +318,7 @@ def _attach_sufficiency(
         )
         corpus.append(text)
         lexical = _lexical_terms(text)
+        corpus_terms.append(lexical)
         matched = tuple(sorted(term for term in terms if term in lexical))
         attainable_terms.update(matched)
         candidates.append(
@@ -340,7 +345,7 @@ def _attach_sufficiency(
 
     certificate = certify(
         candidates,
-        query_term_idf=_idf_map(terms, corpus),
+        query_term_idf=_idf_map(terms, corpus, corpus_terms),
         retained_terms=retained,
         unattainable_terms=terms - attainable_terms,
         budget_exhausted=delivered_tokens >= token_budget * 0.95,
