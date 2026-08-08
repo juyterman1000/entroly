@@ -1038,8 +1038,65 @@ def _infer_language(source: str) -> str:
 _TOOL_COMPRESS_MIN_CHARS = 500
 
 
+def _codec_tool_output(content: str) -> tuple[str, str, float] | None:
+    """Best specialized-codec rendering of a tool result, or None to fall back.
+
+    Tool results are JSON payloads, logs, shell and test output, and tables --
+    precisely the shapes the codec registry was built and measured on. This
+    surface reached none of it: `proxy_transform` carried no codec import, so
+    the keyword-pattern compressors below ran instead.
+
+    Measured on the `benchmarks/codec_ablation.py` fixtures, that cost evidence
+    without buying tokens: the pattern path reduced 75.1% while retaining 24.0%
+    of required evidence, against 76.9% / 100.0% for the registry -- worse than
+    blind truncation, because the patterns reach their ratio by deleting the
+    failures and identifiers the codecs exist to protect.
+
+    Mirrors the reconciliation already made in `sdk._codec_compressed_text`:
+    prefer a representation that can hand the original back, never emit one
+    larger than the input, and never raise -- a codec fault must not turn a
+    proxy call into an error.
+
+    Set `ENTROLY_PROXY_CODECS=0` to restore the previous behaviour.
+    """
+    flag = _os.environ.get("ENTROLY_PROXY_CODECS", "1").strip().lower()
+    if flag in {"0", "false", "no"}:
+        return None
+    try:
+        from .codec import RecoveryStore
+        from .codecs_builtin import default_registry
+
+        reps = default_registry(RecoveryStore()).representations(
+            content, source_id="", content_type="", query=""
+        )
+    except Exception:  # noqa: BLE001 - fall back rather than fail the call
+        return None
+
+    if not reps:
+        return None
+
+    # A form that dropped content and cannot return it is worse than the
+    # pattern path here, because this surface exposes no recovery handle.
+    usable = [r for r in reps if r.recovery is not None or r.text == content]
+    best = min(usable or reps, key=lambda r: r.token_cost)
+
+    text = best.text
+    if not text or not text.strip():
+        return None
+    if len(text) >= len(content):
+        return None  # never let "specialized" mean "larger"
+
+    savings = 1.0 - len(text) / max(len(content), 1)
+    if savings <= 0.10:
+        return None  # the same floor the pattern path applies
+    return text, "codec", savings
+
+
 def compress_tool_output(content: str) -> tuple[str, str, float]:
-    """Compress a tool/MCP call result using pattern-based rules.
+    """Compress a tool/MCP call result.
+
+    Specialized codecs first -- they preserve identifiers, failures and values
+    structurally -- then the keyword-pattern rules, then ESC.
 
     Returns:
         (compressed_content, compression_type, savings_ratio)
@@ -1047,6 +1104,10 @@ def compress_tool_output(content: str) -> tuple[str, str, float]:
     """
     if not content or len(content) < _TOOL_COMPRESS_MIN_CHARS:
         return content, "none", 0.0
+
+    codec_result = _codec_tool_output(content)
+    if codec_result is not None:
+        return codec_result
 
     # Try each compressor in priority order (most specific first)
     for name, fn in _COMPRESSORS:
@@ -1278,15 +1339,37 @@ def _compress_directory_listing(content: str) -> str | None:
     return None
 
 
+# A line that actually looks like a compiler/linter diagnostic. Anchored at a
+# line start (allowing indentation) or after a `file:line:col:` prefix, so a
+# tool name appearing inside a path cannot masquerade as build output.
+_BUILD_DIAGNOSTIC_RE = _re.compile(
+    r"""(?mx)
+      ^\s* (?: error \[ [A-Z]?\d+ \]        # rustc: error[E0499]
+             | (?:error|warning|note)\s*:   # error: / warning: / note:
+             | (?:FAILED|FAIL)\b
+             | \w*(?:Error|Exception)\b\s*:  # SyntaxError: / TypeError:
+             )
+    | ^\s*\S+:\d+:(?:\d+:)?\s*(?:error|warning)\b   # file:12:5: error ...
+    """,
+    _re.IGNORECASE,
+)
+
+
 def _compress_build_errors(content: str) -> str | None:
     """Compress build/lint output: keep only errors and warnings."""
-    # Detect build output
-    is_build = any(kw in content for kw in [
-        "error[E", "error:", "warning:", "Error:", "Warning:",
-        "ERROR", " error ", "SyntaxError", "TypeError",
-        "CompileError", "tsc", "eslint", "ruff",
-    ])
-    if not is_build:
+    # Detection must find a line SHAPED like a diagnostic, not merely a
+    # substring somewhere in the blob.
+    #
+    # The previous test was `any(kw in content for kw in [... "ruff", "tsc",
+    # "eslint", "ERROR" ...])` over the whole string. On a real `git ls-files`
+    # listing -- 1,316 lines, no errors at all -- the single substring "ruff"
+    # in a path flipped the content into build mode. The per-line filter below
+    # then kept the two filenames containing "error" and dropped 1,314 lines,
+    # emitting "[entroly: 2 errors, 0 warnings - 1315 lines compressed]":
+    # 99.7% of the evidence destroyed AND a fabricated error count reported for
+    # content that had none. Anchoring detection to diagnostic shape is what
+    # stops a tool name in a path from rewriting an unrelated tool result.
+    if not _BUILD_DIAGNOSTIC_RE.search(content):
         return None
 
     lines = content.split("\n")
