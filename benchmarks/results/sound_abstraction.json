@@ -1,0 +1,17 @@
+{
+  "functions": 1959,
+  "decidable_rate": {
+    "params": 0.9933639612046963,
+    "calls": 0.9846860643185299,
+    "mutates": 0.9382337927514037,
+    "raises": 0.06482899438489025
+  },
+  "all_predicates_rate": 0.06482899438489025,
+  "poison_counts": {
+    "unresolved_callee": 1832,
+    "dynamic_attr": 114,
+    "forwarding": 21,
+    "dynamic_call": 9
+  },
+  "kill_threshold": 0.2
+}
