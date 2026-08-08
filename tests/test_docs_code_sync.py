@@ -186,13 +186,26 @@ def test_documented_cli_subcommands_exist() -> None:
 
 def test_current_tree_respects_external_name_policy() -> None:
     """The permanent repository-wide policy must pass without exclusions."""
-    completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "check_external_name_policy.py")],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "check_external_name_policy.py")],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            # The scan digests every sliding window of every line in the tree.
+            # At 60s this raised TimeoutExpired on a loaded machine, so the
+            # failure said "timed out" and never named the offending file --
+            # a gate that cannot tell "policy broken" from "machine slow".
+            # The scan now runs in ~42s locally; this leaves real slack.
+            timeout=300,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:  # pragma: no cover - CI pathology
+        raise AssertionError(
+            "external-name policy scan did not finish in 300s. This is a "
+            "performance failure of the scan, not evidence of a violation; "
+            "do not 'fix' it by deleting files."
+        ) from exc
+
     assert completed.returncode == 0, completed.stderr or completed.stdout
     assert "external-name policy check passed" in completed.stdout
