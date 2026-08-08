@@ -248,8 +248,8 @@ except ImportError:
 
 # SRP — Semantic Resolution Protocol.
 # Information-optimal file reads: automatically selects per-block resolution
-# (FULL/MEDIUM/LOW/SKIP) based on query relevance and token budget.
-# Replaces fixed read modes with budget-driven optimization.
+# (FULL/MEDIUM/LOW/SKIP) based on query relevance and token budget, with caller
+# controls for exact FULL/DIFF/range reads and native STRUCTURE outlines.
 try:
     from .semantic_resolution import resolve as srp_resolve, SRPResult  # noqa: F401
 except ImportError:

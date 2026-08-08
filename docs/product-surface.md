@@ -235,6 +235,16 @@ The MCP server exposes tools across these groups:
 | Knowledge vault | `compile_beliefs`, `verify_beliefs`, `vault_query`, `vault_search`, `sync_workspace_changes` |
 | Response verification | `verify_provenance`, `verify_and_repair`, `verify_response`, `eicv_verify_claim`, `eicv_suppress_hallucinations` |
 
+`smart_read` defaults to budget-aware automatic selection. Callers can instead
+request exact `full` text, `medium` or `low` summaries, a whole-file `diff`
+against supplied source, or a lightweight `structure` outline. Inclusive
+`line_start` / `line_end` ranges preserve source newlines exactly. An identical
+rendered read in the same MCP session returns a compact opaque handle only when
+the source, read contract, and output digests all match; `fresh=true` expands
+the text again. Structure extraction supports the native engine's recognized
+language families and fails open to full source when it cannot produce a useful
+smaller outline; it is not presented as a concrete-syntax-tree API.
+
 ## Trust stack
 
 Entroly's trust layer is intentionally layered:
