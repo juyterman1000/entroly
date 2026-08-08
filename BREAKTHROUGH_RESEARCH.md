@@ -540,8 +540,8 @@ IR candidates rank low here despite being strong ideas in general.
 
 | # | candidate | score | note |
 |---|---|---:|---|
-| 5 | **Cache-aligned selection** | **82** | optimises the quantity actually billed; validated without a model |
-| 1 | **Conformal risk-constrained selection** | **78** | half-built; converts a diagnostic into a guarantee |
+| ~~5~~ | ~~Cache-aligned selection~~ | ~~82~~ → **D** | **REJECTED on prior art** — mechanism published (CacheWeaver, RAGCache) and vendor-documented practice; see below |
+| 1 | **Conformal risk-constrained selection** | **78** | now top candidate; half-built; converts a diagnostic into a guarantee |
 | 3 | **Syndrome context (Wyner–Ziv)** | **71** | strongest theory; unproven that a useful syndrome is small |
 | 17 | Test-as-specification context | 68 | high signal, narrow to one workload |
 | 11 | Materialised context views | 64 | large latency/cost win, modest novelty |
@@ -575,10 +575,42 @@ fresh means the cheapest context is often *not* the smallest. Entroly already
 holds the two prerequisites — byte-stable prefixes as an invariant, and
 `cache_aligner.py` — and nothing currently selects *for* reuse.
 
-**Prior-art search not yet done.** Per this programme's own rule, that must
-happen before any novelty claim: search prompt-caching-aware retrieval,
-cache-aware query planning, and the CDN/cache-admission literature, which is the
-likeliest place this already exists under another name.
+### Prior-art search done: **D — REJECTED** — **READ**
+
+The mechanism is published, and the search took one query. Recorded as the
+fourth novelty rejection in this programme.
+
+| work | what it does |
+|---|---|
+| **CacheWeaver**, arXiv 2606.19667 — *Cache-Aware Evidence Ordering for Efficient Grounded RAG Inference* | reorders retrieved evidence to maximise shared prefix for KV-cache reuse. Inspected: targets **GPU prefill compute** in self-hosted serving (vLLM Automatic Prefix Caching, SGLang), and **preserves the full evidence set** — reordering only, no gating |
+| **RAGCache**, arXiv 2404.12457 (ACM TOCS) | cache-aware reordering to raise hit rate; prefix tree over document sequences serving overlapping requests |
+| **Cache-Craft**, SIGMOD 2025 | chunk-cache management for RAG |
+| **CacheClip**, **ProphetKV**, **Fusion RAG Cache**, **Grounded Cache Routing** | further KV-reuse variants |
+| **arXiv 2601.06007** — *Don't Break the Cache: An Evaluation of Prompt Caching for Long-Horizon Agentic Tasks* | the multi-turn agentic evaluation this section proposed running |
+
+Worse for the claim: putting static content first and volatile content last, to
+maximise the cacheable prefix, is **documented standard practice** in OpenAI's,
+Anthropic's and Azure's own prompt-caching guides. The idea is not merely
+published, it is vendor-recommended.
+
+**What survives is a deployment difference, not a mechanism.** CacheWeaver
+optimises GPU prefill in a stack you control and reorders a *fixed* set;
+Entroly's setting is provider-side billed caching where selection also *drops*
+evidence under a budget. That is a different objective and a different
+constraint, but the algorithm — order/choose evidence to lengthen the shared
+prefix — is the published one. Per this programme's standard, a new deployment
+context is not a new mechanism, and the 82/100 score above was inflated by a
+novelty term that the evidence does not support.
+
+**Consequence for the ranking.** The top candidate is removed. The next is
+**#1, conformal risk-constrained selection**, which has the advantage of being
+half-built already: `sufficiency.py` computes the KKT dual and deliberately
+refuses to certify without a named calibration policy. Its novelty question is
+narrower and sharper — not "is risk-constrained selection new" (it is not) but
+"is a *distribution-free calibrated* bound on evidence loss, gating the
+representation at creation time, new". That must itself be prior-art searched
+before any build, against conformal prediction, selective prediction and the
+bounded-AQP literature already surveyed in §5.
 
 **Killing experiment.** Measure billed cost across a realistic multi-turn agent
 session with arms {current selection, cache-aligned selection} at matched answer
