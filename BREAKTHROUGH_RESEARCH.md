@@ -788,9 +788,62 @@ the `unknown` rate. Kill it if the sound fragment answers **< 20%** of real
 questions — a formally beautiful guarantee covering almost nothing is a paper,
 not a product.
 
-**Verdict: C — INTERESTING BUT UNPROVEN.** Not A. There is no implementation, no
-abstract domain defined, no completeness measurement, and prior art is not
-cleared. Recorded as the strongest surviving direction, not as a result.
+### Completeness measured — **OBSERVED**
+
+`benchmarks/sound_abstraction.py` builds the domain over **1,959 top-level
+functions** in tracked source (tests and benchmarks excluded). The analysis
+surrenders to `unknown` wherever `getattr`/`setattr`, `eval`/`exec`,
+`globals()`/`locals()`, or `*args`/`**kwargs` forwarding defeat it — answering NO
+in their presence would be exactly the silent wrongness this design exists to
+remove.
+
+| predicate | answerable |
+|---|---:|
+| params | **99.3%** |
+| calls | **98.5%** |
+| mutates | **93.8%** |
+| raises | **6.5%** |
+| all four | 6.5% |
+
+**Three of four clear the preregistered 20% threshold by a wide margin.** The
+fragment is not empty, and the soundness discipline is doing real work: 5.8% of
+functions poison `mutates` through dynamic attribute access, and those are
+correctly refused rather than guessed.
+
+#### Why `raises` fails, and why it is not fixable here
+
+`raises` needs closure over callees — a callee may raise anything. 93.5% of
+functions call something unresolvable. The tempting explanation is that this is
+an artefact of excluding builtins, which would be repairable with a typeshed-style
+model. It is not:
+
+    unresolved call sites  9,844
+    builtins                3,679  (37%)  -- fixable with a model
+    method calls            6,165  (63%)  -- get, append, strip, join, split, items
+
+**63% are method calls on receivers whose type is not statically known.**
+Resolving `x.get(...)` requires whole-program type inference over untyped Python.
+That is the hard problem, not a missing table.
+
+**The scope boundary this establishes, which is the real result:** sound
+abstraction of *intraprocedural, syntactic* properties is close to free
+(93–99%), while sound *interprocedural effect* reasoning is out of reach in
+untyped Python. The mechanism is therefore language-conditioned — it should be
+markedly stronger on Rust, Go, TypeScript or typed Python, where receivers carry
+types. That is a sharp, falsifiable prediction and the obvious next experiment,
+and it is one this repository can run on its own `entroly-engine` Rust crate.
+
+**Verdict: C — INTERESTING BUT UNPROVEN.** Not killed: the surviving fragment is
+93–99% complete. Not A either, and three things stand between it and any such
+claim:
+
+1. **Prior art is not cleared** — POPL/PLDI/OOPSLA unsearched.
+2. **The preregistered question is still unmeasured.** The kill rule asked what
+   fraction of *real agent questions* fall in the fragment. What was measured is
+   decidability *per function per predicate*, which is necessary but not the same
+   thing, and was substituted because no corpus of real questions exists here.
+   Recorded as a substitution rather than presented as the registered test.
+3. **No end-to-end mechanism exists** — an abstraction is not yet a compressor.
 
 ---
 
