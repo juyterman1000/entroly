@@ -1,0 +1,50 @@
+name: Team Pilot request
+description: Plan a measured two-week Entroly evaluation without posting confidential data
+title: "[Team Pilot]: "
+labels: ["team-pilot"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this public form only for non-confidential planning. Do not include source code, credentials, customer data, private pricing, provider keys, or confidential logs. The pilot contract is in `docs/team-pilot-contract.json`.
+  - type: input
+    id: workload
+    attributes:
+      label: Workload category
+      description: A non-confidential category such as coding agent, CI repair, support RAG, or research agent.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Preferred deployment
+      options:
+        - Local HTTP proxy
+        - Python SDK
+        - TypeScript or Node SDK
+        - MCP or agent plugin
+        - Persistent local service
+        - Undecided
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Decision the pilot must support
+      description: State the adoption decision and the metrics that matter. Do not paste internal data.
+      placeholder: Determine whether provider-observed input falls while task quality remains within our predeclared margin.
+    validations:
+      required: true
+  - type: checkboxes
+    id: measurement
+    attributes:
+      label: Measurement readiness
+      options:
+        - label: We can run matched baseline and Entroly arms.
+          required: true
+        - label: We will predeclare quality, latency, reliability, cache, and recovery gates.
+          required: true
+        - label: We understand that missing provider usage is unknown, not zero.
+          required: true
+        - label: This issue contains no confidential or sensitive information.
+          required: true

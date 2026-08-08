@@ -97,11 +97,34 @@ Image optimization is opt-in. The default behavior is to preserve image bytes
 and only report estimates/recommendations. When enabled, Entroly gates any image
 rewrite on estimated token savings and a quality floor.
 
+The exact original is recoverable only while the local image-recovery store is
+retained. The authenticated `/retrieve-image` route returns base64 bytes and a
+verified digest; it does not recreate a deleted store. A smaller encoded image
+does not imply lower provider billing, and a transform is skipped when the
+provider-specific estimator does not predict fewer tokens.
+
 References for current formulas and token-count behavior:
 
 - OpenAI image token accounting: https://platform.openai.com/docs/guides/images-vision
 - Anthropic vision image sizing and rough token estimate: https://docs.anthropic.com/en/docs/build-with-claude/vision
 - Gemini multimodal token counting: https://ai.google.dev/gemini-api/docs/tokens
+
+## Operational beta boundaries
+
+- `entroly install` creates user-scoped service definitions. CI verifies the
+  generated contracts on Linux, Windows, and macOS, but does not prove a real
+  interactive desktop session accepted every definition. Dry-run first and
+  inspect `docs/platform-readiness.json`.
+- Gateway SDKs require a running local sidecar and retained recovery state.
+  Remote gateway URLs are rejected unless the caller explicitly opts in and
+  supplies its own transport security controls.
+- Failure learning proves only an observed same-operation failure-to-success
+  sequence in one transcript. It does not prove causality. Proposals are
+  separate from apply, source hashes are revalidated, secrets are redacted, and
+  the target is backed up before mutation.
+- Team pilot reports are workload-specific. Missing telemetry is unknown, not
+  zero; failed trials stay in the result set; and no result supports a universal
+  savings or quality claim.
 
 ## Context Receipts
 

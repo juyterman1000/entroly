@@ -20,6 +20,7 @@ VALID_SURFACES = {
     "rust",
     "node-wasm",
     "openclaw",
+    "release",
 }
 
 

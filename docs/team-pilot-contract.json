@@ -1,0 +1,47 @@
+{
+  "schema_version": "entroly.team-pilot.v1",
+  "purpose": "Matched evaluation of recoverable context compression on one declared team workload",
+  "required_configuration": [
+    "workload_id",
+    "sampling_method",
+    "provider",
+    "model",
+    "input_token_cap",
+    "output_token_cap",
+    "cache_policy",
+    "quality_rubric",
+    "baseline_definition",
+    "entroly_configuration"
+  ],
+  "required_per_trial_evidence": [
+    "trial_id",
+    "arm",
+    "request_fingerprint",
+    "provider_request_id_when_available",
+    "provider_input_tokens_when_available",
+    "provider_output_tokens_when_available",
+    "provider_cache_read_tokens_when_available",
+    "task_quality_score",
+    "latency_ms",
+    "status",
+    "entroly_receipt_id_for_entroly_arm",
+    "recovery_events",
+    "error_or_exclusion_reason"
+  ],
+  "required_predeclared_gates": [
+    "quality_non_inferiority_margin",
+    "minimum_provider_input_reduction",
+    "maximum_p95_added_latency_ms",
+    "maximum_operational_failure_rate",
+    "maximum_unrecoverable_omissions",
+    "maximum_cache_read_regression"
+  ],
+  "accounting_rules": {
+    "missing_provider_usage": "unknown_not_zero",
+    "failed_trials": "retain_in_matrix",
+    "local_token_estimates": "label_separately_from_provider_observed_usage",
+    "dollar_savings": "use_declared_pricing_source_and_as_of_date",
+    "quality": "score_with_the_same_rubric_and_blinding_policy_in_both_arms"
+  },
+  "universal_claim": false
+}

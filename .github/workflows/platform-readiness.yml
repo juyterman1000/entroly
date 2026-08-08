@@ -1,0 +1,44 @@
+name: Platform readiness
+
+on:
+  pull_request:
+    paths:
+      - "entroly/install_manager.py"
+      - "entroly/cli.py"
+      - "tests/test_install_manager.py"
+      - "docs/platform-readiness.json"
+      - "scripts/verify_platform_readiness.py"
+      - ".github/workflows/platform-readiness.yml"
+  push:
+    branches: [main]
+    paths:
+      - "entroly/install_manager.py"
+      - "entroly/cli.py"
+      - "tests/test_install_manager.py"
+      - "docs/platform-readiness.json"
+      - "scripts/verify_platform_readiness.py"
+      - ".github/workflows/platform-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  user-service-contract:
+    name: ${{ matrix.os }} user-service contract
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Verify lifecycle generation and removal safety
+        run: python -m pytest -q tests/test_install_manager.py
+      - name: Verify machine-readable readiness matrix
+        run: python scripts/verify_platform_readiness.py

@@ -1,0 +1,70 @@
+name: Supply-chain evidence
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "**/Cargo.lock"
+      - "**/package.json"
+      - ".github/workflows/supply-chain.yml"
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  sbom-and-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build Python release artifacts
+        run: |
+          python -m pip install build
+          python -m build
+      - name: Generate SPDX SBOM for the complete source tree
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom/entroly.spdx.json
+          upload-artifact: false
+      - name: Generate CycloneDX SBOM for the complete source tree
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom/entroly.cdx.json
+          upload-artifact: false
+      - name: Validate generated documents
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          spdx = json.loads(Path("sbom/entroly.spdx.json").read_text())
+          cdx = json.loads(Path("sbom/entroly.cdx.json").read_text())
+          assert spdx.get("spdxVersion") == "SPDX-2.3"
+          assert cdx.get("bomFormat") == "CycloneDX"
+          assert cdx.get("specVersion")
+      - name: Upload SBOMs and build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: entroly-supply-chain-evidence
+          path: |
+            sbom/*.json
+            dist/*
+          if-no-files-found: error
+      - name: Attest release artifacts with SPDX SBOM
+        if: github.event_name == 'release'
+        uses: actions/attest@v4
+        with:
+          subject-path: "dist/*"
+          sbom-path: "sbom/entroly.spdx.json"

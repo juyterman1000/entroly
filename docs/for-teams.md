@@ -4,6 +4,8 @@
 
 A one-page brief for whoever owns the budget, the architecture, and the risk. Entroly can be evaluated with a local proxy or a standalone Rust binary; this page summarizes the spend, security posture, and deployment story.
 
+**Ready to evaluate it?** Use the [two-week team pilot](team-pilot.md) and its machine-readable matched-evaluation contract. The pilot measures provider-observed usage, task quality, cache behavior, recovery, latency, and failures; it does not begin from a promised savings percentage.
+
 ---
 
 ## The problem, in business terms

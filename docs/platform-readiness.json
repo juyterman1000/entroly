@@ -1,0 +1,50 @@
+{
+  "schema_version": "entroly.platform-readiness.v1",
+  "generated_from": "repository CI and focused contract tests",
+  "status_definitions": {
+    "ci_verified": "Executed on the named hosted runner by a required repository workflow.",
+    "contract_tested": "Configuration generation and safety behavior are tested without registering a real host service.",
+    "not_claimed": "No production support claim is made."
+  },
+  "platforms": [
+    {
+      "id": "linux-x86_64",
+      "python_user_journey": "ci_verified",
+      "native_wheel": "ci_verified",
+      "persistent_service_definition": "contract_tested",
+      "service_manager": "systemd --user",
+      "evidence": [
+        ".github/workflows/user-journey-trust.yml",
+        ".github/workflows/publish-core-wheels.yml",
+        "tests/test_install_manager.py"
+      ],
+      "limitation": "CI does not enable a real user service inside the hosted runner."
+    },
+    {
+      "id": "windows-x86_64",
+      "python_user_journey": "ci_verified",
+      "native_wheel": "ci_verified",
+      "persistent_service_definition": "contract_tested",
+      "service_manager": "Task Scheduler",
+      "evidence": [
+        ".github/workflows/user-journey-trust.yml",
+        ".github/workflows/publish-core-wheels.yml",
+        "tests/test_install_manager.py"
+      ],
+      "limitation": "CI validates least-privilege task XML but does not register a real scheduled task."
+    },
+    {
+      "id": "macos-arm64",
+      "python_user_journey": "ci_verified",
+      "native_wheel": "ci_verified",
+      "persistent_service_definition": "contract_tested",
+      "service_manager": "launchd user agent",
+      "evidence": [
+        ".github/workflows/user-journey-trust.yml",
+        ".github/workflows/publish-core-wheels.yml",
+        "tests/test_install_manager.py"
+      ],
+      "limitation": "CI validates the launchd contract but does not bootstrap a real user agent."
+    }
+  ]
+}

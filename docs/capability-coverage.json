@@ -257,6 +257,56 @@
       "limitations": "Generated overlays are bounded, untrusted by default, and cannot promote without verified outcomes."
     },
     {
+      "id": "persistent_user_service",
+      "status": "beta",
+      "implementation": ["entroly/install_manager.py", "entroly/cli.py"],
+      "tests": ["tests/test_install_manager.py::test_linux_apply_is_user_scoped_and_reversible"],
+      "docs": ["docs/persistent-installation.md", "docs/platform-readiness.json"],
+      "package_surfaces": ["cli"],
+      "public_entrypoints": ["entroly install"],
+      "limitations": "Service definitions are contract-tested on all three platforms; hosted CI does not register a real desktop user service."
+    },
+    {
+      "id": "receipt_first_framework_sdks",
+      "status": "beta",
+      "implementation": ["entroly/integrations/gateway.py", "entroly/integrations/litellm.py", "entroly-wasm/js/gateway_client.js"],
+      "tests": ["tests/test_gateway_integrations.py::test_gateway_client_returns_recovery_receipt_and_rejects_remote"],
+      "docs": ["docs/framework-sdk-integrations.md"],
+      "package_surfaces": ["python-sdk", "node-wasm", "proxy"],
+      "public_entrypoints": ["entroly.integrations.CompressionGatewayClient", "EntrolyGatewayClient"],
+      "limitations": "Exact recovery requires a running local Entroly sidecar and retained recovery state."
+    },
+    {
+      "id": "evidence_backed_failure_learning",
+      "status": "beta",
+      "implementation": ["entroly/failure_learning.py", "entroly/cli.py"],
+      "tests": ["tests/test_failure_learning.py::test_proposal_requires_observed_same_operation_failure_then_success"],
+      "docs": ["docs/evidence-backed-failure-learning.md"],
+      "package_surfaces": ["cli", "python-sdk"],
+      "public_entrypoints": ["entroly learn --transcript", "entroly learn --apply-proposal"],
+      "limitations": "Same-operation failure-to-success sequence is evidence of sequence, not proof of causality."
+    },
+    {
+      "id": "recoverable_proxy_image_optimization",
+      "status": "beta",
+      "implementation": ["entroly/image_optimizer.py", "entroly/proxy_image_optimization.py", "entroly/proxy.py"],
+      "tests": ["tests/test_proxy_image_optimization.py::test_provider_images_are_optimized_only_after_exact_original_is_stored", "tests/test_proxy_image_optimization.py::test_authenticated_handler_returns_exact_original_without_local_path"],
+      "docs": ["docs/recoverable-image-optimization.md"],
+      "package_surfaces": ["proxy", "python-sdk"],
+      "public_entrypoints": ["ENTROLY_OPTIMIZE_IMAGES=1 entroly proxy", "GET /retrieve-image?receipt_id=img:..."],
+      "limitations": "Disabled by default; a transform occurs only when the provider-specific estimate decreases and exact original storage succeeds."
+    },
+    {
+      "id": "supply_chain_evidence",
+      "status": "beta",
+      "implementation": [".github/workflows/supply-chain.yml"],
+      "tests": ["tests/test_platform_and_supply_chain.py::test_supply_chain_workflow_generates_both_sbom_formats_and_attests_releases"],
+      "docs": ["docs/platform-readiness.json"],
+      "package_surfaces": ["release"],
+      "public_entrypoints": ["GitHub Actions supply-chain evidence artifact"],
+      "limitations": "Signed SBOM attestations exist only after a release workflow completes successfully."
+    },
+    {
       "id": "neural_evidence_selector",
       "status": "research",
       "implementation": ["entroly/neural_evidence_selector.py"],

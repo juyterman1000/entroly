@@ -1,5 +1,10 @@
 # Eight-pillar competitive gap ledger
 
+> Historical snapshot: this ledger is pinned to Entroly SHA `0f3d131` and must
+> not be used as a statement of current product coverage. See
+> [the 2026-08-08 product-completion ledger](product-completion-gap-ledger-2026-08-08.md)
+> for the current `origin/main` audit and implementation decisions.
+
 **Status of this document.** Entroly columns cite measured evidence in this
 repository. Competitor columns record what External Baseline A and External Baseline B *document about
 themselves*. Neither competitor has been installed or executed here, so no
