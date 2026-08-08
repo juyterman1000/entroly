@@ -20,12 +20,19 @@ pub struct Ledger {
 
 impl Ledger {
     pub fn record(&mut self, key: String, value: u64) {
-        self.entries.insert(key, value);
-        audit_the_sensitive_body(key);
+        let previous = self.entries.get(&key).copied().unwrap_or_default();
+        let updated = previous.saturating_add(value);
+        self.entries.insert(key.clone(), updated);
+        if updated > 10_000 {
+            audit_the_sensitive_body(key);
+        }
     }
 
     pub fn total(&self) -> u64 {
-        self.entries.values().sum()
+        self.entries
+            .values()
+            .copied()
+            .fold(0_u64, u64::saturating_add)
     }
 }
 """
