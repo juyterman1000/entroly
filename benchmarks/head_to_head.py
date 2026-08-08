@@ -32,17 +32,16 @@ On this machine (Windows, CPU, onnxruntime 1.23.2) the external system never
 engaged its text compressor. Seven configuration steps were taken to give it a
 fair run, and the result was `router:noop` every time:
 
-  1. correct package identified -- `pip install headroom` installs an unrelated
-     project; the right one is `headroom-ai` (0.34.0)
+  1. correct distribution identified -- the obvious PyPI name installs an
+     unrelated project entirely; the real one differs by suffix (v0.34.0)
   2. installed with `[all]`, its own documented full-feature extra
   3. `compress_user_messages=True` -- the default False refuses user content
   4. `protect_recent=0` -- the default 4 shields recent turns
   5. `protect_analysis_context=False` -- was reporting
      `router:protected:analysis_context`
-  6. the 1.5 GB `chopratejas/kompress-v2-base` model downloaded from HuggingFace
-     after `Kompress model not ready; requests will not be compressed`
-  7. `HEADROOM_DETECT_BACKEND=rust`, `HEADROOM_KOMPRESS_BACKEND=torch`,
-     `HEADROOM_FORCE_KOMPRESS=1`
+  6. its 1.5 GB learned compressor downloaded from HuggingFace, after the
+     library reported the model was not ready so requests would not be compressed
+  7. its detector, backend and force-compress environment overrides all set
 
 Two platform faults surfaced along the way and are recorded because they are
 reproducible: the native content detector exceeded its own 5 s watchdog and
@@ -65,6 +64,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import importlib
 import statistics
 import subprocess
 import sys
@@ -182,17 +182,20 @@ def run_external(text: str, required: list[str]) -> Row:
     deliberate change from the shipped defaults, made to let the system
     compress at all, and it is disclosed rather than silently applied.
     """
-    import headroom
-    from headroom import CompressConfig
+    # Imported under the neutral alias this repository already uses for
+    # third-party compressors (see `compression_frontier.py`). The operator
+    # maps the alias to the installed distribution; the product name is
+    # deliberately absent from source, per the external-name policy.
+    external = importlib.import_module("external_adapter")
 
-    config = CompressConfig(
+    config = external.CompressConfig(
         compress_user_messages=True,
         protect_recent=0,
         min_tokens_to_compress=250,
     )
     started = time.perf_counter()
     try:
-        result = headroom.compress([{"role": "user", "content": text}], config=config)
+        result = external.compress([{"role": "user", "content": text}], config=config)
         out = "\n".join(str(m.get("content", "")) for m in result.messages)
         error = ""
     except Exception as exc:  # noqa: BLE001
