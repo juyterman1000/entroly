@@ -653,6 +653,69 @@ cache-write tokens and prices each tier, so the accounting exists.
 
 ---
 
+### Candidate #1 also rejected on prior art — **READ**
+
+| work | what it does |
+|---|---|
+| **arXiv 2511.17908** — *Principled Context Engineering for RAG: Statistical Guarantees via Conformal Prediction* (also Springer) | inspected: conformal **coverage-controlled filtering that removes irrelevant content while preserving recall of supporting evidence**, model-agnostic, reducing retained context **2–3×**, with downstream factual accuracy stable or improved. This is candidate #1 |
+| **C-RAG**, arXiv 2402.03181 | certified generation-risk bounds for retrieval-augmented models |
+| **Conformal-RAG** | group-conditional coverage guarantees across sub-domains |
+| **arXiv 2410.02914** — *Streamlining Conformal Information Retrieval via Score Refinement* | conformal retrieval sets guaranteed to contain relevant information, made smaller by monotone score transforms |
+
+The one residual distinction — that 2511.17908 *reports and respects* a coverage
+target rather than **refusing** to emit a context that fails it — is the same
+gate-versus-metric line drawn in §5. And §5 already recorded that distinction as
+**not novel**: enforcement-versus-validation is textbook database integrity, and
+bounded AQP already emits a derived representation only when a guarantee provably
+holds. The residual was pre-empted before it was raised.
+
+**Verdict: D — REJECTED.**
+
+---
+
+## The result of this programme: **B, not A** — and the evidence is consistent
+
+Five novelty claims have now been generated and searched. **All five died.**
+
+| claim | killed by |
+|---|---|
+| protected / lossy channel separation | SemanticZip (2605.24541) |
+| preservation as enforcement, not validation | textbook DB integrity constraints (ENABLE) |
+| gated derived representation | bounded AQP (BAQ, TKDE'18), BEAS |
+| cache-aligned selection | CacheWeaver, RAGCache; and vendor-documented practice |
+| conformal risk-constrained selection | arXiv 2511.17908, C-RAG, Conformal-RAG |
+
+Five for five is no longer a run of bad luck; it is a measurement of the field.
+**Context compression and context assurance are saturated at the mechanism
+level.** Any single mechanism reachable by reasoning from first principles here
+has been published, usually within the last two years, and often by several
+groups at once.
+
+The honest consequence, stated against the mandate's decision standard:
+
+> **B — STRONG ENGINEERING INNOVATION.** Not fundamentally new scientifically.
+> No individual mechanism in Entroly is novel, and this programme should stop
+> looking for one. What is uncommon is the **conjunction** actually shipped:
+> preservation *gated* at creation rather than scored; recovery that is
+> **byte-exact and model-free**, so the compressed form is a view rather than a
+> replacement; **deterministic and offline**, with no model required to
+> compress; and receipts that make the whole selection inspectable.
+>
+> Every element of that conjunction is individually published. The combination,
+> operated as one auditable system, is not — but that is an engineering and
+> product claim, and it must be defended with measured evidence on real
+> workloads, **not** with a novelty claim that five searches have now refuted.
+
+**What this changes about where effort should go.** Chasing mechanism novelty
+has produced five rejections and zero validated mechanisms. The unmeasured
+things are worth far more: no model has ever been in the loop here, so every
+number in this document — 76.7%, 24%→100%, all of it — is a proxy for a quality
+effect nobody has observed. Q-A remains the binding constraint, and
+`benchmarks/answer_correctness_bridge.py` is committed and waiting on a working
+API key.
+
+---
+
 ## 8. Experimental results — **OBSERVED**
 
 All measured in-repo, mutation-tested, CI-verified.
