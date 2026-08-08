@@ -166,7 +166,7 @@ def main() -> int:
     args.out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     n = len(rows)
-    print(f"\n  BODY-RESIDENT regime: gold = the exception a function raises")
+    print("\n  BODY-RESIDENT regime: gold = the exception a function raises")
     print(f"  probes {n}   pool 48 files   qccr budget {payload['budget']}\n")
     print(f"  {'arm':<26}{'carries evidence':>18}{'median tokens':>15}")
     for label, hit, tok in (
