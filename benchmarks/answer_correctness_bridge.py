@@ -132,20 +132,39 @@ class Probe:
     params: tuple[str, ...]
 
 
+def _signature_params(args: ast.arguments) -> tuple[str, ...]:
+    """Every named parameter, in signature order.
+
+    Reading only `args.args` silently dropped positional-only and keyword-only
+    parameters, which made the gold answer *incomplete* rather than merely
+    strict. Measured case: `slot_substitution_score(claim_text, evidence_text,
+    *, window, align_threshold)` produced a gold of two names, so a model that
+    correctly answered all four was scored wrong. A benchmark that penalises
+    correct answers measures its own defect.
+
+    `*args`/`**kwargs` are excluded deliberately: they are not names a caller
+    can be expected to recite, and including them would make the task about
+    Python syntax rather than about whether the evidence reached the model.
+    """
+    named = [*args.posonlyargs, *args.args, *args.kwonlyargs]
+    return tuple(a.arg for a in named if a.arg not in {"self", "cls"})
+
+
 def _callee_params(callee: str, callee_file: str) -> tuple[str, ...] | None:
-    """Parameter names of `callee` as defined in `callee_file`."""
+    """Parameter names of `callee` as defined in `callee_file`.
+
+    Classes are deliberately not resolved. Asking for "the parameter names of
+    `CacheAligner`" is ambiguous: a model that answers with the parameters of
+    its `align()` method rather than its `__init__` has not made an error, and
+    that ambiguity was observed scoring a defensible answer as a miss.
+    """
     try:
         tree = ast.parse((REPO / callee_file).read_text(encoding="utf-8", errors="replace"))
     except (OSError, SyntaxError, ValueError):
         return None
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
-            args = [a.arg for a in node.args.args if a.arg not in {"self", "cls"}]
-            return tuple(args)
-        if isinstance(node, ast.ClassDef) and node.name == callee:
-            for sub in node.body:
-                if isinstance(sub, ast.FunctionDef) and sub.name == "__init__":
-                    return tuple(a.arg for a in sub.args.args if a.arg not in {"self", "cls"})
+            return _signature_params(node.args)
     return None
 
 
@@ -169,7 +188,18 @@ def _call_uses_keywords(caller: str, caller_file: str, callee: str) -> bool:
     return False
 
 
-def build_probes(tasks: list[Task], limit: int) -> list[Probe]:
+def build_probes(
+    tasks: list[Task], limit: int, max_oracle_tokens: int = 0
+) -> list[Probe]:
+    """Probes whose gold answer is unambiguous and whose oracle arm is runnable.
+
+    `max_oracle_tokens` bounds the callee file, which is what the oracle arm
+    sends whole. It exists because the capability control has to actually
+    complete: on CPU inference the 7B model answered 5/5 on callee files under
+    2,700 tokens, and timed out on larger ones. Bounding the file keeps the
+    oracle meaningful (still the entire defining file) while keeping the run
+    inside its timeout. 0 disables the bound.
+    """
     probes: list[Probe] = []
     for task in tasks:
         params = _callee_params(task.callee, task.callee_file)
@@ -177,6 +207,14 @@ def build_probes(tasks: list[Task], limit: int) -> list[Probe]:
             continue
         if _call_uses_keywords(task.caller, task.caller_file, task.callee):
             continue
+        if max_oracle_tokens:
+            try:
+                size = len((REPO / task.callee_file).read_text(
+                    encoding="utf-8", errors="replace")) // 4
+            except OSError:
+                continue
+            if size > max_oracle_tokens:
+                continue
         probes.append(Probe(task=task, params=params))
         if len(probes) >= limit:
             break
@@ -319,7 +357,7 @@ def _score(reply: str, gold: tuple[str, ...]) -> bool:
 
 def run(limit: int, budget: int, model: str, seed: int,
         backend: str = "ollama", base_url: str = "http://127.0.0.1:11434",
-        timeout: float = 300.0) -> dict[str, Any]:
+        timeout: float = 300.0, max_oracle_tokens: int = 0) -> dict[str, Any]:
     client = None
     identity: dict[str, Any] = {}
     if backend == "ollama":
@@ -332,7 +370,7 @@ def run(limit: int, budget: int, model: str, seed: int,
         (REPO / "benchmarks" / "results" / "graph_lane_tasks.json").read_text(encoding="utf-8")
     )
     tasks = [Task(**t) for t in payload["tasks"]]
-    probes = build_probes(tasks, limit)
+    probes = build_probes(tasks, limit, max_oracle_tokens)
     corpus = sorted(
         {str(p.relative_to(REPO)).replace("\\", "/") for p in _tracked_python_files()}
     )
@@ -389,13 +427,16 @@ def main() -> int:
     ap.add_argument("--model", default=os.environ.get("BRIDGE_MODEL", "entroly-qwen2.5-7b-32k:latest"))
     ap.add_argument("--base-url", default="http://127.0.0.1:11434")
     ap.add_argument("--timeout", type=float, default=300.0)
+    ap.add_argument("--max-oracle-tokens", type=int, default=0,
+                    help="bound the callee file the oracle arm sends whole")
     ap.add_argument("--seed", type=int, default=20260807)
     ap.add_argument("--out", type=Path,
                     default=REPO / "benchmarks" / "results" / "answer_correctness_bridge.json")
     args = ap.parse_args()
 
     payload = run(args.limit, args.budget, args.model, args.seed,
-                  backend=args.backend, base_url=args.base_url, timeout=args.timeout)
+                  backend=args.backend, base_url=args.base_url, timeout=args.timeout,
+                  max_oracle_tokens=args.max_oracle_tokens)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
