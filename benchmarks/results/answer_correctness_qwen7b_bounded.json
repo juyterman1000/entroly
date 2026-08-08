@@ -1,0 +1,398 @@
+{
+  "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
+  "backend": "ollama",
+  "model": "entroly-qwen2.5-7b-32k:latest",
+  "model_identity": {
+    "name": "entroly-qwen2.5-7b-32k:latest",
+    "digest": "6561cc69dc5a92f43699c1917013780403e6aecfaff9d366e444f7647f9f2689",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen2",
+      "families": [
+        "qwen2"
+      ],
+      "parameter_size": "7.6B",
+      "quantization_level": "Q4_K_M"
+    }
+  },
+  "budget": 2000,
+  "probes": 5,
+  "records": [
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "null",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "oracle",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "parsed, symbols, limits",
+      "correct": true,
+      "context_tokens": 2245,
+      "error": ""
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "bm25",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1895,
+      "error": ""
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "qccr",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 2069,
+      "error": ""
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "hcc",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1737,
+      "error": ""
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "null",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "oracle",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "root, candidate",
+      "correct": true,
+      "context_tokens": 578,
+      "error": ""
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "bm25",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1955,
+      "error": ""
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "qccr",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 2061,
+      "error": ""
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "hcc",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "root, candidate",
+      "correct": true,
+      "context_tokens": 1736,
+      "error": ""
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "null",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "oracle",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "upper_risk, delta_cost, hallucination_cost, r_floor",
+      "correct": true,
+      "context_tokens": 2330,
+      "error": ""
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "bm25",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1929,
+      "error": ""
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "qccr",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 2062,
+      "error": ""
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "hcc",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1664,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "null",
+      "gold": [
+        "claim_text",
+        "evidence_text",
+        "window",
+        "align_threshold"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "oracle",
+      "gold": [
+        "claim_text",
+        "evidence_text",
+        "window",
+        "align_threshold"
+      ],
+      "reply": "claim_text, evidence_text, window, align_threshold",
+      "correct": true,
+      "context_tokens": 2659,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "bm25",
+      "gold": [
+        "claim_text",
+        "evidence_text",
+        "window",
+        "align_threshold"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1887,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "qccr",
+      "gold": [
+        "claim_text",
+        "evidence_text",
+        "window",
+        "align_threshold"
+      ],
+      "reply": "claim_text, evidence_text, window, align_threshold",
+      "correct": true,
+      "context_tokens": 2055,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "hcc",
+      "gold": [
+        "claim_text",
+        "evidence_text",
+        "window",
+        "align_threshold"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1762,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "null",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "oracle",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "root, candidate",
+      "correct": true,
+      "context_tokens": 578,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "bm25",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 2037,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "qccr",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 2068,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "hcc",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 1752,
+      "error": ""
+    }
+  ]
+}

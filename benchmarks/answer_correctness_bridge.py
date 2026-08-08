@@ -90,6 +90,57 @@ What would actually settle it, in order of preference:
 
 Raising the timeout alone is not a fix: 60 calls already exceeding 300 s each
 is hours of wall clock for one 12-probe matrix.
+
+THIRD RUN: VALID -- and H1 is REFUTED -- **OBSERVED**
+-----------------------------------------------------
+Reproduce:
+
+    python benchmarks/answer_correctness_bridge.py --limit 5 --budget 2000 \
+        --backend ollama --model entroly-qwen2.5-7b-32k:latest \
+        --max-oracle-tokens 2700 --timeout 290
+
+`entroly-qwen2.5-7b-32k` (digest 6561cc69dc5a), 5 probes, budget 2000, **0
+errors**:
+
+    arm      correct   ctx tokens
+    null       0/5              0
+    oracle     5/5          1,678
+    bm25       0/5          1,941
+    qccr       1/5          2,063
+    hcc        1/5          1,730
+
+Both gates pass. The null arm scores 0.0, below the 0.10 void threshold, so the
+question is not answerable from the prompt. The oracle arm scores 5/5, so the
+model can perform the task exactly when the defining file is present -- every
+selection failure below is a selection failure, not a model failure.
+
+**Verdict: H1 REFUTED.** The preregistered rule required qccr to exceed hcc by
+>= 0.20; both scored 0.20, so the rule's REFUTED branch applies, which states:
+*the proxy would then be measuring something that does not reach the model, and
+the Q-B verdict must be reopened rather than defended.*
+
+That reopening is now owed. §Q-B rejected graph-aware selection on **delivery**
+-- qccr 76.7% indirect recall against hcc 3.3%. This run shows that delivery
+advantage producing **no** correctness advantage at a 2,000-token budget. The
+D-REJECTED verdict rested on a proxy that this measurement does not support.
+
+The sharper observation, and the one that survives the small sample: **oracle
+5/5 against every selection arm at 1/5 or 0/5.** The model answers perfectly
+with the defining file and almost never with any arm's rendering of it at this
+budget. Selection delivered usable evidence in 2 of 20 arm-probes.
+
+Every miss is `UNKNOWN`, never a wrong signature. The model reported absent
+evidence honestly rather than fabricating, so the failure is delivery, not
+hallucination. That also means the arms are being scored on whether the
+signature *survived* their rendering -- qccr delivers the file as extracted
+sentences, and the signature is frequently not among them. This is the
+"strong locator, weak reader" pattern seen in dogfooding, now confirmed with a
+model in the loop.
+
+**Power is the honest limit.** n=5 cannot separate qccr from hcc; 1/5 against
+1/5 is one probe. What n=5 *does* support is the 5/5-versus-≤1/5 contrast,
+which is not marginal. Treat the REFUTED verdict as "the delivery proxy is not
+validated" rather than "the arms are proven equal".
 """
 
 from __future__ import annotations

@@ -309,8 +309,50 @@ so a dependency graph should be decisive.
 
 The graph-aware path loses to plain BM25 on the tasks the graph exists to serve.
 Validity gates passed: BM25 far below the void threshold, and QCCR selects 8–12
-files from a 48-file pool rather than passing everything through. **This retires
-the assumption that the graph lane is a latent advantage awaiting wiring.**
+files from a 48-file pool rather than passing everything through.
+
+#### REOPENED — the delivery proxy did not survive a model in the loop — **OBSERVED**
+
+This section previously concluded that the result "retires the assumption that
+the graph lane is a latent advantage awaiting wiring". **That conclusion is
+withdrawn**, because the measurement it rests on has now been tested against a
+model and did not hold.
+
+`benchmarks/answer_correctness_bridge.py` preregistered the check and its own
+consequence: *REFUTED if qccr does not beat hcc — the proxy would then be
+measuring something that does not reach the model, and the Q-B verdict must be
+reopened rather than defended.* Run on `entroly-qwen2.5-7b-32k`, 5 probes,
+budget 2000, 0 errors:
+
+| arm | correct | ctx tokens |
+|---|---:|---:|
+| null | 0/5 | 0 |
+| **oracle** | **5/5** | 1,678 |
+| bm25 | 0/5 | 1,941 |
+| qccr | **1/5** | 2,063 |
+| hcc | **1/5** | 1,730 |
+
+Both gates pass — null at 0.0 is below the void threshold, and oracle at 5/5
+shows the model performs the task exactly when the defining file is present, so
+every failure below is a selection failure rather than a model failure.
+
+**qccr's 76.7%-to-3.3% delivery advantage produced no correctness advantage at
+all.** Delivery is therefore not a validated proxy for usefulness, and the
+D-rejection above cannot be defended on it.
+
+The mechanism is visible in the transcripts: every miss is `UNKNOWN`, never a
+wrong signature, so the model reported absent evidence honestly. qccr delivers
+the *file* as extracted sentences and the signature is frequently not among
+them — it locates well and renders poorly, the same pattern dogfooding showed.
+
+**Power is the honest limit:** n=5 cannot separate qccr from hcc, since 1/5
+against 1/5 is a single probe. What it does support is the 5/5-versus-≤1/5
+contrast, which is not marginal — selection produced usable evidence in 2 of 20
+arm-probes while the oracle produced it 5 times out of 5.
+
+Read this as "the delivery proxy is not validated", not as "the arms are proven
+equal". Every ranking claim in this document that rests on delivery rather than
+answers now carries that caveat.
 
 ### The index/span regime boundary is binary — **OBSERVED**
 
