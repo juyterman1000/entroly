@@ -55,11 +55,105 @@ conversation than structural codecs, and replacing it would be a regression.
 support confidence, not registration order (`schema` deliberately outbids
 `json` at 0.95 vs 0.90 so a schema is not compressed as generic JSON).
 
-### Not yet mapped
+### Correction: the selection engine is a fourth crate, and the map above missed it — **OBSERVED**
 
-Ingestion/chunking internals, repository intelligence, memory/checkpointing,
-proxy provider handling, evaluation harnesses, learned/adaptive mechanisms
-(PRISM, RAVS, evolution daemon). **Do not assume these are absent.**
+The previous revision mapped only the *codec* path and left "repository
+intelligence, learned/adaptive mechanisms" unmapped with a warning not to assume
+absence. That warning was correct, and the omission was larger than expected.
+
+`CLAUDE.md` documents the selection modules (`knapsack.rs`, `bm25.rs`,
+`depgraph.rs`, `entropy.rs`, `prism.rs`, `sast.rs`) as living in
+`entroly-core/src/`. **They do not.** There are four Rust crates, not three:
+
+| crate | role |
+|---|---|
+| `entroly-core` | PyO3 binding layer; re-exports the engine |
+| **`entroly-engine`** | **the actual selection engine — 31 modules, 29,189 lines** |
+| `entroly-qccr` | QCCR support |
+| `entroly-wasm` | WASM/npm build |
+
+`entroly-engine` is a path dependency of `entroly-core` with
+`features = ["python"]`, and `lib.rs` re-exports its modules. It contains, among
+others: `causal.rs`, `depgraph.rs`, `hierarchical.rs`, `skeleton.rs`,
+`knapsack_sds.rs`, `learning.rs`, `prism.rs`, `rnr.rs`, `simhash_wide.rs`,
+`conversation_pruner.rs`, `resonance.rs`, `trajectory.rs`.
+
+### Three of this programme's candidate breakthroughs are already implemented — **OBSERVED**
+
+Read directly from the module headers, not inferred from names:
+
+- **`causal.rs` — "Causal Context Graph — Interventional Estimation."** Uses
+  RAVEN-UCB exploration as a natural instrument variable to separate
+  `P(success | do(include f))` from `P(success | observe(include f))`, and reports
+  `confounding_bias(f)` as the gap. This is *strictly stronger* than the naive
+  leave-one-out `Δᵢ = P(Y|C) − P(Y|C∖cᵢ)` this programme was about to propose,
+  because leave-one-out inherits exactly the co-selection confounding that
+  `causal.rs` was built to remove. Cites Pearl (2009), Hernán & Robins (2020).
+- **`hierarchical.rs` — Hierarchical Context Compression.** Three resolutions
+  (skeleton map → dep-graph cluster → full content), with **symbol-reachability
+  slicing via the dep graph**, submodular diversity, entropy-gated per-fragment
+  resolution, and PageRank centrality for budget allocation. That is the
+  "query-induced evidence graph" and "multi-resolution representation" ideas,
+  built.
+- **`skeleton.rs`** — signature-level extraction claiming ~90% of structural
+  information at ~10–30% of token cost; the intermediate resolution HCC selects.
+
+`depgraph.rs` exposes `transitive_deps`, `reverse_deps`, `connected_components`,
+`compute_dep_boosts` — the program-slicing substrate Q-B assumes must be built.
+
+### The load-bearing finding: the sophisticated lane is bypassed and unmeasured — **OBSERVED**
+
+| check | result |
+|---|---|
+| `enable_causal` default | `true` (`lib.rs:458`) |
+| references to `hierarchical`/`causal`/`skeleton`/`depgraph` in `entroly/qccr.py` | **0** |
+| files in `benchmarks/*.py` exercising the hierarchical or causal lanes | **0** |
+
+`entroly/server.py:679` states it in a source comment: *"Python-routed selectors
+(currently QCCR) bypass the Rust optimizer."* QCCR is the primary selector and
+the one every committed accuracy benchmark runs. The Rust `optimize()` path —
+which is where causal, HCC, skeleton and depgraph live — is reached only on the
+fallback branch.
+
+So this machinery is compiled in, enabled by default, **bypassed by the primary
+path, and covered by no benchmark.** This is the same "production-live but
+benchmark-dark" pattern already recorded for `ios_select`/`knapsack_sds`, but it
+is much wider than one selector: it covers the causal and hierarchical lanes
+entirely.
+
+**This reframes the programme.** The highest-expected-value next step is not
+hypothesis #21; it is measuring whether the mechanisms that already exist do
+anything. If HCC's multi-resolution slicing works, it bears directly on Q-B, Q-D,
+Q-H and Q-I. If it does not, that is a publishable negative result and a large
+deletion. Either outcome is worth more than a new untested mechanism, and neither
+can be claimed until a benchmark exists for the lane.
+
+### Correction to Q-D — the certificate IS wired — **OBSERVED**
+
+The open-questions section below states `SufficiencyCertificate` is "not wired to
+any live path." **That is wrong.** `entroly/qccr.py:244` calls
+`_attach_sufficiency`, which calls `sufficiency.certify` and attaches the payload
+to fragments — inside the *primary* selector. What is true, and is the real
+constraint, is that it is **fail-closed**: `sufficient` requires
+`calibrated and calibration_id and verdict == "sufficient"`, and no
+`CalibrationPolicy` ships, so production can never receive a `sufficient`
+verdict. The mechanism runs; the authorisation to trust it is deliberately
+withheld pending held-out calibration.
+
+Its internals are a KKT/LP-duality construction: `shadow_price` is the maximum
+utility density among *excluded* candidates (the dual variable of the budget
+constraint) and `residual_risk = shadow_price / captured_mass`. `corpus_gap`
+independently detects "a discriminative query term appears in no candidate" and
+forces `expand_required`. **Q-C's `min T(S) s.t. P(E ⊄ S) ≤ α` is therefore
+half-built already**, and Q-D's "detect sufficiency without an LLM call" has a
+running implementation awaiting calibration rather than an unbuilt idea.
+
+### Still not mapped
+
+Ingestion/chunking internals, memory/checkpointing, proxy provider handling,
+evaluation harnesses, RAVS and the evolution daemon. **Do not assume these are
+absent either** — the record above is what happened last time that assumption was
+made.
 
 ---
 
@@ -322,6 +416,179 @@ was: the failure was invisible because 0% compression raises no alarm.
 The fix in each case: **factor out the invariant, keep the load-bearing values
 verbatim.** Compression and preservation stop trading off — the gain comes
 *from* holding identifiers out, not despite it.
+
+### The proxy destroys evidence at no compression benefit — **OBSERVED**
+
+`benchmarks/codec_ablation.py` gained a `proxy` arm calling the real
+`proxy_transform.compress_tool_output`, measured on the same five fixtures and
+required-evidence lists the codec work already used.
+
+| arm | reduction | evidence retained |
+|---|---:|---:|
+| truncate (blind) | 76.9% | 75.3% |
+| generic | 49.7% | 67.3% |
+| **proxy (today)** | **75.1%** | **24.0%** |
+| **specialized (codecs)** | **76.9%** | **100.0%** |
+
+The proxy compresses no harder than the codec path while retaining a quarter of
+the load-bearing evidence — **worse than blind truncation**. Per fixture, and
+worst on the shapes that genuinely are tool output:
+
+| fixture | proxy | specialized |
+|---|---|---|
+| `shell_failing_test_run` | 98.7% reduction, **1/6** evidence | 85.8%, **6/6** |
+| `log_root_cause_flood` | 78.8%, **1/5** | 98.1%, **5/5** |
+| `table_orders_export` | 51.3%, **0/4** | 96.8%, **4/4** |
+| `code_python_module` | 58.8%, **0/5** | 61.4%, **5/5** |
+| `json_payment_error` | 88.0%, 5/6 | 42.3%, 6/6 |
+
+This reframes the surface-coverage gap. It was recorded above as the proxy
+merely *not reaching* the registry — an optimisation left undone. It is not: the
+keyword-pattern compressors hit their ratio by deleting exactly the failures,
+identifiers and values the codecs exist to protect. That is a **trust regression
+on the highest-traffic surface**, and it is the largest measured compression
+defect found in this programme.
+
+**Caveat, stated because it bounds the claim:** these are the five ablation
+fixtures, not captured production traffic. They carry hand-written
+required-evidence lists and were authored for the codec work, so they are not
+neutral third-party samples.
+
+#### That caveat was checked, and it bites — **OBSERVED**
+
+Six real tool outputs were captured (`pytest -v`, `git log --stat`, `pip list`,
+`ruff --output-format json`, `git ls-files`, a Python source file) and run
+through the repaired `compress_tool_output`:
+
+| sample | in | route taken | savings |
+|---|---:|---|---:|
+| pytest output | 1.9 KB | `test_output` (pattern) | 24.4% |
+| `git log --stat` | 43.3 KB | `git_log` (pattern) | 93.8% |
+| `pip list` | 32.2 KB | `esc_universal` | 97.5% |
+| `git ls-files` | 41.5 KB | pattern → now ESC | 92.0% |
+| Python source | 16.4 KB | **`codec`** | 73.7% |
+
+**The codec registry claims only 1 of 5 real samples.** The 24% → 100% evidence
+figure above is therefore an accurate statement about *codec-claimable* content
+and a **misleading** one about proxy traffic overall, because the fixtures were
+codec-shaped by construction. The wiring is still correct — when a codec claims
+content it now preserves everything instead of a quarter — but its blast radius
+on real traffic is far smaller than the fixture table implies. Recorded rather
+than quietly dropped.
+
+#### A worse defect found in the pattern path — **OBSERVED**
+
+Testing on real output surfaced a live fabrication bug that the codec wiring
+does **not** fix, because codecs decline on a bare file listing.
+
+`_compress_build_errors` detected build output with
+`any(kw in content for kw in [... "ruff", "tsc", "eslint", "ERROR" ...])` — a
+bare substring scan over the whole blob. On a real 1,316-line `git ls-files`
+listing, the single substring `"ruff"` in a path triggered it. It then kept the
+two filenames containing "error", dropped 1,314 lines, and emitted:
+
+```
+[entroly: 2 errors, 0 warnings - 1315 lines compressed]
+benchmarks/fever_error_analysis.py
+tests/test_control_learning_snapshot_errors.py
+```
+
+99.7% of the evidence destroyed **and a fabricated error count asserted about
+content containing no errors**. An agent asking "what files are in this repo"
+received two filenames and a false diagnostic summary.
+
+Fixed by anchoring detection to diagnostic *shape* (`^error[E…]`,
+`^error:`/`warning:`/`note:`, `file:line:col: error`, `…Error:`) instead of
+substrings anywhere. Verified: the listing no longer matches, while rustc
+diagnostics, `file:line:col:` errors and Python tracebacks still do, and prose
+still does not.
+
+**The general lesson, which is the transferable part:** substring detection over
+a whole blob decides *content type* on evidence that has nothing to do with
+structure, and every keyword-pattern compressor in `proxy_transform` uses that
+shape. This one was caught because a fabricated summary is visible; a silent
+99.7% drop is not. Auditing the remaining pattern detectors for the same defect
+class is open work.
+
+### Q-B answered: graph-aware selection loses to lexical ranking — **OBSERVED**
+
+Preregistered in `benchmarks/GRAPH_LANE_PREREGISTRATION.md`, run by
+`benchmarks/graph_lane_quality.py` at pinned ref `16934bf`. 60 tasks, pool of 48
+files each, 0 errors. A task is a caller `S` in file `A` importing and calling
+`T` defined in file `B`; the query names only `S` and its docstring first line,
+so `B` is reachable only along the call edge. Primary metric is indirect
+recall — was `B` delivered.
+
+| arm | indirect @2k | indirect @8k | direct @2k |
+|---|---:|---:|---:|
+| null | 0.0% | 0.0% | 0/60 |
+| random | 0.0% | 6.7% | 4/60 |
+| raw_truncated | 0.0% | 3.3% | 3/60 |
+| bm25 | 5.0% | 28.3% | 19/60 |
+| **qccr** (incumbent, lexical) | **76.7%** | **81.7%** | **60/60** |
+| **hcc** (graph-aware) | **3.3%** | **6.7%** | **0/60** |
+| raw_full (ceiling) | 100% | 100% | 60/60 |
+
+**Verdict: D — REJECTED.** The preregistered rule required
+`r_HCC − max(r_QCCR, r_BM25) ≥ 0.10`. The observed gap is **−73.4 pp** at 2k.
+Graph-aware selection loses to plain BM25 on the very tasks where dependency
+edges are the only route to the evidence.
+
+Validity checks, both passed: BM25 at 5.0% is far below the 0.90 void
+threshold, so the tasks are genuinely dependency-sensitive; and QCCR delivers
+8–12 files out of a 48-file pool (not ~48), so its score is real selection, not
+an unexpandable-query passthrough. Budgets are matched — HCC self-reports
+utilisation 0.89–0.97, charging skeletons at their compressed cost.
+
+Of HCC's 6 indirect hits, **5 were skeleton-only** (signatures, no bodies).
+
+**Threat to this verdict, stated plainly:** level 1 of HCC is a one-line-per-file
+map, and it is excluded from "delivered" on the grounds that a table of contents
+is not evidence. If a consumer treats the level-1 map as actionable, HCC's
+effective recall is higher than measured here. The verdict is therefore precise:
+*HCC does not deliver the content of dependency-reachable files at these
+budgets.* It is not a claim that HCC never names them.
+
+**Why the incumbent wins, INFERRED:** QCCR extracts sentences per file, so a
+2000-token budget buys partial coverage of 8–12 files. HCC assigns whole
+fragments one of three resolutions, so a large caller file that will not fit
+drops to level 1 entirely. Under tight budgets, partial coverage of many files
+beats full coverage of few.
+
+This retires Q-B and removes the assumption that the graph lane is a latent
+advantage waiting to be wired in. Any future graph-selection proposal must beat
+76.7% on this harness before it is worth building.
+
+### Cross-fragment factoring — ceiling measured, direction rejected — **OBSERVED**
+
+Every mechanism in Entroly compresses each fragment **independently** (HCC's own
+docstring: the objective is modular, "a fragment's value depends only on its own
+assigned level"). `dedup`/SimHash only *drops* near-duplicates; nothing *factors*
+partial redundancy. Fragments in one pack are correlated — shared imports,
+headers, idioms — so independent coding spends `Σ H(Xᵢ)` where joint coding needs
+`H(X₁..Xₙ)`. The gap is unexploited by construction.
+
+`benchmarks/cross_fragment_redundancy.py` measures an **upper bound** on that gap:
+`1 − |lzma(concat)| / Σ|lzma(fᵢ)|`, over 8 random 24-file packs per workload.
+lzma rather than zlib because zlib's 32 KB window cannot see across files, which
+is exactly the redundancy under test.
+
+| workload | median | min | max |
+|---|---:|---:|---:|
+| Python | 19.8% | 14.8% | 21.1% |
+| Rust | 15.9% | 14.0% | 18.3% |
+| Markdown | 23.7% | 21.2% | 25.5% |
+
+**Verdict: D — rejected as a headline mechanism.** ~16–24% is the ceiling an
+*entropy coder* reaches. A realizable mechanism must emit text the model can
+read, so textual template factoring recovers only a fraction of that, against the
+cost of new cross-fragment template machinery and a new byte-exact recovery path.
+Additionally, redundancy *across calls* — far larger than within-pack — is
+already addressed by prompt-prefix cache stability, which the project maintains
+as an invariant.
+
+Recorded so the next session does not re-derive it. The measurement is cheap
+(stdlib only, no engine) and can be re-run if the workload mix changes.
 
 ### Negative / corrective results (recorded deliberately)
 
