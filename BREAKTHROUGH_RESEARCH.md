@@ -847,6 +847,82 @@ claim:
 
 ---
 
+## 10. The addressability thesis — **OBSERVED**, and the strongest result here
+
+Five measurements in this programme looked unrelated until read together:
+
+1. qccr — shallow coverage of *many* files — beat hierarchical selection —
+   deep coverage of *few* — by 76.7% to 3.3% on evidence delivery (§Q-B);
+2. every codec gain came from holding **identifiers** out verbatim, at which
+   point compression and preservation stopped trading off (§8);
+3. cross-fragment redundancy is only 16–24%, so fragments carry distinct
+   information rather than restating one another;
+4. sound abstraction is 93–99% decidable at **signature** level and 6.5% at
+   effect level (§9);
+5. the proxy defect destroyed identifiers and lost evidence catastrophically
+   **at the same compression ratio** as codecs that kept everything.
+
+**The invariant behind all five: a token's value is its power as a join key
+between the query and the corpus, not its semantic content.** Identifiers
+survive because they are join keys. Shallow-and-wide wins because it maximises
+join keys per token. Fragments do not compress against each other because join
+keys are distinct by construction. Signatures are decidable because they *are*
+the index; effects are elaboration.
+
+> **THESIS. Optimise addressability, not comprehension.** The model does not
+> need to read the corpus; it needs enough of an index to know what to ask for.
+
+**Why this matters against §5's impossibility.** Addressability is
+**query-agnostic** in a way sufficiency is not: an index serves every query, a
+summary serves the query it was written for. The information-bottleneck result
+that killed the query-agnostic frontier applies to minimal *sufficient*
+statistics. It does not apply to an index, because an index does not claim
+sufficiency — it claims reachability, and delegates the rest to recovery.
+
+### Measurement — `benchmarks/addressability.py`
+
+12 probes, 48-file pool, gold evidence = the callee's parameter names. The index
+arm is every file's path and top-level signatures, **no bodies at all**.
+
+| arm | carries evidence | median tokens |
+|---|---:|---:|
+| **index (signatures only)** | **12/12** | 6,157 |
+| qccr span selection @2000 | 6/12 | 2,003 |
+| **qccr span selection @6157 (matched)** | **9/12** | 5,626 |
+| raw pool (ceiling) | 12/12 | **234,351** |
+
+**At matched budget the index beats span selection 12/12 to 9/12, and it equals
+the raw ceiling at 2.6% of raw tokens — 38× compression with zero evidence
+loss.**
+
+### The confound, stated plainly
+
+The gold evidence is parameter names, which live in signatures, so this task is
+**structurally favourable to an index**. The result is therefore strong evidence
+for a *class* of question — what exists, what it is called, what shape it has —
+and no evidence at all for questions whose answer lives in a function body.
+
+The honest claim is not "context is an index" universally. It is: **for
+addressability questions, an index dominates span selection at equal budget and
+dominates raw context by 38×.** Testing the general thesis requires a task whose
+gold answer is body-resident, and that is the next experiment.
+
+This also corrects an error of mine recorded in §Q-B: HCC's level-1 map was
+excluded from the delivery metric as "a table of contents, not evidence". If
+this thesis holds, the table of contents is the highest-value-per-token
+component in the system, and excluding it measured the wrong thing.
+
+### Status
+
+**C — INTERESTING BUT UNPROVEN**, and the strongest candidate in this document.
+Prior art unsearched — code-search and repository-map tools ship signature
+indexes, so the *artifact* is certainly not novel; what may be novel is the
+**objective**: selecting to maximise addressability under a budget, with
+recovery as the completeness mechanism, rather than selecting to maximise
+relevance. That distinction must survive a search before any claim is made.
+
+---
+
 ## 8. Experimental results — **OBSERVED**
 
 All measured in-repo, mutation-tested, CI-verified.

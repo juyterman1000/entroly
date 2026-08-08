@@ -1,0 +1,181 @@
+{
+  "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
+  "budget": 6157,
+  "probes": 12,
+  "rows": [
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "gold_params": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "index_tokens": 5903,
+      "qccr_tokens": 5592,
+      "raw_tokens": 261206,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "gold_params": [
+        "request",
+        "target"
+      ],
+      "index_tokens": 6157,
+      "qccr_tokens": 5967,
+      "raw_tokens": 182303,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "_cache_align_older",
+      "callee": "CacheAligner",
+      "gold_params": [
+        "similarity_threshold",
+        "max_clients"
+      ],
+      "index_tokens": 6339,
+      "qccr_tokens": 5626,
+      "raw_tokens": 194405,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "gold_params": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "index_tokens": 5759,
+      "qccr_tokens": 4949,
+      "raw_tokens": 186299,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "cmd_batch",
+      "callee": "auto_index",
+      "gold_params": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "index_tokens": 7025,
+      "qccr_tokens": 5623,
+      "raw_tokens": 321984,
+      "index_carries": true,
+      "qccr_carries": false,
+      "raw_carries": true
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "gold_params": [
+        "root",
+        "candidate"
+      ],
+      "index_tokens": 6763,
+      "qccr_tokens": 4581,
+      "raw_tokens": 249709,
+      "index_carries": true,
+      "qccr_carries": false,
+      "raw_carries": true
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "callee": "slice_recovery_content",
+      "gold_params": [
+        "content",
+        "query",
+        "token_budget"
+      ],
+      "index_tokens": 5668,
+      "qccr_tokens": 5923,
+      "raw_tokens": 239099,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "modifier_mismatch",
+      "gold_params": [
+        "claim",
+        "evidence"
+      ],
+      "index_tokens": 7495,
+      "qccr_tokens": 6036,
+      "raw_tokens": 277474,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "gold_params": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "index_tokens": 6167,
+      "qccr_tokens": 4229,
+      "raw_tokens": 234351,
+      "index_carries": true,
+      "qccr_carries": false,
+      "raw_carries": true
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "gold_params": [
+        "claim_text",
+        "evidence_text"
+      ],
+      "index_tokens": 5920,
+      "qccr_tokens": 5863,
+      "raw_tokens": 194114,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "gold_params": [
+        "root",
+        "candidate"
+      ],
+      "index_tokens": 5372,
+      "qccr_tokens": 4984,
+      "raw_tokens": 171868,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    },
+    {
+      "caller": "_nli_proxy",
+      "callee": "feat_reverse_entail",
+      "gold_params": [
+        "claim",
+        "context"
+      ],
+      "index_tokens": 5703,
+      "qccr_tokens": 5918,
+      "raw_tokens": 211739,
+      "index_carries": true,
+      "qccr_carries": true,
+      "raw_carries": true
+    }
+  ]
+}
