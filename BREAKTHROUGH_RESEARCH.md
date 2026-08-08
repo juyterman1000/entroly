@@ -716,6 +716,84 @@ API key.
 
 ---
 
+## 9. Candidate #23: context compression as sound abstraction — **HYPOTHESIZED**
+
+Generated after the five rejections, deliberately outside the frame they share.
+
+**The frame all five assumed.** Compression is lossy approximation, and the
+guarantee is *probabilistic over a query distribution*: conformal gives
+`P(evidence loss) ≤ α`. §5 separately established, from the information-
+bottleneck task-dependence result, that a minimal query-agnostic *sufficient*
+statistic cannot exist. Both facts point the same way — every surviving approach
+must gamble on an unknown future query.
+
+**The move: stop requiring sufficiency, require soundness.** Treat the
+compressed context as an **abstract interpretation** of the corpus — concrete
+domain the full source, abstract domain the compressed form, joined by a Galois
+connection. The guarantee becomes universally quantified rather than
+probabilistic:
+
+> For every query in the supported fragment, the answer computed on the
+> compressed form is a **sound over-approximation** of the answer on the
+> original: never wrong, possibly `unknown`.
+
+This escapes the IB impossibility because soundness is strictly weaker than
+sufficiency. An abstraction may lose precision without lying. The failure mode
+changes from *silently wrong* to *explicitly unknown, with the exact span to
+recover* — which is the fail-closed posture the rest of this system already
+takes, given a formal footing instead of a heuristic one.
+
+Concretely for code: abstract a function to signature plus effects (raises,
+mutates, calls, returns). "Does `f` touch global state?" is answered soundly
+from the abstraction. Anything the domain cannot decide returns
+`insufficient → recover span X` rather than a guess.
+
+### Prior-art status — survived two searches, **not** cleared
+
+| search | closest hits | verdict |
+|---|---|---|
+| abstract interpretation × LLM context compression | **SAIL** (POPL/PACMPL 3808308), **AbsInt-AI**, *Cost-Driven Synthesis of Sound Abstract Interpreters* (2511.13663) | all the **inverse** direction — LLMs used to *synthesise* abstract interpreters. Not abstract interpretation used to compress context |
+| soundness certificate over compressed context | arXiv 2605.17304 | already read in §5: *measures* preservation (Critical Atom Recall), does not gate, no soundness certificate |
+
+Five predecessors each died on their **first** search. This one has survived two.
+That is a genuine signal and it is **not** clearance: POPL, PLDI and OOPSLA were
+not searched properly, and program-abstraction-for-LLM work is the likeliest
+place it already exists.
+
+### The weakness, stated before anyone else finds it
+
+Abstract interpretation needs a **formal semantics** for both the query language
+and the answer domain. Natural-language questions over code have neither. So the
+soundness guarantee applies **only to a restricted, formalisable query
+fragment** — call/effect/type/reachability predicates — and says nothing about
+open-ended questions, which are most of what an agent actually asks.
+
+That is a real scope limit, not a detail. The honest claim is not "sound context
+compression" but "a sound *core* for the decidable fragment, with everything
+else explicitly outside it". Whether that fragment covers enough real queries to
+matter is an empirical question and is the first thing to measure.
+
+### Why this candidate is worth the next unit of effort
+
+Uniquely among everything here, **it is partially validatable without a model.**
+Soundness is a proof obligation discharged once per abstract domain, not
+measured. Completeness — the fraction of real queries the abstraction answers
+rather than declaring `unknown` — is deterministic and countable offline. With
+the API key blocked, this is the only candidate whose primary evidence does not
+require inference.
+
+**Killing experiment.** Define the abstract domain (signature + effects), mine
+real questions from this repository's own issue and commit history, and measure
+the `unknown` rate. Kill it if the sound fragment answers **< 20%** of real
+questions — a formally beautiful guarantee covering almost nothing is a paper,
+not a product.
+
+**Verdict: C — INTERESTING BUT UNPROVEN.** Not A. There is no implementation, no
+abstract domain defined, no completeness measurement, and prior art is not
+cleared. Recorded as the strongest surviving direction, not as a result.
+
+---
+
 ## 8. Experimental results — **OBSERVED**
 
 All measured in-repo, mutation-tested, CI-verified.
