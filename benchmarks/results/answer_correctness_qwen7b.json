@@ -1,0 +1,893 @@
+{
+  "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
+  "backend": "ollama",
+  "model": "entroly-qwen2.5-7b-32k:latest",
+  "model_identity": {
+    "name": "entroly-qwen2.5-7b-32k:latest",
+    "digest": "6561cc69dc5a92f43699c1917013780403e6aecfaff9d366e444f7647f9f2689",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen2",
+      "families": [
+        "qwen2"
+      ],
+      "parameter_size": "7.6B",
+      "quantization_level": "Q4_K_M"
+    }
+  },
+  "budget": 6000,
+  "probes": 12,
+  "records": [
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "null",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "oracle",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 17384,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "bm25",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5953,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "qccr",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5612,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "hcc",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5512,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "callee_file": "entroly/provider_adapters.py",
+      "arm": "null",
+      "gold": [
+        "request",
+        "target"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 0,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "callee_file": "entroly/provider_adapters.py",
+      "arm": "oracle",
+      "gold": [
+        "request",
+        "target"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 4744,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "callee_file": "entroly/provider_adapters.py",
+      "arm": "bm25",
+      "gold": [
+        "request",
+        "target"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5899,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "callee_file": "entroly/provider_adapters.py",
+      "arm": "qccr",
+      "gold": [
+        "request",
+        "target"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5992,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "callee_file": "entroly/provider_adapters.py",
+      "arm": "hcc",
+      "gold": [
+        "request",
+        "target"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5496,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_cache_align_older",
+      "callee": "CacheAligner",
+      "callee_file": "entroly/cache_aligner.py",
+      "arm": "null",
+      "gold": [
+        "similarity_threshold",
+        "max_clients"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 0,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_cache_align_older",
+      "callee": "CacheAligner",
+      "callee_file": "entroly/cache_aligner.py",
+      "arm": "oracle",
+      "gold": [
+        "similarity_threshold",
+        "max_clients"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 1103,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_cache_align_older",
+      "callee": "CacheAligner",
+      "callee_file": "entroly/cache_aligner.py",
+      "arm": "bm25",
+      "gold": [
+        "similarity_threshold",
+        "max_clients"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5886,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_cache_align_older",
+      "callee": "CacheAligner",
+      "callee_file": "entroly/cache_aligner.py",
+      "arm": "qccr",
+      "gold": [
+        "similarity_threshold",
+        "max_clients"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5260,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_cache_align_older",
+      "callee": "CacheAligner",
+      "callee_file": "entroly/cache_aligner.py",
+      "arm": "hcc",
+      "gold": [
+        "similarity_threshold",
+        "max_clients"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5687,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "null",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "oracle",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "parsed, symbols, limits",
+      "correct": true,
+      "context_tokens": 2245,
+      "error": ""
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "bm25",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5677,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "qccr",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 4596,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "build_repository_index",
+      "callee": "resolve_calls",
+      "callee_file": "entroly/repository_intelligence/graph.py",
+      "arm": "hcc",
+      "gold": [
+        "parsed",
+        "symbols",
+        "limits"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5304,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "cmd_batch",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "null",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "cmd_batch",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "oracle",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 17384,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "cmd_batch",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "bm25",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 6039,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "cmd_batch",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "qccr",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5473,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "cmd_batch",
+      "callee": "auto_index",
+      "callee_file": "entroly/auto_index.py",
+      "arm": "hcc",
+      "gold": [
+        "engine",
+        "project_dir",
+        "force"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5316,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "null",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 0,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "oracle",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 578,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "bm25",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5985,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "qccr",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 4187,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "scan_codebase",
+      "callee": "resolve_file_within_resolved",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "hcc",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5613,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "callee": "slice_recovery_content",
+      "callee_file": "entroly/ccr.py",
+      "arm": "null",
+      "gold": [
+        "content",
+        "query",
+        "token_budget"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 0,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "callee": "slice_recovery_content",
+      "callee_file": "entroly/ccr.py",
+      "arm": "oracle",
+      "gold": [
+        "content",
+        "query",
+        "token_budget"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 4274,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "callee": "slice_recovery_content",
+      "callee_file": "entroly/ccr.py",
+      "arm": "bm25",
+      "gold": [
+        "content",
+        "query",
+        "token_budget"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5911,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "callee": "slice_recovery_content",
+      "callee_file": "entroly/ccr.py",
+      "arm": "qccr",
+      "gold": [
+        "content",
+        "query",
+        "token_budget"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5864,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_bounded_exact_excerpt",
+      "callee": "slice_recovery_content",
+      "callee_file": "entroly/ccr.py",
+      "arm": "hcc",
+      "gold": [
+        "content",
+        "query",
+        "token_budget"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5411,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "modifier_mismatch",
+      "callee_file": "entroly/atomic_decomposition.py",
+      "arm": "null",
+      "gold": [
+        "claim",
+        "evidence"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "modifier_mismatch",
+      "callee_file": "entroly/atomic_decomposition.py",
+      "arm": "oracle",
+      "gold": [
+        "claim",
+        "evidence"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5253,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "modifier_mismatch",
+      "callee_file": "entroly/atomic_decomposition.py",
+      "arm": "bm25",
+      "gold": [
+        "claim",
+        "evidence"
+      ],
+      "reply": "claim, evidence",
+      "correct": true,
+      "context_tokens": 5998,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "modifier_mismatch",
+      "callee_file": "entroly/atomic_decomposition.py",
+      "arm": "qccr",
+      "gold": [
+        "claim",
+        "evidence"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 6052,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "modifier_mismatch",
+      "callee_file": "entroly/atomic_decomposition.py",
+      "arm": "hcc",
+      "gold": [
+        "claim",
+        "evidence"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5425,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "null",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 0,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "oracle",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 2330,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "bm25",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 6003,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "qccr",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 4222,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "select_band",
+      "callee": "should_escalate",
+      "callee_file": "entroly/escalation.py",
+      "arm": "hcc",
+      "gold": [
+        "upper_risk",
+        "delta_cost",
+        "hallucination_cost",
+        "r_floor"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5524,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "null",
+      "gold": [
+        "claim_text",
+        "evidence_text"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "oracle",
+      "gold": [
+        "claim_text",
+        "evidence_text"
+      ],
+      "reply": "claim_text, evidence_text, window, align_threshold",
+      "correct": false,
+      "context_tokens": 2659,
+      "error": ""
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "bm25",
+      "gold": [
+        "claim_text",
+        "evidence_text"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5922,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "qccr",
+      "gold": [
+        "claim_text",
+        "evidence_text"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5882,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_contradiction_score",
+      "callee": "slot_substitution_score",
+      "callee_file": "entroly/slot_extraction.py",
+      "arm": "hcc",
+      "gold": [
+        "claim_text",
+        "evidence_text"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5624,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "null",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "oracle",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "root, candidate",
+      "correct": true,
+      "context_tokens": 578,
+      "error": ""
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "bm25",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 6056,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "qccr",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5352,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "verify_code",
+      "callee": "resolve_file_within",
+      "callee_file": "entroly/path_safety.py",
+      "arm": "hcc",
+      "gold": [
+        "root",
+        "candidate"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5389,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_nli_proxy",
+      "callee": "feat_reverse_entail",
+      "callee_file": "entroly/witness_features.py",
+      "arm": "null",
+      "gold": [
+        "claim",
+        "context"
+      ],
+      "reply": "UNKNOWN",
+      "correct": false,
+      "context_tokens": 0,
+      "error": ""
+    },
+    {
+      "caller": "_nli_proxy",
+      "callee": "feat_reverse_entail",
+      "callee_file": "entroly/witness_features.py",
+      "arm": "oracle",
+      "gold": [
+        "claim",
+        "context"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 6568,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_nli_proxy",
+      "callee": "feat_reverse_entail",
+      "callee_file": "entroly/witness_features.py",
+      "arm": "bm25",
+      "gold": [
+        "claim",
+        "context"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5892,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_nli_proxy",
+      "callee": "feat_reverse_entail",
+      "callee_file": "entroly/witness_features.py",
+      "arm": "qccr",
+      "gold": [
+        "claim",
+        "context"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5860,
+      "error": "TimeoutError: timed out"
+    },
+    {
+      "caller": "_nli_proxy",
+      "callee": "feat_reverse_entail",
+      "callee_file": "entroly/witness_features.py",
+      "arm": "hcc",
+      "gold": [
+        "claim",
+        "context"
+      ],
+      "reply": "",
+      "correct": false,
+      "context_tokens": 5700,
+      "error": "TimeoutError: timed out"
+    }
+  ]
+}

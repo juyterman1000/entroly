@@ -58,13 +58,38 @@ The run is therefore recorded as VOID rather than as a result. The same model
 answered a 50-token version of the question correctly, so the failure is
 context-length capability, not prompt format.
 
-Re-run on a stronger model before drawing any conclusion:
+SECOND RUN: also VOID -- compute, and biased in a way that matters
+------------------------------------------------------------------
+The 7B re-run (`entroly-qwen2.5-7b-32k`, digest 6561cc69dc5a) failed 49 of 60
+calls with `TimeoutError` at a 300 s per-call limit. The failures are not
+random:
 
-    python benchmarks/answer_correctness_bridge.py --limit 12 --budget 6000 \
-        --backend ollama --model entroly-qwen2.5-7b-32k:latest
+    arm      completed  timed out
+    null             7          5     (0 context tokens)
+    oracle           3          9     (5,425)
+    bm25             1         11     (5,935)
+    qccr             0         12     (5,363)
+    hcc              0         12     (5,500)
 
-That model answered the smoke test exactly ("index, store, budget") but needs
-roughly 50 minutes on CPU for the full matrix.
+**Timeout rate tracks context size, so every large-context arm completed zero
+calls.** A run with that structure does not merely have few samples; it is
+biased toward whichever arm sends least, which is the opposite of what this
+experiment is for. Reporting `qccr 0/12` from it would be reporting a
+stopwatch, not a selector.
+
+Both attempts are therefore void, for different reasons: the 1.5B model was
+capability-limited (oracle 4/12), the 7B was compute-limited (49/60 timeouts).
+Q-A remains unanswered.
+
+What would actually settle it, in order of preference:
+  * a GPU -- Ollama reports `size_vram 0.0` here, so all inference was CPU;
+  * a working hosted API key (`--backend openai`), the path this harness was
+    written for;
+  * a smaller context budget, which changes the experiment rather than running
+    it, and should be a last resort.
+
+Raising the timeout alone is not a fix: 60 calls already exceeding 300 s each
+is hours of wall clock for one 12-probe matrix.
 """
 
 from __future__ import annotations
