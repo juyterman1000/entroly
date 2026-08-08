@@ -230,7 +230,7 @@ def main() -> int:
     print("\n  why the analysis had to surrender:")
     for reason, count in poison.most_common():
         print(f"    {reason:<20}{count:>6}  ({count/len(abstractions):.1%} of functions)")
-    print(f"\n  preregistered kill threshold: 20% on the useful predicates")
+    print("\n  preregistered kill threshold: 20% on the useful predicates")
     print(f"-> {args.out}")
     return 0
 
