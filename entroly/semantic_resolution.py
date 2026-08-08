@@ -167,6 +167,13 @@ class SRPResult:
     total_tokens: int               # total tokens in output
     budget: int                     # requested budget
     blocks: list[ResolvedBlock] = field(default_factory=list, repr=False)
+    # Set when the caller pinned a resolution with `resolve(resolution=...)`.
+    # A pinned resolution is honoured exactly and is NOT demoted to fit, so the
+    # output can exceed `budget`; `over_budget` says whether it did. Silently
+    # truncating a resolution the caller explicitly asked for would defeat the
+    # purpose of asking.
+    forced_resolution: str | None = None
+    over_budget: bool = False
 
 
 # ── Block Extraction ─────────────────────────────────────────────────
@@ -546,6 +553,7 @@ def resolve(
     budget: int = 1000,
     file_path: str = "",
     previous_source: str = "",
+    resolution: str | None = None,
 ) -> SRPResult:
     """Produce an information-optimal file representation at the given budget.
 
@@ -572,12 +580,37 @@ def resolve(
         the agent must learn *what changed* without re-reading the
         unchanged portion. Unmodified blocks fall through to the
         standard FULL / MEDIUM / LOW / SKIP ladder.
+    resolution : str | None
+        Pin every block to one level, bypassing automatic assignment.
+        One of ``Resolution.FULL`` / ``MEDIUM`` / ``DIFF`` / ``LOW``.
+
+        Automatic assignment is the right default and stays the default, but
+        it cannot be right for every question. Measured on this repository, a
+        signature-level view answered 12/12 questions whose evidence lives in
+        a signature and **0/20** whose evidence lives in a function body. No
+        single automatic choice serves both, so a caller that knows which kind
+        of question it is asking needs a way to say so.
+
+        A pinned resolution is honoured exactly: it is **not** demoted to fit
+        the budget, because silently truncating the level the caller asked for
+        would defeat the point of asking. The result reports ``over_budget``
+        instead, so the caller can see the cost rather than discover a
+        quietly-degraded answer.
 
     Returns
     -------
     SRPResult
         Mixed-resolution file representation with metadata.
     """
+    if resolution is not None and resolution not in {
+        Resolution.FULL, Resolution.MEDIUM, Resolution.DIFF, Resolution.LOW,
+    }:
+        # SKIP is deliberately excluded: pinning every block to SKIP asks for
+        # an empty document, which is never what a caller means.
+        raise ValueError(
+            f"resolution must be one of full/medium/diff/low, got {resolution!r}"
+        )
+
     blocks = extract_blocks(source, file_path)
 
     # Attach previous_source per-block for DIFF eligibility. Match by
@@ -612,23 +645,29 @@ def resolve(
 
     for block in blocks:
         relevance = score_relevance(block, query)
-        resolution = _assign_resolution(block, relevance, budget_pressure)
-        output_text = _render_block(block, resolution)
+        assigned = (
+            resolution
+            if resolution is not None
+            else _assign_resolution(block, relevance, budget_pressure)
+        )
+        output_text = _render_block(block, assigned)
         tokens = max(0, int(len(output_text) / _CHARS_PER_TOKEN) + 1) if output_text else 0
 
         resolved.append(ResolvedBlock(
             block=block,
-            resolution=resolution,
+            resolution=assigned,
             relevance=relevance,
             output=output_text,
             tokens=tokens,
         ))
 
     # ── Budget enforcement via greedy demotion ──
-    # If total tokens exceed budget, demote lowest-relevance blocks
+    # If total tokens exceed budget, demote lowest-relevance blocks.
+    # Skipped entirely when the caller pinned a resolution: demoting it would
+    # silently return a different level than the one requested.
     total_tokens = sum(r.tokens for r in resolved)
 
-    if total_tokens > budget:
+    if total_tokens > budget and resolution is None:
         # Sort by relevance ascending (least relevant first to demote)
         by_relevance = sorted(
             range(len(resolved)),
@@ -675,7 +714,13 @@ def resolve(
     # blocks (e.g. the actual request handler) should claim. This was an
     # ``elif`` on the demotion branch, so a post-demotion overshoot never
     # re-filled — smart_read under-resolved to 126/1500 on real files.
-    if total_tokens < budget:
+    #
+    # Skipped when the caller pinned a resolution. Promotion is as much a
+    # violation of a pin as demotion is: asking for LOW and receiving FULL
+    # because there happened to be spare budget returns a different level than
+    # the one requested. Caught by `test_low_returns_only_stubs`, which saw
+    # `{'full'}` where it had pinned `low`.
+    if total_tokens < budget and resolution is None:
         # ── Budget utilization via greedy promotion ──
         # Under budget → upgrade the most-relevant blocks toward FULL so the
         # spare budget actually surfaces query-relevant detail (the tool's
@@ -750,4 +795,6 @@ def resolve(
         total_tokens=final_tokens,
         budget=budget,
         blocks=resolved,
+        forced_resolution=resolution,
+        over_budget=final_tokens > budget,
     )
