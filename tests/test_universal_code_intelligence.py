@@ -30,24 +30,29 @@ from entroly.tree_sitter_support import (
 )
 
 
-def test_registry_exposes_broad_language_set_including_c_and_zig() -> None:
+def test_registry_detection_is_broad_without_remote_manifest_access() -> None:
+    # This accessor is intentionally local-only: it must not fetch the remote
+    # language manifest merely to report parser availability. Path detection,
+    # however, remains broad through the installed registry plus Entroly's
+    # deterministic suffix fallback.
     languages = set(available_parser_languages())
-    assert len(languages) >= 300
-    assert "c" in languages
-    assert "zig" in languages
+    assert languages
+    assert "python" in languages
     assert language_for_path("src/main.c") == "c"
     assert language_for_path("src/main.zig") == "zig"
 
 
-def test_parser_downloads_are_default_but_air_gap_wins(
+def test_parser_downloads_require_explicit_opt_in_and_air_gap_wins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", raising=False)
     monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
+    assert _downloads_allowed() is False
+
+    monkeypatch.setenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "1")
     assert _downloads_allowed() is True
 
     monkeypatch.setenv("ENTROLY_AIR_GAP", "1")
-    monkeypatch.setenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "1")
     assert _downloads_allowed() is False
 
     monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
