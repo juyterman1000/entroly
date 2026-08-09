@@ -11,19 +11,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ..air_gap import air_gap_enabled
-
-
-def _configure_parser_policy() -> None:
-    """Make parser acquisition zero-friction without weakening air-gap mode."""
-    if air_gap_enabled():
-        os.environ["ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD"] = "0"
-    else:
-        os.environ.setdefault("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "1")
-
-
-_configure_parser_policy()
-
 from .graph import analyze_change_impact, localize_tests, resolve_calls, resolve_imports
 from .models import (
     CallEdge,
