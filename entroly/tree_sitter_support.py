@@ -1,11 +1,12 @@
 """Universal, bounded parser-backed structural extraction.
 
-Repository intelligence is a base Entroly capability. The language registry is
-used for path/shebang detection and normalized structure across its available
-grammars. Missing grammars are acquired lazily by default, while
-``ENTROLY_AIR_GAP=1`` or ``ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=0`` keeps parser
-acquisition strictly local. Any parser failure fails open to deterministic
-fallbacks; bounded traversal never presents a truncated tree as complete.
+Repository intelligence remains available without the optional language registry.
+When the registry is installed it is used for path/shebang detection and normalized
+structure across its available grammars. Missing grammars are never acquired as a
+side effect of reading code unless ``ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1`` is set;
+``ENTROLY_AIR_GAP=1`` always disables acquisition. Any parser failure fails open to
+deterministic fallbacks, and bounded traversal never presents a truncated tree as
+complete.
 """
 from __future__ import annotations
 
@@ -193,12 +194,10 @@ def available_parser_languages() -> tuple[str, ...]:
 
 
 def _downloads_allowed() -> bool:
+    """Return whether parser acquisition is explicitly authorized for this process."""
     if _true(os.getenv("ENTROLY_AIR_GAP")):
         return False
-    explicit = os.getenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD")
-    if explicit is not None:
-        return not _false(explicit)
-    return True
+    return _true(os.getenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD"))
 
 
 def _get_local_parser(language: str) -> Any | None:
