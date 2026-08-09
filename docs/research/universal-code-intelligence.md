@@ -8,16 +8,18 @@ not a fixed language-count claim.
 1. **One semantic IR.** Grammar-specific node names stop at the frontend.
 2. **Progressive evidence.** Exact source is always available; parser, static,
    runtime, inferred, and learned evidence remain distinguishable.
-3. **Registry-driven breadth.** The installed grammar registry is authoritative;
-   Entroly's suffix table is only an offline fallback.
+3. **Registry-driven breadth.** When installed, the optional grammar registry is
+   authoritative; Entroly's suffix table remains the offline/base-install fallback.
 4. **Unknown-language survival.** Code-like files that predate registry support
    receive a bounded exact-source structural skeleton instead of disappearing.
 5. **No partial-tree promotion.** Hitting traversal bounds invalidates parser
    completeness; partial AST results are not silently promoted to truth.
-6. **Zero-friction default.** Repository parsing is part of the base install and
-   missing grammars may be acquired lazily by default.
-7. **Air-gap dominance.** `ENTROLY_AIR_GAP=1` always disables parser acquisition.
-   `ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=0` is an explicit local-only override.
+6. **No-surprise acquisition.** Repository intelligence remains usable from a
+   base install. Parser-backed structure is enabled with `entroly[code-intelligence]`,
+   and missing grammars are not acquired unless an operator explicitly sets
+   `ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1`.
+7. **Air-gap dominance.** `ENTROLY_AIR_GAP=1` always disables parser acquisition,
+   including when `ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1` is also present.
 8. **Bindings are stronger than syntax.** A parsed call expression proves the
    spelling and source span, not the semantic callee. Binding requires stronger
    static/compiler/LSP evidence.
