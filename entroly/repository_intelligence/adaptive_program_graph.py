@@ -1,9 +1,10 @@
 """Demand-driven, proof-carrying program graph across programming languages.
 
-This layer composes Entroly's universal semantic IR, syntactic-flow view, and
-verified deep adapters. Per selected file it performs at most one normalized
-registry pass plus one raw parser session; semantic and flow views reuse those
-results instead of reparsing source independently.
+This layer composes Entroly's universal semantic IR, syntactic-flow view,
+query-backed lexical semantics, and verified deep adapters. Per selected file it
+performs at most one normalized registry pass plus one raw parser session;
+semantic, lexical-query, and flow views reuse those results instead of reparsing
+source independently.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from ..tree_sitter_support import language_for_source
 from .interprocedural_flow import build_verified_interprocedural_flow
 from .models import RepositoryIndex, Symbol
 from .program_graph import build_verified_program_graph
+from .query_semantics import build_query_semantic_graph
 from .registry_frontend import extract_registry_facts
 from .semantic_ir import build_universal_semantic_document
 from .syntax_session import build_syntax_session, scan_syntax_session
@@ -190,6 +192,13 @@ def build_adaptive_program_graph(
     syntactic_flow_nodes = 0
     syntactic_flow_edges = 0
     syntactic_flow_incomplete = 0
+    query_semantic_files = 0
+    locals_query_files = 0
+    tags_query_files = 0
+    lexical_bindings = 0
+    lexical_unresolved = 0
+    query_semantic_incomplete = 0
+    path_semantic_tier: dict[str, str] = {}
     epistemic = Counter()
     capabilities = Counter()
     selected_file_digests: dict[str, str] = {}
@@ -209,7 +218,8 @@ def build_adaptive_program_graph(
         selected_file_digests[path] = record.sha256
         remaining_nodes = max(1, node_limit - total_nodes)
 
-        # Two-pass ceiling: normalized registry facts + one raw syntax parse.
+        # Two parser-facing operations at most: one normalized registry pass and
+        # one raw parse. Query semantics execute against the already-built tree.
         session = build_syntax_session(
             source,
             path,
@@ -249,15 +259,46 @@ def build_adaptive_program_graph(
             precomputed_syntax_scan=scan,
         )
         payload = document.to_dict()
+
         if scan is not None:
             flow = build_syntactic_flow_graph_from_scan(scan)
-            flow_payload = flow.to_dict()
-            payload["syntactic_flow"] = flow_payload
+            payload["syntactic_flow"] = flow.to_dict()
             syntactic_flow_files += 1
             syntactic_flow_nodes += len(flow.nodes)
             syntactic_flow_edges += len(flow.edges)
+            epistemic["parser-verified"] += len(flow.nodes) + len(flow.edges)
             if not flow.complete:
                 syntactic_flow_incomplete += 1
+
+        if session is not None:
+            query_graph = build_query_semantic_graph(
+                session,
+                max_facts=min(50_000, max(1_000, remaining_nodes * 2)),
+            )
+            if query_graph is not None:
+                payload["query_semantics"] = query_graph.to_dict()
+                query_semantic_files += 1
+                locals_query_files += int(query_graph.locals_available)
+                tags_query_files += int(query_graph.tags_available)
+                lexical_bindings += len(query_graph.bindings)
+                lexical_unresolved += len(query_graph.unresolved)
+                epistemic["parser-query-verified"] += (
+                    len(query_graph.scopes)
+                    + len(query_graph.definitions)
+                    + len(query_graph.references)
+                    + len(query_graph.tag_facts)
+                )
+                epistemic["lexical-query-resolved"] += len(query_graph.bindings)
+                if not query_graph.complete:
+                    query_semantic_incomplete += 1
+                if query_graph.locals_available:
+                    path_semantic_tier[path] = (
+                        "lexical-semantics"
+                        if query_graph.complete
+                        else "partial-lexical-semantics"
+                    )
+                elif query_graph.tags_available:
+                    path_semantic_tier[path] = "tag-semantics"
 
         nodes = payload.get("nodes", [])
         edges = payload.get("edges", [])
@@ -314,10 +355,16 @@ def build_adaptive_program_graph(
                     "interprocedural_flow": inter,
                 })
         else:
+            tier = path_semantic_tier.get(symbol.path)
+            available = (
+                f"{tier}-plus-syntactic-flow"
+                if tier
+                else "syntactic-flow-or-structure"
+            )
             adapter_boundaries.append({
                 "symbol_id": symbol.symbol_id,
                 "language": symbol.language,
-                "available": "syntactic-flow-or-structure",
+                "available": available,
                 "missing": "verified-language-specific-semantic-flow-adapter",
             })
 
@@ -350,6 +397,12 @@ def build_adaptive_program_graph(
             "syntactic_flow_nodes": syntactic_flow_nodes,
             "syntactic_flow_edges": syntactic_flow_edges,
             "syntactic_flow_incomplete": syntactic_flow_incomplete,
+            "query_semantic_files": query_semantic_files,
+            "locals_query_files": locals_query_files,
+            "tags_query_files": tags_query_files,
+            "lexical_bindings": lexical_bindings,
+            "lexical_unresolved": lexical_unresolved,
+            "query_semantic_incomplete": query_semantic_incomplete,
             "capability_levels": dict(sorted(capabilities.items())),
             "epistemic_facts": dict(sorted(epistemic.items())),
             "answer_sufficiency": "unproven",
@@ -360,8 +413,12 @@ def build_adaptive_program_graph(
         "analysis_contract": {
             "materialization": "query-time-selected-files-only",
             "parser_work_ceiling": "one-registry-pass-plus-one-raw-parse-per-selected-file",
-            "universal_layer": "exact-source-plus-parser-evidence-plus-syntactic-flow",
+            "query_semantics": "bundled-locals-tags-on-existing-tree-no-extra-parse",
+            "universal_layer": (
+                "exact-source-plus-parser-evidence-plus-syntactic-flow-plus-lexical-query-semantics"
+            ),
             "syntactic_flow_guarantee": "control-shape-not-semantic-cfg-or-dataflow",
+            "lexical_binding_guarantee": "unique-prior-definition-in-nearest-captured-scope",
             "deep_adapter_policy": "verified-adapters-only",
             "deep_semantics_materialized": bool(include_deep_semantics),
             "missing_adapters_behavior": "report-boundary-never-invent-flow",
