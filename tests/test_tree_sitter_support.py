@@ -48,7 +48,22 @@ def test_semantic_resolution_uses_parser_spans_when_available() -> None:
     assert all(block.start_line <= block.end_line for block in blocks)
 
 
-def test_parser_acquisition_is_default_when_not_disabled(
+def test_parser_acquisition_is_denied_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    fake = SimpleNamespace(
+        downloaded_languages=lambda: ["python"],
+        get_parser=lambda language: calls.append(language),
+    )
+    monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
+    monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
+    monkeypatch.delenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", raising=False)
+    assert _get_local_parser("rust") is None
+    assert calls == []
+
+
+def test_explicit_download_opt_in_allows_acquisition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -59,7 +74,7 @@ def test_parser_acquisition_is_default_when_not_disabled(
     )
     monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
     monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
-    monkeypatch.delenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", raising=False)
+    monkeypatch.setenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "1")
     assert _get_local_parser("rust") is parser
     assert calls == ["rust"]
 
@@ -75,6 +90,21 @@ def test_explicit_no_download_uses_only_cached_grammars(
     monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
     monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
     monkeypatch.setenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "0")
+    assert _get_local_parser("rust") is None
+    assert calls == []
+
+
+def test_air_gap_overrides_explicit_download_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    fake = SimpleNamespace(
+        downloaded_languages=lambda: ["python"],
+        get_parser=lambda language: calls.append(language),
+    )
+    monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
+    monkeypatch.setenv("ENTROLY_AIR_GAP", "1")
+    monkeypatch.setenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "1")
     assert _get_local_parser("rust") is None
     assert calls == []
 
