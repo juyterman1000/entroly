@@ -58,7 +58,7 @@
 <h2>How Entroly approaches AI cost saving</h2>
 <p><strong>API input economics:</strong> fewer unnecessary provider-bound input tokens can reduce measured input cost on routes where the optimized request is actually sent to a paid model. Fixed-price subscriptions are different: lowering tokens does not necessarily lower the subscription fee.</p>
 <p><strong>Cache economics:</strong> Entroly includes cache-alignment behavior designed to keep eligible stable prompt prefixes byte-stable. Provider-reported cache hits and discounts remain authoritative.</p>
-<p><strong>Context-window economics:</strong> token saving also creates headroom for longer sessions, larger repositories, or more useful evidence inside a fixed model context window.</p>
+<p><strong>Context-window economics:</strong> token saving also leaves more room for longer sessions, larger repositories, or more useful evidence inside a fixed model context window.</p>
 <div class="proof"><strong>Evidence boundary:</strong> Entroly publishes benchmark artifacts, receipts, recovery tests, and workload-specific measurements. Results vary by repository, query, model, provider, token budget, cache behavior, and baseline. See <a href="https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md">benchmark evidence</a> and <a href="ai-cost-optimization.html">AI cost optimization</a>.</div>
 <h2>Related Entroly capabilities</h2>
 <ul>
