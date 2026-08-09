@@ -15,13 +15,7 @@ from ..air_gap import air_gap_enabled
 
 
 def _configure_parser_policy() -> None:
-    """Make parser acquisition zero-friction without weakening air-gap mode.
-
-    The language-pack dependency is part of the base install. Missing grammars
-    may therefore be acquired lazily on first use unless the operator explicitly
-    disables downloads or Entroly is running in air-gap mode. An explicit
-    ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD value always wins outside air-gap mode.
-    """
+    """Make parser acquisition zero-friction without weakening air-gap mode."""
     if air_gap_enabled():
         os.environ["ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD"] = "0"
     else:
@@ -53,6 +47,10 @@ from .semantic_ir import (
     UniversalSemanticDocument,
     build_universal_semantic_document,
 )
+from .workspace_dependencies import (
+    WorkspaceDependencyGraph,
+    resolve_workspace_dependencies,
+)
 
 __all__ = [
     "CallEdge", "FileRecord", "ImpactReport", "RepositoryIndex",
@@ -60,6 +58,7 @@ __all__ = [
     "SEMANTIC_IR_SCHEMA_VERSION", "EpistemicClass", "SemanticCapabilities",
     "SemanticEdge", "SemanticLevel", "SemanticNode", "SourceEvidence",
     "UniversalSemanticDocument", "build_universal_semantic_document",
+    "WorkspaceDependencyGraph", "resolve_workspace_dependencies",
     "analyze_change_impact",
     "build_repository_index", "localize_tests", "InvalidChangedPaths",
     "InvalidContextQuery", "InvalidSymbolQuery",
@@ -95,6 +94,28 @@ __all__ = [
 ]
 
 
+def _merge_file_dependencies(
+    legacy: dict[str, tuple[str, ...]],
+    universal: WorkspaceDependencyGraph,
+    paths: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    """Add proven universal edges without removing established resolver edges.
+
+    The legacy resolver remains authoritative for behaviors already covered by
+    production tests (including framework-specific index-module conventions).
+    The universal resolver contributes only deterministic workspace bindings.
+    This makes the rollout monotonic: language breadth can grow without losing
+    any existing Python/JS/Rust dependency evidence.
+    """
+    universal_map = universal.file_dependencies()
+    return {
+        path: tuple(sorted(
+            set(legacy.get(path, ())) | set(universal_map.get(path, ()))
+        ))
+        for path in paths
+    }
+
+
 def build_repository_index(
     root: str | os.PathLike[str],
     *,
@@ -111,7 +132,13 @@ def build_repository_index(
         for path in sorted(parsed)
         for symbol in sorted(parsed[path].symbols, key=lambda item: item.symbol_id)
     }
-    dependencies = resolve_imports(parsed)
+    legacy_dependencies = resolve_imports(parsed)
+    workspace_dependencies = resolve_workspace_dependencies(parsed)
+    dependencies = _merge_file_dependencies(
+        legacy_dependencies,
+        workspace_dependencies,
+        tuple(sorted(parsed)),
+    )
     calls, unresolved_calls = resolve_calls(parsed, symbols, policy)
     if len(calls) + len(unresolved_calls) >= policy.max_edges:
         diagnostics.append("relationship limit reached; remaining evidence omitted")
