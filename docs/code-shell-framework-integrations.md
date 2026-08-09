@@ -6,15 +6,19 @@ downloads.
 
 ## Parser-backed code structure
 
-Install `entroly[code-intelligence]` to enable parser-backed exact source spans
-for common programming languages. Entroly recognizes more than 27 language
-grammars by extension. The parser is optional: missing, malformed, oversized,
-or unsupported input uses the existing deterministic extractor.
+Install `entroly[code-intelligence]` to add the parser registry used for
+parser-backed exact source spans across common programming languages. Entroly
+recognizes more than 27 language grammars by extension. The parser is optional:
+missing, malformed, oversized, or unsupported input uses the existing
+deterministic extractor.
 
-Entroly does not download a parser as a side effect of reading code. With
-language-pack releases that use on-demand grammar downloads, only already
-cached grammars are used. An operator may explicitly allow acquisition with
-`ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1`.
+Grammar binaries used by the language pack are cached separately and may not be
+present immediately after installing the extra. Entroly does not acquire a
+missing grammar as a side effect of reading code unless the operator explicitly
+sets `ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1`. Operators may instead pre-populate
+the language-pack cache using its documented download mechanism. Once a grammar
+is cached, Entroly can reuse it with acquisition disabled. `ENTROLY_AIR_GAP=1`
+always disables acquisition, even if the allow-download variable is also set.
 
 Parser-backed call sites are attributed to the narrowest enclosing symbol and
 carry exact byte evidence. Ambiguous bindings remain explicit instead of being
