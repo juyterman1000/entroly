@@ -13,7 +13,7 @@ import hashlib
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from .interprocedural_flow import build_verified_interprocedural_flow
 from .models import RepositoryIndex, Symbol
@@ -144,6 +144,8 @@ def build_adaptive_program_graph(
     program_graph_limit: int = 2_000,
     interprocedural_depth: int = 3,
     include_deep_semantics: bool = True,
+    proposal_scores: Iterable[Mapping[str, object]] = (),
+    proposal_provider: str = "caller-supplied",
 ) -> dict[str, object]:
     """Materialize only the program facts needed for one task.
 
@@ -174,6 +176,8 @@ def build_adaptive_program_graph(
         token_budget=max(128, min(int(token_budget), 32_768)),
         max_hops=max(0, min(int(max_hops), 6)),
         max_fragments=max(1, min(int(max_fragments), 100)),
+        proposal_scores=proposal_scores,
+        proposal_provider=proposal_provider,
     )
     exact = _exact_matches(index, clean_query)
     selected_symbols = _selected_symbols(
@@ -223,7 +227,6 @@ def build_adaptive_program_graph(
             diagnostics.append({"path": path, "status": "invalid-semantic-document"})
             continue
         if len(edges) > edge_limit - total_edges:
-            # Partial graph edges are never silently presented as complete.
             payload["edges"] = edges[: max(0, edge_limit - total_edges)]
             payload.setdefault("diagnostics", []).append(
                 "adaptive graph edge budget reached; remaining semantic edges omitted"
@@ -318,7 +321,10 @@ def build_adaptive_program_graph(
             "deep_adapter_policy": "verified-adapters-only",
             "deep_semantics_materialized": bool(include_deep_semantics),
             "missing_adapters_behavior": "report-boundary-never-invent-flow",
-            "learned_facts_allowed": False,
+            "learned_role": "optional-entry-point-ranking-proposal",
+            "proposal_provider": str(proposal_provider)[:200],
+            "proposal_may_create_facts": False,
+            "proposal_may_raise_confidence": False,
             "remote_calls": 0,
         },
         "diagnostics": diagnostics,
