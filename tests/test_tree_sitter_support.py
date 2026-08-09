@@ -63,6 +63,25 @@ def test_pack_v1_never_downloads_without_explicit_opt_in(
     assert calls == []
 
 
+def test_default_deny_allows_proven_locally_loadable_grammar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    parser = object()
+    fake = SimpleNamespace(
+        has_language=lambda language: language == "python",
+        get_parser=lambda language: calls.append(language) or parser,
+    )
+    monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
+    monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
+    monkeypatch.delenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", raising=False)
+
+    assert _get_local_parser("python") is parser
+    assert calls == ["python"]
+    assert _get_local_parser("rust") is None
+    assert calls == ["python"]
+
+
 def test_explicit_download_opt_in_allows_acquisition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
