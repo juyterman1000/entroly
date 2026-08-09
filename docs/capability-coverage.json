@@ -299,6 +299,7 @@
         "entroly/repository_intelligence/repository_map.py",
         "entroly/repository_intelligence/runtime_overlay.py",
         "entroly/repository_intelligence/semantic_overlay.py",
+        "entroly/repository_intelligence/verified_refactor.py",
         "entroly/repository_intelligence/verified_health.py",
         "entroly/repository_intelligence/service.py",
         "entroly/repository_intelligence/mcp.py"
@@ -321,6 +322,10 @@
         "tests/test_repository_semantic_overlay.py::test_semantic_overlay_verifies_utf16_locations_and_receipt",
         "tests/test_repository_verified_health.py::test_health_binds_metrics_cycles_and_ambiguity_to_verified_evidence",
         "tests/test_repository_verified_health.py::test_health_omits_files_changed_after_the_snapshot",
+        "tests/test_repository_verified_refactor.py::test_preview_is_exact_tamper_evident_and_honest_about_completeness",
+        "tests/test_repository_verified_refactor.py::test_apply_rechecks_preimages_and_performs_two_file_rename",
+        "tests/test_repository_verified_refactor.py::test_filesystem_failure_rolls_back_completed_replacements",
+        "tests/test_repository_verified_refactor.py::test_verified_external_semantic_reference_augments_static_call_plan",
         "tests/test_code_intelligence_conformance.py::test_shared_code_intelligence_conformance_fixture",
         "tests/test_verified_code_context_benchmark.py::test_verified_code_context_preregistered_matrix"
       ],
@@ -338,6 +343,8 @@
         "entroly.repository_intelligence.RepositoryIntelligenceService.runtime_overlay",
         "entroly.repository_intelligence.RepositoryIntelligenceService.semantic_overlay",
         "entroly.repository_intelligence.RepositoryIntelligenceService.code_health",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.rename_preview",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.rename_apply",
         "entroly.repository_intelligence.build_repository_index_incremental",
         "entroly.repository_intelligence.build_verified_context",
         "entroly.repository_intelligence.build_symbol_graph",
@@ -346,15 +353,19 @@
         "entroly.repository_intelligence.build_verified_runtime_overlay",
         "entroly.repository_intelligence.build_verified_semantic_overlay",
         "entroly.repository_intelligence.build_verified_code_health",
+        "entroly.repository_intelligence.build_verified_rename_plan",
+        "entroly.repository_intelligence.apply_verified_rename_plan",
         "entroly.repository_intelligence.verify_context_commitment",
         "entroly.repository_intelligence.verify_program_graph_commitment",
         "entroly.repository_intelligence.verify_repository_map_commitment",
         "entroly.repository_intelligence.verify_runtime_overlay_commitment",
         "entroly.repository_intelligence.verify_semantic_overlay_commitment",
         "entroly.repository_intelligence.verify_code_health_commitment",
+        "entroly.repository_intelligence.verify_refactor_plan_commitment",
+        "entroly.repository_intelligence.verify_refactor_apply_commitment",
         "entroly.repository_intelligence.verify_symbol_graph_commitment"
       ],
-      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Structural health publishes a heuristic scoring policy and exact evidence but does not prove defects, dead code, or semantic clones. Runtime events require an external tracer. Content-addressed persistence reuses unchanged parse, whole-index, map, and health artifacts, but any source change rebuilds global relationships and derived analyses. Native compiler/LSP execution, automatic refactoring, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
+      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Structural health publishes a heuristic scoring policy and exact evidence but does not prove defects, dead code, or semantic clones. Runtime events and semantic relationships require external producers. Two-phase rename is preimage-safe and rollback-aware but explicitly not compiler-complete; dynamic, reflective, string, macro, generated, unindexed non-call, and external references may remain. Content-addressed persistence reuses unchanged artifacts, but any source change rebuilds global relationships and derived analyses. Native language-server process orchestration, broader automatic refactoring, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
     },
     {
       "id": "command_aware_shell_evidence",

@@ -128,6 +128,38 @@ def test_health_returns_verified_policy_and_commitment(tmp_path: Path) -> None:
     assert payload["receipt"]["code_health_sha256"]
 
 
+def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, plan = run([
+        "--root", str(tmp_path), "rename-preview",
+        "--symbol", "execute", "--new-name", "perform",
+    ])
+    assert code == 0
+    assert plan["command"] == "rename-preview"
+    assert plan["receipt"]["writes_performed"] == 0
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    rejected_code, rejected = run([
+        "--root", str(tmp_path), "rename-apply",
+        "--plan-json", str(plan_path),
+        "--expected-plan-sha", plan["receipt"]["plan_sha256"],
+    ])
+    assert rejected_code == 2
+    assert "acknowledgement" in rejected["detail"]
+
+    applied_code, applied = run([
+        "--root", str(tmp_path), "rename-apply",
+        "--plan-json", str(plan_path),
+        "--expected-plan-sha", plan["receipt"]["plan_sha256"],
+        "--acknowledge-incomplete",
+    ])
+    assert applied_code == 0
+    assert applied["command"] == "rename-apply"
+    assert applied["apply"]["change_count"] == 3
+    assert "def perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+
 def test_runtime_binds_json_events_without_values(tmp_path: Path) -> None:
     _project(tmp_path)
     events = tmp_path / "events.json"

@@ -68,7 +68,10 @@ def create_repository_mcp_server(
             "Inspect a fixed local repository using bounded symbol, import, and "
             "call graphs. Paths are workspace-relative and absolute local paths "
             "are never returned. Source bytes are exposed only by the bounded "
-            "verified-context tool, labeled untrusted, with exact hashes."
+            "verified-context tool, labeled untrusted, with exact hashes. All "
+            "operations are read-only except repository_rename_apply, which "
+            "requires a prior committed preview, its exact plan hash, and an "
+            "explicit acknowledgement that reference completeness is unproven."
         ),
     )
 
@@ -225,6 +228,42 @@ def create_repository_mcp_server(
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_semantic_overlay")
+
+    @mcp.tool()
+    def repository_rename_preview(
+        symbol_query: str,
+        new_name: str,
+        semantic_relationships: list[dict[str, object]] | None = None,
+        provider: str = "none",
+        max_changes: int = 10_000,
+    ) -> str:
+        """Preview exact rename edits; performs no writes and reports incompleteness."""
+        try:
+            return _json(service.rename_preview(
+                symbol_query,
+                new_name,
+                semantic_relationships=semantic_relationships or (),
+                provider=provider,
+                max_changes=max(1, min(int(max_changes), 100_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_rename_preview")
+
+    @mcp.tool()
+    def repository_rename_apply(
+        plan: dict[str, object],
+        expected_plan_sha256: str,
+        acknowledge_incomplete: bool = False,
+    ) -> str:
+        """Apply a previewed rename after plan-hash and risk acknowledgement."""
+        try:
+            return _json(service.rename_apply(
+                plan,
+                expected_plan_sha256=expected_plan_sha256,
+                acknowledge_incomplete=bool(acknowledge_incomplete),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_rename_apply")
 
     @mcp.tool()
     def refresh_repository_index() -> str:

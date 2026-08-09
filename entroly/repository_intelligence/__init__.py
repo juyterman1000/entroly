@@ -40,6 +40,8 @@ __all__ = [
     "verify_semantic_overlay_commitment",
     "verify_repository_map_commitment",
     "build_verified_code_health", "verify_code_health_commitment",
+    "build_verified_rename_plan", "apply_verified_rename_plan",
+    "verify_refactor_plan_commitment", "verify_refactor_apply_commitment",
 ]
 
 
@@ -102,6 +104,12 @@ from .repository_map import (  # noqa: E402
 from .verified_health import (  # noqa: E402
     build_verified_code_health,
     verify_code_health_commitment,
+)
+from .verified_refactor import (  # noqa: E402
+    apply_verified_rename_plan,
+    build_verified_rename_plan,
+    verify_refactor_apply_commitment,
+    verify_refactor_plan_commitment,
 )
 from .verified_context import (  # noqa: E402
     build_symbol_graph,

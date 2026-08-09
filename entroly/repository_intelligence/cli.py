@@ -103,6 +103,24 @@ def _parser() -> argparse.ArgumentParser:
     semantic.add_argument("--relationships-json", required=True)
     semantic.add_argument("--provider", required=True)
     semantic.add_argument("--max-relationships", type=int, default=100_000)
+
+    rename_preview = subcommands.add_parser(
+        "rename-preview",
+        help="preview an exact two-phase rename without writing files",
+    )
+    rename_preview.add_argument("--symbol", required=True)
+    rename_preview.add_argument("--new-name", required=True)
+    rename_preview.add_argument("--semantic-json")
+    rename_preview.add_argument("--provider", default="none")
+    rename_preview.add_argument("--max-changes", type=int, default=10_000)
+
+    rename_apply = subcommands.add_parser(
+        "rename-apply",
+        help="apply a committed rename plan after explicit risk acknowledgement",
+    )
+    rename_apply.add_argument("--plan-json", required=True)
+    rename_apply.add_argument("--expected-plan-sha", required=True)
+    rename_apply.add_argument("--acknowledge-incomplete", action="store_true")
     return parser
 
 
@@ -203,6 +221,41 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 max_relationships=args.max_relationships,
             )
             payload["command"] = "semantic"
+            return 0, payload
+        if args.command == "rename-preview":
+            relationships: list[dict[str, object]] = []
+            if args.semantic_json:
+                semantic_path = Path(args.semantic_json).expanduser().resolve(strict=True)
+                if semantic_path.stat().st_size > 16 * 1024 * 1024:
+                    raise ValueError("semantic JSON must be at most 16 MiB")
+                raw_relationships = json.loads(semantic_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_relationships, list) or any(
+                    not isinstance(item, dict) for item in raw_relationships
+                ):
+                    raise ValueError("semantic JSON must contain an array of objects")
+                relationships = raw_relationships
+            payload = service.rename_preview(
+                args.symbol,
+                args.new_name,
+                semantic_relationships=relationships,
+                provider=args.provider,
+                max_changes=args.max_changes,
+            )
+            payload["command"] = "rename-preview"
+            return 0, payload
+        if args.command == "rename-apply":
+            plan_path = Path(args.plan_json).expanduser().resolve(strict=True)
+            if plan_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("plan JSON must be at most 16 MiB")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if not isinstance(plan, dict):
+                raise ValueError("plan JSON must contain an object")
+            payload = service.rename_apply(
+                plan,
+                expected_plan_sha256=args.expected_plan_sha,
+                acknowledge_incomplete=args.acknowledge_incomplete,
+            )
+            payload["command"] = "rename-apply"
             return 0, payload
         payload = service.tests(args.changed, limit=args.limit)
         payload["command"] = "tests"

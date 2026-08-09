@@ -75,6 +75,12 @@ failures remain in the denominator.
 21. Import cycles and unresolved-call risk remain separately inspectable.
 22. Health-policy thresholds, score formula, coverage, and report commitment
     are machine-verifiable.
+23. Rename preview performs zero writes and commits exact identifier preimages.
+24. Ambiguous symbols, stale source, overlapping edits, and tampered plans fail
+    before mutation.
+25. Apply requires the exact plan hash plus explicit incompleteness
+    acknowledgement and validates staged syntax.
+26. A multi-file replacement failure attempts rollback and remains visible.
 
 ## Reporting rule
 
@@ -83,6 +89,6 @@ be claimed only for a named scope when one implementation has more
 `executed-pass` results in that scope and no correctness-critical regression
 (ambiguity, stale source, or evidence tampering). Language breadth, native LSP
 execution/refactoring, and persistent global graph maintenance are reported as
-separate capabilities rather than hidden in the 22-point score. Code-health
+separate capabilities rather than hidden in the 26-point score. Code-health
 conformance covers evidence and policy honesty; it does not award a pass merely
 for producing more warnings.

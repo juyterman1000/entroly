@@ -229,6 +229,8 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_summary",
         "repository_program_graph",
         "repository_code_health",
+        "repository_rename_apply",
+        "repository_rename_preview",
         "repository_map",
         "repository_runtime_overlay",
         "repository_semantic_overlay",
@@ -273,6 +275,11 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert health["schema_version"] == "entroly.verified-code-health.v1"
     assert health["receipt"]["remote_calls"] == 0
     assert str(tmp_path) not in json.dumps(health)
+    rename = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+    assert rename["schema_version"] == "entroly.verified-refactor-plan.v1"
+    assert rename["resolution"] == "resolved"
+    assert rename["receipt"]["writes_performed"] == 0
+    assert str(tmp_path) not in json.dumps(rename)
     runtime = json.loads(mcp.tools["repository_runtime_overlay"]([
         {"path": "pkg/source.py", "line": 1, "event": "call"},
     ]))
@@ -316,3 +323,29 @@ def test_mcp_refresh_atomically_changes_generation(tmp_path: Path, monkeypatch) 
     assert after["files"] == before["files"] + 1
     assert after["generation"] == before["generation"] + 1
     assert after["root"] == "."
+
+
+def test_mcp_refactor_apply_requires_ack_and_refreshes_index(tmp_path: Path, monkeypatch) -> None:
+    _project(tmp_path)
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    plan = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+    rejected = json.loads(mcp.tools["repository_rename_apply"](
+        plan,
+        plan["receipt"]["plan_sha256"],
+        False,
+    ))
+    assert rejected["error"] == "verified_refactor_failed"
+    assert "acknowledgement" in rejected["detail"]
+    assert "execute" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+    applied = json.loads(mcp.tools["repository_rename_apply"](
+        plan,
+        plan["receipt"]["plan_sha256"],
+        True,
+    ))
+    assert applied["apply"]["change_count"] == 3
+    assert applied["refresh"]["status"] == "refreshed"
+    assert "perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+    summary = json.loads(mcp.tools["repository_summary"]())
+    assert summary["index_digest"] == applied["refresh"]["index_digest"]

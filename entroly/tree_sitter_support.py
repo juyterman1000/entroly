@@ -431,3 +431,18 @@ def extract_structural_spans(
     raw, tree = parsed
     spans = _spans_from_tree(raw, tree, max_nodes)
     return spans or None
+
+
+def validate_structural_syntax(
+    source: str,
+    file_path: str,
+    *,
+    max_bytes: int = 2 * 1024 * 1024,
+) -> bool | None:
+    """Return parser syntax validity, or ``None`` when no grammar is available."""
+    parsed = _parse_source(source, file_path, max_bytes)
+    if parsed is None:
+        return None
+    _raw, tree = parsed
+    root = getattr(tree, "root_node", None)
+    return not bool(getattr(root, "has_error", True))

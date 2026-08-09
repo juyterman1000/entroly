@@ -19,6 +19,10 @@ from .repository_map import (
 )
 from .runtime_overlay import build_verified_runtime_overlay
 from .semantic_overlay import build_verified_semantic_overlay
+from .verified_refactor import (
+    apply_verified_rename_plan,
+    build_verified_rename_plan,
+)
 from .verified_context import build_symbol_graph, build_verified_context
 from .verified_health import (
     VERIFIED_HEALTH_SCHEMA_VERSION,
@@ -91,6 +95,10 @@ class InvalidContextQuery(RepositoryIntelligenceError):
 
 class InvalidSymbolQuery(RepositoryIntelligenceError):
     code = "invalid_symbol_query"
+
+
+class VerifiedRefactorError(RepositoryIntelligenceError):
+    code = "verified_refactor_failed"
 
 
 Builder = Callable[..., RepositoryIndex]
@@ -529,3 +537,81 @@ class RepositoryIntelligenceService:
         )
         payload["generation"] = generation
         return payload
+
+    def rename_preview(
+        self,
+        symbol_query: str,
+        new_name: str,
+        *,
+        semantic_relationships: Iterable[Mapping[str, object]] = (),
+        provider: str = "none",
+        max_changes: int = 10_000,
+    ) -> dict[str, object]:
+        """Build a no-write, source-verified rename transaction plan."""
+        if not isinstance(symbol_query, str) or not symbol_query.strip():
+            raise InvalidSymbolQuery("symbol query must not be empty")
+        index, digest, generation = self._snapshot()
+        try:
+            payload = build_verified_rename_plan(
+                self.root,
+                index,
+                symbol_query,
+                new_name,
+                index_digest=digest,
+                semantic_relationships=semantic_relationships,
+                provider=provider,
+                max_changes=max(1, min(int(max_changes), 100_000)),
+            )
+        except ValueError as exc:
+            raise VerifiedRefactorError(str(exc)) from None
+        payload["generation"] = generation
+        return payload
+
+    def rename_apply(
+        self,
+        plan: Mapping[str, object],
+        *,
+        expected_plan_sha256: str,
+        acknowledge_incomplete: bool = False,
+    ) -> dict[str, object]:
+        """Apply an explicitly acknowledged plan and refresh the snapshot."""
+        index, digest, _generation = self._snapshot()
+        with self._build_lock:
+            with self._lock:
+                if self._index is not index or self._digest != digest:
+                    raise VerifiedRefactorError(
+                        "repository index changed after refactor preview"
+                    )
+            try:
+                applied = apply_verified_rename_plan(
+                    self.root,
+                    index,
+                    plan,
+                    index_digest=digest,
+                    expected_plan_sha256=expected_plan_sha256,
+                    acknowledge_incomplete=bool(acknowledge_incomplete),
+                )
+            except ValueError as exc:
+                raise VerifiedRefactorError(str(exc)) from None
+            try:
+                refreshed_index = self._build()
+                refreshed_digest, refreshed_generation = self._install(refreshed_index)
+                refresh: dict[str, object] = {
+                    "status": "refreshed",
+                    "index_digest": refreshed_digest,
+                    "generation": refreshed_generation,
+                }
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                with self._lock:
+                    self._index = None
+                    self._digest = ""
+                refresh = {
+                    "status": "failed-after-apply",
+                    "error_type": type(exc).__name__,
+                    "detail": "files were changed; the next operation will rebuild the index",
+                }
+        return {
+            "schema_version": "entroly.repository-refactor-service.v1",
+            "apply": applied,
+            "refresh": refresh,
+        }

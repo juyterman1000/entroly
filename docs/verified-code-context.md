@@ -227,3 +227,43 @@ MCP tool. Entroly interprets positions using the LSP UTF-16 convention,
 converts them to exact UTF-8 byte ranges, and verifies both endpoints against
 fresh indexed source. The provider remains explicitly untrusted: this proves
 which source spans it connected, not that its semantic conclusion is correct.
+
+## Two-phase verified rename
+
+Rename preview is no-write by construction:
+
+```powershell
+python -m entroly.repository_intelligence --root . rename-preview `
+  --symbol "payments.service.charge_card" `
+  --new-name authorize_card > rename-plan.json
+```
+
+The plan resolves exactly one symbol, rechecks source freshness, and emits exact
+identifier byte ranges for its definition, resolved calls, and Python direct
+import bindings. Optional `--semantic-json` relationships can add external
+LSP/compiler reference ranges only after the semantic overlay verifies both
+endpoints. The plan commits every preimage and edit, performs zero writes, and
+reports unresolved same-name calls plus remaining lexical occurrences for
+review. Reference completeness remains `not-proven` even when a provider is
+present.
+
+Apply is a separate, explicit operation:
+
+```powershell
+python -m entroly.repository_intelligence --root . rename-apply `
+  --plan-json rename-plan.json `
+  --expected-plan-sha <receipt.plan_sha256> `
+  --acknowledge-incomplete
+```
+
+Before writing, Entroly verifies the plan commitment, current index identity,
+every file digest, exact identifier preimage, non-overlapping ranges, and staged
+Python or available tree-sitter syntax. New files are staged beside their
+targets. If a replacement fails, Entroly attempts to restore every completed
+file from a same-directory backup and reports the failed transaction. A
+successful service/MCP apply immediately rebuilds the repository snapshot.
+
+This is not equivalent to compiler-complete refactoring. Dynamic lookup,
+reflection, strings, generated code, macro expansion, non-call references, and
+external consumers may remain. The mandatory acknowledgement exists because a
+hash can make an incomplete plan tamper-evident but cannot make it complete.
