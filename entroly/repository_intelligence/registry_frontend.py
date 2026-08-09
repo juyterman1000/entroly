@@ -65,14 +65,20 @@ class RegistryDiagnostic:
 
 @dataclass(frozen=True)
 class RegistryFacts:
+    """One bounded normalized parser pass.
+
+    ``structures`` intentionally has a default and is last so callers/tests
+    written against the v1 keyword/positional shape remain source compatible.
+    """
+
     language: str
-    structures: tuple[RegistryStructure, ...]
     imports: tuple[RegistryImport, ...]
     exports: tuple[RegistryExport, ...]
     symbols: tuple[RegistrySymbol, ...]
     diagnostics: tuple[RegistryDiagnostic, ...]
     node_count: int
     complete: bool
+    structures: tuple[RegistryStructure, ...] = ()
 
 
 def _get(value: object, name: str, default: Any = None) -> Any:
@@ -256,9 +262,6 @@ def extract_registry_facts(
 
     return RegistryFacts(
         language=str(language),
-        structures=tuple(sorted(structures, key=lambda value: (
-            value.span.start_byte, -value.span.end_byte, value.name, value.kind
-        ))),
         imports=tuple(sorted(imports, key=lambda value: (
             value.span.start_byte, value.source, value.items
         ))),
@@ -271,6 +274,9 @@ def extract_registry_facts(
         diagnostics=tuple(diagnostics),
         node_count=node_count,
         complete=complete,
+        structures=tuple(sorted(structures, key=lambda value: (
+            value.span.start_byte, -value.span.end_byte, value.name, value.kind
+        ))),
     )
 
 
