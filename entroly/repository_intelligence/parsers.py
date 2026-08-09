@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import FileRecord, RepositoryLimits, Symbol, normalize_relative
+from ..tree_sitter_support import (
+    LANGUAGE_BY_SUFFIX,
+    StructuralSpan,
+    extract_structural_spans,
+)
 
-SOURCE_SUFFIXES = frozenset({".py", ".pyi", ".rs", ".js", ".jsx", ".ts", ".tsx"})
+SOURCE_SUFFIXES = frozenset(LANGUAGE_BY_SUFFIX)
 IGNORED_DIRS = frozenset(
     {
         ".git", ".hg", ".svn", ".mypy_cache", ".pytest_cache", ".ruff_cache",
@@ -58,11 +63,7 @@ def module_name(path: str) -> str:
 
 
 def _language(path: Path) -> str:
-    return {
-        ".py": "python", ".pyi": "python", ".rs": "rust",
-        ".js": "javascript", ".jsx": "javascript",
-        ".ts": "typescript", ".tsx": "typescript",
-    }.get(path.suffix.lower(), "unknown")
+    return LANGUAGE_BY_SUFFIX.get(path.suffix.lower(), "unknown")
 
 
 def _is_test_path(path: str) -> bool:
@@ -234,6 +235,44 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
     )
 
 
+def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> ParsedFile:
+    """Use exact parser spans while retaining conservative dependency signals."""
+    conservative = _parse_conservative(path, text, raw, language)
+    spans = extract_structural_spans(text, path)
+    if not spans:
+        return conservative
+
+    symbols: list[Symbol] = []
+    active: list[tuple[Symbol, StructuralSpan]] = []
+    for span in sorted(spans, key=lambda item: (item.start_byte, -item.end_byte)):
+        while active and span.start_byte >= active[-1][1].end_byte:
+            active.pop()
+        parent = (
+            active[-1][0]
+            if active and span.end_byte <= active[-1][1].end_byte
+            else None
+        )
+        qualified = f"{parent.qualified_name}.{span.name}" if parent else span.name
+        kind = "test" if span.name.startswith(("test_", "test")) else span.kind
+        # Preserve the v1 index identity contract used by call-edge resolution.
+        if language == "rust" and kind == "function":
+            kind = "fn"
+        symbol = Symbol(
+            _symbol_id(path, qualified, kind), path, span.name, qualified, kind,
+            span.start_line, span.end_line, language,
+            parent.symbol_id if parent else None,
+        )
+        symbols.append(symbol)
+        active.append((symbol, span))
+    return ParsedFile(
+        conservative.record,
+        symbols,
+        conservative.imports,
+        conservative.import_aliases,
+        conservative.calls,
+    )
+
+
 def scan_repository(
     root: Path,
     limits: RepositoryLimits,
@@ -272,7 +311,7 @@ def scan_repository(
             if language == "python":
                 item = _parse_python(relative_hint, text, raw)
             else:
-                item = _parse_conservative(relative_hint, text, raw, language)
+                item = _parse_parser_backed(relative_hint, text, raw, language)
             remaining = max(0, limits.max_symbols - symbol_count)
             if len(item.symbols) > remaining:
                 item.symbols[:] = item.symbols[:remaining]

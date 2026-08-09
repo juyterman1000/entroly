@@ -378,6 +378,27 @@ def _extract_blocks_generic(source: str, file_path: str = "") -> list[CodeBlock]
 
 def extract_blocks(source: str, file_path: str = "") -> list[CodeBlock]:
     """Extract code blocks from source, using language-appropriate parser."""
+    try:
+        from .tree_sitter_support import extract_structural_spans
+
+        spans = extract_structural_spans(source, file_path)
+    except Exception:
+        spans = None
+    if spans:
+        return [
+            CodeBlock(
+                name=span.name,
+                kind=span.kind,
+                start_line=span.start_line,
+                end_line=span.end_line,
+                source=span.source,
+                signature=span.signature,
+                docstring="",
+                indent=span.indent,
+                token_estimate=max(1, int(len(span.source) / _CHARS_PER_TOKEN) + 1),
+            )
+            for span in spans
+        ]
     ext = os.path.splitext(file_path)[1].lower() if file_path else ""
     if ext in (".py", ".pyi", ".pyw"):
         return _extract_blocks_python(source, file_path)

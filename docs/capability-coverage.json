@@ -265,6 +265,88 @@
       "package_surfaces": [],
       "public_entrypoints": [],
       "limitations": "The measured module is not reachable from a shipped entry point and must not support a production headline."
+    },
+    {
+      "id": "parser_backed_code_intelligence",
+      "status": "beta",
+      "implementation": [
+        "entroly/tree_sitter_support.py",
+        "entroly/semantic_resolution.py",
+        "entroly/repository_intelligence/parsers.py"
+      ],
+      "tests": [
+        "tests/test_tree_sitter_support.py::test_language_map_covers_at_least_twenty_seven_languages",
+        "tests/test_tree_sitter_support.py::test_pack_v1_never_downloads_without_explicit_opt_in"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": [
+        "entroly.semantic_resolution.extract_blocks",
+        "entroly.repository_intelligence.build_repository_index"
+      ],
+      "limitations": "Parser grammars are optional and local-first; languages other than Python retain conservative call and dependency inference."
+    },
+    {
+      "id": "command_aware_shell_evidence",
+      "status": "beta",
+      "implementation": [
+        "entroly/shell_codec.py",
+        "entroly/codecs_builtin.py"
+      ],
+      "tests": [
+        "tests/test_shell_profiles.py::test_profiles_preserve_outcome_evidence",
+        "tests/test_shell_profiles.py::test_shell_codec_recovery_remains_exact_with_profile"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "proxy"],
+      "public_entrypoints": [
+        "entroly.shell_codec.esc_compress",
+        "entroly.codecs_builtin.ShellCodec"
+      ],
+      "limitations": "Profiles recognize bounded command families; unknown commands use generic entropy scoring and exact recovery."
+    },
+    {
+      "id": "framework_request_adapters",
+      "status": "beta",
+      "implementation": [
+        "entroly/integrations/langchain.py",
+        "entroly/integrations/litellm.py",
+        "entroly/integrations/asgi.py",
+        "entroly/integrations/request_adapter.py"
+      ],
+      "tests": [
+        "tests/test_framework_request_adapters.py::test_request_adapter_preserves_controls_and_tool_contracts",
+        "tests/test_langchain_deep_integration.py::test_message_compression_preserves_concrete_type_and_tool_metadata"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "proxy"],
+      "public_entrypoints": [
+        "entroly.integrations.EntrolyCompressor",
+        "entroly.integrations.EntrolyDocumentCompressor",
+        "entroly.integrations.EntrolyLiteLLMCallback",
+        "entroly.integrations.EntrolyASGIMiddleware"
+      ],
+      "limitations": "Adapters preserve tool and provider controls but applications still own provider authentication, routing, and budget choice."
+    },
+    {
+      "id": "provider_image_optimization",
+      "status": "beta",
+      "implementation": [
+        "entroly/image_optimizer.py",
+        "entroly/provider_adapters.py",
+        "entroly/proxy.py"
+      ],
+      "tests": [
+        "tests/test_provider_image_optimization.py::test_default_is_byte_for_byte_preservation",
+        "tests/test_provider_image_optimization.py::test_external_image_url_is_never_fetched_or_changed"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "proxy"],
+      "public_entrypoints": [
+        "entroly.provider_adapters.optimize_provider_images",
+        "ENTROLY_IMAGE_OPTIMIZATION"
+      ],
+      "limitations": "Optimization is explicit opt-in, requires Pillow, handles embedded supported images only, and reports estimated rather than billed tokens."
     }
   ]
 }

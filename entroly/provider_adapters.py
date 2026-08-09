@@ -18,6 +18,7 @@ The adapter is deliberately conservative:
 from __future__ import annotations
 
 import copy
+import base64
 import json
 import re
 from dataclasses import dataclass
@@ -38,6 +39,136 @@ class ProviderRequestAdapterResult:
     prefix_tokens_estimate: int
     new_input_tokens_estimate: int
     expected_output_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderImageOptimizationResult:
+    """Auditable result of an explicit provider-payload image optimization."""
+
+    body: dict[str, Any]
+    examined: int = 0
+    optimized: int = 0
+    preserved: int = 0
+    estimated_tokens_before: int = 0
+    estimated_tokens_after: int = 0
+    reasons: tuple[str, ...] = ()
+
+
+def optimize_provider_images(
+    body: Mapping[str, Any],
+    *,
+    provider: str,
+    enabled: bool = False,
+    model: str = "",
+    max_images: int = 8,
+    max_total_decoded_bytes: int = 20 * 1024 * 1024,
+) -> ProviderImageOptimizationResult:
+    """Optimize embedded provider images only after explicit opt-in.
+
+    External URLs, files, and unknown payload shapes are left untouched.  A
+    malformed image or missing Pillow preserves the original block; no single
+    image can make the request fail.
+    """
+    original = dict(body)
+    if not enabled:
+        return ProviderImageOptimizationResult(original, reasons=("disabled",))
+    if max_images <= 0 or max_total_decoded_bytes <= 0:
+        return ProviderImageOptimizationResult(original, reasons=("limits_disabled",))
+
+    from .image_optimizer import decode_base64_image, optimize_image_bytes
+
+    output = copy.deepcopy(original)
+    examined = optimized_count = preserved = total_bytes = 0
+    before_tokens = after_tokens = 0
+    reasons: list[str] = []
+
+    def transform(encoded: str, detail: str = "high") -> str:
+        nonlocal examined, optimized_count, preserved, total_bytes
+        nonlocal before_tokens, after_tokens
+        if examined >= max_images:
+            return encoded
+        try:
+            data = decode_base64_image(encoded)
+        except Exception:
+            return encoded
+        if total_bytes + len(data) > max_total_decoded_bytes:
+            reasons.append("decoded_byte_limit")
+            return encoded
+        examined += 1
+        total_bytes += len(data)
+        try:
+            changed, decision = optimize_image_bytes(
+                data,
+                provider=provider if provider in {"openai", "anthropic", "gemini"} else "unknown",
+                model=model,
+                detail="low" if detail == "low" else "high",
+                enabled=True,
+            )
+        except Exception as exc:
+            preserved += 1
+            reasons.append(f"{type(exc).__name__}:preserve")
+            return encoded
+        before_tokens += decision.before.estimated_tokens
+        after_tokens += (
+            decision.after.estimated_tokens if decision.after is not None
+            else decision.before.estimated_tokens
+        )
+        reasons.append(decision.reason)
+        if decision.action != "optimize" or changed == data:
+            preserved += 1
+            return encoded
+        optimized_count += 1
+        payload = base64.b64encode(changed).decode("ascii")
+        if encoded.lower().startswith("data:") and "," in encoded:
+            return f"{encoded.split(',', 1)[0]},{payload}"
+        return payload
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+
+        image_url = value.get("image_url")
+        if isinstance(image_url, dict):
+            url = image_url.get("url")
+            if isinstance(url, str) and url.lower().startswith("data:image/"):
+                image_url["url"] = transform(url, str(image_url.get("detail") or value.get("detail") or "high"))
+        elif isinstance(image_url, str) and image_url.lower().startswith("data:image/"):
+            value["image_url"] = transform(image_url, str(value.get("detail") or "high"))
+
+        source = value.get("source")
+        if (
+            isinstance(source, dict)
+            and source.get("type") == "base64"
+            and str(source.get("media_type") or "").startswith("image/")
+            and isinstance(source.get("data"), str)
+        ):
+            source["data"] = transform(source["data"])
+
+        for key in ("inline_data", "inlineData"):
+            inline = value.get(key)
+            if not isinstance(inline, dict):
+                continue
+            mime = inline.get("mime_type") or inline.get("mimeType")
+            if str(mime or "").startswith("image/") and isinstance(inline.get("data"), str):
+                inline["data"] = transform(inline["data"])
+
+        for child in value.values():
+            visit(child)
+
+    visit(output)
+    return ProviderImageOptimizationResult(
+        output,
+        examined=examined,
+        optimized=optimized_count,
+        preserved=preserved,
+        estimated_tokens_before=before_tokens,
+        estimated_tokens_after=after_tokens,
+        reasons=tuple(reasons),
+    )
 
 
 def _text_from_content(value: Any) -> str:
@@ -461,9 +592,11 @@ def render_canonical_request(
 
 
 __all__ = [
+    "ProviderImageOptimizationResult",
     "ProviderRequestAdapterResult",
     "apply_target_same_provider",
     "canonical_request_from_provider_body",
+    "optimize_provider_images",
     "render_canonical_request",
     "rewrite_gemini_model_in_url",
 ]

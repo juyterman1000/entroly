@@ -15,6 +15,10 @@ QCCR_SYMBOLS = (
     "py_qccr_rank_files",
     "py_qccr_select",
 )
+RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (
+    "extract_skeleton",
+    "py_compress_block",
+)
 
 
 @dataclass(frozen=True)

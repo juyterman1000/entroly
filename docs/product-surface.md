@@ -212,7 +212,9 @@ Entroly also ships integration points for teams and agent ecosystems.
 
 | Integration | Code surface | Use |
 |---|---|---|
-| LangChain | `integrations/langchain.py` | Programmatic context optimization in LangChain-style apps |
+| LangChain | `integrations/langchain.py` | Metadata-safe message, stream, async, and retriever compression |
+| LiteLLM callback | `integrations/litellm.py` | Pre-call message compression while preserving tools and provider controls |
+| ASGI middleware | `integrations/asgi.py` | Bounded, fail-open JSON request compression for Python gateways |
 | AgentSkills | `integrations/agentskills.py`, `entroly-wasm/js/agentskills_export.js` | Export reusable skills produced or curated by the runtime |
 | Hermes/events | `integrations/hermes.py` | Event bridge for operational workflows |
 | Team gateways | `integrations/slack_gateway.py`, `discord_gateway.py`, `telegram_gateway.py` | Optional feedback/status channels for teams |
@@ -243,7 +245,13 @@ rendered read in the same MCP session returns a compact opaque handle only when
 the source, read contract, and output digests all match; `fresh=true` expands
 the text again. Structure extraction supports the native engine's recognized
 language families and fails open to full source when it cannot produce a useful
-smaller outline; it is not presented as a concrete-syntax-tree API.
+smaller outline. Installing `entroly[code-intelligence]` adds local-first,
+parser-backed exact structural spans for more than 27 grammars without surprise
+grammar downloads; deeper cross-language semantic call resolution remains bounded.
+
+Embedded image optimization is available through the proxy only after explicit
+`ENTROLY_IMAGE_OPTIMIZATION=1` opt-in and the `entroly[images]` extra. External
+image URLs are never fetched. See [integration boundaries](code-shell-framework-integrations.md).
 
 ## Trust stack
 
