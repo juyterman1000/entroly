@@ -21,6 +21,7 @@ from ..tree_sitter_support import (
     language_for_source,
     validate_structural_syntax,
 )
+from .registry_frontend import RegistryFacts, RegistrySpan, extract_registry_facts
 
 SEMANTIC_IR_SCHEMA_VERSION = "entroly.semantic-ir.v1"
 _MAX_FALLBACK_REGIONS = 2_000
@@ -209,6 +210,17 @@ def _evidence(
     )
 
 
+def _registry_evidence(path: str, span: RegistrySpan) -> SourceEvidence:
+    return SourceEvidence(
+        path=path,
+        start_byte=span.start_byte,
+        end_byte=span.end_byte,
+        sha256=span.evidence_sha256,
+        start_line=span.start_line,
+        end_line=span.end_line,
+    )
+
+
 def _node_id(path: str, kind: str, name: str, start: int, end: int) -> str:
     material = f"{path}\0{kind}\0{name}\0{start}\0{end}".encode("utf-8")
     return "node:" + hashlib.sha256(material).hexdigest()[:24]
@@ -272,6 +284,93 @@ def _semantic_nodes(
                 target_name=node.name,
             ))
         active.append(node)
+    return nodes, edges
+
+
+def _registry_graph(
+    root: SemanticNode,
+    language: str,
+    facts: RegistryFacts,
+) -> tuple[list[SemanticNode], list[SemanticEdge]]:
+    """Materialize normalized parser facts without claiming semantic binding."""
+    nodes: list[SemanticNode] = []
+    edges: list[SemanticEdge] = []
+
+    def add_fact(kind: str, name: str, evidence: SourceEvidence, signature: str = "") -> SemanticNode:
+        node = SemanticNode(
+            node_id=_node_id(
+                evidence.path, kind, name, evidence.start_byte, evidence.end_byte
+            ),
+            kind=kind,
+            name=name,
+            language=language,
+            parent_id=root.node_id,
+            signature=signature,
+            epistemic_class=EpistemicClass.PARSER_VERIFIED,
+            evidence=evidence,
+        )
+        nodes.append(node)
+        edges.append(SemanticEdge(
+            edge_id=_edge_id(root.node_id, "contains", node.node_id, evidence),
+            source_id=root.node_id,
+            relation="contains",
+            target_id=node.node_id,
+            target_name=name,
+            epistemic_class=EpistemicClass.PARSER_VERIFIED,
+            evidence=evidence,
+        ))
+        return node
+
+    for item in facts.imports:
+        evidence = _registry_evidence(root.evidence.path, item.span)
+        node = add_fact("import", item.source, evidence)
+        target_id = "external-module:" + hashlib.sha256(
+            item.source.encode("utf-8", errors="surrogateescape")
+        ).hexdigest()[:24]
+        edges.append(SemanticEdge(
+            edge_id=_edge_id(node.node_id, "imports-source", target_id, evidence),
+            source_id=node.node_id,
+            relation="imports-source",
+            target_id=target_id,
+            target_name=item.source,
+            epistemic_class=EpistemicClass.PARSER_VERIFIED,
+            evidence=evidence,
+        ))
+        for imported_name in item.items:
+            item_target = "external-symbol:" + hashlib.sha256(
+                f"{item.source}\0{imported_name}".encode("utf-8")
+            ).hexdigest()[:24]
+            edges.append(SemanticEdge(
+                edge_id=_edge_id(node.node_id, "imports-name", item_target, evidence),
+                source_id=node.node_id,
+                relation="imports-name",
+                target_id=item_target,
+                target_name=imported_name,
+                epistemic_class=EpistemicClass.PARSER_VERIFIED,
+                evidence=evidence,
+            ))
+
+    for item in facts.exports:
+        evidence = _registry_evidence(root.evidence.path, item.span)
+        node = add_fact("export", item.name, evidence, signature=item.kind)
+        edges.append(SemanticEdge(
+            edge_id=_edge_id(root.node_id, "exports-name", node.node_id, evidence),
+            source_id=root.node_id,
+            relation="exports-name",
+            target_id=node.node_id,
+            target_name=item.name,
+            epistemic_class=EpistemicClass.PARSER_VERIFIED,
+            evidence=evidence,
+        ))
+
+    for item in facts.symbols:
+        evidence = _registry_evidence(root.evidence.path, item.span)
+        add_fact(
+            f"symbol:{item.kind}",
+            item.name,
+            evidence,
+            signature=item.type_annotation,
+        )
     return nodes, edges
 
 
@@ -376,6 +475,35 @@ def _fallback_regions(
     )
 
 
+def _deduplicate_graph(
+    nodes: list[SemanticNode],
+    edges: list[SemanticEdge],
+) -> tuple[list[SemanticNode], list[SemanticEdge]]:
+    node_map = {node.node_id: node for node in nodes}
+    edge_map = {edge.edge_id: edge for edge in edges}
+    return (
+        sorted(
+            node_map.values(),
+            key=lambda item: (
+                item.evidence.start_byte,
+                item.evidence.end_byte,
+                item.kind,
+                item.name,
+                item.node_id,
+            ),
+        ),
+        sorted(
+            edge_map.values(),
+            key=lambda item: (
+                item.evidence.start_byte if item.evidence else -1,
+                item.relation,
+                item.source_id,
+                item.target_id,
+            ),
+        ),
+    )
+
+
 def build_universal_semantic_document(
     source: str,
     file_path: str,
@@ -410,6 +538,13 @@ def build_universal_semantic_document(
     )
     call_report = extract_structural_calls_report(
         source, path, max_bytes=max_bytes, max_nodes=max_nodes
+    )
+    registry_facts = (
+        extract_registry_facts(
+            source, language, max_bytes=max_bytes, max_nodes=max_nodes
+        )
+        if language != "unknown"
+        else None
     )
     parser_available = syntax_valid is not None
     parser_structure = span_report is not None and span_report.complete
@@ -474,9 +609,25 @@ def build_universal_semantic_document(
                 "parser structure unavailable; emitted exact-source heuristic regions"
             )
 
+    if registry_facts is not None:
+        if registry_facts.complete:
+            fact_nodes, fact_edges = _registry_graph(root, language, registry_facts)
+            nodes.extend(fact_nodes)
+            edges.extend(fact_edges)
+        else:
+            diagnostics.append(
+                "registry fact extraction exceeded its node bound; facts were omitted"
+            )
+        for item in registry_facts.diagnostics[:100]:
+            if item.message:
+                diagnostics.append(
+                    f"parser diagnostic ({item.severity}): {item.message}"
+                )
+
     if syntax_valid is False:
         diagnostics.append("parser reported syntax errors")
 
+    nodes, edges = _deduplicate_graph(nodes, edges)
     level = SemanticLevel.STRUCTURE if parser_structure else (
         SemanticLevel.SYNTAX if parser_available else SemanticLevel.SOURCE
     )
@@ -498,7 +649,7 @@ def build_universal_semantic_document(
         capabilities=capabilities,
         nodes=nodes,
         edges=edges,
-        diagnostics=diagnostics,
+        diagnostics=sorted(dict.fromkeys(diagnostics)),
     )
 
 
