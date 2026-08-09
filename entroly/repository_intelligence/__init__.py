@@ -31,7 +31,14 @@ __all__ = [
     "InvalidContextQuery", "InvalidSymbolQuery",
     "RepositoryIntelligenceError", "RepositoryIntelligenceService",
     "UnknownChangedPaths", "build_symbol_graph", "build_verified_context",
-    "verify_context_commitment", "verify_symbol_graph_commitment",
+    "build_repository_index_incremental", "build_verified_program_graph",
+    "build_verified_runtime_overlay", "verify_context_commitment",
+    "build_verified_semantic_overlay",
+    "build_verified_repository_map",
+    "verify_program_graph_commitment", "verify_symbol_graph_commitment",
+    "verify_runtime_overlay_commitment",
+    "verify_semantic_overlay_commitment",
+    "verify_repository_map_commitment",
 ]
 
 
@@ -73,6 +80,23 @@ from .service import (  # noqa: E402
     RepositoryIntelligenceError,
     RepositoryIntelligenceService,
     UnknownChangedPaths,
+)
+from .program_graph import (  # noqa: E402
+    build_verified_program_graph,
+    verify_program_graph_commitment,
+)
+from .incremental import build_repository_index_incremental  # noqa: E402
+from .runtime_overlay import (  # noqa: E402
+    build_verified_runtime_overlay,
+    verify_runtime_overlay_commitment,
+)
+from .semantic_overlay import (  # noqa: E402
+    build_verified_semantic_overlay,
+    verify_semantic_overlay_commitment,
+)
+from .repository_map import (  # noqa: E402
+    build_verified_repository_map,
+    verify_repository_map_commitment,
 )
 from .verified_context import (  # noqa: E402
     build_symbol_graph,

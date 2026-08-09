@@ -293,6 +293,11 @@
         "entroly/repository_intelligence/verified_context.py",
         "entroly/repository_intelligence/graph.py",
         "entroly/repository_intelligence/git_history.py",
+        "entroly/repository_intelligence/incremental.py",
+        "entroly/repository_intelligence/program_graph.py",
+        "entroly/repository_intelligence/repository_map.py",
+        "entroly/repository_intelligence/runtime_overlay.py",
+        "entroly/repository_intelligence/semantic_overlay.py",
         "entroly/repository_intelligence/service.py",
         "entroly/repository_intelligence/mcp.py"
       ],
@@ -303,22 +308,43 @@
         "tests/test_repository_verified_context.py::test_symbol_graph_verifies_call_evidence_and_refuses_tampering",
         "tests/test_repository_verified_context.py::test_symbol_graph_preserves_ambiguous_identity",
         "tests/test_repository_verified_context.py::test_symbol_graph_fails_closed_when_indexed_source_is_stale",
+        "tests/test_repository_program_graph.py::test_program_graph_verifies_control_and_branching_definitions",
+        "tests/test_repository_map.py::test_global_map_ranks_dependency_and_call_hub",
+        "tests/test_repository_map.py::test_map_evidence_is_exact_budgeted_and_tamper_evident",
+        "tests/test_repository_incremental.py::test_incremental_cache_reuses_unchanged_exact_parse_results",
+        "tests/test_repository_runtime_overlay.py::test_runtime_overlay_aggregates_events_and_verifies_source",
+        "tests/test_repository_semantic_overlay.py::test_semantic_overlay_verifies_utf16_locations_and_receipt",
+        "tests/test_code_intelligence_conformance.py::test_shared_code_intelligence_conformance_fixture",
         "tests/test_verified_code_context_benchmark.py::test_verified_code_context_preregistered_matrix"
       ],
       "docs": [
         "docs/verified-code-context.md",
-        "benchmarks/VERIFIED_CODE_CONTEXT_PREREGISTRATION.md"
+        "benchmarks/VERIFIED_CODE_CONTEXT_PREREGISTRATION.md",
+        "benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md"
       ],
       "package_surfaces": ["python-sdk", "mcp", "cli"],
       "public_entrypoints": [
         "entroly.repository_intelligence.RepositoryIntelligenceService.context",
         "entroly.repository_intelligence.RepositoryIntelligenceService.symbol_graph",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.program_graph",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.repository_map",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.runtime_overlay",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.semantic_overlay",
+        "entroly.repository_intelligence.build_repository_index_incremental",
         "entroly.repository_intelligence.build_verified_context",
         "entroly.repository_intelligence.build_symbol_graph",
+        "entroly.repository_intelligence.build_verified_program_graph",
+        "entroly.repository_intelligence.build_verified_repository_map",
+        "entroly.repository_intelligence.build_verified_runtime_overlay",
+        "entroly.repository_intelligence.build_verified_semantic_overlay",
         "entroly.repository_intelligence.verify_context_commitment",
+        "entroly.repository_intelligence.verify_program_graph_commitment",
+        "entroly.repository_intelligence.verify_repository_map_commitment",
+        "entroly.repository_intelligence.verify_runtime_overlay_commitment",
+        "entroly.repository_intelligence.verify_semantic_overlay_commitment",
         "entroly.repository_intelligence.verify_symbol_graph_commitment"
       ],
-      "limitations": "Beta query-time partial graph with exact evidence, receipts, and opt-in local Git history; compiler/LSP type resolution, control/data flow, runtime traces, incremental persistence, and broad external quality benchmarks are not yet implemented."
+      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Runtime events require an external tracer, incremental caching reuses parsing but rebuilds global edges and PageRank, and native compiler/LSP execution, interprocedural data flow, and broad external quality benchmarks remain future work."
     },
     {
       "id": "command_aware_shell_evidence",

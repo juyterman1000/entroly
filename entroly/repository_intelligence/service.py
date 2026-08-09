@@ -7,10 +7,14 @@ import os
 import threading
 from collections import Counter
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
 
 from .graph import analyze_change_impact, localize_tests
 from .models import RepositoryIndex, RepositoryLimits, normalize_relative
+from .program_graph import build_verified_program_graph
+from .repository_map import build_verified_repository_map
+from .runtime_overlay import build_verified_runtime_overlay
+from .semantic_overlay import build_verified_semantic_overlay
 from .verified_context import build_symbol_graph, build_verified_context
 
 SERVICE_SCHEMA_VERSION = "entroly.repository-service.v2"
@@ -21,6 +25,7 @@ _MAX_IMPACT_PATHS = 5_000
 _MAX_TEST_CANDIDATES = 100
 _MAX_CONTEXT_TOKENS = 32_768
 _MAX_CONTEXT_FRAGMENTS = 100
+_MAX_MAP_ENTRIES = 1_000
 
 
 class RepositoryIntelligenceError(ValueError):
@@ -108,13 +113,30 @@ class RepositoryIntelligenceService:
         *,
         limits: RepositoryLimits | None = None,
         builder: Builder | None = None,
+        cache_dir: str | os.PathLike[str] | None = None,
     ) -> None:
         resolved = Path(root).expanduser().resolve(strict=True)
         if not resolved.is_dir():
             raise NotADirectoryError(resolved)
         self.root = resolved
         self.limits = limits or RepositoryLimits()
-        self._builder = builder
+        if builder is not None and cache_dir is not None:
+            raise ValueError("builder and cache_dir are mutually exclusive")
+        if cache_dir is not None:
+            from .incremental import build_repository_index_incremental
+
+            selected_cache = Path(cache_dir).expanduser().resolve()
+
+            def incremental_builder(root: Path, *, limits: RepositoryLimits):
+                return build_repository_index_incremental(
+                    root,
+                    cache_dir=selected_cache,
+                    limits=limits,
+                )
+
+            self._builder = incremental_builder
+        else:
+            self._builder = builder
         self._lock = threading.RLock()
         self._build_lock = threading.Lock()
         self._index: RepositoryIndex | None = None
@@ -309,6 +331,30 @@ class RepositoryIntelligenceService:
         payload["generation"] = generation
         return payload
 
+    def repository_map(
+        self,
+        query: str = "",
+        *,
+        token_budget: int = 2_000,
+        max_entries: int = 100,
+    ) -> dict[str, object]:
+        """Return a verified whole-repository structural priority map."""
+        if not isinstance(query, str):
+            raise InvalidContextQuery("query must be a string")
+        if len(query.strip()) > 4_000:
+            raise InvalidContextQuery("query must be at most 4000 characters")
+        index, digest, generation = self._snapshot()
+        payload = build_verified_repository_map(
+            self.root,
+            index,
+            query,
+            index_digest=digest,
+            token_budget=max(128, min(int(token_budget), _MAX_CONTEXT_TOKENS)),
+            max_entries=max(1, min(int(max_entries), _MAX_MAP_ENTRIES)),
+        )
+        payload["generation"] = generation
+        return payload
+
     def symbol_graph(
         self,
         symbol_query: str,
@@ -335,6 +381,68 @@ class RepositoryIntelligenceService:
             direction=direction,
             max_depth=max_depth,
             limit=limit,
+        )
+        payload["generation"] = generation
+        return payload
+
+    def program_graph(
+        self,
+        symbol_query: str,
+        *,
+        limit: int = 1_000,
+    ) -> dict[str, object]:
+        """Return verified intraprocedural control and data-flow evidence."""
+        if not isinstance(symbol_query, str) or not symbol_query.strip():
+            raise InvalidSymbolQuery("symbol query must not be empty")
+        if len(symbol_query.strip()) > 1_000:
+            raise InvalidSymbolQuery("symbol query must be at most 1000 characters")
+        index, digest, generation = self._snapshot()
+        payload = build_verified_program_graph(
+            self.root,
+            index,
+            symbol_query,
+            index_digest=digest,
+            limit=max(16, min(int(limit), 10_000)),
+        )
+        payload["generation"] = generation
+        return payload
+
+    def runtime_overlay(
+        self,
+        events: Iterable[Mapping[str, object]],
+        *,
+        producer: str = "external-trace",
+        max_events: int = 100_000,
+    ) -> dict[str, object]:
+        """Bind external trace events to verified source without values."""
+        index, digest, generation = self._snapshot()
+        payload = build_verified_runtime_overlay(
+            self.root,
+            index,
+            events,
+            index_digest=digest,
+            producer=producer,
+            max_events=max(1, min(int(max_events), 1_000_000)),
+        )
+        payload["generation"] = generation
+        return payload
+
+    def semantic_overlay(
+        self,
+        relationships: Iterable[Mapping[str, object]],
+        *,
+        provider: str,
+        max_relationships: int = 100_000,
+    ) -> dict[str, object]:
+        """Verify externally reported LSP/compiler semantic locations."""
+        index, digest, generation = self._snapshot()
+        payload = build_verified_semantic_overlay(
+            self.root,
+            index,
+            relationships,
+            index_digest=digest,
+            provider=provider,
+            max_relationships=max(1, min(int(max_relationships), 1_000_000)),
         )
         payload["generation"] = generation
         return payload

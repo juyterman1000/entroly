@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from entroly.repository_intelligence.cli import run
@@ -88,6 +89,48 @@ def test_graph_returns_verified_static_callers(tmp_path: Path) -> None:
         "execute",
         "invoke",
     }
+
+
+def test_map_returns_verified_budgeted_repository_priority(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "map", "--query", "execute",
+        "--token-budget", "256",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-repository-map.v1"
+    assert payload["command"] == "map"
+    assert payload["entries"][0]["qualified_name"] == "execute"
+    assert payload["budget"]["estimated_tokens"] <= 256
+
+
+def test_program_returns_verified_control_and_data_flow(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "program", "--symbol", "invoke",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-program-graph.v1"
+    assert payload["command"] == "program"
+    assert payload["resolution"] == "resolved"
+    assert payload["receipt"]["freshness"].startswith("verified")
+
+
+def test_runtime_binds_json_events_without_values(tmp_path: Path) -> None:
+    _project(tmp_path)
+    events = tmp_path / "events.json"
+    events.write_text(json.dumps([
+        {"path": "pkg/source.py", "line": 2, "event": "return", "value": "secret"},
+    ]), encoding="utf-8")
+    code, payload = run([
+        "--root", str(tmp_path), "runtime", "--events-json", str(events),
+        "--producer", "pytest",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-runtime-overlay.v1"
+    assert payload["command"] == "runtime"
+    assert payload["observations"][0]["symbol_id"].endswith("::execute::function")
+    assert "secret" not in json.dumps(payload)
 
 
 def test_unknown_changed_path_fails_visibly(tmp_path: Path) -> None:

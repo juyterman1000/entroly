@@ -7,6 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .models import FileRecord, RepositoryLimits, Symbol, normalize_relative
 from ..tree_sitter_support import (
@@ -66,6 +67,8 @@ class ParsedCall:
     end_byte: int = 0
     evidence_sha256: str = ""
     parse_backend: str = "conservative"
+    receiver_type: str = ""
+    receiver_binding: str = ""
 
 
 def module_name(path: str) -> str:
@@ -119,6 +122,53 @@ class PythonVisitor(ast.NodeVisitor):
         self.aliases: dict[str, str] = {}
         self.calls: list[ParsedCall] = []
         self.scope: list[Symbol] = []
+        self.type_scopes: list[dict[str, tuple[str, str]]] = [{}]
+
+    @staticmethod
+    def _annotation_name(node: ast.AST | None) -> str:
+        if node is None:
+            return ""
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            owner = PythonVisitor._annotation_name(node.value)
+            return f"{owner}.{node.attr}" if owner else node.attr
+        if isinstance(node, ast.Subscript):
+            base = PythonVisitor._annotation_name(node.value)
+            # Optional[T], list[T], and similar wrappers describe the
+            # container, not the receiver's concrete method owner. Union-like
+            # optional wrappers are safely unwrapped only when one type is clear.
+            if base in {"Optional", "typing.Optional"}:
+                return PythonVisitor._annotation_name(node.slice)
+            return base
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value.strip(" '\"")
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+            left = PythonVisitor._annotation_name(node.left)
+            right = PythonVisitor._annotation_name(node.right)
+            non_none = [item for item in (left, right) if item not in {"", "None"}]
+            return non_none[0] if len(non_none) == 1 else ""
+        return ""
+
+    def _lookup_type(self, name: str) -> tuple[str, str]:
+        for scope in reversed(self.type_scopes):
+            if name in scope:
+                return scope[name]
+        return "", ""
+
+    def _expression_type(self, node: ast.AST) -> tuple[str, str]:
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                return node.func.id, "constructor-assignment"
+            if isinstance(node.func, ast.Attribute):
+                owner = self._annotation_name(node.func.value)
+                if owner:
+                    return f"{owner}.{node.func.attr}", "constructor-assignment"
+        if isinstance(node, ast.Name):
+            inferred, _binding = self._lookup_type(node.id)
+            if inferred:
+                return inferred, "assignment-propagation"
+        return "", ""
 
     def _byte_range(self, node: ast.AST) -> tuple[int, int]:
         line = max(1, int(getattr(node, "lineno", 1)))
@@ -157,7 +207,9 @@ class PythonVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         symbol = self._symbol(node, node.name, "class")
         self.scope.append(symbol)
+        self.type_scopes.append({})
         self.generic_visit(node)
+        self.type_scopes.pop()
         self.scope.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -165,8 +217,20 @@ class PythonVisitor(ast.NodeVisitor):
         if node.name.startswith("test_"):
             kind = "test"
         symbol = self._symbol(node, node.name, kind)
+        local_types: dict[str, tuple[str, str]] = {}
+        arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+        for argument in arguments:
+            annotation = self._annotation_name(argument.annotation)
+            if annotation:
+                local_types[argument.arg] = (annotation, "annotation")
+        if self.scope and self.scope[-1].kind == "class" and arguments:
+            first = arguments[0].arg
+            if first in {"self", "cls"}:
+                local_types[first] = (self.scope[-1].qualified_name, "implicit-self")
         self.scope.append(symbol)
+        self.type_scopes.append(local_types)
         self.generic_visit(node)
+        self.type_scopes.pop()
         self.scope.pop()
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -185,6 +249,24 @@ class PythonVisitor(ast.NodeVisitor):
                 local = alias.asname or alias.name
                 self.aliases[local] = f"{target}.{alias.name}" if target else alias.name
 
+    def visit_Assign(self, node: ast.Assign) -> None:
+        inferred, binding = self._expression_type(node.value)
+        if inferred:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.type_scopes[-1][target.id] = (inferred, binding)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.target, ast.Name):
+            inferred = self._annotation_name(node.annotation)
+            binding = "annotation"
+            if not inferred and node.value is not None:
+                inferred, binding = self._expression_type(node.value)
+            if inferred:
+                self.type_scopes[-1][node.target.id] = (inferred, binding)
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
         owner: str | None = None
         name: str | None = None
@@ -197,6 +279,9 @@ class PythonVisitor(ast.NodeVisitor):
         if name:
             target = f"{owner}.{name}" if owner else name
             caller = self.scope[-1].symbol_id if self.scope else None
+            receiver_type, receiver_binding = (
+                self._lookup_type(owner) if owner else ("", "")
+            )
             start, end = self._byte_range(node)
             self.calls.append(ParsedCall(
                 caller,
@@ -206,6 +291,8 @@ class PythonVisitor(ast.NodeVisitor):
                 end,
                 hashlib.sha256(self.raw[start:end]).hexdigest(),
                 "python-ast",
+                receiver_type,
+                receiver_binding,
             ))
         self.generic_visit(node)
 
@@ -372,6 +459,9 @@ def _attribute_structural_calls(
 def scan_repository(
     root: Path,
     limits: RepositoryLimits,
+    *,
+    load_cached: Callable[[str, str], ParsedFile | None] | None = None,
+    store_cached: Callable[[str, str, ParsedFile], None] | None = None,
 ) -> tuple[dict[str, ParsedFile], list[str]]:
     parsed: dict[str, ParsedFile] = {}
     diagnostics: list[str] = []
@@ -403,11 +493,16 @@ def scan_repository(
             except OSError as exc:
                 diagnostics.append(f"failed to read {relative_hint}: {type(exc).__name__}")
                 continue
-            language = _language(resolved)
-            if language == "python":
-                item = _parse_python(relative_hint, text, raw)
-            else:
-                item = _parse_parser_backed(relative_hint, text, raw, language)
+            source_sha256 = hashlib.sha256(raw).hexdigest()
+            item = load_cached(relative_hint, source_sha256) if load_cached else None
+            if item is None:
+                language = _language(resolved)
+                if language == "python":
+                    item = _parse_python(relative_hint, text, raw)
+                else:
+                    item = _parse_parser_backed(relative_hint, text, raw, language)
+                if store_cached:
+                    store_cached(relative_hint, source_sha256, item)
             remaining = max(0, limits.max_symbols - symbol_count)
             if len(item.symbols) > remaining:
                 item.symbols[:] = item.symbols[:remaining]

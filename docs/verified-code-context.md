@@ -15,6 +15,25 @@ python -m entroly.repository_intelligence --root . context `
 The same operation is exposed by the focused repository MCP server as
 `repository_verified_context`.
 
+For an architectural overview rather than one task neighborhood, the `map`
+command and `repository_map` MCP tool run deterministic personalized PageRank
+over typed file, containment, import, and resolved-call edges:
+
+```powershell
+python -m entroly.repository_intelligence --root . map `
+  --query "payment authorization" `
+  --token-budget 2000 `
+  --max-entries 100
+```
+
+With no query, the restart distribution is uniform and dependency/call hubs
+rise globally. With a query, 85% of restart weight follows exact lexical
+relevance while 15% preserves the repository backbone. Every returned anchor
+is an exact source signature with a fresh file digest, byte-span digest,
+stable weak-component identity, transparent score, and token estimate. A
+stale or non-unique signature is omitted rather than guessed. The receipt can
+be checked offline with `verify_repository_map_commitment()`.
+
 For a known symbol, the `graph` command and `repository_symbol_graph` MCP tool
 trace bounded static callers, callees, or both:
 
@@ -30,6 +49,41 @@ Ambiguous matches return candidates and no graph. Before traversal, Entroly
 rechecks source-file hashes and every traversed call-site span; stale or
 hash-mismatched evidence is omitted. The graph receipt can be checked with
 `verify_symbol_graph_commitment()`.
+
+Python functions and methods also expose a verified intraprocedural program
+graph:
+
+```powershell
+python -m entroly.repository_intelligence --root . program `
+  --symbol "payments.service.charge_card"
+```
+
+The graph models branches, loops, jumps, returns, raises, `with`, `match`, and
+`try`/handler paths. A fixed-point reaching-definition analysis labels an edge
+`must-reach` only when the variable is definitely defined on every modeled
+predecessor and has one reaching definition; branch-dependent definitions are
+`may-reach`. Every source node and variable occurrence has an exact byte span
+and digest. Unsupported bindings remain diagnostics or unresolved uses.
+
+External tracing and coverage tools can contribute value-free runtime events:
+
+```powershell
+python -m entroly.repository_intelligence --root . runtime `
+  --events-json trace-events.json `
+  --producer pytest
+```
+
+Only workspace-relative path, line, event kind, and count are accepted. Values
+and exception payloads are discarded. Events are aggregated and attached to
+the narrowest enclosing symbol only after the source-file and line-span hashes
+verify. Entroly does not execute the project to obtain these observations.
+
+Large repositories may opt into per-file incremental parsing with the global
+`--cache-dir` option. Cache keys commit to the workspace-relative path, source
+digest, parser environment, Python version, and cache schema. Corrupt entries
+fail open and are atomically rebuilt. File discovery and global relationship
+resolution still run on every index build; this is an incremental parse cache,
+not a claim of fully incremental compiler analysis.
 
 ## What is verified
 
@@ -49,6 +103,11 @@ inventing an edge. Immediately before returning source, the file is re-read and
 checked against the indexed hash. Changed files are omitted with a visible
 `stale-index` reason.
 
+For Python member calls, annotations, constructor assignments, local type
+propagation, and `self` can select a concrete class member. An untyped receiver
+is never bound merely because one same-named method exists; same-file member
+candidates are returned as `untyped-receiver-member` negative evidence.
+
 The receipt commits to the query, fragments, relationships, unresolved
 evidence, retrieval policy, token estimate, and omissions. Operational
 `generation` and CLI `command` fields are intentionally outside that
@@ -63,7 +122,10 @@ not safety or correctness.
 The selector combines lexical entry-point scoring with a bounded, query-time
 partial graph. It expands exact containment, call/caller, and resolved file
 dependency relationships under a token budget. Oversized symbols degrade to an
-exact signature slice; unverifiable or stale slices fail closed.
+exact signature slice; unverifiable or stale slices fail closed. The
+whole-repository map complements this task graph with typed personalized
+PageRank; it ranks only relationships the index actually resolved and never
+promotes unresolved calls.
 
 History retrieval is explicit opt-in. When requested, Entroly runs a bounded
 local `git log` over selected workspace-relative paths with optional Git locks
@@ -103,6 +165,20 @@ superiority.
 
 Parser grammars remain optional. Python uses its standard AST; other supported
 languages use cached tree-sitter grammars when available and conservative
-fallbacks otherwise. Compiler/LSP-grade type-directed dispatch, control/data
-flow, runtime traces, incremental persistence, and broad external benchmarks
+fallbacks otherwise. Python receiver annotations, constructor assignments,
+local propagation, and `self` dispatch are type-informed static inference, not
+compiler/LSP proof. Verified control/data flow is currently Python-only;
+runtime evidence must be supplied by an external tracer; persistence reuses
+per-file parsing but rebuilds global relationships. Repository-map PageRank is
+recomputed from that snapshot rather than incrementally maintained.
+Interprocedural data flow,
+broader-language program graphs, and broad external task-quality benchmarks
 remain future work and must not be claimed as implemented.
+
+External language servers and compiler indexers can supply definition,
+declaration, implementation, reference, type-definition, and override
+relationships through the `semantic` command or `repository_semantic_overlay`
+MCP tool. Entroly interprets positions using the LSP UTF-16 convention,
+converts them to exact UTF-8 byte ranges, and verifies both endpoints against
+fresh indexed source. The provider remains explicitly untrusted: this proves
+which source spans it connected, not that its semantic conclusion is correct.

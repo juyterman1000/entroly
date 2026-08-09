@@ -227,6 +227,10 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "refresh_repository_index",
         "repository_change_impact",
         "repository_summary",
+        "repository_program_graph",
+        "repository_map",
+        "repository_runtime_overlay",
+        "repository_semantic_overlay",
         "repository_symbol_graph",
         "repository_tests_for_changes",
         "repository_verified_context",
@@ -254,6 +258,23 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert graph["resolution"] == "resolved"
     assert graph["receipt"]["remote_calls"] == 0
     assert str(tmp_path) not in json.dumps(graph)
+    repository_map = json.loads(mcp.tools["repository_map"]("execute"))
+    assert repository_map["schema_version"] == "entroly.verified-repository-map.v1"
+    assert repository_map["entries"][0]["qualified_name"] == "execute"
+    assert repository_map["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(repository_map)
+    program = json.loads(mcp.tools["repository_program_graph"]("execute"))
+    assert program["schema_version"] == "entroly.verified-program-graph.v1"
+    assert program["resolution"] == "resolved"
+    assert program["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(program)
+    runtime = json.loads(mcp.tools["repository_runtime_overlay"]([
+        {"path": "pkg/source.py", "line": 1, "event": "call"},
+    ]))
+    assert runtime["schema_version"] == "entroly.verified-runtime-overlay.v1"
+    assert runtime["observations"][0]["symbol_id"].endswith("::execute::function")
+    assert runtime["receipt"]["event_values_collected"] is False
+    assert str(tmp_path) not in json.dumps(runtime)
 
 
 def test_mcp_unknown_path_returns_machine_readable_error(tmp_path: Path, monkeypatch) -> None:

@@ -49,6 +49,7 @@ def create_repository_mcp_server(
     root: str | os.PathLike[str] | None = None,
     *,
     limits: RepositoryLimits | None = None,
+    cache_dir: str | os.PathLike[str] | None = None,
 ):
     """Create a workspace-fixed MCP server with no caller-controlled root."""
     try:
@@ -56,7 +57,11 @@ def create_repository_mcp_server(
     except ImportError:
         raise RuntimeError("MCP SDK not installed. Install with: pip install mcp") from None
 
-    service = RepositoryIntelligenceService(_configured_root(root), limits=limits)
+    service = RepositoryIntelligenceService(
+        _configured_root(root),
+        limits=limits,
+        cache_dir=cache_dir,
+    )
     mcp = FastMCP(
         "entroly-repository-intelligence",
         instructions=(
@@ -144,6 +149,68 @@ def create_repository_mcp_server(
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_symbol_graph")
+
+    @mcp.tool()
+    def repository_map(
+        query: str = "",
+        token_budget: int = 2_000,
+        max_entries: int = 100,
+    ) -> str:
+        """Rank a receipt-backed structural map across the fixed repository."""
+        try:
+            return _json(service.repository_map(
+                query,
+                token_budget=max(128, min(int(token_budget), 32_768)),
+                max_entries=max(1, min(int(max_entries), 1_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_map")
+
+    @mcp.tool()
+    def repository_program_graph(
+        symbol_query: str,
+        limit: int = 1_000,
+    ) -> str:
+        """Return verified Python control flow and reaching definitions."""
+        try:
+            return _json(service.program_graph(
+                symbol_query,
+                limit=max(16, min(int(limit), 10_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_program_graph")
+
+    @mcp.tool()
+    def repository_runtime_overlay(
+        events: list[dict[str, object]],
+        producer: str = "external-trace",
+        max_events: int = 100_000,
+    ) -> str:
+        """Bind value-free runtime events to fresh source and symbol evidence."""
+        try:
+            return _json(service.runtime_overlay(
+                events,
+                producer=producer,
+                max_events=max(1, min(int(max_events), 1_000_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_runtime_overlay")
+
+    @mcp.tool()
+    def repository_semantic_overlay(
+        relationships: list[dict[str, object]],
+        provider: str,
+        max_relationships: int = 100_000,
+    ) -> str:
+        """Verify external LSP/compiler ranges before trusting semantic edges."""
+        try:
+            return _json(service.semantic_overlay(
+                relationships,
+                provider=provider,
+                max_relationships=max(1, min(int(max_relationships), 1_000_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_semantic_overlay")
 
     @mcp.tool()
     def refresh_repository_index() -> str:
