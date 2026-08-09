@@ -1,19 +1,14 @@
-"""Language-neutral, parser-verified control-shape extraction.
+"""Language-neutral, parser-verified control-shape view.
 
-This module deliberately stops short of claiming a control-flow graph or data-
-flow proof. Across arbitrary Tree-sitter grammars we can verify that concrete
-source spans are branches, loops, calls, assignments, jumps, or terminals by
-syntax shape. We cannot generically prove path feasibility, aliasing, binding,
-or reaching definitions. Those stronger facts belong to compiler/LSP/static-
-analysis adapters and carry stronger epistemic classes elsewhere.
+The raw parser work is owned by :mod:`syntax_session`. This module converts the
+shared bounded scan into a stable public graph contract without reparsing source.
+It deliberately stops short of claiming a control-flow graph or data-flow proof.
 """
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
-from typing import Any
 
-from ..tree_sitter_support import _get_local_parser, language_for_source
+from .syntax_session import SyntaxScan, build_syntax_session, scan_syntax_session
 
 UNIVERSAL_FLOW_SCHEMA_VERSION = "entroly.universal-syntactic-flow.v1"
 
@@ -94,50 +89,44 @@ class SyntacticFlowGraph:
         }
 
 
-def _kind(node_type: str) -> str | None:
-    value = node_type.casefold().replace("-", "_")
-    if not value or value in {"program", "source_file", "module"}:
-        return None
-    if any(token in value for token in ("if_statement", "if_expression", "conditional_expression")):
-        return "branch"
-    if any(token in value for token in (
-        "switch_statement", "switch_expression", "match_expression", "match_statement",
-        "case_statement", "case_clause", "match_arm", "when_entry",
-    )):
-        return "branch"
-    if any(token in value for token in (
-        "for_statement", "for_expression", "for_in_statement", "while_statement",
-        "while_expression", "do_statement", "loop_expression", "repeat_statement",
-    )):
-        return "loop"
-    if any(token in value for token in (
-        "return_statement", "return_expression", "yield_statement", "yield_expression",
-        "throw_statement", "throw_expression", "raise_statement",
-    )):
-        return "terminal"
-    if any(token in value for token in (
-        "break_statement", "break_expression", "continue_statement", "continue_expression",
-        "goto_statement",
-    )):
-        return "jump"
-    if "assignment" in value or value in {"augmented_assignment", "assignment_expression"}:
-        return "assignment"
-    if any(token in value for token in (
-        "variable_declaration", "variable_declarator", "let_declaration",
-        "const_declaration", "declaration_statement", "init_declarator",
-    )):
-        return "declaration"
-    if any(token in value for token in (
-        "call_expression", "call", "function_call", "invocation_expression",
-        "method_invocation", "method_call_expression",
-    )):
-        return "call"
-    return None
-
-
-def _node_id(path: str, kind: str, grammar_type: str, start: int, end: int) -> str:
-    material = f"{path}\0{kind}\0{grammar_type}\0{start}\0{end}".encode("utf-8")
-    return "syntax-flow:" + hashlib.sha256(material).hexdigest()[:24]
+def build_syntactic_flow_graph_from_scan(scan: SyntaxScan) -> SyntacticFlowGraph:
+    """Project one already-computed syntax scan into the flow-shape contract."""
+    nodes = tuple(
+        SyntacticFlowNode(
+            node_id=item.node_id,
+            kind=item.kind,
+            grammar_type=item.grammar_type,
+            start_byte=item.start_byte,
+            end_byte=item.end_byte,
+            start_line=item.start_line,
+            end_line=item.end_line,
+            evidence_sha256=item.evidence_sha256,
+            parent_id=item.parent_id,
+        )
+        for item in scan.flow_shapes
+    )
+    known = {node.node_id for node in nodes}
+    edges = tuple(sorted(
+        (
+            SyntacticFlowEdge(
+                source_id=node.parent_id,
+                target_id=node.node_id,
+                relation="contains-flow-shape",
+            )
+            for node in nodes
+            if node.parent_id is not None and node.parent_id in known
+        ),
+        key=lambda item: (item.source_id, item.target_id, item.relation),
+    ))
+    return SyntacticFlowGraph(
+        language=scan.language,
+        source_sha256=scan.source_sha256,
+        nodes=nodes,
+        edges=edges,
+        complete=scan.flow_complete,
+        nodes_visited=scan.nodes_visited,
+        max_nodes=scan.max_nodes,
+    )
 
 
 def build_syntactic_flow_graph(
@@ -148,96 +137,16 @@ def build_syntactic_flow_graph(
     max_nodes: int = 100_000,
     max_flow_nodes: int = 20_000,
 ) -> SyntacticFlowGraph | None:
-    """Return exact flow-relevant syntax spans for any available grammar.
-
-    A bounded traversal that reaches ``max_nodes`` is explicitly marked
-    incomplete. Consumers must not treat the absence of a node/edge in an
-    incomplete graph as negative evidence.
-    """
-    language = language_for_source(file_path, source)
-    if not language or not source.strip():
+    """Standalone convenience wrapper using one parser invocation/traversal."""
+    session = build_syntax_session(source, file_path, max_bytes=max_bytes)
+    if session is None:
         return None
-    raw = source.encode("utf-8", errors="surrogateescape")
-    if len(raw) > max_bytes:
-        return None
-    parser = _get_local_parser(language)
-    if parser is None:
-        return None
-    try:
-        tree = parser.parse(raw)
-    except Exception:
-        return None
-    root = getattr(tree, "root_node", None)
-    if root is None:
-        return None
-
-    traversal_limit = max(1, min(int(max_nodes), 1_000_000))
-    flow_limit = max(1, min(int(max_flow_nodes), 200_000))
-    stack: list[tuple[Any, str | None]] = [(root, None)]
-    nodes: list[SyntacticFlowNode] = []
-    edges: list[SyntacticFlowEdge] = []
-    seen_nodes: set[str] = set()
-    seen_edges: set[tuple[str, str, str]] = set()
-    visited = 0
-    traversal_exhausted = False
-    flow_exhausted = False
-
-    while stack:
-        if visited >= traversal_limit:
-            traversal_exhausted = True
-            break
-        current, semantic_parent = stack.pop()
-        visited += 1
-        grammar_type = str(getattr(current, "type", ""))
-        kind = _kind(grammar_type)
-        next_parent = semantic_parent
-        if kind is not None and not bool(getattr(current, "is_error", False)):
-            start = int(getattr(current, "start_byte", 0))
-            end = int(getattr(current, "end_byte", 0))
-            if 0 <= start < end <= len(raw):
-                node_id = _node_id(file_path, kind, grammar_type, start, end)
-                if node_id not in seen_nodes:
-                    if len(nodes) >= flow_limit:
-                        flow_exhausted = True
-                        break
-                    seen_nodes.add(node_id)
-                    evidence = hashlib.sha256(raw[start:end]).hexdigest()
-                    start_point = getattr(current, "start_point", (0, 0))
-                    end_point = getattr(current, "end_point", start_point)
-                    node = SyntacticFlowNode(
-                        node_id=node_id,
-                        kind=kind,
-                        grammar_type=grammar_type,
-                        start_byte=start,
-                        end_byte=end,
-                        start_line=int(start_point[0]) + 1,
-                        end_line=int(end_point[0]) + 1,
-                        evidence_sha256=evidence,
-                        parent_id=semantic_parent,
-                    )
-                    nodes.append(node)
-                    if semantic_parent is not None:
-                        edge_key = (semantic_parent, node_id, "contains-flow-shape")
-                        if edge_key not in seen_edges:
-                            seen_edges.add(edge_key)
-                            edges.append(SyntacticFlowEdge(*edge_key))
-                next_parent = node_id
-
-        children = list(getattr(current, "named_children", ()) or getattr(current, "children", ()))
-        stack.extend((child, next_parent) for child in reversed(children))
-
-    complete = not traversal_exhausted and not flow_exhausted and not stack
-    nodes.sort(key=lambda item: (item.start_byte, item.end_byte, item.kind, item.node_id))
-    edges.sort(key=lambda item: (item.source_id, item.target_id, item.relation))
-    return SyntacticFlowGraph(
-        language=language,
-        source_sha256=hashlib.sha256(raw).hexdigest(),
-        nodes=tuple(nodes),
-        edges=tuple(edges),
-        complete=complete,
-        nodes_visited=visited,
-        max_nodes=traversal_limit,
+    scan = scan_syntax_session(
+        session,
+        max_nodes=max_nodes,
+        max_flow_shapes=max_flow_nodes,
     )
+    return build_syntactic_flow_graph_from_scan(scan)
 
 
 __all__ = [
@@ -246,4 +155,5 @@ __all__ = [
     "SyntacticFlowGraph",
     "SyntacticFlowNode",
     "build_syntactic_flow_graph",
+    "build_syntactic_flow_graph_from_scan",
 ]
