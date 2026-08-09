@@ -25,7 +25,7 @@ AST and Tree-sitter structure, dependency and call graphs, interprocedural flow,
 <p align="center"><sub>~72,000 combined PyPI + npm downloads.</sub></p>
 
 <p align="center">
-  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#advanced-code-intelligence-for-ai-agents">Code intelligence</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#advanced-code-intelligence-for-ai-agents">Code intelligence</a> · <a href="docs/ai-efficiency.html">AI efficiency</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
 </p>
 
 ---
@@ -61,6 +61,11 @@ paid.
 ## Advanced Code Intelligence for AI Agents
 
 **Entroly is a verified code-intelligence and repository-understanding engine for AI coding agents.** It combines parser-backed AST structure with graph reasoning, source verification, architecture intelligence, change analysis, and budget-aware context selection so an agent gets the *right code evidence*, not merely more code.
+
+<p align="center">
+  <img src="docs/assets/entroly-ai-code-intelligence-architecture.svg" width="1000" alt="Entroly verified code intelligence architecture showing source repositories flowing through AST and Tree-sitter parsing, typed repository graphs, interprocedural flow, architecture analysis, verified context selection, and AI coding agents">
+</p>
+<p align="center"><sub>Parser-backed source facts → typed repository graph → flow and architecture intelligence → verified context → AI agent, with exact source spans, freshness, ambiguity, LSP enrichment, semantic changes, and safe-refactor evidence.</sub></p>
 
 Entroly is built to be **one of the world's most advanced open-source code-intelligence systems for AI agents**, with an unusual emphasis on evidence, freshness, bounded reasoning, and fail-closed behavior. Instead of turning a heuristic guess into a fact, Entroly keeps ambiguity and omissions visible and attaches exact source identities to the relationships it claims.
 
@@ -373,6 +378,13 @@ or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 
 ## Docs & community
 
+- **[AI efficiency hub](docs/ai-efficiency.html)** — canonical map for token economics, AI cost optimization, Memory OS, hallucination reduction, guarded model routing, adaptive context, and verified code intelligence.
+- **[AI cost optimization](docs/ai-cost-optimization.html)** — canonical evidence-bounded guide to provider-bound input savings, billing boundaries, and workload-specific measurement.
+- **[Token economics](docs/token-economics.html)** — token saving, context compression, cache-aware context control, and context-window headroom without claiming a universal reduction percentage.
+- **[Memory OS](docs/memory-os.html)** — budget-aware working, episodic, and semantic memory with consolidation, forgetting, persistence, safety, receipts, and verification.
+- **[Hallucination reduction](docs/hallucination-reduction.html)** — WITNESS evidence-support verification with the published faithful HaluEval-QA artifact.
+- **[Guarded model routing](docs/model-routing.html)** — RAVS routing, uncertainty control, learned policies, and fail-closed escalation.
+- **[Adaptive context](docs/adaptive-context.html)** — bounded self-improving context through verified outcomes, memory consolidation, and gated learning.
 - **[Verified Code Context](docs/verified-code-context.md)** — parser-backed repository intelligence, typed graphs, architecture, value flow, LSP enrichment, source verification, and refactoring contracts.
 - **[Code-intelligence conformance](benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md)** — 39 explicit structural, semantic, repository-understanding, freshness, safety, and evidence dimensions.
 - **[Universal Code Intelligence](docs/research/universal-code-intelligence.md)** — design direction for language-open, evidence-backed repository understanding.
