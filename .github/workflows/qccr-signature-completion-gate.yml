@@ -227,8 +227,10 @@ jobs:
       - name: Persist exact validated product integration to PR 296
         if: steps.state.outputs.needs_apply == 'true'
         run: |
-          rm -f entroly-qccr/src/dependency_anchor.rs
+          git reset --hard
+          git clean -fd
           git checkout -B diagnostic/qccr-rendering-20260809 origin/diagnostic/qccr-rendering-20260809
+          git reset --hard origin/diagnostic/qccr-rendering-20260809
           if grep -q '^mod dependency_anchor;' entroly-qccr/src/lib.rs; then
             echo 'Validated product integration already exists; no-op.'
             exit 0
