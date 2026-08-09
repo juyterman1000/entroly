@@ -1,24 +1,24 @@
 """Language-independent, evidence-carrying semantic representation for source code.
 
-The IR deliberately hides grammar-specific Tree-sitter node names from the
-rest of Entroly.  Parser/compiler/LSP frontends may strengthen the same graph
-without changing the agent-facing schema.  Unknown languages still receive a
-bounded exact-source structural skeleton rather than an "unsupported" error.
+The IR deliberately hides grammar-specific parser node names from the rest of
+Entroly. Parser/compiler/LSP frontends may strengthen the same graph without
+changing the agent-facing schema. Unknown languages still receive a bounded
+exact-source structural skeleton rather than an "unsupported" error.
 """
 from __future__ import annotations
 
 import hashlib
 import re
 from dataclasses import dataclass, field
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum
 from pathlib import Path
 
 from ..tree_sitter_support import (
     StructuralCall,
     StructuralSpan,
-    extract_structural_calls,
-    extract_structural_spans,
-    language_for_path,
+    extract_structural_calls_report,
+    extract_structural_spans_report,
+    language_for_source,
     validate_structural_syntax,
 )
 
@@ -38,7 +38,7 @@ class SemanticLevel(IntEnum):
     TRANSFORMATION = 5
 
 
-class EpistemicClass(StrEnum):
+class EpistemicClass(str, Enum):
     """How strongly a node/edge is justified."""
 
     EXACT_SOURCE = "exact-source"
@@ -190,7 +190,13 @@ def _line_for_offset(offsets: list[int], position: int) -> int:
     return lo + 1
 
 
-def _evidence(path: str, raw: bytes, start: int, end: int, offsets: list[int]) -> SourceEvidence:
+def _evidence(
+    path: str,
+    raw: bytes,
+    start: int,
+    end: int,
+    offsets: list[int],
+) -> SourceEvidence:
     start = max(0, min(start, len(raw)))
     end = max(start, min(end, len(raw)))
     return SourceEvidence(
@@ -208,8 +214,15 @@ def _node_id(path: str, kind: str, name: str, start: int, end: int) -> str:
     return "node:" + hashlib.sha256(material).hexdigest()[:24]
 
 
-def _edge_id(source: str, relation: str, target: str, evidence: SourceEvidence | None) -> str:
-    span = "" if evidence is None else f"{evidence.path}:{evidence.start_byte}:{evidence.end_byte}"
+def _edge_id(
+    source: str,
+    relation: str,
+    target: str,
+    evidence: SourceEvidence | None,
+) -> str:
+    span = "" if evidence is None else (
+        f"{evidence.path}:{evidence.start_byte}:{evidence.end_byte}"
+    )
     material = f"{source}\0{relation}\0{target}\0{span}".encode("utf-8")
     return "edge:" + hashlib.sha256(material).hexdigest()[:24]
 
@@ -224,7 +237,10 @@ def _semantic_nodes(
     nodes: list[SemanticNode] = []
     edges: list[SemanticEdge] = []
     active: list[SemanticNode] = []
-    ordered = sorted(spans, key=lambda item: (item.start_byte, -item.end_byte, item.name))
+    ordered = sorted(
+        spans,
+        key=lambda item: (item.start_byte, -item.end_byte, item.name),
+    )
     for span in ordered:
         while active and span.start_byte >= active[-1].evidence.end_byte:
             active.pop()
@@ -259,7 +275,10 @@ def _semantic_nodes(
     return nodes, edges
 
 
-def _owner_for_call(nodes: list[SemanticNode], call: StructuralCall) -> SemanticNode | None:
+def _owner_for_call(
+    nodes: list[SemanticNode],
+    call: StructuralCall,
+) -> SemanticNode | None:
     candidates = [
         node
         for node in nodes
@@ -268,7 +287,10 @@ def _owner_for_call(nodes: list[SemanticNode], call: StructuralCall) -> Semantic
     ]
     if not candidates:
         return None
-    return min(candidates, key=lambda item: item.evidence.end_byte - item.evidence.start_byte)
+    return min(
+        candidates,
+        key=lambda item: item.evidence.end_byte - item.evidence.start_byte,
+    )
 
 
 def _call_edges(
@@ -293,17 +315,23 @@ def _call_edges(
             relation="invokes-name",
             target_id=target_id,
             target_name=call.target,
-            # A parser proves the call expression and spelling, not binding.
+            # Parsing proves an invocation expression and its spelling, not the
+            # semantic binding of that spelling to a declaration.
             epistemic_class=EpistemicClass.PARSER_VERIFIED,
             evidence=evidence,
         ))
     return edges
 
 
-def _fallback_regions(path: str, raw: bytes, offsets: list[int]) -> list[SemanticNode]:
-    """Create an exact-source region skeleton without claiming language semantics."""
+def _fallback_regions(
+    path: str,
+    language: str,
+    raw: bytes,
+    offsets: list[int],
+) -> list[SemanticNode]:
+    """Create exact-source regions without pretending they are declarations."""
     nodes: list[SemanticNode] = []
-    stack: list[tuple[int, int]] = []
+    stack: list[int] = []
     quote: int | None = None
     escaped = False
     for index, byte in enumerate(raw):
@@ -312,21 +340,23 @@ def _fallback_regions(path: str, raw: bytes, offsets: list[int]) -> list[Semanti
         if quote is not None:
             if escaped:
                 escaped = False
-            elif byte == 0x5C:  # backslash
+            elif byte == 0x5C:
                 escaped = True
             elif byte == quote:
                 quote = None
             continue
-        if byte in (0x22, 0x27):  # rough string shielding; remains heuristic
+        if byte in (0x22, 0x27):
             quote = byte
             continue
-        if byte == 0x7B:  # {
-            stack.append((index, len(stack)))
+        if byte == 0x7B:
+            stack.append(index)
         elif byte == 0x7D and stack:
-            start, depth = stack.pop()
+            start = stack.pop()
             end = index + 1
             prefix_start = max(raw.rfind(b"\n", 0, start) + 1, start - 160)
-            prefix = raw[prefix_start:start].decode("utf-8", errors="surrogateescape")
+            prefix = raw[prefix_start:start].decode(
+                "utf-8", errors="surrogateescape"
+            )
             identifiers = _IDENTIFIER.findall(prefix)
             name = identifiers[-1] if identifiers else f"region_{start}"
             evidence = _evidence(path, raw, start, end, offsets)
@@ -334,13 +364,16 @@ def _fallback_regions(path: str, raw: bytes, offsets: list[int]) -> list[Semanti
                 node_id=_node_id(path, "region", name, start, end),
                 kind="region",
                 name=name,
-                language="unknown",
+                language=language,
                 parent_id=None,
                 signature=prefix.strip()[-160:],
                 epistemic_class=EpistemicClass.HEURISTIC,
                 evidence=evidence,
             ))
-    return sorted(nodes, key=lambda item: (item.evidence.start_byte, item.evidence.end_byte))
+    return sorted(
+        nodes,
+        key=lambda item: (item.evidence.start_byte, item.evidence.end_byte),
+    )
 
 
 def build_universal_semantic_document(
@@ -355,7 +388,7 @@ def build_universal_semantic_document(
     if len(raw) > max_bytes:
         raise ValueError(f"source exceeds max_bytes={max_bytes}")
     path = file_path.replace("\\", "/")
-    language = language_for_path(path) or "unknown"
+    language = language_for_source(path, source) or "unknown"
     offsets = _line_offsets(raw)
     source_sha256 = hashlib.sha256(raw).hexdigest()
 
@@ -372,24 +405,31 @@ def build_universal_semantic_document(
     )
 
     syntax_valid = validate_structural_syntax(source, path, max_bytes=max_bytes)
-    spans = extract_structural_spans(source, path, max_bytes=max_bytes, max_nodes=max_nodes)
-    calls = extract_structural_calls(source, path, max_bytes=max_bytes, max_nodes=max_nodes)
+    span_report = extract_structural_spans_report(
+        source, path, max_bytes=max_bytes, max_nodes=max_nodes
+    )
+    call_report = extract_structural_calls_report(
+        source, path, max_bytes=max_bytes, max_nodes=max_nodes
+    )
     parser_available = syntax_valid is not None
-    parser_structure = spans is not None
+    parser_structure = span_report is not None and span_report.complete
 
     nodes = [root]
     edges: list[SemanticEdge] = []
     diagnostics: list[str] = []
     if parser_structure:
+        spans = list(span_report.items) if span_report else []
         structure_nodes, structure_edges = _semantic_nodes(
-            path, language, raw, spans or [], offsets
+            path, language, raw, spans, offsets
         )
         nodes.extend(structure_nodes)
         edges.extend(structure_edges)
         for node in structure_nodes:
             if node.parent_id is None:
                 edges.append(SemanticEdge(
-                    edge_id=_edge_id(root.node_id, "contains", node.node_id, node.evidence),
+                    edge_id=_edge_id(
+                        root.node_id, "contains", node.node_id, node.evidence
+                    ),
                     source_id=root.node_id,
                     relation="contains",
                     target_id=node.node_id,
@@ -397,14 +437,26 @@ def build_universal_semantic_document(
                     epistemic_class=EpistemicClass.PARSER_VERIFIED,
                     evidence=node.evidence,
                 ))
-        if calls is not None:
-            edges.extend(_call_edges(path, raw, structure_nodes, calls, offsets))
+        if call_report is not None and call_report.complete:
+            edges.extend(_call_edges(
+                path,
+                raw,
+                structure_nodes,
+                list(call_report.items),
+                offsets,
+            ))
+        elif call_report is not None:
+            diagnostics.append(
+                "call traversal reached its node bound; parser calls were omitted"
+            )
     else:
-        fallback = _fallback_regions(path, raw, offsets)
+        fallback = _fallback_regions(path, language, raw, offsets)
         nodes.extend(fallback)
         for node in fallback:
             edges.append(SemanticEdge(
-                edge_id=_edge_id(root.node_id, "contains-region", node.node_id, node.evidence),
+                edge_id=_edge_id(
+                    root.node_id, "contains-region", node.node_id, node.evidence
+                ),
                 source_id=root.node_id,
                 relation="contains-region",
                 target_id=node.node_id,
@@ -412,14 +464,18 @@ def build_universal_semantic_document(
                 epistemic_class=EpistemicClass.HEURISTIC,
                 evidence=node.evidence,
             ))
-        diagnostics.append(
-            "parser structure unavailable; emitted exact-source heuristic regions"
-        )
+        if span_report is not None and not span_report.complete:
+            diagnostics.append(
+                "structural traversal reached its node bound; partial parser "
+                "results were rejected and exact-source fallback was used"
+            )
+        else:
+            diagnostics.append(
+                "parser structure unavailable; emitted exact-source heuristic regions"
+            )
 
     if syntax_valid is False:
-        diagnostics.append("parser reported syntax errors; structural evidence may be partial")
-    if len(nodes) >= max_nodes:
-        diagnostics.append("semantic node budget reached")
+        diagnostics.append("parser reported syntax errors")
 
     level = SemanticLevel.STRUCTURE if parser_structure else (
         SemanticLevel.SYNTAX if parser_available else SemanticLevel.SOURCE
