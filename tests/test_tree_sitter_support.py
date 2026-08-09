@@ -14,7 +14,9 @@ from entroly.tree_sitter_support import (
 )
 
 
-def test_language_map_covers_at_least_twenty_seven_languages() -> None:
+def test_language_map_covers_at_least_twenty_seven_offline_fallbacks() -> None:
+    # This is only the no-registry fallback now. Runtime breadth comes from the
+    # universal language registry and is tested separately.
     assert len(set(LANGUAGE_BY_SUFFIX.values())) >= 27
 
 
@@ -46,14 +48,33 @@ def test_semantic_resolution_uses_parser_spans_when_available() -> None:
     assert all(block.start_line <= block.end_line for block in blocks)
 
 
-def test_pack_v1_never_downloads_without_explicit_opt_in(monkeypatch) -> None:
+def test_parser_acquisition_is_default_when_not_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    parser = object()
+    fake = SimpleNamespace(
+        downloaded_languages=lambda: ["python"],
+        get_parser=lambda language: calls.append(language) or parser,
+    )
+    monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
+    monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
+    monkeypatch.delenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", raising=False)
+    assert _get_local_parser("rust") is parser
+    assert calls == ["rust"]
+
+
+def test_explicit_no_download_uses_only_cached_grammars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     fake = SimpleNamespace(
         downloaded_languages=lambda: ["python"],
         get_parser=lambda language: calls.append(language),
     )
     monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", fake)
-    monkeypatch.delenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", raising=False)
+    monkeypatch.delenv("ENTROLY_AIR_GAP", raising=False)
+    monkeypatch.setenv("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "0")
     assert _get_local_parser("rust") is None
     assert calls == []
 
