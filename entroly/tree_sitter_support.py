@@ -204,18 +204,35 @@ def _get_local_parser(language: str) -> Any | None:
     pack = _pack()
     if pack is None:
         return None
-    downloaded = getattr(pack, "downloaded_languages", None)
     if not _downloads_allowed():
-        if not callable(downloaded):
-            return None
-        try:
-            cached = {
-                _normalize_language(item)
-                for item in downloaded()
-            }
-        except Exception:
-            return None
-        if _normalize_language(language) not in cached:
+        normalized = _normalize_language(language)
+        locally_loadable = False
+        has_language = getattr(pack, "has_language", None)
+        if callable(has_language):
+            try:
+                locally_loadable = bool(has_language(language))
+            except Exception:
+                return None
+        else:
+            local_languages: set[str | None] = set()
+            available = getattr(pack, "available_languages", None)
+            if callable(available):
+                try:
+                    local_languages.update(
+                        _normalize_language(item) for item in available()
+                    )
+                except Exception:
+                    pass
+            downloaded = getattr(pack, "downloaded_languages", None)
+            if callable(downloaded):
+                try:
+                    local_languages.update(
+                        _normalize_language(item) for item in downloaded()
+                    )
+                except Exception:
+                    pass
+            locally_loadable = normalized in local_languages
+        if not locally_loadable:
             return None
     try:
         return pack.get_parser(language)
