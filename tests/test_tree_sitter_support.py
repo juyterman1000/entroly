@@ -48,7 +48,7 @@ def test_semantic_resolution_uses_parser_spans_when_available() -> None:
     assert all(block.start_line <= block.end_line for block in blocks)
 
 
-def test_parser_acquisition_is_denied_by_default(
+def test_pack_v1_never_downloads_without_explicit_opt_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
