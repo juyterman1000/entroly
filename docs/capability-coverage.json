@@ -294,6 +294,7 @@
         "entroly/repository_intelligence/graph.py",
         "entroly/repository_intelligence/git_history.py",
         "entroly/repository_intelligence/incremental.py",
+        "entroly/repository_intelligence/persistent_analysis.py",
         "entroly/repository_intelligence/program_graph.py",
         "entroly/repository_intelligence/repository_map.py",
         "entroly/repository_intelligence/runtime_overlay.py",
@@ -313,6 +314,9 @@
         "tests/test_repository_map.py::test_global_map_ranks_dependency_and_call_hub",
         "tests/test_repository_map.py::test_map_evidence_is_exact_budgeted_and_tamper_evident",
         "tests/test_repository_incremental.py::test_incremental_cache_reuses_unchanged_exact_parse_results",
+        "tests/test_repository_incremental.py::test_content_identical_checkout_reuses_root_independent_graph_snapshot",
+        "tests/test_repository_persistent_analysis.py::test_unchanged_map_and_health_reuse_verified_persistent_analysis",
+        "tests/test_repository_persistent_analysis.py::test_corrupt_analysis_envelope_fails_open_and_is_replaced",
         "tests/test_repository_runtime_overlay.py::test_runtime_overlay_aggregates_events_and_verifies_source",
         "tests/test_repository_semantic_overlay.py::test_semantic_overlay_verifies_utf16_locations_and_receipt",
         "tests/test_repository_verified_health.py::test_health_binds_metrics_cycles_and_ambiguity_to_verified_evidence",
@@ -350,7 +354,7 @@
         "entroly.repository_intelligence.verify_code_health_commitment",
         "entroly.repository_intelligence.verify_symbol_graph_commitment"
       ],
-      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Structural health publishes a heuristic scoring policy and exact evidence but does not prove defects, dead code, or semantic clones. Runtime events require an external tracer, incremental caching reuses parsing but rebuilds global edges and PageRank, and native compiler/LSP execution, automatic refactoring, interprocedural data flow, and broad external quality benchmarks remain future work."
+      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Structural health publishes a heuristic scoring policy and exact evidence but does not prove defects, dead code, or semantic clones. Runtime events require an external tracer. Content-addressed persistence reuses unchanged parse, whole-index, map, and health artifacts, but any source change rebuilds global relationships and derived analyses. Native compiler/LSP execution, automatic refactoring, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
     },
     {
       "id": "command_aware_shell_evidence",

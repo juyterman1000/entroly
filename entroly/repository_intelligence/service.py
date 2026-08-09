@@ -12,11 +12,19 @@ from typing import Callable, Iterable, Mapping
 from .graph import analyze_change_impact, localize_tests
 from .models import RepositoryIndex, RepositoryLimits, normalize_relative
 from .program_graph import build_verified_program_graph
-from .repository_map import build_verified_repository_map
+from .repository_map import (
+    REPOSITORY_MAP_SCHEMA_VERSION,
+    build_verified_repository_map,
+    verify_repository_map_commitment,
+)
 from .runtime_overlay import build_verified_runtime_overlay
 from .semantic_overlay import build_verified_semantic_overlay
 from .verified_context import build_symbol_graph, build_verified_context
-from .verified_health import build_verified_code_health
+from .verified_health import (
+    VERIFIED_HEALTH_SCHEMA_VERSION,
+    build_verified_code_health,
+    verify_code_health_commitment,
+)
 
 SERVICE_SCHEMA_VERSION = "entroly.repository-service.v2"
 _MAX_CHANGED_PATHS = 200
@@ -127,8 +135,10 @@ class RepositoryIntelligenceService:
             raise ValueError("builder and cache_dir are mutually exclusive")
         if cache_dir is not None:
             from .incremental import build_repository_index_incremental
+            from .persistent_analysis import PersistentAnalysisCache
 
             selected_cache = Path(cache_dir).expanduser().resolve()
+            self._analysis_cache = PersistentAnalysisCache(selected_cache)
 
             def incremental_builder(root: Path, *, limits: RepositoryLimits):
                 return build_repository_index_incremental(
@@ -140,6 +150,7 @@ class RepositoryIntelligenceService:
             self._builder = incremental_builder
         else:
             self._builder = builder
+            self._analysis_cache = None
         self._lock = threading.RLock()
         self._build_lock = threading.Lock()
         self._index: RepositoryIndex | None = None
@@ -161,6 +172,16 @@ class RepositoryIntelligenceService:
         # content. Canonicalize it so identical trees have identical digests
         # across machines and workspaces.
         payload["root"] = "."
+        diagnostics = payload.get("diagnostics", [])
+        if isinstance(diagnostics, list):
+            payload["diagnostics"] = [
+                item
+                for item in diagnostics
+                if not str(item).startswith((
+                    "incremental-parse-cache ",
+                    "persistent-index-snapshot ",
+                ))
+            ]
         canonical = json.dumps(
             payload,
             sort_keys=True,
@@ -347,6 +368,23 @@ class RepositoryIntelligenceService:
         if len(query.strip()) > 4_000:
             raise InvalidContextQuery("query must be at most 4000 characters")
         index, digest, generation = self._snapshot()
+        identity: dict[str, object] = {
+            "analysis_schema": REPOSITORY_MAP_SCHEMA_VERSION,
+            "index_digest": digest,
+            "query": query.strip(),
+            "token_budget": max(128, min(int(token_budget), _MAX_CONTEXT_TOKENS)),
+            "max_entries": max(1, min(int(max_entries), _MAX_MAP_ENTRIES)),
+        }
+        cache_status = "disabled"
+        if self._analysis_cache is not None:
+            cached, cache_status = self._analysis_cache.load(
+                "repository-map",
+                identity,
+                verify=verify_repository_map_commitment,
+            )
+            if cached is not None:
+                cached["generation"] = generation
+                return cached
         payload = build_verified_repository_map(
             self.root,
             index,
@@ -355,6 +393,10 @@ class RepositoryIntelligenceService:
             token_budget=max(128, min(int(token_budget), _MAX_CONTEXT_TOKENS)),
             max_entries=max(1, min(int(max_entries), _MAX_MAP_ENTRIES)),
         )
+        if self._analysis_cache is not None:
+            self._analysis_cache.store(
+                "repository-map", identity, payload, replace=cache_status == "corrupt"
+            )
         payload["generation"] = generation
         return payload
 
@@ -366,13 +408,33 @@ class RepositoryIntelligenceService:
     ) -> dict[str, object]:
         """Return freshness-checked structural health and navigability evidence."""
         index, digest, generation = self._snapshot()
+        bounded_findings = max(1, min(int(max_findings), _MAX_HEALTH_FINDINGS))
+        bounded_symbols = max(1, min(int(max_symbols), _MAX_HEALTH_SYMBOLS))
+        identity: dict[str, object] = {
+            "analysis_schema": VERIFIED_HEALTH_SCHEMA_VERSION,
+            "index_digest": digest,
+            "max_findings": bounded_findings,
+            "max_symbols": bounded_symbols,
+        }
+        cache_status = "disabled"
+        if self._analysis_cache is not None:
+            cached, cache_status = self._analysis_cache.load(
+                "code-health", identity, verify=verify_code_health_commitment
+            )
+            if cached is not None:
+                cached["generation"] = generation
+                return cached
         payload = build_verified_code_health(
             self.root,
             index,
             index_digest=digest,
-            max_findings=max(1, min(int(max_findings), _MAX_HEALTH_FINDINGS)),
-            max_symbols=max(1, min(int(max_symbols), _MAX_HEALTH_SYMBOLS)),
+            max_findings=bounded_findings,
+            max_symbols=bounded_symbols,
         )
+        if self._analysis_cache is not None:
+            self._analysis_cache.store(
+                "code-health", identity, payload, replace=cache_status == "corrupt"
+            )
         payload["generation"] = generation
         return payload
 

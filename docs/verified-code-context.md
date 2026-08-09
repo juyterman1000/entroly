@@ -78,12 +78,20 @@ and exception payloads are discarded. Events are aggregated and attached to
 the narrowest enclosing symbol only after the source-file and line-span hashes
 verify. Entroly does not execute the project to obtain these observations.
 
-Large repositories may opt into per-file incremental parsing with the global
-`--cache-dir` option. Cache keys commit to the workspace-relative path, source
-digest, parser environment, Python version, and cache schema. Corrupt entries
-fail open and are atomically rebuilt. File discovery and global relationship
-resolution still run on every index build; this is an incremental parse cache,
-not a claim of fully incremental compiler analysis.
+Large repositories may opt into content-addressed persistence with the global
+`--cache-dir` option. Per-file parse keys commit to workspace-relative path,
+source digest, parser environment, Python version, and schema. An immutable
+whole-index snapshot additionally commits to the complete source manifest,
+parser environment, and resource limits; it is checkout-root independent.
+Deterministic repository-map and health results are cached by stable index
+digest plus all request parameters, and both their native receipt and an outer
+cache commitment are verified before reuse. Corrupt entries fail open and are
+atomically rebuilt.
+
+Any source change produces a new manifest and rebuilds global import/call
+resolution. This is exact persistent graph and derived-analysis reuse, not a
+claim of fine-grained incremental name resolution. File discovery and hashing
+also still run so deleted or changed files cannot hide behind cached state.
 
 Structural health is available from the same immutable repository snapshot:
 
@@ -191,9 +199,10 @@ languages use cached tree-sitter grammars when available and conservative
 fallbacks otherwise. Python receiver annotations, constructor assignments,
 local propagation, and `self` dispatch are type-informed static inference, not
 compiler/LSP proof. Verified control/data flow is currently Python-only;
-runtime evidence must be supplied by an external tracer; persistence reuses
-per-file parsing but rebuilds global relationships. Repository-map PageRank is
-recomputed from that snapshot rather than incrementally maintained.
+runtime evidence must be supplied by an external tracer. Persistence reuses an
+unchanged whole graph and exact derived results, but any source change rebuilds
+global relationships and affected derived analyses. PageRank is not maintained
+with a fine-grained dynamic-graph algorithm.
 Interprocedural data flow,
 broader-language program graphs, and broad external task-quality benchmarks
 remain future work and must not be claimed as implemented.
@@ -203,10 +212,13 @@ complexity standards, whole-program dead-code proof, semantic clone detection,
 or automatic refactoring. Import cycles are computed only from resolved index
 edges, and unresolved-call rate is shown separately so missing semantic edges
 cannot masquerade as a clean graph. On an August 8, 2026 local dogfood run of
-this checkout (928 indexed files, warm content-addressed parse cache), index
-loading took 1.61 seconds and health analysis took 7.81 seconds on the test
-machine; these are environment-specific engineering measurements, not a
-universal performance claim.
+this checkout (930 files; 12,778 symbols; query `persistent verified graph
+architecture benchmark`; 2,000-token/100-entry map; 500-finding/2,000-profile
+health limits), initial derived computation took 1.20 seconds for the map and
+7.28 seconds for health. Across the next four unchanged runs, median verified
+cache reuse took 0.0023 and 0.0840 seconds respectively; warm index-load median
+was 2.69 seconds. These are environment-specific engineering measurements,
+not universal performance claims.
 
 External language servers and compiler indexers can supply definition,
 declaration, implementation, reference, type-definition, and override

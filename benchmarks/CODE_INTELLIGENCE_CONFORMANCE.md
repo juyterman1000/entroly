@@ -60,7 +60,8 @@ failures remain in the denominator.
 10. Query-personalized rare-symbol ranking.
 11. Bounded call/import/containment context expansion.
 12. Explicit unresolved and omitted evidence.
-13. Content-addressed unchanged-file parse reuse and one-file invalidation.
+13. Content-addressed parse, whole-index, and derived-analysis reuse; one-file
+    changes invalidate global graph results rather than returning stale edges.
 
 ### Evidence and operational truthfulness
 
