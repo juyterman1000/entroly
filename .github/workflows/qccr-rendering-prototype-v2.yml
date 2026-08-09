@@ -28,7 +28,7 @@ jobs:
           git diff --check
 
       - name: Rust QCCR unit tests
-        run: cargo test -p entroly-qccr
+        run: cargo test --manifest-path entroly-qccr/Cargo.toml
 
       - name: Build exact prototype native QCCR
         run: |
