@@ -1,0 +1,84 @@
+name: QCCR Rendering Diagnosis
+
+on:
+  push:
+    branches: ["diagnostic/qccr-rendering-20260809"]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build exact-head native QCCR and install benchmark deps
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install maturin --timeout 120 --retries 5
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+          cd ..
+          .venv/bin/pip install -e ".[test]" --timeout 120 --retries 5
+
+      - name: Step 1 - inspect five QCCR renderings before selector changes
+        run: |
+          .venv/bin/python - <<'PY'
+          import ast
+          import json
+
+          from benchmarks.answer_correctness_bridge import build_probes, _context_for
+          from benchmarks.graph_lane_quality import (
+              REPO, Task, _pool_for, _read, _tokens, _tracked_python_files
+          )
+
+          LIMIT = 5
+          BUDGET = 2000
+          SEED = 0
+
+          payload = json.loads(
+              (REPO / "benchmarks" / "results" / "graph_lane_tasks.json").read_text(encoding="utf-8")
+          )
+          tasks = [Task(**t) for t in payload["tasks"]]
+          probes = build_probes(tasks, LIMIT)
+          corpus = sorted(
+              {str(p.relative_to(REPO)).replace("\\\\", "/") for p in _tracked_python_files()}
+          )
+
+          def signature_line(callee: str, rel: str) -> str:
+              text = (REPO / rel).read_text(encoding="utf-8", errors="replace")
+              lines = text.splitlines()
+              tree = ast.parse(text)
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
+                      return lines[node.lineno - 1].strip()
+                  if isinstance(node, ast.ClassDef) and node.name == callee:
+                      for sub in node.body:
+                          if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == "__init__":
+                              return lines[sub.lineno - 1].strip()
+              raise RuntimeError(f"signature not found for {callee} in {rel}")
+
+          print(f"STEP1 pinned_ref={payload['pinned_ref']} probes={len(probes)} budget={BUDGET} seed={SEED}")
+          for idx, probe in enumerate(probes, 1):
+              pool = _pool_for(probe.task, corpus, 48, SEED)
+              texts = {rel: _read(rel) for rel in pool}
+              context = _context_for("qccr", probe, pool, texts, BUDGET)
+              sig = signature_line(probe.task.callee, probe.task.callee_file)
+              file_header = f"### {probe.task.callee_file}"
+              delivered = file_header in context
+              present = sig in context
+              print(
+                  "STEP1_PROBE "
+                  f"{idx} callee={probe.task.callee!r} file={probe.task.callee_file!r} "
+                  f"file_delivered={delivered} signature_present={present} "
+                  f"context_tokens={_tokens(context)} signature={sig!r}"
+              )
+          PY
