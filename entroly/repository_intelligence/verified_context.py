@@ -14,8 +14,9 @@ import json
 import math
 import re
 from collections import defaultdict
+from itertools import islice
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .models import CallEdge, RepositoryIndex, Symbol
 from .git_history import collect_git_history
@@ -118,10 +119,16 @@ def _rank_candidates(
     *,
     max_hops: int,
     max_candidates: int,
+    proposal_scores: Mapping[str, float] | None = None,
 ) -> tuple[list[tuple[float, str, tuple[str, ...]]], set[str]]:
     query_tokens = _tokens(query)
+    proposals = proposal_scores or {}
     scored = [
-        (_symbol_score(symbol, query, query_tokens), symbol.symbol_id)
+        (
+            _symbol_score(symbol, query, query_tokens)
+            + 80.0 * proposals.get(symbol.symbol_id, 0.0),
+            symbol.symbol_id,
+        )
         for symbol in index.symbols.values()
     ]
     scored.sort(key=lambda item: (-item[0], item[1]))
@@ -132,13 +139,31 @@ def _rank_candidates(
         for score, symbol_id in positive
         if score >= threshold
     ][:8]
+    proposed_seeds = sorted(
+        (
+            (_symbol_score(index.symbols[symbol_id], query, query_tokens) + 80.0 * score, symbol_id)
+            for symbol_id, score in proposals.items()
+            if symbol_id in index.symbols and score > 0.0
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )[:8]
+    seed_by_id = {symbol_id: score for score, symbol_id in seeds}
+    for score, symbol_id in proposed_seeds:
+        seed_by_id[symbol_id] = max(score, seed_by_id.get(symbol_id, 0.0))
+    seeds = sorted(
+        ((score, symbol_id) for symbol_id, score in seed_by_id.items()),
+        key=lambda item: (-item[0], item[1]),
+    )[:8]
     if not seeds:
         seeds = [(1.0, symbol_id) for _, symbol_id in scored[:3]]
 
     graph, _ = _adjacency(index)
     heap: list[tuple[float, int, str, tuple[str, ...]]] = []
     for score, symbol_id in seeds:
-        heapq.heappush(heap, (-score, 0, symbol_id, ("query-match",)))
+        reasons = ["query-match"]
+        if symbol_id in proposals:
+            reasons.append("verified-external-proposal-identity")
+        heapq.heappush(heap, (-score, 0, symbol_id, tuple(reasons)))
     best: dict[str, tuple[float, tuple[str, ...]]] = {}
     seed_ids = {symbol_id for _, symbol_id in seeds}
     while heap and len(best) < max_candidates:
@@ -172,6 +197,49 @@ def _rank_candidates(
     ]
     ranked.sort(key=lambda item: (-item[0], item[1]))
     return ranked, seed_ids
+
+
+def _validated_proposals(
+    index: RepositoryIndex,
+    proposals: Iterable[Mapping[str, object]],
+) -> tuple[dict[str, float], list[dict[str, object]], dict[str, int]]:
+    scores: dict[str, float] = {}
+    accepted: dict[str, dict[str, object]] = {}
+    omissions: dict[str, int] = defaultdict(int)
+    for position, raw in enumerate(islice(proposals, 1_001)):
+        if position >= 1_000:
+            omissions["proposal-limit"] += 1
+            break
+        if not isinstance(raw, Mapping):
+            omissions["invalid-proposal"] += 1
+            continue
+        symbol_id = raw.get("symbol_id")
+        raw_score = raw.get("score")
+        if not isinstance(symbol_id, str) or symbol_id not in index.symbols:
+            omissions["unknown-symbol"] += 1
+            continue
+        if isinstance(raw_score, bool):
+            omissions["invalid-score"] += 1
+            continue
+        try:
+            score = float(raw_score)
+        except (TypeError, ValueError):
+            omissions["invalid-score"] += 1
+            continue
+        if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+            omissions["invalid-score"] += 1
+            continue
+        if score > scores.get(symbol_id, -1.0):
+            scores[symbol_id] = score
+            accepted[symbol_id] = {
+                "symbol_id": symbol_id,
+                "score": round(score, 8),
+            }
+    return (
+        scores,
+        [accepted[symbol_id] for symbol_id in sorted(accepted)],
+        dict(sorted(omissions.items())),
+    )
 
 
 def _read_verified_fragment(
@@ -353,6 +421,8 @@ def build_verified_context(
     max_fragments: int = 24,
     include_history: bool = False,
     max_history_commits: int = 20,
+    proposal_scores: Iterable[Mapping[str, object]] = (),
+    proposal_provider: str = "caller-supplied",
 ) -> dict[str, object]:
     """Build a deterministic partial code graph with a content receipt."""
     clean_query = query.strip()
@@ -363,11 +433,18 @@ def build_verified_context(
     budget = max(128, min(int(token_budget), 32_768))
     hops = max(0, min(int(max_hops), 6))
     fragment_limit = max(1, min(int(max_fragments), 100))
+    provider = proposal_provider.strip()
+    if not provider or len(provider) > 200:
+        raise ValueError("proposal provider must contain 1 to 200 characters")
+    proposal_map, accepted_proposals, proposal_omissions = _validated_proposals(
+        index, proposal_scores
+    )
     ranked, seed_ids = _rank_candidates(
         index,
         clean_query,
         max_hops=hops,
         max_candidates=max(fragment_limit * 8, 64),
+        proposal_scores=proposal_map,
     )
 
     fragments: list[dict[str, object]] = []
@@ -389,6 +466,8 @@ def build_verified_context(
             continue
         fragment["score"] = round(score, 6)
         fragment["selection_path"] = list(reasons)
+        if symbol_id in proposal_map:
+            fragment["proposal_score"] = round(proposal_map[symbol_id], 8)
         fragments.append(fragment)
         selected.add(symbol_id)
         remaining -= int(fragment["estimated_tokens"])
@@ -453,11 +532,22 @@ def build_verified_context(
             "selected_seed_count": len(selected_seeds),
             "seed_coverage": round(seed_coverage, 6),
             "sufficient": bool(fragments) and seed_coverage >= 0.5,
+            "sufficiency_scope": (
+                "query-seed-selection-coverage-only-not-answer-sufficiency"
+            ),
         },
         "fragments": fragments,
         "relations": relations,
         "unresolved_calls": relevant_unresolved,
         "history": history,
+        "proposal_overlay": {
+            "provider": provider,
+            "trust": "untrusted-ranking-proposal-verified-against-symbol-index",
+            "accepted": accepted_proposals,
+            "omissions_by_reason": proposal_omissions,
+            "may_affect_ranking_only": True,
+            "may_create_symbols_or_edges": False,
+        },
         "receipt": {
             "freshness": "verified-against-indexed-source-sha256",
             "selected_fragment_count": len(fragments),
@@ -467,6 +557,8 @@ def build_verified_context(
             "ambiguous_or_unresolved_calls": len(relevant_unresolved),
             "remote_calls": 0,
             "history_requested": bool(include_history),
+            "accepted_proposal_count": len(accepted_proposals),
+            "omitted_proposal_count": sum(proposal_omissions.values()),
             "commitment_scope": "payload-excluding-generation-command-and-context-sha256",
         },
     }

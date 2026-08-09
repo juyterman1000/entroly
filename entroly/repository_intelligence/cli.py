@@ -53,6 +53,24 @@ def _parser() -> argparse.ArgumentParser:
     context.add_argument("--include-history", action="store_true")
     context.add_argument("--max-history-commits", type=int, default=20)
 
+    program_slice = subcommands.add_parser(
+        "slice",
+        help="build a proof-carrying partial slice with control and value flow",
+    )
+    program_slice.add_argument("--query", required=True)
+    program_slice.add_argument("--token-budget", type=int, default=4_000)
+    program_slice.add_argument("--max-hops", type=int, default=3)
+    program_slice.add_argument("--max-fragments", type=int, default=32)
+    program_slice.add_argument("--max-entry-points", type=int, default=3)
+    program_slice.add_argument(
+        "--flow-direction",
+        choices=("outgoing", "incoming", "both"),
+        default="outgoing",
+    )
+    program_slice.add_argument("--flow-depth", type=int, default=3)
+    program_slice.add_argument("--proposals-json")
+    program_slice.add_argument("--proposal-provider", default="caller-supplied")
+
     repository_map = subcommands.add_parser(
         "map",
         help="rank a verified whole-repository map under a token budget",
@@ -297,6 +315,31 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 max_history_commits=args.max_history_commits,
             )
             payload["command"] = "context"
+            return 0, payload
+        if args.command == "slice":
+            proposals: list[dict[str, object]] = []
+            if args.proposals_json:
+                proposals_path = Path(args.proposals_json).expanduser().resolve(strict=True)
+                if proposals_path.stat().st_size > 16 * 1024 * 1024:
+                    raise ValueError("proposal JSON must be at most 16 MiB")
+                raw_proposals = json.loads(proposals_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_proposals, list) or not all(
+                    isinstance(item, dict) for item in raw_proposals
+                ):
+                    raise ValueError("proposal JSON must contain an array of objects")
+                proposals = raw_proposals
+            payload = service.program_slice(
+                args.query,
+                token_budget=args.token_budget,
+                max_hops=args.max_hops,
+                max_fragments=args.max_fragments,
+                max_entry_points=args.max_entry_points,
+                flow_direction=args.flow_direction,
+                flow_depth=args.flow_depth,
+                proposal_scores=proposals,
+                proposal_provider=args.proposal_provider,
+            )
+            payload["command"] = "slice"
             return 0, payload
         if args.command == "graph":
             payload = service.symbol_graph(

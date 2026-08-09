@@ -32,6 +32,7 @@ from .verified_refactor import (
     build_verified_safe_delete_plan,
 )
 from .verified_context import build_symbol_graph, build_verified_context
+from .verified_slice import build_verified_program_slice
 from .verified_health import (
     VERIFIED_HEALTH_SCHEMA_VERSION,
     build_verified_code_health,
@@ -381,6 +382,8 @@ class RepositoryIntelligenceService:
         max_fragments: int = 24,
         include_history: bool = False,
         max_history_commits: int = 20,
+        proposal_scores: Iterable[Mapping[str, object]] = (),
+        proposal_provider: str = "caller-supplied",
     ) -> dict[str, object]:
         """Return a hash-verified, budgeted partial graph for one task."""
         if not isinstance(query, str) or not query.strip():
@@ -398,6 +401,44 @@ class RepositoryIntelligenceService:
             max_fragments=max(1, min(int(max_fragments), _MAX_CONTEXT_FRAGMENTS)),
             include_history=bool(include_history),
             max_history_commits=max(1, min(int(max_history_commits), 100)),
+            proposal_scores=proposal_scores,
+            proposal_provider=proposal_provider,
+        )
+        payload["generation"] = generation
+        return payload
+
+    def program_slice(
+        self,
+        query: str,
+        *,
+        token_budget: int = 4_000,
+        max_hops: int = 3,
+        max_fragments: int = 32,
+        max_entry_points: int = 3,
+        flow_direction: str = "outgoing",
+        flow_depth: int = 3,
+        proposal_scores: Iterable[Mapping[str, object]] = (),
+        proposal_provider: str = "caller-supplied",
+    ) -> dict[str, object]:
+        """Return a proof-carrying partial slice with control and value flow."""
+        if not isinstance(query, str) or not query.strip():
+            raise InvalidContextQuery("query must not be empty")
+        if len(query.strip()) > 4_000:
+            raise InvalidContextQuery("query must be at most 4000 characters")
+        index, digest, generation = self._snapshot()
+        payload = build_verified_program_slice(
+            self.root,
+            index,
+            query,
+            index_digest=digest,
+            token_budget=max(128, min(int(token_budget), _MAX_CONTEXT_TOKENS)),
+            max_hops=max(0, min(int(max_hops), 6)),
+            max_fragments=max(1, min(int(max_fragments), _MAX_CONTEXT_FRAGMENTS)),
+            max_entry_points=max(1, min(int(max_entry_points), 8)),
+            flow_direction=flow_direction,
+            flow_depth=max(0, min(int(flow_depth), 12)),
+            proposal_scores=proposal_scores,
+            proposal_provider=proposal_provider,
         )
         payload["generation"] = generation
         return payload

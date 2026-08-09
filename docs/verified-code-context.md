@@ -83,6 +83,25 @@ alias/heap flow, mutations, exceptions, path conditions, or dynamic dispatch
 beyond an already unique static binding. Those omissions and unresolved calls
 are committed into the receipt rather than silently treated as absent.
 
+`slice` combines the budgeted repository context, intraprocedural graph, and
+cross-function summaries into one query-time evidence package:
+
+```powershell
+python -m entroly.repository_intelligence --root . slice `
+  --query "trace checkout input through validation" `
+  --token-budget 4000 --max-entry-points 3
+```
+
+Exact symbol queries use ambiguity-safe entity routing; other text uses the
+normal task retriever. A caller may optionally provide a JSON array of learned
+`symbol_id`/`score` proposals. Scores can influence entry-point ranking only
+after the symbol identity exists in the verified index. They cannot create an
+edge, source span, symbol, confidence label, or completeness claim. Unknown and
+invalid proposals are omitted with counted reasons. The outer receipt verifies
+the context commitment plus every nested control-flow and interprocedural-flow
+commitment. `coverage.answer_sufficiency` remains `unproven`; reported coverage
+describes admitted structural evidence, not answer quality.
+
 External tracing and coverage tools can contribute value-free runtime events:
 
 ```powershell

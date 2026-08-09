@@ -102,6 +102,23 @@ def test_context_returns_verified_partial_graph(tmp_path: Path) -> None:
     assert payload["fragments"][0]["qualified_name"] == "execute"
 
 
+def test_slice_returns_verified_context_control_and_cross_function_flow(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "slice", "--query", "invoke",
+        "--token-budget", "512",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-program-slice.v1"
+    assert payload["command"] == "slice"
+    assert payload["query_route"]["identity_status"] == "unique-exact"
+    assert payload["verified_context"]["fragments"]
+    assert payload["intraprocedural_graphs"][0]["resolution"] == "resolved"
+    assert payload["interprocedural_flows"][0]["call_relations"]
+
+
 def test_graph_returns_verified_static_callers(tmp_path: Path) -> None:
     _project(tmp_path)
     code, payload = run([

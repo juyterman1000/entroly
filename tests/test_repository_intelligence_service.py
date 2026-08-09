@@ -257,6 +257,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_change_impact",
         "repository_summary",
         "repository_program_graph",
+        "repository_program_slice",
         "repository_interprocedural_flow",
         "repository_architecture",
         "repository_architecture_diff",
@@ -298,6 +299,11 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert context["schema_version"] == "entroly.verified-code-context.v1"
     assert context["fragments"][0]["qualified_name"] == "execute"
     assert str(tmp_path) not in json.dumps(context)
+    program_slice = json.loads(mcp.tools["repository_program_slice"]("invoke"))
+    assert program_slice["schema_version"] == "entroly.verified-program-slice.v1"
+    assert program_slice["query_route"]["identity_status"] == "unique-exact"
+    assert program_slice["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(program_slice)
     graph = json.loads(mcp.tools["repository_symbol_graph"]("execute"))
     assert graph["schema_version"] == "entroly.verified-symbol-graph.v1"
     assert graph["resolution"] == "resolved"

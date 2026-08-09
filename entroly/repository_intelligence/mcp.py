@@ -148,6 +148,8 @@ def create_repository_mcp_server(
         max_fragments: int = 24,
         include_history: bool = False,
         max_history_commits: int = 20,
+        proposal_scores: list[dict[str, object]] | None = None,
+        proposal_provider: str = "caller-supplied",
     ) -> str:
         """Return a partial code graph scoped to one task with a receipt."""
         try:
@@ -158,9 +160,39 @@ def create_repository_mcp_server(
                 max_fragments=max(1, min(int(max_fragments), 100)),
                 include_history=bool(include_history),
                 max_history_commits=max(1, min(int(max_history_commits), 100)),
+                proposal_scores=proposal_scores or (),
+                proposal_provider=proposal_provider,
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_verified_context")
+
+    @mcp.tool()
+    def repository_program_slice(
+        query: str,
+        token_budget: int = 4_000,
+        max_hops: int = 3,
+        max_fragments: int = 32,
+        max_entry_points: int = 3,
+        flow_direction: str = "outgoing",
+        flow_depth: int = 3,
+        proposal_scores: list[dict[str, object]] | None = None,
+        proposal_provider: str = "caller-supplied",
+    ) -> str:
+        """Build a proof-carrying partial code slice from verified facts."""
+        try:
+            return _json(service.program_slice(
+                query,
+                token_budget=max(128, min(int(token_budget), 32_768)),
+                max_hops=max(0, min(int(max_hops), 6)),
+                max_fragments=max(1, min(int(max_fragments), 100)),
+                max_entry_points=max(1, min(int(max_entry_points), 8)),
+                flow_direction=flow_direction,
+                flow_depth=max(0, min(int(flow_depth), 12)),
+                proposal_scores=proposal_scores or (),
+                proposal_provider=proposal_provider,
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_program_slice")
 
     @mcp.tool()
     def repository_symbol_graph(

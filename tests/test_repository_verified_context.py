@@ -79,6 +79,38 @@ def test_verified_context_is_deterministic_for_same_snapshot(tmp_path: Path) -> 
     assert first == second
 
 
+def test_verified_context_constrains_external_proposals_to_indexed_symbols(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    index, _digest, _generation = service._snapshot()
+    authorize = next(
+        symbol for symbol in index.symbols.values() if symbol.name == "authorize"
+    )
+    payload = service.context(
+        "unrelated natural language request",
+        token_budget=256,
+        max_hops=0,
+        max_fragments=1,
+        proposal_scores=[
+            {"symbol_id": authorize.symbol_id, "score": 1.0},
+            {"symbol_id": "invented::symbol", "score": 1.0},
+        ],
+        proposal_provider="test-neural-ranker",
+    )
+    assert payload["fragments"][0]["symbol_id"] == authorize.symbol_id
+    assert payload["fragments"][0]["proposal_score"] == 1.0
+    assert payload["proposal_overlay"]["accepted"] == [
+        {"symbol_id": authorize.symbol_id, "score": 1.0}
+    ]
+    assert payload["proposal_overlay"]["omissions_by_reason"] == {
+        "unknown-symbol": 1
+    }
+    assert payload["proposal_overlay"]["may_create_symbols_or_edges"] is False
+    assert verify_context_commitment(payload)
+
+
 def test_verified_context_fails_closed_when_source_changed_after_index(tmp_path: Path) -> None:
     _project(tmp_path)
     service = RepositoryIntelligenceService(tmp_path)
