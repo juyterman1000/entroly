@@ -4,6 +4,10 @@ Caller-supplied learned scores may propose indexed symbols. They can influence
 ranking, but they cannot create identities, edges, source spans, or confidence.
 Every admitted fact is reconstructed by deterministic repository analyses and
 bound into a detached receipt.
+
+The slice now carries a language-universal adaptive semantic envelope. Python
+keeps its deeper verified CFG/data-flow path; other languages retain exact
+structural evidence and explicit adapter boundaries instead of being discarded.
 """
 from __future__ import annotations
 
@@ -13,6 +17,10 @@ import json
 from pathlib import Path
 from typing import Iterable, Mapping
 
+from .adaptive_program_graph import (
+    build_adaptive_program_graph,
+    verify_adaptive_program_graph_commitment,
+)
 from .interprocedural_flow import (
     build_verified_interprocedural_flow,
     verify_interprocedural_flow_commitment,
@@ -22,7 +30,7 @@ from .program_graph import (
     build_verified_program_graph,
     verify_program_graph_commitment,
 )
-from .verified_context import build_verified_context, verify_context_commitment
+from .verified_context import verify_context_commitment
 
 PROGRAM_SLICE_SCHEMA_VERSION = "entroly.verified-program-slice.v1"
 
@@ -57,6 +65,12 @@ def _entry_points(
     *,
     limit: int,
 ) -> list[dict[str, object]]:
+    """Select only symbols with a currently verified deep-flow adapter.
+
+    Universal structure for all languages is carried separately by the adaptive
+    semantic envelope; this list remains the set that is safe to pass to the
+    existing deep CFG/data-flow engines.
+    """
     selected: list[dict[str, object]] = []
     seen: set[str] = set()
 
@@ -149,7 +163,10 @@ def build_verified_program_slice(
         route = "natural-language"
         identity = "not-applicable"
 
-    context = build_verified_context(
+    # One context retrieval powers both universal structure and the existing
+    # Python deep-flow path. The adaptive layer is told not to duplicate deep
+    # Python analysis because this surface already owns those payloads.
+    adaptive = build_adaptive_program_graph(
         root,
         index,
         clean_query,
@@ -157,9 +174,16 @@ def build_verified_program_slice(
         token_budget=token_budget,
         max_hops=max_hops,
         max_fragments=max_fragments,
+        max_files=max(4, min(int(max_fragments), 64)),
+        max_symbols=max(entry_limit, 8),
+        include_deep_semantics=False,
         proposal_scores=proposal_scores,
         proposal_provider=proposal_provider,
     )
+    context = adaptive.get("verified_context")
+    if not isinstance(context, Mapping):
+        raise ValueError("adaptive program graph did not return verified context")
+
     entries = _entry_points(index, exact, context, limit=entry_limit)
     intra: list[dict[str, object]] = []
     inter: list[dict[str, object]] = []
@@ -192,6 +216,12 @@ def build_verified_program_slice(
         if isinstance(context_receipt, Mapping)
         else ""
     )
+    adaptive_receipt = adaptive.get("receipt")
+    adaptive_sha = (
+        str(adaptive_receipt.get("adaptive_program_graph_sha256", ""))
+        if isinstance(adaptive_receipt, Mapping)
+        else ""
+    )
     program_shas = []
     for graph in intra:
         receipt = graph.get("receipt")
@@ -205,6 +235,16 @@ def build_verified_program_slice(
     known_calls = sum(len(flow.get("call_relations", [])) for flow in inter)
     known_flows = sum(len(flow.get("flow_edges", [])) for flow in inter)
     unresolved = sum(len(flow.get("unresolved_boundary", [])) for flow in inter)
+
+    adaptive_coverage = adaptive.get("coverage")
+    semantic_files = 0
+    semantic_nodes = 0
+    semantic_edges = 0
+    if isinstance(adaptive_coverage, Mapping):
+        semantic_files = int(adaptive_coverage.get("semantic_files", 0) or 0)
+        semantic_nodes = int(adaptive_coverage.get("semantic_nodes", 0) or 0)
+        semantic_edges = int(adaptive_coverage.get("semantic_edges", 0) or 0)
+
     payload: dict[str, object] = {
         "schema_version": PROGRAM_SLICE_SCHEMA_VERSION,
         "query": clean_query,
@@ -217,12 +257,16 @@ def build_verified_program_slice(
             "exact_candidates_omitted": max(0, len(exact) - 100),
         },
         "entry_points": entries,
-        "verified_context": context,
+        "verified_context": dict(context),
+        "adaptive_program_graph": adaptive,
         "intraprocedural_graphs": intra,
         "interprocedural_flows": inter,
         "coverage": {
             "answer_sufficiency": "unproven",
             "selected_entry_points": len(entries),
+            "universal_semantic_files": semantic_files,
+            "universal_semantic_nodes": semantic_nodes,
+            "universal_semantic_edges": semantic_edges,
             "verified_call_relations": known_calls,
             "verified_value_flow_edges": known_flows,
             "unresolved_call_boundary": unresolved,
@@ -235,12 +279,16 @@ def build_verified_program_slice(
             "symbolic_gate": (
                 "indexed-identity-source-freshness-exact-span-and-static-resolution"
             ),
+            "universal_semantic_gate": (
+                "exact-source-parser-evidence-with-explicit-capability-boundaries"
+            ),
             "proposal_may_create_facts": False,
             "proposal_may_raise_confidence": False,
             "remote_calls": 0,
         },
         "receipt": {
             "context_sha256": context_sha,
+            "adaptive_program_graph_sha256": adaptive_sha,
             "program_graph_sha256": program_shas,
             "interprocedural_flow_sha256": flow_shas,
             "remote_calls": 0,
@@ -261,9 +309,16 @@ def verify_program_slice_commitment(payload: Mapping[str, object]) -> bool:
         if candidate.get("schema_version") != PROGRAM_SLICE_SCHEMA_VERSION:
             return False
         context = candidate.get("verified_context")
+        adaptive = candidate.get("adaptive_program_graph")
         intra = candidate.get("intraprocedural_graphs")
         inter = candidate.get("interprocedural_flows")
         if not isinstance(context, dict) or not verify_context_commitment(context):
+            return False
+        if (
+            not isinstance(adaptive, dict)
+            or not verify_adaptive_program_graph_commitment(adaptive)
+            or adaptive.get("verified_context") != context
+        ):
             return False
         if not isinstance(intra, list) or not all(
             isinstance(item, dict) and verify_program_graph_commitment(item)
@@ -277,6 +332,13 @@ def verify_program_slice_commitment(payload: Mapping[str, object]) -> bool:
             return False
         receipt = candidate["receipt"]
         if not isinstance(receipt, dict):
+            return False
+        adaptive_receipt = adaptive.get("receipt")
+        if not isinstance(adaptive_receipt, dict):
+            return False
+        if str(receipt.get("adaptive_program_graph_sha256", "")) != str(
+            adaptive_receipt.get("adaptive_program_graph_sha256", "")
+        ):
             return False
         expected = str(receipt.pop("program_slice_sha256"))
         return hashlib.sha256(_canonical(candidate)).hexdigest() == expected
