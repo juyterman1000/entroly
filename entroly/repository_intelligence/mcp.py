@@ -234,6 +234,27 @@ def create_repository_mcp_server(
             return _error(exc, "repository_program_graph")
 
     @mcp.tool()
+    def repository_interprocedural_flow(
+        symbol_query: str,
+        direction: str = "outgoing",
+        max_depth: int = 3,
+        max_call_edges: int = 1_000,
+        max_flow_edges: int = 10_000,
+    ) -> str:
+        """Trace source-verified arguments, parameters, returns, and consumers."""
+        try:
+            return _json(service.interprocedural_flow(
+                symbol_query,
+                direction=direction,
+                max_depth=max(0, min(int(max_depth), 12)),
+                max_call_edges=max(1, min(int(max_call_edges), 100_000)),
+                max_flow_edges=max(1, min(int(max_flow_edges), 100_000)),
+                max_nodes=100_000,
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_interprocedural_flow")
+
+    @mcp.tool()
     def repository_code_health(
         max_findings: int = 500,
         max_symbols: int = 2_000,

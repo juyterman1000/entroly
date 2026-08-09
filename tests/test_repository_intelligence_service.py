@@ -257,6 +257,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_change_impact",
         "repository_summary",
         "repository_program_graph",
+        "repository_interprocedural_flow",
         "repository_architecture",
         "repository_architecture_diff",
         "repository_git_architecture_diff",
@@ -338,6 +339,11 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert program["resolution"] == "resolved"
     assert program["receipt"]["remote_calls"] == 0
     assert str(tmp_path) not in json.dumps(program)
+    flow = json.loads(mcp.tools["repository_interprocedural_flow"]("invoke"))
+    assert flow["schema_version"] == "entroly.verified-interprocedural-flow.v1"
+    assert flow["resolution"] == "resolved"
+    assert flow["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(flow)
     health = json.loads(mcp.tools["repository_code_health"]())
     assert health["schema_version"] == "entroly.verified-code-health.v1"
     assert health["receipt"]["remote_calls"] == 0

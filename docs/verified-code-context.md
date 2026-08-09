@@ -65,6 +65,24 @@ predecessor and has one reaching definition; branch-dependent definitions are
 `may-reach`. Every source node and variable occurrence has an exact byte span
 and digest. Unsupported bindings remain diagnostics or unresolved uses.
 
+The `flow` command adds a bounded interprocedural summary over uniquely resolved
+Python calls:
+
+```powershell
+python -m entroly.repository_intelligence --root . flow `
+  --symbol "payments.api.submit" --direction outgoing --max-depth 3
+```
+
+It binds actual positional, keyword, and variadic argument expressions to exact
+callee parameter spans; connects every explicit callee return expression to the
+call result; and connects a direct result to its assignment, named-expression,
+or caller-return consumer. Call sites, parameters, return expressions, and
+consumers carry exact byte ranges plus source and evidence hashes. All explicit
+returns are conservatively labelled `may-reach`; the analysis does not claim
+alias/heap flow, mutations, exceptions, path conditions, or dynamic dispatch
+beyond an already unique static binding. Those omissions and unresolved calls
+are committed into the receipt rather than silently treated as absent.
+
 External tracing and coverage tools can contribute value-free runtime events:
 
 ```powershell
@@ -286,6 +304,13 @@ This design incorporates several independently demonstrated directions:
   historical repository knowledge improves localization over stateless search.
 - [DyRetriever (ASE 2026)](https://arxiv.org/abs/2608.01927): query-time
   partial dependency graphs can outperform costly static-graph retrieval.
+- [RANGER](https://arxiv.org/abs/2509.25257): variable-level repository graphs
+  and dual entity/natural-language retrieval improve multi-hop localization.
+- [Program Slicing in the Era of LLMs](https://arxiv.org/abs/2409.12369):
+  model-only slicing remains unreliable around complex control flow, motivating
+  deterministic flow facts beneath any learned proposal layer.
+- [Code Graph Model (NeurIPS 2025)](https://proceedings.neurips.cc/paper_files/paper/2025/hash/178ae4ba29022eb7bf509c2e27bc8ab8-Abstract-Conference.html):
+  preserving repository graph structure improves agentless software tasks.
 - [Stack graphs](https://arxiv.org/abs/2211.01224): file-incremental graph
   construction can support precise name binding without executing untrusted
   project builds.
@@ -307,14 +332,17 @@ Parser grammars remain optional. Python uses its standard AST; other supported
 languages use cached tree-sitter grammars when available and conservative
 fallbacks otherwise. Python receiver annotations, constructor assignments,
 local propagation, and `self` dispatch are type-informed static inference, not
-compiler/LSP proof. Verified control/data flow is currently Python-only;
-runtime evidence must be supplied by an external tracer. Persistence reuses an
+compiler/LSP proof. Verified intraprocedural flow and bounded cross-function
+argument/return summaries are currently Python-only. The interprocedural layer
+does not model alias/heap state, mutation side effects, implicit or exceptional
+returns, path conditions, or unresolved dynamic dispatch. Runtime evidence must
+be supplied by an external tracer. Persistence reuses an
 unchanged whole graph and exact derived results, but any source change rebuilds
 global relationships and affected derived analyses. PageRank, architecture
 layers, communities, and routes are not maintained with a fine-grained
 dynamic-graph algorithm.
-Interprocedural data flow,
-broader-language program graphs, and broad external task-quality benchmarks
+Whole-program data flow, broader-language program graphs, and broad external
+task-quality benchmarks
 remain future work and must not be claimed as implemented.
 
 Structural health does not yet implement compiler-specific cognitive

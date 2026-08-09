@@ -32,10 +32,12 @@ __all__ = [
     "RepositoryIntelligenceError", "RepositoryIntelligenceService",
     "UnknownChangedPaths", "build_symbol_graph", "build_verified_context",
     "build_repository_index_incremental", "build_verified_program_graph",
+    "build_verified_interprocedural_flow",
     "build_verified_runtime_overlay", "verify_context_commitment",
     "build_verified_semantic_overlay",
     "build_verified_repository_map",
     "verify_program_graph_commitment", "verify_symbol_graph_commitment",
+    "verify_interprocedural_flow_commitment",
     "verify_runtime_overlay_commitment",
     "verify_semantic_overlay_commitment",
     "verify_repository_map_commitment",
@@ -99,6 +101,10 @@ from .service import (  # noqa: E402
 from .program_graph import (  # noqa: E402
     build_verified_program_graph,
     verify_program_graph_commitment,
+)
+from .interprocedural_flow import (  # noqa: E402
+    build_verified_interprocedural_flow,
+    verify_interprocedural_flow_commitment,
 )
 from .incremental import build_repository_index_incremental  # noqa: E402
 from .runtime_overlay import (  # noqa: E402

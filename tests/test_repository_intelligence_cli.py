@@ -157,6 +157,22 @@ def test_program_returns_verified_control_and_data_flow(tmp_path: Path) -> None:
     assert payload["receipt"]["freshness"].startswith("verified")
 
 
+def test_flow_returns_verified_cross_function_value_summary(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "flow", "--symbol", "invoke",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-interprocedural-flow.v1"
+    assert payload["command"] == "flow"
+    assert payload["resolution"] == "resolved"
+    assert payload["call_relations"]
+    assert {edge["kind"] for edge in payload["flow_edges"]} >= {
+        "return-to-call-result",
+        "call-result-to-consumer",
+    }
+
+
 def test_health_returns_verified_policy_and_commitment(tmp_path: Path) -> None:
     _project(tmp_path)
     code, payload = run([

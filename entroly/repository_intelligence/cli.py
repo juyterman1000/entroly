@@ -101,6 +101,21 @@ def _parser() -> argparse.ArgumentParser:
     program.add_argument("--symbol", required=True)
     program.add_argument("--limit", type=int, default=1_000)
 
+    flow = subcommands.add_parser(
+        "flow",
+        help="trace verified interprocedural arguments, parameters, and returns",
+    )
+    flow.add_argument("--symbol", required=True)
+    flow.add_argument(
+        "--direction",
+        choices=("outgoing", "incoming", "both"),
+        default="outgoing",
+    )
+    flow.add_argument("--max-depth", type=int, default=3)
+    flow.add_argument("--max-call-edges", type=int, default=1_000)
+    flow.add_argument("--max-flow-edges", type=int, default=10_000)
+    flow.add_argument("--max-nodes", type=int, default=10_000)
+
     health = subcommands.add_parser(
         "health",
         help="audit verified complexity, cycles, coupling, and navigability",
@@ -315,6 +330,17 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
         if args.command == "program":
             payload = service.program_graph(args.symbol, limit=args.limit)
             payload["command"] = "program"
+            return 0, payload
+        if args.command == "flow":
+            payload = service.interprocedural_flow(
+                args.symbol,
+                direction=args.direction,
+                max_depth=args.max_depth,
+                max_call_edges=args.max_call_edges,
+                max_flow_edges=args.max_flow_edges,
+                max_nodes=args.max_nodes,
+            )
+            payload["command"] = "flow"
             return 0, payload
         if args.command == "health":
             payload = service.code_health(

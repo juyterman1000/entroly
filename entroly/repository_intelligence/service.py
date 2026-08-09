@@ -18,6 +18,7 @@ from .lsp_orchestrator import (
 )
 from .models import RepositoryIndex, RepositoryLimits, normalize_relative
 from .program_graph import build_verified_program_graph
+from .interprocedural_flow import build_verified_interprocedural_flow
 from .repository_map import (
     REPOSITORY_MAP_SCHEMA_VERSION,
     build_verified_repository_map,
@@ -776,6 +777,37 @@ class RepositoryIntelligenceService:
             symbol_query,
             index_digest=digest,
             limit=max(16, min(int(limit), 10_000)),
+        )
+        payload["generation"] = generation
+        return payload
+
+    def interprocedural_flow(
+        self,
+        symbol_query: str,
+        *,
+        direction: str = "outgoing",
+        max_depth: int = 3,
+        max_call_edges: int = 1_000,
+        max_flow_edges: int = 10_000,
+        max_nodes: int = 10_000,
+    ) -> dict[str, object]:
+        """Return verified cross-function argument, parameter, and return flow."""
+        query = symbol_query.strip()
+        if not query or len(query) > 1_000:
+            raise InvalidSymbolQuery(
+                "symbol query must contain between 1 and 1000 characters"
+            )
+        index, digest, generation = self._snapshot()
+        payload = build_verified_interprocedural_flow(
+            self.root,
+            index,
+            query,
+            index_digest=digest,
+            direction=direction,
+            max_depth=max(0, min(int(max_depth), 12)),
+            max_call_edges=max(1, min(int(max_call_edges), 100_000)),
+            max_flow_edges=max(1, min(int(max_flow_edges), 100_000)),
+            max_nodes=max(1, min(int(max_nodes), 100_000)),
         )
         payload["generation"] = generation
         return payload
