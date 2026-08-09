@@ -1,0 +1,125 @@
+name: QCCR Signature Completion Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-and-persist:
+    if: github.head_ref == 'diagnostic/qccr-rendering-20260809' && github.event.pull_request.head.sha == 'bc772bd3bf6c37a334cc84abd1d67c313f113d0e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: diagnostic/qccr-rendering-20260809
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Create benchmark environment
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install maturin ruff --timeout 120 --retries 5
+          .venv/bin/pip install -e '.[test]' --timeout 120 --retries 5
+
+      - name: Build exact pre-fix native QCCR
+        run: |
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+
+      - name: Step 1 exact pre-fix rendering evidence
+        run: |
+          .venv/bin/python diagnostics/check_qccr_rendering.py | tee /tmp/qccr_before.txt
+          grep -c 'full_signature_present=True' /tmp/qccr_before.txt > /tmp/full_before.txt || true
+          grep -c 'file_delivered=True' /tmp/qccr_before.txt > /tmp/delivered_before.txt || true
+          echo "PRE_FULL=$(cat /tmp/full_before.txt) PRE_DELIVERED=$(cat /tmp/delivered_before.txt)"
+
+      - name: Exact pre-fix graph-lane baseline
+        run: |
+          .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
+          cp benchmarks/results/graph_lane_results.json /tmp/graph_lane_before.json
+          .venv/bin/python - <<'PY'
+          import json
+          data = json.load(open('/tmp/graph_lane_before.json', encoding='utf-8'))
+          rows = [r for r in data['records'] if r['arm'] == 'qccr' and r['budget'] == 2000]
+          hits = sum(bool(r['indirect_hit']) for r in rows)
+          errors = sum(bool(r['error']) for r in rows)
+          print(f'BASELINE_QCCR_INDIRECT hits={hits}/{len(rows)} recall={hits/len(rows):.6f} errors={errors}')
+          if errors:
+              raise SystemExit('baseline qccr errors are non-zero')
+          PY
+
+      - name: Apply minimal signature-completion candidate
+        run: |
+          .venv/bin/python diagnostics/apply_qccr_signature_completion.py
+          cargo fmt --manifest-path entroly-qccr/Cargo.toml
+          cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
+          git diff --check
+
+      - name: Rust QCCR unit tests
+        run: cargo test --manifest-path entroly-qccr/Cargo.toml
+
+      - name: Rebuild exact post-fix native QCCR
+        run: |
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+
+      - name: Require rendering improvement without delivery regression
+        run: |
+          .venv/bin/python diagnostics/check_qccr_rendering.py | tee /tmp/qccr_after.txt
+          post_full=$(grep -c 'full_signature_present=True' /tmp/qccr_after.txt || true)
+          post_delivered=$(grep -c 'file_delivered=True' /tmp/qccr_after.txt || true)
+          pre_full=$(cat /tmp/full_before.txt)
+          pre_delivered=$(cat /tmp/delivered_before.txt)
+          echo "PRE_FULL=$pre_full POST_FULL=$post_full PRE_DELIVERED=$pre_delivered POST_DELIVERED=$post_delivered"
+          test "$post_full" -gt "$pre_full"
+          test "$post_delivered" -ge "$pre_delivered"
+
+      - name: Exact post-fix graph lane and no-regression comparison
+        run: |
+          .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
+          cp benchmarks/results/graph_lane_results.json /tmp/graph_lane_after.json
+          .venv/bin/python - <<'PY'
+          import json
+          before = json.load(open('/tmp/graph_lane_before.json', encoding='utf-8'))
+          after = json.load(open('/tmp/graph_lane_after.json', encoding='utf-8'))
+          def qccr(data):
+              rows = [r for r in data['records'] if r['arm'] == 'qccr' and r['budget'] == 2000]
+              return sum(bool(r['indirect_hit']) for r in rows), len(rows), sum(bool(r['error']) for r in rows)
+          bh, bn, be = qccr(before)
+          ah, an, ae = qccr(after)
+          print(f'BASELINE_QCCR_INDIRECT hits={bh}/{bn} recall={bh/bn:.6f} errors={be}')
+          print(f'POSTFIX_QCCR_INDIRECT hits={ah}/{an} recall={ah/an:.6f} errors={ae}')
+          if ae:
+              raise SystemExit('post-fix qccr errors are non-zero')
+          if (ah / an) < (bh / bn):
+              raise SystemExit('qccr indirect recall regressed')
+          PY
+
+      - name: Acceptance regression tests
+        run: .venv/bin/python -m pytest tests/ -q -k 'qccr or resolution or codec or compress' --timeout=180
+
+      - name: Ruff
+        run: .venv/bin/ruff check entroly/ benchmarks/
+
+      - name: External name policy
+        run: .venv/bin/python scripts/check_external_name_policy.py
+
+      - name: Persist the exact validated product diff to PR 296
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add entroly-qccr/src/lib.rs
+          git diff --cached --quiet && { echo 'No product diff to commit'; exit 1; }
+          git commit -m 'fix(qccr): preserve complete selected signatures'
+          git push origin HEAD:refs/heads/diagnostic/qccr-rendering-20260809
