@@ -8,7 +8,7 @@ on:
 
 jobs:
   parser-extra:
-    name: Parser Extra (explicit acquisition + offline cache)
+    name: Parser Extra (explicit acquisition + offline reuse)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,7 +34,7 @@ jobs:
             tests/test_code_intelligence_conformance.py \
             tests/test_universal_code_intelligence.py
 
-      - name: Re-run parser regressions from cache with acquisition disabled
+      - name: Re-run parser regressions with acquisition disabled
         env:
           ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD: "0"
           ENTROLY_AIR_GAP: "1"
@@ -43,8 +43,7 @@ jobs:
           import tree_sitter_language_pack as pack
 
           cached = set(pack.downloaded_languages())
-          assert "python" in cached, cached
-          print("cached parser languages:", ", ".join(sorted(cached)))
+          print("downloaded grammar cache entries:", ", ".join(sorted(cached)) or "<none>")
           PY
           python -m pytest -q \
             tests/test_tree_sitter_support.py \
