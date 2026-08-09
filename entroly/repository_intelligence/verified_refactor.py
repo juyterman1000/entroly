@@ -403,6 +403,332 @@ def build_verified_rename_plan(
     return _finish_plan(base)
 
 
+def _python_node_range(
+    node: ast.AST,
+    line_offsets: list[int],
+) -> tuple[int, int] | None:
+    line = int(getattr(node, "lineno", 0))
+    end_line = int(getattr(node, "end_lineno", 0))
+    column = int(getattr(node, "col_offset", -1))
+    end_column = int(getattr(node, "end_col_offset", -1))
+    if (
+        line < 1
+        or end_line < line
+        or column < 0
+        or end_column < 0
+        or end_line >= len(line_offsets)
+    ):
+        return None
+    return line_offsets[line - 1] + column, line_offsets[end_line - 1] + end_column
+
+
+def _literal_inline_expression(node: ast.AST) -> bool:
+    """Accept expressions whose evaluation has no user-code or name lookup."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return all(_literal_inline_expression(item) for item in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            key is not None
+            and _literal_inline_expression(key)
+            and _literal_inline_expression(value)
+            for key, value in zip(node.keys, node.values)
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(
+        node.op, (ast.UAdd, ast.USub, ast.Invert)
+    ):
+        return isinstance(node.operand, ast.Constant) and isinstance(
+            node.operand.value, (int, float, complex)
+        )
+    return False
+
+
+def _python_statement_deletion_range(
+    raw: bytes,
+    node: ast.stmt,
+    line_offsets: list[int],
+) -> tuple[int, int] | None:
+    span = _python_node_range(node, line_offsets)
+    if span is None:
+        return None
+    start, end = span
+    line_start = raw.rfind(b"\n", 0, start) + 1
+    if raw[line_start:start].strip():
+        return None
+    line_end = raw.find(b"\n", end)
+    content_end = len(raw) if line_end < 0 else line_end
+    if raw[end:content_end].strip():
+        return None
+    return line_start, len(raw) if line_end < 0 else line_end + 1
+
+
+def build_verified_inline_local_plan(
+    root: Path,
+    index: RepositoryIndex,
+    symbol_query: str,
+    binding_name: str,
+    *,
+    index_digest: str,
+) -> dict[str, object]:
+    """Preview a semantics-conservative Python single-use local inline."""
+    root = root.expanduser().resolve(strict=True)
+    query = symbol_query.strip()
+    binding = binding_name.strip()
+    if not query or len(query) > 1_000:
+        raise ValueError("symbol_query must contain 1 to 1000 characters")
+    if not _IDENTIFIER.fullmatch(binding) or len(binding) > 128:
+        raise ValueError("binding_name must be a conservative ASCII identifier")
+    resolution, matches = _resolve(index, query)
+    base: dict[str, object] = {
+        "schema_version": REFACTOR_PLAN_SCHEMA_VERSION,
+        "index_digest": index_digest,
+        "operation": "inline-local",
+        "symbol_query": query,
+        "binding_name": binding,
+        "resolution": resolution,
+        "candidates": [symbol.to_dict() for symbol in matches[:100]],
+        "safe_to_apply": False,
+        "blockers": [],
+        "changes": [],
+        "risk": {
+            "supported_subset": "python-single-use-local-literal",
+            "semantic_preservation": "under-documented-no-runtime-reflection-assumption",
+            "requires_incomplete_acknowledgement": True,
+            "dynamic_frame_and_trace_observation": "not-proven-absent",
+        },
+        "receipt": {
+            "freshness": "not-evaluated" if resolution != "resolved" else "pending",
+            "change_count": 0,
+            "blocker_count": 0,
+            "remote_calls": 0,
+            "writes_performed": 0,
+            "commitment_scope": "payload-excluding-generation-command-and-plan-sha256",
+        },
+    }
+    if resolution != "resolved":
+        return _finish_plan(base)
+    symbol = matches[0]
+    blockers: list[dict[str, object]] = []
+    if symbol.language != "python":
+        blockers.append({"kind": "unsupported-language", "language": symbol.language})
+    raw, freshness = _verified_source(root, index, symbol.path)
+    if raw is None:
+        base["resolution"] = freshness
+        base["receipt"]["freshness"] = freshness  # type: ignore[index]
+        return _finish_plan(base)
+    text = raw.decode("utf-8", errors="surrogateescape")
+    try:
+        tree = ast.parse(text, filename=symbol.path, type_comments=True)
+    except (SyntaxError, ValueError, MemoryError, RecursionError, UnicodeError):
+        blockers.append({"kind": "python-ast-parse-failed"})
+        tree = ast.Module(body=[], type_ignores=[])
+    function = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == symbol.name
+            and int(getattr(node, "lineno", -1)) == symbol.line_start
+        ),
+        None,
+    )
+    if function is None:
+        blockers.append({"kind": "unsupported-symbol", "required": "python-function"})
+
+    line_offsets = [0]
+    running = 0
+    for line in text.splitlines(keepends=True):
+        running += len(line.encode("utf-8", errors="surrogateescape"))
+        line_offsets.append(running)
+
+    assignment: ast.Assign | ast.AnnAssign | None = None
+    load: ast.Name | None = None
+    expression: ast.expr | None = None
+    if function is not None:
+        parameters = {
+            argument.arg
+            for argument in (
+                *function.args.posonlyargs,
+                *function.args.args,
+                *function.args.kwonlyargs,
+                *((function.args.vararg,) if function.args.vararg else ()),
+                *((function.args.kwarg,) if function.args.kwarg else ()),
+            )
+        }
+        if binding in parameters:
+            blockers.append({"kind": "binding-is-parameter"})
+        direct_assignments: list[ast.Assign | ast.AnnAssign] = []
+        for statement in function.body:
+            target: ast.expr | None = None
+            value: ast.expr | None = None
+            if (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+            ):
+                target, value = statement.targets[0], statement.value
+            elif (
+                isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.value is not None
+            ):
+                target, value = statement.target, statement.value
+            if isinstance(target, ast.Name) and target.id == binding and value is not None:
+                direct_assignments.append(statement)
+                expression = value
+        if len(direct_assignments) != 1:
+            blockers.append({
+                "kind": "binding-definition-count",
+                "count": len(direct_assignments),
+                "required": 1,
+            })
+        else:
+            assignment = direct_assignments[0]
+
+        parent: dict[ast.AST, ast.AST] = {}
+        for node in ast.walk(function):
+            for child in ast.iter_child_nodes(node):
+                parent[child] = node
+        names = [
+            node for node in ast.walk(function)
+            if isinstance(node, ast.Name) and node.id == binding
+        ]
+        loads = [node for node in names if isinstance(node.ctx, ast.Load)]
+        stores = [node for node in names if isinstance(node.ctx, ast.Store)]
+        deletes = [node for node in names if isinstance(node.ctx, ast.Del)]
+        if len(loads) != 1:
+            blockers.append({
+                "kind": "binding-load-count", "count": len(loads), "required": 1
+            })
+        else:
+            load = loads[0]
+        if len(stores) != 1:
+            blockers.append({
+                "kind": "binding-store-count", "count": len(stores), "required": 1
+            })
+        if deletes:
+            blockers.append({"kind": "binding-delete", "count": len(deletes)})
+
+        if load is not None:
+            ancestor = parent.get(load)
+            while ancestor is not None and ancestor is not function:
+                if isinstance(ancestor, (
+                    ast.For,
+                    ast.AsyncFor,
+                    ast.While,
+                    ast.ListComp,
+                    ast.SetComp,
+                    ast.DictComp,
+                    ast.GeneratorExp,
+                    ast.Lambda,
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef,
+                    ast.ClassDef,
+                )):
+                    blockers.append({
+                        "kind": "potential-repeated-or-deferred-use",
+                        "ancestor": type(ancestor).__name__,
+                    })
+                    break
+                ancestor = parent.get(ancestor)
+
+        reflective_names = {"locals", "globals", "vars", "eval", "exec", "dir"}
+        if any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in reflective_names
+            for node in ast.walk(function)
+        ) or any(
+            isinstance(node, ast.Attribute)
+            and node.attr in {"f_locals", "currentframe", "_getframe"}
+            for node in ast.walk(function)
+        ):
+            blockers.append({"kind": "runtime-local-reflection"})
+
+    if expression is not None:
+        expression_span = _python_node_range(expression, line_offsets)
+        if not _literal_inline_expression(expression):
+            blockers.append({"kind": "expression-not-side-effect-free-literal"})
+        elif expression_span is None:
+            blockers.append({"kind": "expression-range-unavailable"})
+        elif int(getattr(expression, "lineno", 0)) != int(
+            getattr(expression, "end_lineno", -1)
+        ):
+            blockers.append({"kind": "multiline-expression-unsupported"})
+        elif expression_span[1] - expression_span[0] > 16_384:
+            blockers.append({"kind": "expression-too-large", "max_bytes": 16_384})
+
+    assignment_span = (
+        _python_statement_deletion_range(raw, assignment, line_offsets)
+        if assignment is not None
+        else None
+    )
+    load_span = _python_node_range(load, line_offsets) if load is not None else None
+    expression_span = (
+        _python_node_range(expression, line_offsets) if expression is not None else None
+    )
+    if assignment is not None and assignment_span is None:
+        blockers.append({"kind": "assignment-not-an-isolated-statement"})
+    if load is not None and load_span is None:
+        blockers.append({"kind": "load-range-unavailable"})
+    if assignment_span is not None and load_span is not None and load_span[0] < assignment_span[1]:
+        blockers.append({"kind": "use-does-not-follow-definition"})
+
+    changes: list[dict[str, object]] = []
+    if not blockers and assignment_span and load_span and expression_span:
+        source_sha256 = index.files[symbol.path].sha256
+        expression_bytes = raw[expression_span[0]:expression_span[1]]
+        replacement = b"(" + expression_bytes + b")"
+        for start, end, new, kind in (
+            (assignment_span[0], assignment_span[1], b"", "inline-binding-delete"),
+            (load_span[0], load_span[1], replacement, "inline-use"),
+        ):
+            before = raw[start:end]
+            changes.append({
+                "change_id": hashlib.sha256(
+                    f"{symbol.path}\0{start}\0{end}\0{kind}".encode("utf-8")
+                ).hexdigest()[:24],
+                "path": symbol.path,
+                "start_byte": start,
+                "end_byte": end,
+                "old_identifier": before.decode("utf-8", errors="surrogateescape"),
+                "new_identifier": new.decode("utf-8", errors="surrogateescape"),
+                "evidence_sha256": hashlib.sha256(before).hexdigest(),
+                "source_sha256": source_sha256,
+                "kind": kind,
+                "confidence": "python-ast-conservative-inline",
+            })
+        staged = raw
+        for item in sorted(changes, key=lambda value: int(value["start_byte"]), reverse=True):
+            start = int(item["start_byte"])
+            end = int(item["end_byte"])
+            staged = staged[:start] + str(item["new_identifier"]).encode(
+                "utf-8", errors="surrogateescape"
+            ) + staged[end:]
+        syntax = _syntax_status(symbol.path, staged)
+        if syntax.startswith("invalid-"):
+            blockers.append({"kind": "staged-syntax-invalid", "status": syntax})
+            changes = []
+        else:
+            base["staged_syntax"] = syntax
+
+    base["root_symbol_id"] = symbol.symbol_id
+    base["safe_to_apply"] = not blockers and bool(changes)
+    base["blockers"] = blockers
+    base["changes"] = changes
+    base["receipt"] = {
+        "freshness": "verified-against-indexed-source-sha256",
+        "change_count": len(changes),
+        "file_count": int(bool(changes)),
+        "blocker_count": len(blockers),
+        "remote_calls": 0,
+        "writes_performed": 0,
+        "commitment_scope": "payload-excluding-generation-command-and-plan-sha256",
+    }
+    return _finish_plan(base)
+
+
 def _python_top_level_deletion_range(raw: bytes, symbol: Symbol) -> tuple[int, int] | None:
     text = raw.decode("utf-8", errors="surrogateescape")
     try:
@@ -657,12 +983,14 @@ def apply_verified_rename_plan(
     if candidate_plan.get("index_digest") != index_digest:
         raise ValueError("refactor plan index is stale")
     operation = str(candidate_plan.get("operation", ""))
-    if operation not in {"rename", "safe-delete"}:
+    if operation not in {"rename", "safe-delete", "inline-local"}:
         raise ValueError("unsupported refactor operation")
     if candidate_plan.get("resolution") != "resolved":
         raise ValueError("only a resolved refactor plan can be applied")
     if operation == "safe-delete" and candidate_plan.get("safe_to_apply") is not True:
         raise ValueError("safe-delete plan has blockers or incomplete evidence")
+    if operation == "inline-local" and candidate_plan.get("safe_to_apply") is not True:
+        raise ValueError("inline-local plan has blockers or incomplete evidence")
     risk = candidate_plan.get("risk")
     if not isinstance(risk, dict) or (
         risk.get("requires_incomplete_acknowledgement") and not acknowledge_incomplete
@@ -801,6 +1129,7 @@ __all__ = [
     "REFACTOR_PLAN_SCHEMA_VERSION",
     "apply_verified_rename_plan",
     "apply_verified_refactor_plan",
+    "build_verified_inline_local_plan",
     "build_verified_safe_delete_plan",
     "build_verified_rename_plan",
     "verify_refactor_apply_commitment",
