@@ -44,7 +44,7 @@ jobs:
 
           LIMIT = 5
           BUDGET = 2000
-          SEED = 0
+          SEED = 20260807
 
           payload = json.loads(
               (REPO / "benchmarks" / "results" / "graph_lane_tasks.json").read_text(encoding="utf-8")
