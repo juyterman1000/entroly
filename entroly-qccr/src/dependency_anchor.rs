@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::{approx_tokens, ident_re};
 
-pub(crate) const DIRECT_DEPENDENCY_BOOST: f64 = 0.85;
+const MAX_QUERY_ROOTS: usize = 4;
 const MAX_DIRECT_DEPENDENCY_ANCHORS: usize = 8;
 
 #[derive(Clone, Debug)]
@@ -33,8 +33,32 @@ fn python_indent(line: &str) -> usize {
 fn python_header_end(lines: &[&str], start: usize) -> Option<usize> {
     let mut balance = 0i32;
     let mut saw_group = false;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
     for (index, line) in lines.iter().enumerate().skip(start).take(32) {
         for ch in line.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' && quote.is_some() {
+                escaped = true;
+                continue;
+            }
+            if let Some(active) = quote {
+                if ch == active {
+                    quote = None;
+                }
+                continue;
+            }
+            if matches!(ch, '\'' | '"') {
+                quote = Some(ch);
+                continue;
+            }
+            if ch == '#' {
+                break;
+            }
             match ch {
                 '(' | '[' | '{' => {
                     balance += 1;
@@ -44,7 +68,7 @@ fn python_header_end(lines: &[&str], start: usize) -> Option<usize> {
                 _ => {}
             }
         }
-        if line.trim_end().ends_with(':') && (!saw_group || balance <= 0) {
+        if quote.is_none() && line.trim_end().ends_with(':') && (!saw_group || balance <= 0) {
             return Some(index);
         }
     }
@@ -196,7 +220,8 @@ fn python_import_bindings(source: &str, text: &str) -> Vec<(String, String, Stri
         let Some((module, names)) = rest.split_once(" import ") else {
             continue;
         };
-        let Some(target_source) = resolve_python_module_source(source, module.trim()) else {
+        let module = module.trim();
+        let Some(base_target) = resolve_python_module_source(source, module) else {
             continue;
         };
         let cleaned = names.trim().trim_start_matches('(').trim_end_matches(')');
@@ -215,11 +240,12 @@ fn python_import_bindings(source: &str, text: &str) -> Vec<(String, String, Stri
             } else {
                 original
             };
-            out.push((
-                local.to_string(),
-                original.to_string(),
-                target_source.clone(),
-            ));
+            let target_source = if module.ends_with('.') {
+                format!("{}/{}.py", base_target.trim_end_matches(".py"), original)
+            } else {
+                base_target.clone()
+            };
+            out.push((local.to_string(), original.to_string(), target_source));
         }
     }
     out
@@ -255,62 +281,76 @@ fn python_call_position(body: &str, name: &str) -> Option<usize> {
     None
 }
 
+fn query_roots(
+    sources: &[String],
+    texts: &[String],
+    query: &str,
+) -> Vec<(usize, usize, String, String)> {
+    let mut identifiers = Vec::new();
+    let mut seen = HashSet::new();
+    for matched in ident_re().find_iter(query) {
+        let symbol = matched.as_str().to_string();
+        if symbol.len() >= 3 && seen.insert(symbol.clone()) {
+            identifiers.push((matched.start(), symbol));
+        }
+    }
+
+    let mut roots = Vec::new();
+    for (query_position, symbol) in identifiers {
+        for (source_index, source) in sources.iter().enumerate() {
+            if !is_python_source(source) {
+                continue;
+            }
+            if let Some(body) = python_callable_body(&texts[source_index], &symbol) {
+                roots.push((query_position, source_index, symbol.clone(), body));
+            }
+        }
+    }
+    roots.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| sources[a.1].cmp(&sources[b.1]))
+    });
+    roots.truncate(MAX_QUERY_ROOTS);
+    roots
+}
+
 pub(crate) fn query_dependency_anchors(
     sources: &[String],
     texts: &[String],
     query: &str,
 ) -> Vec<DependencyAnchor> {
-    let mut query_symbols = Vec::new();
-    let mut seen_query = HashSet::new();
-    for matched in ident_re().find_iter(query) {
-        let symbol = matched.as_str().to_string();
-        if symbol.len() >= 3 && seen_query.insert(symbol.clone()) {
-            query_symbols.push(symbol);
-        }
-    }
-
     let path_to_index: HashMap<String, usize> = sources
         .iter()
         .enumerate()
         .map(|(index, source)| (normalized_source_path(source), index))
         .collect();
-    let mut candidates: Vec<(usize, String, String, String)> = Vec::new();
+    let roots = query_roots(sources, texts, query);
+    let mut candidates: Vec<(usize, usize, String, String, String)> = Vec::new();
 
-    for (root_index, source) in sources.iter().enumerate() {
-        if !is_python_source(source) {
-            continue;
-        }
-        let bindings = python_import_bindings(source, &texts[root_index]);
-        if bindings.is_empty() {
-            continue;
-        }
-        for query_symbol in &query_symbols {
-            let Some(body) = python_callable_body(&texts[root_index], query_symbol) else {
+    for (root_rank, (_, root_index, _root_symbol, body)) in roots.iter().enumerate() {
+        let bindings = python_import_bindings(&sources[*root_index], &texts[*root_index]);
+        for (local, original, target_path) in bindings {
+            let Some(call_pos) = python_call_position(body, &local) else {
                 continue;
             };
-            for (local, original, target_path) in &bindings {
-                let Some(call_pos) = python_call_position(&body, local) else {
-                    continue;
-                };
-                let target_index = path_to_index.get(target_path).copied().or_else(|| {
-                    let package_path =
-                        format!("{}/__init__.py", target_path.trim_end_matches(".py"));
-                    path_to_index.get(&package_path).copied()
-                });
-                let Some(target_index) = target_index else {
-                    continue;
-                };
-                let Some(signature) = python_signature_for_symbol(&texts[target_index], original)
-                else {
-                    continue;
-                };
-                candidates.push((
-                    call_pos,
-                    sources[target_index].clone(),
-                    original.clone(),
-                    signature,
-                ));
-            }
+            let target_index = path_to_index.get(&target_path).copied().or_else(|| {
+                let package_path = format!("{}/__init__.py", target_path.trim_end_matches(".py"));
+                path_to_index.get(&package_path).copied()
+            });
+            let Some(target_index) = target_index else {
+                continue;
+            };
+            let Some(signature) = python_signature_for_symbol(&texts[target_index], &original) else {
+                continue;
+            };
+            candidates.push((
+                root_rank,
+                call_pos,
+                sources[target_index].clone(),
+                original,
+                signature,
+            ));
         }
     }
 
@@ -318,11 +358,12 @@ pub(crate) fn query_dependency_anchors(
         a.0.cmp(&b.0)
             .then_with(|| a.1.cmp(&b.1))
             .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.3.cmp(&b.3))
     });
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for (_, source, symbol, signature) in candidates {
-        if !seen.insert((source.clone(), symbol.clone())) {
+    for (_, _, source, symbol, signature) in candidates {
+        if !seen.insert((source.clone(), symbol)) {
             continue;
         }
         out.push(DependencyAnchor { source, signature });
@@ -339,17 +380,22 @@ pub(crate) fn render_dependency_anchored_excerpt(
     chosen: &[usize],
     file_budget: i64,
 ) -> String {
+    if file_budget <= 0 {
+        return String::new();
+    }
     let mut pieces: Vec<String> = Vec::new();
-    let mut used = 0i64;
     for anchor in anchors {
-        let cost = approx_tokens(anchor) as i64;
-        if cost > file_budget || used + cost > file_budget {
+        if pieces.contains(anchor) {
             continue;
         }
-        if !pieces.contains(anchor) {
-            pieces.push(anchor.clone());
-            used += cost;
+        let mut candidate = pieces.clone();
+        candidate.push(anchor.clone());
+        if approx_tokens(&candidate.join("\n")) as i64 <= file_budget {
+            pieces = candidate;
         }
+    }
+    if anchors.iter().any(|anchor| !pieces.contains(anchor)) {
+        return String::new();
     }
     for &index in chosen {
         let sentence = sentences[index].clone();
@@ -359,14 +405,17 @@ pub(crate) fn render_dependency_anchored_excerpt(
         {
             continue;
         }
-        let cost = approx_tokens(&sentence) as i64;
-        if used + cost > file_budget {
-            continue;
+        let mut candidate = pieces.clone();
+        candidate.push(sentence);
+        if approx_tokens(&candidate.join("\n")) as i64 <= file_budget {
+            pieces = candidate;
         }
-        pieces.push(sentence);
-        used += cost;
     }
     pieces.join("\n")
+}
+
+pub(crate) fn protected_anchors_survive(content: &str, anchors: &[String]) -> bool {
+    anchors.iter().all(|anchor| content.contains(anchor))
 }
 
 #[cfg(test)]
@@ -404,6 +453,57 @@ mod tests {
     }
 
     #[test]
+    fn resolves_function_local_class_import() {
+        let sources = vec![
+            "file:entroly/sdk.py".to_string(),
+            "file:entroly/cache_aligner.py".to_string(),
+        ];
+        let texts = vec![
+            "def _cache_align_older(\n    client_key: str, older_msgs: list[dict[str, object]]\n) -> list[dict[str, object]]:\n    try:\n        if True:\n            from .cache_aligner import CacheAligner\n            aligner = CacheAligner()\n        return older_msgs\n    except Exception:\n        return older_msgs\n"
+                .to_string(),
+            "class CacheAligner:\n    def __init__(\n        self,\n        similarity_threshold: float = 0.90,\n        max_clients: int = 100,\n    ):\n        pass\n"
+                .to_string(),
+        ];
+        let anchors = query_dependency_anchors(
+            &sources,
+            &texts,
+            "_cache_align_older Reuse the previous compressed older-context",
+        );
+        assert_eq!(anchors.len(), 1, "{anchors:?}");
+        assert_eq!(anchors[0].source, "file:entroly/cache_aligner.py");
+        assert!(anchors[0].signature.contains("def __init__("));
+        assert!(anchors[0]
+            .signature
+            .contains("max_clients: int = 100"));
+    }
+
+    #[test]
+    fn resolves_multi_name_relative_import() {
+        let sources = vec![
+            "file:entroly/repository_intelligence/__init__.py".to_string(),
+            "file:entroly/repository_intelligence/graph.py".to_string(),
+        ];
+        let texts = vec![
+            "from .graph import analyze_change_impact, localize_tests, resolve_calls, resolve_imports\n\ndef build_repository_index(\n    root: str,\n    *,\n    limits: object | None = None,\n) -> object:\n    parsed = {}\n    symbols = {}\n    policy = limits\n    calls, unresolved_calls = resolve_calls(parsed, symbols, policy)\n    return calls, unresolved_calls\n"
+                .to_string(),
+            "def resolve_calls(\n    parsed: object,\n    symbols: object,\n    limits: object,\n) -> tuple:\n    return (), ()\n"
+                .to_string(),
+        ];
+        let anchors = query_dependency_anchors(
+            &sources,
+            &texts,
+            "build_repository_index Build a deterministic, resource-bounded repository index.",
+        );
+        assert_eq!(anchors.len(), 1, "{anchors:?}");
+        assert_eq!(
+            anchors[0].source,
+            "file:entroly/repository_intelligence/graph.py"
+        );
+        assert!(anchors[0].signature.contains("parsed: object"));
+        assert!(anchors[0].signature.contains("limits: object"));
+    }
+
+    #[test]
     fn uses_constructor_signature_for_called_class() {
         let sources = vec![
             "file:pkg/api.py".to_string(),
@@ -418,5 +518,24 @@ mod tests {
         assert_eq!(anchors.len(), 1, "{anchors:?}");
         assert!(anchors[0].signature.contains("def __init__("));
         assert!(anchors[0].signature.contains("max_clients: int = 100"));
+    }
+
+    #[test]
+    fn anchored_renderer_never_splits_protected_signature() {
+        let anchor = "def target(\n    alpha: int,\n    beta: int,\n) -> int:".to_string();
+        let sentences = vec![
+            "This relevant sentence is intentionally long enough for selection.".to_string(),
+            "Another selected sentence would exceed a deliberately small budget.".to_string(),
+        ];
+        let budget = approx_tokens(&anchor) as i64 + 2;
+        let rendered = render_dependency_anchored_excerpt(
+            &[anchor.clone()],
+            &sentences,
+            &[0, 1],
+            budget,
+        );
+        assert!(protected_anchors_survive(&rendered, &[anchor.clone()]));
+        assert!(approx_tokens(&rendered) as i64 <= budget, "{rendered}");
+        assert!(rendered.contains("beta: int"), "{rendered}");
     }
 }
