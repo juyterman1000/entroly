@@ -11,13 +11,16 @@ from typing import Callable, Iterable
 
 from .graph import analyze_change_impact, localize_tests
 from .models import RepositoryIndex, RepositoryLimits, normalize_relative
+from .verified_context import build_symbol_graph, build_verified_context
 
-SERVICE_SCHEMA_VERSION = "entroly.repository-service.v1"
+SERVICE_SCHEMA_VERSION = "entroly.repository-service.v2"
 _MAX_CHANGED_PATHS = 200
 _MAX_DIAGNOSTICS = 100
 _MAX_IMPACT_DEPTH = 12
 _MAX_IMPACT_PATHS = 5_000
 _MAX_TEST_CANDIDATES = 100
+_MAX_CONTEXT_TOKENS = 32_768
+_MAX_CONTEXT_FRAGMENTS = 100
 
 
 class RepositoryIntelligenceError(ValueError):
@@ -64,6 +67,14 @@ class InvalidChangedPaths(RepositoryIntelligenceError):
 
 class TooManyChangedPaths(RepositoryIntelligenceError):
     code = "too_many_changed_paths"
+
+
+class InvalidContextQuery(RepositoryIntelligenceError):
+    code = "invalid_context_query"
+
+
+class InvalidSymbolQuery(RepositoryIntelligenceError):
+    code = "invalid_symbol_query"
 
 
 Builder = Callable[..., RepositoryIndex]
@@ -178,11 +189,15 @@ class RepositoryIntelligenceService:
             "files": len(index.files),
             "symbols": len(index.symbols),
             "call_edges": len(index.call_edges),
+            "unresolved_calls": len(index.unresolved_calls),
             "file_edges": sum(
                 len(values) for values in index.file_dependencies.values()
             ),
             "tests": len(index.test_paths),
             "languages": dict(sorted(languages.items())),
+            "parse_backends": dict(sorted(Counter(
+                symbol.parse_backend for symbol in index.symbols.values()
+            ).items())),
             "diagnostics": list(index.diagnostics[:_MAX_DIAGNOSTICS]),
         }
 
@@ -263,3 +278,63 @@ class RepositoryIntelligenceService:
             "changed_paths": list(changed),
             "candidates": [candidate.to_dict() for candidate in candidates],
         }
+
+    def context(
+        self,
+        query: str,
+        *,
+        token_budget: int = 2_000,
+        max_hops: int = 2,
+        max_fragments: int = 24,
+        include_history: bool = False,
+        max_history_commits: int = 20,
+    ) -> dict[str, object]:
+        """Return a hash-verified, budgeted partial graph for one task."""
+        if not isinstance(query, str) or not query.strip():
+            raise InvalidContextQuery("query must not be empty")
+        if len(query.strip()) > 4_000:
+            raise InvalidContextQuery("query must be at most 4000 characters")
+        index, digest, generation = self._snapshot()
+        payload = build_verified_context(
+            self.root,
+            index,
+            query,
+            index_digest=digest,
+            token_budget=max(128, min(int(token_budget), _MAX_CONTEXT_TOKENS)),
+            max_hops=max(0, min(int(max_hops), 6)),
+            max_fragments=max(1, min(int(max_fragments), _MAX_CONTEXT_FRAGMENTS)),
+            include_history=bool(include_history),
+            max_history_commits=max(1, min(int(max_history_commits), 100)),
+        )
+        payload["generation"] = generation
+        return payload
+
+    def symbol_graph(
+        self,
+        symbol_query: str,
+        *,
+        direction: str = "both",
+        max_depth: int = 3,
+        limit: int = 200,
+    ) -> dict[str, object]:
+        """Return a bounded call graph after unambiguous symbol lookup."""
+        if not isinstance(symbol_query, str) or not symbol_query.strip():
+            raise InvalidSymbolQuery("symbol query must not be empty")
+        if len(symbol_query.strip()) > 1_000:
+            raise InvalidSymbolQuery("symbol query must be at most 1000 characters")
+        if not isinstance(direction, str) or direction.strip().lower() not in {
+            "callers", "callees", "both",
+        }:
+            raise InvalidSymbolQuery("direction must be callers, callees, or both")
+        index, digest, generation = self._snapshot()
+        payload = build_symbol_graph(
+            self.root,
+            index,
+            symbol_query,
+            index_digest=digest,
+            direction=direction,
+            max_depth=max_depth,
+            limit=limit,
+        )
+        payload["generation"] = generation
+        return payload

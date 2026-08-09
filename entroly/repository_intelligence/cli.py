@@ -10,7 +10,7 @@ from typing import Sequence
 from .models import RepositoryLimits
 from .service import RepositoryIntelligenceError, RepositoryIntelligenceService
 
-CLI_SCHEMA_VERSION = "entroly.repository-cli.v1"
+CLI_SCHEMA_VERSION = "entroly.repository-cli.v2"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -18,7 +18,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="python -m entroly.repository_intelligence",
         description=(
             "Build a bounded local symbol graph, inspect change impact, and "
-            "rank relevant tests. Output is deterministic JSON."
+            "emit receipt-backed task context. Output is deterministic JSON."
         ),
     )
     parser.add_argument("--root", default=".", help="repository root")
@@ -37,6 +37,30 @@ def _parser() -> argparse.ArgumentParser:
     tests = subcommands.add_parser("tests", help="rank tests for changed files")
     tests.add_argument("--changed", action="append", required=True)
     tests.add_argument("--limit", type=int, default=20)
+
+    context = subcommands.add_parser(
+        "context",
+        help="build a verified, budgeted partial graph for a task",
+    )
+    context.add_argument("--query", required=True)
+    context.add_argument("--token-budget", type=int, default=2_000)
+    context.add_argument("--max-hops", type=int, default=2)
+    context.add_argument("--max-fragments", type=int, default=24)
+    context.add_argument("--include-history", action="store_true")
+    context.add_argument("--max-history-commits", type=int, default=20)
+
+    graph = subcommands.add_parser(
+        "graph",
+        help="trace freshness-checked static calls for an unambiguous symbol",
+    )
+    graph.add_argument("--symbol", required=True)
+    graph.add_argument(
+        "--direction",
+        choices=("callers", "callees", "both"),
+        default="both",
+    )
+    graph.add_argument("--max-depth", type=int, default=3)
+    graph.add_argument("--limit", type=int, default=200)
     return parser
 
 
@@ -66,6 +90,26 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
             )
             payload["command"] = "impact"
             payload["schema_version"] = CLI_SCHEMA_VERSION
+            return 0, payload
+        if args.command == "context":
+            payload = service.context(
+                args.query,
+                token_budget=args.token_budget,
+                max_hops=args.max_hops,
+                max_fragments=args.max_fragments,
+                include_history=args.include_history,
+                max_history_commits=args.max_history_commits,
+            )
+            payload["command"] = "context"
+            return 0, payload
+        if args.command == "graph":
+            payload = service.symbol_graph(
+                args.symbol,
+                direction=args.direction,
+                max_depth=args.max_depth,
+                limit=args.limit,
+            )
+            payload["command"] = "graph"
             return 0, payload
         payload = service.tests(args.changed, limit=args.limit)
         payload["command"] = "tests"

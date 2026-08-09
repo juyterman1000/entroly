@@ -9,6 +9,7 @@ from entroly.semantic_resolution import extract_blocks
 from entroly.tree_sitter_support import (
     LANGUAGE_BY_SUFFIX,
     _get_local_parser,
+    extract_structural_calls,
     extract_structural_spans,
 )
 
@@ -59,3 +60,27 @@ def test_pack_v1_never_downloads_without_explicit_opt_in(monkeypatch) -> None:
 
 def test_unknown_or_unavailable_parser_fails_open() -> None:
     assert extract_structural_spans("hello", "notes.txt") is None
+
+
+@pytest.mark.parametrize(
+    ("path", "source", "target"),
+    [
+        ("sample.py", "def run():\n    return helper()\n", "helper"),
+        ("sample.rs", "fn run() { helper(); }\n", "helper"),
+        ("sample.ts", "function run() { return client.send(); }\n", "client.send"),
+        ("sample.go", "func run() { client.Send() }\n", "client.Send"),
+        ("Sample.java", "class Sample { void run() { client.send(); } }\n", "send"),
+    ],
+)
+def test_parser_backed_calls_have_exact_evidence(
+    path: str,
+    source: str,
+    target: str,
+) -> None:
+    pytest.importorskip("tree_sitter_language_pack")
+    calls = extract_structural_calls(source, path)
+    assert calls is not None
+    call = next(item for item in calls if item.target == target)
+    raw = source.encode("utf-8")
+    assert raw[call.start_byte:call.end_byte]
+    assert len(call.evidence_sha256) == 64

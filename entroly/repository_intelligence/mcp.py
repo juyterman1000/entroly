@@ -36,7 +36,7 @@ def _error(exc: Exception, operation: str) -> str:
         # Exception messages can contain absolute paths, environment details,
         # or parser internals. Keep the model-facing error useful but local.
         payload = {
-            "schema_version": "entroly.repository-service.v1",
+            "schema_version": "entroly.repository-service.v2",
             "error": "repository_operation_failed",
             "detail": "repository operation failed; inspect local server logs",
             "error_type": type(exc).__name__,
@@ -61,8 +61,9 @@ def create_repository_mcp_server(
         "entroly-repository-intelligence",
         instructions=(
             "Inspect a fixed local repository using bounded symbol, import, and "
-            "call graphs. Tools return workspace-relative paths and metadata, "
-            "never source bytes or absolute local paths."
+            "call graphs. Paths are workspace-relative and absolute local paths "
+            "are never returned. Source bytes are exposed only by the bounded "
+            "verified-context tool, labeled untrusted, with exact hashes."
         ),
     )
 
@@ -103,6 +104,46 @@ def create_repository_mcp_server(
             return _json(service.tests(changed_paths, limit=max(1, min(int(limit), 100))))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_tests_for_changes")
+
+    @mcp.tool()
+    def repository_verified_context(
+        query: str,
+        token_budget: int = 2_000,
+        max_hops: int = 2,
+        max_fragments: int = 24,
+        include_history: bool = False,
+        max_history_commits: int = 20,
+    ) -> str:
+        """Return a partial code graph scoped to one task with a receipt."""
+        try:
+            return _json(service.context(
+                query,
+                token_budget=max(128, min(int(token_budget), 32_768)),
+                max_hops=max(0, min(int(max_hops), 6)),
+                max_fragments=max(1, min(int(max_fragments), 100)),
+                include_history=bool(include_history),
+                max_history_commits=max(1, min(int(max_history_commits), 100)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_verified_context")
+
+    @mcp.tool()
+    def repository_symbol_graph(
+        symbol_query: str,
+        direction: str = "both",
+        max_depth: int = 3,
+        limit: int = 200,
+    ) -> str:
+        """Trace freshness-checked static calls without guessing symbol identity."""
+        try:
+            return _json(service.symbol_graph(
+                symbol_query,
+                direction=direction,
+                max_depth=max(0, min(int(max_depth), 12)),
+                limit=max(1, min(int(limit), 5_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_symbol_graph")
 
     @mcp.tool()
     def refresh_repository_index() -> str:

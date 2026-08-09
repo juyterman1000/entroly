@@ -14,6 +14,7 @@ from .models import (
     RepositoryLimits,
     Symbol,
     TestCandidate,
+    UnresolvedCall,
     normalize_relative,
 )
 from .parsers import ParsedFile, module_name
@@ -64,7 +65,7 @@ def resolve_calls(
     parsed: Mapping[str, ParsedFile],
     symbols: Mapping[str, Symbol],
     limits: RepositoryLimits,
-) -> tuple[CallEdge, ...]:
+) -> tuple[tuple[CallEdge, ...], tuple[UnresolvedCall, ...]]:
     by_name: dict[str, list[Symbol]] = defaultdict(list)
     by_path_name: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
     for symbol in symbols.values():
@@ -72,6 +73,7 @@ def resolve_calls(
         by_path_name[(symbol.path, symbol.name)].append(symbol)
     modules = _module_paths(parsed)
     edges: set[CallEdge] = set()
+    unresolved: set[UnresolvedCall] = set()
 
     def imported(item: ParsedFile, owner: str, name: str) -> list[Symbol]:
         target = item.import_aliases.get(owner or name)
@@ -86,29 +88,86 @@ def resolve_calls(
         path = _unique_module(modules, module)
         return list(by_path_name.get((path, symbol_name), ())) if path else []
 
+    def repository_import_target(item: ParsedFile, owner: str, name: str) -> bool:
+        target = item.import_aliases.get(owner or name)
+        if not target:
+            return False
+        module = target if owner else target.rpartition(".")[0]
+        return any(
+            candidate == module
+            or candidate.startswith(module + ".")
+            or module.startswith(candidate + ".")
+            for candidate in modules
+        )
+
     limit_reached = False
     for path, item in sorted(parsed.items()):
         if limit_reached:
             break
-        for caller_id, target, line in item.calls:
+        for call in item.calls:
+            caller_id, target, line = call.caller_id, call.target, call.line
             owner, dot, name = target.rpartition(".")
             if not dot:
                 owner, name = "", target
             candidates = list(by_path_name.get((path, name), ()))
             candidates.extend(imported(item, owner, name))
-            if not candidates and not item.import_aliases.get(owner or name):
-                if len(by_name.get(name, ())) == 1:
-                    candidates.extend(by_name[name])
+            if (
+                not candidates
+                and not owner
+                and not item.import_aliases.get(name)
+            ):
+                global_candidates = by_name.get(name, ())
+                if global_candidates:
+                    # A unique global definition is a conservative fallback.
+                    # Multiple matches are retained only as negative evidence;
+                    # they must never become an invented edge.
+                    candidates.extend(global_candidates)
             unique = {item.symbol_id: item for item in candidates}
             if len(unique) != 1:
+                # Do not flood the index with ordinary stdlib, dependency, or
+                # dynamic calls that have no repository candidate. Preserve
+                # the cases where the graph had evidence but could not bind it:
+                # ambiguity, or an explicit import alias whose target is absent.
+                if unique or repository_import_target(item, owner, name):
+                    unresolved.add(UnresolvedCall(
+                        caller_id or f"{path}::<module>::module",
+                        target,
+                        path,
+                        line,
+                        "ambiguous" if unique else "unresolved-import",
+                        tuple(sorted(unique)),
+                        call.start_byte,
+                        call.end_byte,
+                        call.evidence_sha256,
+                    ))
+                    if len(edges) + len(unresolved) >= limits.max_edges:
+                        limit_reached = True
+                        break
                 continue
             callee = next(iter(unique.values()))
             caller = caller_id or f"{path}::<module>::module"
-            edges.add(CallEdge(caller, callee.symbol_id, path, line))
-            if len(edges) >= limits.max_edges:
+            if by_path_name.get((path, name)):
+                resolution = "same-file"
+            elif item.import_aliases.get(owner or name):
+                resolution = "import-binding"
+            else:
+                resolution = "global-unique"
+            edges.add(CallEdge(
+                caller,
+                callee.symbol_id,
+                path,
+                line,
+                "resolved",
+                "calls",
+                resolution,
+                call.start_byte,
+                call.end_byte,
+                call.evidence_sha256,
+            ))
+            if len(edges) + len(unresolved) >= limits.max_edges:
                 limit_reached = True
                 break
-    return tuple(
+    resolved = tuple(
         sorted(
             edges,
             key=lambda edge: (
@@ -116,6 +175,13 @@ def resolve_calls(
             ),
         )
     )
+    unknown = tuple(sorted(
+        unresolved,
+        key=lambda call: (
+            call.path, call.line, call.caller_id, call.target, call.reason
+        ),
+    ))
+    return resolved, unknown
 
 
 def analyze_change_impact(

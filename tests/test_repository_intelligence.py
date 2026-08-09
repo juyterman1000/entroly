@@ -197,6 +197,30 @@ def test_ambiguous_symbol_name_does_not_invent_call_edge(tmp_path: Path) -> None
     index = build_repository_index(tmp_path)
     caller_id = index.symbols_for_path("caller.py")[0].symbol_id
     assert all(edge.caller_id != caller_id for edge in index.call_edges)
+    unresolved = [call for call in index.unresolved_calls if call.caller_id == caller_id]
+    assert len(unresolved) == 1
+    assert unresolved[0].reason == "ambiguous"
+    assert len(unresolved[0].candidates) == 2
+
+
+def test_tree_sitter_call_is_attributed_to_narrowest_rust_symbol(tmp_path: Path) -> None:
+    pytest.importorskip("tree_sitter_language_pack")
+    _write(
+        tmp_path,
+        "src/lib.rs",
+        "fn helper() {}\n"
+        "struct Worker;\n"
+        "impl Worker {\n"
+        "    fn run(&self) { helper(); }\n"
+        "}\n",
+    )
+    index = build_repository_index(tmp_path)
+    symbols = {symbol.qualified_name: symbol for symbol in index.symbols.values()}
+    edge = next(edge for edge in index.call_edges if edge.callee_id == symbols["helper"].symbol_id)
+    assert edge.caller_id == symbols["Worker.run"].symbol_id
+    assert edge.resolution == "same-file"
+    assert edge.start_byte < edge.end_byte
+    assert len(edge.evidence_sha256) == 64
 
 
 def test_changed_seed_limit_is_enforced(tmp_path: Path) -> None:
@@ -230,7 +254,24 @@ def test_call_edge_limit_is_global_not_per_file(tmp_path: Path) -> None:
     assert len(repository.call_edges) == 2
 
 
+def test_relationship_limit_also_bounds_ambiguous_call_evidence(tmp_path: Path) -> None:
+    _write(tmp_path, "a.py", "def duplicate():\n    return 'a'\n")
+    _write(tmp_path, "b.py", "def duplicate():\n    return 'b'\n")
+    for index in range(10):
+        _write(
+            tmp_path,
+            f"caller_{index}.py",
+            f"def caller_{index}():\n    return duplicate()\n",
+        )
+    repository = build_repository_index(
+        tmp_path,
+        limits=RepositoryLimits(max_edges=3),
+    )
+    assert len(repository.call_edges) + len(repository.unresolved_calls) == 3
+    assert "relationship limit reached; remaining evidence omitted" in repository.diagnostics
+
+
 def test_index_serialization_is_explicitly_versioned(tmp_path: Path) -> None:
     _write(tmp_path, "sample.py", "def sample():\n    return 1\n")
     payload = build_repository_index(tmp_path).to_dict()
-    assert payload["schema_version"] == "entroly.repository-index.v1"
+    assert payload["schema_version"] == "entroly.repository-index.v2"

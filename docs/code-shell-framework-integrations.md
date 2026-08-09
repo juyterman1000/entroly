@@ -16,9 +16,12 @@ language-pack releases that use on-demand grammar downloads, only already
 cached grammars are used. An operator may explicitly allow acquisition with
 `ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1`.
 
-Limitations: parser-backed spans improve structural boundaries; they do not
-claim semantic call resolution for every grammar. Python keeps its deeper AST
-call graph, while other languages retain conservative dependency inference.
+Parser-backed call sites are attributed to the narrowest enclosing symbol and
+carry exact byte evidence. Ambiguous bindings remain explicit instead of being
+invented. Cross-file and type-directed resolution is still conservative and is
+not claimed to match a compiler or language server for every grammar. See
+[Verified code context](verified-code-context.md) for the receipt-backed partial
+graph surface and its limitations.
 
 ## Command-aware shell evidence
 

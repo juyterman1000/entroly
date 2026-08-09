@@ -8,6 +8,7 @@ failure returns ``None`` so callers can use their exact deterministic fallback.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +66,17 @@ class StructuralSpan:
     indent: int
     start_byte: int
     end_byte: int
+
+
+@dataclass(frozen=True)
+class StructuralCall:
+    """One parser-observed call site with byte-exact source evidence."""
+
+    target: str
+    start_line: int
+    start_byte: int
+    end_byte: int
+    evidence_sha256: str
 
 
 def language_for_path(file_path: str) -> str | None:
@@ -144,14 +156,17 @@ def _kind(node_type: str) -> str:
     return "declaration"
 
 
-def extract_structural_spans(
+_CALL_TYPES = frozenset({
+    "call", "call_expression", "function_call", "function_call_expression",
+    "invocation_expression", "method_invocation", "method_call_expression",
+})
+
+
+def _parse_source(
     source: str,
     file_path: str,
-    *,
-    max_bytes: int = 2 * 1024 * 1024,
-    max_nodes: int = 100_000,
-) -> list[StructuralSpan] | None:
-    """Return parser-backed exact spans, or ``None`` when safely unavailable."""
+    max_bytes: int,
+) -> tuple[bytes, Any] | None:
     language = language_for_path(file_path)
     if not language or not source.strip():
         return None
@@ -165,10 +180,12 @@ def extract_structural_spans(
     if parser is None:
         return None
     try:
-        tree = parser.parse(raw)
+        return raw, parser.parse(raw)
     except Exception:
         return None
 
+
+def _spans_from_tree(raw: bytes, tree: Any, max_nodes: int) -> list[StructuralSpan]:
     spans: list[StructuralSpan] = []
     seen: set[tuple[int, int, str]] = set()
     for node in _walk(tree.root_node, max_nodes):
@@ -199,7 +216,9 @@ def extract_structural_spans(
         signature_bytes = raw[start:max(start, min(signature_end, end))]
         signature = signature_bytes.decode("utf-8", errors="surrogateescape").strip()
         if not signature or len(signature) > 600:
-            signature = raw[start:end].decode("utf-8", errors="surrogateescape").splitlines()[0].strip()
+            signature = raw[start:end].decode(
+                "utf-8", errors="surrogateescape"
+            ).splitlines()[0].strip()
         block_source = raw[start:end].decode("utf-8", errors="surrogateescape")
         block_lines = block_source.splitlines()
         first_line = block_lines[0] if block_lines else ""
@@ -214,4 +233,77 @@ def extract_structural_spans(
             start_byte=start,
             end_byte=end,
         ))
+    return spans
+
+
+def _call_target(node: Any, raw: bytes) -> str:
+    field = getattr(node, "child_by_field_name", None)
+    candidate = None
+    if callable(field):
+        for name in ("function", "method", "name"):
+            candidate = field(name)
+            if candidate is not None:
+                break
+    if candidate is None:
+        children = list(getattr(node, "named_children", ()))
+        candidate = children[0] if children else None
+    if candidate is None:
+        return ""
+    value = raw[int(candidate.start_byte):int(candidate.end_byte)].decode(
+        "utf-8", errors="surrogateescape"
+    ).strip()
+    if not value or len(value) > 512 or "\n" in value:
+        return ""
+    return value
+
+
+def extract_structural_calls(
+    source: str,
+    file_path: str,
+    *,
+    max_bytes: int = 2 * 1024 * 1024,
+    max_nodes: int = 100_000,
+) -> list[StructuralCall] | None:
+    """Return parser-backed call sites, or ``None`` when safely unavailable."""
+    parsed = _parse_source(source, file_path, max_bytes)
+    if parsed is None:
+        return None
+    raw, tree = parsed
+    calls: list[StructuralCall] = []
+    seen: set[tuple[int, int, str]] = set()
+    for node in _walk(tree.root_node, max_nodes):
+        node_type = str(getattr(node, "type", ""))
+        if node_type not in _CALL_TYPES or bool(getattr(node, "is_error", False)):
+            continue
+        start = int(getattr(node, "start_byte", 0))
+        end = int(getattr(node, "end_byte", 0))
+        target = _call_target(node, raw)
+        key = (start, end, target)
+        if not target or end <= start or end > len(raw) or key in seen:
+            continue
+        seen.add(key)
+        evidence = raw[start:end]
+        calls.append(StructuralCall(
+            target=target,
+            start_line=int(node.start_point[0]) + 1,
+            start_byte=start,
+            end_byte=end,
+            evidence_sha256=hashlib.sha256(evidence).hexdigest(),
+        ))
+    return calls
+
+
+def extract_structural_spans(
+    source: str,
+    file_path: str,
+    *,
+    max_bytes: int = 2 * 1024 * 1024,
+    max_nodes: int = 100_000,
+) -> list[StructuralSpan] | None:
+    """Return parser-backed exact spans, or ``None`` when safely unavailable."""
+    parsed = _parse_source(source, file_path, max_bytes)
+    if parsed is None:
+        return None
+    raw, tree = parsed
+    spans = _spans_from_tree(raw, tree, max_nodes)
     return spans or None

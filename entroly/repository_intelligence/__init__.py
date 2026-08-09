@@ -19,15 +19,19 @@ from .models import (
     RepositoryLimits,
     Symbol,
     TestCandidate,
+    UnresolvedCall,
 )
 from .parsers import scan_repository
 
 __all__ = [
     "CallEdge", "FileRecord", "ImpactReport", "RepositoryIndex",
-    "RepositoryLimits", "Symbol", "TestCandidate", "analyze_change_impact",
+    "RepositoryLimits", "Symbol", "TestCandidate", "UnresolvedCall",
+    "analyze_change_impact",
     "build_repository_index", "localize_tests", "InvalidChangedPaths",
+    "InvalidContextQuery", "InvalidSymbolQuery",
     "RepositoryIntelligenceError", "RepositoryIntelligenceService",
-    "UnknownChangedPaths",
+    "UnknownChangedPaths", "build_symbol_graph", "build_verified_context",
+    "verify_context_commitment", "verify_symbol_graph_commitment",
 ]
 
 
@@ -48,12 +52,15 @@ def build_repository_index(
         for symbol in sorted(parsed[path].symbols, key=lambda item: item.symbol_id)
     }
     dependencies = resolve_imports(parsed)
-    calls = resolve_calls(parsed, symbols, policy)
+    calls, unresolved_calls = resolve_calls(parsed, symbols, policy)
+    if len(calls) + len(unresolved_calls) >= policy.max_edges:
+        diagnostics.append("relationship limit reached; remaining evidence omitted")
     return RepositoryIndex(
         root=str(root_path),
         files={path: parsed[path].record for path in sorted(parsed)},
         symbols=symbols,
         call_edges=calls,
+        unresolved_calls=unresolved_calls,
         file_dependencies=dependencies,
         diagnostics=tuple(sorted(dict.fromkeys(diagnostics))),
     )
@@ -61,7 +68,15 @@ def build_repository_index(
 
 from .service import (  # noqa: E402
     InvalidChangedPaths,
+    InvalidContextQuery,
+    InvalidSymbolQuery,
     RepositoryIntelligenceError,
     RepositoryIntelligenceService,
     UnknownChangedPaths,
+)
+from .verified_context import (  # noqa: E402
+    build_symbol_graph,
+    build_verified_context,
+    verify_context_commitment,
+    verify_symbol_graph_commitment,
 )

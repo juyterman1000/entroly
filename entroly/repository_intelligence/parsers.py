@@ -11,7 +11,9 @@ from pathlib import Path
 from .models import FileRecord, RepositoryLimits, Symbol, normalize_relative
 from ..tree_sitter_support import (
     LANGUAGE_BY_SUFFIX,
+    StructuralCall,
     StructuralSpan,
+    extract_structural_calls,
     extract_structural_spans,
 )
 
@@ -52,7 +54,18 @@ class ParsedFile:
     symbols: list[Symbol]
     imports: set[str]
     import_aliases: dict[str, str]
-    calls: list[tuple[str | None, str, int]]
+    calls: list["ParsedCall"]
+
+
+@dataclass(frozen=True)
+class ParsedCall:
+    caller_id: str | None
+    target: str
+    line: int
+    start_byte: int = 0
+    end_byte: int = 0
+    evidence_sha256: str = ""
+    parse_backend: str = "conservative"
 
 
 def module_name(path: str) -> str:
@@ -92,21 +105,51 @@ def _import_target(module: str | None, level: int, path: str) -> str:
 
 
 class PythonVisitor(ast.NodeVisitor):
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, text: str, raw: bytes) -> None:
         self.path = path
+        self.text = text
+        self.raw = raw
+        self._line_offsets = [0]
+        running = 0
+        for line in text.splitlines(keepends=True):
+            running += len(line.encode("utf-8", errors="surrogateescape"))
+            self._line_offsets.append(running)
         self.symbols: list[Symbol] = []
         self.imports: set[str] = set()
         self.aliases: dict[str, str] = {}
-        self.calls: list[tuple[str | None, str, int]] = []
+        self.calls: list[ParsedCall] = []
         self.scope: list[Symbol] = []
+
+    def _byte_range(self, node: ast.AST) -> tuple[int, int]:
+        line = max(1, int(getattr(node, "lineno", 1)))
+        end_line = max(line, int(getattr(node, "end_lineno", line)))
+        start = self._line_offsets[min(line - 1, len(self._line_offsets) - 1)]
+        start += max(0, int(getattr(node, "col_offset", 0)))
+        end = self._line_offsets[min(end_line - 1, len(self._line_offsets) - 1)]
+        end += max(0, int(getattr(node, "end_col_offset", 0)))
+        return min(start, len(self.raw)), min(max(start, end), len(self.raw))
 
     def _symbol(self, node: ast.AST, name: str, kind: str) -> Symbol:
         qualified = ".".join([*(item.name for item in self.scope), name])
+        start, end = self._byte_range(node)
+        signature_end = end
+        body = getattr(node, "body", None)
+        if body:
+            signature_end = self._byte_range(body[0])[0]
+        signature = self.raw[start:signature_end].decode(
+            "utf-8", errors="surrogateescape"
+        ).strip()
+        if not signature or len(signature) > 600:
+            signature = self.raw[start:end].decode(
+                "utf-8", errors="surrogateescape"
+            ).splitlines()[0].strip()
         symbol = Symbol(
             _symbol_id(self.path, qualified, kind), self.path, name, qualified, kind,
             max(1, int(getattr(node, "lineno", 1))),
             max(1, int(getattr(node, "end_lineno", getattr(node, "lineno", 1)))),
             "python", self.scope[-1].symbol_id if self.scope else None,
+            signature, start, end, "python-ast",
+            hashlib.sha256(self.raw[start:end]).hexdigest(),
         )
         self.symbols.append(symbol)
         return symbol
@@ -154,7 +197,16 @@ class PythonVisitor(ast.NodeVisitor):
         if name:
             target = f"{owner}.{name}" if owner else name
             caller = self.scope[-1].symbol_id if self.scope else None
-            self.calls.append((caller, target, max(1, int(getattr(node, "lineno", 1)))))
+            start, end = self._byte_range(node)
+            self.calls.append(ParsedCall(
+                caller,
+                target,
+                max(1, int(getattr(node, "lineno", 1))),
+                start,
+                end,
+                hashlib.sha256(self.raw[start:end]).hexdigest(),
+                "python-ast",
+            ))
         self.generic_visit(node)
 
 
@@ -188,7 +240,7 @@ def _parse_python(path: str, text: str, raw: bytes) -> ParsedFile:
             error=f"{type(exc).__name__}: {exc}",
         )
         return ParsedFile(record, [], set(), {}, [])
-    visitor = PythonVisitor(path)
+    visitor = PythonVisitor(path, text, raw)
     visitor.visit(tree)
     is_test = _is_test_path(path) or any(item.kind == "test" for item in visitor.symbols)
     return ParsedFile(
@@ -200,7 +252,7 @@ def _parse_python(path: str, text: str, raw: bytes) -> ParsedFile:
 def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> ParsedFile:
     symbols: list[Symbol] = []
     imports: set[str] = set()
-    calls: list[tuple[str | None, str, int]] = []
+    calls: list[ParsedCall] = []
     for line_number, line in enumerate(text.splitlines(), 1):
         current: Symbol | None = None
         if language == "rust":
@@ -209,7 +261,8 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
                 kind, name = match.groups()
                 current = Symbol(
                     _symbol_id(path, name, kind), path, name, name, kind,
-                    line_number, line_number, language,
+                    line_number, line_number, language, None, line.strip(),
+                    0, 0, "conservative",
                 )
                 symbols.append(current)
             use = RUST_USE.match(line)
@@ -222,13 +275,18 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
                 name = match.group(2) or match.group(3)
                 current = Symbol(
                     _symbol_id(path, name, kind), path, name, name, kind,
-                    line_number, line_number, language,
+                    line_number, line_number, language, None, line.strip(),
+                    0, 0, "conservative",
                 )
                 symbols.append(current)
             imports.update(JS_IMPORT.findall(line))
         for name in CALL.findall(line):
             if name not in CALL_KEYWORDS:
-                calls.append((current.symbol_id if current else None, name, line_number))
+                calls.append(ParsedCall(
+                    current.symbol_id if current else None,
+                    name,
+                    line_number,
+                ))
     return ParsedFile(
         _record(path, language, raw, text, is_test=_is_test_path(path), imports=imports),
         symbols, imports, {}, calls,
@@ -261,16 +319,54 @@ def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> Par
             _symbol_id(path, qualified, kind), path, span.name, qualified, kind,
             span.start_line, span.end_line, language,
             parent.symbol_id if parent else None,
+            span.signature,
+            span.start_byte,
+            span.end_byte,
+            "tree-sitter",
+            hashlib.sha256(raw[span.start_byte:span.end_byte]).hexdigest(),
         )
         symbols.append(symbol)
         active.append((symbol, span))
+    parser_calls = extract_structural_calls(text, path)
+    calls = conservative.calls
+    if parser_calls is not None:
+        calls = _attribute_structural_calls(parser_calls, symbols)
     return ParsedFile(
         conservative.record,
         symbols,
         conservative.imports,
         conservative.import_aliases,
-        conservative.calls,
+        calls,
     )
+
+
+def _attribute_structural_calls(
+    calls: list[StructuralCall],
+    symbols: list[Symbol],
+) -> list[ParsedCall]:
+    """Attach each parser-observed call to its narrowest enclosing symbol."""
+    result: list[ParsedCall] = []
+    for call in calls:
+        enclosing = [
+            symbol
+            for symbol in symbols
+            if symbol.start_byte <= call.start_byte < symbol.end_byte
+        ]
+        owner = min(
+            enclosing,
+            key=lambda symbol: (symbol.end_byte - symbol.start_byte, symbol.symbol_id),
+            default=None,
+        )
+        result.append(ParsedCall(
+            owner.symbol_id if owner else None,
+            call.target,
+            call.start_line,
+            call.start_byte,
+            call.end_byte,
+            call.evidence_sha256,
+            "tree-sitter",
+        ))
+    return result
 
 
 def scan_repository(

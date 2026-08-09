@@ -284,7 +284,41 @@
         "entroly.semantic_resolution.extract_blocks",
         "entroly.repository_intelligence.build_repository_index"
       ],
-      "limitations": "Parser grammars are optional and local-first; languages other than Python retain conservative call and dependency inference."
+      "limitations": "Parser grammars are optional and local-first; parser-backed call evidence is exact when available, while cross-file and type-directed binding remains conservative."
+    },
+    {
+      "id": "verified_code_context_graph",
+      "status": "beta",
+      "implementation": [
+        "entroly/repository_intelligence/verified_context.py",
+        "entroly/repository_intelligence/graph.py",
+        "entroly/repository_intelligence/git_history.py",
+        "entroly/repository_intelligence/service.py",
+        "entroly/repository_intelligence/mcp.py"
+      ],
+      "tests": [
+        "tests/test_repository_verified_context.py::test_verified_context_selects_query_seed_and_graph_neighbor",
+        "tests/test_repository_verified_context.py::test_verified_context_fails_closed_when_source_changed_after_index",
+        "tests/test_repository_verified_context.py::test_verified_context_can_include_bounded_local_git_history",
+        "tests/test_repository_verified_context.py::test_symbol_graph_verifies_call_evidence_and_refuses_tampering",
+        "tests/test_repository_verified_context.py::test_symbol_graph_preserves_ambiguous_identity",
+        "tests/test_repository_verified_context.py::test_symbol_graph_fails_closed_when_indexed_source_is_stale",
+        "tests/test_verified_code_context_benchmark.py::test_verified_code_context_preregistered_matrix"
+      ],
+      "docs": [
+        "docs/verified-code-context.md",
+        "benchmarks/VERIFIED_CODE_CONTEXT_PREREGISTRATION.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp", "cli"],
+      "public_entrypoints": [
+        "entroly.repository_intelligence.RepositoryIntelligenceService.context",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.symbol_graph",
+        "entroly.repository_intelligence.build_verified_context",
+        "entroly.repository_intelligence.build_symbol_graph",
+        "entroly.repository_intelligence.verify_context_commitment",
+        "entroly.repository_intelligence.verify_symbol_graph_commitment"
+      ],
+      "limitations": "Beta query-time partial graph with exact evidence, receipts, and opt-in local Git history; compiler/LSP type resolution, control/data flow, runtime traces, incremental persistence, and broad external quality benchmarks are not yet implemented."
     },
     {
       "id": "command_aware_shell_evidence",

@@ -9,6 +9,8 @@ from pathlib import Path
 
 from entroly.repository_intelligence import (
     InvalidChangedPaths,
+    InvalidContextQuery,
+    InvalidSymbolQuery,
     RepositoryIntelligenceService,
     build_repository_index,
 )
@@ -133,6 +135,30 @@ def test_service_counts_input_paths_before_deduplication(tmp_path: Path) -> None
         raise AssertionError("request-size limit must precede path deduplication")
 
 
+def test_service_rejects_empty_context_query_before_indexing(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    try:
+        service.context("   ")
+    except InvalidContextQuery as exc:
+        assert exc.to_dict()["error"] == "invalid_context_query"
+    else:
+        raise AssertionError("empty query must fail visibly")
+    assert service._index is None
+
+
+def test_service_rejects_empty_symbol_query_before_indexing(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    try:
+        service.symbol_graph("")
+    except InvalidSymbolQuery as exc:
+        assert exc.to_dict()["error"] == "invalid_symbol_query"
+    else:
+        raise AssertionError("empty symbol query must fail visibly")
+    assert service._index is None
+
+
 def test_service_snapshot_is_single_flight_under_concurrency(tmp_path: Path) -> None:
     _project(tmp_path)
     calls = 0
@@ -201,7 +227,9 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "refresh_repository_index",
         "repository_change_impact",
         "repository_summary",
+        "repository_symbol_graph",
         "repository_tests_for_changes",
+        "repository_verified_context",
     }
     summary = json.loads(mcp.tools["repository_summary"]())
     assert summary["files"] == 3
@@ -215,6 +243,17 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         mcp.tools["repository_tests_for_changes"](["pkg/source.py"])
     )
     assert tests["candidates"][0]["path"] == "tests/test_api.py"
+    context = json.loads(
+        mcp.tools["repository_verified_context"]("execute", token_budget=512)
+    )
+    assert context["schema_version"] == "entroly.verified-code-context.v1"
+    assert context["fragments"][0]["qualified_name"] == "execute"
+    assert str(tmp_path) not in json.dumps(context)
+    graph = json.loads(mcp.tools["repository_symbol_graph"]("execute"))
+    assert graph["schema_version"] == "entroly.verified-symbol-graph.v1"
+    assert graph["resolution"] == "resolved"
+    assert graph["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(graph)
 
 
 def test_mcp_unknown_path_returns_machine_readable_error(tmp_path: Path, monkeypatch) -> None:

@@ -33,7 +33,7 @@ def test_summary_is_bounded_and_versioned(tmp_path: Path) -> None:
     _project(tmp_path)
     code, payload = run(["--root", str(tmp_path), "summary"])
     assert code == 0
-    assert payload["schema_version"] == "entroly.repository-cli.v1"
+    assert payload["schema_version"] == "entroly.repository-cli.v2"
     assert payload["files"] == 3
     assert payload["tests"] == 1
     assert "symbols" in payload and "call_edges" in payload
@@ -60,6 +60,34 @@ def test_tests_ranks_directly_related_test(tmp_path: Path) -> None:
     )
     assert code == 0
     assert payload["candidates"][0]["path"] == "tests/test_api.py"
+
+
+def test_context_returns_verified_partial_graph(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "context", "--query", "execute",
+        "--token-budget", "512",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-code-context.v1"
+    assert payload["command"] == "context"
+    assert payload["fragments"][0]["qualified_name"] == "execute"
+
+
+def test_graph_returns_verified_static_callers(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "graph", "--symbol", "execute",
+        "--direction", "callers",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-symbol-graph.v1"
+    assert payload["command"] == "graph"
+    assert payload["resolution"] == "resolved"
+    assert {node["qualified_name"] for node in payload["nodes"]} >= {
+        "execute",
+        "invoke",
+    }
 
 
 def test_unknown_changed_path_fails_visibly(tmp_path: Path) -> None:
