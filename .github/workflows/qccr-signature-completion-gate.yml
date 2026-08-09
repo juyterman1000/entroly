@@ -5,68 +5,42 @@ on:
     branches: [main]
 
 jobs:
-  validate-and-persist:
+  exact-head-regression:
     if: github.head_ref == 'diagnostic/qccr-rendering-20260809'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    permissions:
-      contents: write
+    timeout-minutes: 30
     steps:
-      - name: Checkout PR branch
+      - name: Checkout exact PR head
         uses: actions/checkout@v6
-        with:
-          ref: diagnostic/qccr-rendering-20260809
-          fetch-depth: 0
-
-      - name: Detect whether product integration already exists
-        id: state
-        shell: bash
-        run: |
-          if grep -q '^mod dependency_anchor;' entroly-qccr/src/lib.rs; then
-            echo 'needs_apply=false' >> "$GITHUB_OUTPUT"
-            echo 'Validated dependency-anchor integration already exists; no-op.'
-          else
-            echo 'needs_apply=true' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Preserve candidate support files and switch to exact clean pre-fix SHA
-        if: steps.state.outputs.needs_apply == 'true'
-        run: |
-          cp entroly-qccr/src/dependency_anchor.rs /tmp/dependency_anchor.rs
-          cp .github/scripts/apply_qccr_dependency_anchor.sh /tmp/apply_qccr_dependency_anchor.sh
-          chmod +x /tmp/apply_qccr_dependency_anchor.sh
-          git checkout --detach d333f1d9c3d72ae32692583d4318eceb99e90944
-          cp /tmp/dependency_anchor.rs entroly-qccr/src/dependency_anchor.rs
-          test "$(git rev-parse HEAD)" = 'd333f1d9c3d72ae32692583d4318eceb99e90944'
 
       - name: Set up Rust
-        if: steps.state.outputs.needs_apply == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python
-        if: steps.state.outputs.needs_apply == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
-      - name: Create clean benchmark environment
-        if: steps.state.outputs.needs_apply == 'true'
+      - name: Create test environment
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install maturin ruff --timeout 120 --retries 5
           .venv/bin/pip install -e '.[test]' --timeout 120 --retries 5
 
-      - name: Build exact clean pre-fix native QCCR
-        if: steps.state.outputs.needs_apply == 'true'
+      - name: Rust format and QCCR unit tests
+        run: |
+          cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
+          cargo test --manifest-path entroly-qccr/Cargo.toml
+
+      - name: Build exact-head native QCCR
         run: |
           cd entroly-core
           ../.venv/bin/maturin develop --release
 
-      - name: Record exact clean pre-fix five-probe baseline
-        if: steps.state.outputs.needs_apply == 'true'
+      - name: Require five of five defining files and complete signatures
         run: |
-          .venv/bin/python - <<'PY' | tee /tmp/qccr_before.txt
+          .venv/bin/python - <<'PY'
           import ast
           import json
           from benchmarks.answer_correctness_bridge import build_probes, _context_for
@@ -104,144 +78,30 @@ jobs:
               full_signature = all(line in context for line in sig)
               delivered += int(file_delivered)
               full += int(full_signature)
-              print('BASE_PROBE', idx, f'callee={probe.task.callee!r}', f'file_delivered={file_delivered}', f'full_signature_present={full_signature}', f'context_tokens={_tokens(context)}')
-          print(f'BASE_SUMMARY full_signatures={full}/5 defining_files_delivered={delivered}/5')
-          if (full, delivered) != (1, 4):
-              raise SystemExit(f'clean baseline drifted: full={full}/5 delivered={delivered}/5')
+              print('EXACT_HEAD_PROBE', idx, f'callee={probe.task.callee!r}', f'file_delivered={file_delivered}', f'full_signature_present={full_signature}', f'gold_presence={tuple((param, param in context) for param in probe.params)!r}', f'context_tokens={_tokens(context)}')
+          print(f'EXACT_HEAD_SUMMARY full_signatures={full}/5 defining_files_delivered={delivered}/5')
+          if full != 5 or delivered != 5:
+              raise SystemExit(f'exact-head acceptance failed: full={full}/5 delivered={delivered}/5')
           PY
 
-      - name: Record exact clean graph baseline
-        if: steps.state.outputs.needs_apply == 'true'
+      - name: Require clean 20-task graph result
         run: |
           .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
-          cp benchmarks/results/graph_lane_results.json /tmp/graph_lane_before.json
           .venv/bin/python - <<'PY'
           import json
-          data = json.load(open('/tmp/graph_lane_before.json', encoding='utf-8'))
+          data = json.load(open('benchmarks/results/graph_lane_results.json', encoding='utf-8'))
           rows = [r for r in data['records'] if r['arm'] == 'qccr' and r['budget'] == 2000]
           hits = sum(bool(r['indirect_hit']) for r in rows)
           errors = sum(bool(r['error']) for r in rows)
-          print(f'BASELINE_QCCR_INDIRECT hits={hits}/{len(rows)} recall={hits/len(rows):.6f} errors={errors}')
-          if (hits, len(rows), errors) != (15, 20, 0):
-              raise SystemExit(f'clean graph baseline drifted: hits={hits}/{len(rows)} errors={errors}')
+          print(f'EXACT_HEAD_QCCR_INDIRECT hits={hits}/{len(rows)} recall={hits/len(rows):.6f} errors={errors}')
+          if (hits, len(rows), errors) != (20, 20, 0):
+              raise SystemExit(f'exact-head graph result drifted: hits={hits}/{len(rows)} errors={errors}')
           PY
 
-      - name: Apply query-rooted dependency-anchor integration
-        if: steps.state.outputs.needs_apply == 'true'
-        run: /tmp/apply_qccr_dependency_anchor.sh
-
-      - name: Rust QCCR unit tests
-        if: steps.state.outputs.needs_apply == 'true'
-        run: cargo test --manifest-path entroly-qccr/Cargo.toml
-
-      - name: Rebuild exact post-fix native QCCR
-        if: steps.state.outputs.needs_apply == 'true'
-        run: |
-          cd entroly-core
-          ../.venv/bin/maturin develop --release
-
-      - name: Require all five defining files and all five complete signatures
-        if: steps.state.outputs.needs_apply == 'true'
-        run: |
-          .venv/bin/python - <<'PY'
-          import ast
-          import json
-          from benchmarks.answer_correctness_bridge import build_probes, _context_for
-          from benchmarks.graph_lane_quality import REPO, Task, _pool_for, _read, _tokens, _tracked_python_files
-
-          LIMIT, BUDGET, SEED = 5, 2000, 20260807
-          payload = json.loads((REPO / 'benchmarks/results/graph_lane_tasks.json').read_text(encoding='utf-8'))
-          probes = build_probes([Task(**row) for row in payload['tasks']], LIMIT)
-          corpus = sorted({str(path.relative_to(REPO)).replace('\\', '/') for path in _tracked_python_files()})
-
-          def signature_lines(callee, rel):
-              source = (REPO / rel).read_text(encoding='utf-8', errors='replace')
-              lines = source.splitlines()
-              tree = ast.parse(source)
-              target = None
-              for node in tree.body:
-                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
-                      target = node
-                      break
-                  if isinstance(node, ast.ClassDef) and node.name == callee:
-                      target = next((sub for sub in node.body if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == '__init__'), None)
-                      break
-              if target is None:
-                  raise RuntimeError((callee, rel))
-              body_line = target.body[0].lineno if target.body else target.end_lineno
-              return tuple(line.strip() for line in lines[target.lineno - 1:max(target.lineno, body_line - 1)] if line.strip())
-
-          full = delivered = 0
-          for idx, probe in enumerate(probes, 1):
-              pool = _pool_for(probe.task, corpus, 48, SEED)
-              texts = {rel: _read(rel) for rel in pool}
-              context = _context_for('qccr', probe, pool, texts, BUDGET)
-              sig = signature_lines(probe.task.callee, probe.task.callee_file)
-              file_delivered = f'### {probe.task.callee_file}' in context
-              full_signature = all(line in context for line in sig)
-              delivered += int(file_delivered)
-              full += int(full_signature)
-              print('FIX_PROBE', idx, f'callee={probe.task.callee!r}', f'file_delivered={file_delivered}', f'full_signature_present={full_signature}', f'gold_presence={tuple((param, param in context) for param in probe.params)!r}', f'context_tokens={_tokens(context)}')
-          print(f'FIX_SUMMARY full_signatures={full}/5 defining_files_delivered={delivered}/5')
-          if full != 5 or delivered != 5:
-              raise SystemExit(f'acceptance failed: full={full}/5 delivered={delivered}/5')
-          PY
-
-      - name: Exact post-fix graph lane must not regress
-        if: steps.state.outputs.needs_apply == 'true'
-        run: |
-          .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
-          .venv/bin/python - <<'PY'
-          import json
-          before = json.load(open('/tmp/graph_lane_before.json', encoding='utf-8'))
-          after = json.load(open('benchmarks/results/graph_lane_results.json', encoding='utf-8'))
-          def qccr(data):
-              rows = [r for r in data['records'] if r['arm'] == 'qccr' and r['budget'] == 2000]
-              return sum(bool(r['indirect_hit']) for r in rows), len(rows), sum(bool(r['error']) for r in rows)
-          bh, bn, be = qccr(before)
-          ah, an, ae = qccr(after)
-          print(f'BASELINE_QCCR_INDIRECT hits={bh}/{bn} recall={bh/bn:.6f} errors={be}')
-          print(f'POSTFIX_QCCR_INDIRECT hits={ah}/{an} recall={ah/an:.6f} errors={ae}')
-          if ae:
-              raise SystemExit('post-fix qccr errors are non-zero')
-          if (ah / an) < (bh / bn):
-              raise SystemExit('qccr indirect recall regressed')
-          PY
-
-      - name: Targeted acceptance regression tests
-        if: steps.state.outputs.needs_apply == 'true'
+      - name: Targeted regression tests
         run: .venv/bin/python -m pytest tests/ -q -k 'qccr or resolution or codec or compress' --timeout=180
 
       - name: Ruff and external-name policy
-        if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/ruff check entroly/ benchmarks/
           .venv/bin/python scripts/check_external_name_policy.py
-
-      - name: Preserve exact validated Rust files
-        if: steps.state.outputs.needs_apply == 'true'
-        run: |
-          cp entroly-qccr/src/lib.rs /tmp/validated-lib.rs
-          cp entroly-qccr/src/dependency_anchor.rs /tmp/validated-dependency-anchor.rs
-
-      - name: Persist exact validated product integration to PR 296
-        if: steps.state.outputs.needs_apply == 'true'
-        run: |
-          git reset --hard
-          git clean -fd
-          git checkout -B diagnostic/qccr-rendering-20260809 origin/diagnostic/qccr-rendering-20260809
-          git reset --hard origin/diagnostic/qccr-rendering-20260809
-          if grep -q '^mod dependency_anchor;' entroly-qccr/src/lib.rs; then
-            echo 'Validated product integration already exists; no-op.'
-            exit 0
-          fi
-          cp /tmp/validated-lib.rs entroly-qccr/src/lib.rs
-          cp /tmp/validated-dependency-anchor.rs entroly-qccr/src/dependency_anchor.rs
-          cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add entroly-qccr/src/lib.rs entroly-qccr/src/dependency_anchor.rs
-          git diff --cached --quiet && { echo 'No product diff to commit'; exit 1; }
-          git commit -m 'fix(qccr): preserve query-rooted dependency evidence'
-          git push origin HEAD:refs/heads/diagnostic/qccr-rendering-20260809
