@@ -8,8 +8,10 @@ import pytest
 from entroly.repository_intelligence import build_repository_index
 from entroly.repository_intelligence.service import RepositoryIntelligenceService
 from entroly.repository_intelligence.verified_refactor import (
+    apply_verified_refactor_plan,
     apply_verified_rename_plan,
     build_verified_rename_plan,
+    build_verified_safe_delete_plan,
     verify_refactor_plan_commitment,
 )
 from entroly.tree_sitter_support import extract_structural_spans
@@ -215,6 +217,68 @@ def test_verified_external_semantic_reference_augments_static_call_plan(tmp_path
     )
     assert plan["risk"]["non_call_references_indexed"] is True
     assert plan["semantic_overlay_receipt"]["accepted_relationship_count"] == 1
+
+
+def test_headless_safe_delete_blocks_known_references(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    summary = service.summary()
+    assert service._index is not None
+    plan = build_verified_safe_delete_plan(
+        tmp_path,
+        service._index,
+        "execute",
+        index_digest=str(summary["index_digest"]),
+    )
+    assert plan["operation"] == "safe-delete"
+    assert plan["safe_to_apply"] is False
+    assert plan["changes"] == []
+    assert {item["kind"] for item in plan["blockers"]} >= {
+        "resolved-call", "unclassified-lexical-reference"
+    }
+    assert verify_refactor_plan_commitment(plan)
+
+
+def test_headless_safe_delete_is_two_phase_and_source_verified(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "module.py",
+        "def keep():\n    return 1\n\n@staticmethod\ndef unused():\n    return 2\n",
+    )
+    service = RepositoryIntelligenceService(tmp_path)
+    summary = service.summary()
+    assert service._index is not None
+    plan = build_verified_safe_delete_plan(
+        tmp_path,
+        service._index,
+        "unused",
+        index_digest=str(summary["index_digest"]),
+    )
+    assert plan["safe_to_apply"] is True
+    assert plan["receipt"]["blocker_count_before_output_limit"] == 0
+    assert "@staticmethod" in plan["changes"][0]["old_identifier"]
+    with pytest.raises(ValueError, match="explicit acknowledgement"):
+        apply_verified_refactor_plan(
+            tmp_path,
+            service._index,
+            plan,
+            index_digest=str(summary["index_digest"]),
+            expected_plan_sha256=plan["receipt"]["plan_sha256"],
+        )
+    applied = apply_verified_refactor_plan(
+        tmp_path,
+        service._index,
+        plan,
+        index_digest=str(summary["index_digest"]),
+        expected_plan_sha256=plan["receipt"]["plan_sha256"],
+        acknowledge_incomplete=True,
+    )
+    assert applied["operation"] == "safe-delete"
+    assert applied["files"][0]["syntax_validation"] == "verified-python-ast"
+    text = (tmp_path / "module.py").read_text(encoding="utf-8")
+    assert "unused" not in text
+    assert "@staticmethod" not in text
+    assert "def keep" in text
 
 
 @pytest.mark.parametrize(

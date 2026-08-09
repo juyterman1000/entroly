@@ -170,6 +170,44 @@ community overlap matching, hotspot-rank movement, routes, and per-category
 truncation. If an input architecture was itself truncated, absence remains
 inconclusive and the diff says so.
 
+### Verified HTTP endpoints
+
+The `routes` command returns endpoint evidence rather than unbound route-like
+text:
+
+```powershell
+python -m entroly.repository_intelligence --root . routes `
+  --method GET --path-prefix /api
+```
+
+For Python, the language AST resolves static strings, constants, decorator
+methods, `APIRouter` or blueprint prefixes, mounted-router chains, and same-file
+handler identities. Dynamic path expressions are omitted with a reason. Other
+supported languages use bounded framework patterns and are labelled
+`heuristic-static`, never upgraded to AST certainty. Parameter spellings such
+as `:id`, `<int:id>`, and `{id}` normalize to one shape so possible method/path
+collisions are visible as review signals, not asserted defects. Exact source
+ranges, source hashes, evidence hashes, ambiguity, output limits, and the full
+payload commitment travel with every result.
+
+### Portable graph snapshots
+
+The complete bounded graph can be committed or shared independently of a local
+cache:
+
+```powershell
+python -m entroly.repository_intelligence --root . snapshot > graph.json
+python -m entroly.repository_intelligence --root . snapshot-check `
+  --snapshot-json graph.json
+```
+
+Snapshots are deterministic and checkout-root independent. Detached validation
+checks graph identity uniqueness, every call/dependency endpoint, the portable
+index digest, source manifest, graph digest, and whole-payload commitment.
+Import reconstructs a `RepositoryIndex` only after every committed source still
+matches the current workspace. It rejects drift instead of merging stale shared
+facts into fresh local analysis.
+
 ## What is verified
 
 Each selected fragment records:
@@ -331,6 +369,21 @@ This is not equivalent to compiler-complete refactoring. Dynamic lookup,
 reflection, strings, generated code, macro expansion, non-call references, and
 external consumers may remain. The mandatory acknowledgement exists because a
 hash can make an incomplete plan tamper-evident but cannot make it complete.
+
+For an unreferenced top-level declaration, `safe-delete-preview` performs an
+even more conservative check:
+
+```powershell
+python -m entroly.repository_intelligence --root . safe-delete-preview `
+  --symbol "pkg.module::unused::function"
+```
+
+Any resolved caller, unresolved call candidate, import binding, comment/string,
+or other unexplained lexical occurrence blocks the plan. A blocker-free plan
+commits the exact declaration preimage and staged syntax result.
+`safe-delete-apply` still requires the plan hash and explicit acknowledgement:
+dynamic dispatch, reflection, generated code, external repositories, and
+runtime configuration are not proven absent.
 
 ### Operator-configured LSP orchestration
 

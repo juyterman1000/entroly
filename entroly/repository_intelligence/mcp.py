@@ -288,6 +288,48 @@ def create_repository_mcp_server(
             return _error(exc, "repository_architecture_diff")
 
     @mcp.tool()
+    def repository_http_routes(
+        method: str | None = None,
+        path_prefix: str | None = None,
+        max_routes: int = 10_000,
+        max_conflicts: int = 1_000,
+    ) -> str:
+        """Discover verified HTTP routes, mounted prefixes, handlers, and collisions."""
+        try:
+            return _json(service.routes(
+                method=method,
+                path_prefix=path_prefix,
+                max_routes=max(1, min(int(max_routes), 100_000)),
+                max_conflicts=max(1, min(int(max_conflicts), 10_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_http_routes")
+
+    @mcp.tool()
+    def repository_graph_snapshot() -> str:
+        """Export the complete bounded graph as a portable committed snapshot."""
+        try:
+            return _json(service.graph_snapshot())
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_graph_snapshot")
+
+    @mcp.tool()
+    def repository_graph_snapshot_check(
+        snapshot: dict[str, object],
+        limit: int = 10_000,
+    ) -> str:
+        """Verify a shared snapshot and prove whether it matches current sources."""
+        try:
+            if len(json.dumps(snapshot).encode("utf-8")) > 256 * 1024 * 1024:
+                raise ValueError("graph snapshot must be at most 256 MiB")
+            return _json(service.graph_snapshot_check(
+                snapshot,
+                limit=max(1, min(int(limit), 100_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_graph_snapshot_check")
+
+    @mcp.tool()
     def repository_runtime_overlay(
         events: list[dict[str, object]],
         producer: str = "external-trace",
@@ -354,6 +396,36 @@ def create_repository_mcp_server(
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_rename_apply")
+
+    @mcp.tool()
+    def repository_safe_delete_preview(
+        symbol_query: str,
+        max_blockers: int = 10_000,
+    ) -> str:
+        """Preview a headless delete; any known or lexical reference blocks it."""
+        try:
+            return _json(service.safe_delete_preview(
+                symbol_query,
+                max_blockers=max(1, min(int(max_blockers), 100_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_safe_delete_preview")
+
+    @mcp.tool()
+    def repository_safe_delete_apply(
+        plan: dict[str, object],
+        expected_plan_sha256: str,
+        acknowledge_incomplete: bool = False,
+    ) -> str:
+        """Apply a blocker-free delete after plan-hash and risk acknowledgement."""
+        try:
+            return _json(service.safe_delete_apply(
+                plan,
+                expected_plan_sha256=expected_plan_sha256,
+                acknowledge_incomplete=bool(acknowledge_incomplete),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_safe_delete_apply")
 
     @mcp.tool()
     def repository_lsp_rename_preview(

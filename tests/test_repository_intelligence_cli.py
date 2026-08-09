@@ -183,6 +183,46 @@ def test_architecture_diff_requires_and_compares_committed_inputs(
     assert payload["files"]["added"] == ["pkg/new.py"]
 
 
+def test_routes_returns_verified_mounted_http_endpoints(tmp_path: Path) -> None:
+    _project(tmp_path)
+    _write(
+        tmp_path,
+        "pkg/routes.py",
+        "from fastapi import APIRouter\n"
+        "router = APIRouter(prefix='/v1')\n"
+        "@router.get('/items/{item_id}')\n"
+        "def item(item_id: str):\n"
+        "    return item_id\n",
+    )
+    code, payload = run([
+        "--root", str(tmp_path), "routes", "--method", "GET",
+        "--path-prefix", "/v1",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-http-routes.v1"
+    assert payload["command"] == "routes"
+    assert payload["routes"][0]["path"] == "/v1/items/{item_id}"
+    assert payload["routes"][0]["handler"]["status"] == "resolved"
+
+
+def test_snapshot_round_trip_proves_current_graph_is_importable(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, snapshot = run(["--root", str(tmp_path), "snapshot"])
+    assert code == 0
+    assert snapshot["schema_version"] == "entroly.verified-graph-snapshot.v1"
+    snapshot_path = tmp_path.parent / f"{tmp_path.name}-graph.json"
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    code, checked = run([
+        "--root", str(tmp_path), "snapshot-check",
+        "--snapshot-json", str(snapshot_path),
+    ])
+    assert code == 0
+    assert checked["command"] == "snapshot-check"
+    assert checked["snapshot_commitment_valid"] is True
+    assert checked["snapshot_importable"] is True
+    assert checked["in_sync"] is True
+
+
 def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: Path) -> None:
     _project(tmp_path)
     code, plan = run([
@@ -213,6 +253,31 @@ def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: 
     assert applied["command"] == "rename-apply"
     assert applied["apply"]["change_count"] == 3
     assert "def perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+
+def test_cli_safe_delete_preview_and_apply_are_committed(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "module.py",
+        "def keep():\n    return 1\n\ndef unused():\n    return 2\n",
+    )
+    code, plan = run([
+        "--root", str(tmp_path), "safe-delete-preview",
+        "--symbol", "unused",
+    ])
+    assert code == 0
+    assert plan["safe_to_apply"] is True
+    plan_path = tmp_path / "safe-delete.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    code, applied = run([
+        "--root", str(tmp_path), "safe-delete-apply",
+        "--plan-json", str(plan_path),
+        "--expected-plan-sha", plan["receipt"]["plan_sha256"],
+        "--acknowledge-incomplete",
+    ])
+    assert code == 0
+    assert applied["apply"]["operation"] == "safe-delete"
+    assert "unused" not in (tmp_path / "module.py").read_text(encoding="utf-8")
 
 
 def test_cli_lsp_preview_requires_explicit_command_file(tmp_path: Path) -> None:

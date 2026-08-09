@@ -9,6 +9,7 @@ from entroly.repository_intelligence import (
     verify_architecture_commitment,
     verify_code_health_commitment,
     verify_repository_map_commitment,
+    verify_routes_commitment,
 )
 
 
@@ -27,7 +28,7 @@ def _project(root: Path) -> None:
     )
 
 
-def test_unchanged_map_health_and_architecture_reuse_verified_persistent_analysis(
+def test_unchanged_map_health_architecture_and_routes_reuse_verified_analysis(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -38,9 +39,11 @@ def test_unchanged_map_health_and_architecture_reuse_verified_persistent_analysi
     first_map = first_service.repository_map("source")
     first_health = first_service.code_health()
     first_architecture = first_service.architecture()
+    first_routes = first_service.routes()
     assert verify_repository_map_commitment(first_map)
     assert verify_code_health_commitment(first_health)
     assert verify_architecture_commitment(first_architecture)
+    assert verify_routes_commitment(first_routes)
 
     def unexpected(*args, **kwargs):
         raise AssertionError("unchanged verified analysis should load from cache")
@@ -48,14 +51,17 @@ def test_unchanged_map_health_and_architecture_reuse_verified_persistent_analysi
     monkeypatch.setattr(service_module, "build_verified_repository_map", unexpected)
     monkeypatch.setattr(service_module, "build_verified_code_health", unexpected)
     monkeypatch.setattr(service_module, "build_verified_architecture", unexpected)
+    monkeypatch.setattr(service_module, "build_verified_routes", unexpected)
     second_service = RepositoryIntelligenceService(root, cache_dir=cache)
     second_map = second_service.repository_map("source")
     second_health = second_service.code_health()
     second_architecture = second_service.architecture()
+    second_routes = second_service.routes()
 
     assert second_map == first_map
     assert second_health == first_health
     assert second_architecture == first_architecture
+    assert second_routes == first_routes
 
 
 def test_corrupt_analysis_envelope_fails_open_and_is_replaced(tmp_path: Path) -> None:

@@ -41,11 +41,16 @@ __all__ = [
     "verify_repository_map_commitment",
     "build_verified_code_health", "verify_code_health_commitment",
     "build_verified_rename_plan", "apply_verified_rename_plan",
+    "build_verified_safe_delete_plan", "apply_verified_refactor_plan",
     "verify_refactor_plan_commitment", "verify_refactor_apply_commitment",
     "collect_lsp_references", "verify_lsp_rename_preview_commitment",
     "build_verified_architecture", "verify_architecture_commitment",
     "build_verified_graph_query", "verify_graph_query_commitment",
     "build_verified_architecture_diff", "verify_architecture_diff_commitment",
+    "build_verified_routes", "verify_routes_commitment",
+    "build_verified_graph_snapshot", "check_verified_graph_snapshot",
+    "load_verified_graph_snapshot", "verify_graph_snapshot_commitment",
+    "verify_graph_snapshot_check_commitment",
 ]
 
 
@@ -110,8 +115,10 @@ from .verified_health import (  # noqa: E402
     verify_code_health_commitment,
 )
 from .verified_refactor import (  # noqa: E402
+    apply_verified_refactor_plan,
     apply_verified_rename_plan,
     build_verified_rename_plan,
+    build_verified_safe_delete_plan,
     verify_refactor_apply_commitment,
     verify_refactor_plan_commitment,
 )
@@ -130,6 +137,17 @@ from .graph_query import (  # noqa: E402
 from .architecture_diff import (  # noqa: E402
     build_verified_architecture_diff,
     verify_architecture_diff_commitment,
+)
+from .verified_routes import (  # noqa: E402
+    build_verified_routes,
+    verify_routes_commitment,
+)
+from .verified_snapshot import (  # noqa: E402
+    build_verified_graph_snapshot,
+    check_verified_graph_snapshot,
+    load_verified_graph_snapshot,
+    verify_graph_snapshot_check_commitment,
+    verify_graph_snapshot_commitment,
 )
 from .verified_context import (  # noqa: E402
     build_symbol_graph,

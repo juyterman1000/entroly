@@ -28,12 +28,22 @@ from .semantic_overlay import build_verified_semantic_overlay
 from .verified_refactor import (
     apply_verified_rename_plan,
     build_verified_rename_plan,
+    build_verified_safe_delete_plan,
 )
 from .verified_context import build_symbol_graph, build_verified_context
 from .verified_health import (
     VERIFIED_HEALTH_SCHEMA_VERSION,
     build_verified_code_health,
     verify_code_health_commitment,
+)
+from .verified_routes import (
+    VERIFIED_ROUTES_SCHEMA_VERSION,
+    build_verified_routes,
+    verify_routes_commitment,
+)
+from .verified_snapshot import (
+    build_verified_graph_snapshot,
+    check_verified_graph_snapshot,
 )
 from .verified_architecture import (
     VERIFIED_ARCHITECTURE_SCHEMA_VERSION,
@@ -58,6 +68,8 @@ _MAX_ARCHITECTURE_CYCLES = 10_000
 _MAX_ARCHITECTURE_EDGES = 1_000_000
 _MAX_ARCHITECTURE_HOTSPOTS = 1_000
 _MAX_ARCHITECTURE_ROUTES = 1_000
+_MAX_HTTP_ROUTES = 100_000
+_MAX_HTTP_ROUTE_CONFLICTS = 10_000
 
 
 class RepositoryIntelligenceError(ValueError):
@@ -535,6 +547,87 @@ class RepositoryIntelligenceService:
             limit=max(1, min(int(limit), 50_000)),
         )
 
+    def routes(
+        self,
+        *,
+        method: str | None = None,
+        path_prefix: str | None = None,
+        max_routes: int = 10_000,
+        max_conflicts: int = 1_000,
+    ) -> dict[str, object]:
+        """Return source-verified HTTP routes, mounts, handlers, and collisions."""
+        index, digest, generation = self._snapshot()
+        selected_method = method.strip().upper() if method else None
+        if selected_method is not None and (
+            not selected_method or len(selected_method) > 32
+        ):
+            raise ValueError("method must be at most 32 characters")
+        selected_prefix = path_prefix.strip() if path_prefix else None
+        if selected_prefix is not None and (
+            not selected_prefix.startswith("/") or len(selected_prefix) > 4_096
+        ):
+            raise ValueError("path prefix must start with / and be at most 4096 characters")
+        bounds = {
+            "max_routes": max(1, min(int(max_routes), _MAX_HTTP_ROUTES)),
+            "max_conflicts": max(
+                1, min(int(max_conflicts), _MAX_HTTP_ROUTE_CONFLICTS)
+            ),
+        }
+        identity: dict[str, object] = {
+            "analysis_schema": VERIFIED_ROUTES_SCHEMA_VERSION,
+            "index_digest": digest,
+            "method": selected_method,
+            "path_prefix": selected_prefix,
+            **bounds,
+        }
+        cache_status = "disabled"
+        if self._analysis_cache is not None:
+            cached, cache_status = self._analysis_cache.load(
+                "http-routes", identity, verify=verify_routes_commitment
+            )
+            if cached is not None:
+                cached["generation"] = generation
+                return cached
+        payload = build_verified_routes(
+            self.root,
+            index,
+            index_digest=digest,
+            method=selected_method,
+            path_prefix=selected_prefix,
+            **bounds,
+        )
+        if self._analysis_cache is not None:
+            self._analysis_cache.store(
+                "http-routes", identity, payload, replace=cache_status == "corrupt"
+            )
+        payload["generation"] = generation
+        return payload
+
+    def graph_snapshot(self) -> dict[str, object]:
+        """Return a deterministic, portable commitment to the complete index."""
+        index, digest, generation = self._snapshot()
+        payload = build_verified_graph_snapshot(index, index_digest=digest)
+        payload["generation"] = generation
+        return payload
+
+    def graph_snapshot_check(
+        self,
+        snapshot: Mapping[str, object],
+        *,
+        limit: int = 10_000,
+    ) -> dict[str, object]:
+        """Check whether a portable graph snapshot can be safely imported."""
+        index, digest, generation = self._snapshot()
+        payload = check_verified_graph_snapshot(
+            self.root,
+            index,
+            snapshot,
+            index_digest=digest,
+            limit=max(1, min(int(limit), 100_000)),
+        )
+        payload["generation"] = generation
+        return payload
+
     def symbol_graph(
         self,
         symbol_query: str,
@@ -754,6 +847,45 @@ class RepositoryIntelligenceService:
             "apply": applied,
             "refresh": refresh,
         }
+
+    def safe_delete_preview(
+        self,
+        symbol_query: str,
+        *,
+        max_blockers: int = 10_000,
+    ) -> dict[str, object]:
+        """Build a no-write delete plan that blocks on every known reference."""
+        if not isinstance(symbol_query, str) or not symbol_query.strip():
+            raise InvalidSymbolQuery("symbol query must not be empty")
+        index, digest, generation = self._snapshot()
+        try:
+            payload = build_verified_safe_delete_plan(
+                self.root,
+                index,
+                symbol_query,
+                index_digest=digest,
+                max_blockers=max(1, min(int(max_blockers), 100_000)),
+            )
+        except ValueError as exc:
+            raise VerifiedRefactorError(str(exc)) from None
+        payload["generation"] = generation
+        return payload
+
+    def safe_delete_apply(
+        self,
+        plan: Mapping[str, object],
+        *,
+        expected_plan_sha256: str,
+        acknowledge_incomplete: bool = False,
+    ) -> dict[str, object]:
+        """Apply a committed blocker-free safe-delete and refresh the index."""
+        if plan.get("operation") != "safe-delete":
+            raise VerifiedRefactorError("safe-delete apply requires a safe-delete plan")
+        return self.rename_apply(
+            plan,
+            expected_plan_sha256=expected_plan_sha256,
+            acknowledge_incomplete=acknowledge_incomplete,
+        )
 
     def lsp_rename_preview(
         self,

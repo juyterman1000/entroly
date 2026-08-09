@@ -1,4 +1,4 @@
-"""Two-phase, source-verified repository rename transactions."""
+"""Two-phase, source-verified repository refactor transactions."""
 from __future__ import annotations
 
 import ast
@@ -403,6 +403,209 @@ def build_verified_rename_plan(
     return _finish_plan(base)
 
 
+def _python_top_level_deletion_range(raw: bytes, symbol: Symbol) -> tuple[int, int] | None:
+    text = raw.decode("utf-8", errors="surrogateescape")
+    try:
+        tree = ast.parse(text, filename=symbol.path, type_comments=True)
+    except (SyntaxError, ValueError, MemoryError, RecursionError, UnicodeError):
+        return None
+    node = next(
+        (
+            item
+            for item in tree.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and item.name == symbol.name
+            and int(getattr(item, "lineno", -1)) == symbol.line_start
+        ),
+        None,
+    )
+    if node is None:
+        return None
+    decorated = getattr(node, "decorator_list", ())
+    first_line = min(
+        [int(getattr(item, "lineno", symbol.line_start)) for item in decorated]
+        or [symbol.line_start]
+    )
+    lines = text.splitlines(keepends=True)
+    start = sum(
+        len(item.encode("utf-8", errors="surrogateescape"))
+        for item in lines[: first_line - 1]
+    )
+    end_line = int(getattr(node, "end_lineno", symbol.line_end))
+    end = sum(
+        len(item.encode("utf-8", errors="surrogateescape"))
+        for item in lines[:end_line]
+    )
+    while end < len(raw) and raw[end:end + 1] in {b"\r", b"\n"}:
+        end += 1
+    return start, end
+
+
+def _deletion_range(raw: bytes, symbol: Symbol) -> tuple[int, int] | None:
+    if symbol.parent_id is not None:
+        return None
+    if symbol.language == "python":
+        return _python_top_level_deletion_range(raw, symbol)
+    start = symbol.start_byte
+    end = symbol.end_byte
+    if not (0 <= start < end <= len(raw)):
+        return None
+    line_start = raw.rfind(b"\n", 0, start) + 1
+    if raw[line_start:start].strip():
+        line_start = start
+    line_end = raw.find(b"\n", end)
+    return line_start, len(raw) if line_end < 0 else line_end + 1
+
+
+def build_verified_safe_delete_plan(
+    root: Path,
+    index: RepositoryIndex,
+    symbol_query: str,
+    *,
+    index_digest: str,
+    max_blockers: int = 10_000,
+) -> dict[str, object]:
+    """Preview a conservative headless delete and expose every known blocker."""
+    root = root.expanduser().resolve(strict=True)
+    query = symbol_query.strip()
+    if not query or len(query) > 1_000:
+        raise ValueError("symbol_query must contain 1 to 1000 characters")
+    resolution, matches = _resolve(index, query)
+    base: dict[str, object] = {
+        "schema_version": REFACTOR_PLAN_SCHEMA_VERSION,
+        "index_digest": index_digest,
+        "operation": "safe-delete",
+        "symbol_query": query,
+        "resolution": resolution,
+        "candidates": [symbol.to_dict() for symbol in matches[:100]],
+        "safe_to_apply": False,
+        "blockers": [],
+        "changes": [],
+        "risk": {
+            "reference_completeness": "not-proven",
+            "requires_incomplete_acknowledgement": True,
+            "dynamic_reflection_and_generated_code": "not-indexed",
+            "policy": "any-unexplained-lexical-occurrence-blocks",
+        },
+        "receipt": {
+            "freshness": "not-evaluated" if resolution != "resolved" else "pending",
+            "change_count": 0,
+            "blocker_count_before_output_limit": 0,
+            "omissions_by_reason": {},
+            "remote_calls": 0,
+            "writes_performed": 0,
+            "commitment_scope": "payload-excluding-generation-command-and-plan-sha256",
+        },
+    }
+    if resolution != "resolved":
+        return _finish_plan(base)
+    symbol = matches[0]
+    bound = max(1, min(int(max_blockers), 100_000))
+    omissions: Counter[str] = Counter()
+    verified: dict[str, bytes] = {}
+    for path in sorted(index.files):
+        raw, status = _verified_source(root, index, path)
+        if raw is None:
+            omissions[status] += 1
+        else:
+            verified[path] = raw
+    raw = verified.get(symbol.path)
+    if raw is None:
+        base["resolution"] = "stale-or-unreadable"
+        base["receipt"]["freshness"] = "failed"  # type: ignore[index]
+        base["receipt"]["omissions_by_reason"] = dict(sorted(omissions.items()))  # type: ignore[index]
+        return _finish_plan(base)
+    deletion = _deletion_range(raw, symbol)
+    if deletion is None:
+        omissions["unsupported-nested-or-unverified-declaration"] += 1
+        base["receipt"]["freshness"] = "verified-against-indexed-source-sha256"  # type: ignore[index]
+        base["receipt"]["omissions_by_reason"] = dict(sorted(omissions.items()))  # type: ignore[index]
+        return _finish_plan(base)
+    start, end = deletion
+    blockers: dict[tuple[str, int, int, str], dict[str, object]] = {}
+    for edge in index.call_edges:
+        if edge.callee_id == symbol.symbol_id:
+            blockers[(edge.path, edge.start_byte, edge.end_byte, "resolved-call")] = {
+                "kind": "resolved-call",
+                "path": edge.path,
+                "line": edge.line,
+                "start_byte": edge.start_byte,
+                "end_byte": edge.end_byte,
+                "evidence_sha256": edge.evidence_sha256,
+            }
+    for call in index.unresolved_calls:
+        if symbol.symbol_id in call.candidates or (
+            call.target.rpartition(".")[2] == symbol.name
+        ):
+            blockers[(call.path, call.start_byte, call.end_byte, "unresolved-call")] = {
+                "kind": "unresolved-call-candidate",
+                "path": call.path,
+                "line": call.line,
+                "start_byte": call.start_byte,
+                "end_byte": call.end_byte,
+                "reason": call.reason,
+            }
+    for path, source in verified.items():
+        for found_start, found_end in _identifier_occurrences(
+            source, 0, len(source), symbol.name
+        ):
+            if path == symbol.path and start <= found_start < found_end <= end:
+                continue
+            key = (path, found_start, found_end, "lexical")
+            blockers.setdefault(key, {
+                "kind": "unclassified-lexical-reference",
+                "path": path,
+                "line": source.count(b"\n", 0, found_start) + 1,
+                "start_byte": found_start,
+                "end_byte": found_end,
+                "evidence_sha256": hashlib.sha256(
+                    source[found_start:found_end]
+                ).hexdigest(),
+            })
+    ordered_blockers = sorted(blockers.values(), key=lambda item: (
+        str(item["path"]), int(item["start_byte"]), str(item["kind"])
+    ))
+    before = raw[start:end]
+    staged = raw[:start] + raw[end:]
+    syntax = _syntax_status(symbol.path, staged)
+    if syntax.startswith("invalid-"):
+        omissions["staged-syntax-invalid"] += 1
+    safe_to_apply = not blockers and not omissions and not syntax.startswith("invalid-")
+    change = {
+        "change_id": hashlib.sha256(
+            f"{symbol.path}\0{start}\0{end}\0safe-delete".encode("utf-8")
+        ).hexdigest()[:24],
+        "path": symbol.path,
+        "start_byte": start,
+        "end_byte": end,
+        "old_identifier": before.decode("utf-8", errors="surrogateescape"),
+        "new_identifier": "",
+        "evidence_sha256": hashlib.sha256(before).hexdigest(),
+        "source_sha256": index.files[symbol.path].sha256,
+        "kind": "definition-delete",
+        "confidence": "parser-definition-with-conservative-reference-scan",
+        "staged_syntax": syntax,
+    }
+    base["root_symbol_id"] = symbol.symbol_id
+    base["safe_to_apply"] = safe_to_apply
+    base["blockers"] = ordered_blockers[:bound]
+    base["changes"] = [change] if safe_to_apply else []
+    base["truncation"] = {
+        "blockers_omitted": max(0, len(ordered_blockers) - bound)
+    }
+    base["receipt"] = {
+        "freshness": "verified-against-indexed-source-sha256",
+        "change_count": int(safe_to_apply),
+        "file_count": int(safe_to_apply),
+        "blocker_count_before_output_limit": len(ordered_blockers),
+        "omissions_by_reason": dict(sorted(omissions.items())),
+        "remote_calls": 0,
+        "writes_performed": 0,
+        "commitment_scope": "payload-excluding-generation-command-and-plan-sha256",
+    }
+    return _finish_plan(base)
+
+
 def verify_refactor_plan_commitment(payload: dict[str, object]) -> bool:
     try:
         candidate = copy.deepcopy(payload)
@@ -453,13 +656,18 @@ def apply_verified_rename_plan(
         raise ValueError("expected_plan_sha256 does not match the plan")
     if candidate_plan.get("index_digest") != index_digest:
         raise ValueError("refactor plan index is stale")
+    operation = str(candidate_plan.get("operation", ""))
+    if operation not in {"rename", "safe-delete"}:
+        raise ValueError("unsupported refactor operation")
     if candidate_plan.get("resolution") != "resolved":
         raise ValueError("only a resolved refactor plan can be applied")
+    if operation == "safe-delete" and candidate_plan.get("safe_to_apply") is not True:
+        raise ValueError("safe-delete plan has blockers or incomplete evidence")
     risk = candidate_plan.get("risk")
     if not isinstance(risk, dict) or (
         risk.get("requires_incomplete_acknowledgement") and not acknowledge_incomplete
     ):
-        raise ValueError("rename completeness is unproven; explicit acknowledgement required")
+        raise ValueError("refactor completeness is unproven; explicit acknowledgement required")
     raw_changes = candidate_plan.get("changes")
     if not isinstance(raw_changes, list) or not raw_changes:
         raise ValueError("refactor plan contains no changes")
@@ -548,7 +756,7 @@ def apply_verified_rename_plan(
 
     result: dict[str, object] = {
         "schema_version": REFACTOR_APPLY_SCHEMA_VERSION,
-        "operation": "rename",
+        "operation": operation,
         "plan_sha256": expected_plan_sha256,
         "index_digest_before": index_digest,
         "files": [
@@ -573,6 +781,9 @@ def apply_verified_rename_plan(
     return result
 
 
+apply_verified_refactor_plan = apply_verified_rename_plan
+
+
 def verify_refactor_apply_commitment(payload: Mapping[str, object]) -> bool:
     try:
         candidate = copy.deepcopy(dict(payload))
@@ -589,6 +800,8 @@ __all__ = [
     "REFACTOR_APPLY_SCHEMA_VERSION",
     "REFACTOR_PLAN_SCHEMA_VERSION",
     "apply_verified_rename_plan",
+    "apply_verified_refactor_plan",
+    "build_verified_safe_delete_plan",
     "build_verified_rename_plan",
     "verify_refactor_apply_commitment",
     "verify_refactor_plan_commitment",

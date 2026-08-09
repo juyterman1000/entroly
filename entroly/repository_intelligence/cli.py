@@ -127,6 +127,26 @@ def _parser() -> argparse.ArgumentParser:
     architecture_diff.add_argument("--after-json", required=True)
     architecture_diff.add_argument("--limit", type=int, default=5_000)
 
+    routes = subcommands.add_parser(
+        "routes",
+        help="discover verified HTTP routes, mounted prefixes, and collisions",
+    )
+    routes.add_argument("--method")
+    routes.add_argument("--path-prefix")
+    routes.add_argument("--max-routes", type=int, default=10_000)
+    routes.add_argument("--max-conflicts", type=int, default=1_000)
+
+    subcommands.add_parser(
+        "snapshot",
+        help="export a portable commitment to the complete bounded graph",
+    )
+    snapshot_check = subcommands.add_parser(
+        "snapshot-check",
+        help="verify a shared graph snapshot against current source",
+    )
+    snapshot_check.add_argument("--snapshot-json", required=True)
+    snapshot_check.add_argument("--limit", type=int, default=10_000)
+
     runtime = subcommands.add_parser(
         "runtime",
         help="bind bounded trace events to verified source locations",
@@ -160,6 +180,21 @@ def _parser() -> argparse.ArgumentParser:
     rename_apply.add_argument("--plan-json", required=True)
     rename_apply.add_argument("--expected-plan-sha", required=True)
     rename_apply.add_argument("--acknowledge-incomplete", action="store_true")
+
+    safe_delete_preview = subcommands.add_parser(
+        "safe-delete-preview",
+        help="preview a conservative headless symbol deletion",
+    )
+    safe_delete_preview.add_argument("--symbol", required=True)
+    safe_delete_preview.add_argument("--max-blockers", type=int, default=10_000)
+
+    safe_delete_apply = subcommands.add_parser(
+        "safe-delete-apply",
+        help="apply a committed blocker-free symbol deletion",
+    )
+    safe_delete_apply.add_argument("--plan-json", required=True)
+    safe_delete_apply.add_argument("--expected-plan-sha", required=True)
+    safe_delete_apply.add_argument("--acknowledge-incomplete", action="store_true")
 
     lsp_preview = subcommands.add_parser(
         "lsp-rename-preview",
@@ -282,6 +317,29 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
             )
             payload["command"] = "architecture-diff"
             return 0, payload
+        if args.command == "routes":
+            payload = service.routes(
+                method=args.method,
+                path_prefix=args.path_prefix,
+                max_routes=args.max_routes,
+                max_conflicts=args.max_conflicts,
+            )
+            payload["command"] = "routes"
+            return 0, payload
+        if args.command == "snapshot":
+            payload = service.graph_snapshot()
+            payload["command"] = "snapshot"
+            return 0, payload
+        if args.command == "snapshot-check":
+            snapshot_path = Path(args.snapshot_json).expanduser().resolve(strict=True)
+            if snapshot_path.stat().st_size > 256 * 1024 * 1024:
+                raise ValueError("graph snapshot must be at most 256 MiB")
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            if not isinstance(snapshot, dict):
+                raise ValueError("graph snapshot JSON must contain an object")
+            payload = service.graph_snapshot_check(snapshot, limit=args.limit)
+            payload["command"] = "snapshot-check"
+            return 0, payload
         if args.command == "runtime":
             events_path = Path(args.events_json).expanduser().resolve(strict=True)
             if events_path.stat().st_size > 16 * 1024 * 1024:
@@ -344,6 +402,27 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 acknowledge_incomplete=args.acknowledge_incomplete,
             )
             payload["command"] = "rename-apply"
+            return 0, payload
+        if args.command == "safe-delete-preview":
+            payload = service.safe_delete_preview(
+                args.symbol,
+                max_blockers=args.max_blockers,
+            )
+            payload["command"] = "safe-delete-preview"
+            return 0, payload
+        if args.command == "safe-delete-apply":
+            plan_path = Path(args.plan_json).expanduser().resolve(strict=True)
+            if plan_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("plan JSON must be at most 16 MiB")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if not isinstance(plan, dict):
+                raise ValueError("plan JSON must contain an object")
+            payload = service.safe_delete_apply(
+                plan,
+                expected_plan_sha256=args.expected_plan_sha,
+                acknowledge_incomplete=args.acknowledge_incomplete,
+            )
+            payload["command"] = "safe-delete-apply"
             return 0, payload
         if args.command == "lsp-rename-preview":
             command_path = Path(args.command_json).expanduser().resolve(strict=True)

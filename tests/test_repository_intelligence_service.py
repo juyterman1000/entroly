@@ -260,9 +260,14 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_architecture",
         "repository_architecture_diff",
         "repository_graph_query",
+        "repository_graph_snapshot",
+        "repository_graph_snapshot_check",
+        "repository_http_routes",
         "repository_code_health",
         "repository_rename_apply",
         "repository_rename_preview",
+        "repository_safe_delete_apply",
+        "repository_safe_delete_preview",
         "repository_lsp_rename_preview",
         "repository_map",
         "repository_runtime_overlay",
@@ -315,6 +320,15 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "entroly.verified-architecture-diff.v1"
     )
     assert sum(architecture_diff["counts"].values()) == 0
+    routes = json.loads(mcp.tools["repository_http_routes"]())
+    assert routes["schema_version"] == "entroly.verified-http-routes.v1"
+    assert routes["receipt"]["remote_calls"] == 0
+    snapshot = json.loads(mcp.tools["repository_graph_snapshot"]())
+    assert snapshot["schema_version"] == "entroly.verified-graph-snapshot.v1"
+    checked = json.loads(mcp.tools["repository_graph_snapshot_check"](snapshot))
+    assert checked["snapshot_commitment_valid"] is True
+    assert checked["snapshot_importable"] is True
+    assert checked["in_sync"] is True
     assert str(tmp_path) not in json.dumps(repository_map)
     program = json.loads(mcp.tools["repository_program_graph"]("execute"))
     assert program["schema_version"] == "entroly.verified-program-graph.v1"
