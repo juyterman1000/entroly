@@ -57,7 +57,7 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 ## AI Cost Optimization
 
 - [AI cost optimization with Entroly](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Plain-language guide to reducing avoidable token usage, measuring provider-bound input, preserving evidence, and understanding fixed-subscription limits.
-- [Token economics with Entroly](https://juyterman1000.github.io/entroly/docs/token-economics.html): Token saving, AI efficiency, recoverable context compression, and context-window headroom.
+- [Token economics with Entroly](https://juyterman1000.github.io/entroly/docs/token-economics.html): Token saving, AI efficiency, recoverable context compression, and more room in the context window.
 - [Repository README](https://github.com/juyterman1000/entroly): Human-friendly product explanation, setup paths, technical architecture, evidence, and limitations.
 - [Entroly Simple Mode specification](https://github.com/juyterman1000/entroly/blob/main/docs/product/entroly-simple-mode.md): Release requirements for a future nontechnical desktop experience; not a shipped capability.
 
