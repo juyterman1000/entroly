@@ -258,5 +258,4 @@ if 'fn select_admits_structural_dependency_ahead_of_lexical_top_k()' not in text
 path.write_text(text, encoding='utf-8')
 PY
 
-cargo fmt --manifest-path entroly-qccr/Cargo.toml
 git diff --check
