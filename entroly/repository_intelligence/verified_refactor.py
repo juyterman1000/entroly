@@ -1,7 +1,7 @@
 """Verified refactor public surface with recoverable filesystem transactions.
 
 Planning, evidence classification, and receipt verification remain implemented
-in :mod:`verified_refactor_impl`.  This facade replaces only the destructive
+in :mod:`verified_refactor_impl`. This facade replaces only the destructive
 apply path so rename/safe-delete/inline-local operations inherit the shared
 workspace transaction's rollback and recovery guarantees.
 """
@@ -18,6 +18,8 @@ from .models import RepositoryIndex
 from .verified_refactor_impl import (
     REFACTOR_APPLY_SCHEMA_VERSION,
     REFACTOR_PLAN_SCHEMA_VERSION,
+    _finish_plan,
+    _identifier_occurrences,
     _syntax_status,
     _verified_source,
     build_verified_inline_local_plan,
