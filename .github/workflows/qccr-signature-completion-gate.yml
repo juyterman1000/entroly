@@ -19,6 +19,9 @@ jobs:
           ref: diagnostic/qccr-rendering-20260809
           fetch-depth: 0
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Isolate candidate and restore uncontaminated baseline tree
         run: |
           cp entroly-qccr/src/lib.rs /tmp/candidate-lib.rs
@@ -29,10 +32,10 @@ jobs:
           cp /tmp/candidate-lib.rs entroly-qccr/src/lib.rs
           cp /tmp/candidate-dependency-anchor.rs entroly-qccr/src/dependency_anchor.rs
           /tmp/migrate-qccr-v2.sh
+          cargo fmt --manifest-path entroly-qccr/Cargo.toml
+          cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
+          git diff --check
           test "$(git rev-parse HEAD)" = 'd333f1d9c3d72ae32692583d4318eceb99e90944'
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -47,9 +50,7 @@ jobs:
           .venv/bin/pip install -e '.[test]' --timeout 120 --retries 5
 
       - name: Rust unit tests
-        run: |
-          cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
-          cargo test --manifest-path entroly-qccr/Cargo.toml
+        run: cargo test --manifest-path entroly-qccr/Cargo.toml
 
       - name: Build clean candidate native QCCR
         run: |
@@ -132,11 +133,11 @@ jobs:
         id: branch
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Apply idempotent v1-to-v2 integration
-        run: .github/scripts/migrate_qccr_dependency_anchor_v2.sh
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply idempotent v1-to-v2 integration
+        run: .github/scripts/migrate_qccr_dependency_anchor_v2.sh
 
       - name: Set up Python
         uses: actions/setup-python@v7
