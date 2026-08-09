@@ -11,6 +11,7 @@ SITE = "https://juyterman1000.github.io/entroly"
 PAGES = {
     "docs/ai-cost-optimization.html": {
         "canonical": f"{SITE}/docs/ai-cost-optimization.html",
+        "lastmod": "2026-08-09",
         "title_terms": ("AI Cost Optimization", "Entroly"),
         "body_terms": (
             "Context Assurance",
@@ -20,21 +21,25 @@ PAGES = {
     },
     "docs/agent-integrations.html": {
         "canonical": f"{SITE}/docs/agent-integrations.html",
+        "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "OpenClaw", "Hermes", "OpenCode"),
         "body_terms": ("context assurance", "exact-recovery contract"),
     },
     "docs/openclaw-context-engine.html": {
         "canonical": f"{SITE}/docs/openclaw-context-engine.html",
+        "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "OpenClaw", "Context Engine"),
         "body_terms": ("OpenClaw", "context assurance engine", "Context Receipts"),
     },
     "docs/hermes-context-engine.html": {
         "canonical": f"{SITE}/docs/hermes-context-engine.html",
+        "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "Hermes Agent", "Context Engine"),
         "body_terms": ("Hermes Agent", "context engine", "hash-only"),
     },
     "docs/opencode-context-assurance.html": {
         "canonical": f"{SITE}/docs/opencode-context-assurance.html",
+        "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "OpenCode", "Context Assurance"),
         "body_terms": ("OpenCode", "MCP", "verification status"),
     },
@@ -81,8 +86,8 @@ def test_discovery_sitemap_is_current_and_complete() -> None:
         for item in root.findall("s:url", namespace)
     }
     for spec in PAGES.values():
-        assert entries[spec["canonical"]] == "2026-07-25"
-    assert entries[f"{SITE}/docs/index.html"] == "2026-07-25"
+        assert entries[spec["canonical"]] == spec["lastmod"]
+    assert entries[f"{SITE}/docs/index.html"] == "2026-08-09"
 
 
 def test_intent_pages_have_unique_search_metadata_and_valid_json_ld() -> None:
