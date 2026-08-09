@@ -341,7 +341,8 @@ pub(crate) fn query_dependency_anchors(
             let Some(target_index) = target_index else {
                 continue;
             };
-            let Some(signature) = python_signature_for_symbol(&texts[target_index], &original) else {
+            let Some(signature) = python_signature_for_symbol(&texts[target_index], &original)
+            else {
                 continue;
             };
             candidates.push((
@@ -472,9 +473,7 @@ mod tests {
         assert_eq!(anchors.len(), 1, "{anchors:?}");
         assert_eq!(anchors[0].source, "file:entroly/cache_aligner.py");
         assert!(anchors[0].signature.contains("def __init__("));
-        assert!(anchors[0]
-            .signature
-            .contains("max_clients: int = 100"));
+        assert!(anchors[0].signature.contains("max_clients: int = 100"));
     }
 
     #[test]
@@ -528,12 +527,8 @@ mod tests {
             "Another selected sentence would exceed a deliberately small budget.".to_string(),
         ];
         let budget = approx_tokens(&anchor) as i64 + 2;
-        let rendered = render_dependency_anchored_excerpt(
-            &[anchor.clone()],
-            &sentences,
-            &[0, 1],
-            budget,
-        );
+        let rendered =
+            render_dependency_anchored_excerpt(&[anchor.clone()], &sentences, &[0, 1], budget);
         assert!(protected_anchors_survive(&rendered, &[anchor.clone()]));
         assert!(approx_tokens(&rendered) as i64 <= budget, "{rendered}");
         assert!(rendered.contains("beta: int"), "{rendered}");
