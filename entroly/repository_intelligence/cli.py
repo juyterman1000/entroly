@@ -196,6 +196,23 @@ def _parser() -> argparse.ArgumentParser:
     safe_delete_apply.add_argument("--expected-plan-sha", required=True)
     safe_delete_apply.add_argument("--acknowledge-incomplete", action="store_true")
 
+    file_move_preview = subcommands.add_parser(
+        "file-move-preview",
+        help="preview a Python module move and exact import rewrites",
+    )
+    file_move_preview.add_argument("--source", required=True)
+    file_move_preview.add_argument("--target", required=True)
+    file_move_preview.add_argument("--max-changes", type=int, default=10_000)
+    file_move_preview.add_argument("--max-blockers", type=int, default=10_000)
+
+    file_move_apply = subcommands.add_parser(
+        "file-move-apply",
+        help="apply a committed blocker-free Python module move",
+    )
+    file_move_apply.add_argument("--plan-json", required=True)
+    file_move_apply.add_argument("--expected-plan-sha", required=True)
+    file_move_apply.add_argument("--acknowledge-incomplete", action="store_true")
+
     lsp_preview = subcommands.add_parser(
         "lsp-rename-preview",
         help="run an explicitly configured LSP and build a no-write rename plan",
@@ -423,6 +440,29 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 acknowledge_incomplete=args.acknowledge_incomplete,
             )
             payload["command"] = "safe-delete-apply"
+            return 0, payload
+        if args.command == "file-move-preview":
+            payload = service.file_move_preview(
+                args.source,
+                args.target,
+                max_changes=args.max_changes,
+                max_blockers=args.max_blockers,
+            )
+            payload["command"] = "file-move-preview"
+            return 0, payload
+        if args.command == "file-move-apply":
+            plan_path = Path(args.plan_json).expanduser().resolve(strict=True)
+            if plan_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("plan JSON must be at most 16 MiB")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if not isinstance(plan, dict):
+                raise ValueError("plan JSON must contain an object")
+            payload = service.file_move_apply(
+                plan,
+                expected_plan_sha256=args.expected_plan_sha,
+                acknowledge_incomplete=args.acknowledge_incomplete,
+            )
+            payload["command"] = "file-move-apply"
             return 0, payload
         if args.command == "lsp-rename-preview":
             command_path = Path(args.command_json).expanduser().resolve(strict=True)

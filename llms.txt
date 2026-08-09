@@ -72,6 +72,7 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - **Verified HTTP routes:** `routes` uses the Python AST to resolve static framework decorators, router/blueprint prefixes, mount chains, handlers, and normalized-path collisions. Other languages use explicitly labelled bounded framework patterns. Dynamic paths are omitted, and every endpoint carries source and evidence hashes.
 - **Portable graph snapshots:** `snapshot` exports the complete bounded repository graph with source and whole-payload commitments. `snapshot-check` reconstructs it only when every identity, edge endpoint, digest, and current source hash verifies; stale shared facts are never unioned into the live graph.
 - **Headless safe delete:** `safe-delete-preview` blocks on resolved, unresolved-candidate, or otherwise unclassified lexical references. `safe-delete-apply` requires a committed blocker-free plan plus explicit acknowledgement that dynamic, reflective, generated, and external references remain unproven.
+- **Headless Python module move:** `file-move-preview` rewrites exact AST import-module ranges, requires every indexed dependent to have a supported rewrite, blocks binding changes and package-relative hazards, and commits all preimages. `file-move-apply` rechecks hashes and syntax, moves the file with rollback-aware importer updates, then rebuilds the graph.
 
 ## Interfaces
 

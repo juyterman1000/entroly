@@ -428,6 +428,40 @@ def create_repository_mcp_server(
             return _error(exc, "repository_safe_delete_apply")
 
     @mcp.tool()
+    def repository_file_move_preview(
+        source_path: str,
+        target_path: str,
+        max_changes: int = 10_000,
+        max_blockers: int = 10_000,
+    ) -> str:
+        """Preview a headless Python module move with exact import rewrites."""
+        try:
+            return _json(service.file_move_preview(
+                source_path,
+                target_path,
+                max_changes=max(1, min(int(max_changes), 100_000)),
+                max_blockers=max(1, min(int(max_blockers), 100_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_file_move_preview")
+
+    @mcp.tool()
+    def repository_file_move_apply(
+        plan: dict[str, object],
+        expected_plan_sha256: str,
+        acknowledge_incomplete: bool = False,
+    ) -> str:
+        """Apply a blocker-free module move after commitment and risk checks."""
+        try:
+            return _json(service.file_move_apply(
+                plan,
+                expected_plan_sha256=expected_plan_sha256,
+                acknowledge_incomplete=bool(acknowledge_incomplete),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_file_move_apply")
+
+    @mcp.tool()
     def repository_lsp_rename_preview(
         symbol_query: str,
         new_name: str,

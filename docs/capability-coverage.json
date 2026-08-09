@@ -304,6 +304,7 @@
         "entroly/repository_intelligence/semantic_overlay.py",
         "entroly/repository_intelligence/verified_architecture.py",
         "entroly/repository_intelligence/verified_refactor.py",
+        "entroly/repository_intelligence/verified_move.py",
         "entroly/repository_intelligence/verified_routes.py",
         "entroly/repository_intelligence/verified_snapshot.py",
         "entroly/repository_intelligence/verified_health.py",
@@ -347,6 +348,9 @@
         "tests/test_repository_verified_routes.py::test_dynamic_python_paths_are_omitted_and_stale_sources_are_excluded",
         "tests/test_repository_verified_snapshot.py::test_snapshot_is_root_independent_importable_and_tamper_evident",
         "tests/test_repository_verified_snapshot.py::test_import_rejects_source_drift_and_check_reports_it",
+        "tests/test_repository_verified_move.py::test_file_move_rewrites_exact_import_and_rebuilds_resolved_graph",
+        "tests/test_repository_verified_move.py::test_file_move_blocks_dotted_unaliased_import",
+        "tests/test_repository_verified_move.py::test_file_move_blocks_relative_import_when_package_changes",
         "tests/test_code_intelligence_conformance.py::test_shared_code_intelligence_conformance_fixture",
         "tests/test_verified_code_context_benchmark.py::test_verified_code_context_preregistered_matrix"
       ],
@@ -374,6 +378,8 @@
         "entroly.repository_intelligence.RepositoryIntelligenceService.rename_apply",
         "entroly.repository_intelligence.RepositoryIntelligenceService.safe_delete_preview",
         "entroly.repository_intelligence.RepositoryIntelligenceService.safe_delete_apply",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.file_move_preview",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.file_move_apply",
         "entroly.repository_intelligence.RepositoryIntelligenceService.lsp_rename_preview",
         "entroly.repository_intelligence.build_repository_index_incremental",
         "entroly.repository_intelligence.build_verified_context",
@@ -390,6 +396,8 @@
         "entroly.repository_intelligence.build_verified_graph_snapshot",
         "entroly.repository_intelligence.check_verified_graph_snapshot",
         "entroly.repository_intelligence.load_verified_graph_snapshot",
+        "entroly.repository_intelligence.build_verified_file_move_plan",
+        "entroly.repository_intelligence.apply_verified_file_move_plan",
         "entroly.repository_intelligence.build_verified_rename_plan",
         "entroly.repository_intelligence.apply_verified_rename_plan",
         "entroly.repository_intelligence.collect_lsp_references",
@@ -407,7 +415,7 @@
         "entroly.repository_intelligence.verify_lsp_rename_preview_commitment",
         "entroly.repository_intelligence.verify_symbol_graph_commitment"
       ],
-      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding, intraprocedural control/reaching-definition flow, and AST-backed static HTTP mount resolution; other languages remain parser-structural or explicitly labelled framework-pattern evidence. Architecture communities, structural relatedness, route collisions, health, and hotspot scoring are disclosed heuristics, not semantic-equivalence or defect proofs. Two-phase rename and top-level safe delete are preimage-safe and rollback-aware but not compiler-complete; dynamic, reflective, string, macro, generated, unindexed non-call, runtime-configured, and external references may remain. Portable graph import rejects source drift rather than merging it. LSP orchestration currently requests one symbol's references; the operator controls the executable, and Entroly does not sandbox or attest that process's network, filesystem, telemetry, plugins, or configuration. Any source change rebuilds global relationships and derived analyses. Symbol/file move, inline refactoring, broader LSP operations, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
+      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding, intraprocedural control/reaching-definition flow, and AST-backed static HTTP mount resolution; other languages remain parser-structural or explicitly labelled framework-pattern evidence. Architecture communities, structural relatedness, route collisions, health, and hotspot scoring are disclosed heuristics, not semantic-equivalence or defect proofs. Two-phase rename, top-level safe delete, and Python module move are preimage-safe and rollback-aware but not compiler-complete; dynamic, reflective, string, macro, generated, unindexed non-call, runtime-configured, and external references may remain. Portable graph import rejects source drift rather than merging it. LSP orchestration currently requests one symbol's references; the operator controls the executable, and Entroly does not sandbox or attest that process's network, filesystem, telemetry, plugins, or configuration. Any source change rebuilds global relationships and derived analyses. Symbol/member move, non-Python file move, inline refactoring, broader LSP operations, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
     },
     {
       "id": "command_aware_shell_evidence",

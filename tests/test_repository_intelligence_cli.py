@@ -280,6 +280,31 @@ def test_cli_safe_delete_preview_and_apply_are_committed(tmp_path: Path) -> None
     assert "unused" not in (tmp_path / "module.py").read_text(encoding="utf-8")
 
 
+def test_cli_file_move_updates_imports_and_refreshes_graph(tmp_path: Path) -> None:
+    _write(tmp_path, "pkg/__init__.py", "")
+    _write(tmp_path, "pkg/old.py", "def execute():\n    return 1\n")
+    _write(tmp_path, "app.py", "from pkg.old import execute\n")
+    code, plan = run([
+        "--root", str(tmp_path), "file-move-preview",
+        "--source", "pkg/old.py", "--target", "pkg/new.py",
+    ])
+    assert code == 0
+    assert plan["safe_to_apply"] is True
+    plan_path = tmp_path / "file-move.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    code, applied = run([
+        "--root", str(tmp_path), "file-move-apply",
+        "--plan-json", str(plan_path),
+        "--expected-plan-sha", plan["receipt"]["plan_sha256"],
+        "--acknowledge-incomplete",
+    ])
+    assert code == 0
+    assert applied["apply"]["operation"] == "file-move"
+    assert applied["refresh"]["status"] == "refreshed"
+    assert not (tmp_path / "pkg/old.py").exists()
+    assert (tmp_path / "pkg/new.py").exists()
+
+
 def test_cli_lsp_preview_requires_explicit_command_file(tmp_path: Path) -> None:
     _project(tmp_path)
     command_path = tmp_path / "lsp-command.json"

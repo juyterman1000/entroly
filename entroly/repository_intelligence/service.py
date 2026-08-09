@@ -45,6 +45,10 @@ from .verified_snapshot import (
     build_verified_graph_snapshot,
     check_verified_graph_snapshot,
 )
+from .verified_move import (
+    apply_verified_file_move_plan,
+    build_verified_file_move_plan,
+)
 from .verified_architecture import (
     VERIFIED_ARCHITECTURE_SCHEMA_VERSION,
     build_verified_architecture,
@@ -886,6 +890,80 @@ class RepositoryIntelligenceService:
             expected_plan_sha256=expected_plan_sha256,
             acknowledge_incomplete=acknowledge_incomplete,
         )
+
+    def file_move_preview(
+        self,
+        source_path: str,
+        target_path: str,
+        *,
+        max_changes: int = 10_000,
+        max_blockers: int = 10_000,
+    ) -> dict[str, object]:
+        """Build a no-write Python module move with exact import rewrites."""
+        index, digest, generation = self._snapshot()
+        try:
+            payload = build_verified_file_move_plan(
+                self.root,
+                index,
+                source_path,
+                target_path,
+                index_digest=digest,
+                max_changes=max(1, min(int(max_changes), 100_000)),
+                max_blockers=max(1, min(int(max_blockers), 100_000)),
+            )
+        except ValueError as exc:
+            raise VerifiedRefactorError(str(exc)) from None
+        payload["generation"] = generation
+        return payload
+
+    def file_move_apply(
+        self,
+        plan: Mapping[str, object],
+        *,
+        expected_plan_sha256: str,
+        acknowledge_incomplete: bool = False,
+    ) -> dict[str, object]:
+        """Apply a committed Python module move and refresh the graph."""
+        index, digest, _generation = self._snapshot()
+        with self._build_lock:
+            with self._lock:
+                if self._index is not index or self._digest != digest:
+                    raise VerifiedRefactorError(
+                        "repository index changed after refactor preview"
+                    )
+            try:
+                applied = apply_verified_file_move_plan(
+                    self.root,
+                    index,
+                    plan,
+                    index_digest=digest,
+                    expected_plan_sha256=expected_plan_sha256,
+                    acknowledge_incomplete=bool(acknowledge_incomplete),
+                )
+            except ValueError as exc:
+                raise VerifiedRefactorError(str(exc)) from None
+            try:
+                refreshed_index = self._build()
+                refreshed_digest, refreshed_generation = self._install(refreshed_index)
+                refresh: dict[str, object] = {
+                    "status": "refreshed",
+                    "index_digest": refreshed_digest,
+                    "generation": refreshed_generation,
+                }
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                with self._lock:
+                    self._index = None
+                    self._digest = ""
+                refresh = {
+                    "status": "failed-after-apply",
+                    "error_type": type(exc).__name__,
+                    "detail": "files were changed; the next operation will rebuild the index",
+                }
+        return {
+            "schema_version": "entroly.repository-refactor-service.v1",
+            "apply": applied,
+            "refresh": refresh,
+        }
 
     def lsp_rename_preview(
         self,

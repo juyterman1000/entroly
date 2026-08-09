@@ -51,6 +51,7 @@ __all__ = [
     "build_verified_graph_snapshot", "check_verified_graph_snapshot",
     "load_verified_graph_snapshot", "verify_graph_snapshot_commitment",
     "verify_graph_snapshot_check_commitment",
+    "build_verified_file_move_plan", "apply_verified_file_move_plan",
 ]
 
 
@@ -148,6 +149,10 @@ from .verified_snapshot import (  # noqa: E402
     load_verified_graph_snapshot,
     verify_graph_snapshot_check_commitment,
     verify_graph_snapshot_commitment,
+)
+from .verified_move import (  # noqa: E402
+    apply_verified_file_move_plan,
+    build_verified_file_move_plan,
 )
 from .verified_context import (  # noqa: E402
     build_symbol_graph,

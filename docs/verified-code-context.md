@@ -385,6 +385,23 @@ commits the exact declaration preimage and staged syntax result.
 dynamic dispatch, reflection, generated code, external repositories, and
 runtime configuration are not proven absent.
 
+Python module moves have a separate headless transaction:
+
+```powershell
+python -m entroly.repository_intelligence --root . file-move-preview `
+  --source payments/legacy.py --target payments/gateway.py
+```
+
+The preview rewrites only AST-resolved `import` and `from ... import` module
+ranges. Every indexed dependent must receive a supported rewrite. Unaliased
+dotted imports, relative imports whose package would change, dynamic/module-path
+text, an existing destination, and any unexplained dependency block the plan.
+Apply requires the plan hash and incompleteness acknowledgement, rechecks all
+source and import preimages, validates staged Python syntax, preserves file
+mode, attempts rollback across importer replacements and the move, and rebuilds
+the repository graph. Symbol/member moves and non-Python import rewrites remain
+outside this headless operation.
+
 ### Operator-configured LSP orchestration
 
 CLI users can explicitly select a local language server with a JSON argument
