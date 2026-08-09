@@ -11,7 +11,7 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 ## Canonical AI Efficiency Intent Map
 
 - AI efficiency hub: https://juyterman1000.github.io/entroly/docs/ai-efficiency.html
-- Token optimization / token economics / context compression: https://juyterman1000.github.io/entroly/docs/token-optimization.html
+- Token economics / token saving / context compression: https://juyterman1000.github.io/entroly/docs/token-economics.html
 - AI cost saving / provider-bound input economics: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
 - Verified code intelligence / AST / Tree-sitter / repository understanding: https://juyterman1000.github.io/entroly/docs/code-intelligence.html
 - Memory OS / agent memory / working + episodic + semantic memory: https://juyterman1000.github.io/entroly/docs/memory-os.html
@@ -34,7 +34,7 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 ## AI Cost Optimization Facts
 
 - Canonical guide: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
-- Token-economics guide: https://juyterman1000.github.io/entroly/docs/token-optimization.html
+- Token-economics guide: https://juyterman1000.github.io/entroly/docs/token-economics.html
 - Entroly can reduce avoidable provider-bound input by selecting useful evidence under a budget and removing duplicate or low-value context.
 - Entroly does not claim a universal compression percentage, guaranteed bill reduction, or guaranteed answer-quality improvement.
 - Provider-bound proxy requests may report observed pre/post input tokens and modeled input-cost avoidance with pricing provenance. This is not a provider invoice.
@@ -91,6 +91,7 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 - [README and quick start](https://github.com/juyterman1000/entroly): Plain-language product explanation followed by technical architecture, commands, evidence, and limitations.
 - [Documentation site](https://juyterman1000.github.io/entroly/docs/index.html): Integration and workflow guides.
 - [AI efficiency hub](https://juyterman1000.github.io/entroly/docs/ai-efficiency.html): Canonical topic map across tokens, cost, code intelligence, memory, verification, routing, and adaptive context.
+- [Token economics](https://juyterman1000.github.io/entroly/docs/token-economics.html): Evidence-first token saving, context compression, cache-aware context control, and context-window headroom.
 - [AI cost optimization](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Evidence-bounded guide to reducing avoidable token usage and understanding measurable versus unobservable savings.
 - [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html): Context Assurance for supported agent integrations.
 - [Architecture](https://github.com/juyterman1000/entroly/blob/main/docs/DETAILS.md): Components, algorithms, and system boundaries.
