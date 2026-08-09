@@ -83,7 +83,7 @@ def test_corrupt_cache_entry_fails_open_and_is_rebuilt(tmp_path: Path) -> None:
     assert "hits=0 misses=1" in _cache_diagnostic(rebuilt)
     assert "corruptions=1" in _cache_diagnostic(rebuilt)
     assert any(symbol.name == "run" for symbol in rebuilt.symbols.values())
-    assert json.loads(entry.read_text(encoding="utf-8"))["schema_version"].endswith("v2")
+    assert json.loads(entry.read_text(encoding="utf-8"))["schema_version"].endswith("v3")
 
 
 def test_tampered_parse_payload_cannot_change_the_graph(tmp_path: Path) -> None:
