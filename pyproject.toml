@@ -39,6 +39,10 @@ dependencies = [
     "httpx>=0.28.1",
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
+    # Repository intelligence is a base capability. The language pack keeps
+    # individual grammars lazy/cached, so broad language support does not mean
+    # eagerly loading hundreds of parsers into every process.
+    "tree-sitter-language-pack>=0.13,<2",
 ]
 
 [project.urls]
@@ -62,9 +66,8 @@ native = [
 receipt-proof = [
     "cryptography>=42",
 ]
-code-intelligence = [
-    "tree-sitter-language-pack>=0.13,<2",
-]
+# Compatibility alias: code intelligence is now included in the base install.
+code-intelligence = []
 images = [
     "Pillow>=10,<13",
 ]
@@ -74,7 +77,6 @@ full = [
     "httpx>=0.28.1",
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
-    "tree-sitter-language-pack>=0.13,<2",
 ]
 test = [
     "pytest>=9.0.3,<10",
