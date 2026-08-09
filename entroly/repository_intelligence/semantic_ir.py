@@ -1,9 +1,10 @@
 """Language-independent, evidence-carrying semantic representation for source code.
 
-The IR deliberately hides grammar-specific parser node names from the rest of
-Entroly. Parser/compiler/LSP frontends may strengthen the same graph without
-changing the agent-facing schema. Unknown languages still receive a bounded
-exact-source structural skeleton rather than an "unsupported" error.
+The IR hides grammar-specific parser details from the rest of Entroly. A source
+artifact is analyzed through at most two parser-facing operations in the
+universal path: one normalized registry pass for structure/import/export/symbol
+facts and one raw syntax session for syntax validity/calls/control shape.
+Compiler/LSP/static-analysis adapters may strengthen the same graph later.
 """
 from __future__ import annotations
 
@@ -13,15 +14,14 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from pathlib import Path
 
-from ..tree_sitter_support import (
-    StructuralCall,
-    StructuralSpan,
-    extract_structural_calls_report,
-    extract_structural_spans_report,
-    language_for_source,
-    validate_structural_syntax,
-)
+from ..tree_sitter_support import StructuralCall, language_for_source
 from .registry_frontend import RegistryFacts, RegistrySpan, extract_registry_facts
+from .syntax_session import (
+    SyntaxScan,
+    SyntaxSession,
+    build_syntax_session,
+    scan_syntax_session,
+)
 
 SEMANTIC_IR_SCHEMA_VERSION = "entroly.semantic-ir.v1"
 _MAX_FALLBACK_REGIONS = 2_000
@@ -239,50 +239,48 @@ def _edge_id(
     return "edge:" + hashlib.sha256(material).hexdigest()[:24]
 
 
-def _semantic_nodes(
-    path: str,
+def _structure_graph(
+    root: SemanticNode,
     language: str,
-    raw: bytes,
-    spans: list[StructuralSpan],
-    offsets: list[int],
+    facts: RegistryFacts,
 ) -> tuple[list[SemanticNode], list[SemanticEdge]]:
+    """Create nested declaration nodes from normalized registry structure."""
     nodes: list[SemanticNode] = []
     edges: list[SemanticEdge] = []
     active: list[SemanticNode] = []
-    ordered = sorted(
-        spans,
-        key=lambda item: (item.start_byte, -item.end_byte, item.name),
-    )
-    for span in ordered:
-        while active and span.start_byte >= active[-1].evidence.end_byte:
+    for item in facts.structures:
+        evidence = _registry_evidence(root.evidence.path, item.span)
+        while active and evidence.start_byte >= active[-1].evidence.end_byte:
             active.pop()
         parent = (
             active[-1]
-            if active and span.end_byte <= active[-1].evidence.end_byte
+            if active and evidence.end_byte <= active[-1].evidence.end_byte
             else None
         )
-        evidence = _evidence(path, raw, span.start_byte, span.end_byte, offsets)
+        kind = item.kind.replace("-", "_") or "declaration"
         node = SemanticNode(
-            node_id=_node_id(path, span.kind, span.name, span.start_byte, span.end_byte),
-            kind=span.kind,
-            name=span.name,
+            node_id=_node_id(
+                evidence.path, kind, item.name, evidence.start_byte, evidence.end_byte
+            ),
+            kind=kind,
+            name=item.name,
             language=language,
-            parent_id=parent.node_id if parent else None,
-            signature=span.signature,
-            epistemic_class=EpistemicClass.PARSER_VERIFIED,
             evidence=evidence,
+            epistemic_class=EpistemicClass.PARSER_VERIFIED,
+            parent_id=parent.node_id if parent else None,
+            signature=item.signature,
         )
         nodes.append(node)
-        if parent is not None:
-            edges.append(SemanticEdge(
-                edge_id=_edge_id(parent.node_id, "contains", node.node_id, evidence),
-                source_id=parent.node_id,
-                relation="contains",
-                target_id=node.node_id,
-                epistemic_class=EpistemicClass.PARSER_VERIFIED,
-                evidence=evidence,
-                target_name=node.name,
-            ))
+        source_id = parent.node_id if parent is not None else root.node_id
+        edges.append(SemanticEdge(
+            edge_id=_edge_id(source_id, "contains", node.node_id, evidence),
+            source_id=source_id,
+            relation="contains",
+            target_id=node.node_id,
+            target_name=node.name,
+            epistemic_class=EpistemicClass.PARSER_VERIFIED,
+            evidence=evidence,
+        ))
         active.append(node)
     return nodes, edges
 
@@ -296,7 +294,12 @@ def _registry_graph(
     nodes: list[SemanticNode] = []
     edges: list[SemanticEdge] = []
 
-    def add_fact(kind: str, name: str, evidence: SourceEvidence, signature: str = "") -> SemanticNode:
+    def add_fact(
+        kind: str,
+        name: str,
+        evidence: SourceEvidence,
+        signature: str = "",
+    ) -> SemanticNode:
         node = SemanticNode(
             node_id=_node_id(
                 evidence.path, kind, name, evidence.start_byte, evidence.end_byte
@@ -396,7 +399,7 @@ def _call_edges(
     path: str,
     raw: bytes,
     nodes: list[SemanticNode],
-    calls: list[StructuralCall],
+    calls: tuple[StructuralCall, ...],
     offsets: list[int],
 ) -> list[SemanticEdge]:
     edges: list[SemanticEdge] = []
@@ -414,8 +417,6 @@ def _call_edges(
             relation="invokes-name",
             target_id=target_id,
             target_name=call.target,
-            # Parsing proves an invocation expression and its spelling, not the
-            # semantic binding of that spelling to a declaration.
             epistemic_class=EpistemicClass.PARSER_VERIFIED,
             evidence=evidence,
         ))
@@ -510,16 +511,56 @@ def build_universal_semantic_document(
     *,
     max_bytes: int = 2 * 1024 * 1024,
     max_nodes: int = 100_000,
+    precomputed_registry_facts: RegistryFacts | None = None,
+    precomputed_syntax_session: SyntaxSession | None = None,
+    precomputed_syntax_scan: SyntaxScan | None = None,
 ) -> UniversalSemanticDocument:
-    """Normalize any source artifact into the stable Entroly semantic IR."""
+    """Normalize any source artifact into the stable Entroly semantic IR.
+
+    Precomputed inputs are optional and are identity-checked before use. The
+    adaptive pipeline supplies them to share work across semantic and flow views;
+    standalone callers get the same result with at most one registry pass and
+    one raw parser session.
+    """
     raw = source.encode("utf-8", errors="surrogateescape")
     if len(raw) > max_bytes:
         raise ValueError(f"source exceeds max_bytes={max_bytes}")
     path = file_path.replace("\\", "/")
-    language = language_for_source(path, source) or "unknown"
-    offsets = _line_offsets(raw)
     source_sha256 = hashlib.sha256(raw).hexdigest()
 
+    session = precomputed_syntax_session
+    if session is not None:
+        if session.source_sha256 != source_sha256 or session.file_path != path:
+            raise ValueError("precomputed syntax session does not match source identity")
+    else:
+        session = build_syntax_session(source, path, max_bytes=max_bytes)
+
+    facts = precomputed_registry_facts
+    language = (
+        session.language
+        if session is not None
+        else facts.language
+        if facts is not None
+        else language_for_source(path, source) or "unknown"
+    )
+    if facts is not None and facts.language != language:
+        raise ValueError("precomputed registry facts language mismatch")
+    if facts is None and language != "unknown":
+        facts = extract_registry_facts(
+            source,
+            language,
+            max_bytes=max_bytes,
+            max_nodes=max_nodes,
+        )
+
+    scan = precomputed_syntax_scan
+    if scan is not None:
+        if scan.source_sha256 != source_sha256 or scan.language != language:
+            raise ValueError("precomputed syntax scan does not match source identity")
+    elif session is not None:
+        scan = scan_syntax_session(session, max_nodes=max_nodes)
+
+    offsets = _line_offsets(raw)
     root_evidence = _evidence(path, raw, 0, len(raw), offsets)
     root = SemanticNode(
         node_id=_node_id(path, "file", Path(path).name, 0, len(raw)),
@@ -532,58 +573,17 @@ def build_universal_semantic_document(
         evidence=root_evidence,
     )
 
-    syntax_valid = validate_structural_syntax(source, path, max_bytes=max_bytes)
-    span_report = extract_structural_spans_report(
-        source, path, max_bytes=max_bytes, max_nodes=max_nodes
-    )
-    call_report = extract_structural_calls_report(
-        source, path, max_bytes=max_bytes, max_nodes=max_nodes
-    )
-    registry_facts = (
-        extract_registry_facts(
-            source, language, max_bytes=max_bytes, max_nodes=max_nodes
-        )
-        if language != "unknown"
-        else None
-    )
-    parser_available = syntax_valid is not None
-    parser_structure = span_report is not None and span_report.complete
-
+    parser_available = session is not None or facts is not None
+    parser_structure = facts is not None and facts.complete
     nodes = [root]
     edges: list[SemanticEdge] = []
     diagnostics: list[str] = []
-    if parser_structure:
-        spans = list(span_report.items) if span_report else []
-        structure_nodes, structure_edges = _semantic_nodes(
-            path, language, raw, spans, offsets
-        )
+    structure_nodes: list[SemanticNode] = []
+
+    if parser_structure and facts is not None:
+        structure_nodes, structure_edges = _structure_graph(root, language, facts)
         nodes.extend(structure_nodes)
         edges.extend(structure_edges)
-        for node in structure_nodes:
-            if node.parent_id is None:
-                edges.append(SemanticEdge(
-                    edge_id=_edge_id(
-                        root.node_id, "contains", node.node_id, node.evidence
-                    ),
-                    source_id=root.node_id,
-                    relation="contains",
-                    target_id=node.node_id,
-                    target_name=node.name,
-                    epistemic_class=EpistemicClass.PARSER_VERIFIED,
-                    evidence=node.evidence,
-                ))
-        if call_report is not None and call_report.complete:
-            edges.extend(_call_edges(
-                path,
-                raw,
-                structure_nodes,
-                list(call_report.items),
-                offsets,
-            ))
-        elif call_report is not None:
-            diagnostics.append(
-                "call traversal reached its node bound; parser calls were omitted"
-            )
     else:
         fallback = _fallback_regions(path, language, raw, offsets)
         nodes.extend(fallback)
@@ -599,37 +599,51 @@ def build_universal_semantic_document(
                 epistemic_class=EpistemicClass.HEURISTIC,
                 evidence=node.evidence,
             ))
-        if span_report is not None and not span_report.complete:
+        if facts is not None and not facts.complete:
             diagnostics.append(
-                "structural traversal reached its node bound; partial parser "
-                "results were rejected and exact-source fallback was used"
+                "registry analysis reached a bound; partial structure/facts were "
+                "rejected and exact-source fallback was used"
             )
         else:
             diagnostics.append(
-                "parser structure unavailable; emitted exact-source heuristic regions"
+                "normalized parser structure unavailable; emitted exact-source "
+                "heuristic regions"
             )
 
-    if registry_facts is not None:
-        if registry_facts.complete:
-            fact_nodes, fact_edges = _registry_graph(root, language, registry_facts)
+    if facts is not None:
+        if facts.complete:
+            fact_nodes, fact_edges = _registry_graph(root, language, facts)
             nodes.extend(fact_nodes)
             edges.extend(fact_edges)
-        else:
-            diagnostics.append(
-                "registry fact extraction exceeded its node bound; facts were omitted"
-            )
-        for item in registry_facts.diagnostics[:100]:
+        for item in facts.diagnostics[:100]:
             if item.message:
                 diagnostics.append(
                     f"parser diagnostic ({item.severity}): {item.message}"
                 )
 
-    if syntax_valid is False:
+    if scan is not None:
+        if scan.calls_complete:
+            edges.extend(_call_edges(path, raw, structure_nodes, scan.calls, offsets))
+        else:
+            diagnostics.append(
+                "call syntax scan reached a bound; partial call facts were omitted"
+            )
+        if not scan.traversal_complete:
+            diagnostics.append(
+                "raw syntax traversal reached its node bound; absence is not "
+                "negative evidence"
+            )
+
+    if session is not None and not session.syntax_valid:
         diagnostics.append("parser reported syntax errors")
 
     nodes, edges = _deduplicate_graph(nodes, edges)
-    level = SemanticLevel.STRUCTURE if parser_structure else (
-        SemanticLevel.SYNTAX if parser_available else SemanticLevel.SOURCE
+    level = (
+        SemanticLevel.STRUCTURE
+        if parser_structure
+        else SemanticLevel.SYNTAX
+        if parser_available
+        else SemanticLevel.SOURCE
     )
     capabilities = SemanticCapabilities(
         language=language,
