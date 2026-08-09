@@ -14,6 +14,7 @@ from entroly.repository_intelligence.registry_frontend import (
     RegistryFacts,
     RegistryImport,
     RegistrySpan,
+    RegistryStructure,
     RegistrySymbol,
     extract_registry_facts,
 )
@@ -22,8 +23,6 @@ from entroly.repository_intelligence.semantic_ir import (
     build_universal_semantic_document,
 )
 from entroly.tree_sitter_support import (
-    StructuralExtraction,
-    StructuralSpan,
     _downloads_allowed,
     available_parser_languages,
     extract_structural_spans,
@@ -33,8 +32,6 @@ from entroly.tree_sitter_support import (
 
 def test_registry_exposes_broad_language_set_including_c_and_zig() -> None:
     languages = set(available_parser_languages())
-    # The base dependency is intentionally the universal registry rather than
-    # an Entroly-maintained language allowlist.
     assert len(languages) >= 300
     assert "c" in languages
     assert "zig" in languages
@@ -79,9 +76,8 @@ def test_unregistered_future_language_is_indexed_as_exact_source(
 def test_universal_ir_unknown_language_keeps_exact_source_proof(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(semantic_ir, "validate_structural_syntax", lambda *a, **k: None)
-    monkeypatch.setattr(semantic_ir, "extract_structural_spans_report", lambda *a, **k: None)
-    monkeypatch.setattr(semantic_ir, "extract_structural_calls_report", lambda *a, **k: None)
+    monkeypatch.setattr(semantic_ir, "build_syntax_session", lambda *a, **k: None)
+    monkeypatch.setattr(semantic_ir, "extract_registry_facts", lambda *a, **k: None)
 
     source = "thing {\n  nested { value }\n}\n"
     document = build_universal_semantic_document(source, "sample.future")
@@ -99,43 +95,53 @@ def test_universal_ir_unknown_language_keeps_exact_source_proof(
     )
 
 
-def test_incomplete_parser_traversal_is_rejected_not_promoted(
+def _span(source: str, start: int, end: int, line: int) -> RegistrySpan:
+    raw = source.encode("utf-8")
+    return RegistrySpan(
+        start_byte=start,
+        end_byte=end,
+        start_line=line,
+        end_line=line,
+        evidence_sha256=hashlib.sha256(raw[start:end]).hexdigest(),
+    )
+
+
+def test_incomplete_registry_analysis_is_rejected_not_promoted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = "fn run() { return 1; }\n"
-    span = StructuralSpan(
-        name="run",
-        kind="function",
-        start_line=1,
-        end_line=1,
-        source=source.strip(),
-        signature="fn run()",
-        indent=0,
-        start_byte=0,
-        end_byte=len(source.encode("utf-8")) - 1,
-    )
-    incomplete = StructuralExtraction(
-        items=(span,),
+    facts = RegistryFacts(
         language="zig",
+        imports=(),
+        exports=(),
+        symbols=(),
+        diagnostics=(),
+        node_count=10,
         complete=False,
-        nodes_visited=10,
-        max_nodes=10,
-        backend="test",
+        structures=(RegistryStructure(
+            name="run",
+            kind="function",
+            signature="fn run()",
+            span=_span(source, 0, len(source.encode()) - 1, 1),
+        ),),
     )
-    monkeypatch.setattr(semantic_ir, "validate_structural_syntax", lambda *a, **k: True)
-    monkeypatch.setattr(
-        semantic_ir, "extract_structural_spans_report", lambda *a, **k: incomplete
-    )
-    monkeypatch.setattr(semantic_ir, "extract_structural_calls_report", lambda *a, **k: None)
-    monkeypatch.setattr(semantic_ir, "extract_registry_facts", lambda *a, **k: None)
+    monkeypatch.setattr(semantic_ir, "build_syntax_session", lambda *a, **k: None)
 
-    document = build_universal_semantic_document(source, "main.zig", max_nodes=10)
+    document = build_universal_semantic_document(
+        source,
+        "main.zig",
+        max_nodes=10,
+        precomputed_registry_facts=facts,
+    )
     assert document.capabilities.structure is False
     assert all(
-        node.epistemic_class is not EpistemicClass.PARSER_VERIFIED
+        not (
+            node.name == "run"
+            and node.epistemic_class is EpistemicClass.PARSER_VERIFIED
+        )
         for node in document.nodes
     )
-    assert any("partial parser results were rejected" in item for item in document.diagnostics)
+    assert any("partial structure/facts were rejected" in item for item in document.diagnostics)
 
 
 def test_registry_normalized_structure_can_serve_new_language(
@@ -189,7 +195,7 @@ def test_registry_normalized_structure_can_serve_new_language(
     assert spans[0].source == source
 
 
-def test_registry_fact_adapter_hashes_exact_import_export_and_symbol_ranges(
+def test_registry_fact_adapter_hashes_exact_import_export_symbol_and_structure_ranges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = 'import core\nexport fn run() void {}\n'
@@ -204,45 +210,51 @@ def test_registry_fact_adapter_hashes_exact_import_export_and_symbol_ranges(
 
     result = {
         "metrics": {"node_count": 12},
-        "imports": [
-            {
-                "source": "core",
-                "items": ["Thing"],
-                "alias": "c",
-                "is_wildcard": False,
-                "span": {
-                    "start_byte": 0,
-                    "end_byte": import_end,
-                    "start_line": 0,
-                    "end_line": 0,
-                },
-            }
-        ],
-        "exports": [
-            {
-                "name": "run",
-                "kind": "Named",
-                "span": {
-                    "start_byte": export_start,
-                    "end_byte": export_end,
-                    "start_line": 1,
-                    "end_line": 1,
-                },
-            }
-        ],
-        "symbols": [
-            {
-                "name": "run",
-                "kind": "Function",
-                "type_annotation": "void",
-                "span": {
-                    "start_byte": export_start,
-                    "end_byte": export_end,
-                    "start_line": 1,
-                    "end_line": 1,
-                },
-            }
-        ],
+        "structure": [{
+            "name": "run",
+            "kind": "Function",
+            "signature": "export fn run() void",
+            "span": {
+                "start_byte": export_start,
+                "end_byte": export_end,
+                "start_line": 1,
+                "end_line": 1,
+            },
+            "children": [],
+        }],
+        "imports": [{
+            "source": "core",
+            "items": ["Thing"],
+            "alias": "c",
+            "is_wildcard": False,
+            "span": {
+                "start_byte": 0,
+                "end_byte": import_end,
+                "start_line": 0,
+                "end_line": 0,
+            },
+        }],
+        "exports": [{
+            "name": "run",
+            "kind": "Named",
+            "span": {
+                "start_byte": export_start,
+                "end_byte": export_end,
+                "start_line": 1,
+                "end_line": 1,
+            },
+        }],
+        "symbols": [{
+            "name": "run",
+            "kind": "Function",
+            "type_annotation": "void",
+            "span": {
+                "start_byte": export_start,
+                "end_byte": export_end,
+                "start_line": 1,
+                "end_line": 1,
+            },
+        }],
         "diagnostics": [],
     }
     fake_pack = SimpleNamespace(ProcessConfig=Config, process=lambda text, config: result)
@@ -250,6 +262,7 @@ def test_registry_fact_adapter_hashes_exact_import_export_and_symbol_ranges(
 
     facts = extract_registry_facts(source, "zig")
     assert facts is not None and facts.complete
+    assert facts.structures[0].name == "run"
     assert facts.imports[0].source == "core"
     assert facts.imports[0].items == ("Thing",)
     assert facts.imports[0].span.evidence_sha256 == hashlib.sha256(
@@ -270,6 +283,7 @@ def test_registry_fact_node_bound_never_promotes_partial_facts(
         ProcessConfig=Config,
         process=lambda text, config: {
             "metrics": {"node_count": 1001},
+            "structure": [],
             "imports": [],
             "exports": [],
             "symbols": [],
@@ -282,23 +296,14 @@ def test_registry_fact_node_bound_never_promotes_partial_facts(
     assert facts.complete is False
 
 
-def test_universal_ir_materializes_registry_facts_without_claiming_binding(
+def test_universal_ir_materializes_structure_and_registry_facts_without_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = 'const x = @import("core.zig");\npub fn run() void {}\n'
+    raw = source.encode("utf-8")
     import_end = source.index(";") + 1
     export_start = source.index("pub fn")
-
-    def span(start: int, end: int, line: int) -> RegistrySpan:
-        raw = source.encode("utf-8")
-        return RegistrySpan(
-            start_byte=start,
-            end_byte=end,
-            start_line=line,
-            end_line=line,
-            evidence_sha256=hashlib.sha256(raw[start:end]).hexdigest(),
-        )
-
+    export_end = len(raw) - 1
     facts = RegistryFacts(
         language="zig",
         imports=(RegistryImport(
@@ -306,31 +311,38 @@ def test_universal_ir_materializes_registry_facts_without_claiming_binding(
             items=(),
             alias="x",
             is_wildcard=False,
-            span=span(0, import_end, 1),
+            span=_span(source, 0, import_end, 1),
         ),),
         exports=(RegistryExport(
             name="run",
             kind="named",
-            span=span(export_start, len(source.encode("utf-8")) - 1, 2),
+            span=_span(source, export_start, export_end, 2),
         ),),
         symbols=(RegistrySymbol(
             name="run",
             kind="function",
             type_annotation="void",
-            span=span(export_start, len(source.encode("utf-8")) - 1, 2),
+            span=_span(source, export_start, export_end, 2),
         ),),
         diagnostics=(),
         node_count=20,
         complete=True,
+        structures=(RegistryStructure(
+            name="run",
+            kind="function",
+            signature="pub fn run() void",
+            span=_span(source, export_start, export_end, 2),
+        ),),
     )
-    monkeypatch.setattr(semantic_ir, "language_for_source", lambda *a, **k: "zig")
-    monkeypatch.setattr(semantic_ir, "validate_structural_syntax", lambda *a, **k: True)
-    monkeypatch.setattr(semantic_ir, "extract_structural_spans_report", lambda *a, **k: None)
-    monkeypatch.setattr(semantic_ir, "extract_structural_calls_report", lambda *a, **k: None)
-    monkeypatch.setattr(semantic_ir, "extract_registry_facts", lambda *a, **k: facts)
+    monkeypatch.setattr(semantic_ir, "build_syntax_session", lambda *a, **k: None)
 
-    document = build_universal_semantic_document(source, "main.zig")
+    document = build_universal_semantic_document(
+        source,
+        "main.zig",
+        precomputed_registry_facts=facts,
+    )
     payload = document.to_dict()
+    assert any(node["kind"] == "function" for node in payload["nodes"])
     assert any(node["kind"] == "import" for node in payload["nodes"])
     assert any(node["kind"] == "export" for node in payload["nodes"])
     assert any(node["kind"] == "symbol:function" for node in payload["nodes"])
@@ -339,4 +351,5 @@ def test_universal_ir_materializes_registry_facts_without_claiming_binding(
     )
     assert import_edge["target_name"] == "core.zig"
     assert import_edge["epistemic_class"] == "parser-verified"
+    assert document.capabilities.structure is True
     assert document.capabilities.semantic_binding is False
