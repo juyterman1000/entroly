@@ -1001,7 +1001,7 @@ def _log_omitted_count(
 
 class ShellCodec:
     name = "shell"
-    version = "2"
+    version = "3"
     _SHELL_SHAPE = re.compile(
         r"^\s*[$>]\s+\S|^(?:PASS|FAIL|ok|error|warning|Error|Warning)\b"
         r"|\b(?:exit(?:ed)? (?:code|status)|Traceback|npm ERR!|error\[E\d+\])"
@@ -1044,7 +1044,11 @@ class ShellCodec:
         reps = [full]
         budget = int(options.get("budget", 1000))
         try:
-            compressed = esc_compress(text, budget=budget).compressed
+            compressed = esc_compress(
+                text,
+                budget=budget,
+                tool_name=str(options.get("tool_name") or source_id or ""),
+            ).compressed
         except Exception:
             return reps
         if not compressed or len(compressed) >= len(text):

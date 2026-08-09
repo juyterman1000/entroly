@@ -348,6 +348,10 @@ class ProxyConfig:
     enable_hierarchical_compression: bool = True
     enable_conversation_compression: bool = True
     enable_passive_feedback: bool = True
+    # Explicit opt-in: embedded images are otherwise byte-for-byte preserved.
+    enable_image_optimization: bool = False
+    image_optimization_max_images: int = 8
+    image_optimization_max_bytes: int = 20 * 1024 * 1024
 
     # Pipeline hardening
     enable_aged_tool_pruning: bool = True
@@ -455,6 +459,16 @@ class ProxyConfig:
             ),
             enable_conversation_compression=(
                 os.environ.get("ENTROLY_CONVERSATION_COMPRESSION", "1") != "0"
+            ),
+            enable_image_optimization=(
+                os.environ.get("ENTROLY_IMAGE_OPTIMIZATION", "0").lower()
+                in {"1", "true", "yes", "on"}
+            ),
+            image_optimization_max_images=_env_int(
+                "ENTROLY_IMAGE_OPTIMIZATION_MAX_IMAGES", 8
+            ),
+            image_optimization_max_bytes=_env_int(
+                "ENTROLY_IMAGE_OPTIMIZATION_MAX_BYTES", 20 * 1024 * 1024
             ),
             tool_result_policy=os.environ.get(
                 "ENTROLY_TOOL_RESULT_POLICY", "auto"

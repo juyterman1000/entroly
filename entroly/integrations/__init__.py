@@ -2,6 +2,17 @@
 
 from __future__ import annotations
 
+from .langchain import EntrolyCompressor, EntrolyDocumentCompressor
+from .asgi import EntrolyASGIMiddleware
+from .litellm import EntrolyLiteLLMCallback
+
+__all__ = [
+    "EntrolyASGIMiddleware",
+    "EntrolyCompressor",
+    "EntrolyDocumentCompressor",
+    "EntrolyLiteLLMCallback",
+]
+
 try:
     from .ebbiforge import (  # noqa: F401
         EbbiforgeAuditResult,
@@ -10,5 +21,12 @@ try:
         run_swarm_with_entroly,
         summarize_ebbiforge_anomalies,
     )
+    __all__ += [
+        "EbbiforgeAuditResult",
+        "EbbiforgeEntrolyBridge",
+        "EbbiforgeProvenanceTurn",
+        "run_swarm_with_entroly",
+        "summarize_ebbiforge_anomalies",
+    ]
 except ImportError:
     pass
