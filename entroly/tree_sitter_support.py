@@ -669,7 +669,7 @@ def extract_structural_spans_report(
         return None
     raw, tree, language = parsed
     normalized = _pack_structure_spans(source, file_path, raw, language)
-    if normalized is not None:
+    if normalized:
         # Registry processing owns its traversal and provides exact spans. Keep
         # the raw parser's node count only as a bounded completeness check.
         metrics_state = _TraversalState()
