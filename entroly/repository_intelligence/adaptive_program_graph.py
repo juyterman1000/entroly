@@ -1,10 +1,9 @@
 """Demand-driven, proof-carrying program graph across programming languages.
 
-This layer composes Entroly's universal semantic IR with the existing verified
-Python CFG/data-flow engines. It intentionally does not pretend every language
-has equal semantic depth: every selected file reports the strongest verified
-semantic level currently available, while the agent-facing graph schema stays
-stable as stronger compiler/LSP/flow adapters are added.
+This layer composes Entroly's universal semantic IR, syntactic-flow view, and
+verified deep adapters. Per selected file it performs at most one normalized
+registry pass plus one raw parser session; semantic and flow views reuse those
+results instead of reparsing source independently.
 """
 from __future__ import annotations
 
@@ -15,10 +14,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable, Mapping
 
+from ..tree_sitter_support import language_for_source
 from .interprocedural_flow import build_verified_interprocedural_flow
 from .models import RepositoryIndex, Symbol
 from .program_graph import build_verified_program_graph
+from .registry_frontend import extract_registry_facts
 from .semantic_ir import build_universal_semantic_document
+from .syntax_session import build_syntax_session, scan_syntax_session
+from .universal_flow import build_syntactic_flow_graph_from_scan
 from .verified_context import build_verified_context
 
 ADAPTIVE_PROGRAM_GRAPH_SCHEMA_VERSION = "entroly.adaptive-program-graph.v1"
@@ -147,18 +150,7 @@ def build_adaptive_program_graph(
     proposal_scores: Iterable[Mapping[str, object]] = (),
     proposal_provider: str = "caller-supplied",
 ) -> dict[str, object]:
-    """Materialize only the program facts needed for one task.
-
-    The graph has a stable cross-language contract. Universal parser facts are
-    always evidence-classified; deeper CFG/data-flow facts are attached only
-    when an adapter can verify them. Missing depth is an explicit capability
-    boundary, never a fabricated edge.
-
-    ``include_deep_semantics=False`` is an internal composition mode used by
-    the existing program-slice surface, which already materializes its own
-    verified Python CFG/data-flow payloads. It avoids duplicate work while
-    preserving the same universal semantic envelope.
-    """
+    """Materialize only the program facts needed for one task."""
     root = root.expanduser().resolve(strict=True)
     clean_query = query.strip()
     if not clean_query or len(clean_query) > 4_000:
@@ -180,9 +172,7 @@ def build_adaptive_program_graph(
         proposal_provider=proposal_provider,
     )
     exact = _exact_matches(index, clean_query)
-    selected_symbols = _selected_symbols(
-        index, exact, context, limit=symbol_limit
-    )
+    selected_symbols = _selected_symbols(index, exact, context, limit=symbol_limit)
     selected_paths: list[str] = []
     for symbol in selected_symbols:
         if symbol.path not in selected_paths:
@@ -196,6 +186,10 @@ def build_adaptive_program_graph(
     diagnostics: list[dict[str, str]] = []
     total_nodes = 0
     total_edges = 0
+    syntactic_flow_files = 0
+    syntactic_flow_nodes = 0
+    syntactic_flow_edges = 0
+    syntactic_flow_incomplete = 0
     epistemic = Counter()
     capabilities = Counter()
     selected_file_digests: dict[str, str] = {}
@@ -214,13 +208,57 @@ def build_adaptive_program_graph(
         record = index.files[path]
         selected_file_digests[path] = record.sha256
         remaining_nodes = max(1, node_limit - total_nodes)
+
+        # Two-pass ceiling: normalized registry facts + one raw syntax parse.
+        session = build_syntax_session(
+            source,
+            path,
+            max_bytes=max(record.byte_length, 1),
+        )
+        language = (
+            session.language
+            if session is not None
+            else language_for_source(path, source) or "unknown"
+        )
+        facts = (
+            extract_registry_facts(
+                source,
+                language,
+                max_bytes=max(record.byte_length, 1),
+                max_nodes=remaining_nodes,
+            )
+            if language != "unknown"
+            else None
+        )
+        scan = (
+            scan_syntax_session(
+                session,
+                max_nodes=remaining_nodes,
+                max_flow_shapes=min(20_000, remaining_nodes),
+            )
+            if session is not None
+            else None
+        )
         document = build_universal_semantic_document(
             source,
             path,
             max_bytes=max(record.byte_length, 1),
             max_nodes=remaining_nodes,
+            precomputed_registry_facts=facts,
+            precomputed_syntax_session=session,
+            precomputed_syntax_scan=scan,
         )
         payload = document.to_dict()
+        if scan is not None:
+            flow = build_syntactic_flow_graph_from_scan(scan)
+            flow_payload = flow.to_dict()
+            payload["syntactic_flow"] = flow_payload
+            syntactic_flow_files += 1
+            syntactic_flow_nodes += len(flow.nodes)
+            syntactic_flow_edges += len(flow.edges)
+            if not flow.complete:
+                syntactic_flow_incomplete += 1
+
         nodes = payload.get("nodes", [])
         edges = payload.get("edges", [])
         if not isinstance(nodes, list) or not isinstance(edges, list):
@@ -279,8 +317,8 @@ def build_adaptive_program_graph(
             adapter_boundaries.append({
                 "symbol_id": symbol.symbol_id,
                 "language": symbol.language,
-                "available": "structure",
-                "missing": "verified-language-specific-flow-adapter",
+                "available": "syntactic-flow-or-structure",
+                "missing": "verified-language-specific-semantic-flow-adapter",
             })
 
     context_receipt = context.get("receipt")
@@ -308,6 +346,10 @@ def build_adaptive_program_graph(
             "semantic_files": len(semantic_files),
             "semantic_nodes": total_nodes,
             "semantic_edges": total_edges,
+            "syntactic_flow_files": syntactic_flow_files,
+            "syntactic_flow_nodes": syntactic_flow_nodes,
+            "syntactic_flow_edges": syntactic_flow_edges,
+            "syntactic_flow_incomplete": syntactic_flow_incomplete,
             "capability_levels": dict(sorted(capabilities.items())),
             "epistemic_facts": dict(sorted(epistemic.items())),
             "answer_sufficiency": "unproven",
@@ -317,7 +359,9 @@ def build_adaptive_program_graph(
         },
         "analysis_contract": {
             "materialization": "query-time-selected-files-only",
-            "universal_layer": "exact-source-plus-parser-evidence",
+            "parser_work_ceiling": "one-registry-pass-plus-one-raw-parse-per-selected-file",
+            "universal_layer": "exact-source-plus-parser-evidence-plus-syntactic-flow",
+            "syntactic_flow_guarantee": "control-shape-not-semantic-cfg-or-dataflow",
             "deep_adapter_policy": "verified-adapters-only",
             "deep_semantics_materialized": bool(include_deep_semantics),
             "missing_adapters_behavior": "report-boundary-never-invent-flow",
