@@ -11,14 +11,14 @@ from typing import Callable
 
 from .models import FileRecord, RepositoryLimits, Symbol, normalize_relative
 from ..tree_sitter_support import (
-    LANGUAGE_BY_SUFFIX,
     StructuralCall,
     StructuralSpan,
     extract_structural_calls,
     extract_structural_spans,
+    language_for_path,
+    language_for_source,
 )
 
-SOURCE_SUFFIXES = frozenset(LANGUAGE_BY_SUFFIX)
 IGNORED_DIRS = frozenset(
     {
         ".git", ".hg", ".svn", ".mypy_cache", ".pytest_cache", ".ruff_cache",
@@ -33,6 +33,16 @@ CALL_KEYWORDS = frozenset(
         "sizeof", "typeof", "function", "fn", "new",
     }
 )
+# Avoid reading obvious binary/media artifacts merely to discover that they are
+# not source. Text/config/data formats stay eligible because they are often
+# required to understand build and runtime behavior.
+NON_SOURCE_SUFFIXES = frozenset({
+    ".7z", ".a", ".avi", ".bmp", ".class", ".dll", ".dylib", ".exe",
+    ".gif", ".gz", ".ico", ".jar", ".jpeg", ".jpg", ".lockb", ".mov",
+    ".mp3", ".mp4", ".o", ".obj", ".pdf", ".png", ".pyc", ".so",
+    ".tar", ".tiff", ".ttf", ".wav", ".webm", ".webp", ".woff",
+    ".woff2", ".xz", ".zip",
+})
 
 RUST_DEF = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?"
@@ -78,8 +88,8 @@ def module_name(path: str) -> str:
     return ".".join(parts)
 
 
-def _language(path: Path) -> str:
-    return LANGUAGE_BY_SUFFIX.get(path.suffix.lower(), "unknown")
+def _language(path: Path, text: str = "") -> str:
+    return language_for_source(str(path), text) or language_for_path(str(path)) or "unknown"
 
 
 def _is_test_path(path: str) -> bool:
@@ -89,6 +99,29 @@ def _is_test_path(path: str) -> bool:
     return bool(parts & TEST_PARTS) or stem.startswith("test_") or any(
         stem.endswith(suffix) for suffix in ("_test", ".test", ".spec")
     )
+
+
+def _looks_like_source(path: str, text: str) -> bool:
+    """Conservative fallback for a language newer than the local registry."""
+    if not text.strip() or "\x00" in text:
+        return False
+    first = text.splitlines()[0].strip() if text.splitlines() else ""
+    if first.startswith("#!"):
+        return True
+    suffix = Path(path).suffix.lower()
+    if suffix in {".md", ".rst", ".txt", ".csv"}:
+        return False
+    sample = text[:16_384]
+    structural = sum(sample.count(token) for token in ("{", "}", "(", ")", "=>"))
+    keywords = sum(
+        1
+        for token in (
+            "fn ", "def ", "func ", "function ", "class ", "struct ",
+            "enum ", "import ", "use ", "package ", "module ", "return ",
+        )
+        if token in sample
+    )
+    return structural >= 4 or keywords >= 2
 
 
 def _symbol_id(path: str, qualified: str, kind: str) -> str:
@@ -135,9 +168,6 @@ class PythonVisitor(ast.NodeVisitor):
             return f"{owner}.{node.attr}" if owner else node.attr
         if isinstance(node, ast.Subscript):
             base = PythonVisitor._annotation_name(node.value)
-            # Optional[T], list[T], and similar wrappers describe the
-            # container, not the receiver's concrete method owner. Union-like
-            # optional wrappers are safely unwrapped only when one type is clear.
             if base in {"Optional", "typing.Optional"}:
                 return PythonVisitor._annotation_name(node.slice)
             return base
@@ -340,6 +370,7 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
     symbols: list[Symbol] = []
     imports: set[str] = set()
     calls: list[ParsedCall] = []
+    js_family = language in {"javascript", "typescript", "tsx"}
     for line_number, line in enumerate(text.splitlines(), 1):
         current: Symbol | None = None
         if language == "rust":
@@ -355,7 +386,7 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
             use = RUST_USE.match(line)
             if use:
                 imports.add(use.group(1).strip().split("::{", 1)[0])
-        else:
+        elif js_family:
             match = JS_DEF.match(line)
             if match:
                 kind = match.group(1) or "function"
@@ -367,13 +398,14 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
                 )
                 symbols.append(current)
             imports.update(JS_IMPORT.findall(line))
-        for name in CALL.findall(line):
-            if name not in CALL_KEYWORDS:
-                calls.append(ParsedCall(
-                    current.symbol_id if current else None,
-                    name,
-                    line_number,
-                ))
+        if language == "rust" or js_family:
+            for name in CALL.findall(line):
+                if name not in CALL_KEYWORDS:
+                    calls.append(ParsedCall(
+                        current.symbol_id if current else None,
+                        name,
+                        line_number,
+                    ))
     return ParsedFile(
         _record(path, language, raw, text, is_test=_is_test_path(path), imports=imports),
         symbols, imports, {}, calls,
@@ -381,10 +413,10 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
 
 
 def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> ParsedFile:
-    """Use exact parser spans while retaining conservative dependency signals."""
+    """Use normalized parser spans while retaining safe fallback signals."""
     conservative = _parse_conservative(path, text, raw, language)
     spans = extract_structural_spans(text, path)
-    if not spans:
+    if spans is None:
         return conservative
 
     symbols: list[Symbol] = []
@@ -399,7 +431,6 @@ def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> Par
         )
         qualified = f"{parent.qualified_name}.{span.name}" if parent else span.name
         kind = "test" if span.name.startswith(("test_", "test")) else span.kind
-        # Preserve the v1 index identity contract used by call-edge resolution.
         if language == "rust" and kind == "function":
             kind = "fn"
         symbol = Symbol(
@@ -418,8 +449,17 @@ def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> Par
     calls = conservative.calls
     if parser_calls is not None:
         calls = _attribute_structural_calls(parser_calls, symbols)
+    is_test = _is_test_path(path) or any(symbol.kind == "test" for symbol in symbols)
+    record = _record(
+        path,
+        language,
+        raw,
+        text,
+        is_test=is_test,
+        imports=conservative.imports,
+    )
     return ParsedFile(
-        conservative.record,
+        record,
         symbols,
         conservative.imports,
         conservative.import_aliases,
@@ -471,9 +511,13 @@ def scan_repository(
         dirnames[:] = sorted(name for name in dirnames if name not in IGNORED_DIRS)
         for filename in sorted(filenames):
             candidate = Path(directory) / filename
-            if candidate.suffix.lower() not in SOURCE_SUFFIXES:
+            if candidate.suffix.lower() in NON_SOURCE_SUFFIXES:
                 continue
             relative_hint = normalize_relative(candidate.relative_to(root))
+            path_language = language_for_path(relative_hint)
+            # Unknown extensionless files may still be scripts via shebang. For
+            # unknown extensions we inspect bounded text and apply the safe
+            # source-likeness fallback after decoding.
             try:
                 resolved = candidate.resolve(strict=True)
                 resolved.relative_to(root)
@@ -482,7 +526,10 @@ def scan_repository(
                 diagnostics.append(f"skipped unsafe or unreadable path: {relative_hint}")
                 continue
             if size > limits.max_file_bytes:
-                diagnostics.append(f"skipped oversized file: {relative_hint} ({size} bytes)")
+                if path_language:
+                    diagnostics.append(
+                        f"skipped oversized file: {relative_hint} ({size} bytes)"
+                    )
                 continue
             if len(parsed) >= limits.max_files or total + size > limits.max_total_bytes:
                 diagnostics.append("repository limits reached; index truncated")
@@ -493,10 +540,16 @@ def scan_repository(
             except OSError as exc:
                 diagnostics.append(f"failed to read {relative_hint}: {type(exc).__name__}")
                 continue
+            if "\x00" in text:
+                continue
+            language = language_for_source(relative_hint, text) or path_language
+            if language is None:
+                if not _looks_like_source(relative_hint, text):
+                    continue
+                language = "unknown"
             source_sha256 = hashlib.sha256(raw).hexdigest()
             item = load_cached(relative_hint, source_sha256) if load_cached else None
             if item is None:
-                language = _language(resolved)
                 if language == "python":
                     item = _parse_python(relative_hint, text, raw)
                 else:
