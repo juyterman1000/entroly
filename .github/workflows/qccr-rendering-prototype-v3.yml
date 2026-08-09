@@ -61,11 +61,15 @@ jobs:
               prefix = f'{current} = "'
               start = text.index(prefix) + len(prefix)
               end = text.index(f'"\n{following} =', start)
-              text = text[:start] + ''.join(text[start:end].split()) + text[end:]
+              payload = ''.join(text[start:end].split())
+              payload += '=' * (-len(payload) % 4)
+              text = text[:start] + payload + text[end:]
           prefix = 'EXCERPT = "'
           start = text.index(prefix) + len(prefix)
           end = text.index('"\n\npath =', start)
-          text = text[:start] + ''.join(text[start:end].split()) + text[end:]
+          payload = ''.join(text[start:end].split())
+          payload += '=' * (-len(payload) % 4)
+          text = text[:start] + payload + text[end:]
           path.write_text(text, encoding='utf-8')
           PY
           python -m py_compile diagnostics/apply_qccr_anchor_prototype_v2.py
