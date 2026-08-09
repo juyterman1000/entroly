@@ -1,0 +1,52 @@
+name: Code Intelligence Optional Extra
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  parser-extra:
+    name: Parser Extra (offline acquisition policy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD: "0"
+      ENTROLY_AIR_GAP: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install optional parser surface
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[code-intelligence,test]"
+
+      - name: Prove parser extra works without acquisition
+        run: |
+          python - <<'PY'
+          import tree_sitter_language_pack
+          from entroly.tree_sitter_support import extract_structural_spans
+
+          source = "class Cart:\n    def total(self):\n        return 1\n"
+          spans = extract_structural_spans(source, "cart.py")
+          assert spans is not None, (
+              "code-intelligence extra installed but a common parser is not usable "
+              "with acquisition disabled"
+          )
+          names = {span.name for span in spans}
+          assert {"Cart", "total"} <= names, names
+          print("offline parser extra verified:", tree_sitter_language_pack.__name__)
+          PY
+
+      - name: Run parser and conformance regressions
+        run: |
+          python -m pytest -q \
+            tests/test_tree_sitter_support.py \
+            tests/test_code_intelligence_conformance.py \
+            tests/test_universal_code_intelligence.py
