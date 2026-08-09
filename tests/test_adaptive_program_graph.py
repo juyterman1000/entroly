@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from entroly.repository_intelligence import adaptive_program_graph as adaptive
 from entroly.repository_intelligence.models import FileRecord, RepositoryIndex, Symbol
+from entroly.repository_intelligence.registry_frontend import RegistryFacts
 from entroly.repository_intelligence.semantic_ir import (
     EpistemicClass,
     SemanticCapabilities,
@@ -15,6 +17,7 @@ from entroly.repository_intelligence.semantic_ir import (
     SourceEvidence,
     UniversalSemanticDocument,
 )
+from entroly.repository_intelligence.syntax_session import SyntaxScan
 
 
 def _record(path: str, source: str, language: str) -> FileRecord:
@@ -61,7 +64,26 @@ def _semantic_document(path: str, source: str, language: str) -> UniversalSemant
     )
 
 
-def test_non_python_symbol_remains_useful_without_invented_flow(
+def _context(path: str, symbol_id: str | None = None) -> dict[str, object]:
+    fragment: dict[str, object] = {"path": path}
+    if symbol_id is not None:
+        fragment["symbol_id"] = symbol_id
+    return {
+        "fragments": [fragment],
+        "receipt": {"context_sha256": "ctx"},
+    }
+
+
+def _disable_frontends(
+    monkeypatch: pytest.MonkeyPatch,
+    language: str,
+) -> None:
+    monkeypatch.setattr(adaptive, "build_syntax_session", lambda *a, **k: None)
+    monkeypatch.setattr(adaptive, "language_for_source", lambda *a, **k: language)
+    monkeypatch.setattr(adaptive, "extract_registry_facts", lambda *a, **k: None)
+
+
+def test_non_python_symbol_remains_useful_without_invented_semantic_flow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -91,11 +113,9 @@ def test_non_python_symbol_remains_useful_without_invented_flow(
     monkeypatch.setattr(
         adaptive,
         "build_verified_context",
-        lambda *args, **kwargs: {
-            "fragments": [{"path": path, "symbol_id": symbol.symbol_id}],
-            "receipt": {"context_sha256": "ctx"},
-        },
+        lambda *args, **kwargs: _context(path, symbol.symbol_id),
     )
+    _disable_frontends(monkeypatch, "zig")
     monkeypatch.setattr(
         adaptive,
         "build_universal_semantic_document",
@@ -113,8 +133,8 @@ def test_non_python_symbol_remains_useful_without_invented_flow(
     assert payload["adapter_boundaries"] == [{
         "symbol_id": symbol.symbol_id,
         "language": "zig",
-        "available": "structure",
-        "missing": "verified-language-specific-flow-adapter",
+        "available": "syntactic-flow-or-structure",
+        "missing": "verified-language-specific-semantic-flow-adapter",
     }]
     assert payload["analysis_contract"]["missing_adapters_behavior"] == (
         "report-boundary-never-invent-flow"
@@ -150,11 +170,9 @@ def test_verified_python_adapter_is_attached_without_changing_universal_schema(
     monkeypatch.setattr(
         adaptive,
         "build_verified_context",
-        lambda *args, **kwargs: {
-            "fragments": [{"path": path, "symbol_id": symbol.symbol_id}],
-            "receipt": {"context_sha256": "ctx"},
-        },
+        lambda *args, **kwargs: _context(path, symbol.symbol_id),
     )
+    _disable_frontends(monkeypatch, "python")
     monkeypatch.setattr(
         adaptive,
         "build_universal_semantic_document",
@@ -190,6 +208,89 @@ def test_verified_python_adapter_is_attached_without_changing_universal_schema(
     assert adaptive.verify_adaptive_program_graph_commitment(payload)
 
 
+def test_adaptive_pipeline_calls_each_frontend_once_per_selected_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = "fn launch() { return; }\n"
+    path = "main.zig"
+    (tmp_path / path).write_text(source, encoding="utf-8")
+    index = RepositoryIndex(
+        root=str(tmp_path),
+        files={path: _record(path, source, "zig")},
+    )
+    monkeypatch.setattr(
+        adaptive,
+        "build_verified_context",
+        lambda *args, **kwargs: _context(path),
+    )
+    counts = {"session": 0, "registry": 0, "scan": 0, "semantic": 0}
+    source_sha = hashlib.sha256(source.encode()).hexdigest()
+    fake_session = SimpleNamespace(
+        language="zig",
+        source_sha256=source_sha,
+        file_path=path,
+        syntax_valid=True,
+    )
+    fake_scan = SyntaxScan(
+        language="zig",
+        source_sha256=source_sha,
+        calls=(),
+        flow_shapes=(),
+        traversal_complete=True,
+        calls_complete=True,
+        flow_complete=True,
+        nodes_visited=1,
+        max_nodes=100,
+        max_calls=100,
+        max_flow_shapes=100,
+    )
+    facts = RegistryFacts(
+        language="zig",
+        imports=(),
+        exports=(),
+        symbols=(),
+        diagnostics=(),
+        node_count=1,
+        complete=True,
+    )
+
+    def build_session(*args, **kwargs):
+        counts["session"] += 1
+        return fake_session
+
+    def build_facts(*args, **kwargs):
+        counts["registry"] += 1
+        return facts
+
+    def build_scan(*args, **kwargs):
+        counts["scan"] += 1
+        return fake_scan
+
+    def build_semantic(*args, **kwargs):
+        counts["semantic"] += 1
+        assert kwargs["precomputed_registry_facts"] is facts
+        assert kwargs["precomputed_syntax_session"] is fake_session
+        assert kwargs["precomputed_syntax_scan"] is fake_scan
+        return _semantic_document(path, source, "zig")
+
+    monkeypatch.setattr(adaptive, "build_syntax_session", build_session)
+    monkeypatch.setattr(adaptive, "extract_registry_facts", build_facts)
+    monkeypatch.setattr(adaptive, "scan_syntax_session", build_scan)
+    monkeypatch.setattr(adaptive, "build_universal_semantic_document", build_semantic)
+
+    payload = adaptive.build_adaptive_program_graph(
+        tmp_path,
+        index,
+        "launch",
+        index_digest="sha256:index",
+    )
+    assert counts == {"session": 1, "registry": 1, "scan": 1, "semantic": 1}
+    assert payload["analysis_contract"]["parser_work_ceiling"] == (
+        "one-registry-pass-plus-one-raw-parse-per-selected-file"
+    )
+
+
 def test_stale_source_is_reported_and_never_materialized(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -205,10 +306,7 @@ def test_stale_source_is_reported_and_never_materialized(
     monkeypatch.setattr(
         adaptive,
         "build_verified_context",
-        lambda *args, **kwargs: {
-            "fragments": [{"path": path}],
-            "receipt": {"context_sha256": "ctx"},
-        },
+        lambda *args, **kwargs: _context(path),
     )
     payload = adaptive.build_adaptive_program_graph(
         tmp_path,
@@ -234,11 +332,9 @@ def test_top_level_commitment_detects_tampering(
     monkeypatch.setattr(
         adaptive,
         "build_verified_context",
-        lambda *args, **kwargs: {
-            "fragments": [{"path": path}],
-            "receipt": {"context_sha256": "ctx"},
-        },
+        lambda *args, **kwargs: _context(path),
     )
+    _disable_frontends(monkeypatch, "unknown")
     monkeypatch.setattr(
         adaptive,
         "build_universal_semantic_document",
