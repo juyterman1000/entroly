@@ -10,9 +10,9 @@ import tempfile
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from ..tree_sitter_support import language_for_path
 from .architecture_diff import build_verified_architecture_diff
 from .models import RepositoryIndex, RepositoryLimits
-from .parsers import SOURCE_SUFFIXES
 from .verified_architecture import build_verified_architecture
 
 VERIFIED_GIT_ARCHITECTURE_DIFF_SCHEMA_VERSION = (
@@ -161,7 +161,7 @@ def _tree_entries(
             continue
         if kind != b"blob" or mode not in {b"100644", b"100755"}:
             continue
-        if Path(safe).suffix.lower() not in SOURCE_SUFFIXES:
+        if language_for_path(safe) is None:
             continue
         if size > limits.max_file_bytes:
             diagnostics.append(f"oversized-baseline-file-omitted:{safe}")
