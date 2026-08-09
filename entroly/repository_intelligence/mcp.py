@@ -288,6 +288,24 @@ def create_repository_mcp_server(
             return _error(exc, "repository_architecture_diff")
 
     @mcp.tool()
+    def repository_git_architecture_diff(
+        ref: str = "HEAD",
+        max_changes: int = 10_000,
+        max_dependency_edges: int = 100_000,
+    ) -> str:
+        """Compare a local Git commit with the verified worktree without checkout."""
+        try:
+            return _json(service.git_architecture_diff(
+                ref,
+                max_changes=max(1, min(int(max_changes), 50_000)),
+                max_dependency_edges=max(
+                    1, min(int(max_dependency_edges), 1_000_000)
+                ),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_git_architecture_diff")
+
+    @mcp.tool()
     def repository_http_routes(
         method: str | None = None,
         path_prefix: str | None = None,

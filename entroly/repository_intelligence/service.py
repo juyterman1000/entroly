@@ -45,6 +45,7 @@ from .verified_snapshot import (
     build_verified_graph_snapshot,
     check_verified_graph_snapshot,
 )
+from .verified_git_diff import build_verified_git_architecture_diff
 from .verified_move import (
     apply_verified_file_move_plan,
     build_verified_file_move_plan,
@@ -550,6 +551,51 @@ class RepositoryIntelligenceService:
             after,
             limit=max(1, min(int(limit), 50_000)),
         )
+
+    def git_architecture_diff(
+        self,
+        ref: str = "HEAD",
+        *,
+        max_changes: int = 10_000,
+        max_components: int = 5_000,
+        max_communities: int = 1_000,
+        max_cycles: int = 1_000,
+        max_dependency_edges: int = 100_000,
+        max_hotspots: int = 100,
+        max_routes: int = 100,
+    ) -> dict[str, object]:
+        """Compare a local Git commit graph with the verified current worktree."""
+        index, digest, generation = self._snapshot()
+        builder = self._builder
+        if builder is None:
+            from . import build_repository_index
+
+            builder = build_repository_index
+        payload = build_verified_git_architecture_diff(
+            self.root,
+            index,
+            current_index_digest=digest,
+            ref=ref,
+            limits=self.limits,
+            build_index=builder,
+            max_changes=max(1, min(int(max_changes), 50_000)),
+            max_components=max(
+                1, min(int(max_components), _MAX_ARCHITECTURE_COMPONENTS)
+            ),
+            max_communities=max(
+                1, min(int(max_communities), _MAX_ARCHITECTURE_COMMUNITIES)
+            ),
+            max_cycles=max(1, min(int(max_cycles), _MAX_ARCHITECTURE_CYCLES)),
+            max_dependency_edges=max(
+                1, min(int(max_dependency_edges), _MAX_ARCHITECTURE_EDGES)
+            ),
+            max_hotspots=max(
+                1, min(int(max_hotspots), _MAX_ARCHITECTURE_HOTSPOTS)
+            ),
+            max_routes=max(1, min(int(max_routes), _MAX_ARCHITECTURE_ROUTES)),
+        )
+        payload["generation"] = generation
+        return payload
 
     def routes(
         self,

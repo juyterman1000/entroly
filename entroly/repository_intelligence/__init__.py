@@ -47,6 +47,8 @@ __all__ = [
     "build_verified_architecture", "verify_architecture_commitment",
     "build_verified_graph_query", "verify_graph_query_commitment",
     "build_verified_architecture_diff", "verify_architecture_diff_commitment",
+    "build_verified_git_architecture_diff",
+    "verify_git_architecture_diff_commitment",
     "build_verified_routes", "verify_routes_commitment",
     "build_verified_graph_snapshot", "check_verified_graph_snapshot",
     "load_verified_graph_snapshot", "verify_graph_snapshot_commitment",
@@ -138,6 +140,10 @@ from .graph_query import (  # noqa: E402
 from .architecture_diff import (  # noqa: E402
     build_verified_architecture_diff,
     verify_architecture_diff_commitment,
+)
+from .verified_git_diff import (  # noqa: E402
+    build_verified_git_architecture_diff,
+    verify_git_architecture_diff_commitment,
 )
 from .verified_routes import (  # noqa: E402
     build_verified_routes,

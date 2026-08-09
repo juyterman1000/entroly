@@ -62,6 +62,18 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - [STAVE implementation](https://github.com/juyterman1000/entroly/blob/main/entroly/verifiers/stave.py): Deterministic structural checks used by the default verifier.
 - [Context Receipt example](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.md): Human-readable record of context decisions.
 
+## Verified Code Intelligence
+
+- [Verified code context and code health](https://github.com/juyterman1000/entroly/blob/main/docs/verified-code-context.md): Local repository maps, task context, caller and Python program graphs, verified external semantic/runtime overlays, parser-derived structural health, import cycles, coupling, explicit ambiguity, exact evidence hashes, tamper-evident receipts, and opt-in content-addressed reuse of unchanged graph analyses.
+- **Health command:** `python -m entroly.repository_intelligence --root . health` reports transparent parser-derived complexity, nesting, language coverage, cycles, coupling, and unresolved-call risk. Findings are review aids rather than defect proofs; stale files are omitted.
+- **Verified rename:** `rename-preview` creates a no-write, tamper-evident plan over exact source identifiers. `rename-apply` requires its plan hash and explicit acknowledgement that reference completeness is unproven, then rechecks preimages, validates syntax, and attempts rollback on filesystem failure.
+- **LSP reference orchestration:** `lsp-rename-preview` runs an explicitly configured local language server with bounded framed JSON-RPC and verifies workspace ranges before planning. MCP executable arguments are operator-controlled through `ENTROLY_LSP_COMMAND_JSON`. The external server's own network behavior is not sandboxed or attested.
+- **Verified architecture and graph queries:** `architecture` emits source-verified SCC layers, deterministic communities, cycle witnesses, dependency routes, and disclosed centrality hotspots. `query` provides ambiguity-safe typed neighbors, shortest paths, relatedness, and reverse-impact witnesses; `architecture-diff` binds two committed snapshots, while `git-architecture-diff` materializes a bounded baseline from local commit objects without checkout mutation and reports structural drift against the verified worktree.
+- **Verified HTTP routes:** `routes` uses the Python AST to resolve static framework decorators, router/blueprint prefixes, mount chains, handlers, and normalized-path collisions. Other languages use explicitly labelled bounded framework patterns. Dynamic paths are omitted, and every endpoint carries source and evidence hashes.
+- **Portable graph snapshots:** `snapshot` exports the complete bounded repository graph with source and whole-payload commitments. `snapshot-check` reconstructs it only when every identity, edge endpoint, digest, and current source hash verifies; stale shared facts are never unioned into the live graph.
+- **Headless safe delete:** `safe-delete-preview` blocks on resolved, unresolved-candidate, or otherwise unclassified lexical references. `safe-delete-apply` requires a committed blocker-free plan plus explicit acknowledgement that dynamic, reflective, generated, and external references remain unproven.
+- **Headless Python module move:** `file-move-preview` rewrites exact AST import-module ranges, requires every indexed dependent to have a supported rewrite, blocks binding changes and package-relative hazards, and commits all preimages. `file-move-apply` rechecks hashes and syntax, moves the file with rollback-aware importer updates, then rebuilds the graph.
+
 ## Interfaces
 
 - [MCP package](https://www.npmjs.com/package/entroly-mcp): NPX bridge for MCP clients.

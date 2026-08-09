@@ -259,6 +259,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_program_graph",
         "repository_architecture",
         "repository_architecture_diff",
+        "repository_git_architecture_diff",
         "repository_graph_query",
         "repository_file_move_apply",
         "repository_file_move_preview",

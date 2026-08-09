@@ -170,6 +170,23 @@ community overlap matching, hotspot-rank movement, routes, and per-category
 truncation. If an input architecture was itself truncated, absence remains
 inconclusive and the diff says so.
 
+`git-architecture-diff` constructs the baseline directly from bounded local Git
+commit objects and compares it with the verified current worktree without
+checking out or rewriting either state:
+
+```powershell
+python -m entroly.repository_intelligence --root . git-architecture-diff `
+  --ref HEAD~1 --max-changes 10000
+```
+
+The receipt records the resolved full commit identity, selected regular source
+blobs, materialization omissions, subprocess policy, exact before/after
+architecture commitments, and semantic structural changes. The current side
+includes untracked source files. Git filters and worktree conversions are not
+applied to the baseline, so byte-only checkout normalization can appear as
+source drift; the separate Git name-status evidence remains available for that
+distinction.
+
 ### Verified HTTP endpoints
 
 The `routes` command returns endpoint evidence rather than unbound route-like

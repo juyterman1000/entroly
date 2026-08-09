@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +32,29 @@ def _project(root: Path) -> None:
         "def test_invoke():\n"
         "    assert invoke() == 1\n",
     )
+
+
+def _commit_project(root: Path) -> str:
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"],
+        cwd=root,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Entroly Test"], cwd=root, check=True
+    )
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "baseline"], cwd=root, check=True
+    )
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 def test_summary_is_bounded_and_versioned(tmp_path: Path) -> None:
@@ -181,6 +205,23 @@ def test_architecture_diff_requires_and_compares_committed_inputs(
     assert payload["schema_version"] == "entroly.verified-architecture-diff.v1"
     assert payload["command"] == "architecture-diff"
     assert payload["files"]["added"] == ["pkg/new.py"]
+
+
+def test_git_architecture_diff_uses_commit_objects_without_checkout(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    baseline = _commit_project(tmp_path)
+    _write(tmp_path, "pkg/new.py", "from pkg.source import execute\n")
+    code, payload = run([
+        "--root", str(tmp_path), "git-architecture-diff", "--ref", baseline,
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-git-architecture-diff.v1"
+    assert payload["command"] == "git-architecture-diff"
+    assert payload["base_commit"] == baseline
+    assert payload["baseline_materialization"]["checkout_mutated"] is False
+    assert payload["architecture_diff"]["files"]["added"] == ["pkg/new.py"]
 
 
 def test_routes_returns_verified_mounted_http_endpoints(tmp_path: Path) -> None:

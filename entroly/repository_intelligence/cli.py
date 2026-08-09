@@ -127,6 +127,21 @@ def _parser() -> argparse.ArgumentParser:
     architecture_diff.add_argument("--after-json", required=True)
     architecture_diff.add_argument("--limit", type=int, default=5_000)
 
+    git_architecture_diff = subcommands.add_parser(
+        "git-architecture-diff",
+        help="compare a local Git commit graph with the verified current worktree",
+    )
+    git_architecture_diff.add_argument("--ref", default="HEAD")
+    git_architecture_diff.add_argument("--max-changes", type=int, default=10_000)
+    git_architecture_diff.add_argument("--max-components", type=int, default=5_000)
+    git_architecture_diff.add_argument("--max-communities", type=int, default=1_000)
+    git_architecture_diff.add_argument("--max-cycles", type=int, default=1_000)
+    git_architecture_diff.add_argument(
+        "--max-dependency-edges", type=int, default=100_000
+    )
+    git_architecture_diff.add_argument("--max-hotspots", type=int, default=100)
+    git_architecture_diff.add_argument("--max-routes", type=int, default=100)
+
     routes = subcommands.add_parser(
         "routes",
         help="discover verified HTTP routes, mounted prefixes, and collisions",
@@ -333,6 +348,19 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 inputs[0], inputs[1], limit=args.limit
             )
             payload["command"] = "architecture-diff"
+            return 0, payload
+        if args.command == "git-architecture-diff":
+            payload = service.git_architecture_diff(
+                args.ref,
+                max_changes=args.max_changes,
+                max_components=args.max_components,
+                max_communities=args.max_communities,
+                max_cycles=args.max_cycles,
+                max_dependency_edges=args.max_dependency_edges,
+                max_hotspots=args.max_hotspots,
+                max_routes=args.max_routes,
+            )
+            payload["command"] = "git-architecture-diff"
             return 0, payload
         if args.command == "routes":
             payload = service.routes(
