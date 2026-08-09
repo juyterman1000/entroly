@@ -3,6 +3,8 @@ name: QCCR Rendering Diagnosis
 on:
   push:
     branches: ["diagnostic/qccr-rendering-20260809"]
+  pull_request:
+    branches: [main]
 
 jobs:
   diagnose:
