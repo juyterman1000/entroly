@@ -51,6 +51,7 @@ DIFF; unchanged blocks fall through to the standard ladder.
 """
 from __future__ import annotations
 
+import difflib
 import logging
 import math
 import os
@@ -68,6 +69,7 @@ class Resolution:
     FULL = "full"
     MEDIUM = "medium"
     DIFF = "diff"
+    STRUCTURE = "structure"
     LOW = "low"
     SKIP = "skip"
 
@@ -78,6 +80,7 @@ class Resolution:
         "full": 1.0,
         "medium": 0.25,
         "diff": 0.15,
+        "structure": 0.20,
         "low": 0.08,
         "skip": 0.0,
     }
@@ -130,7 +133,6 @@ class CodeBlock:
         """
         if not self.previous_source or self.previous_source == self.source:
             return ""
-        import difflib
         diff_lines = list(difflib.unified_diff(
             self.previous_source.splitlines(),
             self.source.splitlines(),
@@ -167,6 +169,21 @@ class SRPResult:
     total_tokens: int               # total tokens in output
     budget: int                     # requested budget
     blocks: list[ResolvedBlock] = field(default_factory=list, repr=False)
+    # Set when the caller pinned a resolution with `resolve(resolution=...)`.
+    # A pinned resolution is honoured exactly and is NOT demoted to fit, so the
+    # output can exceed `budget`; `over_budget` says whether it did. Silently
+    # truncating a resolution the caller explicitly asked for would defeat the
+    # purpose of asking.
+    forced_resolution: str | None = None
+    over_budget: bool = False
+    # Inclusive, 1-indexed line range for exact range reads. ``None`` means
+    # the normal semantic-resolution path was used.
+    line_range: tuple[int, int] | None = None
+    # Identifies the implementation used for caller-forced STRUCTURE reads.
+    # ``native-skeleton`` is the shared Rust engine; ``full-fallback`` means
+    # the engine could not produce a useful smaller outline, so source was
+    # returned losslessly instead of inventing or corrupting structure.
+    structure_backend: str | None = None
 
 
 # ── Block Extraction ─────────────────────────────────────────────────
@@ -361,10 +378,55 @@ def _extract_blocks_generic(source: str, file_path: str = "") -> list[CodeBlock]
 
 def extract_blocks(source: str, file_path: str = "") -> list[CodeBlock]:
     """Extract code blocks from source, using language-appropriate parser."""
+    try:
+        from .tree_sitter_support import extract_structural_spans
+
+        spans = extract_structural_spans(source, file_path)
+    except Exception:
+        spans = None
+    if spans:
+        return [
+            CodeBlock(
+                name=span.name,
+                kind=span.kind,
+                start_line=span.start_line,
+                end_line=span.end_line,
+                source=span.source,
+                signature=span.signature,
+                docstring="",
+                indent=span.indent,
+                token_estimate=max(1, int(len(span.source) / _CHARS_PER_TOKEN) + 1),
+            )
+            for span in spans
+        ]
     ext = os.path.splitext(file_path)[1].lower() if file_path else ""
     if ext in (".py", ".pyi", ".pyw"):
         return _extract_blocks_python(source, file_path)
     return _extract_blocks_generic(source, file_path)
+
+
+def _extract_structure(source: str, file_path: str) -> tuple[str, str]:
+    """Return a native structural outline, failing open to exact source.
+
+    Importability is not a sufficient native capability check: an older wheel
+    can import successfully while lacking this newer export. The explicit
+    ``getattr`` keeps editable/source checkouts and stale wheels safe.
+    """
+    try:
+        import entroly_core
+
+        extractor = getattr(entroly_core, "extract_skeleton", None)
+        if callable(extractor):
+            outline = extractor(source, file_path)
+            if isinstance(outline, str) and outline.strip():
+                return outline, "native-skeleton"
+    except Exception as exc:
+        logger.debug("Native structure extraction unavailable: %s", exc)
+
+    # The native extractor deliberately declines unknown languages, tiny files,
+    # and outlines that would retain more than 70% of the source. Returning the
+    # exact source is honest and lossless in all three cases.
+    return source, "full-fallback"
 
 
 # ── Relevance Scoring ────────────────────────────────────────────────
@@ -545,7 +607,10 @@ def resolve(
     query: str = "",
     budget: int = 1000,
     file_path: str = "",
-    previous_source: str = "",
+    previous_source: str | None = None,
+    resolution: str | None = None,
+    line_start: int | None = None,
+    line_end: int | None = None,
 ) -> SRPResult:
     """Produce an information-optimal file representation at the given budget.
 
@@ -572,19 +637,155 @@ def resolve(
         the agent must learn *what changed* without re-reading the
         unchanged portion. Unmodified blocks fall through to the
         standard FULL / MEDIUM / LOW / SKIP ladder.
+    resolution : str | None
+        Pin every block to one level, bypassing automatic assignment.
+        One of ``Resolution.FULL`` / ``MEDIUM`` / ``DIFF`` / ``STRUCTURE`` /
+        ``LOW``. STRUCTURE keeps declarations and signatures while removing
+        implementation bodies when the native engine can do so profitably.
+
+        Automatic assignment is the right default and stays the default, but
+        it cannot be right for every question. Measured on this repository, a
+        signature-level view answered 12/12 questions whose evidence lives in
+        a signature and **0/20** whose evidence lives in a function body. No
+        single automatic choice serves both, so a caller that knows which kind
+        of question it is asking needs a way to say so.
+
+        A pinned resolution is honoured exactly: it is **not** demoted to fit
+        the budget, because silently truncating the level the caller asked for
+        would defeat the point of asking. The result reports ``over_budget``
+        instead, so the caller can see the cost rather than discover a
+        quietly-degraded answer.
+    line_start, line_end : int | None
+        Inclusive, 1-indexed exact line range. Both values are required
+        together and cannot be combined with ``resolution``. Newline
+        characters inside the selected range are preserved.
 
     Returns
     -------
     SRPResult
         Mixed-resolution file representation with metadata.
     """
+    if resolution is not None and resolution not in {
+        Resolution.FULL, Resolution.MEDIUM, Resolution.DIFF,
+        Resolution.STRUCTURE, Resolution.LOW,
+    }:
+        # SKIP is deliberately excluded: pinning every block to SKIP asks for
+        # an empty document, which is never what a caller means.
+        raise ValueError(
+            "resolution must be one of full/medium/diff/structure/low, "
+            f"got {resolution!r}"
+        )
+
+    has_line_start = line_start is not None
+    has_line_end = line_end is not None
+    if has_line_start != has_line_end:
+        raise ValueError("line_start and line_end must be provided together")
+    if has_line_start:
+        if resolution is not None:
+            raise ValueError("line ranges cannot be combined with resolution")
+        assert line_start is not None and line_end is not None
+        lines = source.splitlines(keepends=True)
+        if line_start < 1 or line_end < line_start:
+            raise ValueError("line range must satisfy 1 <= line_start <= line_end")
+        if line_end > len(lines):
+            raise ValueError(
+                f"line_end {line_end} exceeds file length {len(lines)}"
+            )
+        exact_range = "".join(lines[line_start - 1:line_end])
+        range_tokens = (
+            max(1, int(len(exact_range) / _CHARS_PER_TOKEN) + 1)
+            if exact_range else 0
+        )
+        return SRPResult(
+            output=exact_range,
+            file_path=file_path,
+            total_blocks=1,
+            resolution_counts={"lines": 1},
+            total_tokens=range_tokens,
+            budget=budget,
+            over_budget=range_tokens > budget,
+            line_range=(line_start, line_end),
+        )
+
+    # FULL is the caller's lossless escape hatch. Per-block FULL remains part
+    # of automatic SRP, but a caller-forced FULL must return the original text
+    # exactly: reconstructing extracted blocks drops imports, assignments,
+    # comments, and inter-block whitespace.
+    if resolution == Resolution.FULL:
+        full_tokens = max(1, int(len(source) / _CHARS_PER_TOKEN) + 1) if source else 0
+        return SRPResult(
+            output=source,
+            file_path=file_path,
+            total_blocks=1,
+            resolution_counts={Resolution.FULL: 1},
+            total_tokens=full_tokens,
+            budget=budget,
+            forced_resolution=Resolution.FULL,
+            over_budget=full_tokens > budget,
+        )
+
+    # A forced DIFF is a whole-file fidelity mode, not a per-block heuristic.
+    # Requiring the baseline prevents the previous silent failure where DIFF
+    # without ``previous_source`` emitted LOW stubs while reporting "diff".
+    # Whole-file unified diff also preserves additions and deletions that do
+    # not have a matching block in both versions.
+    if resolution == Resolution.DIFF:
+        if previous_source is None:
+            raise ValueError("resolution='diff' requires previous_source")
+        label = file_path or "<source>"
+        diff_output = "\n".join(difflib.unified_diff(
+            previous_source.splitlines(),
+            source.splitlines(),
+            fromfile=f"a/{label}",
+            tofile=f"b/{label}",
+            lineterm="",
+            n=1,
+        ))
+        diff_tokens = (
+            max(1, int(len(diff_output) / _CHARS_PER_TOKEN) + 1)
+            if diff_output else 0
+        )
+        return SRPResult(
+            output=diff_output,
+            file_path=file_path,
+            total_blocks=1,
+            resolution_counts={Resolution.DIFF: 1},
+            total_tokens=diff_tokens,
+            budget=budget,
+            forced_resolution=Resolution.DIFF,
+            over_budget=diff_tokens > budget,
+        )
+
+    if resolution == Resolution.STRUCTURE:
+        structure_output, structure_backend = _extract_structure(source, file_path)
+        structure_tokens = (
+            max(1, int(len(structure_output) / _CHARS_PER_TOKEN) + 1)
+            if structure_output else 0
+        )
+        delivered_resolution = (
+            Resolution.STRUCTURE
+            if structure_backend == "native-skeleton"
+            else Resolution.FULL
+        )
+        return SRPResult(
+            output=structure_output,
+            file_path=file_path,
+            total_blocks=1,
+            resolution_counts={delivered_resolution: 1},
+            total_tokens=structure_tokens,
+            budget=budget,
+            forced_resolution=Resolution.STRUCTURE,
+            over_budget=structure_tokens > budget,
+            structure_backend=structure_backend,
+        )
+
     blocks = extract_blocks(source, file_path)
 
     # Attach previous_source per-block for DIFF eligibility. Match by
     # (name, kind) — handles re-ordering, additions, and deletions
     # gracefully. Blocks that exist only in the new version stay
     # unmatched and render at standard resolutions (no diff to show).
-    if previous_source:
+    if previous_source is not None:
         prev_blocks = extract_blocks(previous_source, file_path)
         prev_by_key: dict[tuple[str, str], str] = {}
         for pb in prev_blocks:
@@ -612,23 +813,29 @@ def resolve(
 
     for block in blocks:
         relevance = score_relevance(block, query)
-        resolution = _assign_resolution(block, relevance, budget_pressure)
-        output_text = _render_block(block, resolution)
+        assigned = (
+            resolution
+            if resolution is not None
+            else _assign_resolution(block, relevance, budget_pressure)
+        )
+        output_text = _render_block(block, assigned)
         tokens = max(0, int(len(output_text) / _CHARS_PER_TOKEN) + 1) if output_text else 0
 
         resolved.append(ResolvedBlock(
             block=block,
-            resolution=resolution,
+            resolution=assigned,
             relevance=relevance,
             output=output_text,
             tokens=tokens,
         ))
 
     # ── Budget enforcement via greedy demotion ──
-    # If total tokens exceed budget, demote lowest-relevance blocks
+    # If total tokens exceed budget, demote lowest-relevance blocks.
+    # Skipped entirely when the caller pinned a resolution: demoting it would
+    # silently return a different level than the one requested.
     total_tokens = sum(r.tokens for r in resolved)
 
-    if total_tokens > budget:
+    if total_tokens > budget and resolution is None:
         # Sort by relevance ascending (least relevant first to demote)
         by_relevance = sorted(
             range(len(resolved)),
@@ -675,7 +882,13 @@ def resolve(
     # blocks (e.g. the actual request handler) should claim. This was an
     # ``elif`` on the demotion branch, so a post-demotion overshoot never
     # re-filled — smart_read under-resolved to 126/1500 on real files.
-    if total_tokens < budget:
+    #
+    # Skipped when the caller pinned a resolution. Promotion is as much a
+    # violation of a pin as demotion is: asking for LOW and receiving FULL
+    # because there happened to be spare budget returns a different level than
+    # the one requested. Caught by `test_low_returns_only_stubs`, which saw
+    # `{'full'}` where it had pinned `low`.
+    if total_tokens < budget and resolution is None:
         # ── Budget utilization via greedy promotion ──
         # Under budget → upgrade the most-relevant blocks toward FULL so the
         # spare budget actually surfaces query-relevant detail (the tool's
@@ -750,4 +963,6 @@ def resolve(
         total_tokens=final_tokens,
         budget=budget,
         blocks=resolved,
+        forced_resolution=resolution,
+        over_budget=final_tokens > budget,
     )

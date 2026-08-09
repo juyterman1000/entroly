@@ -142,6 +142,86 @@ class ESCResult:
     kept_tokens: int            # estimated tokens in output
     lines: list[ScoredLine] = field(default_factory=list, repr=False)
     class_distribution: dict[str, int] = field(default_factory=dict)
+    profile: str = "generic"
+
+
+@dataclass(frozen=True)
+class ShellProfile:
+    """Semantic anchors for a command family; never a full output parser."""
+
+    name: str
+    detect: re.Pattern[str]
+    critical: re.Pattern[str]
+    summary: re.Pattern[str]
+    header: re.Pattern[str]
+
+
+def _pattern(value: str) -> re.Pattern[str]:
+    return re.compile(value, re.IGNORECASE)
+
+
+SHELL_PROFILES: tuple[ShellProfile, ...] = (
+    ShellProfile(
+        "pytest", _pattern(r"\bpytest\b|test session starts|short test summary|\d+ (?:passed|failed)"),
+        _pattern(r"^(?:FAILED|ERROR)\b|\b(?:AssertionError|failed:)"),
+        _pattern(r"(?:=+\s*)?\d+ (?:passed|failed|errors?|skipped)(?:[,\s]|$)|short test summary"),
+        _pattern(r"test session starts|collected \d+ items|^_{3,}|^={3,}"),
+    ),
+    ShellProfile(
+        "cargo", _pattern(r"\bcargo\b|Compiling\s+\S+|Finished `(?:dev|test|release)`|error\[E\d+\]"),
+        _pattern(r"^error(?:\[E\d+\])?:|panicked at|test result: FAILED"),
+        _pattern(r"Finished `|test result:|\d+ passed; \d+ failed"),
+        _pattern(r"Compiling\s+|Running\s+|Documenting\s+"),
+    ),
+    ShellProfile(
+        "node", _pattern(r"\b(?:npm|pnpm|yarn)\b|npm ERR!|Test Suites:|Packages:\s+"),
+        _pattern(r"npm ERR!|ERR_PNPM|^error Command failed|Test Suites:.*failed"),
+        _pattern(r"Test Suites:|Tests:|Packages:|Done in \d|added \d+ packages"),
+        _pattern(r"^(?:PASS|FAIL)\s|^>\s+\S+@|^Scope:"),
+    ),
+    ShellProfile(
+        "git", _pattern(r"\bgit\s+(?:status|diff|log|push|pull|merge|rebase)\b|^On branch |^commit [0-9a-f]{7,}"),
+        _pattern(r"CONFLICT \(|fatal:|error:|rejected|non-fast-forward"),
+        _pattern(r"nothing to commit|files? changed|Your branch is|Everything up-to-date"),
+        _pattern(r"^On branch |^commit [0-9a-f]{7,}|^Changes (?:not staged|to be committed)"),
+    ),
+    ShellProfile(
+        "container", _pattern(r"\b(?:docker|podman)(?: compose)?\b|^REPOSITORY\s+TAG\s+|^CONTAINER ID\s+"),
+        _pattern(r"error response from daemon|failed to solve|manifest unknown|pull access denied"),
+        _pattern(r"Successfully built|Successfully tagged|exited with code|Container .* (?:Started|Healthy)"),
+        _pattern(r"^REPOSITORY\s+TAG|^CONTAINER ID|^\[[\-+0-9/ ]+\]"),
+    ),
+    ShellProfile(
+        "kubernetes", _pattern(r"\b(?:kubectl|helm)\b|^NAME\s+READY\s+STATUS|LAST DEPLOYED:"),
+        _pattern(r"CrashLoopBackOff|ImagePullBackOff|ErrImagePull|failed|forbidden|timed out"),
+        _pattern(r"rollout status|deployed|STATUS:\s+(?:deployed|failed)|resources? (?:created|configured)"),
+        _pattern(r"^NAME\s+READY\s+STATUS|^REVISION\s+UPDATED|^Release \""),
+    ),
+    ShellProfile(
+        "terraform", _pattern(r"\bterraform\s+(?:plan|apply|validate)\b|Terraform will perform|Plan:\s+\d+ to add"),
+        _pattern(r"^Error:|Apply errored|Failed to|Invalid (?:resource|function)"),
+        _pattern(r"Plan:\s+\d+ to add|Apply complete!|Success! The configuration is valid"),
+        _pattern(r"Terraform will perform|^  # .* will be|^Changes to Outputs:"),
+    ),
+    ShellProfile(
+        "build", _pattern(r"\b(?:make|cmake|gradle|mvn|dotnet build)\b|BUILD (?:SUCCESSFUL|FAILED)"),
+        _pattern(r"BUILD FAILED|compilation (?:error|failed)|undefined reference|cannot find symbol"),
+        _pattern(r"BUILD SUCCESSFUL|Build succeeded|\d+ actionable tasks|Total time:"),
+        _pattern(r"^\[\s*\d+%\]|^> Task :|^\[INFO\] Building"),
+    ),
+)
+
+
+def detect_shell_profile(text: str, tool_name: str | None = None) -> ShellProfile | None:
+    if tool_name:
+        hinted = next(
+            (profile for profile in SHELL_PROFILES if profile.detect.search(tool_name)),
+            None,
+        )
+        if hinted is not None:
+            return hinted
+    sample = text[:16_000]
+    return next((profile for profile in SHELL_PROFILES if profile.detect.search(sample)), None)
 
 
 # ── Phase 1: ANSI Stripping + Unicode Normalization ──────────────────
@@ -440,6 +520,17 @@ def _knapsack_select(
     return selected
 
 
+def _select_with_mandatory(
+    lines: list[ScoredLine], budget_tokens: int, mandatory_indices: set[int]
+) -> list[ScoredLine]:
+    """Select under budget but never discard error or outcome evidence."""
+    mandatory = [line for line in lines if line.index in mandatory_indices]
+    mandatory_tokens = sum(line.token_estimate for line in mandatory)
+    optional = [line for line in lines if line.index not in mandatory_indices]
+    selected = mandatory + _knapsack_select(optional, max(0, budget_tokens - mandatory_tokens))
+    return sorted(selected, key=lambda line: line.index)
+
+
 # ── Main API ─────────────────────────────────────────────────────────
 
 def esc_compress(
@@ -449,6 +540,7 @@ def esc_compress(
     keep_errors: bool = True,
     dedup_threshold: int = 8,
     min_lines: int = 3,
+    tool_name: str | None = None,
 ) -> ESCResult:
     """Compress arbitrary shell output using the Entropic Shell Codec.
 
@@ -501,8 +593,10 @@ def esc_compress(
         raw_lines.append("")
 
     # ── Phase 2 + 3 + 4: Score, classify, hash each line ──
+    profile = detect_shell_profile(cleaned, tool_name)
     scored_lines: list[ScoredLine] = []
     class_counts: dict[str, int] = Counter()
+    mandatory_indices: set[int] = set()
 
     for i, (raw, clean) in enumerate(zip(raw_lines, clean_lines)):
         stripped = clean.strip()
@@ -519,6 +613,23 @@ def esc_compress(
         # Boost errors to ensure they survive
         if cls == LineClass.ERROR:
             value = max(value, 10.0)
+            if keep_errors:
+                mandatory_indices.add(i)
+
+        if profile:
+            if profile.critical.search(stripped):
+                value = max(value, 14.0)
+                mandatory_indices.add(i)
+            elif profile.summary.search(stripped):
+                value = max(value, 11.0)
+                mandatory_indices.add(i)
+            elif profile.header.search(stripped):
+                value = max(value, 7.0)
+
+        # Invocation lines carry the parameters needed to reproduce a failure.
+        if re.match(r"^\s*[$>]\s+\S", clean):
+            value = max(value, 9.0)
+            mandatory_indices.add(i)
 
         sh = _simhash_64(stripped)
 
@@ -538,7 +649,7 @@ def esc_compress(
     deduped = deduplicate_lines(scored_lines, threshold=dedup_threshold)
 
     # ── Phase 5: Knapsack selection ──
-    selected = _knapsack_select(deduped, budget)
+    selected = _select_with_mandatory(deduped, budget, mandatory_indices)
 
     # Enforce minimum lines
     if len(selected) < min_lines and len(deduped) >= min_lines:
@@ -584,6 +695,7 @@ def esc_compress(
         kept_tokens=kept_tokens,
         lines=selected,
         class_distribution=dict(class_counts),
+        profile=profile.name if profile else "generic",
     )
 
 
@@ -597,7 +709,7 @@ def esc_compress_with_header(
     Returns the compressed text with a one-line header showing
     compression stats. Useful for proxy integration.
     """
-    result = esc_compress(text, budget=budget)
+    result = esc_compress(text, budget=budget, tool_name=tool_name)
 
     if result.compression_ratio < 0.05:
         return text  # not worth compressing
@@ -608,6 +720,8 @@ def esc_compress_with_header(
     )
     if tool_name:
         header += f", tool={tool_name}"
+    if result.profile != "generic":
+        header += f", profile={result.profile}"
     header += "]"
 
     return f"{header}\n{result.compressed}"

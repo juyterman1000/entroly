@@ -32,7 +32,7 @@ class EntrolyCompressor:
 
     Integrates with LangChain's LCEL (LangChain Expression Language)
     as a transparent middleware that compresses messages before they
-    reach the LLM, reducing token usage by 60-90%.
+    reach the LLM under the caller's explicit token budget.
 
     Implements the Runnable interface: invoke(), batch(), stream().
     """
@@ -89,18 +89,28 @@ class EntrolyCompressor:
         """Async batch."""
         return self.batch(inputs, config)
 
+    def stream(self, input: Any, config: dict | None = None):
+        """LCEL-compatible single-output stream."""
+        yield self.invoke(input, config)
+
+    async def astream(self, input: Any, config: dict | None = None):
+        """Async LCEL-compatible single-output stream."""
+        yield await self.ainvoke(input, config)
+
     def _to_dicts(self, messages: list) -> list[dict]:
         """Convert LangChain messages to plain dicts."""
         result = []
         for msg in messages:
             if isinstance(msg, dict):
-                result.append(msg)
+                result.append(dict(msg))
             elif hasattr(msg, "content") and hasattr(msg, "type"):
-                # LangChain BaseMessage
-                result.append({
-                    "role": getattr(msg, "type", "user"),
-                    "content": getattr(msg, "content", ""),
-                })
+                # model_dump retains tool calls, names, IDs, and provider
+                # metadata; only role/content participate in compression.
+                dumped = msg.model_dump() if hasattr(msg, "model_dump") else {}
+                item = dict(dumped) if isinstance(dumped, dict) else {}
+                item["role"] = getattr(msg, "type", item.get("role", "user"))
+                item["content"] = getattr(msg, "content", item.get("content", ""))
+                result.append(item)
             else:
                 result.append({"role": "user", "content": str(msg)})
         return result
@@ -111,7 +121,27 @@ class EntrolyCompressor:
         if original and isinstance(original[0], dict):
             return compressed
 
-        # Try to reconstruct LangChain messages
+        # Preserve the original concrete message objects and all their tool/
+        # provider metadata. Pydantic v2 messages expose model_copy; older
+        # LangChain versions expose copy(update=...).
+        if len(original) == len(compressed):
+            rebuilt = []
+            for source, item in zip(original, compressed):
+                content = item.get("content", "")
+                try:
+                    if hasattr(source, "model_copy"):
+                        rebuilt.append(source.model_copy(update={"content": content}))
+                    elif hasattr(source, "copy"):
+                        rebuilt.append(source.copy(update={"content": content}))
+                    else:
+                        raise TypeError
+                except Exception:
+                    rebuilt = []
+                    break
+            if rebuilt:
+                return rebuilt
+
+        # Last-resort reconstruction for unusual third-party message objects.
         try:
             from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -129,3 +159,51 @@ class EntrolyCompressor:
             return result
         except ImportError:
             return compressed
+
+
+class EntrolyDocumentCompressor:
+    """LangChain retriever compressor that preserves document metadata.
+
+    Implements the BaseDocumentCompressor protocol without importing LangChain,
+    so Entroly remains usable when the optional framework is absent.
+    """
+
+    def __init__(self, budget: int = 20_000, content_type: str | None = None):
+        if budget <= 0:
+            raise ValueError("budget must be positive")
+        self.budget = budget
+        self.content_type = content_type
+
+    def compress_documents(self, documents: list[Any], query: str, callbacks: Any = None) -> list[Any]:
+        if not documents:
+            return []
+        from ..sdk import _compress_message_content
+
+        per_document = max(1, self.budget // len(documents))
+        result: list[Any] = []
+        for document in documents:
+            content = getattr(document, "page_content", None)
+            if not isinstance(content, str):
+                result.append(document)
+                continue
+            compressed = _compress_message_content(
+                content,
+                budget=per_document,
+                query=query,
+                profile="safe",
+            )
+            if hasattr(document, "model_copy"):
+                result.append(document.model_copy(update={"page_content": compressed}))
+            elif hasattr(document, "copy"):
+                try:
+                    result.append(document.copy(update={"page_content": compressed}))
+                except TypeError:
+                    result.append(document)
+            else:
+                result.append(document)
+        return result
+
+    async def acompress_documents(
+        self, documents: list[Any], query: str, callbacks: Any = None
+    ) -> list[Any]:
+        return self.compress_documents(documents, query, callbacks)

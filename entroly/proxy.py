@@ -75,6 +75,7 @@ from .control_plane import (
 from .provider_adapters import (
     apply_target_same_provider,
     canonical_request_from_provider_body,
+    optimize_provider_images,
     rewrite_gemini_model_in_url,
 )
 from .provider_policy import (
@@ -2098,6 +2099,36 @@ class PromptCompilerProxy:
             )
         except Exception as e:
             logger.debug("Control-plane planning skipped: %s", e)
+
+        # Embedded vision optimization is explicit opt-in and fail-open.  URL
+        # images and unknown shapes are untouched; each decision is summarized
+        # without exposing image bytes in headers or logs.
+        if getattr(self.config, "enable_image_optimization", False):
+            try:
+                image_result = optimize_provider_images(
+                    body,
+                    provider=provider,
+                    enabled=True,
+                    model=extract_model(body),
+                    max_images=getattr(self.config, "image_optimization_max_images", 8),
+                    max_total_decoded_bytes=getattr(
+                        self.config,
+                        "image_optimization_max_bytes",
+                        20 * 1024 * 1024,
+                    ),
+                )
+                body = image_result.body
+                control_headers["X-Entroly-Images-Examined"] = str(image_result.examined)
+                control_headers["X-Entroly-Images-Optimized"] = str(image_result.optimized)
+                if image_result.estimated_tokens_before:
+                    control_headers["X-Entroly-Image-Tokens-Before"] = str(
+                        image_result.estimated_tokens_before
+                    )
+                    control_headers["X-Entroly-Image-Tokens-After"] = str(
+                        image_result.estimated_tokens_after
+                    )
+            except Exception as exc:
+                logger.debug("Image optimization preserved original payload: %s", exc)
 
         sequence_key = (
             "messages"

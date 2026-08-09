@@ -1,0 +1,18 @@
+{
+  "schema_version": "entroly.competitive-evidence-protocol.v3",
+  "status": "refresh_required",
+  "reason": "Prior comparison artifacts do not represent the current Entroly source or current external releases and cannot support a current leadership claim.",
+  "supersedes_for_new_claims": "benchmarks/competitive_evidence_protocol_v2.json",
+  "required_run_manifest": "entroly.competitive-run.v1",
+  "validator": "python benchmarks/competitive_provenance.py <run-manifest.json> --validate",
+  "claim_policy": {
+    "exact_version_required": true,
+    "full_commit_sha_required": true,
+    "executable_sha256_required": true,
+    "workload_sha256_required": true,
+    "raw_results_sha256_required": true,
+    "failed_or_unconfigured_arms_are_void": true,
+    "void_arms_forbid_directional_claims": true,
+    "universal_superiority_claim_allowed": false
+  }
+}
