@@ -31,12 +31,10 @@ fn python_indent(line: &str) -> usize {
         .sum()
 }
 
-fn python_signature_from_lines(lines: &[&str], start: usize) -> Option<String> {
-    let mut rendered = Vec::new();
+fn python_header_end(lines: &[&str], start: usize) -> Option<usize> {
     let mut balance = 0i32;
     let mut saw_group = false;
-    for line in lines.iter().skip(start).take(32) {
-        rendered.push(line.trim_end().to_string());
+    for (index, line) in lines.iter().enumerate().skip(start).take(32) {
         for ch in line.chars() {
             match ch {
                 '(' | '[' | '{' => {
@@ -48,10 +46,21 @@ fn python_signature_from_lines(lines: &[&str], start: usize) -> Option<String> {
             }
         }
         if line.trim_end().ends_with(':') && (!saw_group || balance <= 0) {
-            return Some(rendered.join("\n"));
+            return Some(index);
         }
     }
     None
+}
+
+fn python_signature_from_lines(lines: &[&str], start: usize) -> Option<String> {
+    let end = python_header_end(lines, start)?;
+    Some(
+        lines[start..=end]
+            .iter()
+            .map(|line| line.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 fn python_signature_for_symbol(text: &str, symbol: &str) -> Option<String> {
@@ -68,7 +77,8 @@ fn python_signature_for_symbol(text: &str, symbol: &str) -> Option<String> {
         }
         if trimmed.starts_with(&class_plain) || trimmed.starts_with(&class_args) {
             let class_indent = python_indent(line);
-            for inner in index + 1..lines.len() {
+            let class_header_end = python_header_end(&lines, index)?;
+            for inner in class_header_end + 1..lines.len() {
                 let inner_line = lines[inner];
                 let inner_trimmed = inner_line.trim_start();
                 if inner_trimmed.is_empty() || inner_trimmed.starts_with('#') {
@@ -106,8 +116,9 @@ fn python_callable_body(text: &str, symbol: &str) -> Option<String> {
             continue;
         }
         let base_indent = python_indent(line);
+        let header_end = python_header_end(&lines, index)?;
         let mut end = lines.len();
-        for (inner, inner_line) in lines.iter().enumerate().skip(index + 1) {
+        for (inner, inner_line) in lines.iter().enumerate().skip(header_end + 1) {
             let inner_trimmed = inner_line.trim();
             if inner_trimmed.is_empty() || inner_trimmed.starts_with('#') {
                 continue;
@@ -117,7 +128,7 @@ fn python_callable_body(text: &str, symbol: &str) -> Option<String> {
                 break;
             }
         }
-        return Some(lines[index + 1..end].join("\n"));
+        return Some(lines[header_end + 1..end].join("\n"));
     }
     None
 }
@@ -384,6 +395,24 @@ mod tests {
         assert_eq!(anchors[0].symbol, "target");
         assert!(anchors[0].signature.contains("alpha: int"));
         assert!(anchors[0].signature.contains("beta: int"));
+    }
+
+    #[test]
+    fn resolves_dependency_from_multiline_caller_signature() {
+        let sources = vec![
+            "file:pkg/api.py".to_string(),
+            "file:pkg/dep.py".to_string(),
+        ];
+        let texts = vec![
+            "from .dep import target\n\ndef caller(\n    value: int,\n) -> int:\n    return target(value)\n"
+                .to_string(),
+            "def target(\n    alpha: int,\n    beta: int = 0,\n) -> int:\n    return alpha + beta\n"
+                .to_string(),
+        ];
+        let anchors = query_dependency_anchors(&sources, &texts, "caller explain behavior");
+        assert_eq!(anchors.len(), 1, "{anchors:?}");
+        assert_eq!(anchors[0].source, "file:pkg/dep.py");
+        assert!(anchors[0].signature.contains("beta: int = 0"));
     }
 
     #[test]
