@@ -283,7 +283,7 @@ def apply_workspace_transaction(
     if commit_error is not None:
         if rollback_complete:
             raise WorkspaceTransactionError(
-                "workspace transaction failed; rollback completed",
+                "workspace transaction failed; rollback attempted; rollback completed",
                 report,
             ) from commit_error
         raise WorkspaceTransactionError(
