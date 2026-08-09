@@ -116,7 +116,7 @@ def test_non_python_symbol_remains_useful_without_invented_flow(
         "available": "structure",
         "missing": "verified-language-specific-flow-adapter",
     }]
-    assert payload["analysis_contract"]["missing-adapter_behavior"] == (
+    assert payload["analysis_contract"]["missing_adapters_behavior"] == (
         "report-boundary-never-invent-flow"
     )
     assert adaptive.verify_adaptive_program_graph_commitment(payload)
