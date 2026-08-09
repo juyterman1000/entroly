@@ -2,7 +2,8 @@
 
 This module is deliberately small and dependency-facing. Third-party parser
 objects never escape it: repository graph, retrieval, receipts, and future flow
-engines consume stable Entroly dataclasses instead.
+engines consume stable Entroly dataclasses instead. Structure, imports, exports,
+symbols, and diagnostics are extracted in one bounded registry pass.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
-REGISTRY_FACTS_SCHEMA_VERSION = "entroly.registry-facts.v1"
+REGISTRY_FACTS_SCHEMA_VERSION = "entroly.registry-facts.v2"
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,14 @@ class RegistrySpan:
     start_line: int
     end_line: int
     evidence_sha256: str
+
+
+@dataclass(frozen=True)
+class RegistryStructure:
+    name: str
+    kind: str
+    signature: str
+    span: RegistrySpan
 
 
 @dataclass(frozen=True)
@@ -57,6 +66,7 @@ class RegistryDiagnostic:
 @dataclass(frozen=True)
 class RegistryFacts:
     language: str
+    structures: tuple[RegistryStructure, ...]
     imports: tuple[RegistryImport, ...]
     exports: tuple[RegistryExport, ...]
     symbols: tuple[RegistrySymbol, ...]
@@ -100,18 +110,29 @@ def _span(raw: bytes, value: object) -> RegistrySpan | None:
     )
 
 
+def _sequence(value: object) -> list[Any]:
+    if isinstance(value, (str, bytes, Mapping)):
+        return []
+    try:
+        return list(value or ())
+    except TypeError:
+        return []
+
+
 def extract_registry_facts(
     source: str,
     language: str,
     *,
     max_bytes: int = 2 * 1024 * 1024,
     max_nodes: int = 100_000,
+    max_structures: int = 50_000,
 ) -> RegistryFacts | None:
     """Return normalized parser facts, or ``None`` when safely unavailable.
 
-    `complete=False` means the parser produced a tree larger than the caller's
-    declared analysis budget. Callers must not promote those facts to complete
-    repository truth; the objects are retained only for diagnostics/research.
+    ``complete=False`` means the parser reported a tree larger than the caller's
+    declared analysis budget or the normalized structure budget was reached.
+    Callers must never treat absence from an incomplete result as negative
+    evidence.
     """
     raw = source.encode("utf-8", errors="surrogateescape")
     if len(raw) > max_bytes or not source.strip() or not language:
@@ -127,7 +148,7 @@ def extract_registry_facts(
     try:
         config = config_type(
             language=language,
-            structure=False,
+            structure=True,
             imports=True,
             exports=True,
             comments=False,
@@ -147,13 +168,37 @@ def extract_registry_facts(
     complete = node_count <= max_nodes if node_count else True
 
     def field(name: str) -> list[Any]:
-        value = _get(result, name, ())
-        if isinstance(value, (str, bytes, Mapping)):
-            return []
-        try:
-            return list(value or ())
-        except TypeError:
-            return []
+        return _sequence(_get(result, name, ()))
+
+    structures: list[RegistryStructure] = []
+    structure_budget_hit = False
+
+    def visit_structure(item: object) -> None:
+        nonlocal structure_budget_hit
+        if len(structures) >= max(1, int(max_structures)):
+            structure_budget_hit = True
+            return
+        span = _span(raw, _get(item, "span", None))
+        name = str(_get(item, "name", "") or "").strip()
+        if span is not None and name and len(name) <= 512 and "\n" not in name:
+            signature = str(_get(item, "signature", "") or "").strip()
+            structures.append(RegistryStructure(
+                name=name,
+                kind=_kind(_get(item, "kind", "unknown")),
+                signature=signature[:2_000],
+                span=span,
+            ))
+        for child in _sequence(_get(item, "children", ())):
+            if structure_budget_hit:
+                break
+            visit_structure(child)
+
+    for item in field("structure"):
+        if structure_budget_hit:
+            break
+        visit_structure(item)
+    if structure_budget_hit:
+        complete = False
 
     imports: list[RegistryImport] = []
     for item in field("imports"):
@@ -163,13 +208,11 @@ def extract_registry_facts(
         source_name = str(_get(item, "source", "") or "").strip()
         if not source_name:
             continue
-        raw_items = _get(item, "items", ())
-        if isinstance(raw_items, (str, bytes, Mapping)):
-            raw_items = ()
-        try:
-            names = tuple(sorted({str(value) for value in raw_items if value}))
-        except TypeError:
-            names = ()
+        names = tuple(sorted({
+            str(value)
+            for value in _sequence(_get(item, "items", ()))
+            if value
+        }))
         imports.append(RegistryImport(
             source=source_name,
             items=names,
@@ -213,6 +256,9 @@ def extract_registry_facts(
 
     return RegistryFacts(
         language=str(language),
+        structures=tuple(sorted(structures, key=lambda value: (
+            value.span.start_byte, -value.span.end_byte, value.name, value.kind
+        ))),
         imports=tuple(sorted(imports, key=lambda value: (
             value.span.start_byte, value.source, value.items
         ))),
@@ -235,6 +281,7 @@ __all__ = [
     "RegistryFacts",
     "RegistryImport",
     "RegistrySpan",
+    "RegistryStructure",
     "RegistrySymbol",
     "extract_registry_facts",
 ]
