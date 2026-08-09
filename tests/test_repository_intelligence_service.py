@@ -7,6 +7,7 @@ import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import entroly.repository_intelligence.service as service_module
 from entroly.repository_intelligence import (
     InvalidChangedPaths,
     InvalidContextQuery,
@@ -194,6 +195,32 @@ def test_service_snapshot_is_single_flight_under_concurrency(tmp_path: Path) -> 
     assert service.summary()["generation"] == 1
 
 
+def test_service_reuses_prepared_graph_query_adjacency_until_refresh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    first = service.graph_query("execute", operation="impact")
+    assert first["resolution"] == "resolved"
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("unchanged service generation should reuse adjacency")
+
+    monkeypatch.setattr(service_module, "prepare_graph_query", unexpected)
+    second = service.graph_query("invoke", operation="neighbors")
+    assert second["resolution"] == "resolved"
+
+    _write(tmp_path, "pkg/new.py", "def added():\n    return True\n")
+    service.refresh()
+    try:
+        service.graph_query("execute", operation="impact")
+    except AssertionError as exc:
+        assert "reuse adjacency" in str(exc)
+    else:
+        raise AssertionError("refresh must invalidate prepared graph adjacency")
+
+
 class FakeFastMCP:
     def __init__(self, name: str, instructions: str = "") -> None:
         self.name = name
@@ -230,6 +257,9 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_change_impact",
         "repository_summary",
         "repository_program_graph",
+        "repository_architecture",
+        "repository_architecture_diff",
+        "repository_graph_query",
         "repository_code_health",
         "repository_rename_apply",
         "repository_rename_preview",
@@ -264,10 +294,27 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert graph["resolution"] == "resolved"
     assert graph["receipt"]["remote_calls"] == 0
     assert str(tmp_path) not in json.dumps(graph)
+    graph_query = json.loads(mcp.tools["repository_graph_query"](
+        "pkg/api.py", "path", "execute", "outgoing", 5, 100,
+    ))
+    assert graph_query["schema_version"] == "entroly.verified-graph-query.v1"
+    assert graph_query["results"][0]["kind"] == "shortest-path"
+    assert graph_query["receipt"]["remote_calls"] == 0
     repository_map = json.loads(mcp.tools["repository_map"]("execute"))
     assert repository_map["schema_version"] == "entroly.verified-repository-map.v1"
     assert repository_map["entries"][0]["qualified_name"] == "execute"
     assert repository_map["receipt"]["remote_calls"] == 0
+    architecture = json.loads(mcp.tools["repository_architecture"]())
+    assert architecture["schema_version"] == "entroly.verified-architecture.v1"
+    assert architecture["receipt"]["remote_calls"] == 0
+    assert architecture["routes"]
+    architecture_diff = json.loads(mcp.tools["repository_architecture_diff"](
+        architecture, architecture,
+    ))
+    assert architecture_diff["schema_version"] == (
+        "entroly.verified-architecture-diff.v1"
+    )
+    assert sum(architecture_diff["counts"].values()) == 0
     assert str(tmp_path) not in json.dumps(repository_map)
     program = json.loads(mcp.tools["repository_program_graph"]("execute"))
     assert program["schema_version"] == "entroly.verified-program-graph.v1"

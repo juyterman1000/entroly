@@ -88,6 +88,21 @@ failures remain in the denominator.
     entering a committed rename plan.
 30. External-process network behavior is labeled uncontrolled rather than
     silently counted as local-only execution.
+31. Architecture conclusions omit files whose current source hash is stale.
+32. Exact SCC condensation layers include a concrete edge-valid cycle witness.
+33. Community IDs derive from sorted members; assignment margins are labeled
+    structural heuristics rather than longitudinal stability proof.
+34. Entry-to-foundation routes and hotspot scores publish their deterministic
+    tie-breaks, sampling, normalization, and source identities.
+35. Typed graph queries preserve ambiguous symbol candidates without choosing.
+36. Neighbors, shortest paths, structural relatedness, and reverse impact carry
+    freshness-checked relationship witnesses and explicit traversal bounds.
+37. Architecture diffs reject tampered inputs and bind source, edge, cycle,
+    layer, community, hotspot-rank, and route changes into a new receipt.
+38. Unchanged architecture analysis is reusable only after native and outer
+    cache commitments both verify.
+39. SCC layering and route extraction handle dependency depth beyond Python's
+    recursion limit and report output truncation by category.
 
 ## Reporting rule
 
@@ -96,6 +111,6 @@ be claimed only for a named scope when one implementation has more
 `executed-pass` results in that scope and no correctness-critical regression
 (ambiguity, stale source, or evidence tampering). Language breadth, native LSP
 execution/refactoring, and persistent global graph maintenance are reported as
-separate capabilities rather than hidden in the 30-point score. Code-health
+separate capabilities rather than hidden in the 39-point score. Code-health
 conformance covers evidence and policy honesty; it does not award a pass merely
 for producing more warnings.

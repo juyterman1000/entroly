@@ -74,6 +74,26 @@ def _parser() -> argparse.ArgumentParser:
     graph.add_argument("--max-depth", type=int, default=3)
     graph.add_argument("--limit", type=int, default=200)
 
+    graph_query = subcommands.add_parser(
+        "query",
+        help="query verified file/symbol neighbors, paths, relatedness, or impact",
+    )
+    graph_query.add_argument("--query", required=True)
+    graph_query.add_argument(
+        "--operation",
+        choices=("explain", "neighbors", "path", "related", "impact"),
+        default="neighbors",
+    )
+    graph_query.add_argument("--target")
+    graph_query.add_argument(
+        "--direction",
+        choices=("incoming", "outgoing", "both"),
+        default="both",
+    )
+    graph_query.add_argument("--max-depth", type=int, default=4)
+    graph_query.add_argument("--limit", type=int, default=100)
+    graph_query.add_argument("--max-visited", type=int, default=10_000)
+
     program = subcommands.add_parser(
         "program",
         help="build verified control and reaching-definition flow for a symbol",
@@ -87,6 +107,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     health.add_argument("--max-findings", type=int, default=500)
     health.add_argument("--max-symbols", type=int, default=2_000)
+
+    architecture = subcommands.add_parser(
+        "architecture",
+        help="build verified layers, communities, cycles, routes, and hotspots",
+    )
+    architecture.add_argument("--max-components", type=int, default=5_000)
+    architecture.add_argument("--max-communities", type=int, default=1_000)
+    architecture.add_argument("--max-cycles", type=int, default=1_000)
+    architecture.add_argument("--max-dependency-edges", type=int, default=100_000)
+    architecture.add_argument("--max-hotspots", type=int, default=100)
+    architecture.add_argument("--max-routes", type=int, default=100)
+
+    architecture_diff = subcommands.add_parser(
+        "architecture-diff",
+        help="compare two committed architecture JSON snapshots",
+    )
+    architecture_diff.add_argument("--before-json", required=True)
+    architecture_diff.add_argument("--after-json", required=True)
+    architecture_diff.add_argument("--limit", type=int, default=5_000)
 
     runtime = subcommands.add_parser(
         "runtime",
@@ -186,6 +225,18 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
             )
             payload["command"] = "graph"
             return 0, payload
+        if args.command == "query":
+            payload = service.graph_query(
+                args.query,
+                operation=args.operation,
+                target_query=args.target,
+                direction=args.direction,
+                max_depth=args.max_depth,
+                limit=args.limit,
+                max_visited=args.max_visited,
+            )
+            payload["command"] = "query"
+            return 0, payload
         if args.command == "map":
             payload = service.repository_map(
                 args.query,
@@ -204,6 +255,32 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 max_symbols=args.max_symbols,
             )
             payload["command"] = "health"
+            return 0, payload
+        if args.command == "architecture":
+            payload = service.architecture(
+                max_components=args.max_components,
+                max_communities=args.max_communities,
+                max_cycles=args.max_cycles,
+                max_dependency_edges=args.max_dependency_edges,
+                max_hotspots=args.max_hotspots,
+                max_routes=args.max_routes,
+            )
+            payload["command"] = "architecture"
+            return 0, payload
+        if args.command == "architecture-diff":
+            inputs: list[dict[str, object]] = []
+            for raw_path in (args.before_json, args.after_json):
+                input_path = Path(raw_path).expanduser().resolve(strict=True)
+                if input_path.stat().st_size > 64 * 1024 * 1024:
+                    raise ValueError("architecture JSON must be at most 64 MiB")
+                raw_payload = json.loads(input_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_payload, dict):
+                    raise ValueError("architecture JSON must contain an object")
+                inputs.append(raw_payload)
+            payload = service.architecture_diff(
+                inputs[0], inputs[1], limit=args.limit
+            )
+            payload["command"] = "architecture-diff"
             return 0, payload
         if args.command == "runtime":
             events_path = Path(args.events_json).expanduser().resolve(strict=True)

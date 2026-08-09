@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from .graph import analyze_change_impact, localize_tests
+from .graph_query import build_verified_graph_query, prepare_graph_query
+from .architecture_diff import build_verified_architecture_diff
 from .lsp_orchestrator import (
     build_committed_lsp_rename_preview,
     collect_lsp_references,
@@ -33,6 +35,11 @@ from .verified_health import (
     build_verified_code_health,
     verify_code_health_commitment,
 )
+from .verified_architecture import (
+    VERIFIED_ARCHITECTURE_SCHEMA_VERSION,
+    build_verified_architecture,
+    verify_architecture_commitment,
+)
 
 SERVICE_SCHEMA_VERSION = "entroly.repository-service.v2"
 _MAX_CHANGED_PATHS = 200
@@ -45,6 +52,12 @@ _MAX_CONTEXT_FRAGMENTS = 100
 _MAX_MAP_ENTRIES = 1_000
 _MAX_HEALTH_FINDINGS = 10_000
 _MAX_HEALTH_SYMBOLS = 20_000
+_MAX_ARCHITECTURE_COMPONENTS = 20_000
+_MAX_ARCHITECTURE_COMMUNITIES = 10_000
+_MAX_ARCHITECTURE_CYCLES = 10_000
+_MAX_ARCHITECTURE_EDGES = 1_000_000
+_MAX_ARCHITECTURE_HOTSPOTS = 1_000
+_MAX_ARCHITECTURE_ROUTES = 1_000
 
 
 class RepositoryIntelligenceError(ValueError):
@@ -168,6 +181,8 @@ class RepositoryIntelligenceService:
         self._index: RepositoryIndex | None = None
         self._digest = ""
         self._generation = 0
+        self._query_graph = None
+        self._query_graph_digest = ""
 
     def _build(self) -> RepositoryIndex:
         builder = self._builder
@@ -208,6 +223,8 @@ class RepositoryIntelligenceService:
             self._index = index
             self._digest = digest
             self._generation += 1
+            self._query_graph = None
+            self._query_graph_digest = ""
             return digest, self._generation
 
     def refresh(self) -> dict[str, object]:
@@ -450,6 +467,74 @@ class RepositoryIntelligenceService:
         payload["generation"] = generation
         return payload
 
+    def architecture(
+        self,
+        *,
+        max_components: int = 5_000,
+        max_communities: int = 1_000,
+        max_cycles: int = 1_000,
+        max_dependency_edges: int = 100_000,
+        max_hotspots: int = 100,
+        max_routes: int = 100,
+    ) -> dict[str, object]:
+        """Return verified layers, communities, cycles, routes, and hotspots."""
+        index, digest, generation = self._snapshot()
+        bounds = {
+            "max_components": max(
+                1, min(int(max_components), _MAX_ARCHITECTURE_COMPONENTS)
+            ),
+            "max_communities": max(
+                1, min(int(max_communities), _MAX_ARCHITECTURE_COMMUNITIES)
+            ),
+            "max_cycles": max(1, min(int(max_cycles), _MAX_ARCHITECTURE_CYCLES)),
+            "max_dependency_edges": max(
+                1, min(int(max_dependency_edges), _MAX_ARCHITECTURE_EDGES)
+            ),
+            "max_hotspots": max(
+                1, min(int(max_hotspots), _MAX_ARCHITECTURE_HOTSPOTS)
+            ),
+            "max_routes": max(1, min(int(max_routes), _MAX_ARCHITECTURE_ROUTES)),
+        }
+        identity: dict[str, object] = {
+            "analysis_schema": VERIFIED_ARCHITECTURE_SCHEMA_VERSION,
+            "index_digest": digest,
+            **bounds,
+        }
+        cache_status = "disabled"
+        if self._analysis_cache is not None:
+            cached, cache_status = self._analysis_cache.load(
+                "architecture", identity, verify=verify_architecture_commitment
+            )
+            if cached is not None:
+                cached["generation"] = generation
+                return cached
+        payload = build_verified_architecture(
+            self.root,
+            index,
+            index_digest=digest,
+            **bounds,
+        )
+        if self._analysis_cache is not None:
+            self._analysis_cache.store(
+                "architecture", identity, payload, replace=cache_status == "corrupt"
+            )
+        payload["generation"] = generation
+        return payload
+
+    def architecture_diff(
+        self,
+        before: Mapping[str, object],
+        after: Mapping[str, object],
+        *,
+        limit: int = 5_000,
+    ) -> dict[str, object]:
+        """Compare two independently committed architecture snapshots."""
+        return build_verified_architecture_diff(
+            before,
+            after,
+            limit=max(1, min(int(limit), 50_000)),
+        )
+
     def symbol_graph(
         self,
         symbol_query: str,
@@ -476,6 +561,56 @@ class RepositoryIntelligenceService:
             direction=direction,
             max_depth=max_depth,
             limit=limit,
+        )
+        payload["generation"] = generation
+        return payload
+
+    def graph_query(
+        self,
+        query: str,
+        *,
+        operation: str = "neighbors",
+        target_query: str | None = None,
+        direction: str = "both",
+        max_depth: int = 4,
+        limit: int = 100,
+        max_visited: int = 10_000,
+    ) -> dict[str, object]:
+        """Query typed file/symbol relationships with freshness on traversal."""
+        if not isinstance(query, str) or not query.strip():
+            raise InvalidSymbolQuery("graph query must not be empty")
+        if len(query.strip()) > 1_000:
+            raise InvalidSymbolQuery("graph query must be at most 1000 characters")
+        if target_query is not None and (
+            not isinstance(target_query, str) or len(target_query.strip()) > 1_000
+        ):
+            raise InvalidSymbolQuery("target query must be at most 1000 characters")
+        index, digest, generation = self._snapshot()
+        with self._lock:
+            prepared_graph = (
+                self._query_graph
+                if self._query_graph_digest == digest
+                else None
+            )
+        if prepared_graph is None:
+            built_graph = prepare_graph_query(index)
+            with self._lock:
+                if self._digest == digest:
+                    self._query_graph = built_graph
+                    self._query_graph_digest = digest
+                prepared_graph = built_graph
+        payload = build_verified_graph_query(
+            self.root,
+            index,
+            query,
+            index_digest=digest,
+            operation=operation,
+            target_query=target_query,
+            direction=direction,
+            max_depth=max(0, min(int(max_depth), 20)),
+            limit=max(1, min(int(limit), 5_000)),
+            max_visited=max(1, min(int(max_visited), 100_000)),
+            prepared_graph=prepared_graph,
         )
         payload["generation"] = generation
         return payload

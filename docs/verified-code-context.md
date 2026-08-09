@@ -83,7 +83,7 @@ Large repositories may opt into content-addressed persistence with the global
 source digest, parser environment, Python version, and schema. An immutable
 whole-index snapshot additionally commits to the complete source manifest,
 parser environment, and resource limits; it is checkout-root independent.
-Deterministic repository-map and health results are cached by stable index
+Deterministic repository-map, architecture, and health results are cached by stable index
 digest plus all request parameters, and both their native receipt and an outer
 cache commitment are verified before reuse. Corrupt entries fail open and are
 atomically rebuilt.
@@ -115,6 +115,60 @@ publishes its thresholds and full formula, labels findings as review aids, and
 commits the entire report with `verify_code_health_commitment()`. A hash proves
 which bytes were analyzed; it does not prove that a threshold violation is a
 bug or that an unreferenced symbol is dead.
+
+### Verified architecture and typed graph queries
+
+The `architecture` command builds a source-verified file architecture rather
+than inferring a diagram from names:
+
+```powershell
+python -m entroly.repository_intelligence --root . architecture `
+  --max-communities 1000 --max-routes 100 --max-hotspots 100 `
+  --max-dependency-edges 100000
+```
+
+It emits exact strongly connected components, condensation-DAG layers measured
+from dependency foundations, concrete cycle witnesses, entry-to-foundation
+routes, and source-bound hotspot metrics. Community detection uses deterministic
+modularity local moving plus connected refinement. IDs hash sorted membership;
+mean/minimum assignment margins show how strongly nodes fit the chosen group.
+Those margins are structural heuristics, not proof that a community will remain
+unchanged after edits. PageRank, deterministically sampled betweenness, fan-in,
+fan-out, normalization weights, sample sources, and lexical tie-breaks are all
+included in the committed policy.
+Architecture calculations use the complete verified graph, while serialized
+dependency edges, component adjacency, communities, cycles, routes, and
+hotspots have separate visible output bounds.
+
+The `query` command traverses a typed property graph of files, declarations,
+imports, and resolved calls:
+
+```powershell
+python -m entroly.repository_intelligence --root . query `
+  --query "payments/api.py" --operation path `
+  --target "charge_card" --direction outgoing --max-depth 8
+```
+
+Operations are `explain`, `neighbors`, `path`, `related`, and `impact`.
+Resolution must identify exactly one file or symbol. Traversal rechecks each
+encountered source hash before using that node, returns shortest-path or impact
+witnesses, and removes stale intermediates. `related` is explicitly structural:
+its score is inverse witness distance multiplied by bounded degree, not an
+embedding or semantic-equivalence claim. Dynamic, reflective, generated, and
+unindexed relationships may remain.
+
+Two saved architecture receipts can be compared without trusting either label:
+
+```powershell
+python -m entroly.repository_intelligence --root . architecture-diff `
+  --before-json before.json --after-json after.json
+```
+
+Both input commitments must verify. The new receipt binds added/removed/modified
+files, dependency edges, introduced/resolved cycles, layer moves, deterministic
+community overlap matching, hotspot-rank movement, routes, and per-category
+truncation. If an input architecture was itself truncated, absence remains
+inconclusive and the diff says so.
 
 ## What is verified
 
@@ -201,8 +255,9 @@ local propagation, and `self` dispatch are type-informed static inference, not
 compiler/LSP proof. Verified control/data flow is currently Python-only;
 runtime evidence must be supplied by an external tracer. Persistence reuses an
 unchanged whole graph and exact derived results, but any source change rebuilds
-global relationships and affected derived analyses. PageRank is not maintained
-with a fine-grained dynamic-graph algorithm.
+global relationships and affected derived analyses. PageRank, architecture
+layers, communities, and routes are not maintained with a fine-grained
+dynamic-graph algorithm.
 Interprocedural data flow,
 broader-language program graphs, and broad external task-quality benchmarks
 remain future work and must not be claimed as implemented.
@@ -219,6 +274,15 @@ health limits), initial derived computation took 1.20 seconds for the map and
 cache reuse took 0.0023 and 0.0840 seconds respectively; warm index-load median
 was 2.69 seconds. These are environment-specific engineering measurements,
 not universal performance claims.
+
+On a later same-machine dogfood run of this checkout (941 files; 12,926
+symbols; 23,063 resolved calls; 1,626 import edges), architecture produced 859
+components, 354 communities, and 29 cycles with no stale-source omissions in
+0.4766 seconds; a verified repeated lookup took 0.0839 seconds. The first typed
+impact query after index load took 0.9138 seconds to prepare adjacency; a second
+query on the same immutable service generation took 0.0264 seconds. The warm
+index snapshot load in that run took 4.2883 seconds. These are scoped local
+engineering measurements, not universal latency or superiority claims.
 
 External language servers and compiler indexers can supply definition,
 declaration, implementation, reference, type-definition, and override

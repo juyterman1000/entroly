@@ -6,6 +6,7 @@ from pathlib import Path
 import entroly.repository_intelligence.service as service_module
 from entroly.repository_intelligence import (
     RepositoryIntelligenceService,
+    verify_architecture_commitment,
     verify_code_health_commitment,
     verify_repository_map_commitment,
 )
@@ -26,7 +27,7 @@ def _project(root: Path) -> None:
     )
 
 
-def test_unchanged_map_and_health_reuse_verified_persistent_analysis(
+def test_unchanged_map_health_and_architecture_reuse_verified_persistent_analysis(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -36,20 +37,25 @@ def test_unchanged_map_and_health_reuse_verified_persistent_analysis(
     first_service = RepositoryIntelligenceService(root, cache_dir=cache)
     first_map = first_service.repository_map("source")
     first_health = first_service.code_health()
+    first_architecture = first_service.architecture()
     assert verify_repository_map_commitment(first_map)
     assert verify_code_health_commitment(first_health)
+    assert verify_architecture_commitment(first_architecture)
 
     def unexpected(*args, **kwargs):
         raise AssertionError("unchanged verified analysis should load from cache")
 
     monkeypatch.setattr(service_module, "build_verified_repository_map", unexpected)
     monkeypatch.setattr(service_module, "build_verified_code_health", unexpected)
+    monkeypatch.setattr(service_module, "build_verified_architecture", unexpected)
     second_service = RepositoryIntelligenceService(root, cache_dir=cache)
     second_map = second_service.repository_map("source")
     second_health = second_service.code_health()
+    second_architecture = second_service.architecture()
 
     assert second_map == first_map
     assert second_health == first_health
+    assert second_architecture == first_architecture
 
 
 def test_corrupt_analysis_envelope_fails_open_and_is_replaced(tmp_path: Path) -> None:

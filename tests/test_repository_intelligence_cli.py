@@ -94,6 +94,20 @@ def test_graph_returns_verified_static_callers(tmp_path: Path) -> None:
     }
 
 
+def test_query_returns_verified_typed_shortest_path(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "query", "--query", "pkg/api.py",
+        "--operation", "path", "--target", "execute",
+        "--direction", "outgoing", "--max-depth", "5",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-graph-query.v1"
+    assert payload["command"] == "query"
+    assert payload["results"][0]["kind"] == "shortest-path"
+    assert payload["receipt"]["freshness"].startswith("verified")
+
+
 def test_map_returns_verified_budgeted_repository_priority(tmp_path: Path) -> None:
     _project(tmp_path)
     code, payload = run([
@@ -129,6 +143,44 @@ def test_health_returns_verified_policy_and_commitment(tmp_path: Path) -> None:
     assert payload["command"] == "health"
     assert payload["policy"]["interpretation"] == "ranking-and-review-aid-not-a-proof-of-defect"
     assert payload["receipt"]["code_health_sha256"]
+
+
+def test_architecture_returns_verified_layers_routes_and_hotspots(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "architecture", "--max-routes", "10",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-architecture.v1"
+    assert payload["command"] == "architecture"
+    assert payload["receipt"]["verified_file_count"] == 3
+    assert payload["routes"]
+    assert payload["hotspots"]
+
+
+def test_architecture_diff_requires_and_compares_committed_inputs(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    code, before = run(["--root", str(tmp_path), "architecture"])
+    assert code == 0
+    before_path = tmp_path.parent / f"{tmp_path.name}-before.json"
+    before_path.write_text(json.dumps(before), encoding="utf-8")
+    _write(tmp_path, "pkg/new.py", "from pkg.source import execute\n")
+    code, after = run(["--root", str(tmp_path), "architecture"])
+    assert code == 0
+    after_path = tmp_path.parent / f"{tmp_path.name}-after.json"
+    after_path.write_text(json.dumps(after), encoding="utf-8")
+    code, payload = run([
+        "--root", str(tmp_path), "architecture-diff",
+        "--before-json", str(before_path), "--after-json", str(after_path),
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-architecture-diff.v1"
+    assert payload["command"] == "architecture-diff"
+    assert payload["files"]["added"] == ["pkg/new.py"]
 
 
 def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: Path) -> None:

@@ -181,6 +181,29 @@ def create_repository_mcp_server(
             return _error(exc, "repository_symbol_graph")
 
     @mcp.tool()
+    def repository_graph_query(
+        query: str,
+        operation: str = "neighbors",
+        target_query: str | None = None,
+        direction: str = "both",
+        max_depth: int = 4,
+        limit: int = 100,
+    ) -> str:
+        """Query verified typed neighbors, paths, relatedness, or impact."""
+        try:
+            return _json(service.graph_query(
+                query,
+                operation=operation,
+                target_query=target_query,
+                direction=direction,
+                max_depth=max(0, min(int(max_depth), 20)),
+                limit=max(1, min(int(limit), 5_000)),
+                max_visited=10_000,
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_graph_query")
+
+    @mcp.tool()
     def repository_map(
         query: str = "",
         token_budget: int = 2_000,
@@ -223,6 +246,46 @@ def create_repository_mcp_server(
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_code_health")
+
+    @mcp.tool()
+    def repository_architecture(
+        max_components: int = 5_000,
+        max_communities: int = 1_000,
+        max_dependency_edges: int = 100_000,
+        max_hotspots: int = 100,
+        max_routes: int = 100,
+    ) -> str:
+        """Return verified layers, communities, cycles, routes, and hotspots."""
+        try:
+            return _json(service.architecture(
+                max_components=max(1, min(int(max_components), 20_000)),
+                max_communities=max(1, min(int(max_communities), 10_000)),
+                max_dependency_edges=max(
+                    1, min(int(max_dependency_edges), 1_000_000)
+                ),
+                max_hotspots=max(1, min(int(max_hotspots), 1_000)),
+                max_routes=max(1, min(int(max_routes), 1_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_architecture")
+
+    @mcp.tool()
+    def repository_architecture_diff(
+        before: dict[str, object],
+        after: dict[str, object],
+        limit: int = 5_000,
+    ) -> str:
+        """Compare two committed architecture receipts and report structural drift."""
+        try:
+            if len(json.dumps([before, after]).encode("utf-8")) > 32 * 1024 * 1024:
+                raise ValueError("combined architecture inputs must be at most 32 MiB")
+            return _json(service.architecture_diff(
+                before,
+                after,
+                limit=max(1, min(int(limit), 50_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_architecture_diff")
 
     @mcp.tool()
     def repository_runtime_overlay(

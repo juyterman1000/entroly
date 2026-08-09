@@ -68,6 +68,7 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - **Health command:** `python -m entroly.repository_intelligence --root . health` reports transparent parser-derived complexity, nesting, language coverage, cycles, coupling, and unresolved-call risk. Findings are review aids rather than defect proofs; stale files are omitted.
 - **Verified rename:** `rename-preview` creates a no-write, tamper-evident plan over exact source identifiers. `rename-apply` requires its plan hash and explicit acknowledgement that reference completeness is unproven, then rechecks preimages, validates syntax, and attempts rollback on filesystem failure.
 - **LSP reference orchestration:** `lsp-rename-preview` runs an explicitly configured local language server with bounded framed JSON-RPC and verifies workspace ranges before planning. MCP executable arguments are operator-controlled through `ENTROLY_LSP_COMMAND_JSON`. The external server's own network behavior is not sandboxed or attested.
+- **Verified architecture and graph queries:** `architecture` emits source-verified SCC layers, deterministic communities, cycle witnesses, dependency routes, and disclosed centrality hotspots. `query` provides ambiguity-safe typed neighbors, shortest paths, relatedness, and reverse-impact witnesses; `architecture-diff` binds two committed snapshots and reports structural drift.
 
 ## Interfaces
 

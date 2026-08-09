@@ -11,6 +11,12 @@ from entroly.repository_intelligence.program_graph import (
 from entroly.repository_intelligence.repository_map import (
     verify_repository_map_commitment,
 )
+from entroly.repository_intelligence.graph_query import (
+    verify_graph_query_commitment,
+)
+from entroly.repository_intelligence.verified_architecture import (
+    verify_architecture_commitment,
+)
 
 
 FIXTURE = (
@@ -50,6 +56,28 @@ def test_shared_code_intelligence_conformance_fixture() -> None:
     assert ambiguous["resolution"] == "ambiguous"
     assert len(ambiguous["candidates"]) == 2
     assert not ambiguous["nodes"] and not ambiguous["edges"]
+
+    architecture = service.architecture()
+    assert architecture["receipt"]["verified_file_count"] == len(index.files)
+    assert architecture["components"]
+    assert architecture["routes"]
+    assert verify_architecture_commitment(architecture)
+
+    ambiguous_query = service.graph_query("execute")
+    assert ambiguous_query["resolution"] == "ambiguous"
+    assert not ambiguous_query["nodes"] and not ambiguous_query["edges"]
+    typed_path = service.graph_query(
+        typed["caller"],
+        operation="path",
+        target_query=typed["callee"],
+        direction="outgoing",
+        max_depth=1,
+    )
+    assert typed_path["results"][0]["distance"] == 1
+    assert typed_path["results"][0]["edges"][0]["evidence"]["confidence"] == (
+        "type-inferred"
+    )
+    assert verify_graph_query_commitment(typed_path)
 
     global_map = service.repository_map(token_budget=2_000)
     query_map = service.repository_map(gold["query"], token_budget=2_000)
