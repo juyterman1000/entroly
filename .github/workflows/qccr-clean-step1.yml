@@ -1,0 +1,104 @@
+name: QCCR Clean Step 1
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  clean-step1:
+    if: github.head_ref == 'diagnostic/qccr-rendering-20260809'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: d333f1d9c3d72ae32692583d4318eceb99e90944
+          fetch-depth: 1
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Build exact clean native QCCR
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install maturin --timeout 120 --retries 5
+          .venv/bin/pip install -e '.[test]' --timeout 120 --retries 5
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+
+      - name: Step 1 exact five-probe signature presence
+        run: |
+          .venv/bin/python - <<'PY'
+          import ast
+          import json
+          from benchmarks.answer_correctness_bridge import build_probes, _context_for
+          from benchmarks.graph_lane_quality import REPO, Task, _pool_for, _read, _tokens, _tracked_python_files
+
+          LIMIT, BUDGET, SEED = 5, 2000, 20260807
+          payload = json.loads((REPO / 'benchmarks/results/graph_lane_tasks.json').read_text(encoding='utf-8'))
+          probes = build_probes([Task(**row) for row in payload['tasks']], LIMIT)
+          corpus = sorted({str(path.relative_to(REPO)).replace('\\', '/') for path in _tracked_python_files()})
+
+          def signature_lines(callee, rel):
+              text = (REPO / rel).read_text(encoding='utf-8', errors='replace')
+              lines = text.splitlines()
+              tree = ast.parse(text)
+              target = None
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
+                      target = node
+                      break
+                  if isinstance(node, ast.ClassDef) and node.name == callee:
+                      target = next((sub for sub in node.body if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == '__init__'), None)
+                      break
+              if target is None:
+                  raise RuntimeError((callee, rel))
+              body_line = target.body[0].lineno if target.body else target.end_lineno
+              return tuple(line.strip() for line in lines[target.lineno - 1:max(target.lineno, body_line - 1)] if line.strip())
+
+          full = 0
+          delivered = 0
+          print(f'CLEAN_STEP1 head=d333f1d9c3d72ae32692583d4318eceb99e90944 seed={SEED} budget={BUDGET} corpus={len(corpus)}')
+          for idx, probe in enumerate(probes, 1):
+              pool = _pool_for(probe.task, corpus, 48, SEED)
+              texts = {rel: _read(rel) for rel in pool}
+              context = _context_for('qccr', probe, pool, texts, BUDGET)
+              sig = signature_lines(probe.task.callee, probe.task.callee_file)
+              file_delivered = f'### {probe.task.callee_file}' in context
+              full_signature = all(line in context for line in sig)
+              delivered += int(file_delivered)
+              full += int(full_signature)
+              print(
+                  'CLEAN_STEP1_PROBE', idx,
+                  f"callee={probe.task.callee!r}",
+                  f"file={probe.task.callee_file!r}",
+                  f"file_delivered={file_delivered}",
+                  f"full_signature_present={full_signature}",
+                  f"gold_presence={tuple((param, param in context) for param in probe.params)!r}",
+                  f"context_tokens={_tokens(context)}",
+                  f"signature_lines={sig!r}",
+              )
+          print(f'CLEAN_STEP1_SUMMARY full_signatures={full}/5 defining_files_delivered={delivered}/5')
+          PY
+
+      - name: Clean exact graph-lane baseline
+        run: |
+          .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('benchmarks/results/graph_lane_results.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          rows = [r for r in data['records'] if r['arm'] == 'qccr' and r['budget'] == 2000]
+          hits = sum(bool(r['indirect_hit']) for r in rows)
+          errors = sum(bool(r['error']) for r in rows)
+          print(f'CLEAN_BASELINE_QCCR_INDIRECT hits={hits}/{len(rows)} recall={hits/len(rows):.6f} errors={errors}')
+          if errors:
+              raise SystemExit('clean qccr errors are non-zero')
+          PY
