@@ -1,4 +1,4 @@
-"""Opt-in content-addressed incremental parsing for repository intelligence."""
+"""Content-addressed incremental repository analysis with bounded retention."""
 from __future__ import annotations
 
 import hashlib
@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cache_retention import CacheRetentionReport, prune_cache_tree
 from .graph import resolve_calls, resolve_imports
 from .models import (
     CallEdge,
@@ -20,11 +21,19 @@ from .models import (
     UnresolvedCall,
 )
 from .parsers import ParsedCall, ParsedFile, scan_repository
+from .workspace_dependencies import resolve_workspace_dependencies
 
-CACHE_SCHEMA_VERSION = "entroly.repository-parse-cache.v2"
-INDEX_SNAPSHOT_SCHEMA_VERSION = "entroly.repository-index-snapshot.v1"
+# Bumped because parser/import semantics and whole-index dependency resolution
+# changed. Old immutable cache objects remain harmless but must not be reused as
+# current semantic truth.
+CACHE_SCHEMA_VERSION = "entroly.repository-parse-cache.v3"
+INDEX_SNAPSHOT_SCHEMA_VERSION = "entroly.repository-index-snapshot.v2"
 _MAX_CACHE_ENTRY_BYTES = 16 * 1024 * 1024
 _MAX_INDEX_SNAPSHOT_BYTES = 256 * 1024 * 1024
+_MAX_PARSE_CACHE_TOTAL_BYTES = 512 * 1024 * 1024
+_MAX_PARSE_CACHE_FILES = 20_000
+_MAX_INDEX_SNAPSHOT_TOTAL_BYTES = 1024 * 1024 * 1024
+_MAX_INDEX_SNAPSHOT_FILES = 8
 
 
 @dataclass
@@ -162,7 +171,7 @@ def _deserialize(
 
 
 class ContentAddressedParseCache:
-    """Fail-open cache whose entries are immutable and identity-validated."""
+    """Fail-open immutable parse cache with a hard global retention ceiling."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory.expanduser().resolve()
@@ -222,8 +231,16 @@ class ContentAddressedParseCache:
                 if temporary.exists():
                     temporary.unlink()
         except OSError:
-            # Cache failure must not make repository intelligence unavailable.
             return
+
+    def prune(self) -> CacheRetentionReport:
+        """Amortized global cleanup; snapshots are a separately bounded tree."""
+        return prune_cache_tree(
+            self.directory,
+            max_total_bytes=_MAX_PARSE_CACHE_TOTAL_BYTES,
+            max_files=_MAX_PARSE_CACHE_FILES,
+            excluded_top_level=("index-snapshots",),
+        )
 
 
 def _snapshot_manifest(
@@ -406,11 +423,7 @@ def _index_from_snapshot(
 
 
 class ContentAddressedIndexSnapshotStore:
-    """Immutable, commitment-checked global graph snapshots.
-
-    A single source change produces a new manifest identity.  This deliberately
-    prefers exact whole-graph invalidation over a clever but stale partial graph.
-    """
+    """Immutable, commitment-checked global graph snapshots with bounded retention."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory.expanduser().resolve() / "index-snapshots"
@@ -479,6 +492,31 @@ class ContentAddressedIndexSnapshotStore:
         except OSError:
             return
 
+    def prune(self, *, protected_manifest: str | None = None) -> CacheRetentionReport:
+        protected = (
+            (self._path(protected_manifest),)
+            if protected_manifest
+            else ()
+        )
+        return prune_cache_tree(
+            self.directory,
+            max_total_bytes=_MAX_INDEX_SNAPSHOT_TOTAL_BYTES,
+            max_files=_MAX_INDEX_SNAPSHOT_FILES,
+            protected=protected,
+        )
+
+
+def _merged_dependencies(parsed: dict[str, ParsedFile]) -> dict[str, tuple[str, ...]]:
+    """Preserve legacy resolver behavior and add only proven universal edges."""
+    legacy = resolve_imports(parsed)
+    universal = resolve_workspace_dependencies(parsed).file_dependencies()
+    return {
+        path: tuple(sorted(
+            set(legacy.get(path, ())) | set(universal.get(path, ()))
+        ))
+        for path in sorted(parsed)
+    }
+
 
 def build_repository_index_incremental(
     root: str | os.PathLike[str],
@@ -498,6 +536,9 @@ def build_repository_index_incremental(
         load_cached=cache.load,
         store_cached=cache.store,
     )
+    # Amortize cleanup once per completed source scan instead of once per file.
+    parse_retention = cache.prune()
+
     snapshot_store = ContentAddressedIndexSnapshotStore(Path(cache_dir))
     manifest_sha256, manifest = _snapshot_manifest(
         parsed, policy, cache.fingerprint
@@ -508,19 +549,25 @@ def build_repository_index_incremental(
         manifest=manifest,
     )
     if cached_index is not None:
+        snapshot_retention = snapshot_store.prune(
+            protected_manifest=manifest_sha256
+        )
         cached_index.diagnostics = tuple(sorted(dict.fromkeys((
             *cached_index.diagnostics,
             *diagnostics,
             cache.stats.diagnostic(),
             snapshot_store.stats.diagnostic(),
+            parse_retention.diagnostic("incremental-parse-cache"),
+            snapshot_retention.diagnostic("persistent-index-snapshot"),
         ))))
         return cached_index
+
     symbols = {
         symbol.symbol_id: symbol
         for path in sorted(parsed)
         for symbol in sorted(parsed[path].symbols, key=lambda item: item.symbol_id)
     }
-    dependencies = resolve_imports(parsed)
+    dependencies = _merged_dependencies(parsed)
     calls, unresolved_calls = resolve_calls(parsed, symbols, policy)
     if len(calls) + len(unresolved_calls) >= policy.max_edges:
         diagnostics.append("relationship limit reached; remaining evidence omitted")
@@ -538,10 +585,15 @@ def build_repository_index_incremental(
         manifest=manifest,
         index=index,
     )
+    snapshot_retention = snapshot_store.prune(
+        protected_manifest=manifest_sha256
+    )
     index.diagnostics = tuple(sorted(dict.fromkeys((
         *index.diagnostics,
         cache.stats.diagnostic(),
         snapshot_store.stats.diagnostic(),
+        parse_retention.diagnostic("incremental-parse-cache"),
+        snapshot_retention.diagnostic("persistent-index-snapshot"),
     ))))
     return index
 
