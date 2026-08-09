@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import warnings
 
 import pytest
 
@@ -51,9 +52,10 @@ def test_below_floor_is_detected_and_warned_once(
     assert warned == status
 
     # Repeated repository operations must not flood logs with the same warning.
-    with pytest.warns(None) as caught:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         compat.warn_if_incompatible_language_pack()
-    assert list(caught) == []
+    assert caught == []
 
 
 def test_floor_release_is_compatible(monkeypatch: pytest.MonkeyPatch) -> None:
