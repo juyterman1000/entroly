@@ -49,6 +49,26 @@ jobs:
 
       - name: Apply structural-ownership prototype without committing it
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('diagnostics/apply_qccr_anchor_prototype_v2.py')
+          text = path.read_text(encoding='utf-8')
+          markers = (
+              ('HELPER', 'TEST'),
+              ('TEST', 'EXCERPT'),
+          )
+          for current, following in markers:
+              prefix = f'{current} = "'
+              start = text.index(prefix) + len(prefix)
+              end = text.index(f'"\n{following} =', start)
+              text = text[:start] + ''.join(text[start:end].split()) + text[end:]
+          prefix = 'EXCERPT = "'
+          start = text.index(prefix) + len(prefix)
+          end = text.index('"\n\npath =', start)
+          text = text[:start] + ''.join(text[start:end].split()) + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+          python -m py_compile diagnostics/apply_qccr_anchor_prototype_v2.py
           python diagnostics/apply_qccr_anchor_prototype_v2.py
           cargo fmt --manifest-path entroly-qccr/Cargo.toml
           cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
