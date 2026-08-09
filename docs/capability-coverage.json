@@ -294,6 +294,7 @@
         "entroly/repository_intelligence/graph.py",
         "entroly/repository_intelligence/git_history.py",
         "entroly/repository_intelligence/incremental.py",
+        "entroly/repository_intelligence/lsp_orchestrator.py",
         "entroly/repository_intelligence/persistent_analysis.py",
         "entroly/repository_intelligence/program_graph.py",
         "entroly/repository_intelligence/repository_map.py",
@@ -316,6 +317,9 @@
         "tests/test_repository_map.py::test_map_evidence_is_exact_budgeted_and_tamper_evident",
         "tests/test_repository_incremental.py::test_incremental_cache_reuses_unchanged_exact_parse_results",
         "tests/test_repository_incremental.py::test_content_identical_checkout_reuses_root_independent_graph_snapshot",
+        "tests/test_repository_lsp_orchestrator.py::test_configured_lsp_process_is_bounded_and_ranges_are_source_verified",
+        "tests/test_repository_lsp_orchestrator.py::test_lsp_timeout_kills_hung_process",
+        "tests/test_repository_lsp_orchestrator.py::test_service_builds_committed_lsp_augmented_rename_preview",
         "tests/test_repository_persistent_analysis.py::test_unchanged_map_and_health_reuse_verified_persistent_analysis",
         "tests/test_repository_persistent_analysis.py::test_corrupt_analysis_envelope_fails_open_and_is_replaced",
         "tests/test_repository_runtime_overlay.py::test_runtime_overlay_aggregates_events_and_verifies_source",
@@ -345,6 +349,7 @@
         "entroly.repository_intelligence.RepositoryIntelligenceService.code_health",
         "entroly.repository_intelligence.RepositoryIntelligenceService.rename_preview",
         "entroly.repository_intelligence.RepositoryIntelligenceService.rename_apply",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.lsp_rename_preview",
         "entroly.repository_intelligence.build_repository_index_incremental",
         "entroly.repository_intelligence.build_verified_context",
         "entroly.repository_intelligence.build_symbol_graph",
@@ -355,6 +360,7 @@
         "entroly.repository_intelligence.build_verified_code_health",
         "entroly.repository_intelligence.build_verified_rename_plan",
         "entroly.repository_intelligence.apply_verified_rename_plan",
+        "entroly.repository_intelligence.collect_lsp_references",
         "entroly.repository_intelligence.verify_context_commitment",
         "entroly.repository_intelligence.verify_program_graph_commitment",
         "entroly.repository_intelligence.verify_repository_map_commitment",
@@ -363,9 +369,10 @@
         "entroly.repository_intelligence.verify_code_health_commitment",
         "entroly.repository_intelligence.verify_refactor_plan_commitment",
         "entroly.repository_intelligence.verify_refactor_apply_commitment",
+        "entroly.repository_intelligence.verify_lsp_rename_preview_commitment",
         "entroly.repository_intelligence.verify_symbol_graph_commitment"
       ],
-      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Structural health publishes a heuristic scoring policy and exact evidence but does not prove defects, dead code, or semantic clones. Runtime events and semantic relationships require external producers. Two-phase rename is preimage-safe and rollback-aware but explicitly not compiler-complete; dynamic, reflective, string, macro, generated, unindexed non-call, and external references may remain. Content-addressed persistence reuses unchanged artifacts, but any source change rebuilds global relationships and derived analyses. Native language-server process orchestration, broader automatic refactoring, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
+      "limitations": "Beta evidence-carrying code intelligence. Python has type-informed receiver binding and intraprocedural control/reaching-definition flow; other languages remain parser-structural. Structural health is heuristic. Two-phase rename is preimage-safe and rollback-aware but not compiler-complete; dynamic, reflective, string, macro, generated, unindexed non-call, and external references may remain. LSP orchestration currently requests one symbol's references; the operator controls the executable, and Entroly does not sandbox or attest that process's network, filesystem, telemetry, plugins, or configuration. Any source change rebuilds global relationships and derived analyses. Broader LSP/refactoring operations, interprocedural data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
     },
     {
       "id": "command_aware_shell_evidence",

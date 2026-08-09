@@ -42,6 +42,7 @@ __all__ = [
     "build_verified_code_health", "verify_code_health_commitment",
     "build_verified_rename_plan", "apply_verified_rename_plan",
     "verify_refactor_plan_commitment", "verify_refactor_apply_commitment",
+    "collect_lsp_references", "verify_lsp_rename_preview_commitment",
 ]
 
 
@@ -110,6 +111,10 @@ from .verified_refactor import (  # noqa: E402
     build_verified_rename_plan,
     verify_refactor_apply_commitment,
     verify_refactor_plan_commitment,
+)
+from .lsp_orchestrator import (  # noqa: E402
+    collect_lsp_references,
+    verify_lsp_rename_preview_commitment,
 )
 from .verified_context import (  # noqa: E402
     build_symbol_graph,

@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from .graph import analyze_change_impact, localize_tests
+from .lsp_orchestrator import (
+    build_committed_lsp_rename_preview,
+    collect_lsp_references,
+)
 from .models import RepositoryIndex, RepositoryLimits, normalize_relative
 from .program_graph import build_verified_program_graph
 from .repository_map import (
@@ -615,3 +619,41 @@ class RepositoryIntelligenceService:
             "apply": applied,
             "refresh": refresh,
         }
+
+    def lsp_rename_preview(
+        self,
+        symbol_query: str,
+        new_name: str,
+        *,
+        command: Iterable[str],
+        language_id: str,
+        timeout_seconds: float = 15.0,
+        max_relationships: int = 10_000,
+    ) -> dict[str, object]:
+        """Run one configured local LSP and return a committed no-write plan."""
+        index, digest, generation = self._snapshot()
+        try:
+            orchestration = collect_lsp_references(
+                self.root,
+                index,
+                symbol_query,
+                command=tuple(command),
+                language_id=language_id,
+                timeout_seconds=timeout_seconds,
+                max_relationships=max_relationships,
+            )
+            plan = build_verified_rename_plan(
+                self.root,
+                index,
+                symbol_query,
+                new_name,
+                index_digest=digest,
+                semantic_relationships=orchestration["relationships"],
+                provider=str(orchestration["provider"]),
+                max_changes=max_relationships,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise VerifiedRefactorError(str(exc)) from None
+        payload = build_committed_lsp_rename_preview(orchestration, plan)
+        payload["generation"] = generation
+        return payload

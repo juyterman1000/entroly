@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from entroly.repository_intelligence.cli import run
+
+FAKE_LSP_SERVER = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
 
 
 def _write(root: Path, path: str, text: str) -> None:
@@ -158,6 +161,25 @@ def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: 
     assert applied["command"] == "rename-apply"
     assert applied["apply"]["change_count"] == 3
     assert "def perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+
+def test_cli_lsp_preview_requires_explicit_command_file(tmp_path: Path) -> None:
+    _project(tmp_path)
+    command_path = tmp_path / "lsp-command.json"
+    command_path.write_text(
+        json.dumps([sys.executable, str(FAKE_LSP_SERVER)]),
+        encoding="utf-8",
+    )
+    code, payload = run([
+        "--root", str(tmp_path), "lsp-rename-preview",
+        "--symbol", "execute", "--new-name", "perform",
+        "--language-id", "python", "--command-json", str(command_path),
+        "--timeout-seconds", "5",
+    ])
+    assert code == 0
+    assert payload["command"] == "lsp-rename-preview"
+    assert payload["plan"]["resolution"] == "resolved"
+    assert payload["receipt"]["writes_performed"] == 0
 
 
 def test_runtime_binds_json_events_without_values(tmp_path: Path) -> None:

@@ -6,7 +6,11 @@ import os
 from pathlib import Path
 
 from .models import RepositoryLimits
-from .service import RepositoryIntelligenceError, RepositoryIntelligenceService
+from .service import (
+    RepositoryIntelligenceError,
+    RepositoryIntelligenceService,
+    VerifiedRefactorError,
+)
 
 
 def _configured_root(root: str | os.PathLike[str] | None) -> Path:
@@ -27,6 +31,29 @@ def _mcp_safe(payload: dict[str, object]) -> dict[str, object]:
     if "root" in safe:
         safe["root"] = "."
     return safe
+
+
+def _configured_lsp_command() -> tuple[str, ...]:
+    raw = os.environ.get("ENTROLY_LSP_COMMAND_JSON", "").strip()
+    if not raw:
+        raise VerifiedRefactorError(
+            "LSP orchestration is disabled; operator must set ENTROLY_LSP_COMMAND_JSON"
+        )
+    try:
+        command = json.loads(raw)
+    except json.JSONDecodeError:
+        raise VerifiedRefactorError(
+            "ENTROLY_LSP_COMMAND_JSON must be a JSON argument array"
+        ) from None
+    if (
+        not isinstance(command, list)
+        or not 1 <= len(command) <= 32
+        or any(not isinstance(item, str) or not item or len(item) > 4096 for item in command)
+    ):
+        raise VerifiedRefactorError(
+            "ENTROLY_LSP_COMMAND_JSON must contain 1 to 32 strings"
+        )
+    return tuple(command)
 
 
 def _error(exc: Exception, operation: str) -> str:
@@ -264,6 +291,27 @@ def create_repository_mcp_server(
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_rename_apply")
+
+    @mcp.tool()
+    def repository_lsp_rename_preview(
+        symbol_query: str,
+        new_name: str,
+        language_id: str,
+        timeout_seconds: float = 15.0,
+        max_relationships: int = 10_000,
+    ) -> str:
+        """Run the operator-configured LSP and return a committed no-write plan."""
+        try:
+            return _json(service.lsp_rename_preview(
+                symbol_query,
+                new_name,
+                command=_configured_lsp_command(),
+                language_id=language_id,
+                timeout_seconds=max(1.0, min(float(timeout_seconds), 30.0)),
+                max_relationships=max(1, min(int(max_relationships), 100_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_lsp_rename_preview")
 
     @mcp.tool()
     def refresh_repository_index() -> str:

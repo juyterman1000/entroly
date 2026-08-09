@@ -81,6 +81,13 @@ failures remain in the denominator.
 25. Apply requires the exact plan hash plus explicit incompleteness
     acknowledgement and validates staged syntax.
 26. A multi-file replacement failure attempts rollback and remains visible.
+27. MCP callers cannot choose or modify the operator-configured LSP executable.
+28. LSP framing, timeout, output, message, relationship, environment, and
+    workspace-URI bounds are exercised against an unchanged fake server.
+29. External UTF-16 reference ranges pass through source verification before
+    entering a committed rename plan.
+30. External-process network behavior is labeled uncontrolled rather than
+    silently counted as local-only execution.
 
 ## Reporting rule
 
@@ -89,6 +96,6 @@ be claimed only for a named scope when one implementation has more
 `executed-pass` results in that scope and no correctness-critical regression
 (ambiguity, stale source, or evidence tampering). Language breadth, native LSP
 execution/refactoring, and persistent global graph maintenance are reported as
-separate capabilities rather than hidden in the 26-point score. Code-health
+separate capabilities rather than hidden in the 30-point score. Code-health
 conformance covers evidence and policy honesty; it does not award a pass merely
 for producing more warnings.

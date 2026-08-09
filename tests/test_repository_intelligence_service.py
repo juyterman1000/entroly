@@ -17,6 +17,8 @@ from entroly.repository_intelligence import (
 from entroly.repository_intelligence.mcp import create_repository_mcp_server
 from entroly.repository_intelligence.service import UnknownChangedPaths
 
+FAKE_LSP_SERVER = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
+
 
 def _write(root: Path, path: str, text: str) -> None:
     target = root / path
@@ -231,6 +233,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_code_health",
         "repository_rename_apply",
         "repository_rename_preview",
+        "repository_lsp_rename_preview",
         "repository_map",
         "repository_runtime_overlay",
         "repository_semantic_overlay",
@@ -349,3 +352,38 @@ def test_mcp_refactor_apply_requires_ack_and_refreshes_index(tmp_path: Path, mon
     assert "perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
     summary = json.loads(mcp.tools["repository_summary"]())
     assert summary["index_digest"] == applied["refresh"]["index_digest"]
+
+
+def test_mcp_lsp_command_is_operator_configured_not_caller_controlled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _project(tmp_path)
+    monkeypatch.setenv(
+        "ENTROLY_LSP_COMMAND_JSON",
+        json.dumps([sys.executable, str(FAKE_LSP_SERVER)]),
+    )
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    payload = json.loads(mcp.tools["repository_lsp_rename_preview"](
+        "execute", "perform", "python", 5.0, 100,
+    ))
+    assert payload["schema_version"] == "entroly.lsp-rename-preview.v1"
+    assert payload["plan"]["resolution"] == "resolved"
+    assert payload["orchestration"]["process"]["shell"] is False
+    assert payload["receipt"]["external_process_network_control"] == "not-enforced"
+
+
+def test_mcp_lsp_preview_fails_visibly_when_operator_did_not_configure_command(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _project(tmp_path)
+    monkeypatch.delenv("ENTROLY_LSP_COMMAND_JSON", raising=False)
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    payload = json.loads(mcp.tools["repository_lsp_rename_preview"](
+        "execute", "perform", "python",
+    ))
+    assert payload["error"] == "verified_refactor_failed"
+    assert "operator must set" in payload["detail"]

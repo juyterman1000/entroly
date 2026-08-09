@@ -267,3 +267,37 @@ This is not equivalent to compiler-complete refactoring. Dynamic lookup,
 reflection, strings, generated code, macro expansion, non-call references, and
 external consumers may remain. The mandatory acknowledgement exists because a
 hash can make an incomplete plan tamper-evident but cannot make it complete.
+
+### Operator-configured LSP orchestration
+
+CLI users can explicitly select a local language server with a JSON argument
+array stored in a file:
+
+```powershell
+python -m entroly.repository_intelligence --root . lsp-rename-preview `
+  --symbol "payments.service.charge_card" `
+  --new-name authorize_card `
+  --language-id python `
+  --command-json lsp-command.json
+```
+
+For MCP, the operator—not the model caller—must set
+`ENTROLY_LSP_COMMAND_JSON` before starting the repository server. The tool
+accepts symbol, new name, language ID, timeout, and result bound; it cannot
+replace or append executable arguments. If the environment variable is absent
+or malformed, orchestration fails visibly without launching a process.
+
+The bounded client launches without a shell, strips non-operational environment
+variables, negotiates UTF-16 positions, handles common server capability and
+configuration requests, limits total time/messages/output/relationships, and
+accepts only existing `file:` URIs under the fixed workspace. Returned ranges
+still pass through `repository_semantic_overlay` before entering the committed
+rename plan. Stderr content is never returned; only its byte count and digest
+are reported.
+
+Entroly itself performs zero remote calls in this flow. The configured language
+server is external executable code: Entroly does not sandbox it and cannot
+enforce or attest its network, filesystem, telemetry, plugin, or configuration
+behavior. Operators should use a trusted server and their normal OS/container
+controls. Current orchestration requests references for one symbol; broader
+LSP operations remain future work.

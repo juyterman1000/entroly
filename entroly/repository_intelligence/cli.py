@@ -121,6 +121,17 @@ def _parser() -> argparse.ArgumentParser:
     rename_apply.add_argument("--plan-json", required=True)
     rename_apply.add_argument("--expected-plan-sha", required=True)
     rename_apply.add_argument("--acknowledge-incomplete", action="store_true")
+
+    lsp_preview = subcommands.add_parser(
+        "lsp-rename-preview",
+        help="run an explicitly configured LSP and build a no-write rename plan",
+    )
+    lsp_preview.add_argument("--symbol", required=True)
+    lsp_preview.add_argument("--new-name", required=True)
+    lsp_preview.add_argument("--language-id", required=True)
+    lsp_preview.add_argument("--command-json", required=True)
+    lsp_preview.add_argument("--timeout-seconds", type=float, default=15.0)
+    lsp_preview.add_argument("--max-relationships", type=int, default=10_000)
     return parser
 
 
@@ -256,6 +267,30 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 acknowledge_incomplete=args.acknowledge_incomplete,
             )
             payload["command"] = "rename-apply"
+            return 0, payload
+        if args.command == "lsp-rename-preview":
+            command_path = Path(args.command_json).expanduser().resolve(strict=True)
+            if command_path.stat().st_size > 64 * 1024:
+                raise ValueError("LSP command JSON must be at most 64 KiB")
+            command = json.loads(command_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(command, list)
+                or not 1 <= len(command) <= 32
+                or any(
+                    not isinstance(item, str) or not item or len(item) > 4096
+                    for item in command
+                )
+            ):
+                raise ValueError("LSP command JSON must contain 1 to 32 strings")
+            payload = service.lsp_rename_preview(
+                args.symbol,
+                args.new_name,
+                command=command,
+                language_id=args.language_id,
+                timeout_seconds=args.timeout_seconds,
+                max_relationships=args.max_relationships,
+            )
+            payload["command"] = "lsp-rename-preview"
             return 0, payload
         payload = service.tests(args.changed, limit=args.limit)
         payload["command"] = "tests"
