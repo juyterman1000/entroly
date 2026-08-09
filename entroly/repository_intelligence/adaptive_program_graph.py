@@ -1,7 +1,7 @@
 """Demand-driven, proof-carrying program graph across programming languages.
 
 This layer composes Entroly's universal semantic IR with the existing verified
-Python CFG/data-flow engines.  It intentionally does not pretend every language
+Python CFG/data-flow engines. It intentionally does not pretend every language
 has equal semantic depth: every selected file reports the strongest verified
 semantic level currently available, while the agent-facing graph schema stays
 stable as stronger compiler/LSP/flow adapters are added.
@@ -143,13 +143,19 @@ def build_adaptive_program_graph(
     max_semantic_edges: int = 50_000,
     program_graph_limit: int = 2_000,
     interprocedural_depth: int = 3,
+    include_deep_semantics: bool = True,
 ) -> dict[str, object]:
     """Materialize only the program facts needed for one task.
 
-    The graph has a stable cross-language contract.  Universal parser facts are
+    The graph has a stable cross-language contract. Universal parser facts are
     always evidence-classified; deeper CFG/data-flow facts are attached only
-    when an adapter can verify them.  Missing depth is an explicit capability
+    when an adapter can verify them. Missing depth is an explicit capability
     boundary, never a fabricated edge.
+
+    ``include_deep_semantics=False`` is an internal composition mode used by
+    the existing program-slice surface, which already materializes its own
+    verified Python CFG/data-flow payloads. It avoids duplicate work while
+    preserving the same universal semantic envelope.
     """
     root = root.expanduser().resolve(strict=True)
     clean_query = query.strip()
@@ -240,31 +246,32 @@ def build_adaptive_program_graph(
     adapter_boundaries: list[dict[str, str]] = []
     for symbol in selected_symbols:
         if _deep_adapter_available(symbol):
-            program = build_verified_program_graph(
-                root,
-                index,
-                symbol.symbol_id,
-                index_digest=index_digest,
-                limit=max(16, min(int(program_graph_limit), 10_000)),
-            )
-            inter = build_verified_interprocedural_flow(
-                root,
-                index,
-                symbol.symbol_id,
-                index_digest=index_digest,
-                direction="both",
-                max_depth=max(0, min(int(interprocedural_depth), 12)),
-                max_call_edges=2_000,
-                max_flow_edges=20_000,
-                max_nodes=20_000,
-            )
-            deep_semantics.append({
-                "symbol_id": symbol.symbol_id,
-                "language": symbol.language,
-                "semantic_level": "flow",
-                "program_graph": program,
-                "interprocedural_flow": inter,
-            })
+            if include_deep_semantics:
+                program = build_verified_program_graph(
+                    root,
+                    index,
+                    symbol.symbol_id,
+                    index_digest=index_digest,
+                    limit=max(16, min(int(program_graph_limit), 10_000)),
+                )
+                inter = build_verified_interprocedural_flow(
+                    root,
+                    index,
+                    symbol.symbol_id,
+                    index_digest=index_digest,
+                    direction="both",
+                    max_depth=max(0, min(int(interprocedural_depth), 12)),
+                    max_call_edges=2_000,
+                    max_flow_edges=20_000,
+                    max_nodes=20_000,
+                )
+                deep_semantics.append({
+                    "symbol_id": symbol.symbol_id,
+                    "language": symbol.language,
+                    "semantic_level": "flow",
+                    "program_graph": program,
+                    "interprocedural_flow": inter,
+                })
         else:
             adapter_boundaries.append({
                 "symbol_id": symbol.symbol_id,
@@ -309,7 +316,8 @@ def build_adaptive_program_graph(
             "materialization": "query-time-selected-files-only",
             "universal_layer": "exact-source-plus-parser-evidence",
             "deep_adapter_policy": "verified-adapters-only",
-            "missing-adapter_behavior": "report-boundary-never-invent-flow",
+            "deep_semantics_materialized": bool(include_deep_semantics),
+            "missing_adapters_behavior": "report-boundary-never-invent-flow",
             "learned_facts_allowed": False,
             "remote_calls": 0,
         },
