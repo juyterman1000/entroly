@@ -2,13 +2,13 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
+<h1 align="center">Entroly — Verified Code Intelligence + Context Assurance for AI Agents</h1>
 
-<p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
-Select the highest-value evidence first, compress it, keep originals recoverable, and emit a receipt — without rewriting your codebase or agent architecture.</p>
+<p align="center"><b>Advanced repository intelligence that finds, verifies, budgets, and preserves the code evidence an AI agent actually needs.</b><br>
+AST and Tree-sitter structure, dependency and call graphs, interprocedural flow, architecture analysis, semantic change intelligence, recoverable compression, and tamper-evident receipts — in one local-first context system.</p>
 
 <p align="center">
-  <sub>Entroly is a local-first Context OS: content-addressed evidence, recoverable compression, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
+  <sub>Entroly is a local-first Context OS and verified code-intelligence layer for AI coding agents: content-addressed evidence, repository understanding, recoverable compression, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 <p align="center"><sub>~72,000 combined PyPI + npm downloads.</sub></p>
 
 <p align="center">
-  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#advanced-code-intelligence-for-ai-agents">Code intelligence</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
 </p>
 
 ---
@@ -36,17 +36,17 @@ AI coding assistants have a memory limit. Hand one your whole codebase and it
 gets slow, expensive, and distracted — like giving someone a 500-page manual
 when they only needed page 47.
 
-**Entroly finds page 47.**
+**Entroly finds page 47 — and can prove why it is page 47.**
 
-It sits between your code and the AI, reads everything, and passes along only
-the parts that matter for the question actually being asked. Three things make
-that safe to do:
+It sits between your code and the AI, builds a bounded understanding of the
+repository, selects the evidence that matters for the current task, and passes
+along only the useful context. Three things make that safe to do:
 
 |  |  |
 |---|---|
-| 💰 **Your bill goes down** | Fewer words sent to the AI means a smaller invoice. How much depends on the job — see the [real numbers](#benchmarks) below. |
-| 🔍 **Nothing is lost** | Whatever Entroly sets aside is kept and can be pulled back *exactly* as it was, character for character. |
-| 🧾 **You can check its work** | Every decision comes with a receipt: what was kept, what was left out, and why. |
+| 🧠 **It understands repository structure** | AST/parser-backed declarations, calls, dependencies, architecture, change relationships, and verified source spans help agents reason over code instead of treating a repo as a bag of text. |
+| 🔍 **Nothing is silently lost** | Whatever Entroly sets aside is kept and can be pulled back *exactly* as it was, character for character. |
+| 🧾 **You can check its work** | Every decision can carry evidence: what was selected, what was omitted, source hashes, ambiguity, and what remains unproven. |
 
 **Do I have to change my code?** No. Entroly works with the tools you already
 use — Claude Code, Cursor, Copilot and 30+ others — and runs in the background.
@@ -55,6 +55,47 @@ use — Claude Code, Cursor, Copilot and 30+ others — and runs in the backgrou
 [Install](#install) section below run entirely on your own machine, with no API
 key, and show you real numbers on your own project before you connect anything
 paid.
+
+---
+
+## Advanced Code Intelligence for AI Agents
+
+**Entroly is a verified code-intelligence and repository-understanding engine for AI coding agents.** It combines parser-backed AST structure with graph reasoning, source verification, architecture intelligence, change analysis, and budget-aware context selection so an agent gets the *right code evidence*, not merely more code.
+
+Entroly is built to be **one of the world's most advanced open-source code-intelligence systems for AI agents**, with an unusual emphasis on evidence, freshness, bounded reasoning, and fail-closed behavior. Instead of turning a heuristic guess into a fact, Entroly keeps ambiguity and omissions visible and attaches exact source identities to the relationships it claims.
+
+### What makes Entroly code intelligence advanced?
+
+| Intelligence layer | What Entroly does |
+|---|---|
+| **AST + parser intelligence** | Native Python AST analysis plus an open Tree-sitter language registry for parser-backed declarations, recognized call sites, exact byte spans, signatures, and structural profiles. Missing grammars fall back conservatively instead of pretending parsing succeeded. |
+| **Repository graph intelligence** | Builds symbol, import, call, containment, dependency, reverse-impact, neighborhood, shortest-path, and relatedness views with explicit unresolved and ambiguous evidence. |
+| **Typed call resolution** | Distinguishes same-name methods using receiver/type evidence where it is actually known and refuses ambiguous dispatch instead of guessing. |
+| **Interprocedural reasoning** | Source-verified Python argument→parameter and explicit return→result value-flow summaries cross function boundaries while preserving the exact source spans that justify every relationship. |
+| **Architecture intelligence** | Computes SCCs/cycles, condensation layers, communities, entry-to-foundation routes, hotspots, architecture diffs, and deterministic witnesses rather than producing an unexplained architecture score. |
+| **Semantic change intelligence** | Uses Git-object semantic diffs, source hashes, architecture diffs, portable graph snapshots, freshness checks, and incremental invalidation so stale analysis is not silently reused. |
+| **Build/test topology** | Maps repository components from verified manifests across Cargo, Python, Node, Go, Zig, CMake, Maven/Gradle, Bazel, Swift, Elixir, Ruby, PHP, Dart, Clojure, Haskell, Meson, Make, and more, while explicitly distinguishing manifest ancestry from proven build inclusion. |
+| **LSP-enriched intelligence** | An operator-configured Language Server can add bounded definitions, references, overrides, and workspace relationships; Entroly verifies returned source ranges before using them as evidence. |
+| **Verified refactoring intelligence** | Two-phase rename, safe-delete, and Python module-move planning bind edits to exact preimages, reject stale/tampered plans, preserve ambiguity, validate staged syntax, and make rollback failures visible. |
+| **Evidence-aware code context** | Code slices combine structural graph evidence with token budgets, protected dependency signatures, exact source-span digests, recoverability, and tamper-evident receipts. |
+| **Local-first trust model** | Repository analysis is local by default; parser acquisition is explicit, air-gap mode wins, and external-process network behavior is labeled rather than silently claimed safe. |
+
+### Why this matters for AI coding agents
+
+Most retrieval systems answer **“which text looks similar?”** Entroly can also answer higher-order repository questions such as:
+
+- *Where is this symbol defined, called, imported, or contained?*
+- *Which implementation can this typed call resolve to — and where is it ambiguous?*
+- *What code can be affected if this function or module changes?*
+- *What is the shortest verified relationship path between these symbols?*
+- *Which components form cycles, architectural layers, communities, routes, or hotspots?*
+- *Which source evidence is stale, missing, unresolved, truncated, or outside the current token budget?*
+- *Can this rename/delete/move be planned without silently editing ambiguous or stale references?*
+- *Which exact evidence should an AI agent receive under a fixed context budget?*
+
+That combination is why Entroly is more than a context compressor. It is a **code-intelligence control plane for AI agents**: understand the repository, select evidence, verify freshness, preserve provenance, then compress only after the right context has been chosen.
+
+**Evidence, not slogans:** the repository includes a [39-dimension code-intelligence conformance protocol](benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md) covering structural correctness, typed dispatch, call/dependency graphs, value flow, LSP ranges, cache invalidation, architecture reasoning, refactoring safety, stale-source rejection, and tamper evidence. The design and limitations are documented in [Verified Code Context](docs/verified-code-context.md) and [Universal Code Intelligence](docs/research/universal-code-intelligence.md).
 
 ---
 
@@ -97,7 +138,7 @@ Rust binary, and uninstall steps: [Engine & install options](docs/DETAILS.md#eng
 | 🟢 **"I just want it on."** *(pip / Python user)* | `pip install -U entroly && entroly go` | Auto-detects your editor, wraps your agent, opens a dashboard showing tokens before and after |
 | **"I use Node, not Python."** *(npm user)* | `npm install -g entroly && entroly init` | Same engine, nothing Python required |
 | **"I want one binary, no runtime."** *(Rust user)* | `cargo build --release --bin entroly-rs --features proxy` (from `entroly-core/`) | A single native program with no dependencies |
-| **"I use Claude Code / Cursor / Windsurf / VS Code."** *(MCP user)* | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your editor gets compression, receipts, and recovery as built-in tools — access expires on its own, and you change zero code |
+| **"I use Claude Code / Cursor / Windsurf / VS Code."** *(MCP user)* | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your editor gets compression, receipts, recovery, and repository intelligence as built-in tools — access expires on its own, and you change zero code |
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
@@ -192,7 +233,7 @@ Recovery, latency, and head-to-head frontier results — [context-cap retention]
 - **Doesn't wreck your caching** — keeps the unchanging parts of your prompt stable so your provider's discount for repeated text still applies. <sub>Stable system/history bytes stay ahead of changing context.</sub>
 - **Rescues sessions before they crash** — when a conversation grows too big, it trims recoverable output instead of letting the provider reject the request mid-task. <sub>Proxy-side compaction of tool output.</sub>
 - **Lets agents choose the evidence fidelity** — `smart_read` supports exact full text, inclusive line ranges, whole-file diffs, budget-aware automatic reads, and lightweight multi-language structure outlines. Exact same-session re-reads collapse to an opaque content handle; `fresh=true` restores the rendered text. <sub>Source-, contract-, and output-digest guarded; structure fails open to full source when no useful outline is available.</sub>
-- **Builds verified code context** — an optional local-first parser pack maps 27+ language grammars and emits exact declaration and recognized call-site spans. Proof-carrying partial slices combine budgeted source, typed graph queries, architecture layers/communities/routes, Git-object semantic diffs, HTTP endpoint mounts, portable graph snapshots, and intra- and interprocedural Python value-flow summaries; structural health and two-phase rename, safe-delete, or Python module-move plans use the same source hashes, ambiguity, omissions, and tamper-evident receipts. <sub>Optional learned scores may rank existing symbols but cannot create facts or raise confidence. The cross-function layer covers verified argument/parameter and explicit return/result bindings, not whole-program heap or side-effect flow. An operator-configured LSP can add bounded workspace references; Entroly verifies returned ranges but cannot enforce the external server's network behavior. Community and hotspot scores are disclosed heuristics, and refactors do not claim compiler-complete references; [design and limitations](docs/verified-code-context.md).</sub>
+- **Builds verified code context** — an optional local-first parser pack uses an open language registry and emits exact declaration and recognized call-site spans. Proof-carrying partial slices combine budgeted source, typed graph queries, architecture layers/communities/routes, Git-object semantic diffs, build/test topology, portable graph snapshots, and intra- and interprocedural Python value-flow summaries; structural health and two-phase rename, safe-delete, or Python module-move plans use the same source hashes, ambiguity, omissions, and tamper-evident receipts. <sub>Optional learned scores may rank existing symbols but cannot create facts or raise confidence. The cross-function layer covers verified argument/parameter and explicit return/result bindings, not whole-program heap or side-effect flow. An operator-configured LSP can add bounded workspace references; Entroly verifies returned ranges but cannot enforce the external server's network behavior. Community and hotspot scores are disclosed heuristics, and refactors do not claim compiler-complete references; [design and limitations](docs/verified-code-context.md).</sub>
 - **Understands command outcomes** — shell profiles preserve invocations, failures, and terminal summaries under tight budgets. <sub>Unknown commands retain deterministic fallbacks and exact recovery.</sub>
 - **Fits existing Python gateways** — metadata-safe LangChain messages/documents, a LiteLLM pre-call hook, and bounded ASGI middleware reuse the same budgeted message compressor without changing tool contracts. <sub>Framework dependencies remain optional.</sub>
 - **Can route cheap work to cheap models** — optional, and when it isn't confident it always picks the stronger model rather than gambling. <sub>Fail-closed routing; local ranking adapts from recorded outcomes, no embeddings API.</sub>
@@ -219,7 +260,7 @@ Status describes integration depth, not a savings guarantee — provider-observe
 
 ## When to use it · when to skip it
 
-**Great fit:** large repos where the agent only sees a few files at a time · chatty multi-turn agents (cache alignment compounds savings) · anywhere you want answers checked against evidence · cutting a real, growing AI bill.
+**Great fit:** large repositories where an AI agent needs repository understanding, dependency-aware code context, architecture reasoning, or verified source evidence · chatty multi-turn agents (cache alignment compounds savings) · anywhere you want answers checked against evidence · cutting a real, growing AI bill.
 
 **Skip it:** tiny repos or short prompts that already fit the budget (Entroly passes them through unchanged) · judgment-heavy tasks where you always want the full flagship model.
 
@@ -239,11 +280,24 @@ description of every command: [command reference](docs/DETAILS.md#command-refere
 ## Common questions
 
 <details>
+<summary><b>Is Entroly only a context compressor?</b></summary>
+<br>
+
+No. Entroly includes a local-first **code-intelligence and repository-intelligence layer** for AI agents: AST/parser-backed structure, symbol and call relationships, dependency graphs, typed dispatch, architecture analysis, semantic Git/change intelligence, source-verified interprocedural flow, LSP-enriched relationships, build/test topology, verified refactoring plans, evidence receipts, and budget-aware code-context selection. Compression happens after evidence selection; it is one layer of the system, not the whole product.
+</details>
+
+<details>
+<summary><b>What makes Entroly different from ordinary code search or RAG?</b></summary>
+<br>
+
+Text search and RAG are primarily similarity systems. Entroly can combine lexical relevance with **structural, relational, and source-verified evidence**: where a symbol is defined, which calls are resolvable, what depends on what, which paths are ambiguous, what changed, whether the indexed source is still fresh, and which evidence can fit safely inside the model's context budget. Where it cannot prove a relationship, it keeps that uncertainty visible instead of silently manufacturing certainty.
+</details>
+
+<details>
 <summary><b>Will this change my code or my files?</b></summary>
 <br>
 
-No. Entroly reads your files and decides what to send to the AI. It never edits,
-moves, or deletes anything in your project.
+No. Entroly's context-selection and analysis paths do not silently edit your project. Explicit refactoring operations use preview/plan/apply contracts with source verification and tamper checks before mutation.
 </details>
 
 <details>
@@ -253,7 +307,7 @@ moves, or deletes anything in your project.
 No. All the selecting, compressing, and checking happens on your own machine.
 Entroly makes no outbound calls of its own — the only thing that leaves your
 computer is the request you were already sending to your AI provider, just
-smaller. There are no analytics on by default.
+smaller. There are no analytics on by default. Optional external tools such as an operator-configured language server keep their own network boundary, which Entroly reports rather than hiding.
 </details>
 
 <details>
@@ -271,11 +325,7 @@ guessing.
 <summary><b>How much money will this actually save me?</b></summary>
 <br>
 
-Honestly: it depends on your project, and anyone who gives you a single number
-without seeing your work is guessing. Run `entroly simulate` in your project —
-it's free, needs no API key, and estimates the reduction on *your* files. If
-your prompts are already small, Entroly passes them through untouched and saves
-you nothing, which it will tell you.
+It depends on your project, and anyone who gives you a single number without seeing your work is guessing. Run `entroly simulate` in your project — it's free, needs no API key, and estimates the reduction on *your* files. If your prompts are already small, Entroly passes them through untouched and saves you nothing, which it will tell you.
 </details>
 
 <details>
@@ -304,6 +354,8 @@ or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 
 | Word | What it actually means |
 |---|---|
+| **AST** | Abstract Syntax Tree — parser-produced code structure used to identify declarations, calls, scopes, and other syntax relationships more reliably than plain text matching. |
+| **Code intelligence** | Structured understanding of symbols, calls, dependencies, architecture, changes, and source evidence that helps an AI agent reason about a repository. |
 | **Token** | Roughly ¾ of a word. AI providers charge per token, so "fewer tokens" = smaller bill. |
 | **Context** | Everything you send the AI along with your question — your code, past messages, documents. |
 | **Context window** | The AI's memory limit. Go over it and things get dropped or rejected. |
@@ -321,6 +373,9 @@ or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 
 ## Docs & community
 
+- **[Verified Code Context](docs/verified-code-context.md)** — parser-backed repository intelligence, typed graphs, architecture, value flow, LSP enrichment, source verification, and refactoring contracts.
+- **[Code-intelligence conformance](benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md)** — 39 explicit structural, semantic, repository-understanding, freshness, safety, and evidence dimensions.
+- **[Universal Code Intelligence](docs/research/universal-code-intelligence.md)** — design direction for language-open, evidence-backed repository understanding.
 - **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat, including [Context Commit conformance](benchmarks/results/context_commit_conformance.json) (128/128 deterministic replay, 576/576 exact recovery, 768/768 tamper detection).
 - **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, npm/WASM, verification, memory, security.
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, 3-resolution compression, provenance, command reference.
@@ -333,9 +388,9 @@ or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 - **[Cookbook](cookbook/README.md)** — copy-paste recipes.
 - **[Discord](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
-> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
+> Compressing a *bad* selection is still a bad selection. Entroly understands and ranks repository evidence first, then compresses — so the model gets verified structure, not just fewer tokens.
 
-<p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
+<p align="center"><sub>Apache-2.0 · local-first · verified code intelligence · recoverable context · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>
 
 <!-- mcp-name: io.github.juyterman1000/entroly -->
