@@ -81,6 +81,13 @@ def _parser() -> argparse.ArgumentParser:
     program.add_argument("--symbol", required=True)
     program.add_argument("--limit", type=int, default=1_000)
 
+    health = subcommands.add_parser(
+        "health",
+        help="audit verified complexity, cycles, coupling, and navigability",
+    )
+    health.add_argument("--max-findings", type=int, default=500)
+    health.add_argument("--max-symbols", type=int, default=2_000)
+
     runtime = subcommands.add_parser(
         "runtime",
         help="bind bounded trace events to verified source locations",
@@ -161,6 +168,13 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
         if args.command == "program":
             payload = service.program_graph(args.symbol, limit=args.limit)
             payload["command"] = "program"
+            return 0, payload
+        if args.command == "health":
+            payload = service.code_health(
+                max_findings=args.max_findings,
+                max_symbols=args.max_symbols,
+            )
+            payload["command"] = "health"
             return 0, payload
         if args.command == "runtime":
             events_path = Path(args.events_json).expanduser().resolve(strict=True)

@@ -116,6 +116,18 @@ def test_program_returns_verified_control_and_data_flow(tmp_path: Path) -> None:
     assert payload["receipt"]["freshness"].startswith("verified")
 
 
+def test_health_returns_verified_policy_and_commitment(tmp_path: Path) -> None:
+    _project(tmp_path)
+    code, payload = run([
+        "--root", str(tmp_path), "health", "--max-findings", "10",
+    ])
+    assert code == 0
+    assert payload["schema_version"] == "entroly.verified-code-health.v1"
+    assert payload["command"] == "health"
+    assert payload["policy"]["interpretation"] == "ranking-and-review-aid-not-a-proof-of-defect"
+    assert payload["receipt"]["code_health_sha256"]
+
+
 def test_runtime_binds_json_events_without_values(tmp_path: Path) -> None:
     _project(tmp_path)
     events = tmp_path / "events.json"

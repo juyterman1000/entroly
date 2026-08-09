@@ -69,6 +69,11 @@ failures remain in the denominator.
 16. Exact evidence digest for every claimed source span.
 17. Value-free runtime/coverage observation binding.
 18. Bounded token estimate and visible budget omissions.
+19. Parser-derived health findings carry exact source-span evidence.
+20. Stale files are omitted from health reports rather than graded.
+21. Import cycles and unresolved-call risk remain separately inspectable.
+22. Health-policy thresholds, score formula, coverage, and report commitment
+    are machine-verifiable.
 
 ## Reporting rule
 
@@ -76,6 +81,7 @@ Reports show each dimension and evidence pointer separately. An overall lead may
 be claimed only for a named scope when one implementation has more
 `executed-pass` results in that scope and no correctness-critical regression
 (ambiguity, stale source, or evidence tampering). Language breadth, native LSP
-execution/refactoring, code-health analysis, and persistent global graph
-maintenance are reported as separate capabilities rather than hidden in the
-18-point score.
+execution/refactoring, and persistent global graph maintenance are reported as
+separate capabilities rather than hidden in the 22-point score. Code-health
+conformance covers evidence and policy honesty; it does not award a pass merely
+for producing more warnings.

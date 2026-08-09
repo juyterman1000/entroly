@@ -79,6 +79,26 @@ class StructuralCall:
     evidence_sha256: str
 
 
+@dataclass(frozen=True)
+class StructuralProfile:
+    """Parser-derived control-shape metrics for one declaration.
+
+    These are language-neutral structural metrics, not a type-system claim.
+    The exact declaration range lets callers bind every metric back to source.
+    """
+
+    name: str
+    kind: str
+    start_byte: int
+    end_byte: int
+    decision_points: int
+    cyclomatic_complexity: int
+    cognitive_complexity: int
+    max_control_nesting: int
+    parameter_count: int
+    return_points: int
+
+
 def language_for_path(file_path: str) -> str | None:
     return LANGUAGE_BY_SUFFIX.get(Path(file_path).suffix.lower())
 
@@ -234,6 +254,110 @@ def _spans_from_tree(raw: bytes, tree: Any, max_nodes: int) -> list[StructuralSp
             end_byte=end,
         ))
     return spans
+
+
+_CONTROL_TYPES = frozenset({
+    "if_statement", "if_expression", "elif_clause", "unless_expression",
+    "for_statement", "for_expression", "enhanced_for_statement",
+    "while_statement", "while_expression", "do_statement",
+    "catch_clause", "except_clause", "rescue", "rescue_clause",
+    "case_statement", "case_clause", "switch_case", "match_arm",
+    "when_entry", "conditional_expression", "ternary_expression",
+})
+_PROFILE_DECLARATION_TYPES = frozenset(
+    node_type
+    for node_type in _DECLARATION_TYPES
+    if any(hint in node_type for hint in ("function", "method", "constructor"))
+)
+_RETURN_TYPES = frozenset({
+    "return_statement", "yield_expression", "yield_statement",
+    "throw_statement", "raise_statement",
+})
+_PARAMETER_CONTAINER_TYPES = frozenset({
+    "parameters", "formal_parameters", "parameter_list",
+    "lambda_parameters", "closure_parameters",
+})
+
+
+def _profile_for_node(node: Any, raw: bytes) -> StructuralProfile | None:
+    name_node = _name_node(node)
+    if name_node is None:
+        return None
+    name = raw[int(name_node.start_byte):int(name_node.end_byte)].decode(
+        "utf-8", errors="surrogateescape"
+    ).strip()
+    if not name:
+        return None
+
+    decisions = 0
+    cognitive = 0
+    max_nesting = 0
+    returns = 0
+    parameters = 0
+    stack: list[tuple[Any, int]] = [(node, 0)]
+    while stack:
+        current, nesting = stack.pop()
+        node_type = str(getattr(current, "type", ""))
+        if current is not node and node_type in _DECLARATION_TYPES:
+            # A nested declaration receives its own profile.  Charging it to
+            # the enclosing declaration both double-counts risk and turns
+            # large class/impl containers into quadratic walks.
+            continue
+        is_control = current is not node and node_type in _CONTROL_TYPES
+        child_nesting = nesting
+        if is_control:
+            decisions += 1
+            cognitive += 1 + nesting
+            child_nesting = nesting + 1
+            max_nesting = max(max_nesting, child_nesting)
+        if current is not node and node_type in _RETURN_TYPES:
+            returns += 1
+        if node_type in _PARAMETER_CONTAINER_TYPES:
+            named_children = list(getattr(current, "named_children", ()))
+            parameters = max(parameters, sum(
+                1
+                for child in named_children
+                if "comment" not in str(getattr(child, "type", ""))
+            ))
+        children = list(getattr(current, "named_children", ()))
+        stack.extend((child, child_nesting) for child in reversed(children))
+
+    node_type = str(getattr(node, "type", ""))
+    return StructuralProfile(
+        name=name,
+        kind=_kind(node_type),
+        start_byte=int(getattr(node, "start_byte", 0)),
+        end_byte=int(getattr(node, "end_byte", 0)),
+        decision_points=decisions,
+        cyclomatic_complexity=1 + decisions,
+        cognitive_complexity=cognitive,
+        max_control_nesting=max_nesting,
+        parameter_count=parameters,
+        return_points=returns,
+    )
+
+
+def extract_structural_profiles(
+    source: str,
+    file_path: str,
+    *,
+    max_bytes: int = 2 * 1024 * 1024,
+    max_nodes: int = 100_000,
+) -> list[StructuralProfile] | None:
+    """Return parser-backed declaration profiles, or ``None`` if unavailable."""
+    parsed = _parse_source(source, file_path, max_bytes)
+    if parsed is None:
+        return None
+    raw, tree = parsed
+    profiles: list[StructuralProfile] = []
+    for node in _walk(tree.root_node, max_nodes):
+        node_type = str(getattr(node, "type", ""))
+        if node_type not in _PROFILE_DECLARATION_TYPES or bool(getattr(node, "is_error", False)):
+            continue
+        profile = _profile_for_node(node, raw)
+        if profile is not None and 0 <= profile.start_byte < profile.end_byte <= len(raw):
+            profiles.append(profile)
+    return sorted(profiles, key=lambda item: (item.start_byte, item.end_byte, item.name)) or None
 
 
 def _call_target(node: Any, raw: bytes) -> str:

@@ -39,6 +39,7 @@ __all__ = [
     "verify_runtime_overlay_commitment",
     "verify_semantic_overlay_commitment",
     "verify_repository_map_commitment",
+    "build_verified_code_health", "verify_code_health_commitment",
 ]
 
 
@@ -97,6 +98,10 @@ from .semantic_overlay import (  # noqa: E402
 from .repository_map import (  # noqa: E402
     build_verified_repository_map,
     verify_repository_map_commitment,
+)
+from .verified_health import (  # noqa: E402
+    build_verified_code_health,
+    verify_code_health_commitment,
 )
 from .verified_context import (  # noqa: E402
     build_symbol_graph,

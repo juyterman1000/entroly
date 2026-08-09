@@ -85,6 +85,29 @@ fail open and are atomically rebuilt. File discovery and global relationship
 resolution still run on every index build; this is an incremental parse cache,
 not a claim of fully incremental compiler analysis.
 
+Structural health is available from the same immutable repository snapshot:
+
+```powershell
+python -m entroly.repository_intelligence --root . health `
+  --max-findings 500 `
+  --max-symbols 2000
+```
+
+The `repository_code_health` MCP tool exposes the same bounded report. Python
+metrics come from the standard AST; other languages are profiled only when a
+local tree-sitter grammar produced an exact declaration span. The report
+includes cyclomatic decision count, a language-neutral cognitive-complexity
+approximation, control nesting, parameter and symbol-size thresholds, import
+strongly connected components, coupling, parser coverage, and unresolved-call
+reasons. Every symbol profile and finding carries its source and evidence
+digests. Files changed since indexing are omitted as `stale-index`.
+
+The grade is intentionally reproducible policy, not an oracle. The response
+publishes its thresholds and full formula, labels findings as review aids, and
+commits the entire report with `verify_code_health_commitment()`. A hash proves
+which bytes were analyzed; it does not prove that a threshold violation is a
+bug or that an unreferenced symbol is dead.
+
 ## What is verified
 
 Each selected fragment records:
@@ -174,6 +197,16 @@ recomputed from that snapshot rather than incrementally maintained.
 Interprocedural data flow,
 broader-language program graphs, and broad external task-quality benchmarks
 remain future work and must not be claimed as implemented.
+
+Structural health does not yet implement compiler-specific cognitive
+complexity standards, whole-program dead-code proof, semantic clone detection,
+or automatic refactoring. Import cycles are computed only from resolved index
+edges, and unresolved-call rate is shown separately so missing semantic edges
+cannot masquerade as a clean graph. On an August 8, 2026 local dogfood run of
+this checkout (928 indexed files, warm content-addressed parse cache), index
+loading took 1.61 seconds and health analysis took 7.81 seconds on the test
+machine; these are environment-specific engineering measurements, not a
+universal performance claim.
 
 External language servers and compiler indexers can supply definition,
 declaration, implementation, reference, type-definition, and override

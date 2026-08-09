@@ -62,6 +62,11 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - [STAVE implementation](https://github.com/juyterman1000/entroly/blob/main/entroly/verifiers/stave.py): Deterministic structural checks used by the default verifier.
 - [Context Receipt example](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.md): Human-readable record of context decisions.
 
+## Verified Code Intelligence
+
+- [Verified code context and code health](https://github.com/juyterman1000/entroly/blob/main/docs/verified-code-context.md): Local repository maps, task context, caller and Python program graphs, verified external semantic/runtime overlays, parser-derived structural health, import cycles, coupling, explicit ambiguity, exact evidence hashes, and tamper-evident receipts.
+- **Health command:** `python -m entroly.repository_intelligence --root . health` reports transparent parser-derived complexity, nesting, language coverage, cycles, coupling, and unresolved-call risk. Findings are review aids rather than defect proofs; stale files are omitted.
+
 ## Interfaces
 
 - [MCP package](https://www.npmjs.com/package/entroly-mcp): NPX bridge for MCP clients.

@@ -181,6 +181,20 @@ def create_repository_mcp_server(
             return _error(exc, "repository_program_graph")
 
     @mcp.tool()
+    def repository_code_health(
+        max_findings: int = 500,
+        max_symbols: int = 2_000,
+    ) -> str:
+        """Audit verified complexity, cycles, coupling, and navigability risk."""
+        try:
+            return _json(service.code_health(
+                max_findings=max(1, min(int(max_findings), 10_000)),
+                max_symbols=max(1, min(int(max_symbols), 20_000)),
+            ))
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return _error(exc, "repository_code_health")
+
+    @mcp.tool()
     def repository_runtime_overlay(
         events: list[dict[str, object]],
         producer: str = "external-trace",

@@ -228,6 +228,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_change_impact",
         "repository_summary",
         "repository_program_graph",
+        "repository_code_health",
         "repository_map",
         "repository_runtime_overlay",
         "repository_semantic_overlay",
@@ -268,6 +269,10 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert program["resolution"] == "resolved"
     assert program["receipt"]["remote_calls"] == 0
     assert str(tmp_path) not in json.dumps(program)
+    health = json.loads(mcp.tools["repository_code_health"]())
+    assert health["schema_version"] == "entroly.verified-code-health.v1"
+    assert health["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(health)
     runtime = json.loads(mcp.tools["repository_runtime_overlay"]([
         {"path": "pkg/source.py", "line": 1, "event": "call"},
     ]))

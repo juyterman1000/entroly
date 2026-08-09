@@ -16,6 +16,7 @@ from .repository_map import build_verified_repository_map
 from .runtime_overlay import build_verified_runtime_overlay
 from .semantic_overlay import build_verified_semantic_overlay
 from .verified_context import build_symbol_graph, build_verified_context
+from .verified_health import build_verified_code_health
 
 SERVICE_SCHEMA_VERSION = "entroly.repository-service.v2"
 _MAX_CHANGED_PATHS = 200
@@ -26,6 +27,8 @@ _MAX_TEST_CANDIDATES = 100
 _MAX_CONTEXT_TOKENS = 32_768
 _MAX_CONTEXT_FRAGMENTS = 100
 _MAX_MAP_ENTRIES = 1_000
+_MAX_HEALTH_FINDINGS = 10_000
+_MAX_HEALTH_SYMBOLS = 20_000
 
 
 class RepositoryIntelligenceError(ValueError):
@@ -351,6 +354,24 @@ class RepositoryIntelligenceService:
             index_digest=digest,
             token_budget=max(128, min(int(token_budget), _MAX_CONTEXT_TOKENS)),
             max_entries=max(1, min(int(max_entries), _MAX_MAP_ENTRIES)),
+        )
+        payload["generation"] = generation
+        return payload
+
+    def code_health(
+        self,
+        *,
+        max_findings: int = 500,
+        max_symbols: int = 2_000,
+    ) -> dict[str, object]:
+        """Return freshness-checked structural health and navigability evidence."""
+        index, digest, generation = self._snapshot()
+        payload = build_verified_code_health(
+            self.root,
+            index,
+            index_digest=digest,
+            max_findings=max(1, min(int(max_findings), _MAX_HEALTH_FINDINGS)),
+            max_symbols=max(1, min(int(max_symbols), _MAX_HEALTH_SYMBOLS)),
         )
         payload["generation"] = generation
         return payload
