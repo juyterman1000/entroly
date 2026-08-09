@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ..parser_compatibility import warn_if_incompatible_language_pack
 from .graph import analyze_change_impact, localize_tests, resolve_calls, resolve_imports
 from .models import (
     CallEdge,
@@ -113,7 +114,15 @@ def build_repository_index(
     root_path = Path(root).expanduser().resolve(strict=True)
     if not root_path.is_dir():
         raise NotADirectoryError(root_path)
+    parser_status = warn_if_incompatible_language_pack()
     parsed, diagnostics = scan_repository(root_path, policy)
+    if parser_status.installed and not parser_status.compatible:
+        version = parser_status.version or "unknown"
+        diagnostics.append(
+            "parser registry degraded: tree-sitter-language-pack "
+            f"{version} is below supported >={parser_status.minimum_version}; "
+            "language coverage may be materially reduced"
+        )
     symbols = {
         symbol.symbol_id: symbol
         for path in sorted(parsed)
