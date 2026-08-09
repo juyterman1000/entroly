@@ -55,32 +55,55 @@ jobs:
               {str(p.relative_to(REPO)).replace("\\\\", "/") for p in _tracked_python_files()}
           )
 
-          def signature_line(callee: str, rel: str) -> str:
+          def signature_evidence(callee: str, rel: str) -> tuple[str, tuple[str, ...]]:
               text = (REPO / rel).read_text(encoding="utf-8", errors="replace")
               lines = text.splitlines()
               tree = ast.parse(text)
+              target = None
               for node in tree.body:
                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
-                      return lines[node.lineno - 1].strip()
+                      target = node
+                      break
                   if isinstance(node, ast.ClassDef) and node.name == callee:
-                      for sub in node.body:
-                          if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == "__init__":
-                              return lines[sub.lineno - 1].strip()
-              raise RuntimeError(f"signature not found for {callee} in {rel}")
+                      target = next(
+                          (
+                              sub for sub in node.body
+                              if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))
+                              and sub.name == "__init__"
+                          ),
+                          None,
+                      )
+                      break
+              if target is None:
+                  raise RuntimeError(f"signature not found for {callee} in {rel}")
+              first = lines[target.lineno - 1].strip()
+              body_lineno = target.body[0].lineno if target.body else target.end_lineno
+              signature_lines = tuple(
+                  line.strip()
+                  for line in lines[target.lineno - 1 : max(target.lineno, body_lineno - 1)]
+                  if line.strip()
+              )
+              return first, signature_lines
 
           print(f"STEP1 pinned_ref={payload['pinned_ref']} probes={len(probes)} budget={BUDGET} seed={SEED}")
           for idx, probe in enumerate(probes, 1):
               pool = _pool_for(probe.task, corpus, 48, SEED)
               texts = {rel: _read(rel) for rel in pool}
               context = _context_for("qccr", probe, pool, texts, BUDGET)
-              sig = signature_line(probe.task.callee, probe.task.callee_file)
+              first_line, signature_lines = signature_evidence(
+                  probe.task.callee, probe.task.callee_file
+              )
               file_header = f"### {probe.task.callee_file}"
               delivered = file_header in context
-              present = sig in context
+              first_present = first_line in context
+              full_signature_present = all(line in context for line in signature_lines)
+              param_presence = tuple((param, param in context) for param in probe.params)
               print(
                   "STEP1_PROBE "
                   f"{idx} callee={probe.task.callee!r} file={probe.task.callee_file!r} "
-                  f"file_delivered={delivered} signature_present={present} "
-                  f"context_tokens={_tokens(context)} signature={sig!r}"
+                  f"file_delivered={delivered} def_line_present={first_present} "
+                  f"full_signature_present={full_signature_present} "
+                  f"gold_params={probe.params!r} gold_presence={param_presence!r} "
+                  f"context_tokens={_tokens(context)} signature_lines={signature_lines!r}"
               )
           PY
