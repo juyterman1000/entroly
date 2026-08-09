@@ -1,14 +1,34 @@
 """Bounded, deterministic repository intelligence.
 
-Python uses exact AST symbol ranges. Rust and JavaScript/TypeScript use
-conservative syntax recognition; ambiguous relationships are omitted rather
-than guessed. All paths remain workspace-relative and escaping symlinks are
-rejected.
+Repository intelligence is a base Entroly capability. Source files are mapped
+into a language-independent semantic representation; parser/compiler/LSP
+frontends strengthen evidence when available, while unknown languages retain a
+safe exact-source fallback. All paths remain workspace-relative and escaping
+symlinks are rejected.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from ..air_gap import air_gap_enabled
+
+
+def _configure_parser_policy() -> None:
+    """Make parser acquisition zero-friction without weakening air-gap mode.
+
+    The language-pack dependency is part of the base install. Missing grammars
+    may therefore be acquired lazily on first use unless the operator explicitly
+    disables downloads or Entroly is running in air-gap mode. An explicit
+    ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD value always wins outside air-gap mode.
+    """
+    if air_gap_enabled():
+        os.environ["ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD"] = "0"
+    else:
+        os.environ.setdefault("ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD", "1")
+
+
+_configure_parser_policy()
 
 from .graph import analyze_change_impact, localize_tests, resolve_calls, resolve_imports
 from .models import (
@@ -22,10 +42,24 @@ from .models import (
     UnresolvedCall,
 )
 from .parsers import scan_repository
+from .semantic_ir import (
+    SEMANTIC_IR_SCHEMA_VERSION,
+    EpistemicClass,
+    SemanticCapabilities,
+    SemanticEdge,
+    SemanticLevel,
+    SemanticNode,
+    SourceEvidence,
+    UniversalSemanticDocument,
+    build_universal_semantic_document,
+)
 
 __all__ = [
     "CallEdge", "FileRecord", "ImpactReport", "RepositoryIndex",
     "RepositoryLimits", "Symbol", "TestCandidate", "UnresolvedCall",
+    "SEMANTIC_IR_SCHEMA_VERSION", "EpistemicClass", "SemanticCapabilities",
+    "SemanticEdge", "SemanticLevel", "SemanticNode", "SourceEvidence",
+    "UniversalSemanticDocument", "build_universal_semantic_document",
     "analyze_change_impact",
     "build_repository_index", "localize_tests", "InvalidChangedPaths",
     "InvalidContextQuery", "InvalidSymbolQuery",
