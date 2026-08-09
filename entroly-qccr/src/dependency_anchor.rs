@@ -375,10 +375,7 @@ mod tests {
 
     #[test]
     fn resolves_relative_import_and_complete_signature() {
-        let sources = vec![
-            "file:pkg/api.py".to_string(),
-            "file:pkg/dep.py".to_string(),
-        ];
+        let sources = vec!["file:pkg/api.py".to_string(), "file:pkg/dep.py".to_string()];
         let texts = vec![
             "from .dep import target\n\ndef caller():\n    return target(1, 2)\n".to_string(),
             "def target(\n    alpha: int,\n    beta: int,\n) -> int:\n    return alpha + beta\n"
@@ -393,10 +390,7 @@ mod tests {
 
     #[test]
     fn resolves_dependency_from_multiline_caller_signature() {
-        let sources = vec![
-            "file:pkg/api.py".to_string(),
-            "file:pkg/dep.py".to_string(),
-        ];
+        let sources = vec!["file:pkg/api.py".to_string(), "file:pkg/dep.py".to_string()];
         let texts = vec![
             "from .dep import target\n\ndef caller(\n    value: int,\n) -> int:\n    return target(value)\n"
                 .to_string(),
@@ -423,8 +417,6 @@ mod tests {
         let anchors = query_dependency_anchors(&sources, &texts, "caller cache setup");
         assert_eq!(anchors.len(), 1, "{anchors:?}");
         assert!(anchors[0].signature.contains("def __init__("));
-        assert!(anchors[0]
-            .signature
-            .contains("max_clients: int = 100"));
+        assert!(anchors[0].signature.contains("max_clients: int = 100"));
     }
 }
