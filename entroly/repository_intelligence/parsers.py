@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from .models import FileRecord, RepositoryLimits, Symbol, normalize_relative
+from .registry_frontend import extract_registry_facts
 from ..tree_sitter_support import (
     StructuralCall,
     StructuralSpan,
@@ -33,9 +34,6 @@ CALL_KEYWORDS = frozenset(
         "sizeof", "typeof", "function", "fn", "new",
     }
 )
-# Avoid reading obvious binary/media artifacts merely to discover that they are
-# not source. Text/config/data formats stay eligible because they are often
-# required to understand build and runtime behavior.
 NON_SOURCE_SUFFIXES = frozenset({
     ".7z", ".a", ".avi", ".bmp", ".class", ".dll", ".dylib", ".exe",
     ".gif", ".gz", ".ico", ".jar", ".jpeg", ".jpg", ".lockb", ".mov",
@@ -413,7 +411,7 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
 
 
 def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> ParsedFile:
-    """Use normalized parser spans while retaining safe fallback signals."""
+    """Use normalized parser spans/facts while retaining safe fallback signals."""
     conservative = _parse_conservative(path, text, raw, language)
     spans = extract_structural_spans(text, path)
     if spans is None:
@@ -445,10 +443,20 @@ def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> Par
         )
         symbols.append(symbol)
         active.append((symbol, span))
+
     parser_calls = extract_structural_calls(text, path)
     calls = conservative.calls
     if parser_calls is not None:
         calls = _attribute_structural_calls(parser_calls, symbols)
+
+    # Registry import extraction is syntax evidence, not binding evidence.  It
+    # may strengthen file dependency/impact analysis, but import_aliases stays
+    # untouched so call resolution cannot invent a callee from parser syntax.
+    imports = set(conservative.imports)
+    facts = extract_registry_facts(text, language)
+    if facts is not None and facts.complete:
+        imports.update(item.source for item in facts.imports if item.source)
+
     is_test = _is_test_path(path) or any(symbol.kind == "test" for symbol in symbols)
     record = _record(
         path,
@@ -456,12 +464,12 @@ def _parse_parser_backed(path: str, text: str, raw: bytes, language: str) -> Par
         raw,
         text,
         is_test=is_test,
-        imports=conservative.imports,
+        imports=imports,
     )
     return ParsedFile(
         record,
         symbols,
-        conservative.imports,
+        imports,
         conservative.import_aliases,
         calls,
     )
@@ -515,9 +523,6 @@ def scan_repository(
                 continue
             relative_hint = normalize_relative(candidate.relative_to(root))
             path_language = language_for_path(relative_hint)
-            # Unknown extensionless files may still be scripts via shebang. For
-            # unknown extensions we inspect bounded text and apply the safe
-            # source-likeness fallback after decoding.
             try:
                 resolved = candidate.resolve(strict=True)
                 resolved.relative_to(root)
