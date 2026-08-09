@@ -49,258 +49,7 @@ jobs:
       - name: Apply production anchor invariants
         if: steps.state.outputs.needs_apply == 'true'
         run: |
-          .venv/bin/python - <<'PY'
-          from pathlib import Path
-
-          path = Path('entroly-qccr/src/lib.rs')
-          text = path.read_text(encoding='utf-8')
-
-          old_import = '''use dependency_anchor::{
-              query_dependency_anchors, render_dependency_anchored_excerpt, DIRECT_DEPENDENCY_BOOST,
-          };
-          '''
-          new_import = '''use dependency_anchor::{
-              protected_anchors_survive, query_dependency_anchors, render_dependency_anchored_excerpt,
-          };
-          '''
-
-          old_rank = '''    if !dependency_order.is_empty() {
-              for (score, source, _) in &mut file_scores {
-                  if dependency_by_source.contains_key(source) {
-                      *score = (*score + DIRECT_DEPENDENCY_BOOST).max(DIRECT_DEPENDENCY_BOOST);
-                  }
-              }
-          }
-          file_scores.sort_by(|a, b| b.0.total_cmp(&a.0));
-
-          // Caller-supplied reorder (engine_s6 localizer) — same effect as the Python
-          // `localize_files` block: reorder the candidate list, scores preserved.
-          if !preferred.is_empty()
-              && file_scores.len() > 1
-              && file_scores.iter().any(|(s, _, _)| *s > 0.0)
-          {
-              let by_src: HashMap<String, (f64, String)> = file_scores
-                  .iter()
-                  .map(|(sc, src, txt)| (src.clone(), (*sc, txt.clone())))
-                  .collect();
-              let mut reordered = Vec::new();
-              let mut reordered_seen = HashSet::new();
-              for src in &dependency_order {
-                  if let Some((sc, txt)) = by_src.get(src) {
-                      reordered.push((*sc, src.clone(), txt.clone()));
-                      reordered_seen.insert(src.clone());
-                  }
-              }
-              for src in preferred {
-                  if reordered_seen.insert(src.clone()) {
-                      if let Some((sc, txt)) = by_src.get(src) {
-                          reordered.push((*sc, src.clone(), txt.clone()));
-                      }
-                  }
-              }
-              if !reordered.is_empty() {
-                  file_scores = reordered;
-              }
-          }
-
-          let mut top_files: Vec<(f64, String, String)> = file_scores
-              .iter()
-              .take(MAX_FILES_CONSIDERED)
-              .filter(|(s, _, _)| *s > 0.0)
-              .cloned()
-              .collect();
-          '''
-          new_rank = '''    file_scores.sort_by(|a, b| b.0.total_cmp(&a.0));
-              let ranked_by_src: HashMap<String, (f64, String)> = file_scores
-                  .iter()
-                  .map(|(sc, src, txt)| (src.clone(), (*sc, txt.clone())))
-                  .collect();
-
-              // Caller-supplied reorder (engine_s6 localizer) — same effect as the Python
-              // `localize_files` block: reorder the candidate list, scores preserved.
-              if !preferred.is_empty()
-                  && file_scores.len() > 1
-                  && file_scores.iter().any(|(s, _, _)| *s > 0.0)
-              {
-                  let mut reordered = Vec::new();
-                  for src in preferred {
-                      if let Some((sc, txt)) = ranked_by_src.get(src) {
-                          reordered.push((*sc, src.clone(), txt.clone()));
-                      }
-                  }
-                  if !reordered.is_empty() {
-                      file_scores = reordered;
-                  }
-              }
-
-              // A proven direct dependency is structural evidence, not another lexical hint.
-              // Admit it before lexical/localizer top-k truncation while preserving its
-              // original score for budget allocation.
-              if !dependency_order.is_empty() {
-                  let mut reordered = Vec::new();
-                  let mut seen = HashSet::new();
-                  for src in &dependency_order {
-                      if let Some((sc, txt)) = ranked_by_src.get(src) {
-                          reordered.push((*sc, src.clone(), txt.clone()));
-                          seen.insert(src.clone());
-                      }
-                  }
-                  for (sc, src, txt) in file_scores {
-                      if seen.insert(src.clone()) {
-                          reordered.push((sc, src, txt));
-                      }
-                  }
-                  file_scores = reordered;
-              }
-
-              let dependency_sources: HashSet<String> = dependency_order.iter().cloned().collect();
-              let mut top_files: Vec<(f64, String, String)> = file_scores
-                  .iter()
-                  .filter(|(s, src, _)| *s > 0.0 || dependency_sources.contains(src))
-                  .take(MAX_FILES_CONSIDERED)
-                  .cloned()
-                  .collect();
-          '''
-
-          old_cost = '''        let anchor_cost = anchors
-              .map(|items| {
-                  items
-                      .iter()
-                      .map(|item| approx_tokens(item) as i64)
-                      .sum::<i64>()
-              })
-              .unwrap_or(0)
-              .min(file_budget);
-          '''
-          new_cost = '''        let anchor_cost = anchors
-              .map(|items| approx_tokens(&items.join("\\n")) as i64)
-              .unwrap_or(0);
-          '''
-
-          old_trim = '''    // Hard budget ceiling: trim trailing excerpts (drop last sentence, then
-              // whole excerpts) until the emitted total fits.
-              let frag_tokens = |f: &OutFragment| -> usize {
-                  if f.token_count > 0 {
-                      f.token_count
-                  } else {
-                      approx_tokens(&f.content)
-                  }
-              };
-              let mut total: i64 = output.iter().map(|f| frag_tokens(f) as i64).sum();
-              while !output.is_empty() && total > token_budget {
-                  let last = output.last_mut().unwrap();
-                  let mut lines: Vec<&str> = last.content.split('\\n').collect();
-                  if lines.len() > 1 {
-                      lines.pop();
-                      last.content = lines.join("\\n");
-                      last.token_count = approx_tokens(&last.content);
-                  } else {
-                      output.pop();
-                  }
-                  total = output.iter().map(|f| frag_tokens(f) as i64).sum();
-              }
-
-              output
-          '''
-          new_trim = '''    // Hard budget ceiling. Dependency signatures are atomic: trim only
-              // content that leaves every protected signature byte-for-byte intact.
-              // If the budget cannot be reconciled without corrupting protected evidence,
-              // fail closed instead of emitting a deceptively partial declaration.
-              let frag_tokens = |f: &OutFragment| -> usize {
-                  if f.token_count > 0 {
-                      f.token_count
-                  } else {
-                      approx_tokens(&f.content)
-                  }
-              };
-              let mut total: i64 = output.iter().map(|f| frag_tokens(f) as i64).sum();
-              while !output.is_empty() && total > token_budget {
-                  let mut changed = false;
-                  for index in (0..output.len()).rev() {
-                      let protected = dependency_by_source.get(&output[index].source);
-                      let lines: Vec<&str> = output[index].content.split('\\n').collect();
-                      if lines.len() > 1 {
-                          let candidate = lines[..lines.len() - 1].join("\\n");
-                          let protected_ok = protected
-                              .map(|anchors| protected_anchors_survive(&candidate, anchors))
-                              .unwrap_or(true);
-                          if protected_ok && !candidate.is_empty() {
-                              output[index].content = candidate;
-                              output[index].token_count = approx_tokens(&output[index].content);
-                              changed = true;
-                              break;
-                          }
-                      }
-                      if protected.is_none() {
-                          output.remove(index);
-                          changed = true;
-                          break;
-                      }
-                  }
-                  if !changed {
-                      return Vec::new();
-                  }
-                  total = output.iter().map(|f| frag_tokens(f) as i64).sum();
-              }
-
-              output
-          '''
-
-          marker = '''    #[test]
-              fn split_sentences_breaks_on_boundaries() {
-          '''
-          test = '''    #[test]
-              fn select_admits_structural_dependency_ahead_of_lexical_top_k() {
-                  let mut fragments = vec![
-                      InFragment {
-                          source: "file:pkg/api.py".to_string(),
-                          content: "from .dep import target\\n\\ndef caller():\\n    return target(1, 2)\\n".to_string(),
-                          feedback_multiplier: 1.0,
-                      },
-                      InFragment {
-                          source: "file:pkg/dep.py".to_string(),
-                          content: "def target(\\n    alpha: int,\\n    beta: int,\\n) -> int:\\n    return alpha + beta\\n".to_string(),
-                          feedback_multiplier: 1.0,
-                      },
-                  ];
-                  for index in 0..16 {
-                      fragments.push(InFragment {
-                          source: format!("file:noise_{index}.py"),
-                          content: "caller explain behavior deterministic repository index ".repeat(20),
-                          feedback_multiplier: 1.0,
-                      });
-                  }
-                  let out = select(
-                      &fragments,
-                      800,
-                      "caller explain behavior deterministic repository index",
-                      &HashMap::new(),
-                      &[],
-                  );
-                  let target = out
-                      .iter()
-                      .find(|fragment| fragment.source == "file:pkg/dep.py")
-                      .expect("structural dependency must survive lexical top-k pressure");
-                  assert!(target.content.contains("def target("), "{}", target.content);
-                  assert!(target.content.contains("beta: int"), "{}", target.content);
-              }
-
-          '''
-
-          replacements = [
-              ('import', old_import, new_import),
-              ('rank/top-k', old_rank, new_rank),
-              ('anchor-cost', old_cost, new_cost),
-              ('hard-trim', old_trim, new_trim),
-              ('test-marker', marker, test + marker),
-          ]
-          for label, old, new in replacements:
-              if old not in text:
-                  raise SystemExit(f'{label} marker not found')
-              text = text.replace(old, new, 1)
-
-          path.write_text(text, encoding='utf-8')
-          PY
+          bash .github/scripts/migrate_qccr_dependency_anchor_v2.sh
           cargo fmt --manifest-path entroly-qccr/Cargo.toml
           cargo fmt --manifest-path entroly-qccr/Cargo.toml -- --check
           git diff --check
@@ -319,31 +68,45 @@ jobs:
         if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/python - <<'PY'
-          import ast, json
+          import ast
+          import json
           from benchmarks.answer_correctness_bridge import build_probes, _context_for
           from benchmarks.graph_lane_quality import REPO, Task, _pool_for, _read, _tracked_python_files
-          payload = json.loads((REPO / 'benchmarks/results/graph_lane_tasks.json').read_text())
+
+          payload = json.loads((REPO / 'benchmarks/results/graph_lane_tasks.json').read_text(encoding='utf-8'))
           probes = build_probes([Task(**row) for row in payload['tasks']], 5)
-          corpus = sorted({str(p.relative_to(REPO)).replace('\\\\', '/') for p in _tracked_python_files()})
-          def sig_lines(callee, rel):
+          corpus = sorted({str(path.relative_to(REPO)).replace('\\', '/') for path in _tracked_python_files()})
+
+          def signature_lines(callee, rel):
               source = (REPO / rel).read_text(encoding='utf-8', errors='replace')
-              lines = source.splitlines(); tree = ast.parse(source); target = None
+              lines = source.splitlines()
+              tree = ast.parse(source)
+              target = None
               for node in tree.body:
                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
-                      target = node; break
+                      target = node
+                      break
                   if isinstance(node, ast.ClassDef) and node.name == callee:
-                      target = next((s for s in node.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)) and s.name == '__init__'), None); break
-              if target is None: raise RuntimeError((callee, rel))
+                      target = next((sub for sub in node.body if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == '__init__'), None)
+                      break
+              if target is None:
+                  raise RuntimeError((callee, rel))
               body_line = target.body[0].lineno if target.body else target.end_lineno
-              return tuple(line.strip() for line in lines[target.lineno-1:max(target.lineno, body_line-1)] if line.strip())
+              return tuple(line.strip() for line in lines[target.lineno - 1:max(target.lineno, body_line - 1)] if line.strip())
+
           full = delivered = 0
-          for probe in probes:
-              pool = _pool_for(probe.task, corpus, 48, 20260807); texts = {r: _read(r) for r in pool}
+          for idx, probe in enumerate(probes, 1):
+              pool = _pool_for(probe.task, corpus, 48, 20260807)
+              texts = {rel: _read(rel) for rel in pool}
               context = _context_for('qccr', probe, pool, texts, 2000)
-              delivered += int(f'### {probe.task.callee_file}' in context)
-              full += int(all(line in context for line in sig_lines(probe.task.callee, probe.task.callee_file)))
+              file_delivered = f'### {probe.task.callee_file}' in context
+              full_signature = all(line in context for line in signature_lines(probe.task.callee, probe.task.callee_file))
+              delivered += int(file_delivered)
+              full += int(full_signature)
+              print('HARDENED_PROBE', idx, f'callee={probe.task.callee!r}', f'file_delivered={file_delivered}', f'full_signature_present={full_signature}')
           print(f'HARDENED_QCCR signatures={full}/5 files={delivered}/5')
-          if (full, delivered) != (5, 5): raise SystemExit((full, delivered))
+          if (full, delivered) != (5, 5):
+              raise SystemExit((full, delivered))
           PY
 
       - name: Graph and targeted regression gates
@@ -352,11 +115,13 @@ jobs:
           .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
           .venv/bin/python - <<'PY'
           import json
-          data=json.load(open('benchmarks/results/graph_lane_results.json'))
-          rows=[r for r in data['records'] if r['arm']=='qccr' and r['budget']==2000]
-          hits=sum(bool(r['indirect_hit']) for r in rows); errors=sum(bool(r['error']) for r in rows)
+          data = json.load(open('benchmarks/results/graph_lane_results.json', encoding='utf-8'))
+          rows = [row for row in data['records'] if row['arm'] == 'qccr' and row['budget'] == 2000]
+          hits = sum(bool(row['indirect_hit']) for row in rows)
+          errors = sum(bool(row['error']) for row in rows)
           print(f'HARDENED_GRAPH hits={hits}/{len(rows)} errors={errors}')
-          if (hits, len(rows), errors)!=(20,20,0): raise SystemExit((hits,len(rows),errors))
+          if (hits, len(rows), errors) != (20, 20, 0):
+              raise SystemExit((hits, len(rows), errors))
           PY
           .venv/bin/python -m pytest tests/ -q -k 'qccr or resolution or codec or compress' --timeout=180
           .venv/bin/ruff check entroly/ benchmarks/
