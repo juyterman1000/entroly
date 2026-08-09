@@ -7,63 +7,299 @@ on:
     branches: [main]
 
 jobs:
-  measure-signature-map:
+  prototype:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Measure exact callable-signature map cost
+
+      - name: Apply prototype in working tree only
         run: |
           python - <<'PY'
-          import ast
           from pathlib import Path
 
-          ROOT = Path.cwd()
-          FILES = [
-              "entroly/auto_index.py",
-              "entroly/provider_adapters.py",
-              "entroly/cache_aligner.py",
-              "entroly/repository_intelligence/graph.py",
-          ]
+          path = Path('entroly-qccr/src/lib.rs')
+          text = path.read_text(encoding='utf-8')
+          marker = '''fn approx_tokens(s: &str) -> usize {
+    (s.chars().count() / CHARS_PER_TOKEN).max(1)
+}
+'''
+          helper = r'''fn sentence_offsets(text: &str, sentences: &[String]) -> Vec<Option<usize>> {
+    let mut cursor = 0usize;
+    sentences
+        .iter()
+        .map(|sentence| {
+            let found = text[cursor..]
+                .find(sentence)
+                .map(|relative| cursor + relative)
+                .or_else(|| text.find(sentence));
+            if let Some(start) = found {
+                cursor = start.saturating_add(sentence.len()).min(text.len());
+            }
+            found
+        })
+        .collect()
+}
 
-          def sig_lines(lines, node):
-              body_line = node.body[0].lineno if node.body else node.end_lineno
-              return [
-                  line.rstrip()
-                  for line in lines[node.lineno - 1 : max(node.lineno, body_line - 1)]
-                  if line.strip()
-              ]
+fn python_signature_at(lines: &[&str], start: usize) -> Option<(String, usize, usize)> {
+    let raw = *lines.get(start)?;
+    let trimmed = raw.trim_start();
+    if !(trimmed.starts_with("def ")
+        || trimmed.starts_with("async def ")
+        || trimmed.starts_with("class "))
+    {
+        return None;
+    }
+    let indent = raw.len().saturating_sub(trimmed.len());
+    let mut balance = 0i32;
+    let mut signature = Vec::new();
+    for (idx, line) in lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(32)
+    {
+        signature.push(line.trim_end().to_string());
+        for ch in line.chars() {
+            match ch {
+                '(' | '[' | '{' => balance += 1,
+                ')' | ']' | '}' => balance -= 1,
+                _ => {}
+            }
+        }
+        if balance <= 0 && line.trim_end().ends_with(':') {
+            return Some((signature.join("\n"), idx, indent));
+        }
+    }
+    None
+}
 
-          for rel in FILES:
-              text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
+fn python_block_contains(
+    lines: &[&str],
+    signature_end: usize,
+    indent: usize,
+    target_line: usize,
+) -> bool {
+    if target_line <= signature_end {
+        return true;
+    }
+    for line in lines
+        .iter()
+        .take(target_line.saturating_add(1))
+        .skip(signature_end.saturating_add(1))
+    {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let leading = line.len().saturating_sub(line.trim_start().len());
+        if leading <= indent {
+            return false;
+        }
+    }
+    true
+}
+
+fn python_enclosing_signature(text: &str, offset: usize) -> Option<String> {
+    if offset > text.len() || !text.is_char_boundary(offset) {
+        return None;
+    }
+    let target_line = text[..offset].bytes().filter(|byte| *byte == b'\n').count();
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+    let target_line = target_line.min(lines.len() - 1);
+    for start in (0..=target_line).rev() {
+        let Some((signature, signature_end, indent)) = python_signature_at(&lines, start) else {
+            continue;
+        };
+        if python_block_contains(&lines, signature_end, indent, target_line) {
+            return Some(signature);
+        }
+    }
+    None
+}
+
+fn render_python_selection_with_anchors(
+    source: &str,
+    text: &str,
+    sentences: &[String],
+    chosen: &[usize],
+    file_budget: i64,
+) -> String {
+    let plain = chosen
+        .iter()
+        .map(|&i| sentences[i].clone())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized_source = source.to_ascii_lowercase();
+    if !(normalized_source.ends_with(".py")
+        || normalized_source.ends_with(".pyi")
+        || normalized_source.ends_with(".pyw"))
+    {
+        return plain;
+    }
+
+    let offsets = sentence_offsets(text, sentences);
+    let mut seen = HashSet::new();
+    let mut anchors = Vec::new();
+    for &index in chosen {
+        let Some(Some(offset)) = offsets.get(index) else {
+            continue;
+        };
+        let Some(anchor) = python_enclosing_signature(text, *offset) else {
+            continue;
+        };
+        if seen.insert(anchor.clone()) && !plain.contains(&anchor) {
+            anchors.push(anchor);
+        }
+    }
+    if anchors.is_empty() {
+        return plain;
+    }
+
+    let anchor_text = anchors.join("\n");
+    if approx_tokens(&anchor_text) as i64 > file_budget {
+        return plain;
+    }
+    let mut kept = chosen.to_vec();
+    loop {
+        let body = kept
+            .iter()
+            .map(|&i| sentences[i].clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let candidate = if body.is_empty() {
+            anchor_text.clone()
+        } else {
+            format!("{anchor_text}\n{body}")
+        };
+        if approx_tokens(&candidate) as i64 <= file_budget {
+            return candidate;
+        }
+        if kept.pop().is_none() {
+            return anchor_text;
+        }
+    }
+}
+
+'''
+          if marker not in text:
+              raise SystemExit('approx_tokens marker not found')
+          text = text.replace(marker, helper + marker, 1)
+
+          old = '''        let excerpt = chosen
+            .iter()
+            .map(|&i| sentences[i].clone())
+            .collect::<Vec<_>>()
+            .join("\\n");
+'''
+          new = '''        let excerpt = render_python_selection_with_anchors(
+            src,
+            text,
+            &sentences,
+            &chosen,
+            file_budget,
+        );
+'''
+          if old not in text:
+              raise SystemExit('excerpt marker not found')
+          text = text.replace(old, new, 1)
+
+          test_marker = '''    #[test]
+    fn split_sentences_breaks_on_boundaries() {
+'''
+          test = r'''    #[test]
+    fn python_selected_body_keeps_full_enclosing_signature() {
+        let source = "def target(\n    alpha: str,\n    beta: int,\n    gamma: bool = False,\n) -> dict:\n    \"\"\"Unrelated introduction long enough to be its own sentence.\"\"\"\n\n    service_readiness = transport_bootstrap(alpha)\n    return {\"ready\": service_readiness}\n";
+        let sentences = split_sentences(source);
+        let chosen = vec![sentences
+            .iter()
+            .position(|sentence| sentence.contains("service_readiness"))
+            .expect("relevant body sentence")];
+        let rendered = render_python_selection_with_anchors(
+            "file:service.py",
+            source,
+            &sentences,
+            &chosen,
+            128,
+        );
+        assert!(rendered.contains("def target("), "{rendered}");
+        assert!(rendered.contains("gamma: bool = False,"), "{rendered}");
+        assert!(rendered.contains("service_readiness"), "{rendered}");
+        assert!(approx_tokens(&rendered) <= 128, "{rendered}");
+    }
+
+'''
+          if test_marker not in text:
+              raise SystemExit('test marker not found')
+          text = text.replace(test_marker, test + test_marker, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          cargo fmt -- entroly-qccr/src/lib.rs
+          git diff --check
+
+      - name: Rust QCCR unit tests
+        run: cargo test -p entroly-qccr
+
+      - name: Build native QCCR for exact benchmark rendering
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install maturin --timeout 120 --retries 5
+          cd entroly-core
+          ../.venv/bin/maturin develop --release
+          cd ..
+          .venv/bin/pip install -e ".[test]" --timeout 120 --retries 5
+
+      - name: Post-fix five-probe evidence survival
+        run: |
+          .venv/bin/python - <<'PY'
+          import ast
+          import json
+          from benchmarks.answer_correctness_bridge import build_probes, _context_for
+          from benchmarks.graph_lane_quality import REPO, Task, _pool_for, _read, _tokens, _tracked_python_files
+
+          LIMIT, BUDGET, SEED = 5, 2000, 20260807
+          payload = json.loads((REPO / 'benchmarks/results/graph_lane_tasks.json').read_text(encoding='utf-8'))
+          probes = build_probes([Task(**t) for t in payload['tasks']], LIMIT)
+          corpus = sorted({str(p.relative_to(REPO)).replace('\\\\', '/') for p in _tracked_python_files()})
+
+          def signature_lines(callee, rel):
+              text = (REPO / rel).read_text(encoding='utf-8', errors='replace')
               lines = text.splitlines()
               tree = ast.parse(text)
-              anchors = []
-              count = 0
+              target = None
               for node in tree.body:
-                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                      anchors.extend(sig_lines(lines, node))
-                      count += 1
-                  elif isinstance(node, ast.ClassDef):
-                      init = next(
-                          (
-                              sub for sub in node.body
-                              if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))
-                              and sub.name == "__init__"
-                          ),
-                          None,
-                      )
-                      if init is not None:
-                          anchors.append(lines[node.lineno - 1].rstrip())
-                          anchors.extend(sig_lines(lines, init))
-                          count += 1
-              rendered = "\n".join(anchors)
-              approx = max(1, len(rendered) // 4)
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
+                      target = node; break
+                  if isinstance(node, ast.ClassDef) and node.name == callee:
+                      target = next((sub for sub in node.body if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name == '__init__'), None)
+                      break
+              if target is None:
+                  raise RuntimeError((callee, rel))
+              body_line = target.body[0].lineno if target.body else target.end_lineno
+              return tuple(line.strip() for line in lines[target.lineno - 1:max(target.lineno, body_line - 1)] if line.strip())
+
+          for idx, probe in enumerate(probes, 1):
+              pool = _pool_for(probe.task, corpus, 48, SEED)
+              texts = {rel: _read(rel) for rel in pool}
+              context = _context_for('qccr', probe, pool, texts, BUDGET)
+              sig = signature_lines(probe.task.callee, probe.task.callee_file)
               print(
-                  f"SIGNATURE_MAP file={rel!r} callables={count} chars={len(rendered)} "
-                  f"approx_tokens={approx}"
+                  'POSTFIX_PROBE', idx,
+                  f"callee={probe.task.callee!r}",
+                  f"file_delivered={f'### {probe.task.callee_file}' in context}",
+                  f"full_signature_present={all(line in context for line in sig)}",
+                  f"gold_presence={tuple((p, p in context) for p in probe.params)!r}",
+                  f"context_tokens={_tokens(context)}",
               )
           PY
+
+      - name: Graph-lane delivery regression
+        run: .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
