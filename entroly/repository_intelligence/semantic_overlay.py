@@ -1,4 +1,10 @@
-"""Verified source binding for external LSP/compiler semantic relationships."""
+"""Verified source binding for external LSP/compiler semantic relationships.
+
+External semantic providers are untrusted. Entroly accepts only bounded
+workspace-relative locations, converts the provider's declared character
+encoding into exact UTF-8 byte ranges, revalidates source freshness, and hashes
+the concrete evidence before admitting a relationship.
+"""
 from __future__ import annotations
 
 import copy
@@ -10,7 +16,7 @@ from typing import Iterable, Mapping
 
 from .models import RepositoryIndex, normalize_relative
 
-SEMANTIC_OVERLAY_SCHEMA_VERSION = "entroly.verified-semantic-overlay.v1"
+SEMANTIC_OVERLAY_SCHEMA_VERSION = "entroly.verified-semantic-overlay.v2"
 _ALLOWED_KINDS = frozenset({
     "definition",
     "declaration",
@@ -19,6 +25,7 @@ _ALLOWED_KINDS = frozenset({
     "type-definition",
     "override",
 })
+_POSITION_ENCODINGS = frozenset({"utf-8", "utf-16", "utf-32"})
 
 
 def _strict_path(value: object) -> str | None:
@@ -32,6 +39,20 @@ def _strict_path(value: object) -> str | None:
     if any(part == ".." for part in raw.split("/")):
         return None
     return normalize_relative(raw) or None
+
+
+def _utf8_to_byte(text: str, character: int) -> int | None:
+    if character < 0:
+        return None
+    raw = text.encode("utf-8", errors="surrogateescape")
+    if character > len(raw):
+        return None
+    # A provider offset into the middle of a multi-byte code point is invalid.
+    try:
+        raw[:character].decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return None
+    return character
 
 
 def _utf16_to_byte(text: str, character: int) -> int | None:
@@ -48,6 +69,26 @@ def _utf16_to_byte(text: str, character: int) -> int | None:
         units += width
         byte_offset += len(value.encode("utf-8", errors="surrogateescape"))
     return byte_offset if units == character else None
+
+
+def _utf32_to_byte(text: str, character: int) -> int | None:
+    if character < 0 or character > len(text):
+        return None
+    return len(text[:character].encode("utf-8", errors="surrogateescape"))
+
+
+def _character_to_byte(
+    text: str,
+    character: int,
+    position_encoding: str,
+) -> int | None:
+    if position_encoding == "utf-8":
+        return _utf8_to_byte(text, character)
+    if position_encoding == "utf-16":
+        return _utf16_to_byte(text, character)
+    if position_encoding == "utf-32":
+        return _utf32_to_byte(text, character)
+    return None
 
 
 def _finish(payload: dict[str, object]) -> dict[str, object]:
@@ -70,10 +111,19 @@ def build_verified_semantic_overlay(
     *,
     index_digest: str,
     provider: str,
+    position_encoding: str = "utf-16",
     max_relationships: int = 100_000,
 ) -> dict[str, object]:
-    """Verify LSP-style UTF-16 ranges without trusting compiler output blindly."""
+    """Verify external semantic locations without trusting provider claims.
+
+    ``position_encoding`` follows the LSP position-encoding vocabulary. UTF-16
+    remains the default for backward compatibility, while UTF-8 and UTF-32 let
+    compiler/static-analysis adapters use the same verified overlay authority.
+    """
     root = root.expanduser().resolve(strict=True)
+    encoding = str(position_encoding).strip().lower().replace("_", "-")
+    if encoding not in _POSITION_ENCODINGS:
+        raise ValueError("position_encoding must be utf-8, utf-16, or utf-32")
     limit = max(1, min(int(max_relationships), 1_000_000))
     source_cache: dict[str, tuple[bytes | None, str, list[tuple[int, int, str]]]] = {}
     omissions: Counter[str] = Counter()
@@ -101,9 +151,11 @@ def build_verified_semantic_overlay(
                     offset = 0
                     for raw_line in raw.splitlines(keepends=True):
                         clean = raw_line.rstrip(b"\r\n")
-                        lines.append((offset, offset + len(clean), clean.decode(
-                            "utf-8", errors="surrogateescape"
-                        )))
+                        lines.append((
+                            offset,
+                            offset + len(clean),
+                            clean.decode("utf-8", errors="surrogateescape"),
+                        ))
                         offset += len(raw_line)
                     if not lines and not raw:
                         lines.append((0, 0, ""))
@@ -129,25 +181,32 @@ def build_verified_semantic_overlay(
         if line >= len(lines):
             return None, "line-out-of-range"
         line_start, _line_end, text = lines[line]
-        local_start = _utf16_to_byte(text, start_character)
-        local_end = _utf16_to_byte(text, end_character)
+        local_start = _character_to_byte(text, start_character, encoding)
+        local_end = _character_to_byte(text, end_character, encoding)
         if local_start is None or local_end is None or local_end <= local_start:
             return None, "character-out-of-range"
         start = line_start + local_start
         end = line_start + local_end
+        if not (0 <= start < end <= len(raw)):
+            return None, "byte-range-out-of-range"
         evidence = raw[start:end]
         enclosing = sorted(
             (
-                symbol for symbol in index.symbols_for_path(path)
+                symbol
+                for symbol in index.symbols_for_path(path)
                 if symbol.line_start <= line + 1 <= symbol.line_end
             ),
-            key=lambda symbol: (symbol.line_end - symbol.line_start, symbol.symbol_id),
+            key=lambda symbol: (
+                symbol.line_end - symbol.line_start,
+                symbol.symbol_id,
+            ),
         )
         return {
             "path": path,
             "line": line,
             "start_character": start_character,
             "end_character": end_character,
+            "position_encoding": encoding,
             "start_byte": start,
             "end_byte": end,
             "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
@@ -171,7 +230,9 @@ def build_verified_semantic_overlay(
         target_location, target_status = location(relationship.get("target"))
         if source_location is None or target_location is None:
             omissions[
-                f"source-{source_status}" if source_location is None else f"target-{target_status}"
+                f"source-{source_status}"
+                if source_location is None
+                else f"target-{target_status}"
             ] += 1
             continue
         edge_id = hashlib.sha256(json.dumps(
@@ -185,6 +246,7 @@ def build_verified_semantic_overlay(
             "source": source_location,
             "target": target_location,
             "confidence": "externally-reported-source-verified",
+            "epistemic_class": "external-semantic-source-verified",
         })
     edges.sort(key=lambda item: str(item["edge_id"]))
     clean_provider = str(provider).strip()[:128] or "unspecified"
@@ -193,14 +255,16 @@ def build_verified_semantic_overlay(
         "index_digest": index_digest,
         "provider": clean_provider,
         "provider_trust": "untrusted-external-semantic-provider",
-        "position_encoding": "utf-16",
+        "position_encoding": encoding,
         "relationships": edges,
         "receipt": {
             "freshness": "verified-against-indexed-source-sha256",
             "accepted_relationship_count": len(edges),
             "omissions_by_reason": dict(sorted(omissions.items())),
             "remote_calls": 0,
-            "commitment_scope": "payload-excluding-generation-command-and-semantic-overlay-sha256",
+            "commitment_scope": (
+                "payload-excluding-generation-command-and-semantic-overlay-sha256"
+            ),
         },
     }
     return _finish(payload)
