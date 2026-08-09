@@ -55,17 +55,14 @@ jobs:
               {str(p.relative_to(REPO)).replace("\\\\", "/") for p in _tracked_python_files()}
           )
 
-          def signature_evidence(callee: str, rel: str) -> tuple[str, tuple[str, ...]]:
+          def target_node(callee: str, rel: str):
               text = (REPO / rel).read_text(encoding="utf-8", errors="replace")
-              lines = text.splitlines()
               tree = ast.parse(text)
-              target = None
               for node in tree.body:
                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == callee:
-                      target = node
-                      break
+                      return text, node
                   if isinstance(node, ast.ClassDef) and node.name == callee:
-                      target = next(
+                      init = next(
                           (
                               sub for sub in node.body
                               if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -73,9 +70,13 @@ jobs:
                           ),
                           None,
                       )
-                      break
-              if target is None:
-                  raise RuntimeError(f"signature not found for {callee} in {rel}")
+                      if init is not None:
+                          return text, init
+              raise RuntimeError(f"signature not found for {callee} in {rel}")
+
+          def signature_evidence(callee: str, rel: str):
+              text, target = target_node(callee, rel)
+              lines = text.splitlines()
               first = lines[target.lineno - 1].strip()
               body_lineno = target.body[0].lineno if target.body else target.end_lineno
               signature_lines = tuple(
@@ -83,14 +84,23 @@ jobs:
                   for line in lines[target.lineno - 1 : max(target.lineno, body_lineno - 1)]
                   if line.strip()
               )
-              return first, signature_lines
+              return first, signature_lines, target
+
+          def qccr_excerpt(context: str, rel: str) -> str:
+              marker = f"### {rel}\n"
+              start = context.find(marker)
+              if start < 0:
+                  return ""
+              start += len(marker)
+              end = context.find("\n\n### ", start)
+              return context[start:] if end < 0 else context[start:end]
 
           print(f"STEP1 pinned_ref={payload['pinned_ref']} probes={len(probes)} budget={BUDGET} seed={SEED}")
           for idx, probe in enumerate(probes, 1):
               pool = _pool_for(probe.task, corpus, 48, SEED)
               texts = {rel: _read(rel) for rel in pool}
               context = _context_for("qccr", probe, pool, texts, BUDGET)
-              first_line, signature_lines = signature_evidence(
+              first_line, signature_lines, target = signature_evidence(
                   probe.task.callee, probe.task.callee_file
               )
               file_header = f"### {probe.task.callee_file}"
@@ -98,12 +108,24 @@ jobs:
               first_present = first_line in context
               full_signature_present = all(line in context for line in signature_lines)
               param_presence = tuple((param, param in context) for param in probe.params)
+              excerpt = qccr_excerpt(context, probe.task.callee_file)
+              source_lines = texts[probe.task.callee_file].splitlines()
+              target_lines = {
+                  line.strip()
+                  for line in source_lines[target.lineno - 1 : target.end_lineno]
+                  if len(line.strip()) >= 20
+              }
+              rendered_lines = [line.strip() for line in excerpt.splitlines() if len(line.strip()) >= 20]
+              target_body_hits = tuple(line for line in rendered_lines if line in target_lines)
               print(
                   "STEP1_PROBE "
                   f"{idx} callee={probe.task.callee!r} file={probe.task.callee_file!r} "
                   f"file_delivered={delivered} def_line_present={first_present} "
                   f"full_signature_present={full_signature_present} "
                   f"gold_params={probe.params!r} gold_presence={param_presence!r} "
+                  f"target_body_rendered_lines={len(target_body_hits)} "
                   f"context_tokens={_tokens(context)} signature_lines={signature_lines!r}"
               )
+              if target_body_hits:
+                  print(f"STEP1_TARGET_BODY_SAMPLE {idx} {target_body_hits[:3]!r}")
           PY
