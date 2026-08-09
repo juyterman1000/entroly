@@ -4,7 +4,7 @@
 
 <h1 align="center">Entroly — Verified Code Intelligence + Context Assurance for AI Agents</h1>
 
-<p align="center"><b>Entroly — Drop-in Context Assurance to lower AI operational cost</b><br>
+<p align="center"><b>Entroly — Drop-In Context Assurance to Lower AI Operational Cost</b><br>
 Reduce unnecessary context without losing control of critical evidence.</p>
 
 <p align="center"><b>Advanced repository intelligence that finds, verifies, budgets, and preserves the code evidence an AI agent actually needs.</b><br>
