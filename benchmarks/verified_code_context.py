@@ -40,9 +40,7 @@ FIXTURES = {
         "function helper(): number { return 1; }\n"
         "export function run(): number { return helper(); }\n"
     ),
-    "go/main.go": (
-        "package main\nfunc helper() {}\nfunc run() { helper() }\n"
-    ),
+    "go/main.go": "package main\nfunc helper() {}\nfunc run() { helper() }\n",
     "java/Sample.java": (
         "class Sample { static void helper() {} "
         "static void run() { helper(); } }\n"
@@ -57,38 +55,34 @@ GOLD_EDGES = (
     ("java/Sample.java::Sample.run::method", "java/Sample.java::Sample.helper::method"),
 )
 
+IMPLEMENTATION_FILES = (
+    "entroly/tree_sitter_support.py",
+    "entroly/repository_intelligence/models.py",
+    "entroly/repository_intelligence/parsers.py",
+    "entroly/repository_intelligence/graph.py",
+    "entroly/repository_intelligence/verified_context.py",
+)
+
 
 def _git_head() -> str:
     result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
+        ["git", "rev-parse", "HEAD"], cwd=ROOT,
+        capture_output=True, text=True, check=True,
     )
     return result.stdout.strip()
 
 
 def _git_dirty() -> bool:
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
+        ["git", "status", "--porcelain"], cwd=ROOT,
+        capture_output=True, text=True, check=True,
     )
     return bool(result.stdout.strip())
 
 
 def _implementation_sha256() -> str:
     digest = hashlib.sha256()
-    for relative in (
-        "entroly/tree_sitter_support.py",
-        "entroly/repository_intelligence/models.py",
-        "entroly/repository_intelligence/parsers.py",
-        "entroly/repository_intelligence/graph.py",
-        "entroly/repository_intelligence/verified_context.py",
-    ):
+    for relative in IMPLEMENTATION_FILES:
         digest.update(relative.encode("utf-8"))
         digest.update((ROOT / relative).read_bytes())
     return digest.hexdigest()
@@ -114,10 +108,7 @@ def _fragment_valid(root: Path, fragment: dict[str, object]) -> bool:
     start = int(fragment["start_byte"])
     end = int(fragment["end_byte"])
     content = str(fragment["content"]).encode("utf-8")
-    return (
-        raw[start:end] == content
-        and hashlib.sha256(content).hexdigest() == fragment["fragment_sha256"]
-    )
+    return raw[start:end] == content and hashlib.sha256(content).hexdigest() == fragment["fragment_sha256"]
 
 
 def _graph_edge_valid(root: Path, edge: dict[str, object]) -> bool:
@@ -125,9 +116,7 @@ def _graph_edge_valid(root: Path, edge: dict[str, object]) -> bool:
     start = int(edge["start_byte"])
     end = int(edge["end_byte"])
     evidence = raw[start:end]
-    return bool(evidence) and hashlib.sha256(evidence).hexdigest() == edge[
-        "evidence_sha256"
-    ]
+    return bool(evidence) and hashlib.sha256(evidence).hexdigest() == edge["evidence_sha256"]
 
 
 def run_benchmark() -> dict[str, object]:
@@ -205,15 +194,12 @@ def run_benchmark() -> dict[str, object]:
             and verify_symbol_graph_commitment(stale_graph)
         )
 
-        elapsed = time.perf_counter() - started
         metrics = {
             "gold_edge_recall": round(len(found) / len(GOLD_EDGES), 6),
             "edge_evidence_validity": round(valid_edges / max(1, len(found)), 6),
             "ambiguous_call_truthfulness": truthfulness,
             "query_symbol_recall": round(query_hits / len(queries), 6),
-            "fragment_evidence_validity": round(
-                fragment_valid / max(1, fragment_total), 6
-            ),
+            "fragment_evidence_validity": round(fragment_valid / max(1, fragment_total), 6),
             "deterministic_receipt": deterministic,
             "stale_source_fail_closed": stale_closed,
             "symbol_graph_evidence_validity": graph_evidence,
@@ -226,46 +212,54 @@ def run_benchmark() -> dict[str, object]:
             "git_dirty": _git_dirty(),
             "implementation_sha256": _implementation_sha256(),
             "index_digest": digest,
-            "environment": {
-                "python": platform.python_version(),
-                "platform": platform.platform(),
-            },
+            "environment": {"python": platform.python_version(), "platform": platform.platform()},
             "workload": {
                 "languages": ["python", "rust", "typescript", "go", "java"],
-                "gold_edges": len(GOLD_EDGES),
-                "queries": len(queries),
-                "token_budget": 512,
-                "max_hops": 2,
+                "gold_edges": len(GOLD_EDGES), "queries": len(queries),
+                "token_budget": 512, "max_hops": 2,
             },
             "index": {
-                "files": len(index.files),
-                "symbols": len(index.symbols),
+                "files": len(index.files), "symbols": len(index.symbols),
                 "resolved_calls": len(index.call_edges),
                 "ambiguous_or_unresolved_calls": len(index.unresolved_calls),
             },
             "metrics": metrics,
-            "elapsed_seconds": round(elapsed, 6),
+            "elapsed_seconds": round(time.perf_counter() - started, 6),
             "errors": errors,
         }
 
 
-def verify(payload: dict[str, object]) -> bool:
+def verify(payload: dict[str, object], *, require_current_clean_tree: bool = False) -> bool:
     metrics = payload.get("metrics", {})
-    return isinstance(metrics, dict) and not payload.get("errors") and all(
+    metrics_ok = isinstance(metrics, dict) and not payload.get("errors") and all(
         metrics.get(name) == 1 or metrics.get(name) == 1.0
         for name in (
-            "gold_edge_recall",
-            "edge_evidence_validity",
-            "ambiguous_call_truthfulness",
-            "query_symbol_recall",
-            "fragment_evidence_validity",
-            "deterministic_receipt",
-            "stale_source_fail_closed",
-            "symbol_graph_evidence_validity",
-            "symbol_graph_ambiguity_truthfulness",
-            "symbol_graph_stale_source_fail_closed",
+            "gold_edge_recall", "edge_evidence_validity", "ambiguous_call_truthfulness",
+            "query_symbol_recall", "fragment_evidence_validity", "deterministic_receipt",
+            "stale_source_fail_closed", "symbol_graph_evidence_validity",
+            "symbol_graph_ambiguity_truthfulness", "symbol_graph_stale_source_fail_closed",
         )
     )
+    if not metrics_ok:
+        return False
+    if not require_current_clean_tree:
+        return True
+    return (
+        payload.get("git_dirty") is False
+        and payload.get("git_commit") == _git_head()
+        and payload.get("implementation_sha256") == _implementation_sha256()
+        and not _git_dirty()
+    )
+
+
+def _verify_sidecar(path: Path) -> bool:
+    sidecar = path.with_suffix(path.suffix + ".sha256")
+    try:
+        expected = sidecar.read_text(encoding="ascii").strip()
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return False
+    return len(expected) == 64 and expected == actual
 
 
 def main() -> int:
@@ -282,10 +276,12 @@ def main() -> int:
             hashlib.sha256(rendered.encode("utf-8")).hexdigest() + "\n",
             encoding="ascii",
         )
+        valid = verify(payload)
     else:
         payload = json.loads(args.out.read_text(encoding="utf-8"))
+        valid = _verify_sidecar(args.out) and verify(payload, require_current_clean_tree=True)
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0 if verify(payload) else 1
+    return 0 if valid else 1
 
 
 if __name__ == "__main__":
