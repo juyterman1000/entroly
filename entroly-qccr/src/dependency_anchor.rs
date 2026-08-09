@@ -8,7 +8,6 @@ const MAX_DIRECT_DEPENDENCY_ANCHORS: usize = 8;
 #[derive(Clone, Debug)]
 pub(crate) struct DependencyAnchor {
     pub(crate) source: String,
-    pub(crate) symbol: String,
     pub(crate) signature: String,
 }
 
@@ -326,11 +325,7 @@ pub(crate) fn query_dependency_anchors(
         if !seen.insert((source.clone(), symbol.clone())) {
             continue;
         }
-        out.push(DependencyAnchor {
-            source,
-            symbol,
-            signature,
-        });
+        out.push(DependencyAnchor { source, signature });
         if out.len() >= MAX_DIRECT_DEPENDENCY_ANCHORS {
             break;
         }
@@ -392,7 +387,6 @@ mod tests {
         let anchors = query_dependency_anchors(&sources, &texts, "caller explain behavior");
         assert_eq!(anchors.len(), 1, "{anchors:?}");
         assert_eq!(anchors[0].source, "file:pkg/dep.py");
-        assert_eq!(anchors[0].symbol, "target");
         assert!(anchors[0].signature.contains("alpha: int"));
         assert!(anchors[0].signature.contains("beta: int"));
     }
