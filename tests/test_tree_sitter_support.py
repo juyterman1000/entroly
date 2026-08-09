@@ -14,7 +14,7 @@ from entroly.tree_sitter_support import (
 )
 
 
-def test_language_map_covers_at_least_twenty_seven_offline_fallbacks() -> None:
+def test_language_map_covers_at_least_twenty_seven_languages() -> None:
     # This is only the no-registry fallback now. Runtime breadth comes from the
     # universal language registry and is tested separately.
     assert len(set(LANGUAGE_BY_SUFFIX.values())) >= 27
