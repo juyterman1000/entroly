@@ -32,6 +32,7 @@ jobs:
           python -m pytest -q \
             tests/test_tree_sitter_support.py \
             tests/test_parser_compatibility.py \
+            tests/test_language_open_registry_contract.py \
             tests/test_code_intelligence_conformance.py \
             tests/test_universal_code_intelligence.py
 
@@ -49,5 +50,6 @@ jobs:
           python -m pytest -q \
             tests/test_tree_sitter_support.py \
             tests/test_parser_compatibility.py \
+            tests/test_language_open_registry_contract.py \
             tests/test_code_intelligence_conformance.py \
             tests/test_universal_code_intelligence.py
