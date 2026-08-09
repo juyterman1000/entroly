@@ -4,6 +4,9 @@
 
 <h1 align="center">Entroly — Verified Code Intelligence + Context Assurance for AI Agents</h1>
 
+<p align="center"><b>Entroly — Drop-in Context Assurance to lower AI operational cost</b><br>
+Reduce unnecessary context without losing control of critical evidence.</p>
+
 <p align="center"><b>Advanced repository intelligence that finds, verifies, budgets, and preserves the code evidence an AI agent actually needs.</b><br>
 AST and Tree-sitter structure, dependency and call graphs, interprocedural flow, architecture analysis, semantic change intelligence, recoverable compression, and tamper-evident receipts — in one local-first context system.</p>
 
@@ -297,7 +300,6 @@ No. Entroly includes a local-first **code-intelligence and repository-intelligen
 
 Text search and RAG are primarily similarity systems. Entroly can combine lexical relevance with **structural, relational, and source-verified evidence**: where a symbol is defined, which calls are resolvable, what depends on what, which paths are ambiguous, what changed, whether the indexed source is still fresh, and which evidence can fit safely inside the model's context budget. Where it cannot prove a relationship, it keeps that uncertainty visible instead of silently manufacturing certainty.
 </details>
-
 <details>
 <summary><b>Will this change my code or my files?</b></summary>
 <br>
@@ -380,7 +382,7 @@ or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 
 - **[AI efficiency hub](docs/ai-efficiency.html)** — canonical map for token economics, AI cost optimization, Memory OS, hallucination reduction, guarded model routing, adaptive context, and verified code intelligence.
 - **[AI cost optimization](docs/ai-cost-optimization.html)** — canonical evidence-bounded guide to provider-bound input savings, billing boundaries, and workload-specific measurement.
-- **[Token economics](docs/token-economics.html)** — token saving, context compression, cache-aware context control, and context-window headroom without claiming a universal reduction percentage.
+- **[Token economics](docs/token-economics.html)** — token saving, context compression, cache-aware context control, and more room in the context window without claiming a universal reduction percentage.
 - **[Memory OS](docs/memory-os.html)** — budget-aware working, episodic, and semantic memory with consolidation, forgetting, persistence, safety, receipts, and verification.
 - **[Hallucination reduction](docs/hallucination-reduction.html)** — WITNESS evidence-support verification with the published faithful HaluEval-QA artifact.
 - **[Guarded model routing](docs/model-routing.html)** — RAVS routing, uncertainty control, learned policies, and fail-closed escalation.
