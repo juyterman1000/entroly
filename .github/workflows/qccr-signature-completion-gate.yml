@@ -6,7 +6,7 @@ on:
 
 jobs:
   validate-and-persist:
-    if: github.head_ref == 'diagnostic/qccr-rendering-20260809' && github.event.pull_request.head.sha == 'bc772bd3bf6c37a334cc84abd1d67c313f113d0e'
+    if: github.head_ref == 'diagnostic/qccr-rendering-20260809'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -17,15 +17,29 @@ jobs:
           ref: diagnostic/qccr-rendering-20260809
           fetch-depth: 0
 
+      - name: Detect whether product fix is already persisted
+        id: state
+        shell: bash
+        run: |
+          if grep -q 'render_python_selection_with_complete_signatures' entroly-qccr/src/lib.rs; then
+            echo 'needs_apply=false' >> "$GITHUB_OUTPUT"
+            echo 'Validated product fix already exists; this rerun is intentionally a no-op.'
+          else
+            echo 'needs_apply=true' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Rust
+        if: steps.state.outputs.needs_apply == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python
+        if: steps.state.outputs.needs_apply == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
       - name: Create benchmark environment
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
@@ -33,11 +47,13 @@ jobs:
           .venv/bin/pip install -e '.[test]' --timeout 120 --retries 5
 
       - name: Build exact pre-fix native QCCR
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           cd entroly-core
           ../.venv/bin/maturin develop --release
 
       - name: Step 1 exact pre-fix rendering evidence
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/python diagnostics/check_qccr_rendering.py | tee /tmp/qccr_before.txt
           grep -c 'full_signature_present=True' /tmp/qccr_before.txt > /tmp/full_before.txt || true
@@ -45,6 +61,7 @@ jobs:
           echo "PRE_FULL=$(cat /tmp/full_before.txt) PRE_DELIVERED=$(cat /tmp/delivered_before.txt)"
 
       - name: Exact pre-fix graph-lane baseline
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
           cp benchmarks/results/graph_lane_results.json /tmp/graph_lane_before.json
@@ -60,6 +77,7 @@ jobs:
           PY
 
       - name: Apply minimal signature-completion candidate
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/python diagnostics/apply_qccr_signature_completion.py
           cargo fmt --manifest-path entroly-qccr/Cargo.toml
@@ -67,14 +85,17 @@ jobs:
           git diff --check
 
       - name: Rust QCCR unit tests
+        if: steps.state.outputs.needs_apply == 'true'
         run: cargo test --manifest-path entroly-qccr/Cargo.toml
 
       - name: Rebuild exact post-fix native QCCR
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           cd entroly-core
           ../.venv/bin/maturin develop --release
 
       - name: Require rendering improvement without delivery regression
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/python diagnostics/check_qccr_rendering.py | tee /tmp/qccr_after.txt
           post_full=$(grep -c 'full_signature_present=True' /tmp/qccr_after.txt || true)
@@ -86,6 +107,7 @@ jobs:
           test "$post_delivered" -ge "$pre_delivered"
 
       - name: Exact post-fix graph lane and no-regression comparison
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           .venv/bin/python benchmarks/graph_lane_quality.py run --budgets 2000 --limit 20
           cp benchmarks/results/graph_lane_results.json /tmp/graph_lane_after.json
@@ -107,15 +129,19 @@ jobs:
           PY
 
       - name: Acceptance regression tests
+        if: steps.state.outputs.needs_apply == 'true'
         run: .venv/bin/python -m pytest tests/ -q -k 'qccr or resolution or codec or compress' --timeout=180
 
       - name: Ruff
+        if: steps.state.outputs.needs_apply == 'true'
         run: .venv/bin/ruff check entroly/ benchmarks/
 
       - name: External name policy
+        if: steps.state.outputs.needs_apply == 'true'
         run: .venv/bin/python scripts/check_external_name_policy.py
 
       - name: Persist the exact validated product diff to PR 296
+        if: steps.state.outputs.needs_apply == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
