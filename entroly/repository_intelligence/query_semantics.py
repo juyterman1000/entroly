@@ -2,13 +2,14 @@
 
 Tree-sitter defines fixed locals-query captures (``local.scope``,
 ``local.definition``, ``local.reference``) and a standard tags vocabulary
-(``definition.*`` / ``reference.*`` with ``name``).  When a grammar bundles
-those queries, Entroly can extract exact lexical facts from the already-parsed
-syntax tree without another parse.
+(``definition.*`` / ``reference.*`` with ``name``). When a grammar bundles
+those queries, Entroly extracts exact lexical facts from an already-parsed tree.
 
-This is intentionally narrower than compiler semantics.  A reference is bound
+This is intentionally narrower than compiler semantics. A reference is bound
 only when a unique prior same-name definition exists in the nearest enclosing
-captured scope.  Tags enrich roles/kinds but never create semantic bindings.
+captured scope. A same-name definition in that nearer scope blocks fallback to
+an outer scope even when it occurs later, because hoisting/shadow semantics are
+language-specific. Tags enrich roles/kinds but never create bindings.
 """
 from __future__ import annotations
 
@@ -194,16 +195,19 @@ def _query_results(
     except Exception:
         return None
 
-    # py-tree-sitter >=0.25 moved execution from Query to QueryCursor.
     try:
         from tree_sitter import QueryCursor
-        cursor = QueryCursor(query)
-        captures = cursor.captures(root_node)
-        matches = cursor.matches(root_node)
-        exceeded = bool(getattr(cursor, "did_exceed_match_limit", False))
-        return dict(captures), list(matches), not exceeded
-    except (ImportError, TypeError, AttributeError):
-        pass
+    except ImportError:
+        QueryCursor = None  # type: ignore[assignment,misc]
+    if QueryCursor is not None:
+        try:
+            cursor = QueryCursor(query)
+            captures = cursor.captures(root_node)
+            matches = cursor.matches(root_node)
+            exceeded = bool(getattr(cursor, "did_exceed_match_limit", False))
+            return dict(captures), list(matches), not exceeded
+        except Exception:
+            return None
     try:
         captures = query.captures(root_node)
         matches = query.matches(root_node)
@@ -213,7 +217,11 @@ def _query_results(
         return None
 
 
-def _scope_for_position(scopes: Iterable[QueryFact], start: int, end: int) -> QueryFact | None:
+def _scope_for_position(
+    scopes: Iterable[QueryFact],
+    start: int,
+    end: int,
+) -> QueryFact | None:
     containing = [
         scope
         for scope in scopes
@@ -223,7 +231,11 @@ def _scope_for_position(scopes: Iterable[QueryFact], start: int, end: int) -> Qu
         return None
     return min(
         containing,
-        key=lambda item: (item.end_byte - item.start_byte, -item.start_byte, item.fact_id),
+        key=lambda item: (
+            item.end_byte - item.start_byte,
+            -item.start_byte,
+            item.fact_id,
+        ),
     )
 
 
@@ -232,11 +244,10 @@ def resolve_lexical_bindings(
     definitions: tuple[QueryFact, ...],
     references: tuple[QueryFact, ...],
 ) -> tuple[tuple[LexicalBinding, ...], tuple[UnresolvedLexicalReference, ...]]:
-    """Resolve only unique prior definitions in the nearest lexical scope."""
+    """Resolve unique prior definitions without unsafe outer-scope fallback."""
     bindings: list[LexicalBinding] = []
     unresolved: list[UnresolvedLexicalReference] = []
     by_scope: dict[str, list[QueryFact]] = {}
-    scope_map = {scope.fact_id: scope for scope in scopes}
     root_scope = "scope:root"
     for definition in definitions:
         by_scope.setdefault(definition.scope_id or root_scope, []).append(definition)
@@ -249,53 +260,66 @@ def resolve_lexical_bindings(
                 if scope.start_byte <= reference.start_byte
                 and reference.end_byte <= scope.end_byte
             ),
-            key=lambda item: (item.end_byte - item.start_byte, -item.start_byte, item.fact_id),
+            key=lambda item: (
+                item.end_byte - item.start_byte,
+                -item.start_byte,
+                item.fact_id,
+            ),
         )
         search_scopes = [scope.fact_id for scope in containing]
         search_scopes.append(root_scope)
         resolved = False
         for scope_id in search_scopes:
-            candidates = [
+            same_name = [
                 item
                 for item in by_scope.get(scope_id, ())
-                if item.name == reference.name and item.start_byte < reference.start_byte
+                if item.name == reference.name
             ]
-            if not candidates:
+            if not same_name:
                 continue
-            if len(candidates) == 1:
-                definition = candidates[0]
+            prior = [
+                item for item in same_name if item.start_byte < reference.start_byte
+            ]
+            if len(prior) == 1:
+                definition = prior[0]
                 bindings.append(LexicalBinding(
                     definition_id=definition.fact_id,
                     reference_id=reference.fact_id,
                     name=reference.name,
                     scope_id=scope_id,
                 ))
-            else:
+            elif len(prior) > 1:
                 unresolved.append(UnresolvedLexicalReference(
                     reference_id=reference.fact_id,
                     name=reference.name,
                     reason="ambiguous-prior-definitions",
-                    candidates=tuple(sorted(item.fact_id for item in candidates)),
+                    candidates=tuple(sorted(item.fact_id for item in prior)),
+                ))
+            else:
+                unresolved.append(UnresolvedLexicalReference(
+                    reference_id=reference.fact_id,
+                    name=reference.name,
+                    reason="nearer-scope-definition-not-prior",
+                    candidates=tuple(sorted(item.fact_id for item in same_name)[:100]),
                 ))
             resolved = True
             break
         if not resolved:
-            # Later definitions are not treated as hoisted because that is a
-            # language semantic claim. They remain visible as candidates only.
-            later = [
-                item.fact_id
-                for item in definitions
-                if item.name == reference.name and item.start_byte >= reference.start_byte
-            ]
             unresolved.append(UnresolvedLexicalReference(
                 reference_id=reference.fact_id,
                 name=reference.name,
-                reason="no-unique-prior-definition",
-                candidates=tuple(sorted(later)[:100]),
+                reason="no-definition-in-visible-captured-scopes",
+                candidates=(),
             ))
     return (
-        tuple(sorted(bindings, key=lambda item: (item.reference_id, item.definition_id))),
-        tuple(sorted(unresolved, key=lambda item: (item.reference_id, item.reason, item.candidates))),
+        tuple(sorted(
+            bindings,
+            key=lambda item: (item.reference_id, item.definition_id),
+        )),
+        tuple(sorted(
+            unresolved,
+            key=lambda item: (item.reference_id, item.reason, item.candidates),
+        )),
     )
 
 
@@ -304,21 +328,29 @@ def _locals_facts(
     captures: Mapping[str, list[object]],
     *,
     max_facts: int,
-) -> tuple[tuple[QueryFact, ...], tuple[QueryFact, ...], tuple[QueryFact, ...], bool]:
+) -> tuple[
+    tuple[QueryFact, ...],
+    tuple[QueryFact, ...],
+    tuple[QueryFact, ...],
+    bool,
+]:
     ignored = {
         (int(getattr(node, "start_byte", -1)), int(getattr(node, "end_byte", -1)))
         for node in captures.get("ignore", ())
     }
     scopes: list[QueryFact] = []
+    complete = True
     for node in captures.get("local.scope", ()):
-        fact = _fact(raw, node, role="scope", kind="local")
+        if len(scopes) >= max_facts:
+            complete = False
+            break
+        fact = _fact(raw, node, role="scope", kind="local", name="scope")
         if fact is not None:
             scopes.append(fact)
     scopes.sort(key=lambda item: (item.start_byte, -item.end_byte, item.fact_id))
 
     definitions: list[QueryFact] = []
     references: list[QueryFact] = []
-    complete = True
     for capture_name, role, target in (
         ("local.definition", "definition", definitions),
         ("local.reference", "reference", references),
@@ -330,7 +362,7 @@ def _locals_facts(
             )
             if span in ignored:
                 continue
-            if len(definitions) + len(references) >= max_facts:
+            if len(scopes) + len(definitions) + len(references) >= max_facts:
                 complete = False
                 break
             scope = _scope_for_position(scopes, span[0], span[1])
@@ -346,10 +378,10 @@ def _locals_facts(
         if not complete:
             break
     return (
-        tuple(scopes[:max_facts]),
+        tuple(scopes),
         tuple(sorted(definitions, key=lambda item: (item.start_byte, item.fact_id))),
         tuple(sorted(references, key=lambda item: (item.start_byte, item.fact_id))),
-        complete and len(scopes) <= max_facts,
+        complete,
     )
 
 
@@ -387,14 +419,27 @@ def _tag_facts(
             ]
             for name_node in contained_names[:10]:
                 role, _, kind = capture.partition(".")
-                fact = _fact(raw, name_node, role=role, kind=kind or "unknown")
+                fact = _fact(
+                    raw,
+                    name_node,
+                    role=role,
+                    kind=kind or "unknown",
+                )
                 if fact is not None and fact.fact_id not in seen:
                     seen.add(fact.fact_id)
                     facts.append(fact)
         if not complete:
             break
     return (
-        tuple(sorted(facts, key=lambda item: (item.start_byte, item.role, item.kind, item.fact_id))),
+        tuple(sorted(
+            facts,
+            key=lambda item: (
+                item.start_byte,
+                item.role,
+                item.kind,
+                item.fact_id,
+            ),
+        )),
         complete,
     )
 
@@ -443,33 +488,49 @@ def build_query_semantic_graph(
     tags_available = bool(tags_source)
 
     if locals_source:
-        result = _query_results(language_object, str(locals_source), session.tree.root_node)
+        result = _query_results(
+            language_object,
+            str(locals_source),
+            session.tree.root_node,
+        )
         if result is None:
             complete = False
             diagnostics.append("locals-query-execution-failed")
         else:
             captures, _matches, query_complete = result
             scopes, definitions, references, extraction_complete = _locals_facts(
-                session.raw, captures, max_facts=fact_limit
+                session.raw,
+                captures,
+                max_facts=fact_limit,
             )
             complete = complete and query_complete and extraction_complete
 
     if tags_source:
-        result = _query_results(language_object, str(tags_source), session.tree.root_node)
+        result = _query_results(
+            language_object,
+            str(tags_source),
+            session.tree.root_node,
+        )
         if result is None:
             complete = False
             diagnostics.append("tags-query-execution-failed")
         else:
             _captures, matches, query_complete = result
             tag_facts, extraction_complete = _tag_facts(
-                session.raw, matches, max_facts=fact_limit
+                session.raw,
+                matches,
+                max_facts=fact_limit,
             )
             complete = complete and query_complete and extraction_complete
 
     if not locals_available and not tags_available:
         return None
 
-    bindings, unresolved = resolve_lexical_bindings(scopes, definitions, references)
+    bindings, unresolved = resolve_lexical_bindings(
+        scopes,
+        definitions,
+        references,
+    )
     return QuerySemanticGraph(
         language=session.language,
         source_sha256=session.source_sha256,
