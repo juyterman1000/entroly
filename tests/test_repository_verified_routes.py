@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import io
 from pathlib import Path
 
 from entroly.repository_intelligence import build_repository_index
@@ -128,3 +129,49 @@ def test_route_receipt_detects_tampering(tmp_path: Path) -> None:
     tampered = copy.deepcopy(payload)
     tampered["routes"][0]["path"] = "/invented"
     assert not verify_routes_commitment(tampered)
+
+
+def test_route_order_is_independent_of_line_endings(tmp_path: Path) -> None:
+    """The same source must order identically whether stored LF or CRLF.
+
+    Colliding routes tie on (normalized_path, method), so ordering fell through
+    to route_id -- a digest computed over (start_byte, end_byte). CRLF shifts
+    every offset, so a Windows checkout emitted ['/v1/users/:name', ...] while
+    the identical file with LF emitted ['/v1/users/{user_id}', ...]. Receipt
+    ordering must depend on the code, not on how git normalised the newlines.
+
+    Written with io.open(newline=...) deliberately: Path.write_text translates
+    "\n" to os.linesep, so it cannot express both cases on one platform.
+    """
+    source = (
+        'from fastapi import APIRouter, FastAPI\n'
+        'VERSION = "/v1"\n'
+        'app = FastAPI()\n'
+        'users = APIRouter(prefix="/users")\n'
+        '\n'
+        '@users.get("/{user_id}")\n'
+        'def read_user(user_id: str):\n'
+        '    return user_id\n'
+        '\n'
+        '@users.get("/:name")\n'
+        'def read_named(name: str):\n'
+        '    return name\n'
+        '\n'
+        'app.include_router(users, prefix=VERSION)\n'
+    )
+
+    observed = {}
+    for label, newline in (("lf", ""), ("crlf", "\r\n")):
+        root = tmp_path / label
+        root.mkdir()
+        with io.open(root / "api.py", "w", encoding="utf-8", newline=newline) as handle:
+            handle.write(source)
+        raw = (root / "api.py").read_bytes()
+        assert (b"\r\n" in raw) == (label == "crlf"), "fixture did not store the intended newline"
+        payload = build_verified_routes(
+            root, build_repository_index(root), index_digest="sha256:test"
+        )
+        observed[label] = [item["path"] for item in payload["routes"]]
+
+    assert observed["lf"] == observed["crlf"]
+    assert observed["lf"] == ["/v1/users/:name", "/v1/users/{user_id}"]

@@ -545,8 +545,19 @@ def build_verified_routes(
                 "extraction": route.extraction,
                 "confidence": "heuristic-static" if heuristic else "exact-static",
             })
+    # Order on the route's own text before falling back to route_id. Routes
+    # that collide on a normalized path tie on the first two keys, so ordering
+    # was decided by route_id -- a digest whose identity covers (start_byte,
+    # end_byte). Those offsets shift when the same file is checked out with
+    # CRLF rather than LF, so one repository produced two different receipt
+    # orderings depending only on line endings. Sorting by the declared path
+    # keeps the order canonical, and reads in a defensible order for a human
+    # besides. route_id still breaks exact duplicates.
     routes.sort(key=lambda item: (
-        str(item["normalized_path"]), str(item["method"]), str(item["route_id"])
+        str(item["normalized_path"]),
+        str(item["method"]),
+        str(item["path"]),
+        str(item["route_id"]),
     ))
     grouped: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
     for route in routes:
