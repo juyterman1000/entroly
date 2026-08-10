@@ -55,6 +55,15 @@ JS_DEF = re.compile(
 )
 JS_IMPORT = re.compile(r"(?:from\s+|require\s*\(\s*)['\"]([^'\"]+)['\"]")
 CALL = re.compile(r"(?<![\w$])([A-Za-z_$][\w$]*)\s*\(")
+# A name introduced by one of these keywords is being declared, not called.
+# `CALL` cannot tell "fn run(&self)" from "run()", so without this every
+# declaration became a call to itself. Matched against the text preceding the
+# name so it also catches declarations nested mid-line, as in
+# "impl Worker { fn run(&self) { helper(); } }", which no line-anchored
+# declaration pattern sees.
+DECLARATION_PREFIX = re.compile(
+    r"(?:^|[^\w$])(?:fn|function|class|struct|enum|trait|impl|mod|def|sub)\s+$"
+)
 
 
 @dataclass
@@ -382,10 +391,15 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
         line_start = byte_cursor
         byte_cursor += len(terminated.encode("utf-8", "surrogateescape"))
         current: Symbol | None = None
+        # Where this line declares a name, rather than calls one. `CALL` also
+        # matches the "helper(" inside "function helper()", which turned every
+        # single-line declaration into a call to itself.
+        declared_name_span: tuple[int, int] | None = None
         if language == "rust":
             match = RUST_DEF.match(line)
             if match:
                 kind, name = match.groups()
+                declared_name_span = match.span(2)
                 current = Symbol(
                     _symbol_id(path, name, kind), path, name, name, kind,
                     line_number, line_number, language, None, line.strip(),
@@ -400,6 +414,7 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
             if match:
                 kind = match.group(1) or "function"
                 name = match.group(2) or match.group(3)
+                declared_name_span = match.span(2 if match.group(2) else 3)
                 current = Symbol(
                     _symbol_id(path, name, kind), path, name, name, kind,
                     line_number, line_number, language, None, line.strip(),
@@ -411,6 +426,15 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
             for call_match in CALL.finditer(line):
                 name = call_match.group(1)
                 if name in CALL_KEYWORDS:
+                    continue
+                # Suppress by position, not by name. Skipping every occurrence
+                # matching the enclosing symbol would also drop real recursion
+                # written on one line, as in "fn f() { f() }" -- there only the
+                # first occurrence is a declaration.
+                prefix_text = line[:call_match.start(1)]
+                if call_match.span(1) == declared_name_span or DECLARATION_PREFIX.search(
+                    prefix_text
+                ):
                     continue
                 # Every emitted edge must carry evidence a caller can recover
                 # and re-hash. Leaving these at the ParsedCall defaults shipped
